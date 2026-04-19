@@ -1,0 +1,135 @@
+"use client";
+
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+
+type Props = {
+  /** The top-level comment being replied to. Replies to replies aren't allowed. */
+  parentCommentId: string;
+  /** Optional label for the trigger button. Default: "Reply". */
+  label?: string;
+};
+
+const MAX = 4000;
+
+/**
+ * Click "Reply" → reveals an inline textarea. Submit posts via
+ * /api/comments/reply and calls router.refresh() on success.
+ * Esc closes the drawer without sending.
+ */
+export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function openDrawer() {
+    setOpen(true);
+    setError(null);
+    // Focus after the textarea mounts.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function closeDrawer() {
+    setOpen(false);
+    setValue("");
+    setError(null);
+  }
+
+  function submit() {
+    const body = value.trim();
+    if (!body) {
+      setError("Reply can't be empty.");
+      return;
+    }
+    if (body.length > MAX) {
+      setError(`Too long (${body.length}/${MAX}).`);
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/comments/reply", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ parentCommentId, body }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        closeDrawer();
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    });
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeDrawer();
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      submit();
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="reply-btn"
+        onClick={openDrawer}
+        title="Reply to this thread (⌘/Ctrl+Enter to send)"
+      >
+        {label}
+      </button>
+    );
+  }
+
+  const count = value.trim().length;
+  const over = count > MAX;
+
+  return (
+    <div className="reply-drawer">
+      <textarea
+        ref={textareaRef}
+        className="reply-textarea"
+        rows={3}
+        value={value}
+        placeholder="Write a reply… (⌘/Ctrl+Enter to send, Esc to cancel)"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={onKeyDown}
+        disabled={isPending}
+        maxLength={MAX + 1}
+      />
+      <div className="reply-drawer-foot">
+        <span className={`reply-count ${over ? "is-over" : ""}`}>
+          {count}/{MAX}
+        </span>
+        {error && <span className="reply-error">{error}</span>}
+        <span className="reply-drawer-spacer" />
+        <button
+          type="button"
+          className="reply-btn reply-btn-ghost"
+          onClick={closeDrawer}
+          disabled={isPending}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="reply-btn reply-btn-primary"
+          onClick={submit}
+          disabled={isPending || count === 0 || over}
+        >
+          {isPending ? "Sending…" : "Send"}
+        </button>
+      </div>
+    </div>
+  );
+}

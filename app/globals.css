@@ -1012,3 +1012,99 @@ a.section-link:hover {
   flex-wrap: wrap;
   font-size: 0.85rem;
 }
+
+/* Reply button + inline drawer */
+.reply-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.reply-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reply-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.reply-btn-ghost {
+  background: transparent;
+  border-style: dashed;
+}
+
+.reply-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.reply-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+  color: #fff;
+}
+
+.reply-drawer {
+  margin-top: 0.5rem;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+}
+
+.reply-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 3.25em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.reply-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.reply-drawer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.reply-drawer-spacer {
+  flex: 1;
+}
+
+.reply-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reply-count.is-over {
+  color: var(--overdue);
+  font-weight: 500;
+}
+
+.reply-error {
+  color: var(--overdue);
+}

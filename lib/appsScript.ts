@@ -290,3 +290,22 @@ export function resolveComment(args: {
     resolved: args.resolved ? "true" : "false",
   });
 }
+
+export type PostReplyResult = {
+  ok: boolean;
+  comment_id: string;
+  parent_id: string;
+  project: string;
+  body: string;
+  timestamp: string;
+};
+
+export function postReply(args: {
+  parentCommentId: string;
+  body: string;
+}): Promise<PostReplyResult> {
+  return postApi<PostReplyResult>("postReply", {
+    parentCommentId: args.parentCommentId,
+    body: args.body,
+  });
+}

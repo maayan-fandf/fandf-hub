@@ -7,6 +7,7 @@ import {
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
 import ResolveButton from "@/components/ResolveButton";
+import ReplyDrawer from "@/components/ReplyDrawer";
 
 export const dynamic = "force-dynamic";
 
@@ -228,9 +229,12 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           </div>
         )}
         <div className="timeline-actions">
-          {/* Only top-level comments are resolvable on the Apps Script side. */}
+          {/* Only top-level comments are resolvable / replyable from the hub. */}
           {!c.parent_id && (
-            <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+            <>
+              <ReplyDrawer parentCommentId={c.comment_id} />
+              <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+            </>
           )}
           {c.deep_link && (
             <a
