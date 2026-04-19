@@ -42,10 +42,6 @@ export default async function TaskBoardPage({
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
               → סקירת {projectName}
             </Link>
-            {" · "}
-            <Link href={`/projects/${encodeURIComponent(projectName)}/metrics`}>
-              📊 מטריקות
-            </Link>
             {data && ` · 🔥 ${countOpen(data.tasks)} פתוחות`}
           </div>
         </div>

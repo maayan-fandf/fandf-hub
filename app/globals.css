@@ -1937,26 +1937,7 @@ a.section-link:hover {
   flex-wrap: wrap;
 }
 
-/* ─── Metrics iframe (dashboard embed) ────────────────────────────── */
-.metrics-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-
-.metrics-foot-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.8rem;
-  flex-wrap: wrap;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.7rem 1rem;
-  box-shadow: var(--shadow-sm);
-}
-
+/* ─── Metrics iframe (dashboard embed, inline on project overview) ── */
 .metrics-frame-wrap {
   position: relative;
   background: var(--surface);
@@ -2013,10 +1994,14 @@ a.section-link:hover {
   line-height: 1.2;
 }
 
-.project-section-metrics .empty-small {
-  color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.5;
+/* Full-width metrics section lives outside the .project-sections grid,
+   so it spans the container. Same card styling as other sections. */
+.project-section-metrics {
+  margin-top: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
 }
 
 /* Red-dot badge for open mentions on the תיוגים nav link */

@@ -3,12 +3,14 @@ import {
   getProjectTasks,
   getProjectComments,
   getMyMentions,
+  getMyProjects,
   type TaskItem,
   type CommentItem,
   type MentionItem,
 } from "@/lib/appsScript";
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 import Avatar from "@/components/Avatar";
+import MetricsIframe from "@/components/MetricsIframe";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +24,15 @@ export default async function ProjectOverviewPage({
   const { project: projectParam } = await params;
   const projectName = decodeURIComponent(projectParam);
 
-  // Fire three API calls in parallel — each one validates access independently,
-  // so if the user is unauthorized we'll get consistent errors.
-  const [tasksRes, commentsRes, mentionsRes] = await Promise.allSettled([
+  // Fire four API calls in parallel — each one validates access independently,
+  // so if the user is unauthorized we'll get consistent errors. getMyProjects
+  // is added so we can resolve the project's company for the dashboard iframe
+  // filter (needs ?company=X&project=Y).
+  const [tasksRes, commentsRes, mentionsRes, projectsRes] = await Promise.allSettled([
     getProjectTasks(projectName),
     getProjectComments(projectName, 15),
     getMyMentions(),
+    getMyProjects(),
   ]);
 
   const tasksData = tasksRes.status === "fulfilled" ? tasksRes.value : null;
@@ -35,6 +40,18 @@ export default async function ProjectOverviewPage({
     commentsRes.status === "fulfilled" ? commentsRes.value : null;
   const mentionsData =
     mentionsRes.status === "fulfilled" ? mentionsRes.value : null;
+  const projectsData =
+    projectsRes.status === "fulfilled" ? projectsRes.value : null;
+
+  const companyForDashboard =
+    projectsData?.projects.find((p) => p.name === projectName)?.company ?? "";
+  const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
+  const dashboardFilteredUrl = dashboardBaseUrl
+    ? buildDashboardUrl(dashboardBaseUrl, {
+        company: companyForDashboard,
+        project: projectName,
+      })
+    : "";
 
   // If the tasks call failed, it's likely an access-denied — show the first error.
   const firstError =
@@ -123,22 +140,30 @@ export default async function ProjectOverviewPage({
           </div>
           <MentionsPreview mentions={myMentionsOnProject} />
         </section>
+      </div>
 
+      {/* Dashboard iframe, inline under the comment/task cards. Spans the
+          full container width. No standalone page header — the section
+          heading is enough. */}
+      {dashboardFilteredUrl && (
         <section className="project-section project-section-metrics">
           <div className="section-head">
             <h2>📊 מטריקות</h2>
-            <Link
+            <a
               className="section-link"
-              href={`/projects/${encodeURIComponent(projectName)}/metrics`}
+              href={dashboardFilteredUrl}
+              target="_blank"
+              rel="noreferrer"
             >
-              פתח דוח ←
-            </Link>
+              פתח בכרטיסייה חדשה ↗
+            </a>
           </div>
-          <div className="empty-small">
-            דוח שיווקי מהדשבורד, מסונן לפרויקט זה — לידים, עלויות, תשואה.
-          </div>
+          <MetricsIframe
+            src={dashboardFilteredUrl}
+            projectName={projectName}
+          />
         </section>
-      </div>
+      )}
     </main>
   );
 }
@@ -325,4 +350,20 @@ function formatRelative(iso: string): string {
 
 function extractError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Append project+company filters to the dashboard base URL. */
+function buildDashboardUrl(
+  base: string,
+  filters: { company?: string; project?: string },
+): string {
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    return base;
+  }
+  if (filters.company) url.searchParams.set("company", filters.company);
+  if (filters.project) url.searchParams.set("project", filters.project);
+  return url.toString();
 }
