@@ -5,6 +5,12 @@ import { useEffect, useRef, useState } from "react";
 type Props = {
   src: string;
   projectName: string;
+  /**
+   * Email the hub's session says you are. Used in the fallback message
+   * ("make sure you're signed into Google as X") and to pre-fill the
+   * Google AccountChooser link when the iframe can't load.
+   */
+  expectedEmail?: string;
 };
 
 /**
@@ -12,14 +18,16 @@ type Props = {
  * of the project overview page. Responsibilities:
  *   - Show a "loading…" overlay until onLoad fires
  *   - After 6s with no load event, surface a fallback hint with an
- *     open-in-new-tab button (third-party cookies, Apps Script sign-in
- *     loop, or X-Frame block all silently fail the same way)
+ *     open-in-new-tab button AND a Google AccountChooser link pre-filled
+ *     with the user's hub-session email (helps when the browser is
+ *     signed into the wrong Google account — the #1 cause of iframe
+ *     auth failures)
  *
  * We deliberately don't cross-origin-probe to detect auth failures —
  * not possible in browsers, and not worth the code. The 6-second
  * heuristic + always-available fallback is simpler and sufficient.
  */
-export default function MetricsIframe({ src, projectName }: Props) {
+export default function MetricsIframe({ src, projectName, expectedEmail }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [slowWarning, setSlowWarning] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -56,13 +64,38 @@ export default function MetricsIframe({ src, projectName }: Props) {
         <div className="metrics-slow-warning">
           <span className="emoji" aria-hidden>⚠️</span>
           <div>
-            <div><b>לא נטען תוך כמה שניות?</b></div>
+            <div><b>לא נטען? רוב הסיכויים שהדפדפן מחובר ל-Google עם חשבון אחר.</b></div>
             <div className="subtitle">
-              חלק מהדפדפנים חוסמים עוגיות-צד-שלישי, מה שמונע כניסה ל-Google בתוך
-              מסגרת. אם הדוח נשאר ריק —{" "}
-              <a href={src} target="_blank" rel="noreferrer">
-                פתח בכרטיסייה חדשה ↗
-              </a>
+              {expectedEmail && (
+                <>
+                  ודאו שאתם מחוברים ל-Google עם החשבון{" "}
+                  <code dir="ltr">{expectedEmail}</code>.{" "}
+                </>
+              )}
+              אם לא —{" "}
+              {expectedEmail ? (
+                <a
+                  href={`https://accounts.google.com/AccountChooser?Email=${encodeURIComponent(
+                    expectedEmail,
+                  )}&continue=${encodeURIComponent(src)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  התחבר לחשבון הנכון ↗
+                </a>
+              ) : (
+                <a href={src} target="_blank" rel="noreferrer">
+                  פתח בכרטיסייה חדשה ↗
+                </a>
+              )}
+              {expectedEmail && (
+                <>
+                  {" "}או{" "}
+                  <a href={src} target="_blank" rel="noreferrer">
+                    פתח בכרטיסייה חדשה ↗
+                  </a>
+                </>
+              )}
               .
             </div>
           </div>

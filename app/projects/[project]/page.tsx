@@ -45,11 +45,17 @@ export default async function ProjectOverviewPage({
 
   const companyForDashboard =
     projectsData?.projects.find((p) => p.name === projectName)?.company ?? "";
+  const userEmail = projectsData?.email ?? "";
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
+  // `authuser` hints Google to load the iframe under *this* account if the
+  // browser is signed into multiple Google accounts. If it's signed into the
+  // wrong one (or none), Google will redirect to its sign-in flow with our
+  // email pre-filled — still better than a silent "can't open" error.
   const dashboardFilteredUrl = dashboardBaseUrl
     ? buildDashboardUrl(dashboardBaseUrl, {
         company: companyForDashboard,
         project: projectName,
+        authuser: userEmail,
       })
     : "";
 
@@ -161,6 +167,7 @@ export default async function ProjectOverviewPage({
           <MetricsIframe
             src={dashboardFilteredUrl}
             projectName={projectName}
+            expectedEmail={userEmail}
           />
         </section>
       )}
@@ -352,10 +359,10 @@ function extractError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Append project+company filters to the dashboard base URL. */
+/** Append project+company+authuser filters to the dashboard base URL. */
 function buildDashboardUrl(
   base: string,
-  filters: { company?: string; project?: string },
+  filters: { company?: string; project?: string; authuser?: string },
 ): string {
   let url: URL;
   try {
@@ -365,5 +372,6 @@ function buildDashboardUrl(
   }
   if (filters.company) url.searchParams.set("company", filters.company);
   if (filters.project) url.searchParams.set("project", filters.project);
+  if (filters.authuser) url.searchParams.set("authuser", filters.authuser);
   return url.toString();
 }
