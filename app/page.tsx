@@ -53,7 +53,7 @@ export default async function HomePage() {
         <ul className="project-list">
           {data.projects.map((name) => (
             <li key={name}>
-              <Link href={`/projects/${encodeURIComponent(name)}/tasks`}>
+              <Link href={`/projects/${encodeURIComponent(name)}`}>
                 {name}
               </Link>
             </li>

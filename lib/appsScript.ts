@@ -178,6 +178,38 @@ export function getMyMentions(): Promise<MyMentions> {
   return callApi<MyMentions>("myMentions");
 }
 
+export type CommentItem = {
+  comment_id: string;
+  project: string;
+  anchor: string;
+  parent_id: string;
+  author_email: string;
+  author_name: string;
+  body: string;
+  mentions: string[];
+  timestamp: string;
+  resolved: boolean;
+  reply_count: number;
+  deep_link: string;
+};
+
+export type ProjectComments = {
+  project: string;
+  comments: CommentItem[];
+  total: number;
+  me: { email: string; isAdmin: boolean };
+};
+
+export function getProjectComments(
+  project: string,
+  limit = 20,
+): Promise<ProjectComments> {
+  return callApi<ProjectComments>("projectComments", {
+    project,
+    limit: String(limit),
+  });
+}
+
 export type ReassignResult = {
   ok: boolean;
   noop?: boolean;

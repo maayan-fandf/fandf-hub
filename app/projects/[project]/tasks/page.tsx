@@ -33,9 +33,11 @@ export default async function TaskBoardPage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>{projectName}</h1>
+          <h1>{projectName} · Tasks</h1>
           <div className="subtitle">
-            <Link href="/">← All projects</Link>
+            <Link href={`/projects/${encodeURIComponent(projectName)}`}>
+              ← {projectName} overview
+            </Link>
             {data && ` · ${countOpen(data.tasks)} open tasks`}
           </div>
         </div>
