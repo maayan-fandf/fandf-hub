@@ -3,12 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { TaskItem } from "@/lib/appsScript";
-import { companyColorVars } from "@/lib/colors";
+import { companyColorSlot } from "@/lib/colors";
 import Avatar from "./Avatar";
 import ResolveButton from "./ResolveButton";
 import DeleteButton from "./DeleteButton";
-
-type CSSVars = React.CSSProperties & Record<`--${string}`, string>;
 
 type Props = {
   tasks: TaskItem[];
@@ -119,7 +117,7 @@ export default function Board({ tasks, today, assigneeFilter, showDone }: Props)
             <section
               key={email}
               className={`board-column ${isDropZone ? "is-drop-target" : ""}`}
-              style={companyColorVars(email) as CSSVars}
+              data-co={companyColorSlot(email)}
               onDragOver={(e) => {
                 if (dragSrc && dragSrc.from.toLowerCase() !== email.toLowerCase()) {
                   e.preventDefault();

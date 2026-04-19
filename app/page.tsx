@@ -1,11 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMyProjects, type Project } from "@/lib/appsScript";
-import { companyColorVars } from "@/lib/colors";
-
-// Tiny helper — casts the CSS custom-property object to React's style type
-// so TypeScript lets us apply it.
-type CSSVars = React.CSSProperties & Record<`--${string}`, string>;
+import { companyColorSlot } from "@/lib/colors";
 
 export const dynamic = "force-dynamic";
 
@@ -65,12 +61,12 @@ export default async function HomePage() {
       {grouped.length > 0 && (
         <div className="company-groups">
           {grouped.map((g) => {
-            const colorVars = companyColorVars(g.company || "__ungrouped");
+            const slot = companyColorSlot(g.company || "__ungrouped");
             return (
               <details
                 key={g.company || "__ungrouped"}
                 className="company-group"
-                style={colorVars as CSSVars}
+                data-co={slot}
               >
                 <summary className="company-group-summary">
                   <span className="company-group-name">

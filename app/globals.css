@@ -180,6 +180,25 @@
   box-sizing: border-box;
 }
 
+/* Company / assignee color slot assignment.
+ *
+ * Anything rendered with `data-co="N"` (N = 0..11) gets a theme-aware
+ * pair of color vars. Using this instead of inline styles lets dark
+ * mode actually work — inline `style={--co-soft: #...}` would beat
+ * any CSS override and freeze the palette to light-mode values. */
+[data-co="0"]  { --co-solid: var(--co-0);  --co-soft: var(--co-0-soft); }
+[data-co="1"]  { --co-solid: var(--co-1);  --co-soft: var(--co-1-soft); }
+[data-co="2"]  { --co-solid: var(--co-2);  --co-soft: var(--co-2-soft); }
+[data-co="3"]  { --co-solid: var(--co-3);  --co-soft: var(--co-3-soft); }
+[data-co="4"]  { --co-solid: var(--co-4);  --co-soft: var(--co-4-soft); }
+[data-co="5"]  { --co-solid: var(--co-5);  --co-soft: var(--co-5-soft); }
+[data-co="6"]  { --co-solid: var(--co-6);  --co-soft: var(--co-6-soft); }
+[data-co="7"]  { --co-solid: var(--co-7);  --co-soft: var(--co-7-soft); }
+[data-co="8"]  { --co-solid: var(--co-8);  --co-soft: var(--co-8-soft); }
+[data-co="9"]  { --co-solid: var(--co-9);  --co-soft: var(--co-9-soft); }
+[data-co="10"] { --co-solid: var(--co-10); --co-soft: var(--co-10-soft); }
+[data-co="11"] { --co-solid: var(--co-11); --co-soft: var(--co-11-soft); }
+
 html,
 body {
   margin: 0;

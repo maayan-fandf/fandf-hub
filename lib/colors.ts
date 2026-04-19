@@ -44,18 +44,26 @@ function hashString(s: string): number {
   return Math.abs(h);
 }
 
-/** Return { solid, soft } colors deterministically derived from `key`. */
+/** Return { solid, soft } colors deterministically derived from `key`.
+ *  Used by the Avatar component where the solid color IS the background —
+ *  the solid stays the same in both themes so hardcoded hex is fine. */
 export function colorForKey(key: string): { solid: string; soft: string } {
   const idx = hashString(key) % AVATAR_HUES.length;
   return { solid: AVATAR_HUES[idx], soft: AVATAR_SOFTS[idx] };
 }
 
-/** The N-th slot's CSS variable pair, for use in inline styles. */
-export function companyColorVars(
-  key: string,
-): { "--co-solid": string; "--co-soft": string } {
-  const { solid, soft } = colorForKey(key);
-  return { "--co-solid": solid, "--co-soft": soft };
+/** Slot index (0..11) for company/assignee color assignment.
+ *
+ *  We use this instead of inline `style={{--co-soft: "#ede9fe"}}` so CSS
+ *  can drive the actual --co-solid / --co-soft tokens based on the slot
+ *  AND the current theme. The JSX sets `data-co={N}` on the container;
+ *  CSS rules in globals.css map each slot → theme-aware var pair.
+ *
+ *  Why this matters: inline styles beat cascade. If we hardcode
+ *  `--co-soft: "#ede9fe"` from JS, dark-mode overrides in CSS can never
+ *  take effect — the container stays in pastel-light forever.           */
+export function companyColorSlot(key: string): number {
+  return hashString(key) % AVATAR_HUES.length;
 }
 
 /** Pick a 1- or 2-char label from a name/email for avatar use. */
