@@ -58,7 +58,7 @@ export default async function ProjectOverviewPage({
         <div>
           <h1>{projectName}</h1>
           <div className="subtitle">
-            <Link href="/">→ All projects</Link>
+            <Link href="/">→ כל הפרויקטים</Link>
           </div>
         </div>
         <CreateTaskDrawer project={projectName} />
@@ -66,27 +66,27 @@ export default async function ProjectOverviewPage({
 
       {firstError && (
         <div className="error">
-          <strong>Failed to load project.</strong>
+          <strong>שגיאה בטעינת הפרויקט.</strong>
           <br />
           {firstError}
         </div>
       )}
 
       <div className="stats-grid">
-        <StatTile label="Open tasks" value={openTasks} />
-        <StatTile label="Open mentions for you" value={openMentions} />
-        <StatTile label="Total comments" value={totalComments} />
+        <StatTile label="משימות פתוחות" value={openTasks} />
+        <StatTile label="תיוגים פתוחים עבורך" value={openMentions} />
+        <StatTile label='סה"כ הערות' value={totalComments} />
       </div>
 
       <div className="project-sections">
         <section className="project-section">
           <div className="section-head">
-            <h2>Tasks</h2>
+            <h2>משימות</h2>
             <Link
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/tasks`}
             >
-              Open board ←
+              פתח לוח ←
             </Link>
           </div>
           <TasksPreview tasks={tasks} today={tasksData?.today ?? today()} />
@@ -94,27 +94,27 @@ export default async function ProjectOverviewPage({
 
         <section className="project-section">
           <div className="section-head">
-            <h2>Recent comments</h2>
+            <h2>הערות אחרונות</h2>
             <Link
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/timeline`}
             >
-              Open timeline ←
+              פתח ציר זמן ←
             </Link>
           </div>
           <CommentsPreview comments={comments} />
           {totalComments > comments.length && (
             <div className="section-foot">
-              Showing {comments.length} of {totalComments}
+              מציג {comments.length} מתוך {totalComments}
             </div>
           )}
         </section>
 
         <section className="project-section">
           <div className="section-head">
-            <h2>Your mentions on this project</h2>
+            <h2>התיוגים שלך בפרויקט</h2>
             <Link className="section-link" href="/inbox">
-              Full inbox ←
+              כל התיוגים ←
             </Link>
           </div>
           <MentionsPreview mentions={myMentionsOnProject} />
@@ -129,7 +129,7 @@ export default async function ProjectOverviewPage({
 function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
   const open = tasks.filter((t) => !t.resolved).slice(0, 6);
   if (open.length === 0) {
-    return <div className="empty-small">No open tasks.</div>;
+    return <div className="empty-small">אין משימות פתוחות.</div>;
   }
   return (
     <ul className="compact-list">
@@ -140,10 +140,10 @@ function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
             <div className="compact-task-title">
               {t.deep_link ? (
                 <a href={t.deep_link} target="_blank" rel="noreferrer">
-                  {truncate(t.title, 100) || "(no body)"}
+                  {truncate(t.title, 100) || "(ללא תוכן)"}
                 </a>
               ) : (
-                truncate(t.title, 100) || "(no body)"
+                truncate(t.title, 100) || "(ללא תוכן)"
               )}
             </div>
             <div className="compact-task-meta">
@@ -162,7 +162,7 @@ function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
 function CommentsPreview({ comments }: { comments: CommentItem[] }) {
   const top = comments.filter((c) => !c.parent_id).slice(0, 8);
   if (top.length === 0) {
-    return <div className="empty-small">No comments yet on this project.</div>;
+    return <div className="empty-small">אין הערות בפרויקט זה עדיין.</div>;
   }
   return (
     <ul className="compact-list">
@@ -177,9 +177,9 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
               {formatRelative(c.timestamp)}
             </span>
             {c.reply_count > 0 && (
-              <span className="chip chip-muted">{c.reply_count} replies</span>
+              <span className="chip chip-muted">{c.reply_count} תגובות</span>
             )}
-            {c.resolved && <span className="chip chip-done">resolved</span>}
+            {c.resolved && <span className="chip chip-done">נסגר</span>}
           </div>
           <div className="compact-comment-body">{truncate(c.body, 220)}</div>
           {c.deep_link && (
@@ -189,7 +189,7 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
               target="_blank"
               rel="noreferrer"
             >
-              Open in dashboard ←
+              פתח בדשבורד ←
             </a>
           )}
         </li>
@@ -203,7 +203,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
   if (top.length === 0) {
     return (
       <div className="empty-small">
-        You haven&apos;t been @-mentioned on this project.
+        לא תויגת בפרויקט זה.
       </div>
     );
   }
@@ -219,7 +219,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
             <span className="time" title={m.timestamp}>
               {formatRelative(m.timestamp)}
             </span>
-            {m.resolved && <span className="chip chip-done">resolved</span>}
+            {m.resolved && <span className="chip chip-done">נסגר</span>}
           </div>
           <div className="compact-comment-body">{truncate(m.body, 200)}</div>
           {m.deep_link && (
@@ -229,7 +229,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
               target="_blank"
               rel="noreferrer"
             >
-              Open in dashboard ←
+              פתח בדשבורד ←
             </a>
           )}
         </li>
@@ -265,9 +265,9 @@ function taskState(
 }
 
 function formatDue(due: string, today: string): string {
-  if (due === today) return "Due today";
-  if (due < today) return `Overdue (${due})`;
-  return `Due ${due}`;
+  if (due === today) return "יעד היום";
+  if (due < today) return `עבר היעד (${due})`;
+  return `יעד ${due}`;
 }
 
 function truncate(s: string, n: number): string {
@@ -280,17 +280,17 @@ function formatRelative(iso: string): string {
   if (Number.isNaN(then)) return iso;
   const now = Date.now();
   const diffSec = Math.round((now - then) / 1000);
-  if (diffSec < 60) return "just now";
+  if (diffSec < 60) return "עכשיו";
   const mins = Math.round(diffSec / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `לפני ${mins} ד׳`;
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return `לפני ${hrs} ש׳`;
   const days = Math.round(hrs / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return `לפני ${days} י׳`;
   const months = Math.round(days / 30);
-  if (months < 12) return `${months}mo ago`;
+  if (months < 12) return `לפני ${months} חו׳`;
   const years = Math.round(days / 365);
-  return `${years}y ago`;
+  return `לפני ${years} ש׳`;
 }
 
 function extractError(err: unknown): string {

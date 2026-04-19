@@ -32,7 +32,7 @@ export default function FilterBar({
         className={showDone ? "active" : ""}
         onClick={() => updateParam("done", showDone ? null : "1")}
       >
-        {showDone ? "Hiding nothing" : "Include done"}
+        {showDone ? "מציג הכל" : "כולל הושלמו"}
       </button>
       <span className="filter-sep" />
       <button
@@ -40,7 +40,7 @@ export default function FilterBar({
         className={!currentAssignee ? "active" : ""}
         onClick={() => updateParam("assignee", null)}
       >
-        All assignees
+        כל האחראים
       </button>
       {assignees.map((a) => (
         <button

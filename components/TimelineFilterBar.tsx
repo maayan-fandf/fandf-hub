@@ -32,21 +32,21 @@ export default function TimelineFilterBar({
         className={currentKind === "" ? "active" : ""}
         onClick={() => updateParam("kind", null)}
       >
-        All <span className="count-inline">{counts.all}</span>
+        הכל <span className="count-inline">{counts.all}</span>
       </button>
       <button
         type="button"
         className={currentKind === "comment" ? "active" : ""}
         onClick={() => updateParam("kind", "comment")}
       >
-        Comments <span className="count-inline">{counts.comments}</span>
+        הערות <span className="count-inline">{counts.comments}</span>
       </button>
       <button
         type="button"
         className={currentKind === "task" ? "active" : ""}
         onClick={() => updateParam("kind", "task")}
       >
-        Tasks <span className="count-inline">{counts.tasks}</span>
+        משימות <span className="count-inline">{counts.tasks}</span>
       </button>
       <span className="filter-sep" />
       <button
@@ -54,7 +54,7 @@ export default function TimelineFilterBar({
         className={showResolved ? "active" : ""}
         onClick={() => updateParam("resolved", showResolved ? null : "1")}
       >
-        {showResolved ? "Hiding nothing" : "Include resolved"}
+        {showResolved ? "מציג הכל" : "כולל סגורים"}
       </button>
     </div>
   );

@@ -87,11 +87,11 @@ export default function CreateTaskDrawer({ project }: Props) {
   function submit() {
     const trimmed = body.trim();
     if (!trimmed) {
-      setSubmitError("Task body can't be empty.");
+      setSubmitError("תוכן המשימה לא יכול להיות ריק.");
       return;
     }
     if (trimmed.length > MAX) {
-      setSubmitError(`Too long (${trimmed.length}/${MAX}).`);
+      setSubmitError(`ארוך מדי (${trimmed.length}/${MAX}).`);
       return;
     }
     setSubmitError(null);
@@ -139,9 +139,9 @@ export default function CreateTaskDrawer({ project }: Props) {
         type="button"
         className="reply-btn reply-btn-primary"
         onClick={openDrawer}
-        title="Create a new task in this project"
+        title="צור משימה חדשה בפרויקט זה"
       >
-        + New task
+        + משימה חדשה
       </button>
     );
   }
@@ -163,26 +163,26 @@ export default function CreateTaskDrawer({ project }: Props) {
         onKeyDown={onKeyDown}
       >
         <div className="create-task-head">
-          <h2>New task · {project}</h2>
+          <h2>משימה חדשה · {project}</h2>
           <button
             type="button"
             className="create-task-close"
             onClick={closeDrawer}
-            aria-label="Close"
+            aria-label="סגור"
           >
             ×
           </button>
         </div>
 
         <label className="create-task-label">
-          Body
+          תוכן
           <textarea
             ref={textareaRef}
             className="reply-textarea"
             rows={4}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="What needs to get done? (⌘/Ctrl+Enter to create)"
+            placeholder="מה צריך לעשות? (⌘/Ctrl+Enter ליצירה)"
             disabled={isPending}
             maxLength={MAX + 1}
           />
@@ -192,16 +192,16 @@ export default function CreateTaskDrawer({ project }: Props) {
         </label>
 
         <label className="create-task-label">
-          Assignees
+          אחראים
           {loading && (
-            <div className="create-task-loading">Loading people…</div>
+            <div className="create-task-loading">טוען אנשים…</div>
           )}
           {fetchError && (
-            <div className="reply-error">Couldn't load people: {fetchError}</div>
+            <div className="reply-error">שגיאה בטעינת אנשים: {fetchError}</div>
           )}
           {assignees && assignees.length === 0 && (
             <div className="create-task-loading">
-              No one configured for this project in Keys.
+              לא מוגדרים אנשים עבור פרויקט זה ב-Keys.
             </div>
           )}
           {assignees && assignees.length > 0 && (
@@ -229,7 +229,7 @@ export default function CreateTaskDrawer({ project }: Props) {
         </label>
 
         <label className="create-task-label">
-          Due date <span className="create-task-hint">(optional)</span>
+          תאריך יעד <span className="create-task-hint">(אופציונלי)</span>
           <input
             type="date"
             className="create-task-due"
@@ -248,7 +248,7 @@ export default function CreateTaskDrawer({ project }: Props) {
             onClick={closeDrawer}
             disabled={isPending}
           >
-            Cancel
+            ביטול
           </button>
           <button
             type="button"
@@ -257,10 +257,10 @@ export default function CreateTaskDrawer({ project }: Props) {
             disabled={isPending || count === 0 || over}
           >
             {isPending
-              ? "Creating…"
+              ? "יוצר…"
               : selected.size > 0
-                ? `Create · notify ${selected.size}`
-                : "Create"}
+                ? `צור · תייג ${selected.size}`
+                : "צור"}
           </button>
         </div>
       </div>

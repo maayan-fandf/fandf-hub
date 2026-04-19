@@ -34,12 +34,12 @@ export default async function TaskBoardPage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>{projectName} · Tasks</h1>
+          <h1>{projectName} · משימות</h1>
           <div className="subtitle">
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
-              → {projectName} overview
+              → סקירת {projectName}
             </Link>
-            {data && ` · ${countOpen(data.tasks)} open tasks`}
+            {data && ` · ${countOpen(data.tasks)} משימות פתוחות`}
           </div>
         </div>
         <CreateTaskDrawer project={projectName} />
@@ -47,7 +47,7 @@ export default async function TaskBoardPage({
 
       {error && (
         <div className="error">
-          <strong>Failed to load tasks.</strong>
+          <strong>שגיאה בטעינת המשימות.</strong>
           <br />
           {error}
         </div>
@@ -55,8 +55,8 @@ export default async function TaskBoardPage({
 
       {data && data.tasks.length === 0 && (
         <div className="empty">
-          No tasks yet. Tasks are created when someone @-mentions an internal user
-          in a comment on the dashboard.
+          עדיין אין משימות. משימות נוצרות כאשר מתייגים משתמש פנימי בהערה בדשבורד,
+          או מכאן באמצעות כפתור &quot;משימה חדשה&quot;.
         </div>
       )}
 

@@ -32,7 +32,7 @@ export default function InboxFilterBar({
         className={showResolved ? "active" : ""}
         onClick={() => updateParam("resolved", showResolved ? null : "1")}
       >
-        {showResolved ? "Hiding nothing" : "Include resolved"}
+        {showResolved ? "מציג הכל" : "כולל סגורים"}
       </button>
       <span className="filter-sep" />
       <select
@@ -40,7 +40,7 @@ export default function InboxFilterBar({
         onChange={(e) => updateParam("project", e.target.value || null)}
         className="inbox-project-select"
       >
-        <option value="">All projects</option>
+        <option value="">כל הפרויקטים</option>
         {projects.map((p) => (
           <option key={p} value={p}>
             {p}

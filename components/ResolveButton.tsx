@@ -35,7 +35,7 @@ export default function ResolveButton({
   }
 
   if (localResolved && readOnlyWhenResolved) {
-    return <span className="chip chip-done">resolved</span>;
+    return <span className="chip chip-done">נסגר</span>;
   }
 
   async function toggle() {
@@ -72,11 +72,11 @@ export default function ResolveButton({
         aria-pressed={localResolved}
         title={
           localResolved
-            ? "Mark as unresolved"
-            : "Mark this thread as resolved (also closes spawned tasks)"
+            ? "סמן כלא-סגור"
+            : "סמן שיחה כסגורה (יסגור גם משימות שנוצרו ממנה)"
         }
       >
-        {isPending ? "…" : localResolved ? "Resolved ✓" : "Resolve"}
+        {isPending ? "…" : localResolved ? "נסגר ✓" : "סגור"}
       </button>
       {error && <span className="resolve-btn-error">{error}</span>}
     </span>

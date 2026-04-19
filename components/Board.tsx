@@ -33,7 +33,7 @@ export default function Board({ tasks, today, assigneeFilter, showDone }: Props)
   // Group by assignee.
   const byAssignee = new Map<string, TaskItem[]>();
   for (const t of visible) {
-    const key = t.assignee_email || "(unassigned)";
+    const key = t.assignee_email || "(לא מוקצה)";
     if (!byAssignee.has(key)) byAssignee.set(key, []);
     byAssignee.get(key)!.push(t);
   }
@@ -106,7 +106,7 @@ export default function Board({ tasks, today, assigneeFilter, showDone }: Props)
       <div className="board">
         {columns.map(([email, items]) => {
           const name =
-            items[0]?.assignee_name || email.split("@")[0] || "(unassigned)";
+            items[0]?.assignee_name || email.split("@")[0] || "(לא מוקצה)";
           const openCount = items.filter((t) => !t.resolved).length;
           const isDropZone = dropTarget === email;
           return (
@@ -179,10 +179,10 @@ function TaskCard({
         <div className="task-title">
           {task.deep_link ? (
             <a href={task.deep_link} target="_blank" rel="noreferrer">
-              {task.title || "(no body)"}
+              {task.title || "(ללא תוכן)"}
             </a>
           ) : (
-            task.title || "(no body)"
+            task.title || "(ללא תוכן)"
           )}
         </div>
       </div>
@@ -203,7 +203,7 @@ function TaskCard({
                 if (dueDraft !== task.due) onDueChange(dueDraft);
               }}
             >
-              Save
+              שמור
             </button>
             <button
               type="button"
@@ -213,7 +213,7 @@ function TaskCard({
                 setDueDraft(task.due);
               }}
             >
-              Cancel
+              ביטול
             </button>
             {task.due && (
               <button
@@ -223,9 +223,9 @@ function TaskCard({
                   setEditing(false);
                   onDueChange("");
                 }}
-                title="Clear due date"
+                title="נקה תאריך יעד"
               >
-                Clear
+                נקה
               </button>
             )}
           </span>
@@ -238,13 +238,13 @@ function TaskCard({
               setEditing(true);
             }}
             disabled={busy || task.resolved}
-            title="Click to edit due date"
+            title="לחץ לעריכת תאריך יעד"
           >
-            {task.due ? formatDue(task.due, today) : "+ due date"}
+            {task.due ? formatDue(task.due, today) : "+ תאריך יעד"}
           </button>
         )}
-        <span className="by">by {task.author_name || task.author_email}</span>
-        {task.resolved && <span>· done</span>}
+        <span className="by">מאת {task.author_name || task.author_email}</span>
+        {task.resolved && <span>· הושלם</span>}
       </div>
     </li>
   );
@@ -262,7 +262,7 @@ function taskState(
 }
 
 function formatDue(due: string, today: string): string {
-  if (due === today) return "Due today";
-  if (due < today) return `Overdue (${due})`;
-  return `Due ${due}`;
+  if (due === today) return "יעד היום";
+  if (due < today) return `עבר היעד (${due})`;
+  return `יעד ${due}`;
 }

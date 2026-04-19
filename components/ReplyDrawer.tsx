@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 type Props = {
   /** The top-level comment being replied to. Replies to replies aren't allowed. */
   parentCommentId: string;
-  /** Optional label for the trigger button. Default: "Reply". */
+  /** Optional label for the trigger button. Default: "השב". */
   label?: string;
 };
 
@@ -17,7 +17,7 @@ const MAX = 4000;
  * /api/comments/reply and calls router.refresh() on success.
  * Esc closes the drawer without sending.
  */
-export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props) {
+export default function ReplyDrawer({ parentCommentId, label = "השב" }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -41,11 +41,11 @@ export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props)
   function submit() {
     const body = value.trim();
     if (!body) {
-      setError("Reply can't be empty.");
+      setError("תגובה לא יכולה להיות ריקה.");
       return;
     }
     if (body.length > MAX) {
-      setError(`Too long (${body.length}/${MAX}).`);
+      setError(`ארוך מדי (${body.length}/${MAX}).`);
       return;
     }
     setError(null);
@@ -84,7 +84,7 @@ export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props)
         type="button"
         className="reply-btn"
         onClick={openDrawer}
-        title="Reply to this thread (⌘/Ctrl+Enter to send)"
+        title="השב לשיחה זו (⌘/Ctrl+Enter לשליחה)"
       >
         {label}
       </button>
@@ -101,7 +101,7 @@ export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props)
         className="reply-textarea"
         rows={3}
         value={value}
-        placeholder="Write a reply… (⌘/Ctrl+Enter to send, Esc to cancel)"
+        placeholder="כתוב תגובה… (⌘/Ctrl+Enter לשליחה, Esc לביטול)"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
         disabled={isPending}
@@ -119,7 +119,7 @@ export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props)
           onClick={closeDrawer}
           disabled={isPending}
         >
-          Cancel
+          ביטול
         </button>
         <button
           type="button"
@@ -127,7 +127,7 @@ export default function ReplyDrawer({ parentCommentId, label = "Reply" }: Props)
           onClick={submit}
           disabled={isPending || count === 0 || over}
         >
-          {isPending ? "Sending…" : "Send"}
+          {isPending ? "שולח…" : "שלח"}
         </button>
       </div>
     </div>

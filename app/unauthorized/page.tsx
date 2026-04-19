@@ -9,16 +9,15 @@ export default async function UnauthorizedPage() {
   return (
     <main className="container signin-container">
       <div className="signin-card">
-        <h1>No access yet</h1>
+        <h1>אין עדיין גישה</h1>
         <p>
-          You&apos;re signed in as <strong>{email ?? "(unknown)"}</strong>, but
-          that email isn&apos;t listed as an admin or a member of any project in
-          the dashboard.
+          אתה מחובר כ-<strong dir="ltr">{email ?? "(לא ידוע)"}</strong>, אבל
+          המייל הזה לא רשום כאדמין או כחבר באף פרויקט בדשבורד.
         </p>
         <p>
-          Ask an admin to add you to the <code>Keys</code> tab (as
-          &quot;EMAIL Manager&quot; or &quot;Email Client&quot;) or to
-          <code>CONFIG.ADMIN_EMAILS</code>. Then reload this page.
+          בקש מאדמין להוסיף אותך לטאב <code>Keys</code> (בעמודה
+          &quot;EMAIL Manager&quot; או &quot;Email Client&quot;) או ל-
+          <code>CONFIG.ADMIN_EMAILS</code>. לאחר מכן טען מחדש את הדף.
         </p>
         <form
           action={async () => {
@@ -27,7 +26,7 @@ export default async function UnauthorizedPage() {
           }}
         >
           <button type="submit" className="btn-primary">
-            Sign out
+            יציאה
           </button>
         </form>
       </div>

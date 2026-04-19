@@ -24,11 +24,11 @@ export default async function HomePage() {
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>Projects</h1>
+          <h1>פרויקטים</h1>
           {data && (
             <div className="subtitle">
-              Signed in as {data.email}
-              {data.isAdmin && " · Admin"}
+              מחובר כ-<span dir="ltr">{data.email}</span>
+              {data.isAdmin && " · אדמין"}
             </div>
           )}
         </div>
@@ -36,19 +36,19 @@ export default async function HomePage() {
 
       {error && (
         <div className="error">
-          <strong>Failed to load projects.</strong>
+          <strong>שגיאה בטעינת הפרויקטים.</strong>
           <br />
           {error}
           <br />
           <br />
-          Check <code>APPS_SCRIPT_API_URL</code>,{" "}
-          <code>APPS_SCRIPT_API_TOKEN</code>, and <code>DEV_USER_EMAIL</code> in{" "}
+          בדוק את <code>APPS_SCRIPT_API_URL</code>,{" "}
+          <code>APPS_SCRIPT_API_TOKEN</code>, ו-<code>DEV_USER_EMAIL</code> ב-
           <code>.env.local</code>.
         </div>
       )}
 
       {data && data.projects.length === 0 && (
-        <div className="empty">No projects you have access to yet.</div>
+        <div className="empty">אין פרויקטים שיש לך גישה אליהם עדיין.</div>
       )}
 
       {grouped.length > 0 && (

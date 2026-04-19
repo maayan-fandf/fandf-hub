@@ -39,12 +39,12 @@ export default async function InboxPage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>Mentions</h1>
+          <h1>תיוגים</h1>
           <div className="subtitle">
             {data && (
               <>
-                {openCount} open · {all.length} total
-                {data.me.isAdmin && " · Admin (seeing all projects)"}
+                {openCount} פתוחים · {all.length} סה&quot;כ
+                {data.me.isAdmin && " · אדמין (רואה את כל הפרויקטים)"}
               </>
             )}
           </div>
@@ -53,7 +53,7 @@ export default async function InboxPage({
 
       {error && (
         <div className="error">
-          <strong>Failed to load mentions.</strong>
+          <strong>שגיאה בטעינת התיוגים.</strong>
           <br />
           {error}
         </div>
@@ -70,8 +70,8 @@ export default async function InboxPage({
       {data && visible.length === 0 && (
         <div className="empty">
           {all.length === 0
-            ? "Nobody has @-mentioned you yet. You're off the hook."
-            : "No mentions match the current filters."}
+            ? "אף אחד לא תייג אותך עדיין."
+            : "אין תיוגים תואמים לסינון הנוכחי."}
         </div>
       )}
 
@@ -115,7 +115,7 @@ function MentionCard({ m }: { m: MentionItem }) {
         <ResolveButton commentId={resolveTarget} resolved={m.resolved} />
         {m.deep_link && (
           <a href={m.deep_link} target="_blank" rel="noreferrer">
-            Open in dashboard ←
+            פתח בדשבורד ←
           </a>
         )}
       </div>
@@ -135,15 +135,15 @@ function formatRelative(iso: string): string {
   if (Number.isNaN(then)) return iso;
   const now = Date.now();
   const diffSec = Math.round((now - then) / 1000);
-  if (diffSec < 60) return "just now";
+  if (diffSec < 60) return "עכשיו";
   const mins = Math.round(diffSec / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `לפני ${mins} ד׳`;
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return `לפני ${hrs} ש׳`;
   const days = Math.round(hrs / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return `לפני ${days} י׳`;
   const months = Math.round(days / 30);
-  if (months < 12) return `${months}mo ago`;
+  if (months < 12) return `לפני ${months} חו׳`;
   const years = Math.round(days / 365);
-  return `${years}y ago`;
+  return `לפני ${years} ש׳`;
 }

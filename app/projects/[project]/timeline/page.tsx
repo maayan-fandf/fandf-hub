@@ -136,13 +136,13 @@ export default async function ProjectTimelinePage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>{projectName} · Timeline</h1>
+          <h1>{projectName} · ציר זמן</h1>
           <div className="subtitle">
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
-              → {projectName} overview
+              → סקירת {projectName}
             </Link>
             {commentsData && totalComments > comments.length && (
-              <> · Showing latest {comments.length} of {totalComments} comments</>
+              <> · מציג {comments.length} מתוך {totalComments} ההערות האחרונות</>
             )}
           </div>
         </div>
@@ -150,7 +150,7 @@ export default async function ProjectTimelinePage({
 
       {firstError && (
         <div className="error">
-          <strong>Failed to load timeline.</strong>
+          <strong>שגיאה בטעינת ציר הזמן.</strong>
           <br />
           {firstError}
         </div>
@@ -167,8 +167,8 @@ export default async function ProjectTimelinePage({
       {!firstError && visible.length === 0 && (
         <div className="empty">
           {counts.all === 0
-            ? "Nothing on this project yet."
-            : "No entries match the current filters."}
+            ? "עדיין אין פעילות בפרויקט זה."
+            : "אין רשומות תואמות לסינון הנוכחי."}
         </div>
       )}
 
@@ -202,11 +202,11 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
       </div>
       <div className="timeline-card">
         <div className="timeline-head">
-          <span className="chip chip-muted">Comment</span>
+          <span className="chip chip-muted">הערה</span>
           <span className="author">{c.author_name || c.author_email}</span>
-          {c.parent_id && <span className="chip chip-muted">reply</span>}
+          {c.parent_id && <span className="chip chip-muted">תגובה</span>}
           {c.reply_count > 0 && (
-            <span className="chip chip-muted">{c.reply_count} replies</span>
+            <span className="chip chip-muted">{c.reply_count} תגובות</span>
           )}
           <span className="time" title={c.timestamp}>
             {formatRelative(c.timestamp)}
@@ -215,12 +215,12 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
         <div className="timeline-body">{truncate(c.body, 600)}</div>
         {entry.spawnedTasks.length > 0 && (
           <div className="timeline-tasks">
-            <span className="timeline-tasks-label">Tasks spawned:</span>
+            <span className="timeline-tasks-label">משימות שנוצרו:</span>
             {entry.spawnedTasks.map((t) => (
               <span
                 key={t.comment_id + "|" + t.assignee_email}
                 className={`chip ${t.resolved ? "chip-done" : ""}`}
-                title={t.due ? `Due ${t.due}` : "No due date"}
+                title={t.due ? `יעד ${t.due}` : "ללא תאריך יעד"}
               >
                 {t.assignee_name || t.assignee_email}
                 {t.due && !t.resolved ? ` · ${t.due}` : ""}
@@ -243,7 +243,7 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
               target="_blank"
               rel="noreferrer"
             >
-              Open in dashboard ←
+              פתח בדשבורד ←
             </a>
           )}
         </div>
@@ -265,21 +265,21 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
       </div>
       <div className="timeline-card">
         <div className="timeline-head">
-          <span className="chip">Task</span>
+          <span className="chip">משימה</span>
           <span className="author">
-            for {t.assignee_name || t.assignee_email}
+            עבור {t.assignee_name || t.assignee_email}
           </span>
           {t.due && !t.resolved && (
             <span className={`chip due-${state}`}>{formatDue(t.due, today)}</span>
           )}
-          {t.resolved && <span className="chip chip-done">done</span>}
+          {t.resolved && <span className="chip chip-done">הושלם</span>}
           <span className="time" title={t.created_at}>
             {formatRelative(t.created_at)}
           </span>
         </div>
         <div className="timeline-body">{truncate(t.title || t.body, 600)}</div>
         <div className="timeline-subnote">
-          from {t.author_name || t.author_email}
+          מאת {t.author_name || t.author_email}
         </div>
         {t.deep_link && (
           <a
@@ -288,7 +288,7 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
             target="_blank"
             rel="noreferrer"
           >
-            Open in dashboard ←
+            פתח בדשבורד ←
           </a>
         )}
       </div>
@@ -315,9 +315,9 @@ function taskState(
 }
 
 function formatDue(due: string, today: string): string {
-  if (due === today) return "Due today";
-  if (due < today) return `Overdue (${due})`;
-  return `Due ${due}`;
+  if (due === today) return "יעד היום";
+  if (due < today) return `עבר היעד (${due})`;
+  return `יעד ${due}`;
 }
 
 function truncate(s: string, n: number): string {
@@ -330,17 +330,17 @@ function formatRelative(iso: string): string {
   if (Number.isNaN(then)) return iso;
   const now = Date.now();
   const diffSec = Math.round((now - then) / 1000);
-  if (diffSec < 60) return "just now";
+  if (diffSec < 60) return "עכשיו";
   const mins = Math.round(diffSec / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `לפני ${mins} ד׳`;
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return `לפני ${hrs} ש׳`;
   const days = Math.round(hrs / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return `לפני ${days} י׳`;
   const months = Math.round(days / 30);
-  if (months < 12) return `${months}mo ago`;
+  if (months < 12) return `לפני ${months} חו׳`;
   const years = Math.round(days / 365);
-  return `${years}y ago`;
+  return `לפני ${years} ש׳`;
 }
 
 function extractError(err: unknown): string {
