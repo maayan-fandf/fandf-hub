@@ -7,6 +7,7 @@ import {
   type CommentItem,
   type MentionItem,
 } from "@/lib/appsScript";
+import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export default async function ProjectOverviewPage({
             <Link href="/">← All projects</Link>
           </div>
         </div>
+        <CreateTaskDrawer project={projectName} />
       </header>
 
       {firstError && (

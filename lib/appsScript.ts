@@ -309,3 +309,48 @@ export function postReply(args: {
     body: args.body,
   });
 }
+
+export type Assignee = {
+  email: string;
+  name: string;
+  /** 'admin' | 'manager' | 'account' | 'client' — freeform string from Keys */
+  role: string;
+};
+
+export type ProjectAssignees = {
+  project: string;
+  assignees: Assignee[];
+  me: { email: string; isAdmin: boolean };
+};
+
+export function getProjectAssignees(project: string): Promise<ProjectAssignees> {
+  return callApi<ProjectAssignees>("projectAssignees", { project });
+}
+
+export type CreateTaskResult = {
+  ok: boolean;
+  comment_id: string;
+  project: string;
+  body: string;
+  /** Emails that were valid + accepted. Unrecognized emails are silently dropped. */
+  assignees: string[];
+  /** Sanitized YYYY-MM-DD, or "" if no due date. */
+  due: string;
+  timestamp: string;
+};
+
+export function createTask(args: {
+  project: string;
+  body: string;
+  /** Emails to @-mention (triggers Google Tasks creation for internal emails). */
+  assignees: string[];
+  /** YYYY-MM-DD, or "" / omit for no due date. */
+  due?: string;
+}): Promise<CreateTaskResult> {
+  return postApi<CreateTaskResult>("createTask", {
+    project: args.project,
+    body: args.body,
+    assignees: args.assignees.join(","),
+    due: args.due ?? "",
+  });
+}

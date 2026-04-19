@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getProjectTasks, type TaskItem } from "@/lib/appsScript";
 import Board from "@/components/Board";
 import FilterBar from "@/components/FilterBar";
+import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export default async function TaskBoardPage({
             {data && ` · ${countOpen(data.tasks)} open tasks`}
           </div>
         </div>
+        <CreateTaskDrawer project={projectName} />
       </header>
 
       {error && (
