@@ -52,10 +52,13 @@ env:
 
   # Explicit canonical URL for NextAuth — Firebase App Hosting's proxy headers
   # don't give NextAuth enough to derive this on its own, so it defaults to
-  # the internal 0.0.0.0:8080 container address. Update this if you add a
-  # custom domain and want NextAuth to redirect there.
+  # the internal 0.0.0.0:8080 container address. Updated to the custom domain
+  # once DNS propagated. The old Firebase default URL still works (both map
+  # to the same backend) but NextAuth OAuth redirects target this canonical
+  # one, which must match an entry in the Google OAuth client's
+  # "Authorized redirect URIs".
   - variable: AUTH_URL
-    value: https://fandf-hub--fandf-dashboard.europe-west4.hosted.app
+    value: https://hub.fandf.co.il
     availability:
       - BUILD
       - RUNTIME
