@@ -1,0 +1,58 @@
+# Firebase App Hosting config.
+# https://firebase.google.com/docs/app-hosting/configure
+#
+# Sensitive values (*_SECRET, AUTH_GOOGLE_*) come from Google Cloud Secret Manager.
+# Non-sensitive values are declared directly as `value:` below.
+
+runConfig:
+  minInstances: 0
+  maxInstances: 5
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  # ─── Apps Script hub API ─────────────────────────────────────────
+  - variable: APPS_SCRIPT_API_URL
+    secret: APPS_SCRIPT_API_URL
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: APPS_SCRIPT_API_TOKEN
+    secret: APPS_SCRIPT_API_TOKEN
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # ─── NextAuth ────────────────────────────────────────────────────
+  - variable: AUTH_SECRET
+    secret: AUTH_SECRET
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: AUTH_GOOGLE_ID
+    secret: AUTH_GOOGLE_ID
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: AUTH_GOOGLE_SECRET
+    secret: AUTH_GOOGLE_SECRET
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: AUTH_TRUST_HOST
+    value: "true"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # ─── Dashboard link ──────────────────────────────────────────────
+  - variable: DASHBOARD_URL
+    value: https://script.google.com/macros/s/AKfycbz2IQv3mTzd3CfJbwWy78z13dgJBKFl0vvqIX4wPXyqXHnxwVvQ9lt1Sw4m_2lbZrO0Eg/exec
+    availability:
+      - BUILD
+      - RUNTIME

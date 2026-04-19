@@ -1,0 +1,142 @@
+import Link from "next/link";
+import { getMyMentions, type MentionItem } from "@/lib/appsScript";
+import InboxFilterBar from "@/components/InboxFilterBar";
+
+export const dynamic = "force-dynamic";
+
+type Search = { resolved?: string; project?: string };
+
+export default async function InboxPage({
+  searchParams,
+}: {
+  searchParams: Promise<Search>;
+}) {
+  const sp = await searchParams;
+  const showResolved = sp.resolved === "1";
+  const projectFilter = sp.project ?? "";
+
+  let data;
+  let error: string | null = null;
+  try {
+    data = await getMyMentions();
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+
+  const all = data?.mentions ?? [];
+  const projects = Array.from(new Set(all.map((m) => m.project))).sort();
+  const visible = all.filter((m) => {
+    if (!showResolved && m.resolved) return false;
+    if (projectFilter && m.project !== projectFilter) return false;
+    return true;
+  });
+
+  const openCount = all.filter((m) => !m.resolved).length;
+
+  return (
+    <main className="container">
+      <header className="page-header">
+        <div>
+          <h1>Mentions</h1>
+          <div className="subtitle">
+            {data && (
+              <>
+                {openCount} open · {all.length} total
+                {data.me.isAdmin && " · Admin (seeing all projects)"}
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {error && (
+        <div className="error">
+          <strong>Failed to load mentions.</strong>
+          <br />
+          {error}
+        </div>
+      )}
+
+      {data && all.length > 0 && (
+        <InboxFilterBar
+          projects={projects}
+          currentProject={projectFilter}
+          showResolved={showResolved}
+        />
+      )}
+
+      {data && visible.length === 0 && (
+        <div className="empty">
+          {all.length === 0
+            ? "Nobody has @-mentioned you yet. You're off the hook."
+            : "No mentions match the current filters."}
+        </div>
+      )}
+
+      {visible.length > 0 && (
+        <ul className="mention-list">
+          {visible.map((m) => (
+            <MentionCard key={m.comment_id} m={m} />
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}
+
+function MentionCard({ m }: { m: MentionItem }) {
+  return (
+    <li className={`mention-card ${m.resolved ? "is-resolved" : ""}`}>
+      <div className="mention-head">
+        <Link
+          className="mention-project"
+          href={`/projects/${encodeURIComponent(m.project)}/tasks`}
+        >
+          {m.project}
+        </Link>
+        <span className="mention-author">
+          {m.author_name || m.author_email}
+        </span>
+        <span className="mention-time" title={m.timestamp}>
+          {formatRelative(m.timestamp)}
+        </span>
+        {m.resolved && <span className="mention-resolved">resolved</span>}
+      </div>
+      <div className="mention-body">
+        {truncate(m.body, 400)}
+      </div>
+      {m.deep_link && (
+        <div className="mention-actions">
+          <a href={m.deep_link} target="_blank" rel="noreferrer">
+            Open in dashboard →
+          </a>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/* ─── Helpers ────────────────────────────────────────────────────── */
+
+function truncate(s: string, n: number): string {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const now = Date.now();
+  const diffSec = Math.round((now - then) / 1000);
+  if (diffSec < 60) return "just now";
+  const mins = Math.round(diffSec / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.round(days / 365);
+  return `${years}y ago`;
+}
