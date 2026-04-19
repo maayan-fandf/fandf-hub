@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { TaskItem } from "@/lib/appsScript";
+import ResolveButton from "./ResolveButton";
+import DeleteButton from "./DeleteButton";
 
 type Props = {
   tasks: TaskItem[];
@@ -245,6 +247,21 @@ function TaskCard({
         )}
         <span className="by">מאת {task.author_name || task.author_email}</span>
         {task.resolved && <span>· הושלם</span>}
+      </div>
+      <div className="task-actions">
+        <ResolveButton
+          commentId={task.comment_id}
+          resolved={task.resolved}
+        />
+        {/* Delete button only visible when the card can actually be removed —
+            authors + admins. The server rejects unauthorized deletes with a
+            clear error; showing the button unconditionally keeps the UI
+            simple and the extra round-trip is cheap. */}
+        <DeleteButton
+          commentId={task.comment_id}
+          itemLabel="את המשימה"
+          minimal
+        />
       </div>
     </li>
   );

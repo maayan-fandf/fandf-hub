@@ -355,6 +355,17 @@ export function createTask(args: {
   });
 }
 
+export type DeleteCommentResult = {
+  ok: boolean;
+  comment_id: string;
+  deleted_replies: number;
+  deleted_tasks: number;
+};
+
+export function deleteComment(commentId: string): Promise<DeleteCommentResult> {
+  return postApi<DeleteCommentResult>("deleteComment", { commentId });
+}
+
 export type SearchResult = {
   comment_id: string;
   project: string;

@@ -8,6 +8,7 @@ import {
 import TimelineFilterBar from "@/components/TimelineFilterBar";
 import ResolveButton from "@/components/ResolveButton";
 import ReplyDrawer from "@/components/ReplyDrawer";
+import DeleteButton from "@/components/DeleteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -229,12 +230,17 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           </div>
         )}
         <div className="timeline-actions">
-          {/* Only top-level comments are resolvable / replyable from the hub. */}
-          {!c.parent_id && (
+          {/* Only top-level comments are resolvable / replyable / deletable
+              from the hub. Replies get a delete button only (no reply/resolve
+              since those target thread roots). */}
+          {!c.parent_id ? (
             <>
               <ReplyDrawer parentCommentId={c.comment_id} />
               <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+              <DeleteButton commentId={c.comment_id} itemLabel="את ההערה" minimal />
             </>
+          ) : (
+            <DeleteButton commentId={c.comment_id} itemLabel="את התגובה" minimal />
           )}
           {c.deep_link && (
             <a
@@ -281,16 +287,24 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
         <div className="timeline-subnote">
           מאת {t.author_name || t.author_email}
         </div>
-        {t.deep_link && (
-          <a
-            className="compact-link"
-            href={t.deep_link}
-            target="_blank"
-            rel="noreferrer"
-          >
-            פתח בדשבורד ←
-          </a>
-        )}
+        <div className="timeline-actions">
+          <ResolveButton commentId={t.comment_id} resolved={t.resolved} />
+          <DeleteButton
+            commentId={t.comment_id}
+            itemLabel="את המשימה"
+            minimal
+          />
+          {t.deep_link && (
+            <a
+              className="compact-link"
+              href={t.deep_link}
+              target="_blank"
+              rel="noreferrer"
+            >
+              פתח בדשבורד ←
+            </a>
+          )}
+        </div>
       </div>
     </li>
   );

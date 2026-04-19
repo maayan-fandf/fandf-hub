@@ -3,6 +3,7 @@ import { getMyMentions, type MentionItem } from "@/lib/appsScript";
 import InboxFilterBar from "@/components/InboxFilterBar";
 import ResolveButton from "@/components/ResolveButton";
 import ReplyDrawer from "@/components/ReplyDrawer";
+import DeleteButton from "@/components/DeleteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,7 @@ function MentionCard({ m }: { m: MentionItem }) {
       <div className="mention-actions">
         <ReplyDrawer parentCommentId={resolveTarget} />
         <ResolveButton commentId={resolveTarget} resolved={m.resolved} />
+        <DeleteButton commentId={resolveTarget} itemLabel="את התיוג" minimal />
         {m.deep_link && (
           <a href={m.deep_link} target="_blank" rel="noreferrer">
             פתח בדשבורד ←

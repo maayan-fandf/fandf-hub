@@ -1004,6 +1004,55 @@ a.section-link:hover {
   font-size: 0.75rem;
 }
 
+/* Delete (destructive) button. Two modes: text ("מחק") or minimal ("✕"). */
+.delete-btn-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.delete-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.delete-btn:hover:not(:disabled) {
+  border-color: var(--overdue);
+  color: var(--overdue);
+  background: #fef2f2;
+}
+
+.delete-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.delete-btn.is-minimal {
+  padding: 0.1rem 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 4px;
+  border-style: dashed;
+}
+
+/* Task-card action strip: resolve + delete below the meta row */
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+
 .timeline-actions {
   margin-top: 0.55rem;
   display: flex;
