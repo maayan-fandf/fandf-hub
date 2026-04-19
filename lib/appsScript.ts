@@ -354,3 +354,27 @@ export function createTask(args: {
     due: args.due ?? "",
   });
 }
+
+export type SearchResult = {
+  comment_id: string;
+  project: string;
+  body: string;
+  timestamp: string;
+  parent_id: string;
+  author_email: string;
+  author_name: string;
+  resolved: boolean;
+  has_tasks: boolean;
+  deep_link: string;
+};
+
+export type SearchResponse = {
+  query: string;
+  results: SearchResult[];
+  total: number;
+  truncated?: boolean;
+};
+
+export function searchContent(q: string, limit = 30): Promise<SearchResponse> {
+  return callApi<SearchResponse>("search", { q, limit: String(limit) });
+}

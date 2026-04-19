@@ -1319,6 +1319,25 @@ a.section-link:hover {
   padding: 0.35rem;
 }
 
+.palette-section + .palette-section {
+  margin-top: 0.4rem;
+}
+
+.palette-section-title {
+  padding: 0.5rem 0.7rem 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.palette-section-empty {
+  padding: 0.3rem 0.7rem 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .palette-item {
   display: flex;
   align-items: center;
@@ -1332,6 +1351,26 @@ a.section-link:hover {
   font: inherit;
   color: var(--text);
   text-align: inherit;
+}
+
+.palette-item.is-faded .palette-item-label,
+.palette-item.is-faded .palette-item-sub {
+  opacity: 0.55;
+}
+
+.palette-badge {
+  font-size: 0.7rem;
+  padding: 0.1em 0.5em;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.palette-badge-muted {
+  background: var(--done-soft);
+  color: var(--done);
 }
 
 .palette-item.is-selected {
