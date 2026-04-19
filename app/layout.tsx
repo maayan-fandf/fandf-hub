@@ -5,6 +5,24 @@ import CommandPalette from "@/components/CommandPalette";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavAdminLink from "@/components/NavAdminLink";
+import ThemeToggle from "@/components/ThemeToggle";
+
+// Runs before React hydrates so data-theme is set before the first paint —
+// avoids the "flash of wrong theme" when a user has picked dark/light but
+// the page renders in light first then flips.
+const THEME_INIT_SCRIPT = `
+(function () {
+  try {
+    var k = 'hub-theme';
+    var t = localStorage.getItem(k) || 'auto';
+    var effective;
+    if (t === 'dark') effective = 'dark';
+    else if (t === 'light') effective = 'light';
+    else effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = effective;
+  } catch (e) {}
+})();
+`;
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -23,6 +41,12 @@ export default async function RootLayout({
 
   return (
     <html lang="he" dir="rtl">
+      <head>
+        <script
+          // Safe: string is static, no user input interpolated.
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
+      </head>
       <body>
         <nav className="topnav">
           <div className="topnav-inner">
@@ -49,6 +73,7 @@ export default async function RootLayout({
             )}
             {email && (
               <div className="topnav-user">
+                <ThemeToggle />
                 <span
                   className="topnav-hint"
                   title="לחץ ⌘K או Ctrl+K לפתיחת חיפוש"

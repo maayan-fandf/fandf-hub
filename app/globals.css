@@ -90,6 +90,87 @@
   --shadow-sm: 0 1px 2px rgba(80, 70, 160, 0.06);
   --shadow-md: 0 4px 16px rgba(80, 70, 160, 0.08);
   --shadow-lg: 0 12px 40px rgba(80, 70, 160, 0.18);
+
+  /* Derived surfaces — theme-aware via vars below. */
+  --error-bg:      #fef2f2;
+  --error-border:  #fecaca;
+  --error-text:    #991b1b;
+  --topnav-bg:     linear-gradient(90deg, #ffffff 0%, #fbfaff 100%);
+  --loading-bg:    linear-gradient(135deg, var(--violet-soft), var(--pink-soft));
+}
+
+/* ─── Dark theme overrides ─────────────────────────────────────────
+ *
+ * Applied when <html data-theme="dark">. Our ThemeToggle sets this
+ * from JS, and an inline <script> in layout.tsx also sets it before
+ * first paint so we never flash the wrong theme.
+ *
+ * Neutrals invert; saturated role/status/company solids stay punchy
+ * but their soft backgrounds get a dark tint pair so contrast stays
+ * readable. Shadows get stronger to compensate for the dark bg. */
+[data-theme="dark"] {
+  --bg: #0d0d1c;
+  --surface: #18182e;
+  --surface-soft: #13132a;
+  --border: #2a2a4a;
+  --text: #ecebff;
+  --muted: #9a98bd;
+
+  /* Soft-tint variants for dark — hue preserved, lightness dropped. */
+  --violet-soft:        #2a1f56;
+  --purple-soft:        #2d1f54;
+  --pink-soft:          #3a1832;
+  --rose-soft:          #3b1e2b;
+  --red-soft:           #3e1818;
+  --orange-soft:        #3b231a;
+  --amber-soft:         #382d15;
+  --yellow-soft:        #332d14;
+  --lime-soft:          #1e2a12;
+  --green-soft:         #122e1f;
+  --teal-soft:          #102f2a;
+  --cyan-soft:          #123039;
+  --sky-soft:           #142a3e;
+  --blue-soft:          #192545;
+  --indigo-soft:        #1f204b;
+
+  /* Role soft aliases re-bind to the dark soft tokens. */
+  --role-admin-soft:       var(--purple-soft);
+  --role-campaign-soft:    var(--blue-soft);
+  --role-account-soft:     var(--green-soft);
+  --role-creative-soft:    var(--pink-soft);
+  --role-creative-cf-soft: var(--cyan-soft);
+  --role-client-soft:      var(--amber-soft);
+
+  --overdue-soft:    var(--red-soft);
+  --due-today-soft:  var(--orange-soft);
+  --done-soft:       var(--green-soft);
+  --accent-soft:     var(--indigo-soft);
+
+  /* Company soft palette — darker counterparts for each of 12 slots. */
+  --co-0-soft:  #2a1f56;
+  --co-1-soft:  #3a1832;
+  --co-2-soft:  #3b231a;
+  --co-3-soft:  #332d14;
+  --co-4-soft:  #1e2a12;
+  --co-5-soft:  #122e1f;
+  --co-6-soft:  #102f2a;
+  --co-7-soft:  #123039;
+  --co-8-soft:  #192545;
+  --co-9-soft:  #1f204b;
+  --co-10-soft: #2d1f54;
+  --co-11-soft: #3b1e2b;
+
+  /* Shadows are stronger on dark — we're casting on near-black. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+
+  /* Surface-derived tokens. */
+  --error-bg:     #3e1818;
+  --error-border: #5a2525;
+  --error-text:   #fca5a5;
+  --topnav-bg:    linear-gradient(90deg, #181830 0%, #16152c 100%);
+  --loading-bg:   linear-gradient(135deg, var(--violet-soft), var(--pink-soft));
 }
 
 * {
@@ -343,9 +424,9 @@ a:hover {
 }
 
 .error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #991b1b;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
   padding: 1rem 1.25rem;
   border-radius: 8px;
 }
@@ -476,7 +557,7 @@ a:hover {
 
 /* Top nav */
 .topnav {
-  background: linear-gradient(90deg, #ffffff 0%, #fbfaff 100%);
+  background: var(--topnav-bg);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -608,7 +689,7 @@ a:hover {
 }
 
 .signin-btn {
-  background: #fff;
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
   width: 100%;
@@ -1011,7 +1092,8 @@ a.section-link:hover {
 }
 
 .chip-muted {
-  background: #eceafc;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
   color: var(--muted);
 }
 
@@ -1244,7 +1326,7 @@ a.section-link:hover {
 .delete-btn:hover:not(:disabled) {
   border-color: var(--overdue);
   color: var(--overdue);
-  background: #fef2f2;
+  background: var(--overdue-soft);
 }
 
 .delete-btn:disabled {
@@ -1808,6 +1890,32 @@ a.section-link:hover {
   font-family: inherit;
 }
 
+.theme-toggle {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: rotate(-12deg);
+}
+
+.theme-toggle:active {
+  transform: rotate(-12deg) scale(0.92);
+}
+
 /* ─── Admin console ───────────────────────────────────────────────── */
 .admin-section-list {
   list-style: none;
@@ -1963,11 +2071,7 @@ a.section-link:hover {
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  background: linear-gradient(
-    135deg,
-    var(--violet-soft),
-    var(--pink-soft)
-  );
+  background: var(--loading-bg);
   color: var(--muted);
   pointer-events: none;
   font-size: 0.95rem;
