@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getMyProjects } from "@/lib/appsScript";
+import { getMyProjects, type Project } from "@/lib/appsScript";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,8 @@ export default async function HomePage() {
   if (data && !data.isAdmin && data.projects.length === 0) {
     redirect("/unauthorized");
   }
+
+  const grouped = data ? groupByCompany(data.projects) : [];
 
   return (
     <main className="container">
@@ -49,17 +51,63 @@ export default async function HomePage() {
         <div className="empty">No projects you have access to yet.</div>
       )}
 
-      {data && data.projects.length > 0 && (
-        <ul className="project-list">
-          {data.projects.map((name) => (
-            <li key={name}>
-              <Link href={`/projects/${encodeURIComponent(name)}`}>
-                {name}
-              </Link>
-            </li>
+      {grouped.length > 0 && (
+        <div className="company-groups">
+          {grouped.map((g) => (
+            <section key={g.company || "__ungrouped"} className="company-group">
+              <h2 className="company-group-title">
+                {g.company || "ללא חברה"}
+                <span className="company-group-count">{g.projects.length}</span>
+              </h2>
+              <ul className="project-list">
+                {g.projects.map((p) => (
+                  <li key={p.name}>
+                    <Link href={`/projects/${encodeURIComponent(p.name)}`}>
+                      {p.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
     </main>
   );
+}
+
+/**
+ * Group projects by company, sorted by company name (Hebrew-aware), with
+ * "ללא חברה" (no company) bucket last. Projects inside each group are
+ * sorted alphabetically by name.
+ */
+function groupByCompany(
+  projects: Project[],
+): { company: string; projects: Project[] }[] {
+  const map = new Map<string, Project[]>();
+  for (const p of projects) {
+    const key = (p.company || "").trim();
+    const list = map.get(key) ?? [];
+    list.push(p);
+    map.set(key, list);
+  }
+
+  const collator = new Intl.Collator("he");
+  const named = Array.from(map.entries())
+    .filter(([k]) => k !== "")
+    .sort(([a], [b]) => collator.compare(a, b))
+    .map(([company, list]) => ({
+      company,
+      projects: list.slice().sort((a, b) => collator.compare(a.name, b.name)),
+    }));
+
+  const ungrouped = map.get("");
+  if (ungrouped && ungrouped.length > 0) {
+    named.push({
+      company: "",
+      projects: ungrouped.slice().sort((a, b) => collator.compare(a.name, b.name)),
+    });
+  }
+
+  return named;
 }

@@ -117,8 +117,24 @@ async function postApi<T>(
 
 /* ─── Typed call sites ───────────────────────────────────────────── */
 
+export type Project = {
+  name: string;
+  company: string; // "" when the Keys tab has no company for this project
+};
+
 export type MyProjects = {
-  projects: string[];
+  projects: Project[];
+  isAdmin: boolean;
+  email: string;
+};
+
+/**
+ * Raw shape the Apps Script hub API might return. The old API (pre-company)
+ * returns `projects: string[]`; the new one returns `projects: Project[]`.
+ * We normalize at the boundary so callers only ever see `Project[]`.
+ */
+type MyProjectsRaw = {
+  projects: (string | Project)[];
   isAdmin: boolean;
   email: string;
 };
@@ -147,8 +163,12 @@ export type ProjectTasks = {
   today: string; // YYYY-MM-DD
 };
 
-export function getMyProjects(): Promise<MyProjects> {
-  return callApi<MyProjects>("myProjects");
+export async function getMyProjects(): Promise<MyProjects> {
+  const raw = await callApi<MyProjectsRaw>("myProjects");
+  const projects: Project[] = (raw.projects ?? []).map((p) =>
+    typeof p === "string" ? { name: p, company: "" } : { name: p.name, company: p.company ?? "" },
+  );
+  return { projects, isAdmin: raw.isAdmin, email: raw.email };
 }
 
 export function getProjectTasks(project: string): Promise<ProjectTasks> {
