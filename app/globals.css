@@ -634,6 +634,12 @@ a.section-link:hover {
   padding: 0.75rem 0;
 }
 
+.section-foot {
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .compact-list {
   list-style: none;
   padding: 0;
@@ -753,4 +759,132 @@ a.section-link:hover {
 .chip.due-due-today {
   background: #fef3c7;
   color: var(--due-today);
+}
+
+/* Timeline */
+.timeline-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.timeline-entry {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.timeline-entry.is-resolved .timeline-card {
+  opacity: 0.6;
+}
+
+.timeline-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 0.85rem;
+}
+
+.timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -0.9rem;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--border);
+}
+
+.timeline-entry:last-child .timeline-rail::before {
+  bottom: 50%;
+}
+
+.timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+
+.timeline-dot-comment {
+  background: var(--accent);
+}
+
+.timeline-dot-task {
+  background: var(--muted);
+}
+
+.timeline-dot-task.overdue {
+  background: var(--overdue);
+}
+
+.timeline-dot-task.due-today {
+  background: var(--due-today);
+}
+
+.timeline-dot-task.done {
+  background: var(--done);
+}
+
+.timeline-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.timeline-head .author {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.timeline-head .time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.timeline-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 0.93rem;
+}
+
+.timeline-subnote {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.timeline-tasks {
+  margin-top: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+
+.timeline-tasks-label {
+  color: var(--muted);
+  margin-right: 0.1rem;
 }

@@ -93,13 +93,19 @@ export default async function ProjectOverviewPage({
         <section className="project-section">
           <div className="section-head">
             <h2>Recent comments</h2>
-            {totalComments > comments.length && (
-              <span className="section-link">
-                Showing {comments.length} of {totalComments}
-              </span>
-            )}
+            <Link
+              className="section-link"
+              href={`/projects/${encodeURIComponent(projectName)}/timeline`}
+            >
+              Open timeline →
+            </Link>
           </div>
           <CommentsPreview comments={comments} />
+          {totalComments > comments.length && (
+            <div className="section-foot">
+              Showing {comments.length} of {totalComments}
+            </div>
+          )}
         </section>
 
         <section className="project-section">

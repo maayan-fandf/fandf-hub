@@ -1,0 +1,338 @@
+import Link from "next/link";
+import {
+  getProjectTasks,
+  getProjectComments,
+  type TaskItem,
+  type CommentItem,
+} from "@/lib/appsScript";
+import TimelineFilterBar from "@/components/TimelineFilterBar";
+
+export const dynamic = "force-dynamic";
+
+type Params = { project: string };
+type Search = { kind?: string; resolved?: string };
+
+type CommentEntry = {
+  kind: "comment";
+  at: number;
+  iso: string;
+  comment: CommentItem;
+  spawnedTasks: TaskItem[];
+};
+type TaskEntry = {
+  kind: "task";
+  at: number;
+  iso: string;
+  task: TaskItem;
+};
+type FeedEntry = CommentEntry | TaskEntry;
+
+export default async function ProjectTimelinePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<Search>;
+}) {
+  const { project: projectParam } = await params;
+  const projectName = decodeURIComponent(projectParam);
+  const sp = await searchParams;
+  const rawKind = sp.kind ?? "";
+  const kindFilter: "" | "comment" | "task" =
+    rawKind === "comment" || rawKind === "task" ? rawKind : "";
+  const showResolved = sp.resolved === "1";
+
+  const [tasksRes, commentsRes] = await Promise.allSettled([
+    getProjectTasks(projectName),
+    getProjectComments(projectName, 100),
+  ]);
+
+  const tasksData = tasksRes.status === "fulfilled" ? tasksRes.value : null;
+  const commentsData =
+    commentsRes.status === "fulfilled" ? commentsRes.value : null;
+  const firstError =
+    tasksRes.status === "rejected"
+      ? extractError(tasksRes.reason)
+      : commentsRes.status === "rejected"
+        ? extractError(commentsRes.reason)
+        : null;
+
+  const tasks = tasksData?.tasks ?? [];
+  const comments = commentsData?.comments ?? [];
+  const today = tasksData?.today ?? new Date().toISOString().slice(0, 10);
+  const totalComments = commentsData?.total ?? comments.length;
+
+  // Build the merged feed. A task whose source comment is already in `comments`
+  // gets folded into that comment's entry as a chip — showing it separately
+  // would just duplicate the body. Tasks whose source comment is older than
+  // the comment fetch window appear as standalone entries.
+  const commentIds = new Set(comments.map((c) => c.comment_id));
+  const tasksByCommentId = new Map<string, TaskItem[]>();
+  for (const t of tasks) {
+    const list = tasksByCommentId.get(t.comment_id) ?? [];
+    list.push(t);
+    tasksByCommentId.set(t.comment_id, list);
+  }
+
+  const allEntries: FeedEntry[] = [];
+  for (const c of comments) {
+    allEntries.push({
+      kind: "comment",
+      at: toTs(c.timestamp),
+      iso: c.timestamp,
+      comment: c,
+      spawnedTasks: tasksByCommentId.get(c.comment_id) ?? [],
+    });
+  }
+  for (const t of tasks) {
+    if (commentIds.has(t.comment_id)) continue;
+    allEntries.push({
+      kind: "task",
+      at: toTs(t.created_at),
+      iso: t.created_at,
+      task: t,
+    });
+  }
+  allEntries.sort((a, b) => b.at - a.at);
+
+  const counts = {
+    all: allEntries.length,
+    comments: allEntries.filter((e) => e.kind === "comment").length,
+    tasks:
+      allEntries.filter((e) => e.kind === "task").length +
+      allEntries.reduce(
+        (n, e) => n + (e.kind === "comment" ? e.spawnedTasks.length : 0),
+        0,
+      ),
+  };
+
+  let visible: FeedEntry[];
+  if (kindFilter === "task") {
+    // Flatten all tasks as standalone entries — no folding — so filtering to
+    // "tasks" surfaces every task including ones attached to fetched comments.
+    visible = tasks
+      .filter((t) => showResolved || !t.resolved)
+      .map<FeedEntry>((t) => ({
+        kind: "task",
+        at: toTs(t.created_at),
+        iso: t.created_at,
+        task: t,
+      }))
+      .sort((a, b) => b.at - a.at);
+  } else {
+    visible = allEntries.filter((e) => {
+      if (kindFilter === "comment" && e.kind !== "comment") return false;
+      if (!showResolved) {
+        if (e.kind === "comment" && e.comment.resolved) return false;
+        if (e.kind === "task" && e.task.resolved) return false;
+      }
+      return true;
+    });
+  }
+
+  return (
+    <main className="container">
+      <header className="page-header">
+        <div>
+          <h1>{projectName} · Timeline</h1>
+          <div className="subtitle">
+            <Link href={`/projects/${encodeURIComponent(projectName)}`}>
+              ← {projectName} overview
+            </Link>
+            {commentsData && totalComments > comments.length && (
+              <> · Showing latest {comments.length} of {totalComments} comments</>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {firstError && (
+        <div className="error">
+          <strong>Failed to load timeline.</strong>
+          <br />
+          {firstError}
+        </div>
+      )}
+
+      {!firstError && counts.all > 0 && (
+        <TimelineFilterBar
+          currentKind={kindFilter}
+          showResolved={showResolved}
+          counts={counts}
+        />
+      )}
+
+      {!firstError && visible.length === 0 && (
+        <div className="empty">
+          {counts.all === 0
+            ? "Nothing on this project yet."
+            : "No entries match the current filters."}
+        </div>
+      )}
+
+      {visible.length > 0 && (
+        <ul className="timeline-list">
+          {visible.map((e) =>
+            e.kind === "comment" ? (
+              <CommentRow key={`c:${e.comment.comment_id}`} entry={e} />
+            ) : (
+              <TaskRow
+                key={`t:${e.task.comment_id}|${e.task.assignee_email}`}
+                entry={e}
+                today={today}
+              />
+            ),
+          )}
+        </ul>
+      )}
+    </main>
+  );
+}
+
+/* ─── Row renderers ──────────────────────────────────────────────── */
+
+function CommentRow({ entry }: { entry: CommentEntry }) {
+  const c = entry.comment;
+  return (
+    <li className={`timeline-entry ${c.resolved ? "is-resolved" : ""}`}>
+      <div className="timeline-rail">
+        <span className="timeline-dot timeline-dot-comment" aria-hidden />
+      </div>
+      <div className="timeline-card">
+        <div className="timeline-head">
+          <span className="chip chip-muted">Comment</span>
+          <span className="author">{c.author_name || c.author_email}</span>
+          {c.parent_id && <span className="chip chip-muted">reply</span>}
+          {c.reply_count > 0 && (
+            <span className="chip chip-muted">{c.reply_count} replies</span>
+          )}
+          {c.resolved && <span className="chip chip-done">resolved</span>}
+          <span className="time" title={c.timestamp}>
+            {formatRelative(c.timestamp)}
+          </span>
+        </div>
+        <div className="timeline-body">{truncate(c.body, 600)}</div>
+        {entry.spawnedTasks.length > 0 && (
+          <div className="timeline-tasks">
+            <span className="timeline-tasks-label">Tasks spawned:</span>
+            {entry.spawnedTasks.map((t) => (
+              <span
+                key={t.comment_id + "|" + t.assignee_email}
+                className={`chip ${t.resolved ? "chip-done" : ""}`}
+                title={t.due ? `Due ${t.due}` : "No due date"}
+              >
+                {t.assignee_name || t.assignee_email}
+                {t.due && !t.resolved ? ` · ${t.due}` : ""}
+              </span>
+            ))}
+          </div>
+        )}
+        {c.deep_link && (
+          <a
+            className="compact-link"
+            href={c.deep_link}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in dashboard →
+          </a>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
+  const t = entry.task;
+  const state = taskState(t, today);
+  return (
+    <li className={`timeline-entry ${t.resolved ? "is-resolved" : ""}`}>
+      <div className="timeline-rail">
+        <span
+          className={`timeline-dot timeline-dot-task ${state}`}
+          aria-hidden
+        />
+      </div>
+      <div className="timeline-card">
+        <div className="timeline-head">
+          <span className="chip">Task</span>
+          <span className="author">
+            for {t.assignee_name || t.assignee_email}
+          </span>
+          {t.due && !t.resolved && (
+            <span className={`chip due-${state}`}>{formatDue(t.due, today)}</span>
+          )}
+          {t.resolved && <span className="chip chip-done">done</span>}
+          <span className="time" title={t.created_at}>
+            {formatRelative(t.created_at)}
+          </span>
+        </div>
+        <div className="timeline-body">{truncate(t.title || t.body, 600)}</div>
+        <div className="timeline-subnote">
+          from {t.author_name || t.author_email}
+        </div>
+        {t.deep_link && (
+          <a
+            className="compact-link"
+            href={t.deep_link}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in dashboard →
+          </a>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/* ─── Helpers ────────────────────────────────────────────────────── */
+
+function toTs(iso: string): number {
+  const n = new Date(iso).getTime();
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function taskState(
+  t: TaskItem,
+  today: string,
+): "done" | "overdue" | "due-today" | "" {
+  if (t.resolved) return "done";
+  if (!t.due) return "";
+  if (t.due < today) return "overdue";
+  if (t.due === today) return "due-today";
+  return "";
+}
+
+function formatDue(due: string, today: string): string {
+  if (due === today) return "Due today";
+  if (due < today) return `Overdue (${due})`;
+  return `Due ${due}`;
+}
+
+function truncate(s: string, n: number): string {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const now = Date.now();
+  const diffSec = Math.round((now - then) / 1000);
+  if (diffSec < 60) return "just now";
+  const mins = Math.round(diffSec / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.round(days / 365);
+  return `${years}y ago`;
+}
+
+function extractError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
