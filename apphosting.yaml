@@ -50,6 +50,16 @@ env:
       - BUILD
       - RUNTIME
 
+  # Explicit canonical URL for NextAuth — Firebase App Hosting's proxy headers
+  # don't give NextAuth enough to derive this on its own, so it defaults to
+  # the internal 0.0.0.0:8080 container address. Update this if you add a
+  # custom domain and want NextAuth to redirect there.
+  - variable: AUTH_URL
+    value: https://fandf-hub--fandf-dashboard.europe-west4.hosted.app
+    availability:
+      - BUILD
+      - RUNTIME
+
   # ─── Dashboard link ──────────────────────────────────────────────
   - variable: DASHBOARD_URL
     value: https://script.google.com/macros/s/AKfycbz2IQv3mTzd3CfJbwWy78z13dgJBKFl0vvqIX4wPXyqXHnxwVvQ9lt1Sw4m_2lbZrO0Eg/exec
