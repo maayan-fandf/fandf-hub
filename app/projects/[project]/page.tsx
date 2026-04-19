@@ -123,6 +123,21 @@ export default async function ProjectOverviewPage({
           </div>
           <MentionsPreview mentions={myMentionsOnProject} />
         </section>
+
+        <section className="project-section project-section-metrics">
+          <div className="section-head">
+            <h2>📊 מטריקות</h2>
+            <Link
+              className="section-link"
+              href={`/projects/${encodeURIComponent(projectName)}/metrics`}
+            >
+              פתח דוח ←
+            </Link>
+          </div>
+          <div className="empty-small">
+            דוח שיווקי מהדשבורד, מסונן לפרויקט זה — לידים, עלויות, תשואה.
+          </div>
+        </section>
       </div>
     </main>
   );

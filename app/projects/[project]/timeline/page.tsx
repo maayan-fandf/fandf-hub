@@ -146,6 +146,10 @@ export default async function ProjectTimelinePage({
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
               → סקירת {projectName}
             </Link>
+            {" · "}
+            <Link href={`/projects/${encodeURIComponent(projectName)}/metrics`}>
+              📊 מטריקות
+            </Link>
             {commentsData && totalComments > comments.length && (
               <> · מציג {comments.length} מתוך {totalComments} ההערות האחרונות</>
             )}

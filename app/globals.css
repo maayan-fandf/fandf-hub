@@ -1937,6 +1937,88 @@ a.section-link:hover {
   flex-wrap: wrap;
 }
 
+/* ─── Metrics iframe (dashboard embed) ────────────────────────────── */
+.metrics-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.metrics-foot-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.metrics-frame-wrap {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: min(80vh, 720px);
+  box-shadow: var(--shadow-sm);
+}
+
+.metrics-iframe {
+  width: 100%;
+  height: min(80vh, 720px);
+  border: 0;
+  display: block;
+}
+
+.metrics-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: linear-gradient(
+    135deg,
+    var(--violet-soft),
+    var(--pink-soft)
+  );
+  color: var(--muted);
+  pointer-events: none;
+  font-size: 0.95rem;
+}
+
+.metrics-loading .emoji {
+  font-size: 2.4rem;
+  animation: wiggle 2.4s ease-in-out infinite;
+}
+
+.metrics-slow-warning {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  padding: 0.8rem 1rem;
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  color: var(--text);
+}
+
+.metrics-slow-warning .emoji {
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+.project-section-metrics .empty-small {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 /* Red-dot badge for open mentions on the תיוגים nav link */
 .topnav-link-with-badge {
   display: inline-flex;
