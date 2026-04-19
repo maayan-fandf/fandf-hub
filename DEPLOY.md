@@ -127,8 +127,68 @@ Firebase rebuilds and rolls out automatically.
 
 ---
 
-## Adding a custom domain (optional, later)
+## Adding a custom domain
 
-Firebase Console → App Hosting → your backend → **Custom domains** →
-**Add domain**. Follow the DNS verification steps. Then update the OAuth client
-redirect URIs to add the custom domain too.
+This was done for `hub.fandf.co.il`. DNS is managed at **upress.io**, the
+GCP/Firebase project is `fandf-dashboard`.
+
+### 1. In Firebase Console
+- **App Hosting** → `fandf-hub` backend → **Custom domains** → **Add domain**
+- Enter the subdomain, e.g. `hub.fandf.co.il`
+- Firebase shows a single A record to add:
+  - Type: `A`
+  - Host: `hub` (i.e. for `hub.fandf.co.il`)
+  - Value: **`35.219.200.96`** ← this is what Firebase gave us; Firebase MAY
+    give a different IP for a new setup, always trust the console.
+- Firebase may also request a TXT verification record. Ours didn't; yours
+  might. If so, add it exactly as shown.
+
+### 2. At the DNS registrar (upress)
+upress auto-created a default subdomain template with extra records (MX,
+SPF, www, ftp, autodiscover, NS). **Only the A record is required for the
+Firebase app to work.** The others are unused but mostly harmless. To keep
+things clean you can delete:
+- `A ftp.hub.fandf.co.il` (upress FTP hosting)
+- `A www.hub.fandf.co.il` (upress landing page)
+- `MX hub.fandf.co.il` (unused — we don't have `@hub` mail)
+- `SRV _autodiscover._tcp.hub.fandf.co.il`
+- `TXT hub.fandf.co.il` with `v=spf1 ...` (unused without matching MX)
+
+**Keep:**
+- `A hub.fandf.co.il → 35.219.200.96` (the Firebase one)
+- `NS hub.fandf.co.il → ns1/ns2.upress.io` (likely required by upress)
+
+### 3. After DNS propagates
+DNS usually resolves in 5–30 min at upress. Check with
+[dnschecker.org](https://dnschecker.org) or `dig hub.fandf.co.il A`.
+
+Firebase provisions an SSL cert automatically (Let's Encrypt, ~5 min after
+the record resolves). Visit `https://hub.fandf.co.il` to confirm it loads.
+
+### 4. Update hub + Google for the new URL
+Without these, Google sign-in will fail on the new URL.
+
+**a) `AUTH_URL` env var** — Firebase Console → App Hosting → backend →
+Environment variables. Change from
+`https://fandf-hub--fandf-dashboard.europe-west4.hosted.app`
+→ `https://hub.fandf.co.il`. Triggers a redeploy.
+
+**b) OAuth redirect URI** — Google Cloud Console →
+[Credentials](https://console.cloud.google.com/apis/credentials) → your Hub
+OAuth client → Authorized redirect URIs → add
+`https://hub.fandf.co.il/api/auth/callback/google`. Keep the old one too
+(in case you ever roll back).
+
+**c) `HUB_URL` Apps Script property** — Apps Script editor → Project
+Settings → Script properties → `HUB_URL` → `https://hub.fandf.co.il`.
+The daily mention-digest email uses this for the CTA button.
+
+The old Firebase default URL keeps working in parallel — both map to the
+same backend. Only AUTH and the mention email CTA care about the canonical
+URL.
+
+### Gotcha to remember
+**Don't touch apex (`fandf.co.il`) DNS records.** Mail delivery for
+`@fandf.co.il` depends on MX/SPF/DKIM/DMARC TXT records there. All
+subdomain records are safe. A CNAME on the apex would break mail;
+never do that.
