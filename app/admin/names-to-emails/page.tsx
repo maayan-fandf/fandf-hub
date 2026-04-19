@@ -33,7 +33,10 @@ export default async function NamesToEmailsPage() {
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>שמות ואימיילים</h1>
+          <h1>
+            <span className="emoji" aria-hidden>📇</span>
+            שמות ואימיילים
+          </h1>
           <div className="subtitle">
             <Link href="/admin">→ ניהול</Link> · מיפוי שם מלא לאימייל. זהו המקור
             לתיוגים (dropdown) ולהרשאות הצוות (מיפוי שמות בעמודות C, D, J, K

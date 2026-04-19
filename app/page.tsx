@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMyProjects, type Project } from "@/lib/appsScript";
+import { companyColorVars } from "@/lib/colors";
+
+// Tiny helper — casts the CSS custom-property object to React's style type
+// so TypeScript lets us apply it.
+type CSSVars = React.CSSProperties & Record<`--${string}`, string>;
 
 export const dynamic = "force-dynamic";
 
@@ -24,11 +29,14 @@ export default async function HomePage() {
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>פרויקטים</h1>
+          <h1>
+            <span className="emoji" aria-hidden>📂</span>
+            פרויקטים
+          </h1>
           {data && (
             <div className="subtitle">
               מחובר כ-<span dir="ltr">{data.email}</span>
-              {data.isAdmin && " · אדמין"}
+              {data.isAdmin && " · 👑 אדמין"}
             </div>
           )}
         </div>
@@ -48,36 +56,43 @@ export default async function HomePage() {
       )}
 
       {data && data.projects.length === 0 && (
-        <div className="empty">אין פרויקטים שיש לך גישה אליהם עדיין.</div>
+        <div className="empty">
+          <span className="emoji" aria-hidden>🗂️</span>
+          אין פרויקטים שיש לך גישה אליהם עדיין.
+        </div>
       )}
 
       {grouped.length > 0 && (
         <div className="company-groups">
-          {grouped.map((g) => (
-            <details
-              key={g.company || "__ungrouped"}
-              className="company-group"
-            >
-              <summary className="company-group-summary">
-                <span className="company-group-name">
-                  {g.company || "ללא חברה"}
-                </span>
-                <span className="company-group-count">{g.projects.length}</span>
-                <span className="company-group-chevron" aria-hidden>
-                  ▸
-                </span>
-              </summary>
-              <ul className="project-list">
-                {g.projects.map((p) => (
-                  <li key={p.name}>
-                    <Link href={`/projects/${encodeURIComponent(p.name)}`}>
-                      {p.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
+          {grouped.map((g) => {
+            const colorVars = companyColorVars(g.company || "__ungrouped");
+            return (
+              <details
+                key={g.company || "__ungrouped"}
+                className="company-group"
+                style={colorVars as CSSVars}
+              >
+                <summary className="company-group-summary">
+                  <span className="company-group-name">
+                    {g.company || "ללא חברה"}
+                  </span>
+                  <span className="company-group-count">{g.projects.length}</span>
+                  <span className="company-group-chevron" aria-hidden>
+                    ▸
+                  </span>
+                </summary>
+                <ul className="project-list">
+                  {g.projects.map((p) => (
+                    <li key={p.name}>
+                      <Link href={`/projects/${encodeURIComponent(p.name)}`}>
+                        {p.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })}
         </div>
       )}
     </main>

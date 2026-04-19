@@ -27,13 +27,13 @@ export default async function RootLayout({
         <nav className="topnav">
           <div className="topnav-inner">
             <Link href="/" className="topnav-brand">
-              Hub
+              ✨ Hub
             </Link>
             <Link href="/" className="topnav-link">
-              פרויקטים
+              📂 פרויקטים
             </Link>
             <Link href="/inbox" className="topnav-link topnav-link-with-badge">
-              תיוגים
+              🏷️ תיוגים
               {email && <NavMentionBadge />}
             </Link>
             {email && <NavAdminLink />}
@@ -44,7 +44,7 @@ export default async function RootLayout({
                 rel="noreferrer"
                 className="topnav-link topnav-external"
               >
-                דשבורד ↗
+                🔗 דשבורד
               </a>
             )}
             {email && (

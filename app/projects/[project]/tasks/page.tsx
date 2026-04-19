@@ -34,12 +34,15 @@ export default async function TaskBoardPage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>{projectName} · משימות</h1>
+          <h1>
+            <span className="emoji" aria-hidden>📋</span>
+            {projectName} · משימות
+          </h1>
           <div className="subtitle">
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
               → סקירת {projectName}
             </Link>
-            {data && ` · ${countOpen(data.tasks)} משימות פתוחות`}
+            {data && ` · 🔥 ${countOpen(data.tasks)} פתוחות`}
           </div>
         </div>
         <CreateTaskDrawer project={projectName} />
@@ -55,8 +58,9 @@ export default async function TaskBoardPage({
 
       {data && data.tasks.length === 0 && (
         <div className="empty">
+          <span className="emoji" aria-hidden>🎯</span>
           עדיין אין משימות. משימות נוצרות כאשר מתייגים משתמש פנימי בהערה בדשבורד,
-          או מכאן באמצעות כפתור &quot;משימה חדשה&quot;.
+          או מכאן באמצעות כפתור &quot;+ משימה חדשה&quot;.
         </div>
       )}
 

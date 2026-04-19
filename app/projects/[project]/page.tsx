@@ -8,6 +8,7 @@ import {
   type MentionItem,
 } from "@/lib/appsScript";
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
+import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,10 @@ export default async function ProjectOverviewPage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>{projectName}</h1>
+          <h1>
+            <span className="emoji" aria-hidden>🏢</span>
+            {projectName}
+          </h1>
           <div className="subtitle">
             <Link href="/">→ כל הפרויקטים</Link>
           </div>
@@ -73,15 +77,15 @@ export default async function ProjectOverviewPage({
       )}
 
       <div className="stats-grid">
-        <StatTile label="משימות פתוחות" value={openTasks} />
-        <StatTile label="תיוגים פתוחים עבורך" value={openMentions} />
-        <StatTile label='סה"כ הערות' value={totalComments} />
+        <StatTile label="📋 משימות פתוחות" value={openTasks} variant="tasks" />
+        <StatTile label="🏷️ תיוגים פתוחים עבורך" value={openMentions} variant="mentions" />
+        <StatTile label='💬 סה"כ הערות' value={totalComments} variant="comments" />
       </div>
 
       <div className="project-sections">
         <section className="project-section">
           <div className="section-head">
-            <h2>משימות</h2>
+            <h2>📋 משימות</h2>
             <Link
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/tasks`}
@@ -94,7 +98,7 @@ export default async function ProjectOverviewPage({
 
         <section className="project-section">
           <div className="section-head">
-            <h2>הערות אחרונות</h2>
+            <h2>💬 הערות אחרונות</h2>
             <Link
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/timeline`}
@@ -112,7 +116,7 @@ export default async function ProjectOverviewPage({
 
         <section className="project-section">
           <div className="section-head">
-            <h2>התיוגים שלך בפרויקט</h2>
+            <h2>🏷️ התיוגים שלך בפרויקט</h2>
             <Link className="section-link" href="/inbox">
               כל התיוגים ←
             </Link>
@@ -129,7 +133,7 @@ export default async function ProjectOverviewPage({
 function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
   const open = tasks.filter((t) => !t.resolved).slice(0, 6);
   if (open.length === 0) {
-    return <div className="empty-small">אין משימות פתוחות.</div>;
+    return <div className="empty-small">🎉 אין משימות פתוחות!</div>;
   }
   return (
     <ul className="compact-list">
@@ -162,7 +166,7 @@ function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
 function CommentsPreview({ comments }: { comments: CommentItem[] }) {
   const top = comments.filter((c) => !c.parent_id).slice(0, 8);
   if (top.length === 0) {
-    return <div className="empty-small">אין הערות בפרויקט זה עדיין.</div>;
+    return <div className="empty-small">💭 אין הערות בפרויקט זה עדיין.</div>;
   }
   return (
     <ul className="compact-list">
@@ -172,14 +176,15 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
           className={`compact-comment ${c.resolved ? "is-resolved" : ""}`}
         >
           <div className="compact-comment-head">
+            <Avatar name={c.author_email} title={c.author_name || c.author_email} size={22} />
             <span className="author">{c.author_name || c.author_email}</span>
             <span className="time" title={c.timestamp}>
               {formatRelative(c.timestamp)}
             </span>
             {c.reply_count > 0 && (
-              <span className="chip chip-muted">{c.reply_count} תגובות</span>
+              <span className="chip chip-muted">💬 {c.reply_count}</span>
             )}
-            {c.resolved && <span className="chip chip-done">נסגר</span>}
+            {c.resolved && <span className="chip chip-done">✅ נסגר</span>}
           </div>
           <div className="compact-comment-body">{truncate(c.body, 220)}</div>
           {c.deep_link && (
@@ -203,7 +208,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
   if (top.length === 0) {
     return (
       <div className="empty-small">
-        לא תויגת בפרויקט זה.
+        🌿 לא תויגת בפרויקט זה.
       </div>
     );
   }
@@ -215,11 +220,12 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
           className={`compact-comment ${m.resolved ? "is-resolved" : ""}`}
         >
           <div className="compact-comment-head">
+            <Avatar name={m.author_email} title={m.author_name || m.author_email} size={22} />
             <span className="author">{m.author_name || m.author_email}</span>
             <span className="time" title={m.timestamp}>
               {formatRelative(m.timestamp)}
             </span>
-            {m.resolved && <span className="chip chip-done">נסגר</span>}
+            {m.resolved && <span className="chip chip-done">✅ נסגר</span>}
           </div>
           <div className="compact-comment-body">{truncate(m.body, 200)}</div>
           {m.deep_link && (
@@ -240,9 +246,18 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
 
 /* ─── Small bits ─────────────────────────────────────────────────── */
 
-function StatTile({ label, value }: { label: string; value: number }) {
+function StatTile({
+  label,
+  value,
+  variant,
+}: {
+  label: string;
+  value: number;
+  variant?: "tasks" | "mentions" | "comments";
+}) {
+  const cls = variant ? `stat-tile stat-tile-${variant}` : "stat-tile";
   return (
-    <div className="stat-tile">
+    <div className={cls}>
       <div className="stat-value">{value}</div>
       <div className="stat-label">{label}</div>
     </div>

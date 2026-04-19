@@ -9,6 +9,7 @@ import TimelineFilterBar from "@/components/TimelineFilterBar";
 import ResolveButton from "@/components/ResolveButton";
 import ReplyDrawer from "@/components/ReplyDrawer";
 import DeleteButton from "@/components/DeleteButton";
+import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -137,7 +138,10 @@ export default async function ProjectTimelinePage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>{projectName} · ציר זמן</h1>
+          <h1>
+            <span className="emoji" aria-hidden>📅</span>
+            {projectName} · ציר זמן
+          </h1>
           <div className="subtitle">
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
               → סקירת {projectName}
@@ -167,6 +171,9 @@ export default async function ProjectTimelinePage({
 
       {!firstError && visible.length === 0 && (
         <div className="empty">
+          <span className="emoji" aria-hidden>
+            {counts.all === 0 ? "🌱" : "🔍"}
+          </span>
           {counts.all === 0
             ? "עדיין אין פעילות בפרויקט זה."
             : "אין רשומות תואמות לסינון הנוכחי."}
@@ -203,9 +210,10 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
       </div>
       <div className="timeline-card">
         <div className="timeline-head">
-          <span className="chip chip-muted">הערה</span>
+          <Avatar name={c.author_email} title={c.author_name || c.author_email} size={26} />
+          <span className="chip chip-muted">💬 הערה</span>
           <span className="author">{c.author_name || c.author_email}</span>
-          {c.parent_id && <span className="chip chip-muted">תגובה</span>}
+          {c.parent_id && <span className="chip chip-muted">↩️ תגובה</span>}
           {c.reply_count > 0 && (
             <span className="chip chip-muted">{c.reply_count} תגובות</span>
           )}
@@ -271,14 +279,21 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
       </div>
       <div className="timeline-card">
         <div className="timeline-head">
-          <span className="chip">משימה</span>
+          <Avatar name={t.assignee_email} title={t.assignee_name || t.assignee_email} size={26} />
+          <span className="chip">📋 משימה</span>
           <span className="author">
             עבור {t.assignee_name || t.assignee_email}
           </span>
-          {t.due && !t.resolved && (
-            <span className={`chip due-${state}`}>{formatDue(t.due, today)}</span>
+          {t.due && !t.resolved && state === "overdue" && (
+            <span className="chip due-overdue">🔥 {formatDue(t.due, today)}</span>
           )}
-          {t.resolved && <span className="chip chip-done">הושלם</span>}
+          {t.due && !t.resolved && state === "due-today" && (
+            <span className="chip due-due-today">⏰ {formatDue(t.due, today)}</span>
+          )}
+          {t.due && !t.resolved && state === "" && (
+            <span className="chip chip-muted">{formatDue(t.due, today)}</span>
+          )}
+          {t.resolved && <span className="chip chip-done">✅ הושלם</span>}
           <span className="time" title={t.created_at}>
             {formatRelative(t.created_at)}
           </span>

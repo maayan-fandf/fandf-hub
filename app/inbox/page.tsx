@@ -4,6 +4,7 @@ import InboxFilterBar from "@/components/InboxFilterBar";
 import ResolveButton from "@/components/ResolveButton";
 import ReplyDrawer from "@/components/ReplyDrawer";
 import DeleteButton from "@/components/DeleteButton";
+import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +41,15 @@ export default async function InboxPage({
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>תיוגים</h1>
+          <h1>
+            <span className="emoji" aria-hidden>🏷️</span>
+            תיוגים
+          </h1>
           <div className="subtitle">
             {data && (
               <>
-                {openCount} פתוחים · {all.length} סה&quot;כ
-                {data.me.isAdmin && " · אדמין (רואה את כל הפרויקטים)"}
+                🔥 {openCount} פתוחים · {all.length} סה&quot;כ
+                {data.me.isAdmin && " · 👑 אדמין (רואה את כל הפרויקטים)"}
               </>
             )}
           </div>
@@ -70,8 +74,11 @@ export default async function InboxPage({
 
       {data && visible.length === 0 && (
         <div className="empty">
+          <span className="emoji" aria-hidden>
+            {all.length === 0 ? "🌿" : "🔍"}
+          </span>
           {all.length === 0
-            ? "אף אחד לא תייג אותך עדיין."
+            ? "אף אחד לא תייג אותך עדיין. יום שקט!"
             : "אין תיוגים תואמים לסינון הנוכחי."}
         </div>
       )}
@@ -95,6 +102,11 @@ function MentionCard({ m }: { m: MentionItem }) {
   return (
     <li className={`mention-card ${m.resolved ? "is-resolved" : ""}`}>
       <div className="mention-head">
+        <Avatar
+          name={m.author_email}
+          title={m.author_name || m.author_email}
+          size={32}
+        />
         <Link
           className="mention-project"
           href={`/projects/${encodeURIComponent(m.project)}/tasks`}

@@ -33,7 +33,7 @@ export default function NavAdminLink() {
 
   return (
     <Link href="/admin" className="topnav-link">
-      ניהול
+      ⚙️ ניהול
     </Link>
   );
 }

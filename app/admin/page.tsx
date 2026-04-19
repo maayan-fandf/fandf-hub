@@ -25,12 +25,14 @@ export default async function AdminHome() {
   const sections: {
     href: string;
     title: string;
+    emoji: string;
     subtitle: string;
     ready: boolean;
   }[] = [
     {
       href: "/admin/names-to-emails",
       title: "שמות ואימיילים",
+      emoji: "📇",
       subtitle:
         "הגדרת מיפוי שמות לאימיילים — מקור הנתונים ללוח התיוגים והרשאות הצוות.",
       ready: true,
@@ -38,18 +40,21 @@ export default async function AdminHome() {
     {
       href: "/admin/projects",
       title: "פרויקטים",
+      emoji: "🏢",
       subtitle: "עריכת Keys — פרויקטים, חברה, צוות פנימי וחיצוני.",
       ready: false,
     },
     {
       href: "/admin/admins",
       title: "אדמינים",
+      emoji: "👑",
       subtitle: "ניהול רשימת אדמינים.",
       ready: false,
     },
     {
       href: "/admin/webhooks",
       title: "Webhooks",
+      emoji: "🔗",
       subtitle: "טאב Webhooks — URLs לכל לקוח חיצוני.",
       ready: false,
     },
@@ -59,7 +64,10 @@ export default async function AdminHome() {
     <main className="container">
       <header className="page-header">
         <div>
-          <h1>ניהול</h1>
+          <h1>
+            <span className="emoji" aria-hidden>⚙️</span>
+            ניהול
+          </h1>
           <div className="subtitle">אזור אדמין — עריכת תצורה של המערכת.</div>
         </div>
       </header>
@@ -69,7 +77,10 @@ export default async function AdminHome() {
           s.ready ? (
             <li key={s.href} className="admin-section-card">
               <Link href={s.href}>
-                <div className="admin-section-title">{s.title}</div>
+                <div className="admin-section-title">
+                  <span aria-hidden>{s.emoji}</span>
+                  {s.title}
+                </div>
                 <div className="admin-section-sub">{s.subtitle}</div>
               </Link>
             </li>
@@ -80,6 +91,7 @@ export default async function AdminHome() {
               title="בקרוב"
             >
               <div className="admin-section-title">
+                <span aria-hidden>{s.emoji}</span>
                 {s.title}
                 <span className="chip chip-muted">בקרוב</span>
               </div>

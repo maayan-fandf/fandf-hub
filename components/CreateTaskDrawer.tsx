@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Assignee } from "@/lib/appsScript";
+import Avatar from "./Avatar";
+import RoleChip from "./RoleChip";
 
 type Props = {
   project: string;
@@ -219,8 +221,9 @@ export default function CreateTaskDrawer({ project }: Props) {
                       onChange={() => toggleAssignee(a.email)}
                       disabled={isPending}
                     />
+                    <Avatar name={a.email} title={a.name} size={22} />
                     <span className="assignee-name">{a.name}</span>
-                    <span className="assignee-role">{a.role}</span>
+                    <RoleChip role={a.role} />
                   </label>
                 );
               })}

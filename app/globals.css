@@ -1,15 +1,95 @@
 :root {
-  --bg: #f5f5f7;
+  /* Warmer neutrals so the app feels less clinical. */
+  --bg: #f7f5ff;
   --surface: #ffffff;
-  --border: #e5e7eb;
-  --text: #111827;
-  --muted: #6b7280;
-  --accent: #4f46e5;
-  --accent-soft: #eef2ff;
-  --overdue: #dc2626;
-  --due-today: #d97706;
-  --done: #059669;
-  --done-soft: #dcfce7;
+  --surface-soft: #faf9ff;
+  --border: #e5e4f5;
+  --text: #1b1940;
+  --muted: #6b6a85;
+
+  /* Full palette — used by role chips, company hashing, status tints. */
+  --violet: #8b5cf6;
+  --purple: #a855f7;
+  --pink: #ec4899;
+  --rose: #f43f5e;
+  --red: #ef4444;
+  --orange: #f97316;
+  --amber: #f59e0b;
+  --yellow: #eab308;
+  --lime: #84cc16;
+  --green: #10b981;
+  --emerald: #059669;
+  --teal: #14b8a6;
+  --cyan: #06b6d4;
+  --sky: #0ea5e9;
+  --blue: #3b82f6;
+  --indigo: #6366f1;
+
+  /* Soft / tint backgrounds — the Monday trick is pairing saturated text
+     with a very soft background of the same hue. */
+  --violet-soft: #ede9fe;
+  --purple-soft: #f3e8ff;
+  --pink-soft: #fce7f3;
+  --rose-soft: #ffe4e6;
+  --red-soft: #fee2e2;
+  --orange-soft: #ffedd5;
+  --amber-soft: #fef3c7;
+  --yellow-soft: #fef9c3;
+  --lime-soft: #ecfccb;
+  --green-soft: #d1fae5;
+  --teal-soft: #ccfbf1;
+  --cyan-soft: #cffafe;
+  --sky-soft: #e0f2fe;
+  --blue-soft: #dbeafe;
+  --indigo-soft: #e0e7ff;
+
+  /* Legacy accent aliases — keep the old var names wired into the new palette
+     so existing components don't break. */
+  --accent: var(--indigo);
+  --accent-soft: var(--indigo-soft);
+
+  /* Status system — louder than before. Overdue gets a real red background
+     on cards; due-today gets amber; done gets green. */
+  --overdue: var(--red);
+  --overdue-soft: var(--red-soft);
+  --due-today: var(--orange);
+  --due-today-soft: var(--orange-soft);
+  --done: var(--green);
+  --done-soft: var(--green-soft);
+
+  /* Role colors — used by <RoleChip> and the assignee picker. */
+  --role-admin: var(--purple);
+  --role-admin-soft: var(--purple-soft);
+  --role-campaign: var(--blue);
+  --role-campaign-soft: var(--blue-soft);
+  --role-account: var(--emerald);
+  --role-account-soft: var(--green-soft);
+  --role-creative: var(--pink);
+  --role-creative-soft: var(--pink-soft);
+  --role-creative-cf: var(--cyan);
+  --role-creative-cf-soft: var(--cyan-soft);
+  --role-client: var(--amber);
+  --role-client-soft: var(--amber-soft);
+
+  /* Company color palette — picked via hash(companyName). Kept separate
+     from role colors so a company colored "blue" doesn't look like a role. */
+  --co-0:  #8b5cf6; --co-0-soft:  #ede9fe;
+  --co-1:  #ec4899; --co-1-soft:  #fce7f3;
+  --co-2:  #f97316; --co-2-soft:  #ffedd5;
+  --co-3:  #eab308; --co-3-soft:  #fef9c3;
+  --co-4:  #84cc16; --co-4-soft:  #ecfccb;
+  --co-5:  #10b981; --co-5-soft:  #d1fae5;
+  --co-6:  #14b8a6; --co-6-soft:  #ccfbf1;
+  --co-7:  #06b6d4; --co-7-soft:  #cffafe;
+  --co-8:  #3b82f6; --co-8-soft:  #dbeafe;
+  --co-9:  #6366f1; --co-9-soft:  #e0e7ff;
+  --co-10: #a855f7; --co-10-soft: #f3e8ff;
+  --co-11: #f43f5e; --co-11-soft: #ffe4e6;
+
+  /* Rounded shadows — softer, more Monday-esque. */
+  --shadow-sm: 0 1px 2px rgba(80, 70, 160, 0.06);
+  --shadow-md: 0 4px 16px rgba(80, 70, 160, 0.08);
+  --shadow-lg: 0 12px 40px rgba(80, 70, 160, 0.18);
 }
 
 * {
@@ -52,8 +132,17 @@ a:hover {
 
 .page-header h1 {
   margin: 0;
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 1.9rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  letter-spacing: -0.01em;
+}
+
+.page-header h1 .emoji {
+  font-size: 1.25em;
+  line-height: 1;
 }
 
 .page-header .subtitle {
@@ -79,20 +168,35 @@ a:hover {
 }
 
 .project-list a {
+  position: relative;
   display: block;
-  padding: 1rem;
+  padding: 1rem 1rem 1rem 1rem;
+  padding-inline-start: 1.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text);
   font-weight: 500;
-  transition: border-color 0.15s, transform 0.15s;
+  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Color-coded left edge from the parent company group's --co-solid. */
+.project-list a::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.4rem;
+  inset-inline-start: 0.45rem;
+  width: 4px;
+  border-radius: 4px;
+  background: var(--co-solid, var(--accent));
 }
 
 .project-list a:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
+  border-color: var(--co-solid, var(--accent));
+  transform: translateY(-2px);
   text-decoration: none;
+  box-shadow: var(--shadow-md);
 }
 
 .board {
@@ -101,25 +205,44 @@ a:hover {
   gap: 1rem;
 }
 
+.board-column {
+  background: var(--co-soft, var(--surface-soft));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.85rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .board-column h3 {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.75rem;
+  gap: 0.55rem;
+  margin: 0 0 0.25rem;
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.board-col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 .board-column .count {
-  background: var(--accent-soft);
-  color: var(--accent);
-  padding: 0.1em 0.6em;
+  background: var(--co-solid, var(--accent));
+  color: #fff;
+  padding: 0.1em 0.65em;
   border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-inline-start: auto;
+  box-shadow: var(--shadow-sm);
 }
 
 .task-list {
@@ -134,29 +257,33 @@ a:hover {
 .task-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-inline-start: 3px solid var(--border);
-  border-radius: 8px;
+  border-inline-start: 4px solid var(--border);
+  border-radius: 10px;
   padding: 0.75rem 0.9rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  transition: box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: var(--shadow-sm);
 }
 
 .task-card:hover {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .task-card.overdue {
+  background: linear-gradient(180deg, var(--overdue-soft), var(--surface) 40%);
   border-inline-start-color: var(--overdue);
 }
 
 .task-card.due-today {
+  background: linear-gradient(180deg, var(--due-today-soft), var(--surface) 40%);
   border-inline-start-color: var(--due-today);
 }
 
 .task-card.done {
-  opacity: 0.65;
+  opacity: 0.7;
   border-inline-start-color: var(--done);
   background: var(--done-soft);
 }
@@ -195,6 +322,24 @@ a:hover {
   padding: 3rem 1rem;
   text-align: center;
   color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.empty .emoji {
+  display: block;
+  font-size: 2.4rem;
+  margin-bottom: 0.6rem;
+  line-height: 1;
+  animation: wiggle 2.4s ease-in-out infinite;
+}
+
+@keyframes wiggle {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  65% { transform: rotate(6deg); }
+  75% { transform: rotate(-6deg); }
+  85% { transform: rotate(4deg); }
+  95% { transform: rotate(-2deg); }
 }
 
 .error {
@@ -217,17 +362,26 @@ a:hover {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.4rem 0.9rem;
+  padding: 0.4rem 0.95rem;
   border-radius: 999px;
   font-size: 0.85rem;
   cursor: pointer;
   font-family: inherit;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s, transform 0.08s;
+  box-shadow: var(--shadow-sm);
+}
+
+.filter-bar button:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .filter-bar .active {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--violet), var(--indigo));
   color: #fff;
-  border-color: var(--accent);
+  border-color: transparent;
+  box-shadow: var(--shadow-md);
 }
 
 .filter-bar .count-inline {
@@ -322,11 +476,12 @@ a:hover {
 
 /* Top nav */
 .topnav {
-  background: var(--surface);
+  background: linear-gradient(90deg, #ffffff 0%, #fbfaff 100%);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 20;
+  box-shadow: var(--shadow-sm);
 }
 
 .topnav-inner {
@@ -339,20 +494,27 @@ a:hover {
 }
 
 .topnav-brand {
-  font-weight: 700;
-  color: var(--accent);
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  background: linear-gradient(90deg, var(--violet), var(--pink));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .topnav-link {
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.95rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  transition: background 0.15s, color 0.15s;
 }
 
 .topnav-link:hover {
   color: var(--text);
+  background: var(--accent-soft);
   text-decoration: none;
 }
 
@@ -569,24 +731,42 @@ a:hover {
 }
 
 .stat-tile {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem 1.2rem;
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
+/* Decorative color accent down the inline-start edge */
+.stat-tile::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 4px;
+  background: var(--tile-accent, var(--accent));
+}
+
+.stat-tile-tasks    { --tile-accent: var(--violet); }
+.stat-tile-mentions { --tile-accent: var(--pink); }
+.stat-tile-comments { --tile-accent: var(--sky); }
+
 .stat-value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 2.1rem;
+  font-weight: 800;
+  color: var(--tile-accent, var(--text));
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
   color: var(--muted);
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
+  font-size: 0.88rem;
+  margin-top: 0.3rem;
+  font-weight: 500;
 }
 
 .project-sections {
@@ -654,13 +834,15 @@ a.section-link:hover {
 .company-group {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-shadow: var(--shadow-sm);
 }
 
 .company-group[open] {
-  border-color: var(--accent);
+  border-color: var(--co-solid, var(--accent));
+  box-shadow: var(--shadow-md);
 }
 
 .company-group-summary {
@@ -669,11 +851,13 @@ a.section-link:hover {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  padding: 0.9rem 1.1rem;
-  font-size: 1rem;
+  padding: 0.95rem 1.1rem;
+  font-size: 1.02rem;
   font-weight: 600;
   color: var(--text);
   user-select: none;
+  background: var(--co-soft, transparent);
+  transition: filter 0.15s;
 }
 
 .company-group-summary::-webkit-details-marker {
@@ -681,7 +865,7 @@ a.section-link:hover {
 }
 
 .company-group-summary:hover {
-  background: var(--accent-soft);
+  filter: brightness(0.97);
 }
 
 .company-group-name {
@@ -689,13 +873,25 @@ a.section-link:hover {
 }
 
 .company-group-count {
-  background: var(--accent-soft);
-  color: var(--accent);
-  padding: 0.1em 0.6em;
+  background: var(--co-solid, var(--accent));
+  color: #fff;
+  padding: 0.12em 0.7em;
   border-radius: 999px;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  box-shadow: var(--shadow-sm);
+}
+
+.company-group-chevron {
+  color: var(--co-solid, var(--muted));
+  font-weight: 700;
+}
+
+/* When the group is open, the project-list inherits the soft hue too. */
+.company-group[open] .project-list {
+  background: var(--co-soft, transparent);
+  padding-top: 0.5rem;
 }
 
 .company-group-chevron {
@@ -803,36 +999,58 @@ a.section-link:hover {
 }
 
 .chip {
-  display: inline-block;
-  padding: 0.1rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.12rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.76rem;
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .chip-muted {
-  background: var(--border);
+  background: #eceafc;
   color: var(--muted);
 }
 
 .chip-done {
   background: var(--done-soft);
   color: var(--done);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
 }
 
 .chip.due-overdue {
-  background: #fee2e2;
+  background: var(--overdue-soft);
   color: var(--overdue);
 }
 
 .chip.due-due-today {
-  background: #fef3c7;
+  background: var(--due-today-soft);
   color: var(--due-today);
+}
+
+/* Role chips — each role gets its own hue pair */
+.chip-role         { font-weight: 600; }
+.role-admin        { background: var(--role-admin-soft);        color: var(--role-admin); }
+.role-campaign     { background: var(--role-campaign-soft);     color: var(--role-campaign); }
+.role-account      { background: var(--role-account-soft);      color: var(--role-account); }
+.role-creative     { background: var(--role-creative-soft);     color: var(--role-creative); }
+.role-creative-cf  { background: var(--role-creative-cf-soft);  color: var(--role-creative-cf); }
+.role-client       { background: var(--role-client-soft);       color: var(--role-client); }
+
+/* ─── Avatar (initials circle, hash-colored) ──────────────────────── */
+.avatar {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--surface), var(--shadow-sm);
 }
 
 /* Timeline */

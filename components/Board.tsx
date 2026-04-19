@@ -3,8 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { TaskItem } from "@/lib/appsScript";
+import { companyColorVars } from "@/lib/colors";
+import Avatar from "./Avatar";
 import ResolveButton from "./ResolveButton";
 import DeleteButton from "./DeleteButton";
+
+type CSSVars = React.CSSProperties & Record<`--${string}`, string>;
 
 type Props = {
   tasks: TaskItem[];
@@ -115,6 +119,7 @@ export default function Board({ tasks, today, assigneeFilter, showDone }: Props)
             <section
               key={email}
               className={`board-column ${isDropZone ? "is-drop-target" : ""}`}
+              style={companyColorVars(email) as CSSVars}
               onDragOver={(e) => {
                 if (dragSrc && dragSrc.from.toLowerCase() !== email.toLowerCase()) {
                   e.preventDefault();
@@ -130,7 +135,9 @@ export default function Board({ tasks, today, assigneeFilter, showDone }: Props)
               }}
             >
               <h3>
-                {name} <span className="count">{openCount}</span>
+                <Avatar name={email} title={name} size={28} />
+                <span className="board-col-name">{name}</span>
+                <span className="count">{openCount}</span>
               </h3>
               <ul className="task-list">
                 {items.map((t) => (
@@ -179,6 +186,9 @@ function TaskCard({
     >
       <div className="task-row">
         <div className="task-title">
+          {state === "overdue" && <span aria-hidden>🔥 </span>}
+          {state === "due-today" && <span aria-hidden>⏰ </span>}
+          {state === "done" && <span aria-hidden>✅ </span>}
           {task.deep_link ? (
             <a href={task.deep_link} target="_blank" rel="noreferrer">
               {task.title || "(ללא תוכן)"}
