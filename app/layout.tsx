@@ -3,6 +3,7 @@ import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
 import KeyboardHelp from "@/components/KeyboardHelp";
+import NavMentionBadge from "@/components/NavMentionBadge";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,8 +31,9 @@ export default async function RootLayout({
             <Link href="/" className="topnav-link">
               פרויקטים
             </Link>
-            <Link href="/inbox" className="topnav-link">
+            <Link href="/inbox" className="topnav-link topnav-link-with-badge">
               תיוגים
+              {email && <NavMentionBadge />}
             </Link>
             {dashboardUrl && (
               <a

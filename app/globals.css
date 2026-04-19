@@ -1540,3 +1540,23 @@ a.section-link:hover {
   font-size: 0.78rem;
   font-family: inherit;
 }
+
+/* Red-dot badge for open mentions on the תיוגים nav link */
+.topnav-link-with-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.nav-badge {
+  background: var(--overdue);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.05em 0.5em;
+  border-radius: 999px;
+  line-height: 1.3;
+  min-width: 1.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
