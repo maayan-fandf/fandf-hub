@@ -54,11 +54,19 @@ export default async function HomePage() {
       {grouped.length > 0 && (
         <div className="company-groups">
           {grouped.map((g) => (
-            <section key={g.company || "__ungrouped"} className="company-group">
-              <h2 className="company-group-title">
-                {g.company || "ללא חברה"}
+            <details
+              key={g.company || "__ungrouped"}
+              className="company-group"
+            >
+              <summary className="company-group-summary">
+                <span className="company-group-name">
+                  {g.company || "ללא חברה"}
+                </span>
                 <span className="company-group-count">{g.projects.length}</span>
-              </h2>
+                <span className="company-group-chevron" aria-hidden>
+                  ▸
+                </span>
+              </summary>
               <ul className="project-list">
                 {g.projects.map((p) => (
                   <li key={p.name}>
@@ -68,7 +76,7 @@ export default async function HomePage() {
                   </li>
                 ))}
               </ul>
-            </section>
+            </details>
           ))}
         </div>
       )}

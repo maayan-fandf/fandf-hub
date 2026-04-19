@@ -640,34 +640,74 @@ a.section-link:hover {
   color: var(--muted);
 }
 
-/* Home: projects grouped by company */
+/* Home: projects grouped by company, collapsed by default */
 .company-groups {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.6rem;
 }
 
-.company-group-title {
+.company-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.company-group[open] {
+  border-color: var(--accent);
+}
+
+.company-group-summary {
+  list-style: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin: 0 0 0.75rem;
+  gap: 0.7rem;
+  padding: 0.9rem 1.1rem;
   font-size: 1rem;
   font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text);
+  user-select: none;
+}
+
+.company-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.company-group-summary:hover {
+  background: var(--accent-soft);
+}
+
+.company-group-name {
+  flex: 1;
 }
 
 .company-group-count {
   background: var(--accent-soft);
   color: var(--accent);
-  padding: 0.1em 0.55em;
+  padding: 0.1em 0.6em;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.company-group-chevron {
+  color: var(--muted);
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+
+.company-group[open] .company-group-chevron {
+  transform: rotate(90deg);
+}
+
+.company-group .project-list {
+  padding: 0 1rem 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
 .compact-list {
