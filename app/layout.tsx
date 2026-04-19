@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
+import CommandPalette from "@/components/CommandPalette";
+import KeyboardHelp from "@/components/KeyboardHelp";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,7 +20,7 @@ export default async function RootLayout({
   const dashboardUrl = process.env.DASHBOARD_URL ?? "";
 
   return (
-    <html lang="en">
+    <html lang="he" dir="rtl">
       <body>
         <nav className="topnav">
           <div className="topnav-inner">
@@ -26,10 +28,10 @@ export default async function RootLayout({
               Hub
             </Link>
             <Link href="/" className="topnav-link">
-              Projects
+              פרויקטים
             </Link>
             <Link href="/inbox" className="topnav-link">
-              Mentions
+              תיוגים
             </Link>
             {dashboardUrl && (
               <a
@@ -38,12 +40,18 @@ export default async function RootLayout({
                 rel="noreferrer"
                 className="topnav-link topnav-external"
               >
-                Dashboard ↗
+                דשבורד ↗
               </a>
             )}
             {email && (
               <div className="topnav-user">
-                <span className="topnav-email" title={email}>
+                <span
+                  className="topnav-hint"
+                  title="לחץ ⌘K או Ctrl+K לפתיחת חיפוש"
+                >
+                  ⌘K
+                </span>
+                <span className="topnav-email" title={email} dir="ltr">
                   {email}
                 </span>
                 <form
@@ -53,7 +61,7 @@ export default async function RootLayout({
                   }}
                 >
                   <button type="submit" className="topnav-signout">
-                    Sign out
+                    יציאה
                   </button>
                 </form>
               </div>
@@ -61,6 +69,9 @@ export default async function RootLayout({
           </div>
         </nav>
         {children}
+        {/* Global overlays — mounted once, listen for their own key combos. */}
+        {email && <CommandPalette />}
+        <KeyboardHelp />
       </body>
     </html>
   );

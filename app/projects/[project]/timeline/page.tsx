@@ -139,7 +139,7 @@ export default async function ProjectTimelinePage({
           <h1>{projectName} · Timeline</h1>
           <div className="subtitle">
             <Link href={`/projects/${encodeURIComponent(projectName)}`}>
-              ← {projectName} overview
+              → {projectName} overview
             </Link>
             {commentsData && totalComments > comments.length && (
               <> · Showing latest {comments.length} of {totalComments} comments</>
@@ -243,7 +243,7 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
               target="_blank"
               rel="noreferrer"
             >
-              Open in dashboard →
+              Open in dashboard ←
             </a>
           )}
         </div>
@@ -288,7 +288,7 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
             target="_blank"
             rel="noreferrer"
           >
-            Open in dashboard →
+            Open in dashboard ←
           </a>
         )}
       </div>

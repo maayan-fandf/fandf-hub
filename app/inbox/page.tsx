@@ -115,7 +115,7 @@ function MentionCard({ m }: { m: MentionItem }) {
         <ResolveButton commentId={resolveTarget} resolved={m.resolved} />
         {m.deep_link && (
           <a href={m.deep_link} target="_blank" rel="noreferrer">
-            Open in dashboard →
+            Open in dashboard ←
           </a>
         )}
       </div>

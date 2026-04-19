@@ -58,7 +58,7 @@ export default async function ProjectOverviewPage({
         <div>
           <h1>{projectName}</h1>
           <div className="subtitle">
-            <Link href="/">← All projects</Link>
+            <Link href="/">→ All projects</Link>
           </div>
         </div>
         <CreateTaskDrawer project={projectName} />
@@ -86,7 +86,7 @@ export default async function ProjectOverviewPage({
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/tasks`}
             >
-              Open board →
+              Open board ←
             </Link>
           </div>
           <TasksPreview tasks={tasks} today={tasksData?.today ?? today()} />
@@ -99,7 +99,7 @@ export default async function ProjectOverviewPage({
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/timeline`}
             >
-              Open timeline →
+              Open timeline ←
             </Link>
           </div>
           <CommentsPreview comments={comments} />
@@ -114,7 +114,7 @@ export default async function ProjectOverviewPage({
           <div className="section-head">
             <h2>Your mentions on this project</h2>
             <Link className="section-link" href="/inbox">
-              Full inbox →
+              Full inbox ←
             </Link>
           </div>
           <MentionsPreview mentions={myMentionsOnProject} />
@@ -189,7 +189,7 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
               target="_blank"
               rel="noreferrer"
             >
-              Open in dashboard →
+              Open in dashboard ←
             </a>
           )}
         </li>
@@ -229,7 +229,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
               target="_blank"
               rel="noreferrer"
             >
-              Open in dashboard →
+              Open in dashboard ←
             </a>
           )}
         </li>
