@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getMyMentions, type MentionItem } from "@/lib/appsScript";
 import InboxFilterBar from "@/components/InboxFilterBar";
+import ResolveButton from "@/components/ResolveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,10 @@ export default async function InboxPage({
 }
 
 function MentionCard({ m }: { m: MentionItem }) {
+  // Resolve targets the thread root — only top-level comments can be
+  // resolved on the Apps Script side. Falls back to comment_id for API
+  // responses that don't yet include thread_root_id.
+  const resolveTarget = m.thread_root_id || m.parent_id || m.comment_id;
   return (
     <li className={`mention-card ${m.resolved ? "is-resolved" : ""}`}>
       <div className="mention-head">
@@ -100,18 +105,18 @@ function MentionCard({ m }: { m: MentionItem }) {
         <span className="mention-time" title={m.timestamp}>
           {formatRelative(m.timestamp)}
         </span>
-        {m.resolved && <span className="mention-resolved">resolved</span>}
       </div>
       <div className="mention-body">
         {truncate(m.body, 400)}
       </div>
-      {m.deep_link && (
-        <div className="mention-actions">
+      <div className="mention-actions">
+        <ResolveButton commentId={resolveTarget} resolved={m.resolved} />
+        {m.deep_link && (
           <a href={m.deep_link} target="_blank" rel="noreferrer">
             Open in dashboard →
           </a>
-        </div>
-      )}
+        )}
+      </div>
     </li>
   );
 }

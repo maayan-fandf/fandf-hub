@@ -180,10 +180,22 @@ export type MentionItem = {
   project: string;
   anchor: string;
   parent_id: string;
+  /**
+   * ID of the thread root — same as comment_id when this mention lives on a
+   * top-level comment, or the parent when the mention is on a reply. Use this
+   * as the target when resolving (only top-level threads are resolvable).
+   * Falls back to comment_id for older API responses that don't send it.
+   */
+  thread_root_id?: string;
   author_email: string;
   author_name: string;
   body: string;
   timestamp: string; // ISO
+  /**
+   * Resolved state of the thread root (not just this row). The API side now
+   * propagates this so a reply-mention disappears from the inbox when its
+   * parent thread is resolved.
+   */
   resolved: boolean;
   deep_link: string;
 };
@@ -260,4 +272,21 @@ export function setTaskDue(args: {
   due: string; // YYYY-MM-DD, or "" to clear
 }): Promise<SetDueResult> {
   return postApi<SetDueResult>("setTaskDue", args);
+}
+
+export type ResolveCommentResult = {
+  ok: boolean;
+  comment_id: string;
+  resolved: boolean;
+};
+
+export function resolveComment(args: {
+  commentId: string;
+  resolved: boolean;
+}): Promise<ResolveCommentResult> {
+  // Apps Script coerces everything to string; pass "true"/"false" explicitly.
+  return postApi<ResolveCommentResult>("resolveComment", {
+    commentId: args.commentId,
+    resolved: args.resolved ? "true" : "false",
+  });
 }

@@ -6,6 +6,7 @@ import {
   type CommentItem,
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
+import ResolveButton from "@/components/ResolveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -206,7 +207,6 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           {c.reply_count > 0 && (
             <span className="chip chip-muted">{c.reply_count} replies</span>
           )}
-          {c.resolved && <span className="chip chip-done">resolved</span>}
           <span className="time" title={c.timestamp}>
             {formatRelative(c.timestamp)}
           </span>
@@ -227,16 +227,22 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
             ))}
           </div>
         )}
-        {c.deep_link && (
-          <a
-            className="compact-link"
-            href={c.deep_link}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open in dashboard →
-          </a>
-        )}
+        <div className="timeline-actions">
+          {/* Only top-level comments are resolvable on the Apps Script side. */}
+          {!c.parent_id && (
+            <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+          )}
+          {c.deep_link && (
+            <a
+              className="compact-link"
+              href={c.deep_link}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open in dashboard →
+            </a>
+          )}
+        </div>
       </div>
     </li>
   );
