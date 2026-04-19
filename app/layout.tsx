@@ -4,6 +4,7 @@ import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
+import NavAdminLink from "@/components/NavAdminLink";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default async function RootLayout({
               תיוגים
               {email && <NavMentionBadge />}
             </Link>
+            {email && <NavAdminLink />}
             {dashboardUrl && (
               <a
                 href={dashboardUrl}

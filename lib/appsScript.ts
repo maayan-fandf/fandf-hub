@@ -389,3 +389,43 @@ export type SearchResponse = {
 export function searchContent(q: string, limit = 30): Promise<SearchResponse> {
   return callApi<SearchResponse>("search", { q, limit: String(limit) });
 }
+
+/* ─── Admin: names to emails ──────────────────────────────────────── */
+
+export type NameEmailRow = { full_name: string; email: string };
+export type NamesToEmailsList = { rows: NameEmailRow[] };
+
+export function adminListNamesToEmails(): Promise<NamesToEmailsList> {
+  return callApi<NamesToEmailsList>("adminListNamesToEmails");
+}
+
+export type UpsertNameToEmailResult = {
+  ok: boolean;
+  created?: boolean;
+  updated?: boolean;
+  full_name: string;
+  email: string;
+};
+
+export function adminUpsertNameToEmail(args: {
+  fullName: string;
+  email: string;
+}): Promise<UpsertNameToEmailResult> {
+  return postApi<UpsertNameToEmailResult>("adminUpsertNameToEmail", {
+    fullName: args.fullName,
+    email: args.email,
+  });
+}
+
+export type DeleteNameToEmailResult = {
+  ok: boolean;
+  deleted: boolean;
+  full_name?: string;
+  removed_rows?: number;
+};
+
+export function adminDeleteNameToEmail(
+  fullName: string,
+): Promise<DeleteNameToEmailResult> {
+  return postApi<DeleteNameToEmailResult>("adminDeleteNameToEmail", { fullName });
+}
