@@ -319,32 +319,52 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
   }
   return (
     <ul className="compact-list">
-      {top.map((m) => (
-        <li
-          key={m.comment_id}
-          className={`compact-comment ${m.resolved ? "is-resolved" : ""}`}
-        >
-          <div className="compact-comment-head">
-            <Avatar name={m.author_email} title={m.author_name || m.author_email} size={22} />
-            <span className="author">{m.author_name || m.author_email}</span>
-            <span className="time" title={m.timestamp}>
-              {formatRelative(m.timestamp)}
-            </span>
-            {m.resolved && <span className="chip chip-done">✅ נסגר</span>}
-          </div>
-          <div className="compact-comment-body">{truncate(m.body, 200)}</div>
-          {m.deep_link && (
-            <a
-              className="compact-link"
-              href={m.deep_link}
-              target="_blank"
-              rel="noreferrer"
-            >
-              פתח בדשבורד ←
-            </a>
-          )}
-        </li>
-      ))}
+      {top.map((m) => {
+        // Resolve/delete target the thread root — only top-level comments
+        // are resolvable/deletable. Falls back to comment_id for older API
+        // responses that don't include thread_root_id.
+        const actionTarget =
+          m.thread_root_id || m.parent_id || m.comment_id;
+        return (
+          <li
+            key={m.comment_id}
+            className={`compact-comment ${m.resolved ? "is-resolved" : ""}`}
+          >
+            <div className="compact-comment-head">
+              <Avatar
+                name={m.author_email}
+                title={m.author_name || m.author_email}
+                size={22}
+              />
+              <span className="author">
+                {m.author_name || m.author_email}
+              </span>
+              <span className="time" title={m.timestamp}>
+                {formatRelative(m.timestamp)}
+              </span>
+            </div>
+            <div className="compact-comment-body">{truncate(m.body, 200)}</div>
+            <div className="compact-comment-actions">
+              <ResolveButton commentId={actionTarget} resolved={m.resolved} />
+              <DeleteButton
+                commentId={actionTarget}
+                itemLabel="את התיוג"
+                minimal
+              />
+              {m.deep_link && (
+                <a
+                  className="compact-link"
+                  href={m.deep_link}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  פתח בדשבורד ←
+                </a>
+              )}
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
