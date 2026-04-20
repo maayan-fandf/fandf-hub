@@ -257,6 +257,32 @@ a:hover {
   font-size: 0.9rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-chat:hover {
+  background: var(--surface-hover, var(--surface));
+  border-color: var(--primary, var(--fg));
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);

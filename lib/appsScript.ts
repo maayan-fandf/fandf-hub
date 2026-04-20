@@ -120,6 +120,7 @@ async function postApi<T>(
 export type Project = {
   name: string;
   company: string; // "" when the Keys tab has no company for this project
+  chatSpaceUrl: string; // "" when no Chat webhook is configured for the project
 };
 
 export type MyProjects = {
@@ -130,11 +131,15 @@ export type MyProjects = {
 
 /**
  * Raw shape the Apps Script hub API might return. The old API (pre-company)
- * returns `projects: string[]`; the new one returns `projects: Project[]`.
- * We normalize at the boundary so callers only ever see `Project[]`.
+ * returns `projects: string[]`; newer versions return object entries with
+ * snake_case fields. We normalize at the boundary so callers only ever see
+ * the camelCase `Project` shape.
  */
 type MyProjectsRaw = {
-  projects: (string | Project)[];
+  projects: (
+    | string
+    | { name: string; company?: string; chat_space_url?: string }
+  )[];
   isAdmin: boolean;
   email: string;
 };
@@ -166,7 +171,13 @@ export type ProjectTasks = {
 export async function getMyProjects(): Promise<MyProjects> {
   const raw = await callApi<MyProjectsRaw>("myProjects");
   const projects: Project[] = (raw.projects ?? []).map((p) =>
-    typeof p === "string" ? { name: p, company: "" } : { name: p.name, company: p.company ?? "" },
+    typeof p === "string"
+      ? { name: p, company: "", chatSpaceUrl: "" }
+      : {
+          name: p.name,
+          company: p.company ?? "",
+          chatSpaceUrl: p.chat_space_url ?? "",
+        },
   );
   return { projects, isAdmin: raw.isAdmin, email: raw.email };
 }

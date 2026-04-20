@@ -43,8 +43,11 @@ export default async function ProjectOverviewPage({
   const projectsData =
     projectsRes.status === "fulfilled" ? projectsRes.value : null;
 
-  const companyForDashboard =
-    projectsData?.projects.find((p) => p.name === projectName)?.company ?? "";
+  const projectMeta = projectsData?.projects.find(
+    (p) => p.name === projectName,
+  );
+  const companyForDashboard = projectMeta?.company ?? "";
+  const chatSpaceUrl = projectMeta?.chatSpaceUrl ?? "";
   const userEmail = projectsData?.email ?? "";
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
   // `authuser` hints Google to load the iframe under *this* account if the
@@ -88,7 +91,20 @@ export default async function ProjectOverviewPage({
             <Link href="/">→ כל הפרויקטים</Link>
           </div>
         </div>
-        <CreateTaskDrawer project={projectName} />
+        <div className="header-actions">
+          {chatSpaceUrl && (
+            <a
+              className="btn-chat"
+              href={chatSpaceUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="פתח את שיחת הפרויקט ב-Google Chat"
+            >
+              💬 פתח בצ׳אט
+            </a>
+          )}
+          <CreateTaskDrawer project={projectName} />
+        </div>
       </header>
 
       {firstError && (
