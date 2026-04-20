@@ -203,8 +203,11 @@ export default async function ProjectTimelinePage({
 
 function CommentRow({ entry }: { entry: CommentEntry }) {
   const c = entry.comment;
+  const isReply = !!c.parent_id;
   return (
-    <li className={`timeline-entry ${c.resolved ? "is-resolved" : ""}`}>
+    <li
+      className={`timeline-entry ${c.resolved ? "is-resolved" : ""} ${isReply ? "is-reply" : ""}`}
+    >
       <div className="timeline-rail">
         <span className="timeline-dot timeline-dot-comment" aria-hidden />
       </div>

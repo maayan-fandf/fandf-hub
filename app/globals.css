@@ -1161,11 +1161,12 @@ a.section-link:hover {
 
 /* Compact task card */
 .compact-task {
-  padding: 0.6rem 0.7rem;
+  padding: 0.7rem 0.85rem;
   border: 1px solid var(--border);
-  border-inline-start: 3px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  border-inline-start: 4px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .compact-task.overdue {
@@ -1176,11 +1177,32 @@ a.section-link:hover {
   border-inline-start-color: var(--due-today);
 }
 
-/* Reply tasks — indent to signal the thread relationship with the
-   parent task above. Dashed left edge + ↪ arrow in the title. */
+/* Top-level tasks get a bolder title so they read as "primary" when
+   a child reply is sitting beneath them. */
+.compact-task:not(.is-reply) .compact-task-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* Reply tasks — visually nested: indent, softer background, smaller
+   font, no shadow, dashed start-edge. Combined with the ↪ arrow +
+   parent grouping, the hierarchy reads at a glance. */
 .compact-task.is-reply {
-  margin-inline-start: 1.5rem;
+  margin-inline-start: 1.6rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface-soft);
   border-inline-start-style: dashed;
+  border-inline-start-width: 3px;
+  box-shadow: none;
+}
+
+.compact-task.is-reply .compact-task-title {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.compact-task.is-reply .compact-task-title a {
+  color: inherit;
 }
 
 .compact-task-reply-arrow {
@@ -1339,6 +1361,22 @@ a.section-link:hover {
 
 .timeline-entry.is-resolved .timeline-card {
   opacity: 0.6;
+}
+
+/* Reply entries in the timeline — indent + softer card. Keeps the
+   thread visually attached to its parent in the rail above. */
+.timeline-entry.is-reply {
+  padding-inline-start: 1.75rem;
+}
+
+.timeline-entry.is-reply .timeline-card {
+  background: var(--surface-soft);
+  border-style: dashed;
+  font-size: 0.9em;
+}
+
+.timeline-entry.is-reply .timeline-body {
+  color: var(--muted);
 }
 
 .timeline-rail {
