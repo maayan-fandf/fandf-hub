@@ -1251,6 +1251,19 @@ a.section-link:hover {
   font-size: 0.8rem;
 }
 
+.compact-comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.55rem;
+}
+
+.compact-comment-actions .compact-link {
+  margin-top: 0;
+  margin-inline-start: auto;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

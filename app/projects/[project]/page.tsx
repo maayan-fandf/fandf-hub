@@ -11,6 +11,8 @@ import {
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
+import ResolveButton from "@/components/ResolveButton";
+import DeleteButton from "@/components/DeleteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -280,19 +282,26 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
             {c.reply_count > 0 && (
               <span className="chip chip-muted">💬 {c.reply_count}</span>
             )}
-            {c.resolved && <span className="chip chip-done">✅ נסגר</span>}
           </div>
           <div className="compact-comment-body">{truncate(c.body, 220)}</div>
-          {c.deep_link && (
-            <a
-              className="compact-link"
-              href={c.deep_link}
-              target="_blank"
-              rel="noreferrer"
-            >
-              פתח בדשבורד ←
-            </a>
-          )}
+          <div className="compact-comment-actions">
+            <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+            <DeleteButton
+              commentId={c.comment_id}
+              itemLabel="את ההערה"
+              minimal
+            />
+            {c.deep_link && (
+              <a
+                className="compact-link"
+                href={c.deep_link}
+                target="_blank"
+                rel="noreferrer"
+              >
+                פתח בדשבורד ←
+              </a>
+            )}
+          </div>
         </li>
       ))}
     </ul>
