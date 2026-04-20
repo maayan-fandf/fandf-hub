@@ -813,6 +813,49 @@ a:hover {
   margin-top: 0.5rem;
 }
 
+.resolve-container {
+  display: flex;
+  justify-content: center;
+  padding-top: 5rem;
+}
+
+.resolve-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.25rem 2.5rem;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.resolve-card h1 {
+  margin: 0.5rem 0;
+  font-size: 1.6rem;
+}
+
+.resolve-card .subtitle {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.resolve-card .subtitle.error-detail {
+  color: var(--danger, #c0392b);
+  font-family: monospace;
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.resolve-icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.resolve-actions {
+  margin-top: 1.5rem;
+}
+
 .signin-btn:hover {
   border-color: var(--accent);
   filter: none;
