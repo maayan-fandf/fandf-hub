@@ -1,18 +1,31 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getMyProjects, type Project } from "@/lib/appsScript";
+import {
+  getMyProjects,
+  getMyCounts,
+  type Project,
+  type MyCountsPerProject,
+} from "@/lib/appsScript";
 import { companyColorSlot } from "@/lib/colors";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  let data;
-  let error: string | null = null;
-  try {
-    data = await getMyProjects();
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-  }
+  // Projects + counts in parallel — both one Apps Script call each, no shared
+  // computation so no point in serializing them.
+  const [projectsRes, countsRes] = await Promise.allSettled([
+    getMyProjects(),
+    getMyCounts(),
+  ]);
+
+  const data = projectsRes.status === "fulfilled" ? projectsRes.value : null;
+  const counts = countsRes.status === "fulfilled" ? countsRes.value : null;
+  const error =
+    projectsRes.status === "rejected"
+      ? projectsRes.reason instanceof Error
+        ? projectsRes.reason.message
+        : String(projectsRes.reason)
+      : null;
 
   // Authenticated but not authorized: no projects and not admin → send to /unauthorized.
   if (data && !data.isAdmin && data.projects.length === 0) {
@@ -20,6 +33,8 @@ export default async function HomePage() {
   }
 
   const grouped = data ? groupByCompany(data.projects) : [];
+  const byProject = counts?.byProject ?? {};
+  const totals = counts?.total ?? { openTasks: 0, openMentions: 0 };
 
   return (
     <main className="container">
@@ -58,6 +73,21 @@ export default async function HomePage() {
         </div>
       )}
 
+      {counts && (
+        <div className="stats-grid home-stats">
+          <StatTile
+            variant="tasks"
+            label="📋 משימות פתוחות"
+            value={totals.openTasks}
+          />
+          <StatTile
+            variant="mentions"
+            label="🏷️ תיוגים פתוחים"
+            value={totals.openMentions}
+          />
+        </div>
+      )}
+
       {grouped.length > 0 && (
         <div className="company-groups">
           {grouped.map((g) => {
@@ -78,13 +108,17 @@ export default async function HomePage() {
                   </span>
                 </summary>
                 <ul className="project-list">
-                  {g.projects.map((p) => (
-                    <li key={p.name}>
-                      <Link href={`/projects/${encodeURIComponent(p.name)}`}>
-                        {p.name}
-                      </Link>
-                    </li>
-                  ))}
+                  {g.projects.map((p) => {
+                    const pc = byProject[p.name];
+                    return (
+                      <li key={p.name}>
+                        <Link href={`/projects/${encodeURIComponent(p.name)}`}>
+                          <span className="project-pill-name">{p.name}</span>
+                          <ProjectPillBadges counts={pc} />
+                        </Link>
+                      </li>
+                    );
+                  })}
                 </ul>
               </details>
             );
@@ -92,6 +126,62 @@ export default async function HomePage() {
         </div>
       )}
     </main>
+  );
+}
+
+/* ─── Subcomponents ──────────────────────────────────────────────── */
+
+function StatTile({
+  variant,
+  label,
+  value,
+}: {
+  variant: "tasks" | "mentions";
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className={`stat-tile stat-tile-${variant}`}>
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * Per-project badges shown at the end of each pill. Only rendered when
+ * there's something waiting for the user on that project — zero counts
+ * keep the pill visually clean.
+ */
+function ProjectPillBadges({
+  counts,
+}: {
+  counts: MyCountsPerProject | undefined;
+}) {
+  if (!counts) return null;
+  const { openTasks, openMentions } = counts;
+  if (openTasks === 0 && openMentions === 0) return null;
+  return (
+    <span className="pill-badges">
+      {openTasks > 0 && (
+        <span
+          className="pill-badge pill-badge-tasks"
+          title={`${openTasks} משימות פתוחות עבורך`}
+          aria-label={`${openTasks} משימות פתוחות`}
+        >
+          📋 {openTasks}
+        </span>
+      )}
+      {openMentions > 0 && (
+        <span
+          className="pill-badge pill-badge-mentions"
+          title={`${openMentions} תיוגים פתוחים עבורך`}
+          aria-label={`${openMentions} תיוגים פתוחים`}
+        >
+          🏷️ {openMentions}
+        </span>
+      )}
+    </span>
   );
 }
 

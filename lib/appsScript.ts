@@ -210,6 +210,22 @@ export function getMyMentions(): Promise<MyMentions> {
   return callApi<MyMentions>("myMentions");
 }
 
+export type MyCountsPerProject = {
+  openTasks: number;
+  openMentions: number;
+};
+
+export type MyCounts = {
+  me: { email: string; isAdmin: boolean };
+  total: { openTasks: number; openMentions: number };
+  /** Map of project-name → counts. Only projects with >0 of either are included. */
+  byProject: Record<string, MyCountsPerProject>;
+};
+
+export function getMyCounts(): Promise<MyCounts> {
+  return callApi<MyCounts>("myCounts");
+}
+
 export type CommentItem = {
   comment_id: string;
   project: string;

@@ -276,7 +276,9 @@ a:hover {
 
 .project-list a {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   padding: 1rem 1rem 1rem 1rem;
   padding-inline-start: 1.25rem;
   background: var(--surface);
@@ -286,6 +288,64 @@ a:hover {
   font-weight: 600;
   transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
   box-shadow: var(--shadow-sm);
+}
+
+.project-pill-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Badges at the end of each pill — 📋 N / 🏷️ N when the user has open
+   items on that project. Kept small + colored so the pill still reads
+   "project X, oh and there's 2 tasks waiting" at a glance. */
+.pill-badges {
+  display: inline-flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+  padding: 0.12em 0.55em;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
+.pill-badge-tasks {
+  background: var(--violet);
+  color: #fff;
+}
+
+.pill-badge-mentions {
+  background: var(--pink);
+  color: #fff;
+}
+
+/* Compact version of the stat-grid for the home page (less vertical
+   weight than the project-overview version). */
+.home-stats {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 1.25rem;
+}
+
+.home-stats .stat-tile {
+  padding: 0.85rem 1rem;
+}
+
+.home-stats .stat-value {
+  font-size: 1.75rem;
+}
+
+.home-stats .stat-label {
+  font-size: 0.85rem;
 }
 
 /* Color-coded left edge from the parent company group's --co-solid. */
