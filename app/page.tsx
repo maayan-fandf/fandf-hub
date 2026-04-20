@@ -36,6 +36,23 @@ export default async function HomePage() {
   const byProject = counts?.byProject ?? {};
   const totals = counts?.total ?? { openTasks: 0, openMentions: 0 };
 
+  // Company-level aggregates. Sum per-project counts for each company
+  // group so we can render a "6 tasks + 2 mentions" summary on the
+  // collapsed company bar.
+  const byCompany = new Map<string, MyCountsPerProject>();
+  for (const g of grouped) {
+    let openTasks = 0;
+    let openMentions = 0;
+    for (const p of g.projects) {
+      const pc = byProject[p.name];
+      if (pc) {
+        openTasks += pc.openTasks;
+        openMentions += pc.openMentions;
+      }
+    }
+    byCompany.set(g.company || "__ungrouped", { openTasks, openMentions });
+  }
+
   return (
     <main className="container">
       <header className="page-header">
@@ -102,6 +119,9 @@ export default async function HomePage() {
                   <span className="company-group-name">
                     {g.company || "ללא חברה"}
                   </span>
+                  <ProjectPillBadges
+                    counts={byCompany.get(g.company || "__ungrouped")}
+                  />
                   <span className="company-group-count">{g.projects.length}</span>
                   <span className="company-group-chevron" aria-hidden>
                     ▸
