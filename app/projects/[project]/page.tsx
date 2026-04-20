@@ -13,6 +13,7 @@ import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import ResolveButton from "@/components/ResolveButton";
 import DeleteButton from "@/components/DeleteButton";
+import EditDrawer from "@/components/EditDrawer";
 
 export const dynamic = "force-dynamic";
 
@@ -282,10 +283,23 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
             {c.reply_count > 0 && (
               <span className="chip chip-muted">💬 {c.reply_count}</span>
             )}
+            {c.edited_at && (
+              <span
+                className="chip chip-muted"
+                title={`נערך ${formatRelative(c.edited_at)}`}
+              >
+                📝 נערך
+              </span>
+            )}
           </div>
           <div className="compact-comment-body">{truncate(c.body, 220)}</div>
           <div className="compact-comment-actions">
             <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+            <EditDrawer
+              commentId={c.comment_id}
+              initialBody={c.body}
+              locked={c.resolved}
+            />
             <DeleteButton
               commentId={c.comment_id}
               itemLabel="את ההערה"
@@ -339,6 +353,14 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
               <span className="author">
                 {m.author_name || m.author_email}
               </span>
+              {m.edited_at && (
+                <span
+                  className="chip chip-muted"
+                  title={`נערך ${formatRelative(m.edited_at)}`}
+                >
+                  📝 נערך
+                </span>
+              )}
               <span className="time" title={m.timestamp}>
                 {formatRelative(m.timestamp)}
               </span>
@@ -346,6 +368,11 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
             <div className="compact-comment-body">{truncate(m.body, 200)}</div>
             <div className="compact-comment-actions">
               <ResolveButton commentId={actionTarget} resolved={m.resolved} />
+              <EditDrawer
+                commentId={m.comment_id}
+                initialBody={m.body}
+                locked={m.resolved}
+              />
               <DeleteButton
                 commentId={actionTarget}
                 itemLabel="את התיוג"

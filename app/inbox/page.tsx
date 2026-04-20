@@ -4,6 +4,7 @@ import InboxFilterBar from "@/components/InboxFilterBar";
 import ResolveButton from "@/components/ResolveButton";
 import ReplyDrawer from "@/components/ReplyDrawer";
 import DeleteButton from "@/components/DeleteButton";
+import EditDrawer from "@/components/EditDrawer";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
@@ -116,6 +117,14 @@ function MentionCard({ m }: { m: MentionItem }) {
         <span className="mention-author">
           {m.author_name || m.author_email}
         </span>
+        {m.edited_at && (
+          <span
+            className="chip chip-muted"
+            title={`נערך ${formatRelative(m.edited_at)}`}
+          >
+            📝 נערך
+          </span>
+        )}
         <span className="mention-time" title={m.timestamp}>
           {formatRelative(m.timestamp)}
         </span>
@@ -126,6 +135,11 @@ function MentionCard({ m }: { m: MentionItem }) {
       <div className="mention-actions">
         <ReplyDrawer parentCommentId={resolveTarget} />
         <ResolveButton commentId={resolveTarget} resolved={m.resolved} />
+        <EditDrawer
+          commentId={m.comment_id}
+          initialBody={m.body}
+          locked={m.resolved}
+        />
         <DeleteButton commentId={resolveTarget} itemLabel="את התיוג" minimal />
         {m.deep_link && (
           <a href={m.deep_link} target="_blank" rel="noreferrer">

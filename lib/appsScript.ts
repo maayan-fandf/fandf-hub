@@ -158,6 +158,9 @@ export type TaskItem = {
   parent_id: string;
   created_at: string;
   resolved: boolean;
+  /** ISO timestamp of the last body edit on the source comment. Empty
+   *  / undefined when never edited. */
+  edited_at?: string;
   deep_link: string;
 };
 
@@ -208,6 +211,8 @@ export type MentionItem = {
    * parent thread is resolved.
    */
   resolved: boolean;
+  /** ISO timestamp of the last body edit. Empty string / undefined when never edited. */
+  edited_at?: string;
   deep_link: string;
 };
 
@@ -249,6 +254,8 @@ export type CommentItem = {
   timestamp: string;
   resolved: boolean;
   reply_count: number;
+  /** ISO timestamp of the last body edit. Empty / undefined when never edited. */
+  edited_at?: string;
   deep_link: string;
 };
 
@@ -391,6 +398,25 @@ export type DeleteCommentResult = {
 
 export function deleteComment(commentId: string): Promise<DeleteCommentResult> {
   return postApi<DeleteCommentResult>("deleteComment", { commentId });
+}
+
+export type EditCommentResult = {
+  ok: boolean;
+  noop?: boolean;
+  comment_id: string;
+  body: string;
+  edited_at: string;
+  synced_tasks?: number;
+};
+
+export function editComment(args: {
+  commentId: string;
+  body: string;
+}): Promise<EditCommentResult> {
+  return postApi<EditCommentResult>("editComment", {
+    commentId: args.commentId,
+    body: args.body,
+  });
 }
 
 export type SearchResult = {

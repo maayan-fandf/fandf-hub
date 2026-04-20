@@ -9,6 +9,7 @@ import TimelineFilterBar from "@/components/TimelineFilterBar";
 import ResolveButton from "@/components/ResolveButton";
 import ReplyDrawer from "@/components/ReplyDrawer";
 import DeleteButton from "@/components/DeleteButton";
+import EditDrawer from "@/components/EditDrawer";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
@@ -220,6 +221,14 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           {c.reply_count > 0 && (
             <span className="chip chip-muted">{c.reply_count} תגובות</span>
           )}
+          {c.edited_at && (
+            <span
+              className="chip chip-muted"
+              title={`נערך ${formatRelative(c.edited_at)}`}
+            >
+              📝 נערך
+            </span>
+          )}
           <span className="time" title={c.timestamp}>
             {formatRelative(c.timestamp)}
           </span>
@@ -242,16 +251,27 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
         )}
         <div className="timeline-actions">
           {/* Only top-level comments are resolvable / replyable / deletable
-              from the hub. Replies get a delete button only (no reply/resolve
-              since those target thread roots). */}
+              from the hub. Replies get edit + delete only (no reply/resolve
+              since those target thread roots). Edit is server-locked when
+              the thread is resolved — we pass c.resolved as the lock hint
+              for top-level; replies show the button and server handles it
+              (their own .resolved is usually false; server checks parent). */}
           {!c.parent_id ? (
             <>
               <ReplyDrawer parentCommentId={c.comment_id} />
               <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
+              <EditDrawer
+                commentId={c.comment_id}
+                initialBody={c.body}
+                locked={c.resolved}
+              />
               <DeleteButton commentId={c.comment_id} itemLabel="את ההערה" minimal />
             </>
           ) : (
-            <DeleteButton commentId={c.comment_id} itemLabel="את התגובה" minimal />
+            <>
+              <EditDrawer commentId={c.comment_id} initialBody={c.body} />
+              <DeleteButton commentId={c.comment_id} itemLabel="את התגובה" minimal />
+            </>
           )}
           {c.deep_link && (
             <a
@@ -297,6 +317,14 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
             <span className="chip chip-muted">{formatDue(t.due, today)}</span>
           )}
           {t.resolved && <span className="chip chip-done">✅ הושלם</span>}
+          {t.edited_at && (
+            <span
+              className="chip chip-muted"
+              title={`נערך ${formatRelative(t.edited_at)}`}
+            >
+              📝 נערך
+            </span>
+          )}
           <span className="time" title={t.created_at}>
             {formatRelative(t.created_at)}
           </span>
@@ -307,6 +335,11 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
         </div>
         <div className="timeline-actions">
           <ResolveButton commentId={t.comment_id} resolved={t.resolved} />
+          <EditDrawer
+            commentId={t.comment_id}
+            initialBody={t.body}
+            locked={t.resolved}
+          />
           <DeleteButton
             commentId={t.comment_id}
             itemLabel="את המשימה"
