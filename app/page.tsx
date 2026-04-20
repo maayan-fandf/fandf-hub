@@ -99,7 +99,7 @@ export default async function HomePage() {
           />
           <StatTile
             variant="mentions"
-            label="🏷️ תיוגים פתוחים"
+            label="🏷️ תיוגים שלי"
             value={totals.openMentions}
           />
         </div>
@@ -186,7 +186,7 @@ function ProjectPillBadges({
       {openTasks > 0 && (
         <span
           className="pill-badge pill-badge-tasks"
-          title={`${openTasks} משימות פתוחות עבורך`}
+          title={`${openTasks} משימות פתוחות בפרויקט`}
           aria-label={`${openTasks} משימות פתוחות`}
         >
           📋 {openTasks}
@@ -195,8 +195,8 @@ function ProjectPillBadges({
       {openMentions > 0 && (
         <span
           className="pill-badge pill-badge-mentions"
-          title={`${openMentions} תיוגים פתוחים עבורך`}
-          aria-label={`${openMentions} תיוגים פתוחים`}
+          title={`${openMentions} תיוגים שלי`}
+          aria-label={`${openMentions} תיוגים שלי`}
         >
           🏷️ {openMentions}
         </span>
