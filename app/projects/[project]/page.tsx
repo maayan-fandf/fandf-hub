@@ -178,17 +178,50 @@ export default async function ProjectOverviewPage({
 /* ─── Sections ───────────────────────────────────────────────────── */
 
 function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
-  const open = tasks.filter((t) => !t.resolved).slice(0, 6);
+  const open = tasks.filter((t) => !t.resolved);
   if (open.length === 0) {
     return <div className="empty-small">🎉 אין משימות פתוחות!</div>;
   }
+
+  // Group replies under their parent so the visual order mirrors the
+  // thread structure: [top-level] → [its reply] → [its reply] → [next
+  // top-level] ... Orphan replies (parent not in the visible window)
+  // land at the end, still marked as replies.
+  const topLevel = open.filter((t) => !t.parent_id);
+  const repliesByParent = new Map<string, TaskItem[]>();
+  for (const t of open) {
+    if (!t.parent_id) continue;
+    const list = repliesByParent.get(t.parent_id) ?? [];
+    list.push(t);
+    repliesByParent.set(t.parent_id, list);
+  }
+  const ordered: TaskItem[] = [];
+  for (const t of topLevel) {
+    ordered.push(t);
+    const replies = repliesByParent.get(t.comment_id);
+    if (replies) ordered.push(...replies);
+    repliesByParent.delete(t.comment_id);
+  }
+  // Any replies whose parent isn't in the visible set.
+  for (const replies of repliesByParent.values()) ordered.push(...replies);
+  const visible = ordered.slice(0, 6);
+
   return (
     <ul className="compact-list">
-      {open.map((t) => {
+      {visible.map((t) => {
         const state = taskState(t, today);
+        const isReply = !!t.parent_id;
         return (
-          <li key={t.comment_id + "|" + t.assignee_email} className={`compact-task ${state}`}>
+          <li
+            key={t.comment_id + "|" + t.assignee_email}
+            className={`compact-task ${state} ${isReply ? "is-reply" : ""}`}
+          >
             <div className="compact-task-title">
+              {isReply && (
+                <span className="compact-task-reply-arrow" aria-hidden>
+                  ↪{" "}
+                </span>
+              )}
               {t.deep_link ? (
                 <a href={t.deep_link} target="_blank" rel="noreferrer">
                   {truncate(t.title, 100) || "(ללא תוכן)"}

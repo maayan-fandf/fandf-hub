@@ -1107,6 +1107,19 @@ a.section-link:hover {
   border-inline-start-color: var(--due-today);
 }
 
+/* Reply tasks — indent to signal the thread relationship with the
+   parent task above. Dashed left edge + ↪ arrow in the title. */
+.compact-task.is-reply {
+  margin-inline-start: 1.5rem;
+  border-inline-start-style: dashed;
+}
+
+.compact-task-reply-arrow {
+  color: var(--muted);
+  font-weight: 700;
+  margin-inline-end: 0.2em;
+}
+
 .compact-task-title {
   font-size: 0.92rem;
   line-height: 1.35;
