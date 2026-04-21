@@ -56,6 +56,9 @@ export default async function RootLayout({
             <Link href="/" className="topnav-link">
               📂 פרויקטים
             </Link>
+            <Link href="/morning" className="topnav-link">
+              ☀️ בוקר
+            </Link>
             <Link href="/inbox" className="topnav-link topnav-link-with-badge">
               🏷️ תיוגים
               {email && <NavMentionBadge />}

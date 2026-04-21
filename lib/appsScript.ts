@@ -482,3 +482,94 @@ export function adminDeleteNameToEmail(
 ): Promise<DeleteNameToEmailResult> {
   return postApi<DeleteNameToEmailResult>("adminDeleteNameToEmail", { fullName });
 }
+
+/* ─── Morning dashboard ─────────────────────────────────────────── */
+
+export type MorningSignalKind =
+  | "pacing-variance"
+  | "project-budget"
+  | "deadline"
+  | "paused-budget";
+
+export type MorningSeverity = "severe" | "warn" | "info";
+
+export type MorningSignal = {
+  kind: MorningSignalKind;
+  severity: MorningSeverity;
+  title: string;
+  detail: string;
+  channel?: string;
+  copy?: string | null;
+  url?: string;
+  platform?: "google" | "facebook" | "";
+  key: string;
+  revisit?: boolean;
+  previouslyDismissedAt?: string;
+  previouslySnoozedUntil?: string;
+};
+
+export type MorningProject = {
+  name: string;
+  slug: string;
+  company: string;
+  startIso: string;
+  endIso: string;
+  daysTotal: number;
+  daysElapsed: number;
+  daysRemaining: number;
+  budget: number;
+  spend: number;
+  pctBudget: number;
+  pctTime: number;
+  gAdsUrl: string;
+  fbAdsUrl: string;
+  sheetTabUrl: string;
+  signals: MorningSignal[];
+  maxSeverity: number;
+};
+
+export type MorningFeed = {
+  email: string;
+  isAdmin: boolean;
+  scope: "mine" | "all";
+  generatedAt: string;
+  counts: {
+    total: number;
+    severe: number;
+    warn: number;
+    info: number;
+    clear: number;
+  };
+  projects: MorningProject[];
+};
+
+export function getMorningFeed(scope?: "mine" | "all"): Promise<MorningFeed> {
+  return callApi<MorningFeed>("morningFeed", scope ? { scope } : {});
+}
+
+export type DismissResult = {
+  ok: boolean;
+  signal_key: string;
+  snooze_until: string;
+  dismissed_at: string;
+};
+
+export function dismissMorningSignal(args: {
+  signalKey: string;
+  snoozeUntil?: string;
+  reason?: string;
+}): Promise<DismissResult> {
+  return postApi<DismissResult>("dismissMorningSignal", {
+    signal_key: args.signalKey,
+    snooze_until: args.snoozeUntil ?? "",
+    reason: args.reason ?? "",
+  });
+}
+
+export function unsnoozeMorningSignal(
+  signalKey: string,
+): Promise<{ ok: boolean; removed: boolean }> {
+  return postApi<{ ok: boolean; removed: boolean }>("unsnoozeMorningSignal", {
+    signal_key: signalKey,
+  });
+}

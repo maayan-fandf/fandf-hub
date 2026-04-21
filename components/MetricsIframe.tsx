@@ -57,6 +57,11 @@ export default function MetricsIframe({ src, projectName, expectedEmail }: Props
           // sandbox lets Apps Script JS run, talk to its own server, and
           // POST forms — same permissions as loading in a normal tab.
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+          // Cross-origin iframes need explicit allow= to use the Clipboard API.
+          // Without this, navigator.clipboard.writeText() inside the dashboard
+          // silently fails when it's embedded here — the pacing-cell copy-to-
+          // clipboard behavior only works in a standalone tab otherwise.
+          allow="clipboard-write"
         />
       </div>
 
