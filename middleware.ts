@@ -26,5 +26,7 @@ export default auth((req) => {
 export const config = {
   // Skip Next.js internals + static assets so middleware doesn't run for every
   // image/bundle. The auth handler decides what's public vs protected.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // `icon.png` is the Next.js app-router favicon convention — served as /icon.png
+  // from app/icon.png; must be public so browsers can fetch it pre-login.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png).*)"],
 };
