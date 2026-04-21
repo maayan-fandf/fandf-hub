@@ -2427,13 +2427,13 @@ a.section-link:hover {
   border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--border);
-  color: var(--ink);
+  color: var(--text);
   font-size: .9em; font-weight: 600;
   text-decoration: none;
   transition: background .12s, border-color .12s, transform .12s;
 }
-.morning-severity-chip:hover { transform: translateY(-1px); background: var(--surface-hi); }
-.morning-severity-chip.is-active { border-color: var(--ink); background: var(--surface-hi); }
+.morning-severity-chip:hover { transform: translateY(-1px); background: var(--surface-soft); }
+.morning-severity-chip.is-active { border-color: var(--text); background: var(--surface-soft); }
 .morning-severity-chip.tone-severe.is-active { border-color: #dc2626; background: #fef2f2; color: #991b1b; }
 .morning-severity-chip.tone-warn.is-active   { border-color: #d97706; background: #fffbeb; color: #92400e; }
 .morning-severity-chip.tone-clear.is-active  { border-color: #059669; background: #ecfdf5; color: #065f46; }
@@ -2450,9 +2450,9 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
 
 .morning-scope-toggle {
   font-weight: 600; text-decoration: underline;
-  color: var(--ink-soft);
+  color: var(--muted);
 }
-.morning-scope-toggle:hover { color: var(--ink); }
+.morning-scope-toggle:hover { color: var(--text); }
 
 .morning-list {
   list-style: none; padding: 0; margin: 0;
@@ -2463,7 +2463,7 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
 .morning-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   padding: 1.1em 1.25em;
   box-shadow: 0 1px 3px rgba(15,23,42,.05);
   border-inline-start: 4px solid var(--border);
@@ -2483,11 +2483,11 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
   min-width: 12em;
 }
 .morning-card-title a {
-  color: var(--ink); text-decoration: none;
+  color: var(--text); text-decoration: none;
 }
 .morning-card-title a:hover { text-decoration: underline; }
 .morning-card-company {
-  color: var(--ink-soft); font-weight: 500; font-size: .85em;
+  color: var(--muted); font-weight: 500; font-size: .85em;
   margin-inline-start: .5em;
 }
 
@@ -2500,9 +2500,9 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
   align-items: center; gap: .5em;
   font-size: .78em;
 }
-.morning-bar-label { color: var(--ink-soft); font-weight: 600; }
+.morning-bar-label { color: var(--muted); font-weight: 600; }
 .morning-bar-track {
-  background: var(--surface-alt);
+  background: var(--surface-soft);
   border-radius: 999px;
   height: .5em;
   overflow: hidden;
@@ -2511,13 +2511,13 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
 .morning-bar-fill {
   display: block;
   height: 100%;
-  background: var(--brand);
+  background: var(--accent);
   transition: width .25s ease;
 }
 .morning-bar-fill.is-over { background: #dc2626; }
 .morning-bar-val {
   font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
+  color: var(--muted);
   text-align: end;
 }
 
@@ -2531,7 +2531,7 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
   border: 1px solid var(--border);
   background: var(--surface);
   font-size: .8em; font-weight: 600;
-  text-decoration: none; color: var(--ink);
+  text-decoration: none; color: var(--text);
   transition: transform .12s, box-shadow .12s, background .12s, color .12s;
 }
 .morning-link:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(15,23,42,.12); }
@@ -2550,8 +2550,8 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
   display: flex; align-items: center; justify-content: space-between;
   gap: .75em;
   padding: .65em .85em;
-  background: var(--surface-alt);
-  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border-radius: 8px;
   border: 1px solid transparent;
 }
 .morning-signal-severe { background: #fef2f2; border-color: #fecaca; }
@@ -2568,11 +2568,11 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
 .morning-signal-sev { font-size: 1.1em; line-height: 1.2; }
 .morning-signal-body { flex: 1; }
 .morning-signal-title {
-  font-weight: 700; color: var(--ink);
+  font-weight: 700; color: var(--text);
   font-size: .92em;
 }
 .morning-signal-detail {
-  color: var(--ink-soft); font-size: .82em;
+  color: var(--muted); font-size: .82em;
   margin-top: .15em;
 }
 .morning-signal-action { flex-shrink: 0; }
@@ -2581,8 +2581,8 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
   display: inline-flex; align-items: center; gap: .3em;
   padding: .4em .9em;
   border-radius: 999px;
-  border: 1px solid var(--brand);
-  background: var(--brand);
+  border: 1px solid var(--accent);
+  background: var(--accent);
   color: #fff;
   font-size: .8em; font-weight: 600;
   cursor: pointer;
@@ -2592,9 +2592,9 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
 .morning-copy-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .morning-copy-btn.ghost {
   background: transparent;
-  color: var(--brand);
+  color: var(--accent);
 }
-.morning-copy-btn.ghost:hover { background: var(--brand); color: #fff; }
+.morning-copy-btn.ghost:hover { background: var(--accent); color: #fff; }
 
 .morning-clear {
   margin-top: 2em;
@@ -2604,13 +2604,13 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
 .morning-clear summary {
   cursor: pointer;
   font-weight: 600;
-  color: var(--ink-soft);
+  color: var(--muted);
   padding: .5em 0;
   list-style: none;
 }
 .morning-clear summary::-webkit-details-marker { display: none; }
-.morning-clear[open] summary { color: var(--ink); }
-.morning-clear summary:hover { color: var(--ink); }
+.morning-clear[open] summary { color: var(--text); }
+.morning-clear summary:hover { color: var(--text); }
 
 /* Dismiss button + snooze menu on morning signals. */
 .morning-signal-actions {
@@ -2627,7 +2627,7 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
   padding: .4em .85em;
   border: 1px solid var(--border);
   background: var(--surface);
-  color: var(--ink);
+  color: var(--text);
   border-end-end-radius: 0;
   border-start-end-radius: 0;
   font-size: .8em; font-weight: 600;
@@ -2642,21 +2642,21 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
   border: 1px solid var(--border);
   border-inline-start: none;
   background: var(--surface);
-  color: var(--ink-soft);
+  color: var(--muted);
   border-end-start-radius: 0;
   border-start-start-radius: 0;
   font-size: .95em;
   cursor: pointer;
   font-family: inherit;
 }
-.morning-dismiss-more:hover:not(:disabled) { background: var(--surface-hi); color: var(--ink); }
+.morning-dismiss-more:hover:not(:disabled) { background: var(--surface-soft); color: var(--text); }
 .morning-dismiss-menu {
   position: absolute;
   top: calc(100% + .3em);
   inset-inline-end: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   box-shadow: 0 8px 24px rgba(15,23,42,.15);
   padding: .35em;
   min-width: 10em;
@@ -2672,12 +2672,12 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
   display: block; width: 100%;
   padding: .5em .75em;
   border: 0; background: transparent;
-  color: var(--ink); text-align: start;
+  color: var(--text); text-align: start;
   font-family: inherit; font-size: .88em; font-weight: 500;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   cursor: pointer;
 }
-.morning-dismiss-menu-item:hover { background: var(--surface-hi); }
+.morning-dismiss-menu-item:hover { background: var(--surface-soft); }
 .morning-dismiss-menu-unsnooze { color: #b45309; }
 .morning-dismiss-menu-unsnooze:hover { background: #fef3c7; color: #92400e; }
 .morning-dismiss-menu-sep {
