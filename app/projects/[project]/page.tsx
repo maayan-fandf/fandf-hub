@@ -4,9 +4,11 @@ import {
   getProjectComments,
   getMyMentions,
   getMyProjects,
+  getMorningFeed,
   type TaskItem,
   type CommentItem,
   type MentionItem,
+  type MorningProject,
 } from "@/lib/appsScript";
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 import Avatar from "@/components/Avatar";
@@ -14,6 +16,7 @@ import MetricsIframe from "@/components/MetricsIframe";
 import ResolveButton from "@/components/ResolveButton";
 import DeleteButton from "@/components/DeleteButton";
 import EditDrawer from "@/components/EditDrawer";
+import MorningSignalRow from "@/components/MorningSignalRow";
 
 export const dynamic = "force-dynamic";
 
@@ -31,12 +34,14 @@ export default async function ProjectOverviewPage({
   // so if the user is unauthorized we'll get consistent errors. getMyProjects
   // is added so we can resolve the project's company for the dashboard iframe
   // filter (needs ?company=X&project=Y).
-  const [tasksRes, commentsRes, mentionsRes, projectsRes] = await Promise.allSettled([
-    getProjectTasks(projectName),
-    getProjectComments(projectName, 15),
-    getMyMentions(),
-    getMyProjects(),
-  ]);
+  const [tasksRes, commentsRes, mentionsRes, projectsRes, alertsRes] =
+    await Promise.allSettled([
+      getProjectTasks(projectName),
+      getProjectComments(projectName, 15),
+      getMyMentions(),
+      getMyProjects(),
+      getMorningFeed({ project: projectName }),
+    ]);
 
   const tasksData = tasksRes.status === "fulfilled" ? tasksRes.value : null;
   const commentsData =
@@ -45,6 +50,10 @@ export default async function ProjectOverviewPage({
     mentionsRes.status === "fulfilled" ? mentionsRes.value : null;
   const projectsData =
     projectsRes.status === "fulfilled" ? projectsRes.value : null;
+  const alertsData =
+    alertsRes.status === "fulfilled" ? alertsRes.value : null;
+  const projectAlerts: MorningProject | null =
+    alertsData?.projects[0] ?? null;
 
   const projectMeta = projectsData?.projects.find(
     (p) => p.name === projectName,
@@ -166,6 +175,30 @@ export default async function ProjectOverviewPage({
           <MentionsPreview mentions={myMentionsOnProject} />
         </section>
       </div>
+
+      {/* Alerts section — pacing/budget/deadline/paused-budget signals for
+          this project only. Same dismiss/snooze/revisit behavior as the
+          morning page; dismissals are team-wide. */}
+      {projectAlerts && projectAlerts.signals.length > 0 && (
+        <section className="project-section">
+          <div className="section-head">
+            <h2>
+              🔔 התראות
+              <span className="section-count">
+                {projectAlerts.signals.length}
+              </span>
+            </h2>
+            <Link className="section-link" href="/morning">
+              כל ההתראות ←
+            </Link>
+          </div>
+          <ul className="morning-signal-list">
+            {projectAlerts.signals.map((s, i) => (
+              <MorningSignalRow key={i} signal={s} />
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section

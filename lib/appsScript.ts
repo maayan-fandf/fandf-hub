@@ -543,8 +543,13 @@ export type MorningFeed = {
   projects: MorningProject[];
 };
 
-export function getMorningFeed(scope?: "mine" | "all"): Promise<MorningFeed> {
-  return callApi<MorningFeed>("morningFeed", scope ? { scope } : {});
+export function getMorningFeed(
+  opts: { scope?: "mine" | "all"; project?: string } = {},
+): Promise<MorningFeed> {
+  const params: Record<string, string> = {};
+  if (opts.scope) params.scope = opts.scope;
+  if (opts.project) params.project = opts.project;
+  return callApi<MorningFeed>("morningFeed", params);
 }
 
 export type DismissResult = {

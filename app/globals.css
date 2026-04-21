@@ -2694,3 +2694,22 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
   font-size: .72em; font-weight: 600;
 }
 html[data-theme="dark"] .morning-signal-revisit { background: #451a0360; color: #fde68a; }
+
+.morning-link-hub     { color: #7c3aed; border-color: #ddd6fe; }
+.morning-link-hub:hover { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+
+/* Small count chip next to a section heading, e.g. "🔔 התראות (3)". */
+.section-head h2 .section-count {
+  display: inline-block;
+  margin-inline-start: .5em;
+  padding: .05em .55em;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: .62em;
+  font-weight: 700;
+  vertical-align: middle;
+}
+html[data-theme="dark"] .section-head h2 .section-count {
+  background: #451a0360; color: #fde68a;
+}
