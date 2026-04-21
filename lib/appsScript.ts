@@ -126,6 +126,7 @@ export type Project = {
 export type MyProjects = {
   projects: Project[];
   isAdmin: boolean;
+  isInternal: boolean;
   email: string;
 };
 
@@ -141,6 +142,7 @@ type MyProjectsRaw = {
     | { name: string; company?: string; chat_space_url?: string }
   )[];
   isAdmin: boolean;
+  isInternal?: boolean;
   email: string;
 };
 
@@ -182,7 +184,12 @@ export async function getMyProjects(): Promise<MyProjects> {
           chatSpaceUrl: p.chat_space_url ?? "",
         },
   );
-  return { projects, isAdmin: raw.isAdmin, email: raw.email };
+  return {
+    projects,
+    isAdmin: raw.isAdmin,
+    isInternal: !!raw.isInternal,
+    email: raw.email,
+  };
 }
 
 export function getProjectTasks(project: string): Promise<ProjectTasks> {
@@ -490,6 +497,8 @@ export type MorningSignalKind =
   | "rising-cpl"
   | "high-cpl"
   | "high-cps"
+  | "pixel-tracking-low"
+  | "pixel-overcount"
   | "project-budget"
   | "deadline"
   | "paused-budget";
@@ -534,7 +543,8 @@ export type MorningProject = {
 export type MorningFeed = {
   email: string;
   isAdmin: boolean;
-  scope: "mine" | "all";
+  isInternal: boolean;
+  scope: "mine" | "all" | "project" | "none";
   generatedAt: string;
   counts: {
     total: number;

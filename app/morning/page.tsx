@@ -60,7 +60,7 @@ export default async function MorningPage({
                 <>✅ {data.counts.clear} ללא התראות · </>
               )}
               {data.counts.total} פרויקטים סה&quot;כ
-              {data.isAdmin && (
+              {(data.isAdmin || data.isInternal) && (
                 <>
                   {" · "}
                   <ScopeToggle scope={scope} />
@@ -111,7 +111,14 @@ export default async function MorningPage({
         </div>
       )}
 
-      {data && visible.length === 0 && (
+      {data && !data.isAdmin && !data.isInternal && (
+        <div className="empty">
+          <span className="emoji" aria-hidden>🔒</span>
+          עמוד ההתראות זמין לצוות F&amp;F בלבד.
+        </div>
+      )}
+
+      {data && (data.isAdmin || data.isInternal) && visible.length === 0 && (
         <div className="empty">
           <span className="emoji" aria-hidden>
             🌿

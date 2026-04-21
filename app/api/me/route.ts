@@ -12,6 +12,7 @@ export async function GET() {
     return NextResponse.json({
       email: data.email,
       isAdmin: data.isAdmin,
+      isInternal: data.isInternal,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

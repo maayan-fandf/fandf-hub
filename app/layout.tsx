@@ -5,6 +5,7 @@ import CommandPalette from "@/components/CommandPalette";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavAdminLink from "@/components/NavAdminLink";
+import NavMorningLink from "@/components/NavMorningLink";
 import ThemeToggle from "@/components/ThemeToggle";
 
 // Runs before React hydrates so data-theme is set before the first paint —
@@ -56,9 +57,7 @@ export default async function RootLayout({
             <Link href="/" className="topnav-link">
               📂 פרויקטים
             </Link>
-            <Link href="/morning" className="topnav-link">
-              ☀️ בוקר
-            </Link>
+            {email && <NavMorningLink />}
             <Link href="/inbox" className="topnav-link topnav-link-with-badge">
               🏷️ תיוגים
               {email && <NavMentionBadge />}
