@@ -487,6 +487,8 @@ export function adminDeleteNameToEmail(
 
 export type MorningSignalKind =
   | "pacing-variance"
+  | "high-cpl"
+  | "high-cps"
   | "project-budget"
   | "deadline"
   | "paused-budget";
