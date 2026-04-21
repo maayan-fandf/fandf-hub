@@ -11,8 +11,17 @@ export default function MorningSignalRow({ signal }: { signal: MorningSignal }) 
     warn: "⚠️",
     info: "📅",
   };
+  const isDismissed = !!signal.dismissed;
   return (
-    <li className={`morning-signal morning-signal-${signal.severity}`}>
+    <li
+      className={[
+        "morning-signal",
+        `morning-signal-${signal.severity}`,
+        isDismissed ? "morning-signal-dismissed" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="morning-signal-main">
         <span className="morning-signal-sev" aria-hidden>
           {sevEmoji[signal.severity]}
@@ -20,7 +29,23 @@ export default function MorningSignalRow({ signal }: { signal: MorningSignal }) 
         <div className="morning-signal-body">
           <div className="morning-signal-title">
             {signal.title}
-            {signal.revisit && (
+            {signal.dismissed && (
+              <span
+                className="morning-signal-dismissed-chip"
+                title={
+                  `טופל ${signal.dismissedBy ? "ע״י " + signal.dismissedBy : ""}` +
+                  (signal.dismissedAt
+                    ? ` · ${signal.dismissedAt.slice(0, 10)}`
+                    : "") +
+                  (signal.dismissedUntil
+                    ? ` · ישוקט עד ${signal.dismissedUntil.slice(0, 10)}`
+                    : "")
+                }
+              >
+                ✓ טופל
+              </span>
+            )}
+            {signal.revisit && !signal.dismissed && (
               <span
                 className="morning-signal-revisit"
                 title={`חזר — הושקט ${
@@ -35,14 +60,14 @@ export default function MorningSignalRow({ signal }: { signal: MorningSignal }) 
         </div>
       </div>
       <div className="morning-signal-actions">
-        {signal.copy && (
+        {!isDismissed && signal.copy && (
           <CopyAmountButton
             amount={signal.copy}
             url={signal.url}
             label={`📋 העתק ₪${signal.copy}${signal.url ? " ופתח" : ""}`}
           />
         )}
-        {!signal.copy && signal.url && (
+        {!isDismissed && !signal.copy && signal.url && (
           <a
             href={signal.url}
             target="_blank"
@@ -56,6 +81,7 @@ export default function MorningSignalRow({ signal }: { signal: MorningSignal }) 
           signalKey={signal.key}
           kind={signal.kind}
           revisit={signal.revisit}
+          dismissed={isDismissed}
         />
       </div>
     </li>

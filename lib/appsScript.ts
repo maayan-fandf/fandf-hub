@@ -518,6 +518,13 @@ export type MorningSignal = {
   revisit?: boolean;
   previouslyDismissedAt?: string;
   previouslySnoozedUntil?: string;
+  // Active dismissal (still within snooze window). When true the alert is
+  // rendered faded to show it's been addressed but kept visible for
+  // continuity. dismissed* fields only populated when dismissed=true.
+  dismissed?: boolean;
+  dismissedAt?: string;
+  dismissedUntil?: string;
+  dismissedBy?: string;
 };
 
 export type MorningProject = {

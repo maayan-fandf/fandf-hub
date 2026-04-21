@@ -7,6 +7,9 @@ type Props = {
   signalKey: string;
   kind: string;
   revisit?: boolean;
+  /** True when the signal is currently in the snooze window. The button
+   *  flips to an "undo dismissal" action instead of "טיפלתי". */
+  dismissed?: boolean;
 };
 
 const SNOOZE_OPTIONS = [
@@ -21,7 +24,7 @@ const SNOOZE_OPTIONS = [
    the default snooze for that kind; the "⋯" opens a custom-duration menu.
    Dismissals are team-wide — the Apps Script stores them in the
    "Alert Dismissals" sheet tab, keyed by signal_key. */
-export default function MorningDismissButton({ signalKey, revisit }: Props) {
+export default function MorningDismissButton({ signalKey, revisit, dismissed }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -66,6 +69,24 @@ export default function MorningDismissButton({ signalKey, revisit }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // When already dismissed, the primary button flips to "undo" so the
+  // manager can re-activate the alert without opening the menu.
+  if (dismissed) {
+    return (
+      <div className="morning-dismiss" dir="rtl">
+        <button
+          type="button"
+          className="morning-dismiss-primary morning-dismiss-undo"
+          disabled={busy}
+          onClick={unsnooze}
+          title="בטל את הטיפול והחזר את ההתראה"
+        >
+          {busy ? "…" : "↺ בטל טיפול"}
+        </button>
+      </div>
+    );
   }
 
   return (
