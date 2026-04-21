@@ -3,23 +3,33 @@ import { redirect } from "next/navigation";
 import {
   getMyProjects,
   getMyCounts,
+  getMorningFeed,
   type Project,
   type MyCountsPerProject,
+  type MorningFeed,
 } from "@/lib/appsScript";
 import { companyColorSlot } from "@/lib/colors";
+
+type AlertCounts = { severe: number; warn: number; info: number };
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   // Projects + counts in parallel — both one Apps Script call each, no shared
   // computation so no point in serializing them.
-  const [projectsRes, countsRes] = await Promise.allSettled([
+  const [projectsRes, countsRes, morningRes] = await Promise.allSettled([
     getMyProjects(),
     getMyCounts(),
+    // Morning feed powers the alert badges. Returns empty for clients (gated
+    // internal-only) so we silently swallow access errors here and just
+    // don't render alert pills for them.
+    getMorningFeed({ scope: "mine" }),
   ]);
 
   const data = projectsRes.status === "fulfilled" ? projectsRes.value : null;
   const counts = countsRes.status === "fulfilled" ? countsRes.value : null;
+  const morning: MorningFeed | null =
+    morningRes.status === "fulfilled" ? morningRes.value : null;
   const error =
     projectsRes.status === "rejected"
       ? projectsRes.reason instanceof Error
@@ -51,6 +61,40 @@ export default async function HomePage() {
       }
     }
     byCompany.set(g.company || "__ungrouped", { openTasks, openMentions });
+  }
+
+  // Alert counts per project + per company, built from the morning feed.
+  // Dismissed signals are explicitly excluded so badges reflect what still
+  // needs attention — matches the severity-count logic inside the feed.
+  const alertsByProject = new Map<string, AlertCounts>();
+  if (morning) {
+    for (const p of morning.projects) {
+      const ac: AlertCounts = { severe: 0, warn: 0, info: 0 };
+      for (const s of p.signals) {
+        if (s.dismissed) continue;
+        if (s.severity === "severe") ac.severe++;
+        else if (s.severity === "warn") ac.warn++;
+        else if (s.severity === "info") ac.info++;
+      }
+      if (ac.severe || ac.warn || ac.info) {
+        alertsByProject.set(p.name, ac);
+      }
+    }
+  }
+  const alertsByCompany = new Map<string, AlertCounts>();
+  for (const g of grouped) {
+    const agg: AlertCounts = { severe: 0, warn: 0, info: 0 };
+    for (const p of g.projects) {
+      const ac = alertsByProject.get(p.name);
+      if (ac) {
+        agg.severe += ac.severe;
+        agg.warn += ac.warn;
+        agg.info += ac.info;
+      }
+    }
+    if (agg.severe || agg.warn || agg.info) {
+      alertsByCompany.set(g.company || "__ungrouped", agg);
+    }
   }
 
   return (
@@ -119,10 +163,19 @@ export default async function HomePage() {
                   <span className="company-group-name">
                     {g.company || "ללא חברה"}
                   </span>
+                  <AlertPills
+                    counts={alertsByCompany.get(g.company || "__ungrouped")}
+                  />
                   <ProjectPillBadges
                     counts={byCompany.get(g.company || "__ungrouped")}
                   />
-                  <span className="company-group-count">{g.projects.length}</span>
+                  <span
+                    className="company-group-count"
+                    title={`${g.projects.length} פרויקטים בחברה זו`}
+                    aria-label={`${g.projects.length} פרויקטים`}
+                  >
+                    📁 {g.projects.length}
+                  </span>
                   <span className="company-group-chevron" aria-hidden>
                     ▸
                   </span>
@@ -130,10 +183,12 @@ export default async function HomePage() {
                 <ul className="project-list">
                   {g.projects.map((p) => {
                     const pc = byProject[p.name];
+                    const ac = alertsByProject.get(p.name);
                     return (
                       <li key={p.name}>
                         <Link href={`/projects/${encodeURIComponent(p.name)}`}>
                           <span className="project-pill-name">{p.name}</span>
+                          <AlertPills counts={ac} />
                           <ProjectPillBadges counts={pc} />
                         </Link>
                       </li>
@@ -165,6 +220,49 @@ function StatTile({
       <div className="stat-value">{value}</div>
       <div className="stat-label">{label}</div>
     </div>
+  );
+}
+
+/**
+ * Alert-severity pills — shown at both company and project levels when
+ * the morning feed fired active signals. Dismissed alerts are excluded
+ * server-side so these reflect what still needs attention. Internal /
+ * admin only — for clients the morning feed returns empty and these
+ * don't render.
+ */
+function AlertPills({ counts }: { counts: AlertCounts | undefined }) {
+  if (!counts) return null;
+  if (!counts.severe && !counts.warn && !counts.info) return null;
+  return (
+    <span className="pill-badges">
+      {counts.severe > 0 && (
+        <span
+          className="pill-badge pill-badge-severe"
+          title={`${counts.severe} התראות קריטיות`}
+          aria-label={`${counts.severe} התראות קריטיות`}
+        >
+          🔥 {counts.severe}
+        </span>
+      )}
+      {counts.warn > 0 && (
+        <span
+          className="pill-badge pill-badge-warn"
+          title={`${counts.warn} אזהרות`}
+          aria-label={`${counts.warn} אזהרות`}
+        >
+          ⚠️ {counts.warn}
+        </span>
+      )}
+      {counts.info > 0 && (
+        <span
+          className="pill-badge pill-badge-info"
+          title={`${counts.info} התראות מידע`}
+          aria-label={`${counts.info} התראות מידע`}
+        >
+          📅 {counts.info}
+        </span>
+      )}
+    </span>
   );
 }
 

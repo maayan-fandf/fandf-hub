@@ -355,6 +355,12 @@ a:hover {
   color: #fff;
 }
 
+/* Alert-severity pills — rendered at both company and project levels on
+   the home page when the morning feed fired active signals for them. */
+.pill-badge-severe { background: var(--red);    color: #fff; }
+.pill-badge-warn   { background: var(--amber);  color: #fff; }
+.pill-badge-info   { background: var(--blue);   color: #fff; }
+
 /* Compact version of the stat-grid for the home page (less vertical
    weight than the project-overview version). */
 .home-stats {
