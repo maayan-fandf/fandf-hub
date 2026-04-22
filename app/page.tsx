@@ -11,10 +11,34 @@ import {
 import { companyColorSlot } from "@/lib/colors";
 
 type AlertCounts = { severe: number; warn: number; info: number };
+type HomeSearch = { mine?: string };
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+/** Is this project "mine" — does the current user appear in any of the Keys
+ *  roles (campaign mgr / account mgr / internal / client-facing) for this
+ *  project? Match is case-insensitive against the user's full display name. */
+function isProjectMine(p: Project, person: string): boolean {
+  if (!person) return false;
+  const target = person.toLowerCase();
+  const r = p.roster;
+  if (r.mediaManager && r.mediaManager.toLowerCase() === target) return true;
+  if (r.projectManagerFull && r.projectManagerFull.toLowerCase() === target)
+    return true;
+  if (r.internalOnly.some((n) => n.toLowerCase() === target)) return true;
+  if (r.clientFacing.some((n) => n.toLowerCase() === target)) return true;
+  return false;
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<HomeSearch>;
+}) {
+  const sp = await searchParams;
+  // Default: show user's own projects only. `?mine=0` opts into the full
+  // portfolio view. Mirrors the dashboard's default-filter-on-load behavior.
+  const showAll = sp.mine === "0";
   // Projects + counts in parallel — both one Apps Script call each, no shared
   // computation so no point in serializing them.
   const [projectsRes, countsRes, morningRes] = await Promise.allSettled([
@@ -42,7 +66,28 @@ export default async function HomePage() {
     redirect("/unauthorized");
   }
 
-  const grouped = data ? groupByCompany(data.projects) : [];
+  // Role-aware default filter: staff (including admins with a resolvable name)
+  // land on their own projects unless ?mine=0 is in the URL. Clients always
+  // see their scoped list — no toggle, no filtering to do.
+  const canFilterMine = !!data && !!data.person && (data.isStaff || data.isAdmin);
+  const visibleProjects: Project[] = data
+    ? !canFilterMine || showAll
+      ? data.projects
+      : data.projects.filter((p) => isProjectMine(p, data.person))
+    : [];
+  // If filtering stripped everything (e.g. user has a Keys role in theory but
+  // isn't actually on any project), fall back to the full list so the page
+  // isn't empty.
+  const effectiveProjects =
+    canFilterMine && !showAll && visibleProjects.length === 0
+      ? data!.projects
+      : visibleProjects;
+  const filterFellBack =
+    canFilterMine && !showAll && visibleProjects.length === 0;
+  const grouped = data ? groupByCompany(effectiveProjects) : [];
+  const mineCount = data
+    ? data.projects.filter((p) => isProjectMine(p, data.person)).length
+    : 0;
   const byProject = counts?.byProject ?? {};
   const totals = counts?.total ?? { openTasks: 0, openMentions: 0 };
 
@@ -126,7 +171,30 @@ export default async function HomePage() {
             </div>
           )}
         </div>
+        {canFilterMine && (
+          <div className="home-filter-toggle">
+            <Link
+              href={showAll ? "/" : "/?mine=0"}
+              className={`home-filter-btn${showAll ? "" : " is-active"}`}
+              title={
+                showAll
+                  ? `הצג רק את הפרויקטים שלי (${mineCount})`
+                  : `הצג את כל הפרויקטים (${data?.projects.length ?? 0})`
+              }
+            >
+              {showAll
+                ? `👤 שלי בלבד (${mineCount})`
+                : `🌐 הצג הכל (${data?.projects.length ?? 0})`}
+            </Link>
+          </div>
+        )}
       </header>
+
+      {filterFellBack && (
+        <div className="info-banner">
+          ℹ️ לא נמצאו פרויקטים שבהם את/ה מוגדר/ת ב-Keys — מציג את כל התיק.
+        </div>
+      )}
 
       {error && (
         <div className="error">

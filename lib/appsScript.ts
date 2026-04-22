@@ -117,16 +117,33 @@ async function postApi<T>(
 
 /* ─── Typed call sites ───────────────────────────────────────────── */
 
+/** Keys-sheet roster subset used for the "my projects" default filter —
+ *  mirror of the fields the dashboard uses so both clients agree on what
+ *  "a project this person is on" means. Empty fields when the Keys cell
+ *  is empty or the column is missing. */
+export type ProjectRoster = {
+  mediaManager: string;         // col C — campaign manager full name
+  projectManagerFull: string;   // col D — account manager full name
+  internalOnly: string[];       // col J — creative team (internal only)
+  clientFacing: string[];       // col K — creative team (client-facing)
+};
+
 export type Project = {
   name: string;
   company: string; // "" when the Keys tab has no company for this project
   chatSpaceUrl: string; // "" when no Chat webhook is configured for the project
+  roster: ProjectRoster;
 };
 
 export type MyProjects = {
   projects: Project[];
   isAdmin: boolean;
   isInternal: boolean;
+  isStaff: boolean;
+  isClient: boolean;
+  /** User's display name (full) if resolved via names-to-emails. Used to
+   *  default-filter the home page to their own projects on first render. */
+  person: string;
   email: string;
 };
 
@@ -139,10 +156,18 @@ export type MyProjects = {
 type MyProjectsRaw = {
   projects: (
     | string
-    | { name: string; company?: string; chat_space_url?: string }
+    | {
+        name: string;
+        company?: string;
+        chat_space_url?: string;
+        roster?: Partial<ProjectRoster>;
+      }
   )[];
   isAdmin: boolean;
   isInternal?: boolean;
+  isStaff?: boolean;
+  isClient?: boolean;
+  person?: string;
   email: string;
 };
 
@@ -173,21 +198,37 @@ export type ProjectTasks = {
   today: string; // YYYY-MM-DD
 };
 
+const EMPTY_ROSTER: ProjectRoster = {
+  mediaManager: "",
+  projectManagerFull: "",
+  internalOnly: [],
+  clientFacing: [],
+};
+
 export async function getMyProjects(): Promise<MyProjects> {
   const raw = await callApi<MyProjectsRaw>("myProjects");
   const projects: Project[] = (raw.projects ?? []).map((p) =>
     typeof p === "string"
-      ? { name: p, company: "", chatSpaceUrl: "" }
+      ? { name: p, company: "", chatSpaceUrl: "", roster: EMPTY_ROSTER }
       : {
           name: p.name,
           company: p.company ?? "",
           chatSpaceUrl: p.chat_space_url ?? "",
+          roster: {
+            mediaManager: p.roster?.mediaManager ?? "",
+            projectManagerFull: p.roster?.projectManagerFull ?? "",
+            internalOnly: p.roster?.internalOnly ?? [],
+            clientFacing: p.roster?.clientFacing ?? [],
+          },
         },
   );
   return {
     projects,
     isAdmin: raw.isAdmin,
     isInternal: !!raw.isInternal,
+    isStaff: !!raw.isStaff,
+    isClient: !!raw.isClient,
+    person: raw.person ?? "",
     email: raw.email,
   };
 }

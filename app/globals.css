@@ -264,6 +264,51 @@ a:hover {
   flex-wrap: wrap;
 }
 
+/* Home-page toggle: "שלי בלבד" vs "הצג הכל". Mirrors the dashboard's role-
+   based default filter behavior — starts on "mine", one click to expand. */
+.home-filter-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.home-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.home-filter-btn:hover {
+  background: var(--surface-hi, var(--surface));
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.home-filter-btn.is-active {
+  background: var(--accent-soft, #eef2ff);
+  color: var(--accent-dark, #3730a3);
+  border-color: var(--accent, #6366f1);
+}
+
+/* Info banner shown when the "mine" filter stripped to zero and we fell back. */
+.info-banner {
+  padding: 0.7rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted, var(--muted));
+  font-size: 0.88rem;
+}
+
 .btn-chat {
   display: inline-flex;
   align-items: center;
