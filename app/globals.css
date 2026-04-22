@@ -264,68 +264,6 @@ a:hover {
   flex-wrap: wrap;
 }
 
-/* ─── Inbox archive — collapsible resolved-mentions section ──────────
-   Resolved mentions don't disappear; they tuck into a details block at the
-   bottom of the inbox. One click to expand, unresolve, or audit recent
-   work. Keeps the default inbox focused on unresolved work. */
-.inbox-archive {
-  margin-top: 1.5rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-soft, var(--surface));
-  overflow: hidden;
-}
-
-.inbox-archive-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  list-style: none;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.92rem;
-  transition: background 0.12s, color 0.12s;
-  user-select: none;
-}
-
-.inbox-archive-summary::-webkit-details-marker {
-  display: none;
-}
-
-.inbox-archive-summary:hover {
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
-.inbox-archive-icon {
-  font-size: 1.1em;
-  line-height: 1;
-}
-
-.inbox-archive-label {
-  flex: 1;
-}
-
-.inbox-archive-chev {
-  font-size: 0.85em;
-  opacity: 0.6;
-  transition: transform 0.15s;
-}
-
-.inbox-archive[open] .inbox-archive-chev {
-  transform: rotate(90deg);
-}
-
-.inbox-archive-list {
-  padding: 0 0.75rem 0.75rem;
-  margin: 0;
-  /* Archive items render with reduced opacity so visually they read as
-     "handled" vs the active list above. Still fully interactive. */
-  opacity: 0.8;
-}
-
 /* ─── Unified card-action row ────────────────────────────────────────
    Comment / task / mention cards all surface the same four actions:
    השב · סמן כפתור · ערוך · מחק. Rendered as icon-only buttons with Hebrew
