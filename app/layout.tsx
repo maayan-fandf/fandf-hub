@@ -38,7 +38,17 @@ export default async function RootLayout({
 }) {
   const session = await auth();
   const email = session?.user?.email ?? null;
-  const dashboardUrl = process.env.DASHBOARD_URL ?? "";
+  const dashboardBase = process.env.DASHBOARD_URL ?? "";
+  // Append ?authuser=<user-email> so multi-account browsers land in the right
+  // Google slot instead of Apps Script's default "last used" account. Preserves
+  // any existing query string if DASHBOARD_URL happens to carry one.
+  const dashboardUrl =
+    dashboardBase && email
+      ? dashboardBase +
+        (dashboardBase.includes("?") ? "&" : "?") +
+        "authuser=" +
+        encodeURIComponent(email)
+      : dashboardBase;
 
   return (
     <html lang="he" dir="rtl">
