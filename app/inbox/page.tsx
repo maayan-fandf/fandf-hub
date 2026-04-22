@@ -6,7 +6,7 @@ import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
-type Search = { resolved?: string; project?: string };
+type Search = { project?: string };
 
 export default async function InboxPage({
   searchParams,
@@ -14,7 +14,6 @@ export default async function InboxPage({
   searchParams: Promise<Search>;
 }) {
   const sp = await searchParams;
-  const showResolved = sp.resolved === "1";
   const projectFilter = sp.project ?? "";
 
   let data;
@@ -27,11 +26,13 @@ export default async function InboxPage({
 
   const all = data?.mentions ?? [];
   const projects = Array.from(new Set(all.map((m) => m.project))).sort();
-  const visible = all.filter((m) => {
-    if (!showResolved && m.resolved) return false;
-    if (projectFilter && m.project !== projectFilter) return false;
-    return true;
-  });
+
+  // Split open vs resolved. Project filter applies to both so the archive
+  // respects the same scope the user is browsing.
+  const byProject = (m: MentionItem) =>
+    !projectFilter || m.project === projectFilter;
+  const openMentions = all.filter((m) => !m.resolved && byProject(m));
+  const resolvedMentions = all.filter((m) => m.resolved && byProject(m));
 
   const openCount = all.filter((m) => !m.resolved).length;
 
@@ -66,27 +67,48 @@ export default async function InboxPage({
         <InboxFilterBar
           projects={projects}
           currentProject={projectFilter}
-          showResolved={showResolved}
         />
       )}
 
-      {data && visible.length === 0 && (
+      {data && openMentions.length === 0 && (
         <div className="empty">
           <span className="emoji" aria-hidden>
-            {all.length === 0 ? "🌿" : "🔍"}
+            {all.length === 0 ? "🌿" : resolvedMentions.length > 0 ? "✅" : "🔍"}
           </span>
           {all.length === 0
             ? "אף אחד לא תייג אותך עדיין. יום שקט!"
-            : "אין תיוגים תואמים לסינון הנוכחי."}
+            : resolvedMentions.length > 0
+              ? "כל הכבוד — אין תיוגים פתוחים."
+              : "אין תיוגים תואמים לסינון הנוכחי."}
         </div>
       )}
 
-      {visible.length > 0 && (
+      {openMentions.length > 0 && (
         <ul className="mention-list">
-          {visible.map((m) => (
+          {openMentions.map((m) => (
             <MentionCard key={m.comment_id} m={m} />
           ))}
         </ul>
+      )}
+
+      {/* Collapsible archive — resolved mentions stay one click away so the
+          user can unresolve, re-read context, or audit recently-handled
+          tags without abandoning the inbox view. Closed by default. */}
+      {resolvedMentions.length > 0 && (
+        <details className="inbox-archive">
+          <summary className="inbox-archive-summary">
+            <span className="inbox-archive-icon" aria-hidden>📦</span>
+            <span className="inbox-archive-label">
+              ארכיון תיוגים שנפתרו ({resolvedMentions.length})
+            </span>
+            <span className="inbox-archive-chev" aria-hidden>▸</span>
+          </summary>
+          <ul className="mention-list inbox-archive-list">
+            {resolvedMentions.map((m) => (
+              <MentionCard key={m.comment_id} m={m} />
+            ))}
+          </ul>
+        </details>
       )}
     </main>
   );

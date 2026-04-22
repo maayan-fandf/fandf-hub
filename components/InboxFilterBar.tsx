@@ -5,13 +5,15 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 type Props = {
   projects: string[];
   currentProject: string;
-  showResolved: boolean;
 };
 
+// Inbox filter — currently just the per-project dropdown. The old "include
+// resolved" toggle was replaced by a collapsible archive below the main list,
+// so resolved mentions are always one expand-click away without cluttering
+// the default view.
 export default function InboxFilterBar({
   projects,
   currentProject,
-  showResolved,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -27,14 +29,6 @@ export default function InboxFilterBar({
 
   return (
     <div className="filter-bar">
-      <button
-        type="button"
-        className={showResolved ? "active" : ""}
-        onClick={() => updateParam("resolved", showResolved ? null : "1")}
-      >
-        {showResolved ? "מציג הכל" : "כולל סגורים"}
-      </button>
-      <span className="filter-sep" />
       <select
         value={currentProject}
         onChange={(e) => updateParam("project", e.target.value || null)}
