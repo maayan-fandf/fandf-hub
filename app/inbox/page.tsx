@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { getMyMentions, type MentionItem } from "@/lib/appsScript";
 import InboxFilterBar from "@/components/InboxFilterBar";
-import ResolveButton from "@/components/ResolveButton";
-import ReplyDrawer from "@/components/ReplyDrawer";
-import DeleteButton from "@/components/DeleteButton";
-import EditDrawer from "@/components/EditDrawer";
+import CardActions from "@/components/CardActions";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
@@ -133,19 +130,13 @@ function MentionCard({ m }: { m: MentionItem }) {
         {truncate(m.body, 400)}
       </div>
       <div className="mention-actions">
-        <ReplyDrawer parentCommentId={resolveTarget} />
-        <ResolveButton commentId={resolveTarget} resolved={m.resolved} />
-        <EditDrawer
-          commentId={m.comment_id}
-          initialBody={m.body}
-          locked={m.resolved}
+        <CardActions
+          commentId={resolveTarget}
+          editCommentId={m.comment_id}
+          resolved={m.resolved}
+          body={m.body}
+          deleteItemLabel="את התיוג"
         />
-        <DeleteButton commentId={resolveTarget} itemLabel="את התיוג" minimal />
-        {m.deep_link && (
-          <a href={m.deep_link} target="_blank" rel="noreferrer">
-            פתח בדשבורד ←
-          </a>
-        )}
       </div>
     </li>
   );

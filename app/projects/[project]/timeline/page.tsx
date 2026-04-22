@@ -6,10 +6,7 @@ import {
   type CommentItem,
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
-import ResolveButton from "@/components/ResolveButton";
-import ReplyDrawer from "@/components/ReplyDrawer";
-import DeleteButton from "@/components/DeleteButton";
-import EditDrawer from "@/components/EditDrawer";
+import CardActions from "@/components/CardActions";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
@@ -250,38 +247,25 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           </div>
         )}
         <div className="timeline-actions">
-          {/* Only top-level comments are resolvable / replyable / deletable
-              from the hub. Replies get edit + delete only (no reply/resolve
-              since those target thread roots). Edit is server-locked when
-              the thread is resolved — we pass c.resolved as the lock hint
-              for top-level; replies show the button and server handles it
-              (their own .resolved is usually false; server checks parent). */}
+          {/* Top-level comments get all 4 actions. Replies skip reply/resolve
+              (those operate on the thread root) — CardActions takes care of
+              both via canReply + readOnlyWhenResolved flags. */}
           {!c.parent_id ? (
-            <>
-              <ReplyDrawer parentCommentId={c.comment_id} />
-              <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
-              <EditDrawer
-                commentId={c.comment_id}
-                initialBody={c.body}
-                locked={c.resolved}
-              />
-              <DeleteButton commentId={c.comment_id} itemLabel="את ההערה" minimal />
-            </>
+            <CardActions
+              commentId={c.comment_id}
+              resolved={c.resolved}
+              body={c.body}
+              deleteItemLabel="את התגובה"
+            />
           ) : (
-            <>
-              <EditDrawer commentId={c.comment_id} initialBody={c.body} />
-              <DeleteButton commentId={c.comment_id} itemLabel="את התגובה" minimal />
-            </>
-          )}
-          {c.deep_link && (
-            <a
-              className="compact-link"
-              href={c.deep_link}
-              target="_blank"
-              rel="noreferrer"
-            >
-              פתח בדשבורד ←
-            </a>
+            <CardActions
+              commentId={c.comment_id}
+              resolved={c.resolved}
+              body={c.body}
+              deleteItemLabel="את התגובה"
+              canReply={false}
+              readOnlyWhenResolved
+            />
           )}
         </div>
       </div>
@@ -334,27 +318,12 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
           מאת {t.author_name || t.author_email}
         </div>
         <div className="timeline-actions">
-          <ResolveButton commentId={t.comment_id} resolved={t.resolved} />
-          <EditDrawer
+          <CardActions
             commentId={t.comment_id}
-            initialBody={t.body}
-            locked={t.resolved}
+            resolved={t.resolved}
+            body={t.body}
+            deleteItemLabel="את המשימה"
           />
-          <DeleteButton
-            commentId={t.comment_id}
-            itemLabel="את המשימה"
-            minimal
-          />
-          {t.deep_link && (
-            <a
-              className="compact-link"
-              href={t.deep_link}
-              target="_blank"
-              rel="noreferrer"
-            >
-              פתח בדשבורד ←
-            </a>
-          )}
         </div>
       </div>
     </li>

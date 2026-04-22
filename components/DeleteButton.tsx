@@ -12,6 +12,9 @@ type Props = {
   itemLabel?: string;
   /** Subtle mode: just an "✕", title-tooltip only. Default is a text button. */
   minimal?: boolean;
+  /** Icon-only with 🗑️ — matches the CardActions unified row style. Takes
+   *  precedence over `minimal` when both are passed. */
+  iconOnly?: boolean;
 };
 
 /**
@@ -24,6 +27,7 @@ export default function DeleteButton({
   commentId,
   itemLabel = "פריט זה",
   minimal = false,
+  iconOnly = false,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -60,13 +64,17 @@ export default function DeleteButton({
     <span className="delete-btn-wrap">
       <button
         type="button"
-        className={`delete-btn ${minimal ? "is-minimal" : ""}`}
+        className={
+          iconOnly
+            ? "card-action card-action-danger"
+            : `delete-btn ${minimal ? "is-minimal" : ""}`
+        }
         onClick={onClick}
         disabled={isPending}
-        title={minimal ? "מחק" : "מחק לצמיתות"}
+        title={iconOnly || minimal ? "מחק" : "מחק לצמיתות"}
         aria-label="מחק"
       >
-        {isPending ? "…" : minimal ? "✕" : "מחק"}
+        {isPending ? "…" : iconOnly ? "🗑️" : minimal ? "✕" : "מחק"}
       </button>
       {error && <span className="resolve-btn-error">{error}</span>}
     </span>

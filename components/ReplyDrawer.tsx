@@ -8,6 +8,9 @@ type Props = {
   parentCommentId: string;
   /** Optional label for the trigger button. Default: "השב". */
   label?: string;
+  /** If true, render the trigger as an icon-only button (↩) with the label in
+   *  a tooltip. Used by CardActions for the unified icon-row layout. */
+  iconOnly?: boolean;
 };
 
 const MAX = 4000;
@@ -17,7 +20,11 @@ const MAX = 4000;
  * /api/comments/reply and calls router.refresh() on success.
  * Esc closes the drawer without sending.
  */
-export default function ReplyDrawer({ parentCommentId, label = "השב" }: Props) {
+export default function ReplyDrawer({
+  parentCommentId,
+  label = "השב",
+  iconOnly = false,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -82,11 +89,12 @@ export default function ReplyDrawer({ parentCommentId, label = "השב" }: Props
     return (
       <button
         type="button"
-        className="reply-btn"
+        className={iconOnly ? "card-action" : "reply-btn"}
         onClick={openDrawer}
-        title="השב לשיחה זו (⌘/Ctrl+Enter לשליחה)"
+        title={iconOnly ? label : "השב לשיחה זו (⌘/Ctrl+Enter לשליחה)"}
+        aria-label={iconOnly ? label : undefined}
       >
-        {label}
+        {iconOnly ? "↩" : label}
       </button>
     );
   }

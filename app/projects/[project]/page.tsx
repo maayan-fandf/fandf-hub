@@ -13,9 +13,7 @@ import {
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
-import ResolveButton from "@/components/ResolveButton";
-import DeleteButton from "@/components/DeleteButton";
-import EditDrawer from "@/components/EditDrawer";
+import CardActions from "@/components/CardActions";
 import MorningSignalRow from "@/components/MorningSignalRow";
 
 export const dynamic = "force-dynamic";
@@ -327,27 +325,12 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
           </div>
           <div className="compact-comment-body">{truncate(c.body, 220)}</div>
           <div className="compact-comment-actions">
-            <ResolveButton commentId={c.comment_id} resolved={c.resolved} />
-            <EditDrawer
+            <CardActions
               commentId={c.comment_id}
-              initialBody={c.body}
-              locked={c.resolved}
+              resolved={c.resolved}
+              body={c.body}
+              deleteItemLabel="את התגובה"
             />
-            <DeleteButton
-              commentId={c.comment_id}
-              itemLabel="את ההערה"
-              minimal
-            />
-            {c.deep_link && (
-              <a
-                className="compact-link"
-                href={c.deep_link}
-                target="_blank"
-                rel="noreferrer"
-              >
-                פתח בדשבורד ←
-              </a>
-            )}
           </div>
         </li>
       ))}
@@ -400,27 +383,13 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
             </div>
             <div className="compact-comment-body">{truncate(m.body, 200)}</div>
             <div className="compact-comment-actions">
-              <ResolveButton commentId={actionTarget} resolved={m.resolved} />
-              <EditDrawer
-                commentId={m.comment_id}
-                initialBody={m.body}
-                locked={m.resolved}
-              />
-              <DeleteButton
+              <CardActions
                 commentId={actionTarget}
-                itemLabel="את התיוג"
-                minimal
+                editCommentId={m.comment_id}
+                resolved={m.resolved}
+                body={m.body}
+                deleteItemLabel="את התיוג"
               />
-              {m.deep_link && (
-                <a
-                  className="compact-link"
-                  href={m.deep_link}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  פתח בדשבורד ←
-                </a>
-              )}
             </div>
           </li>
         );

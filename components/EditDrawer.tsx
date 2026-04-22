@@ -15,6 +15,9 @@ type Props = {
   locked?: boolean;
   /** Small label on the button. Default "ערוך". */
   label?: string;
+  /** Render the trigger as an icon-only button (✏️) with the label as a
+   *  tooltip. Used by CardActions. */
+  iconOnly?: boolean;
 };
 
 const MAX = 4000;
@@ -33,6 +36,7 @@ export default function EditDrawer({
   initialBody,
   locked = false,
   label = "ערוך",
+  iconOnly = false,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -117,11 +121,12 @@ export default function EditDrawer({
     return (
       <button
         type="button"
-        className="reply-btn"
+        className={iconOnly ? "card-action" : "reply-btn"}
         onClick={openDrawer}
-        title="ערוך את גוף ההערה (⌘/Ctrl+Enter לשמירה)"
+        title={iconOnly ? label : "ערוך את גוף ההערה (⌘/Ctrl+Enter לשמירה)"}
+        aria-label={iconOnly ? label : undefined}
       >
-        {label}
+        {iconOnly ? "✏️" : label}
       </button>
     );
   }

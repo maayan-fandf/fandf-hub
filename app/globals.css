@@ -264,6 +264,71 @@ a:hover {
   flex-wrap: wrap;
 }
 
+/* ─── Unified card-action row ────────────────────────────────────────
+   Comment / task / mention cards all surface the same four actions:
+   השב · סמן כפתור · ערוך · מחק. Rendered as icon-only buttons with Hebrew
+   tooltips. Shared class so all four primitives render identically. */
+.card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s;
+}
+
+.card-action:hover:not(:disabled),
+.card-action:focus-visible {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--text);
+  outline: none;
+}
+
+.card-action:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.card-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Resolved state: the ✓ button fills in with the "done" color so the state
+   is visible at a glance. Toggles back to plain on un-resolve. */
+.card-action.is-resolved {
+  background: var(--done-soft);
+  color: var(--done);
+  border-color: var(--done);
+}
+.card-action.is-resolved:hover:not(:disabled) {
+  background: var(--done-soft);
+  filter: brightness(1.05);
+}
+
+/* Destructive variant — delete button stays neutral until hover/focus, then
+   turns red. Keeps the card visually calm until the user reaches for it. */
+.card-action-danger:hover:not(:disabled),
+.card-action-danger:focus-visible {
+  background: var(--overdue-soft);
+  border-color: var(--overdue);
+  color: var(--overdue);
+}
+
 /* Home-page filter bar: person dropdown + hide-ended toggle. Both are pills
    sharing the same base style (.home-filter-pill) so they sit side-by-side
    coherently with the rest of the UI's pill/badge vocabulary. */

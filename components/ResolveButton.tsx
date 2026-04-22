@@ -13,12 +13,16 @@ type Props = {
    * can toggle.
    */
   readOnlyWhenResolved?: boolean;
+  /** Render the trigger as an icon-only button (✓) with the label in a
+   *  tooltip. Used by CardActions for the unified icon-row layout. */
+  iconOnly?: boolean;
 };
 
 export default function ResolveButton({
   commentId,
   resolved,
   readOnlyWhenResolved = false,
+  iconOnly = false,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -62,21 +66,27 @@ export default function ResolveButton({
     });
   }
 
+  const label = localResolved ? "בטל פתור" : "סמן כפתור";
+  const tooltip = localResolved
+    ? "בטל פתור"
+    : "סמן שיחה כפתורה (יסגור גם משימות שנוצרו ממנה)";
+
   return (
     <span className="resolve-btn-wrap">
       <button
         type="button"
-        className={`resolve-btn ${localResolved ? "is-resolved" : ""}`}
+        className={
+          iconOnly
+            ? `card-action ${localResolved ? "is-resolved" : ""}`
+            : `resolve-btn ${localResolved ? "is-resolved" : ""}`
+        }
         onClick={toggle}
         disabled={isPending}
         aria-pressed={localResolved}
-        title={
-          localResolved
-            ? "בטל פתור"
-            : "סמן שיחה כפתורה (יסגור גם משימות שנוצרו ממנה)"
-        }
+        aria-label={iconOnly ? label : undefined}
+        title={iconOnly ? label : tooltip}
       >
-        {isPending ? "…" : localResolved ? "פתור ✓" : "סמן כפתור"}
+        {isPending ? "…" : iconOnly ? "✓" : localResolved ? "פתור ✓" : "סמן כפתור"}
       </button>
       {error && <span className="resolve-btn-error">{error}</span>}
     </span>
