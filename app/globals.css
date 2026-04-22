@@ -334,18 +334,21 @@ a:hover {
 
 /* Budget + time progress bars, stacked at the bottom of each pill when
    the morning feed returned numbers for this project. Kept small and
-   tonal so they don't compete with the project name. */
+   tonal so they don't compete with the project name.
+   Single parent grid so BOTH bars share the same column widths — the
+   tracks align to the same width regardless of label length ("תקציב" vs
+   "זמן") or percentage width ("1%" vs "361%"). Each .pill-bar uses
+   display:contents so its 3 children flow directly into the parent grid. */
 .project-pill-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.5rem;
+  row-gap: 0.3rem;
+  align-items: center;
 }
 
 .pill-bar {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.5rem;
+  display: contents;
   font-weight: 500;
 }
 
