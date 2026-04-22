@@ -255,6 +255,25 @@ function TaskCard({
         )}
         <span className="by">מאת {task.author_name || task.author_email}</span>
         {task.resolved && <span>· הושלם</span>}
+        {/* Reply-count chip — signals that the task's source comment has a
+            discussion attached. Click opens the comment deep-link. */}
+        {task.reply_count && task.reply_count > 0 ? (
+          task.deep_link ? (
+            <a
+              href={task.deep_link}
+              target="_blank"
+              rel="noreferrer"
+              className="chip chip-muted task-thread-chip"
+              title="יש שרשור תגובות — לחץ לצפייה"
+            >
+              💬 {task.reply_count}
+            </a>
+          ) : (
+            <span className="chip chip-muted task-thread-chip" title="יש שרשור תגובות">
+              💬 {task.reply_count}
+            </span>
+          )
+        ) : null}
       </div>
       <div className="task-actions">
         <ResolveButton

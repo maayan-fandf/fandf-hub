@@ -188,6 +188,9 @@ export type TaskItem = {
   /** ISO timestamp of the last body edit on the source comment. Empty
    *  / undefined when never edited. */
   edited_at?: string;
+  /** Number of replies on the comment this task was created from — lets the
+   *  task card surface a "💬 N" chip so the user sees there's a discussion. */
+  reply_count?: number;
   deep_link: string;
 };
 
