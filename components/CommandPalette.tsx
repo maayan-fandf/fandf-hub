@@ -419,7 +419,7 @@ export default function CommandPalette() {
                     )}
                     {cmd.kind === "content" && cmd.resolved && (
                       <span className="palette-badge palette-badge-muted">
-                        נסגר
+                        פתור
                       </span>
                     )}
                     {cmd.kind === "action" && cmd.hint && (

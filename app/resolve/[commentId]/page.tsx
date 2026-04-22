@@ -37,7 +37,7 @@ export default async function ResolvePage({
         {ok ? (
           <>
             <div className="resolve-icon" aria-hidden>✅</div>
-            <h1>נסגר</h1>
+            <h1>פתור</h1>
             <p className="subtitle">
               סימנת את המשימה כהושלמה. אפשר לסגור את הלשונית הזו ולחזור לצ׳אט.
             </p>
@@ -55,10 +55,10 @@ export default async function ResolvePage({
         ) : (
           <>
             <div className="resolve-icon" aria-hidden>⚠️</div>
-            <h1>לא הצלחנו לסגור</h1>
+            <h1>לא הצלחנו לפתור</h1>
             <p className="subtitle error-detail">{errMsg}</p>
             <p className="subtitle">
-              אפשר שאין לך הרשאה, שהפריט כבר נסגר, או שהוא נמחק.
+              אפשר שאין לך הרשאה, שהפריט כבר פתור, או שהוא נמחק.
             </p>
             <div className="resolve-actions">
               {project ? (

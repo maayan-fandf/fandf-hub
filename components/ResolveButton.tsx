@@ -35,7 +35,7 @@ export default function ResolveButton({
   }
 
   if (localResolved && readOnlyWhenResolved) {
-    return <span className="chip chip-done">נסגר</span>;
+    return <span className="chip chip-done">פתור</span>;
   }
 
   async function toggle() {
@@ -72,11 +72,11 @@ export default function ResolveButton({
         aria-pressed={localResolved}
         title={
           localResolved
-            ? "סמן כלא-סגור"
-            : "סמן שיחה כסגורה (יסגור גם משימות שנוצרו ממנה)"
+            ? "בטל פתור"
+            : "סמן שיחה כפתורה (יסגור גם משימות שנוצרו ממנה)"
         }
       >
-        {isPending ? "…" : localResolved ? "נסגר ✓" : "סגור"}
+        {isPending ? "…" : localResolved ? "פתור ✓" : "סמן כפתור"}
       </button>
       {error && <span className="resolve-btn-error">{error}</span>}
     </span>
