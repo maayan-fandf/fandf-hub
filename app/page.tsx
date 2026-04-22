@@ -67,6 +67,12 @@ export default async function HomePage() {
   // Dismissed signals are explicitly excluded so badges reflect what still
   // needs attention — matches the severity-count logic inside the feed.
   const alertsByProject = new Map<string, AlertCounts>();
+  // Budget + time progress per project, also from morning feed. Piggy-backs
+  // on the fetch that's already happening for alerts — no extra API call.
+  const progressByProject = new Map<
+    string,
+    { pctBudget: number; pctTime: number; budget: number; spend: number }
+  >();
   if (morning) {
     for (const p of morning.projects) {
       const ac: AlertCounts = { severe: 0, warn: 0, info: 0 };
@@ -78,6 +84,14 @@ export default async function HomePage() {
       }
       if (ac.severe || ac.warn || ac.info) {
         alertsByProject.set(p.name, ac);
+      }
+      if (p.budget > 0 || p.daysTotal > 0) {
+        progressByProject.set(p.name, {
+          pctBudget: p.pctBudget,
+          pctTime: p.pctTime,
+          budget: p.budget,
+          spend: p.spend,
+        });
       }
     }
   }
@@ -184,12 +198,16 @@ export default async function HomePage() {
                   {g.projects.map((p) => {
                     const pc = byProject[p.name];
                     const ac = alertsByProject.get(p.name);
+                    const pg = progressByProject.get(p.name);
                     return (
                       <li key={p.name}>
                         <Link href={`/projects/${encodeURIComponent(p.name)}`}>
-                          <span className="project-pill-name">{p.name}</span>
-                          <AlertPills counts={ac} />
-                          <ProjectPillBadges counts={pc} />
+                          <div className="project-pill-top">
+                            <span className="project-pill-name">{p.name}</span>
+                            <AlertPills counts={ac} />
+                            <ProjectPillBadges counts={pc} />
+                          </div>
+                          {pg && <ProjectPillProgress progress={pg} />}
                         </Link>
                       </li>
                     );
@@ -300,6 +318,53 @@ function ProjectPillBadges({
         </span>
       )}
     </span>
+  );
+}
+
+/**
+ * Budget-used and time-elapsed progress bars shown at the bottom of each
+ * project pill. Data comes from the morning-feed call that's already happening
+ * for alert badges, so no additional API round-trip. Bars only render for users
+ * who receive morning-feed data (admins + internal F&F) — external clients see
+ * the pill without bars.
+ */
+function ProjectPillProgress({
+  progress,
+}: {
+  progress: { pctBudget: number; pctTime: number; budget: number; spend: number };
+}) {
+  const budgetPct = Math.round((progress.pctBudget || 0) * 100);
+  const timePct = Math.round((progress.pctTime || 0) * 100);
+  const budgetOver = budgetPct > 100;
+  const budgetTooltip =
+    progress.budget > 0
+      ? `${progress.spend.toLocaleString("he-IL")} ₪ מתוך ${progress.budget.toLocaleString(
+          "he-IL",
+        )} ₪`
+      : "אין תקציב מוגדר";
+  return (
+    <div className="project-pill-bars">
+      <div className={`pill-bar pill-bar-budget${budgetOver ? " pill-bar-over" : ""}`}>
+        <span className="pill-bar-label">תקציב</span>
+        <span className="pill-bar-track" title={budgetTooltip}>
+          <span
+            className="pill-bar-fill"
+            style={{ width: `${Math.min(budgetPct, 100)}%` }}
+          />
+        </span>
+        <span className="pill-bar-pct">{budgetPct}%</span>
+      </div>
+      <div className="pill-bar pill-bar-time">
+        <span className="pill-bar-label">זמן</span>
+        <span className="pill-bar-track">
+          <span
+            className="pill-bar-fill"
+            style={{ width: `${Math.min(timePct, 100)}%` }}
+          />
+        </span>
+        <span className="pill-bar-pct">{timePct}%</span>
+      </div>
+    </div>
   );
 }
 

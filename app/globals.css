@@ -303,9 +303,10 @@ a:hover {
 .project-list a {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 1rem 1rem 1rem 1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem 0.9rem 1rem;
   padding-inline-start: 1.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -316,12 +317,92 @@ a:hover {
   box-shadow: var(--shadow-sm);
 }
 
+.project-pill-top {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
 .project-pill-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Budget + time progress bars, stacked at the bottom of each pill when
+   the morning feed returned numbers for this project. Kept small and
+   tonal so they don't compete with the project name. */
+.project-pill-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pill-bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.pill-bar-label {
+  font-size: 0.72rem;
+  color: var(--text-muted, #6b7280);
+  letter-spacing: 0.01em;
+}
+
+.pill-bar-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.pill-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease-out;
+}
+
+/* Budget bar — neutral earthy tone, flips to red diagonal-stripe
+   pattern when the project is over budget (>100%). */
+.pill-bar-budget .pill-bar-fill {
+  background: var(--text, #111);
+}
+.pill-bar-budget.pill-bar-over .pill-bar-fill {
+  background: repeating-linear-gradient(
+    135deg,
+    #dc2626 0,
+    #dc2626 5px,
+    #b91c1c 5px,
+    #b91c1c 10px
+  );
+  width: 100% !important;
+}
+.pill-bar-budget.pill-bar-over .pill-bar-pct {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* Time bar — lighter, always the same neutral fill regardless of %. */
+.pill-bar-time .pill-bar-fill {
+  background: var(--text-muted, #6b7280);
+  opacity: 0.55;
+}
+
+.pill-bar-pct {
+  font-size: 0.72rem;
+  color: var(--text, #111);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.8em;
+  text-align: end;
+  letter-spacing: 0.01em;
 }
 
 /* Badges at the end of each pill — 📋 N / 🏷️ N when the user has open
