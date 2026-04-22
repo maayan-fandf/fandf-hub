@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import HomeFilterBar from "@/components/HomeFilterBar";
 import {
   getMyProjects,
   getMyCounts,
@@ -11,14 +12,12 @@ import {
 import { companyColorSlot } from "@/lib/colors";
 
 type AlertCounts = { severe: number; warn: number; info: number };
-type HomeSearch = { mine?: string };
+type HomeSearch = { person?: string };
 
 export const dynamic = "force-dynamic";
 
-/** Is this project "mine" — does the current user appear in any of the Keys
- *  roles (campaign mgr / account mgr / internal / client-facing) for this
- *  project? Match is case-insensitive against the user's full display name. */
-function isProjectMine(p: Project, person: string): boolean {
+/** Does `person` appear in any Keys role on project `p`? Case-insensitive. */
+function isPersonOnProject(p: Project, person: string): boolean {
   if (!person) return false;
   const target = person.toLowerCase();
   const r = p.roster;
@@ -30,25 +29,41 @@ function isProjectMine(p: Project, person: string): boolean {
   return false;
 }
 
+/** True if the project's morning-feed endIso is more than 5 days in the past. */
+function isProjectEndedByIso(endIso: string | undefined): boolean {
+  if (!endIso) return false;
+  const end = new Date(endIso + "T00:00:00");
+  if (isNaN(end.getTime())) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 5);
+  cutoff.setHours(0, 0, 0, 0);
+  return end < cutoff;
+}
+
 export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<HomeSearch>;
 }) {
   const sp = await searchParams;
-  // Default: show user's own projects only. `?mine=0` opts into the full
-  // portfolio view. Mirrors the dashboard's default-filter-on-load behavior.
-  const showAll = sp.mine === "0";
-  // Projects + counts in parallel — both one Apps Script call each, no shared
-  // computation so no point in serializing them.
-  const [projectsRes, countsRes, morningRes] = await Promise.allSettled([
+  // Kick off projects + counts in parallel so the morning-feed scope (which
+  // depends on isStaff/isAdmin from the projects call) can be chosen after.
+  const [projectsRes, countsRes] = await Promise.allSettled([
     getMyProjects(),
     getMyCounts(),
-    // Morning feed powers the alert badges. Returns empty for clients (gated
-    // internal-only) so we silently swallow access errors here and just
-    // don't render alert pills for them.
-    getMorningFeed({ scope: "mine" }),
   ]);
+  const dataEarly = projectsRes.status === "fulfilled" ? projectsRes.value : null;
+  // Morning feed scope: staff/admin need "all" so the endIso map covers
+  // projects they're browsing via the person filter; clients always see only
+  // their own projects so "mine" is sufficient.
+  const morningScope: "all" | "mine" =
+    dataEarly && (dataEarly.isAdmin || dataEarly.isStaff) ? "all" : "mine";
+  const morningRes = await Promise.allSettled([
+    // Morning feed powers alert badges AND the "hide ended" filter (via
+    // endIso). Returns empty for clients (gated internal-only) so we silently
+    // swallow access errors.
+    getMorningFeed({ scope: morningScope }),
+  ]).then((r) => r[0]);
 
   const data = projectsRes.status === "fulfilled" ? projectsRes.value : null;
   const counts = countsRes.status === "fulfilled" ? countsRes.value : null;
@@ -66,28 +81,58 @@ export default async function HomePage({
     redirect("/unauthorized");
   }
 
-  // Role-aware default filter: staff (including admins with a resolvable name)
-  // land on their own projects unless ?mine=0 is in the URL. Clients always
-  // see their scoped list — no toggle, no filtering to do.
-  const canFilterMine = !!data && !!data.person && (data.isStaff || data.isAdmin);
+  // Person filter — defaults to the current user's name. `?person=__all__`
+  // is the explicit "show every project" sentinel. Clients have no person-
+  // filtering (their list is already scoped by the server).
+  const canFilterPerson = !!data && (data.isStaff || data.isAdmin);
+  const requestedPerson = sp.person;
+  const selectedPerson: string =
+    !canFilterPerson || !data
+      ? ""
+      : requestedPerson === "__all__"
+        ? ""
+        : requestedPerson !== undefined
+          ? requestedPerson
+          : data.person || "";
   const visibleProjects: Project[] = data
-    ? !canFilterMine || showAll
-      ? data.projects
-      : data.projects.filter((p) => isProjectMine(p, data.person))
+    ? selectedPerson
+      ? data.projects.filter((p) => isPersonOnProject(p, selectedPerson))
+      : data.projects
     : [];
-  // If filtering stripped everything (e.g. user has a Keys role in theory but
-  // isn't actually on any project), fall back to the full list so the page
-  // isn't empty.
+  // If filtering stripped everything (e.g. selected a person with no projects),
+  // fall back to the full list so the page isn't empty.
   const effectiveProjects =
-    canFilterMine && !showAll && visibleProjects.length === 0
-      ? data!.projects
+    selectedPerson && visibleProjects.length === 0 && data
+      ? data.projects
       : visibleProjects;
   const filterFellBack =
-    canFilterMine && !showAll && visibleProjects.length === 0;
+    !!selectedPerson && visibleProjects.length === 0 && !!data;
   const grouped = data ? groupByCompany(effectiveProjects) : [];
   const mineCount = data
-    ? data.projects.filter((p) => isProjectMine(p, data.person)).length
+    ? data.projects.filter((p) => isPersonOnProject(p, data.person)).length
     : 0;
+
+  // Unique list of people across all projects' rosters. Powers the dropdown
+  // options (excluding the current user who gets a dedicated "שלי" option).
+  const peopleSet = new Set<string>();
+  if (data) {
+    for (const p of data.projects) {
+      const r = p.roster;
+      if (r.mediaManager) peopleSet.add(r.mediaManager);
+      if (r.projectManagerFull) peopleSet.add(r.projectManagerFull);
+      for (const n of r.internalOnly) if (n) peopleSet.add(n);
+      for (const n of r.clientFacing) if (n) peopleSet.add(n);
+    }
+  }
+  const allPeople = Array.from(peopleSet);
+
+  // endIso map from the morning feed — powers the hide-ended filter.
+  const endIsoByProject = new Map<string, string>();
+  if (morning) {
+    for (const p of morning.projects) {
+      if (p.endIso) endIsoByProject.set(p.name, p.endIso);
+    }
+  }
   const byProject = counts?.byProject ?? {};
   const totals = counts?.total ?? { openTasks: 0, openMentions: 0 };
 
@@ -171,28 +216,20 @@ export default async function HomePage({
             </div>
           )}
         </div>
-        {canFilterMine && (
-          <div className="home-filter-toggle">
-            <Link
-              href={showAll ? "/" : "/?mine=0"}
-              className={`home-filter-btn${showAll ? "" : " is-active"}`}
-              title={
-                showAll
-                  ? `הצג רק את הפרויקטים שלי (${mineCount})`
-                  : `הצג את כל הפרויקטים (${data?.projects.length ?? 0})`
-              }
-            >
-              {showAll
-                ? `👤 שלי בלבד (${mineCount})`
-                : `🌐 הצג הכל (${data?.projects.length ?? 0})`}
-            </Link>
-          </div>
+        {canFilterPerson && data && (
+          <HomeFilterBar
+            people={allPeople}
+            selected={selectedPerson}
+            currentUser={data.person}
+            totalCount={data.projects.length}
+            mineCount={mineCount}
+          />
         )}
       </header>
 
       {filterFellBack && (
         <div className="info-banner">
-          ℹ️ לא נמצאו פרויקטים שבהם את/ה מוגדר/ת ב-Keys — מציג את כל התיק.
+          ℹ️ לא נמצאו פרויקטים עבור <b>{selectedPerson}</b> — מציג את כל התיק.
         </div>
       )}
 
@@ -235,11 +272,20 @@ export default async function HomePage({
         <div className="company-groups">
           {grouped.map((g) => {
             const slot = companyColorSlot(g.company || "__ungrouped");
+            // A company is "fully ended" only when every one of its projects
+            // is past-end. CSS uses data-all-ended="1" on the whole group to
+            // hide the group (not just its rows) when hide-ended is active.
+            const allEnded =
+              g.projects.length > 0 &&
+              g.projects.every((p) =>
+                isProjectEndedByIso(endIsoByProject.get(p.name)),
+              );
             return (
               <details
                 key={g.company || "__ungrouped"}
                 className="company-group"
                 data-co={slot}
+                data-all-ended={allEnded ? "1" : "0"}
               >
                 <summary className="company-group-summary">
                   <span className="company-group-name">
@@ -267,8 +313,11 @@ export default async function HomePage({
                     const pc = byProject[p.name];
                     const ac = alertsByProject.get(p.name);
                     const pg = progressByProject.get(p.name);
+                    const ended = isProjectEndedByIso(
+                      endIsoByProject.get(p.name),
+                    );
                     return (
-                      <li key={p.name}>
+                      <li key={p.name} data-ended={ended ? "1" : "0"}>
                         <Link href={`/projects/${encodeURIComponent(p.name)}`}>
                           <div className="project-pill-top">
                             <span className="project-pill-name">{p.name}</span>

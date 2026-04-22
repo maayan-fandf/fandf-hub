@@ -264,38 +264,100 @@ a:hover {
   flex-wrap: wrap;
 }
 
-/* Home-page toggle: "שלי בלבד" vs "הצג הכל". Mirrors the dashboard's role-
-   based default filter behavior — starts on "mine", one click to expand. */
-.home-filter-toggle {
+/* Home-page filter bar: person dropdown + hide-ended toggle. Both are pills
+   sharing the same base style (.home-filter-pill) so they sit side-by-side
+   coherently with the rest of the UI's pill/badge vocabulary. */
+.home-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 0.55rem;
 }
 
-.home-filter-btn {
+/* Shared pill base — one border, one height, one hover treatment. */
+.home-filter-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 1rem;
+  gap: 0.45rem;
+  height: 2.2rem;
+  padding: 0 0.9rem;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   font-weight: 600;
-  font-size: 0.9rem;
-  text-decoration: none;
-  transition: background 0.15s, border-color 0.15s;
+  font-size: 0.88rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  box-sizing: border-box;
 }
 
-.home-filter-btn:hover {
-  background: var(--surface-hi, var(--surface));
+.home-filter-pill:hover,
+.home-filter-pill:focus-within {
   border-color: var(--accent);
-  text-decoration: none;
+  background: var(--surface-hi, var(--surface));
 }
 
-.home-filter-btn.is-active {
+.home-filter-pill-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Select variant — the pill wraps a bare <select> so the chrome stays ours. */
+.home-filter-pill--select {
+  padding-inline-end: 0.65rem;  /* small breathing room for the native arrow */
+}
+
+.home-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 240px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  /* Custom caret drawn as a CSS arrow so it matches the pill's accent color. */
+  padding-inline-start: 1.2rem;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 0.65rem) 50%, calc(100% - 0.35rem) 50%;
+  background-size: 0.3rem 0.3rem, 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+.home-filter-select:focus {
+  outline: none;
+}
+
+/* Button variant — toggle state for the hide-ended pill. */
+.home-filter-pill--button {
+  cursor: pointer;
+}
+
+.home-filter-pill--button.is-active {
   background: var(--accent-soft, #eef2ff);
   color: var(--accent-dark, #3730a3);
   border-color: var(--accent, #6366f1);
+}
+.home-filter-pill--button.is-active:hover {
+  background: var(--accent-soft, #eef2ff);
+  filter: brightness(0.98);
+}
+
+/* Hide-ended CSS: the toggle writes data-hide-ended="1" on <html>. When set,
+   individual ended project rows AND fully-ended company groups disappear. */
+html[data-hide-ended="1"] .project-list > li[data-ended="1"] {
+  display: none;
+}
+html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
+  display: none;
 }
 
 /* Info banner shown when the "mine" filter stripped to zero and we fell back. */
@@ -852,6 +914,202 @@ a:hover {
 
 .topnav-external {
   font-size: 0.88rem;
+}
+
+/* Projects nav dropdown — 2-level hover menu.
+   - Trigger is a real <Link> (click navigates home).
+   - Hover the trigger area (or :focus-within for keyboard) reveals the
+     company dropdown.
+   - Hover a company row reveals its projects sub-menu popping to the LEFT
+     of the row (in RTL layout, "left" = further inline-end of the nav).
+   - Pure CSS — no React state — so this can stay a server component. */
+.projects-nav-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.projects-nav-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.projects-nav-chev {
+  font-size: 0.7em;
+  opacity: 0.7;
+}
+
+.projects-nav-dropdown {
+  position: absolute;
+  top: calc(100% + 0.1rem);
+  right: 0;
+  width: 280px;
+  background: var(--card-bg, var(--topnav-bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md, 0 4px 18px rgba(0, 0, 0, 0.18));
+  padding: 0.35rem;
+  z-index: 40;
+  /* Deliberately no overflow:auto here — absolutely-positioned sub-menus
+     need to escape the dropdown bounds on the inline-start (left in RTL)
+     axis. Any overflow value other than 'visible' clips on BOTH axes in
+     most browsers, hiding the nested project sub-menu. */
+  overflow: visible;
+  /* Hidden by default; revealed via :hover / :focus-within on the parent.
+     opacity+visibility keeps the element in the DOM so hover transitions
+     smoothly from trigger to dropdown without a gap flicker. */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s linear 0.12s;
+}
+
+/* A small invisible bridge between trigger and dropdown so moving the mouse
+   between them doesn't drop hover. */
+.projects-nav-menu::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  height: 0.4rem;
+  width: 100%;
+  pointer-events: none;
+}
+.projects-nav-menu:hover::before {
+  pointer-events: auto;
+}
+
+.projects-nav-menu:hover .projects-nav-dropdown,
+.projects-nav-menu:focus-within .projects-nav-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.projects-nav-all {
+  display: block;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.3rem;
+}
+
+.projects-nav-all:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+
+.projects-nav-empty {
+  padding: 0.6rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.projects-nav-company {
+  position: relative;
+  margin-bottom: 0.1rem;
+}
+
+.projects-nav-company-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: default;
+  text-align: right;
+  transition: background 0.1s ease;
+}
+
+.projects-nav-company:hover > .projects-nav-company-btn,
+.projects-nav-company:focus-within > .projects-nav-company-btn {
+  background: var(--accent-soft);
+}
+
+.projects-nav-company-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-nav-company-count {
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  min-width: 1.6rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.projects-nav-company-chev {
+  font-size: 1em;
+  opacity: 0.45;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.projects-nav-projects {
+  position: absolute;
+  top: -0.35rem;
+  /* right:100% positions the sub-menu's right edge at the parent's right
+     edge, so it extends to the LEFT of the company row (RTL: further inline-
+     end). The small gap (0.25rem) creates visual separation. */
+  right: calc(100% + 0.25rem);
+  width: 240px;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  background: var(--card-bg, var(--topnav-bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md, 0 4px 18px rgba(0, 0, 0, 0.18));
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s linear 0.12s;
+  z-index: 41;
+}
+
+.projects-nav-company:hover > .projects-nav-projects,
+.projects-nav-company:focus-within > .projects-nav-projects {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s;
+}
+
+.projects-nav-projects li a {
+  display: block;
+  padding: 0.4rem 0.65rem;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 500;
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.1s ease;
+}
+
+.projects-nav-projects li a:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
 }
 
 .topnav-user {
@@ -2466,31 +2724,59 @@ a.section-link:hover {
   padding: 1.1rem 1.25rem;
 }
 
+/* ─── Tablet / narrow-desktop tightening ───────────────────────────── */
+@media (max-width: 900px) {
+  /* Shrink nav items so all fit on one row before forcing wrap. */
+  .topnav-inner {
+    gap: 0.4rem 0.8rem;
+  }
+  .topnav-link {
+    padding: 0.32rem 0.55rem;
+    font-size: 0.9rem;
+  }
+  /* The ⌘K hint is only useful on desktop-with-keyboard. */
+  .topnav-hint {
+    display: none;
+  }
+  /* Email is informational — take less space when room is tight. */
+  .topnav-email {
+    max-width: 160px;
+    font-size: 0.8rem;
+  }
+}
+
 /* ─── Mobile tightening (narrow viewports) ────────────────────────── */
 @media (max-width: 640px) {
   .container {
     padding: 1rem 0.9rem;
   }
 
-  /* Topnav: less padding + gap so it fits on 1-2 rows after wrap. */
   .topnav-inner {
-    padding: 0.55rem 0.9rem;
-    gap: 0.4rem 0.9rem;
+    padding: 0.55rem 0.75rem;
+    gap: 0.35rem 0.6rem;
+  }
+
+  .topnav-brand {
+    font-size: 1.02rem;
   }
 
   .topnav-link {
-    font-size: 0.88rem;
-    padding: 0.3rem 0.55rem;
+    font-size: 0.85rem;
+    padding: 0.28rem 0.45rem;
   }
 
-  /* The ⌘K hint is pointless on touch devices — hide. */
-  .topnav-hint {
-    display: none;
+  /* Drop the dashboard-link text on phones — icon is enough. */
+  .topnav-external {
+    font-size: 0;   /* hides the "דשבורד" label but keeps the 🔗 emoji */
+  }
+  .topnav-external::before {
+    content: "🔗";
+    font-size: 1rem;
   }
 
+  /* Hide the email entirely on phones — identity is shown on the avatar. */
   .topnav-email {
-    max-width: 160px;
-    font-size: 0.78rem;
+    display: none;
   }
 
   .topnav-signout {
@@ -2510,6 +2796,20 @@ a.section-link:hover {
 
   .page-header h1 .emoji {
     font-size: 1.15em;
+  }
+
+  /* Filter bar stacks on phones so pills wrap cleanly. */
+  .home-filter-bar {
+    width: 100%;
+  }
+  .home-filter-pill--select {
+    flex: 1;
+    min-width: 0;
+  }
+  .home-filter-select {
+    max-width: none;
+    flex: 1;
+    min-width: 0;
   }
 
   /* Stats tiles and project cards should stack cleanly on mobile. */

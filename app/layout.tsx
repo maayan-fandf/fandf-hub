@@ -6,7 +6,9 @@ import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
+import ProjectsNavMenu from "@/components/ProjectsNavMenu";
 import ThemeToggle from "@/components/ThemeToggle";
+import { getMyProjects, type Project } from "@/lib/appsScript";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -38,6 +40,20 @@ export default async function RootLayout({
 }) {
   const session = await auth();
   const email = session?.user?.email ?? null;
+
+  // Prefetch the user's projects server-side so the nav dropdown opens
+  // instantly. Next dedupes the `myProjects` call with the one /page.tsx
+  // makes, so this is free when landing on the home page.
+  let navProjects: Project[] = [];
+  if (email) {
+    try {
+      const data = await getMyProjects();
+      navProjects = data.projects;
+    } catch {
+      navProjects = [];
+    }
+  }
+
   const dashboardBase = process.env.DASHBOARD_URL ?? "";
   // Append ?authuser=<user-email> so multi-account browsers land in the right
   // Google slot instead of Apps Script's default "last used" account. Preserves
@@ -64,9 +80,13 @@ export default async function RootLayout({
             <Link href="/" className="topnav-brand">
               ✨ Hub
             </Link>
-            <Link href="/" className="topnav-link">
-              📂 פרויקטים
-            </Link>
+            {email ? (
+              <ProjectsNavMenu projects={navProjects} />
+            ) : (
+              <Link href="/" className="topnav-link">
+                📂 פרויקטים
+              </Link>
+            )}
             {email && <NavMorningLink />}
             <Link href="/inbox" className="topnav-link topnav-link-with-badge">
               🏷️ תיוגים
