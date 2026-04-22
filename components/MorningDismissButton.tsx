@@ -96,7 +96,7 @@ export default function MorningDismissButton({ signalKey, revisit, dismissed }: 
         className="morning-dismiss-primary"
         disabled={busy}
         onClick={() => dismiss()}
-        title="טיפלתי — השקט את ההתראה"
+        title="טיפלתי — משתיק את ההתראה לצוות כולו עד פקיעת ההשהייה (ברירת מחדל לפי סוג ההתראה: 1–7 ימים). לחץ ⋯ לבחירת משך אחר."
       >
         {busy ? "…" : "✓ טיפלתי"}
       </button>
