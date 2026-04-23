@@ -132,6 +132,9 @@ export default async function ProjectOverviewPage({
         <StatTile label='💬 סה"כ הערות' value={totalComments} variant="comments" />
       </div>
 
+      {/* Section order intentionally matches the stats row above (tasks /
+          mentions / comments) so each column lines up with its count tile
+          when the grid renders in RTL. */}
       <div className="project-sections">
         <section className="project-section">
           <div className="section-head">
@@ -143,7 +146,19 @@ export default async function ProjectOverviewPage({
               פתח לוח ←
             </Link>
           </div>
+          <p className="section-subtitle">משימות פתוחות על שרשורים בפרויקט</p>
           <TasksPreview tasks={tasks} today={tasksData?.today ?? today()} />
+        </section>
+
+        <section className="project-section">
+          <div className="section-head">
+            <h2>🏷️ התיוגים שלך בפרויקט</h2>
+            <Link className="section-link" href="/inbox">
+              כל התיוגים ←
+            </Link>
+          </div>
+          <p className="section-subtitle">שרשורים שבהם תויגת ועוד לא סגרת</p>
+          <MentionsPreview mentions={myMentionsOnProject} />
         </section>
 
         <section className="project-section">
@@ -156,22 +171,13 @@ export default async function ProjectOverviewPage({
               פתח ציר זמן ←
             </Link>
           </div>
-          <CommentsPreview comments={comments} />
+          <p className="section-subtitle">פעילות חדשה בפרויקט — הערות פתוחות</p>
+          <CommentsPreview comments={comments} projectName={projectName} />
           {totalComments > comments.length && (
             <div className="section-foot">
               מציג {comments.length} מתוך {totalComments}
             </div>
           )}
-        </section>
-
-        <section className="project-section">
-          <div className="section-head">
-            <h2>🏷️ התיוגים שלך בפרויקט</h2>
-            <Link className="section-link" href="/inbox">
-              כל התיוגים ←
-            </Link>
-          </div>
-          <MentionsPreview mentions={myMentionsOnProject} />
         </section>
       </div>
 
@@ -294,10 +300,36 @@ function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
   );
 }
 
-function CommentsPreview({ comments }: { comments: CommentItem[] }) {
-  const top = comments.filter((c) => !c.parent_id).slice(0, 8);
-  if (top.length === 0) {
+function CommentsPreview({
+  comments,
+  projectName,
+}: {
+  comments: CommentItem[];
+  projectName: string;
+}) {
+  // Default-hide resolved threads — they're still reachable via the "N
+  // פתורות →" link below, which jumps to the timeline with ?resolved=1.
+  // Keeps the preview focused on active conversations.
+  const topLevel = comments.filter((c) => !c.parent_id);
+  const open = topLevel.filter((c) => !c.resolved);
+  const resolvedCount = topLevel.length - open.length;
+  const top = open.slice(0, 8);
+
+  if (top.length === 0 && resolvedCount === 0) {
     return <div className="empty-small">💭 אין הערות בפרויקט זה עדיין.</div>;
+  }
+  if (top.length === 0) {
+    return (
+      <div className="empty-small">
+        ✅ אין הערות פתוחות.{" "}
+        <Link
+          href={`/projects/${encodeURIComponent(projectName)}/timeline?resolved=1`}
+          className="section-link"
+        >
+          הצג {resolvedCount} פתורות ←
+        </Link>
+      </div>
+    );
   }
   return (
     <ul className="compact-list">
@@ -337,16 +369,40 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
           </div>
         </li>
       ))}
+      {resolvedCount > 0 && (
+        <li className="compact-comment compact-comment-footer">
+          <Link
+            href={`/projects/${encodeURIComponent(projectName)}/timeline?resolved=1`}
+            className="section-link"
+          >
+            + הצג {resolvedCount} {resolvedCount === 1 ? "הערה פתורה" : "הערות פתורות"} בציר הזמן ←
+          </Link>
+        </li>
+      )}
     </ul>
   );
 }
 
 function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
-  const top = mentions.slice(0, 5);
-  if (top.length === 0) {
+  // Default-hide resolved mentions — they still exist on the inbox page
+  // under the "הצג סגורים" toggle. Preview stays focused on open tags.
+  const openMentions = mentions.filter((m) => !m.resolved);
+  const resolvedCount = mentions.length - openMentions.length;
+  const top = openMentions.slice(0, 5);
+  if (top.length === 0 && resolvedCount === 0) {
     return (
       <div className="empty-small">
         🌿 לא תויגת בפרויקט זה.
+      </div>
+    );
+  }
+  if (top.length === 0) {
+    return (
+      <div className="empty-small">
+        ✅ אין תיוגים פתוחים עבורך בפרויקט זה.{" "}
+        <Link href="/inbox?resolved=1" className="section-link">
+          הצג {resolvedCount} פתורים ←
+        </Link>
       </div>
     );
   }
@@ -402,6 +458,13 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
           </li>
         );
       })}
+      {resolvedCount > 0 && (
+        <li className="compact-comment compact-comment-footer">
+          <Link href="/inbox?resolved=1" className="section-link">
+            + הצג {resolvedCount} {resolvedCount === 1 ? "תיוג פתור" : "תיוגים פתורים"} בתיבת התיוגים ←
+          </Link>
+        </li>
+      )}
     </ul>
   );
 }
