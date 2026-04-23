@@ -7,12 +7,13 @@ import {
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
 import CardActions from "@/components/CardActions";
+import ScrollToThread from "@/components/ScrollToThread";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
 type Params = { project: string };
-type Search = { kind?: string; resolved?: string };
+type Search = { kind?: string; resolved?: string; q?: string; author?: string };
 
 type CommentEntry = {
   kind: "comment";
@@ -43,6 +44,9 @@ export default async function ProjectTimelinePage({
   const kindFilter: "" | "comment" | "task" =
     rawKind === "comment" || rawKind === "task" ? rawKind : "";
   const showResolved = sp.resolved === "1";
+  const query = (sp.q ?? "").trim();
+  const queryLc = query.toLowerCase();
+  const authorFilter = (sp.author ?? "").trim();
 
   const [tasksRes, commentsRes] = await Promise.allSettled([
     getProjectTasks(projectName),
@@ -132,6 +136,35 @@ export default async function ProjectTimelinePage({
     });
   }
 
+  // Text + author filters — applied after kind/resolved so the filter bar's
+  // counts still reflect the broader feed. Authors are case-insensitive
+  // matched against the stored full name OR email. Query matches the body
+  // (comment.body or task.title + task.body) substring, case-insensitive.
+  const entryAuthorName = (e: FeedEntry): string =>
+    e.kind === "comment" ? e.comment.author_name || e.comment.author_email : e.task.author_name || e.task.author_email;
+  const entryBodyLc = (e: FeedEntry): string =>
+    e.kind === "comment"
+      ? (e.comment.body || "").toLowerCase()
+      : ((e.task.title || "") + " " + (e.task.body || "")).toLowerCase();
+
+  if (authorFilter) {
+    const af = authorFilter.toLowerCase();
+    visible = visible.filter((e) => entryAuthorName(e).toLowerCase() === af);
+  }
+  if (queryLc) {
+    visible = visible.filter((e) => entryBodyLc(e).includes(queryLc));
+  }
+
+  // Distinct author names across the whole feed — powers the filter dropdown.
+  // Built from `allEntries` (not `visible`) so toggling a filter doesn't shrink
+  // the dropdown options the user might want to pick next.
+  const authorSet = new Set<string>();
+  for (const e of allEntries) {
+    const name = entryAuthorName(e);
+    if (name) authorSet.add(name);
+  }
+  const authors = Array.from(authorSet).sort((a, b) => a.localeCompare(b, "he"));
+
   return (
     <main className="container">
       <header className="page-header">
@@ -164,8 +197,14 @@ export default async function ProjectTimelinePage({
           currentKind={kindFilter}
           showResolved={showResolved}
           counts={counts}
+          authors={authors}
+          currentAuthor={authorFilter}
+          currentQuery={query}
         />
       )}
+      {/* Scroll-to-thread on #thread-{id} hash — e.g. from ⌘K results
+          or the dashboard drawer's "פתח בהאב" deep-links. */}
+      <ScrollToThread />
 
       {!firstError && visible.length === 0 && (
         <div className="empty">
@@ -202,8 +241,12 @@ export default async function ProjectTimelinePage({
 function CommentRow({ entry }: { entry: CommentEntry }) {
   const c = entry.comment;
   const isReply = !!c.parent_id;
+  // Anchor id — target for #thread-{id} deep-links (⌘K results, dashboard
+  // drawer's "פתח בהאב" button). For replies, land on the reply itself so
+  // the user sees the specific sub-comment, not just the thread root.
   return (
     <li
+      id={`thread-${c.comment_id}`}
       className={`timeline-entry ${c.resolved ? "is-resolved" : ""} ${isReply ? "is-reply" : ""}`}
     >
       <div className="timeline-rail">
@@ -276,8 +319,14 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
 function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
   const t = entry.task;
   const state = taskState(t, today);
+  // Tasks share the thread anchor with their source comment so a ⌘K deep
+  // link lands on whichever form (task-only row or comment-with-task chip)
+  // happens to render for this thread.
   return (
-    <li className={`timeline-entry ${t.resolved ? "is-resolved" : ""}`}>
+    <li
+      id={`thread-${t.comment_id}`}
+      className={`timeline-entry ${t.resolved ? "is-resolved" : ""}`}
+    >
       <div className="timeline-rail">
         <span
           className={`timeline-dot timeline-dot-task ${state}`}

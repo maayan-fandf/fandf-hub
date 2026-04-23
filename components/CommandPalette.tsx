@@ -247,14 +247,18 @@ export default function CommandPalette() {
           .map((x) => x.c)
       : local.slice(0, 50);
 
-    // Remote content matches → "content" commands, opened via deep link.
+    // Remote content matches → "content" commands. Land the user on the
+    // hub's own timeline with a #thread-<id> anchor so ScrollToThread flashes
+    // the exact row. The dashboard's deep_link remains available via the
+    // "פתח בדשבורד" path inside the timeline itself — palette prefers the
+    // hub view to keep everything in one app.
     const contentCmds: ContentCmd[] = contentResults.map((r) => ({
       kind: "content",
       key: `content:${r.comment_id}`,
       label: truncate(r.body, 120),
       sublabel: `${r.project} · ${r.author_name || r.author_email} · ${formatRelative(r.timestamp)}`,
-      href: r.deep_link || `/projects/${encodeURIComponent(r.project)}/timeline`,
-      external: !!r.deep_link,
+      href: `/projects/${encodeURIComponent(r.project)}/timeline#thread-${r.comment_id}`,
+      external: false,
       resolved: r.resolved,
       hasTasks: r.has_tasks,
     }));
