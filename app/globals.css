@@ -553,6 +553,70 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
   text-decoration: none;
 }
 
+/* @-mention picker dropdown — portals above the CreateTaskDrawer textarea.
+ * position: fixed so it escapes the modal's overflow and can grow upward
+ * via transform: translateY(-100%). Each result row is an avatar + name +
+ * role chip; arrow-keys move the active index, Enter/Tab commits, Escape
+ * closes. Matches the dashboard's comment-drawer mention UX. */
+.mention-dropdown {
+  position: fixed;
+  z-index: 10000;
+  min-width: 240px;
+  max-width: 360px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  transform: translateY(-100%);
+  display: none;
+}
+.mention-dropdown.open { display: block; }
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.mention-item:last-child { border-bottom: none; }
+.mention-item.is-active,
+.mention-item:hover {
+  background: var(--surface-soft, var(--surface));
+  filter: brightness(0.97);
+}
+html[data-theme="dark"] .mention-item.is-active,
+html[data-theme="dark"] .mention-item:hover {
+  filter: brightness(1.2);
+}
+.mention-item-name {
+  font-weight: 600;
+  color: var(--fg);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Footer row under the create-task textarea — shows mention count on the
+ * left, char count on the right. Uses flex so it stays aligned across LTR/RTL. */
+.create-task-body-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.create-task-mentions-hint {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Top-of-viewport navigation progress bar. Thin accent-colored line that
  * starts on internal-link click and completes when the new pathname
  * renders. Pattern mimics nprogress: slow 0→80% fill during load, snap

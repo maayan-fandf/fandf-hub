@@ -11,10 +11,10 @@ const META: Record<
   string,
   { emoji: string; label: string; cls: string }
 > = {
-  admin:       { emoji: "👑", label: "אדמין",      cls: "role-admin" },
+  admin:       { emoji: "👑", label: "אדמין",       cls: "role-admin" },
   campaign:    { emoji: "🎯", label: "קמפיינים",   cls: "role-campaign" },
-  account:     { emoji: "👔", label: "לקוח",       cls: "role-account" },
-  internal:    { emoji: "🎨", label: "קריאייטיב", cls: "role-creative" },
+  account:     { emoji: "👔", label: "מנהל לקוח",  cls: "role-account" },
+  internal:    { emoji: "🎨", label: "קריאייטיב",  cls: "role-creative" },
   internal_cf: { emoji: "🌈", label: "קריאייטיב",  cls: "role-creative-cf" },
   client:      { emoji: "🛍️", label: "לקוח",       cls: "role-client" },
 };
