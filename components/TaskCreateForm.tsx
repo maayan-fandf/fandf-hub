@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { TasksPerson } from "@/lib/appsScript";
 
 const DEPARTMENTS = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 const KINDS = [
@@ -14,14 +15,24 @@ const KINDS = [
   { val: "other", label: "אחר" },
 ];
 
-type ProjectOption = { name: string; company: string };
+type ProjectOption = {
+  name: string;
+  company: string;
+  /** Keys col D "EMAIL Manager" — stored as a display name like
+   *  "Itay Stein". Resolved to an email client-side via the people list. */
+  projectManagerFull: string;
+};
 
 export default function TaskCreateForm({
   projects,
   defaultProject,
+  people,
+  currentUserEmail,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
+  people: TasksPerson[];
+  currentUserEmail: string;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -38,24 +49,53 @@ export default function TaskCreateForm({
     return m;
   }, [projects]);
 
-  const defaultCompany =
-    projects.find((p) => p.name === defaultProject)?.company || "";
+  // Resolve a Keys display-name (like "Itay Stein") to an email by
+  // matching against the people list by name. Lower-cased exact match;
+  // falls back to empty so the user can type the address manually.
+  const nameToEmail = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of people) {
+      const k = String(p.name || "").trim().toLowerCase();
+      if (k && !m.has(k)) m.set(k, p.email);
+    }
+    return m;
+  }, [people]);
+
+  const defaultProjectOpt = projects.find((p) => p.name === defaultProject);
+  const defaultCompany = defaultProjectOpt?.company || "";
+  const defaultPm = defaultProjectOpt
+    ? nameToEmail.get(defaultProjectOpt.projectManagerFull.trim().toLowerCase()) || ""
+    : "";
 
   const [company, setCompany] = useState(defaultCompany);
   const [project, setProject] = useState(defaultProject);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [projectManager, setProjectManager] = useState(defaultPm);
+  const [approver, setApprover] = useState("");
+  const [assignees, setAssignees] = useState("");
 
-  // Projects available for the currently-selected company. Empty company
-  // = show every project. Switching companies resets the project select
-  // (the new list may not include the old selection).
-  const companyProjects = company
-    ? byCompany.get(company) || []
-    : projects;
+  const companyProjects = company ? byCompany.get(company) || [] : projects;
 
   function toggleDept(d: string) {
     setDepartments((cur) =>
       cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d],
     );
+  }
+
+  function onProjectChange(name: string) {
+    setProject(name);
+    const opt = projects.find((x) => x.name === name);
+    if (opt) {
+      // Auto-fill company if user picked project first.
+      if (!company && opt.company) setCompany(opt.company);
+      // Auto-fill project manager from the project's Keys roster, BUT
+      // only if the user hasn't already typed something. This respects
+      // manual entry if they're ahead of the cascade.
+      const pmEmail = nameToEmail.get(
+        opt.projectManagerFull.trim().toLowerCase(),
+      );
+      if (pmEmail && !projectManager) setProjectManager(pmEmail);
+    }
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -64,7 +104,7 @@ export default function TaskCreateForm({
     setError(null);
     const fd = new FormData(e.currentTarget);
 
-    const assignees = String(fd.get("assignees") || "")
+    const assigneeList = assignees
       .split(/[,;\n]/)
       .map((s) => s.trim())
       .filter(Boolean);
@@ -78,9 +118,9 @@ export default function TaskCreateForm({
       departments,
       kind: String(fd.get("kind") || ""),
       priority: Number(fd.get("priority") || "2"),
-      approver_email: String(fd.get("approver_email") || ""),
-      project_manager_email: String(fd.get("project_manager_email") || ""),
-      assignees,
+      approver_email: approver,
+      project_manager_email: projectManager,
+      assignees: assigneeList,
       requested_date: String(fd.get("requested_date") || ""),
     };
 
@@ -111,6 +151,15 @@ export default function TaskCreateForm({
     <form className="task-form" onSubmit={onSubmit}>
       {error && <div className="error">{error}</div>}
 
+      {/* Shared datalist for all four people inputs below. */}
+      <datalist id="tasks-people">
+        {people.map((p) => (
+          <option key={p.email} value={p.email}>
+            {p.name} · {p.role}
+          </option>
+        ))}
+      </datalist>
+
       <div className="task-form-row">
         <label>
           חברה
@@ -119,6 +168,7 @@ export default function TaskCreateForm({
             onChange={(e) => {
               setCompany(e.target.value);
               setProject(""); // reset — project list changes with company
+              setProjectManager(""); // reset PM until new project is picked
             }}
           >
             <option value="">בחר חברה…</option>
@@ -135,14 +185,7 @@ export default function TaskCreateForm({
           <select
             required
             value={project}
-            onChange={(e) => {
-              setProject(e.target.value);
-              // Auto-fill company if user picks the project first.
-              if (!company) {
-                const p = projects.find((x) => x.name === e.target.value);
-                if (p?.company) setCompany(p.company);
-              }
-            }}
+            onChange={(e) => onProjectChange(e.target.value)}
           >
             <option value="">בחר פרויקט…</option>
             {companyProjects.map((p) => (
@@ -230,32 +273,85 @@ export default function TaskCreateForm({
 
       <div className="task-form-row">
         <label>
-          גורם מאשר (מייל או שם)
+          גורם מאשר
           <input
             type="text"
-            name="approver_email"
+            list="tasks-people"
+            value={approver}
+            onChange={(e) => setApprover(e.target.value)}
             placeholder="name@fandf.co.il"
           />
         </label>
 
         <label>
-          מנהל פרויקט (מייל או שם)
+          מנהל פרויקט
           <input
             type="text"
-            name="project_manager_email"
+            list="tasks-people"
+            value={projectManager}
+            onChange={(e) => setProjectManager(e.target.value)}
             placeholder="name@fandf.co.il"
           />
         </label>
 
         <label>
-          עובדים במשימה (פסיקים או שורות)
+          עובדים במשימה
           <textarea
-            name="assignees"
             rows={2}
+            value={assignees}
+            onChange={(e) => setAssignees(e.target.value)}
             placeholder="felix@fandf.co.il, nadav@fandf.co.il"
           />
+          {people.length > 0 && (
+            <div className="task-form-assignee-chips">
+              {people.slice(0, 24).map((p) => {
+                const already = assignees
+                  .split(/[,;\n]/)
+                  .map((s) => s.trim().toLowerCase())
+                  .includes(p.email.toLowerCase());
+                return (
+                  <button
+                    key={p.email}
+                    type="button"
+                    className={`task-form-assignee-chip${
+                      already ? " is-active" : ""
+                    }`}
+                    title={`${p.name} · ${p.role}`}
+                    onClick={() => {
+                      // Toggle: click once to append, click again to remove
+                      // (matches the department chip row pattern above).
+                      if (already) {
+                        const next = assignees
+                          .split(/[,;\n]/)
+                          .map((s) => s.trim())
+                          .filter(
+                            (s) =>
+                              s.toLowerCase() !== p.email.toLowerCase(),
+                          )
+                          .join(", ");
+                        setAssignees(next);
+                      } else {
+                        const cleaned = assignees.replace(/[,;\s]+$/g, "");
+                        setAssignees(
+                          cleaned ? `${cleaned}, ${p.email}` : p.email,
+                        );
+                      }
+                    }}
+                  >
+                    {p.name.split(/\s+/)[0]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </label>
       </div>
+
+      {currentUserEmail && (
+        <div className="task-form-author-line">
+          כותב המשימה: <b dir="ltr">{currentUserEmail}</b>
+        </div>
+      )}
 
       <div className="task-form-actions">
         <button type="submit" className="btn-primary" disabled={saving}>

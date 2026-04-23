@@ -3920,6 +3920,46 @@ html[data-theme="dark"] .tasks-round-chip {
   color: #fff;
 }
 
+/* Assignee chip-picker — workaround for the fact that <textarea list>
+   is ignored by browsers (datalist only works on <input>). Users type
+   directly in the textarea OR click a chip to toggle an email in/out
+   of the comma-separated list. */
+.task-form-assignee-chips {
+  display: flex; flex-wrap: wrap; gap: .35em;
+  margin-top: .4em;
+}
+.task-form-assignee-chip {
+  padding: .25em .7em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: .82em;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.task-form-assignee-chip:hover { background: var(--surface-soft); }
+.task-form-assignee-chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Read-only author confirmation above the submit. The server sets
+   author_email from the NextAuth session either way; this just makes
+   the attribution visible so there's no "what will this look like in
+   the queue?" doubt. */
+.task-form-author-line {
+  font-size: .85em;
+  color: var(--muted);
+  padding: .6em .9em;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.task-form-author-line b { color: var(--text); }
+
 .tasks-priority-pill {
   display: inline-block;
   min-width: 1.5em;
