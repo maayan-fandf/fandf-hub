@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
@@ -10,6 +11,7 @@ import NavMorningLink from "@/components/NavMorningLink";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
+import TopProgressBar from "@/components/TopProgressBar";
 import { getMyProjects, type Project } from "@/lib/appsScript";
 import { isPersonOnProject, SCOPE_PERSON_COOKIE } from "@/lib/scope";
 
@@ -101,6 +103,12 @@ export default async function RootLayout({
         />
       </head>
       <body>
+        {/* Suspense boundary required by Next.js 15 for any client component
+            that reads useSearchParams (TopProgressBar uses it to detect
+            navigation completion on ?-param changes). */}
+        <Suspense fallback={null}>
+          <TopProgressBar />
+        </Suspense>
         <nav className="topnav">
           <div className="topnav-inner">
             <Link href="/" className="topnav-brand">
