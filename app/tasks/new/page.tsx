@@ -4,7 +4,7 @@ import TaskCreateForm from "@/components/TaskCreateForm";
 
 export const dynamic = "force-dynamic";
 
-type Search = { project?: string };
+type Search = { project?: string; company?: string };
 
 export default async function NewTaskPage({
   searchParams,
@@ -13,7 +13,10 @@ export default async function NewTaskPage({
 }) {
   const sp = await searchParams;
   const projectsRes = await getMyProjects().catch(() => null);
-  const projects = (projectsRes?.projects ?? []).map((p) => p.name).sort();
+  const projects = (projectsRes?.projects ?? []).map((p) => ({
+    name: p.name,
+    company: p.company,
+  }));
 
   return (
     <main className="container">
@@ -26,9 +29,9 @@ export default async function NewTaskPage({
             משימה חדשה
           </h1>
           <div className="subtitle">
-            ברירת המחדל — יוצר משימה עם סטטוס &quot;ממתין לאישור&quot;. בעת יצירה
-            המערכת פותחת תיקייה ב־Drive, שולחת מייל לגורם המאשר, ומוסיפה אירוע
-            ב־Google Calendar + משימה ב־Google Tasks לכל מבצע.
+            ברירת המחדל — &quot;ממתין לאישור&quot;. בעת יצירה: תיקייה ב־Drive
+            תחת <code dir="ltr">חברה / פרויקט / משימה</code>, מייל לגורם המאשר,
+            אירוע ב־Google Calendar + משימה ב־Google Tasks לכל מבצע.
           </div>
         </div>
         <div className="page-header-actions">

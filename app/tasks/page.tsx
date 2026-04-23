@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   tasksList,
+  getMyProjects,
   type WorkTask,
   type WorkTaskStatus,
 } from "@/lib/appsScript";
@@ -8,15 +9,17 @@ import {
 export const dynamic = "force-dynamic";
 
 type Search = {
+  company?: string;
   project?: string;
+  brief?: string;
   status?: string;
   department?: string;
+  author?: string;
+  project_manager?: string;
   assignee?: string;
 };
 
-// Data Plus's four lifecycle buckets, same Hebrew labels the team already
-// uses. `awaiting_clarification` maps to "ממתין לבירור" — the clarification
-// loop before a task can move into "בעבודה".
+// Data Plus's four lifecycle buckets, same Hebrew labels.
 const STATUS_BUCKETS: { key: WorkTaskStatus; label: string; tone: string }[] = [
   { key: "in_progress", label: "בעבודה", tone: "in_progress" },
   { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
@@ -31,28 +34,48 @@ export default async function TasksPage({
 }) {
   const sp = await searchParams;
 
-  const { tasks, error } = await tasksList({
-    project: sp.project || "",
-    status: (sp.status as WorkTaskStatus) || "",
-    department: sp.department || "",
-    assignee: sp.assignee || "",
-  })
-    .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
-    .catch((e: unknown) => ({
-      tasks: [] as WorkTask[],
-      error: e instanceof Error ? e.message : String(e),
-    }));
+  // Load tasks + the project list in parallel. projectList feeds the
+  // company/project dropdowns so they show *all* options the user has
+  // access to, not just the ones already represented in the filtered
+  // result set (which was the Phase 0 behaviour).
+  const [tasksRes, projectsRes] = await Promise.all([
+    tasksList({
+      company: sp.company || "",
+      project: sp.project || "",
+      brief: sp.brief || "",
+      status: (sp.status as WorkTaskStatus) || "",
+      department: sp.department || "",
+      author: sp.author || "",
+      project_manager: sp.project_manager || "",
+      assignee: sp.assignee || "",
+    })
+      .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
+      .catch((e: unknown) => ({
+        tasks: [] as WorkTask[],
+        error: e instanceof Error ? e.message : String(e),
+      })),
+    getMyProjects().catch(() => null),
+  ]);
+  const { tasks, error } = tasksRes;
 
-  // Distinct projects + departments from the current result set for the
-  // filter dropdowns. Stable-sorted.
-  const projects = Array.from(new Set(tasks.map((t) => t.project))).sort();
-  const departments = Array.from(
-    new Set(tasks.map((t) => t.department).filter(Boolean)),
+  // Company/project options from the Keys roster (all projects the user
+  // can see), not just the ones in the current result set — so the
+  // dropdowns stay usable after narrowing filters down to zero matches.
+  const allProjects = projectsRes?.projects ?? [];
+  const companyOptions = Array.from(
+    new Set(allProjects.map((p) => p.company).filter(Boolean)),
   ).sort();
+  const projectOptions = Array.from(
+    new Set(
+      (sp.company
+        ? allProjects.filter((p) => p.company === sp.company)
+        : allProjects
+      ).map((p) => p.name),
+    ),
+  ).sort();
+  const departmentOptions = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 
-  // Group by bucket for rendering; any status that doesn't match a bucket
-  // (e.g. `draft`, `cancelled`) falls into a separate tail bucket we hide
-  // by default. Keeps the top-level queue focused.
+  // Bucketize.
   const byStatus: Record<string, WorkTask[]> = {};
   for (const b of STATUS_BUCKETS) byStatus[b.key] = [];
   const other: WorkTask[] = [];
@@ -73,7 +96,8 @@ export default async function TasksPage({
           </h1>
           <div className="subtitle">
             ניהול משימות — יצירה, אישור, ובקרת סטטוס. כל משימה מקבלת תיקייה
-            ב־Drive, אירוע ביומן של המבצע, משימה ב־Google Tasks, ומייל לאישור.
+            ב־Drive תחת <code dir="ltr">חברה / פרויקט / משימה</code>, אירוע ביומן
+            לכל מבצע, משימה ב־Google Tasks, ומייל לגורם המאשר.
           </div>
         </div>
         <div className="page-header-actions">
@@ -85,13 +109,18 @@ export default async function TasksPage({
 
       <TasksFilterBar
         current={{
+          company: sp.company || "",
           project: sp.project || "",
+          brief: sp.brief || "",
           status: sp.status || "",
           department: sp.department || "",
+          author: sp.author || "",
+          project_manager: sp.project_manager || "",
           assignee: sp.assignee || "",
         }}
-        projects={projects}
-        departments={departments}
+        companies={companyOptions}
+        projects={projectOptions}
+        departments={departmentOptions}
       />
 
       {error && (
@@ -124,20 +153,21 @@ export default async function TasksPage({
               <table className="tasks-table">
                 <thead>
                   <tr>
-                    <th className="num">#</th>
-                    <th>פרויקט</th>
-                    <th>כותרת</th>
-                    <th>מחלקה</th>
-                    <th>עדיפות</th>
-                    <th>תאריך מבוקש</th>
-                    <th>עובדים במשימה</th>
-                    <th>גורם מאשר</th>
-                    <th>כותב המשימה</th>
+                    <th className="num">בריף</th>
+                    <th>חברה / פרויקט</th>
+                    <th>פרטי המשימה</th>
+                    <th>מחלקות</th>
+                    <th>עדיפות / תאריך</th>
+                    {b.key === "in_progress" && <th>סטטוס</th>}
+                    <th>עובדים</th>
+                    <th>מאשר</th>
+                    <th>כותב</th>
+                    <th className="icons">פעולות</th>
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((t) => (
-                    <TaskRow key={t.id} task={t} />
+                    <TaskRow key={t.id} task={t} showSubStatus={b.key === "in_progress"} />
                   ))}
                 </tbody>
               </table>
@@ -159,14 +189,18 @@ export default async function TasksPage({
                   <th>פרויקט</th>
                   <th>כותרת</th>
                   <th>תאריך מבוקש</th>
-                  <th>כותב המשימה</th>
+                  <th>כותב</th>
                 </tr>
               </thead>
               <tbody>
                 {other.map((t) => (
                   <tr key={t.id}>
                     <td>
-                      <span className="tasks-status-pill">{t.status}</span>
+                      <span
+                        className={`tasks-status-pill tasks-status-${t.status}`}
+                      >
+                        {t.status}
+                      </span>
                     </td>
                     <td>{t.project}</td>
                     <td>
@@ -187,14 +221,28 @@ export default async function TasksPage({
   );
 }
 
-function TaskRow({ task }: { task: WorkTask }) {
+function TaskRow({
+  task,
+  showSubStatus,
+}: {
+  task: WorkTask;
+  showSubStatus: boolean;
+}) {
   return (
     <tr>
-      <td className="num">{task.id.slice(-6)}</td>
+      <td className="num">{task.brief || task.id.slice(-6)}</td>
       <td>
-        <Link href={`/projects/${encodeURIComponent(task.project)}`}>
-          {task.project}
-        </Link>
+        <div className="tasks-proj-cell">
+          {task.company && (
+            <span className="tasks-company">{task.company}</span>
+          )}
+          <Link
+            href={`/projects/${encodeURIComponent(task.project)}`}
+            className="tasks-project-link"
+          >
+            {task.project}
+          </Link>
+        </div>
       </td>
       <td className="title-cell">
         <Link
@@ -203,6 +251,11 @@ function TaskRow({ task }: { task: WorkTask }) {
         >
           {task.title}
         </Link>
+        {task.round_number > 1 && (
+          <span className="tasks-round-chip" title="סבב תיקונים">
+            סבב #{task.round_number}
+          </span>
+        )}
         {task.description && (
           <div className="tasks-desc-preview">
             {task.description.slice(0, 90)}
@@ -210,16 +263,58 @@ function TaskRow({ task }: { task: WorkTask }) {
           </div>
         )}
       </td>
-      <td>{task.department || "—"}</td>
       <td>
+        {(task.departments || []).length
+          ? (task.departments || []).join(", ")
+          : "—"}
+      </td>
+      <td className="date-cell">
         <span className={`tasks-priority-pill p${task.priority}`}>
           {task.priority || "—"}
-        </span>
+        </span>{" "}
+        {task.requested_date || "—"}
       </td>
-      <td className="date-cell">{task.requested_date || "—"}</td>
+      {showSubStatus && (
+        <td>
+          {task.sub_status ? (
+            <span className="tasks-substatus-pill">{task.sub_status}</span>
+          ) : (
+            "—"
+          )}
+        </td>
+      )}
       <td>{(task.assignees || []).map(shortName).join(", ") || "—"}</td>
       <td>{shortName(task.approver_email) || "—"}</td>
       <td>{shortName(task.author_email) || "—"}</td>
+      <td className="icons">
+        <div className="tasks-row-icons">
+          <Link
+            href={`/tasks/${encodeURIComponent(task.id)}`}
+            className="tasks-row-icon"
+            title="פתח משימה"
+          >
+            ▶
+          </Link>
+          {task.drive_folder_url && (
+            <a
+              href={task.drive_folder_url}
+              target="_blank"
+              rel="noreferrer"
+              className="tasks-row-icon"
+              title="תיקיית קבצים ב־Drive"
+            >
+              📁
+            </a>
+          )}
+          <Link
+            href={`/tasks/${encodeURIComponent(task.id)}#history`}
+            className="tasks-row-icon"
+            title="היסטוריה + הערות"
+          >
+            💬
+          </Link>
+        </div>
+      </td>
     </tr>
   );
 }
@@ -232,10 +327,21 @@ function shortName(email: string): string {
 
 function TasksFilterBar({
   current,
+  companies,
   projects,
   departments,
 }: {
-  current: { project: string; status: string; department: string; assignee: string };
+  current: {
+    company: string;
+    project: string;
+    brief: string;
+    status: string;
+    department: string;
+    author: string;
+    project_manager: string;
+    assignee: string;
+  };
+  companies: string[];
   projects: string[];
   departments: string[];
 }) {
@@ -249,6 +355,27 @@ function TasksFilterBar({
   ];
   return (
     <form method="GET" action="/tasks" className="tasks-filter-bar">
+      <label>
+        בריף
+        <input
+          type="text"
+          name="brief"
+          placeholder="#"
+          defaultValue={current.brief}
+          style={{ width: "5em" }}
+        />
+      </label>
+      <label>
+        חברה
+        <select name="company" defaultValue={current.company}>
+          <option value="">הכל</option>
+          {companies.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
       <label>
         פרויקט
         <select name="project" defaultValue={current.project}>
@@ -282,7 +409,25 @@ function TasksFilterBar({
         </select>
       </label>
       <label>
-        מבצע
+        כותב
+        <input
+          type="text"
+          name="author"
+          placeholder="name@domain"
+          defaultValue={current.author}
+        />
+      </label>
+      <label>
+        מנהל פרויקט
+        <input
+          type="text"
+          name="project_manager"
+          placeholder="name@domain"
+          defaultValue={current.project_manager}
+        />
+      </label>
+      <label>
+        עובד מבצע
         <input
           type="text"
           name="assignee"

@@ -732,15 +732,19 @@ export type WorkTaskStatusHistoryEntry = {
 
 export type WorkTask = {
   id: string;
+  brief: string;
+  company: string;
   project: string;
   title: string;
   description: string;
-  department: string;
+  departments: string[];
   kind: string;
   priority: number;
   status: WorkTaskStatus;
+  sub_status: string;
   author_email: string;
   approver_email: string;
+  project_manager_email: string;
   assignees: string[];
   requested_date: string;
   created_at: string;
@@ -758,10 +762,13 @@ export type WorkTask = {
 };
 
 export type TasksListFilters = {
+  company?: string;
   project?: string;
+  brief?: string;
   status?: WorkTaskStatus | "";
   department?: string;
   author?: string;
+  project_manager?: string;
   assignee?: string;
 };
 
@@ -769,10 +776,13 @@ export function tasksList(
   filters: TasksListFilters = {},
 ): Promise<{ ok: boolean; tasks: WorkTask[]; count: number }> {
   const params: Record<string, string> = {};
+  if (filters.company) params.company = filters.company;
   if (filters.project) params.project = filters.project;
+  if (filters.brief) params.brief = filters.brief;
   if (filters.status) params.status = filters.status;
   if (filters.department) params.department = filters.department;
   if (filters.author) params.author = filters.author;
+  if (filters.project_manager) params.project_manager = filters.project_manager;
   if (filters.assignee) params.assignee = filters.assignee;
   return callApi<{ ok: boolean; tasks: WorkTask[]; count: number }>(
     "tasksList",
@@ -788,12 +798,16 @@ export type TasksCreateInput = {
   project: string;
   title: string;
   description?: string;
-  department?: string;
+  company?: string;          // auto-filled from Keys if omitted
+  brief?: string;
+  departments?: string[];    // multi-select; "מדיה, קריאייטיב" in Data Plus
   kind?: WorkTaskKind | string;
   priority?: number;
   approver_email?: string;
+  project_manager_email?: string;
   assignees?: string[];
   requested_date?: string;
+  sub_status?: string;
   parent_id?: string;
   round_number?: number;
 };
@@ -805,6 +819,7 @@ export function tasksCreate(
     payload: JSON.stringify({
       ...input,
       assignees: (input.assignees ?? []).join(","),
+      departments: (input.departments ?? []).join(","),
     }),
   });
 }
@@ -814,12 +829,16 @@ export type TasksUpdatePatch = {
   note?: string;
   title?: string;
   description?: string;
-  department?: string;
+  brief?: string;
+  company?: string;
+  departments?: string[];
   kind?: string;
   priority?: number;
   approver_email?: string;
+  project_manager_email?: string;
   assignees?: string[];
   requested_date?: string;
+  sub_status?: string;
 };
 
 export function tasksUpdate(
@@ -833,6 +852,9 @@ export function tasksUpdate(
       payload: JSON.stringify({
         ...patch,
         assignees: patch.assignees ? patch.assignees.join(",") : undefined,
+        departments: patch.departments
+          ? patch.departments.join(",")
+          : undefined,
       }),
     },
   );

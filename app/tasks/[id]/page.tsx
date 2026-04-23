@@ -38,17 +38,39 @@ export default async function TaskDetailPage({
           <div className="task-detail-crumbs">
             <Link href="/tasks">← משימות</Link>
             {" · "}
+            {t.company && (
+              <>
+                <Link href={`/tasks?company=${encodeURIComponent(t.company)}`}>
+                  {t.company}
+                </Link>
+                {" / "}
+              </>
+            )}
             <Link href={`/projects/${encodeURIComponent(t.project)}`}>
               {t.project}
             </Link>
+            {t.brief && <> {" · "} בריף #{t.brief}</>}
           </div>
           <h1 className="task-detail-title">{t.title}</h1>
           <div className="subtitle">
             <span className={`tasks-status-pill tasks-status-${t.status}`}>
               {statusLabel}
-            </span>{" "}
-            · עדיפות {t.priority} · {t.department || "—"}{" "}
+            </span>
+            {t.sub_status && (
+              <>
+                {" "}
+                <span className="tasks-substatus-pill">{t.sub_status}</span>
+              </>
+            )}{" "}
+            · עדיפות {t.priority} ·{" "}
+            {(t.departments || []).join(", ") || "—"}{" "}
             {t.requested_date ? `· מבוקש: ${t.requested_date}` : ""}
+            {t.round_number > 1 && (
+              <>
+                {" "}
+                · <span className="tasks-round-chip">סבב #{t.round_number}</span>
+              </>
+            )}
           </div>
         </div>
         <div className="page-header-actions">
@@ -93,14 +115,18 @@ export default async function TaskDetailPage({
         </div>
 
         <aside className="task-detail-side">
+          <KV label="חברה" value={t.company || "—"} />
+          <KV label="פרויקט" value={t.project} />
+          <KV label="בריף" value={t.brief || "—"} />
           <KV label="כותב" value={shortName(t.author_email)} />
           <KV label="גורם מאשר" value={shortName(t.approver_email)} />
+          <KV label="מנהל פרויקט" value={shortName(t.project_manager_email)} />
           <KV
             label="עובדים במשימה"
             value={(t.assignees || []).map(shortName).join(", ") || "—"}
           />
           <KV label="סוג" value={t.kind} />
-          <KV label="מחלקה" value={t.department || "—"} />
+          <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
           <KV
             label="סבב"
             value={
