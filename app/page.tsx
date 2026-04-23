@@ -10,24 +10,12 @@ import {
   type MorningFeed,
 } from "@/lib/appsScript";
 import { companyColorSlot } from "@/lib/colors";
+import { isPersonOnProject } from "@/lib/scope";
 
 type AlertCounts = { severe: number; warn: number; info: number };
 type HomeSearch = { person?: string };
 
 export const dynamic = "force-dynamic";
-
-/** Does `person` appear in any Keys role on project `p`? Case-insensitive. */
-function isPersonOnProject(p: Project, person: string): boolean {
-  if (!person) return false;
-  const target = person.toLowerCase();
-  const r = p.roster;
-  if (r.mediaManager && r.mediaManager.toLowerCase() === target) return true;
-  if (r.projectManagerFull && r.projectManagerFull.toLowerCase() === target)
-    return true;
-  if (r.internalOnly.some((n) => n.toLowerCase() === target)) return true;
-  if (r.clientFacing.some((n) => n.toLowerCase() === target)) return true;
-  return false;
-}
 
 /** True if the project's morning-feed endIso is more than 5 days in the past. */
 function isProjectEndedByIso(endIso: string | undefined): boolean {

@@ -12,6 +12,30 @@ type Props = {
 };
 
 const HIDE_ENDED_KEY = "hub_hide_ended";
+const SCOPE_COOKIE = "hub_scope_person";
+
+/**
+ * Persist the person scope in a cookie so the top-nav projects dropdown
+ * (a server component in app/layout.tsx) can read the same filter and
+ * narrow its list accordingly. Cookie is the single source of truth for
+ * "what person am I scoped to across the whole hub".
+ *
+ *   person = ""   → clear cookie (= "show everything")
+ *   person = "X"  → cookie = X (URI-encoded so Hebrew names survive)
+ */
+function writeScopeCookie(person: string) {
+  try {
+    if (person) {
+      const value = encodeURIComponent(person);
+      // 1 year, site-wide, lax so it's sent on normal navigations.
+      document.cookie = `${SCOPE_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax`;
+    } else {
+      document.cookie = `${SCOPE_COOKIE}=; path=/; max-age=0; samesite=lax`;
+    }
+  } catch {
+    /* private mode / cookies disabled — scope falls back to URL param only */
+  }
+}
 
 // Combined filter bar for the home page: person dropdown + hide-ended toggle.
 // Mirrors the dashboard conventions — person defaults to the current user;
@@ -71,9 +95,23 @@ export default function HomeFilterBar({
     } else {
       params.set("person", value);
     }
+    // Mirror the selection into the scope cookie so the top-nav projects
+    // dropdown (server component) reflects the same filter. "Show all" wipes
+    // the cookie; any specific person name (including the current user) sets
+    // it, so the nav stays scoped even after the URL param is cleared.
+    writeScopeCookie(value);
     const qs = params.toString();
     router.push(pathname + (qs ? "?" + qs : ""));
   }
+
+  // Seed the scope cookie on first mount so users who loaded the page with a
+  // server-rendered default (URL param absent → server picks currentUser) also
+  // get the nav scoped. Without this, the nav shows all projects until the
+  // first dropdown interaction. Only writes when `selected` has a value; no-op
+  // on "show all" since that's already an empty/missing cookie.
+  useEffect(() => {
+    if (selected) writeScopeCookie(selected);
+  }, [selected]);
 
   // De-dupe + sort the people list with current user first.
   const otherPeople = people
