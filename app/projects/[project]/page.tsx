@@ -20,7 +20,6 @@ import ProjectFilterBar from "@/components/ProjectFilterBar";
 import OutOfScopeBanner from "@/components/OutOfScopeBanner";
 import { isPersonOnProject } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
-import { signIframeUrl } from "@/lib/iframeSign";
 
 export const dynamic = "force-dynamic";
 
@@ -99,34 +98,28 @@ export default async function ProjectOverviewPage({
         authuser: userEmail,
       })
     : "";
-  // Iframe URL: points at the Hub API deployment (USER_DEPLOYING +
-  // ANYONE_ANONYMOUS) with ?iframe=1 + an HMAC-signed user/project/ts
-  // triplet. Works for external Gmail clients who can't hit the
-  // USER_ACCESSING dashboard deployment directly. See lib/iframeSign.ts
-  // for the signing contract (must match _iframeHmacSign_ in Code.js).
-  // Falls back to the legacy embed URL (plain embed=1 on the
-  // USER_ACCESSING deployment) if iframe signing env vars aren't set,
-  // so internal users keep working even in a misconfigured env.
-  const hubApiUrl = process.env.APPS_SCRIPT_API_URL ?? "";
-  const hubApiToken = process.env.APPS_SCRIPT_API_TOKEN ?? "";
-  const dashboardEmbedUrl =
-    hubApiUrl && hubApiToken && userEmail
-      ? signIframeUrl({
-          baseUrl: hubApiUrl,
-          token: hubApiToken,
-          email: userEmail,
-          project: projectName,
-          company: companyForDashboard,
-          embed: true,
-        })
-      : dashboardBaseUrl
-        ? buildDashboardUrl(dashboardBaseUrl, {
-            company: companyForDashboard,
-            project: projectName,
-            authuser: userEmail,
-            embed: true,
-          })
-        : "";
+  // Iframe URL selection:
+  //   - Internal @fandf.co.il users → legacy embed URL on the USER_ACCESSING
+  //     dashboard. Runs under their Google session, so the comment drawer,
+  //     AI summaries, alert dismissal, admin summary, sheet/ads links, and
+  //     every other google.script.run feature keep working.
+  //   - External clients (non-fandf domains) → hub-proxied `/api/dashboard/
+  //     <project>` route. The hub server fetches the Apps Script HTML
+  //     server-to-server (no browser cookies, so Google's `/u/N/` multi-
+  //     account rerouting can't apply) and serves it at hub origin. Read-
+  //     only snapshot; IFRAME_MODE=true on the Apps Script side skips all
+  //     google.script.run calls. See app/api/dashboard/[project]/route.ts.
+  const isInternalUser = userEmail.toLowerCase().endsWith("@fandf.co.il");
+  const legacyEmbedUrl = dashboardBaseUrl
+    ? buildDashboardUrl(dashboardBaseUrl, {
+        company: companyForDashboard,
+        project: projectName,
+        authuser: userEmail,
+        embed: true,
+      })
+    : "";
+  const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}`;
+  const dashboardEmbedUrl = isInternalUser ? legacyEmbedUrl : proxyEmbedUrl;
 
   // If the tasks call failed, it's likely an access-denied — show the first error.
   const firstError =

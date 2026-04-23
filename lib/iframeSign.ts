@@ -53,5 +53,13 @@ export function signIframeUrl({
   url.searchParams.set("ts", ts);
   url.searchParams.set("sig", sig);
   if (embed) url.searchParams.set("embed", "1");
+  // authuser=<email> tells Google's multi-account picker which session context
+  // to use when the browser is signed into multiple Google accounts. Without
+  // this, Google silently rewrites the URL to /u/N/ for an arbitrary account
+  // index, and if that account's Drive ACL can't see the script file, the
+  // viewer gets Drive's "can't open this file" error — even for
+  // ANYONE_ANONYMOUS deployments. Pinning to the viewer's email ensures
+  // routing through the account they're already logged in as.
+  url.searchParams.set("authuser", user);
   return url.toString();
 }
