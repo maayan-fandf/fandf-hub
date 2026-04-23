@@ -1,14 +1,17 @@
 import Link from "next/link";
 import {
   getMorningFeed,
+  getMyProjects,
   type MorningFeed,
   type MorningProject,
 } from "@/lib/appsScript";
+import { scopedProjectNames } from "@/lib/scope";
+import { getScopedPerson } from "@/lib/scope-server";
 import MorningSignalRow from "@/components/MorningSignalRow";
 
 export const dynamic = "force-dynamic";
 
-type Search = { scope?: string; severity?: string };
+type Search = { scope?: string; severity?: string; person?: string };
 
 export default async function MorningPage({
   searchParams,
@@ -19,15 +22,48 @@ export default async function MorningPage({
   const scope = sp.scope === "all" ? "all" : "mine";
   const severityFilter = sp.severity ?? "";
 
-  let data: MorningFeed | null = null;
-  let error: string | null = null;
-  try {
-    data = await getMorningFeed({ scope });
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-  }
+  // Person scope: cookie (set by home-page filter) with `?person=X` as an
+  // ephemeral URL override. Matches the precedence used on the home page,
+  // inbox, and nav dropdown.
+  const scopedPerson = await getScopedPerson(sp.person);
 
-  const projects = data?.projects ?? [];
+  const [feedRes, projectsRes] = await Promise.allSettled([
+    getMorningFeed({ scope }),
+    scopedPerson ? getMyProjects() : Promise.resolve(null),
+  ]);
+  const data: MorningFeed | null =
+    feedRes.status === "fulfilled" ? feedRes.value : null;
+  const error =
+    feedRes.status === "rejected"
+      ? feedRes.reason instanceof Error
+        ? feedRes.reason.message
+        : String(feedRes.reason)
+      : null;
+  const projectsData =
+    projectsRes.status === "fulfilled" ? projectsRes.value : null;
+
+  const allProjects = data?.projects ?? [];
+  // Narrow to projects where the scoped person is on the roster. Null set
+  // = stale cookie (person no longer on any project), fall back to full
+  // feed so the page doesn't go empty — same pattern as app/layout.tsx.
+  const scopedSet = projectsData
+    ? scopedProjectNames(projectsData.projects, scopedPerson)
+    : null;
+  const projects = scopedSet
+    ? allProjects.filter((p) => scopedSet.has(p.name))
+    : allProjects;
+
+  // Recompute severity counts against the scoped set so the chip counts
+  // (above the severity filter bar) match what will actually render.
+  const counts = scopedSet
+    ? {
+        total: projects.length,
+        severe: projects.filter((p) => p.maxSeverity === 3).length,
+        warn: projects.filter((p) => p.maxSeverity === 2).length,
+        clear: projects.filter((p) => p.maxSeverity === 0).length,
+      }
+    : data?.counts ?? { total: 0, severe: 0, warn: 0, clear: 0 };
+
   const visible = projects.filter((p) => {
     if (!severityFilter) return true;
     if (severityFilter === "severe") return p.maxSeverity === 3;
@@ -52,14 +88,16 @@ export default async function MorningPage({
             <div className="subtitle">
               התראות זמינות לאורך כל היום · טיפלת? סמן ✓ והן ישוקטו עד למחר
               <br />
-              {data.counts.severe > 0 && (
-                <>🔥 {data.counts.severe} קריטיים · </>
+              {counts.severe > 0 && <>🔥 {counts.severe} קריטיים · </>}
+              {counts.warn > 0 && <>⚠️ {counts.warn} אזהרות · </>}
+              {counts.clear > 0 && <>✅ {counts.clear} ללא התראות · </>}
+              {counts.total} פרויקטים סה&quot;כ
+              {scopedPerson && scopedSet && (
+                <>
+                  {" · "}
+                  👤 סינון: <b>{scopedPerson}</b>
+                </>
               )}
-              {data.counts.warn > 0 && <>⚠️ {data.counts.warn} אזהרות · </>}
-              {data.counts.clear > 0 && (
-                <>✅ {data.counts.clear} ללא התראות · </>
-              )}
-              {data.counts.total} פרויקטים סה&quot;כ
               {(data.isAdmin || data.isInternal) && (
                 <>
                   {" · "}
@@ -83,27 +121,27 @@ export default async function MorningPage({
         <div className="morning-filter-bar">
           <SeverityChip
             label="הכל"
-            count={data.counts.total}
+            count={counts.total}
             active={!severityFilter}
             href={`/morning${scope === "all" ? "?scope=all" : ""}`}
           />
           <SeverityChip
             label="🔥 קריטיים"
-            count={data.counts.severe}
+            count={counts.severe}
             active={severityFilter === "severe"}
             href={buildHref(scope, "severe")}
             tone="severe"
           />
           <SeverityChip
             label="⚠️ אזהרות"
-            count={data.counts.warn}
+            count={counts.warn}
             active={severityFilter === "warn"}
             href={buildHref(scope, "warn")}
             tone="warn"
           />
           <SeverityChip
             label="✅ שקט"
-            count={data.counts.clear}
+            count={counts.clear}
             active={severityFilter === "clear"}
             href={buildHref(scope, "clear")}
             tone="clear"
@@ -123,9 +161,11 @@ export default async function MorningPage({
           <span className="emoji" aria-hidden>
             🌿
           </span>
-          {projects.length === 0
-            ? "אין פרויקטים בטווח הזה."
-            : "אין פרויקטים תואמים לסינון."}
+          {scopedSet && projects.length === 0 && allProjects.length > 0
+            ? `הסינון הנוכחי (${scopedPerson}) מסתיר ${allProjects.length} פרויקטים.`
+            : projects.length === 0
+              ? "אין פרויקטים בטווח הזה."
+              : "אין פרויקטים תואמים לסינון."}
         </div>
       )}
 

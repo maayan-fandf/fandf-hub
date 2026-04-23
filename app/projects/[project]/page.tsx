@@ -17,11 +17,14 @@ import CardActions from "@/components/CardActions";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import ProjectFilterBar from "@/components/ProjectFilterBar";
+import OutOfScopeBanner from "@/components/OutOfScopeBanner";
+import { isPersonOnProject } from "@/lib/scope";
+import { getScopedPerson } from "@/lib/scope-server";
 
 export const dynamic = "force-dynamic";
 
 type Params = { project: string };
-type Search = { resolved?: string };
+type Search = { resolved?: string; person?: string };
 
 export default async function ProjectOverviewPage({
   params,
@@ -37,6 +40,11 @@ export default async function ProjectOverviewPage({
   // pattern is uniform across the hub.
   const sp = await searchParams;
   const showResolved = sp.resolved === "1";
+  // Person scope (cookie + `?person=X` ephemeral override). Used only to
+  // decide whether to show the out-of-scope banner below — we deliberately
+  // still render the full project page, since deep-links from email/chat
+  // should always resolve.
+  const scopedPerson = await getScopedPerson(sp.person);
 
   // Fire four API calls in parallel — each one validates access independently,
   // so if the user is unauthorized we'll get consistent errors. getMyProjects
@@ -66,6 +74,15 @@ export default async function ProjectOverviewPage({
   const projectMeta = projectsData?.projects.find(
     (p) => p.name === projectName,
   );
+  // Out-of-scope check: if a person-scope is active and the requested
+  // project's roster doesn't include them, render a banner. We only
+  // assert "out of scope" when we have both a scope AND projectMeta
+  // (otherwise it's indeterminate — stay silent rather than falsely
+  // flagging).
+  const isOutOfScope =
+    !!scopedPerson &&
+    !!projectMeta &&
+    !isPersonOnProject(projectMeta, scopedPerson);
   const companyForDashboard = projectMeta?.company ?? "";
   const chatSpaceUrl = projectMeta?.chatSpaceUrl ?? "";
   const userEmail = projectsData?.email ?? "";
@@ -157,6 +174,8 @@ export default async function ProjectOverviewPage({
           {firstError}
         </div>
       )}
+
+      {isOutOfScope && <OutOfScopeBanner person={scopedPerson} />}
 
       <div className="stats-grid">
         <StatTile label="📋 משימות פתוחות" value={openTasks} variant="tasks" />

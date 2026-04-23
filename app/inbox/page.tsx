@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { getMyMentions, type MentionItem } from "@/lib/appsScript";
+import { getMyMentions, getMyProjects, type MentionItem } from "@/lib/appsScript";
+import { scopedProjectNames } from "@/lib/scope";
+import { getScopedPerson } from "@/lib/scope-server";
 import InboxFilterBar from "@/components/InboxFilterBar";
 import CardActions from "@/components/CardActions";
 import ThreadReplies from "@/components/ThreadReplies";
@@ -7,7 +9,7 @@ import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
-type Search = { resolved?: string; project?: string };
+type Search = { resolved?: string; project?: string; person?: string };
 
 export default async function InboxPage({
   searchParams,
@@ -18,24 +20,46 @@ export default async function InboxPage({
   const showResolved = sp.resolved === "1";
   const projectFilter = sp.project ?? "";
 
-  let data;
-  let error: string | null = null;
-  try {
-    data = await getMyMentions();
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-  }
+  // Person scope: cookie (set by home-page filter) with `?person=X` as an
+  // ephemeral URL override so shared links don't silently hijack the
+  // recipient's own scope.
+  const scopedPerson = await getScopedPerson(sp.person);
+
+  const [mentionsRes, projectsRes] = await Promise.allSettled([
+    getMyMentions(),
+    scopedPerson ? getMyProjects() : Promise.resolve(null),
+  ]);
+  const data =
+    mentionsRes.status === "fulfilled" ? mentionsRes.value : undefined;
+  const error =
+    mentionsRes.status === "rejected"
+      ? mentionsRes.reason instanceof Error
+        ? mentionsRes.reason.message
+        : String(mentionsRes.reason)
+      : null;
+  const projectsData =
+    projectsRes.status === "fulfilled" ? projectsRes.value : null;
 
   const all = data?.mentions ?? [];
-  const projects = Array.from(new Set(all.map((m) => m.project))).sort();
-  const visible = all.filter((m) => {
+
+  // Narrow mentions to projects where the scoped person is on the roster.
+  // Null = no scope (fallback to showing everything), same stale-cookie
+  // safety as app/layout.tsx's nav dropdown.
+  const scopedSet = projectsData
+    ? scopedProjectNames(projectsData.projects, scopedPerson)
+    : null;
+  const scoped = scopedSet ? all.filter((m) => scopedSet.has(m.project)) : all;
+  const hiddenByScope = all.length - scoped.length;
+
+  const projects = Array.from(new Set(scoped.map((m) => m.project))).sort();
+  const visible = scoped.filter((m) => {
     if (!showResolved && m.resolved) return false;
     if (projectFilter && m.project !== projectFilter) return false;
     return true;
   });
 
-  const openCount = all.filter((m) => !m.resolved).length;
-  const resolvedCount = all.filter((m) => {
+  const openCount = scoped.filter((m) => !m.resolved).length;
+  const resolvedCount = scoped.filter((m) => {
     if (!m.resolved) return false;
     if (projectFilter && m.project !== projectFilter) return false;
     return true;
@@ -52,7 +76,10 @@ export default async function InboxPage({
           <div className="subtitle">
             {data && (
               <>
-                🔥 {openCount} פתוחים · {all.length} סה&quot;כ
+                🔥 {openCount} פתוחים · {scoped.length} סה&quot;כ
+                {scopedPerson && hiddenByScope > 0 && (
+                  <> · 👤 סינון: <b>{scopedPerson}</b></>
+                )}
                 {data.me.isAdmin && " · 👑 אדמין (רואה את כל הפרויקטים)"}
               </>
             )}
@@ -68,7 +95,7 @@ export default async function InboxPage({
         </div>
       )}
 
-      {data && all.length > 0 && (
+      {data && scoped.length > 0 && (
         <InboxFilterBar
           projects={projects}
           currentProject={projectFilter}
@@ -80,11 +107,13 @@ export default async function InboxPage({
       {data && visible.length === 0 && (
         <div className="empty">
           <span className="emoji" aria-hidden>
-            {all.length === 0 ? "🌿" : "🔍"}
+            {scoped.length === 0 && all.length === 0 ? "🌿" : "🔍"}
           </span>
-          {all.length === 0
+          {scoped.length === 0 && all.length === 0
             ? "אף אחד לא תייג אותך עדיין. יום שקט!"
-            : "אין תיוגים תואמים לסינון הנוכחי."}
+            : scoped.length === 0 && hiddenByScope > 0
+              ? `הסינון הנוכחי מסתיר ${hiddenByScope} תיוגים מפרויקטים אחרים.`
+              : "אין תיוגים תואמים לסינון הנוכחי."}
         </div>
       )}
 
