@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getMyMentions, type MentionItem } from "@/lib/appsScript";
 import InboxFilterBar from "@/components/InboxFilterBar";
 import CardActions from "@/components/CardActions";
+import ThreadReplies from "@/components/ThreadReplies";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
@@ -131,6 +132,11 @@ function MentionCard({ m }: { m: MentionItem }) {
         <span className="mention-time" title={m.timestamp}>
           {formatRelative(m.timestamp)}
         </span>
+        <ThreadReplies
+          parentCommentId={resolveTarget}
+          project={m.project}
+          count={m.reply_count ?? 0}
+        />
       </div>
       <div className="mention-body">
         {truncate(m.body, 400)}

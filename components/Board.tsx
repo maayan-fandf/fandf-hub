@@ -6,6 +6,7 @@ import type { TaskItem } from "@/lib/appsScript";
 import { companyColorSlot } from "@/lib/colors";
 import Avatar from "./Avatar";
 import CardActions from "./CardActions";
+import ThreadReplies from "./ThreadReplies";
 
 type Props = {
   tasks: TaskItem[];
@@ -254,25 +255,13 @@ function TaskCard({
         )}
         <span className="by">מאת {task.author_name || task.author_email}</span>
         {task.resolved && <span>· הושלם</span>}
-        {/* Reply-count chip — signals that the task's source comment has a
-            discussion attached. Click opens the comment deep-link. */}
-        {task.reply_count && task.reply_count > 0 ? (
-          task.deep_link ? (
-            <a
-              href={task.deep_link}
-              target="_blank"
-              rel="noreferrer"
-              className="chip chip-muted task-thread-chip"
-              title="יש שרשור תגובות — לחץ לצפייה"
-            >
-              💬 {task.reply_count}
-            </a>
-          ) : (
-            <span className="chip chip-muted task-thread-chip" title="יש שרשור תגובות">
-              💬 {task.reply_count}
-            </span>
-          )
-        ) : null}
+        {/* Reply-count chip → click to expand the thread inline below the
+            card. Nothing rendered when reply_count === 0. */}
+        <ThreadReplies
+          parentCommentId={task.comment_id}
+          project={task.project}
+          count={task.reply_count ?? 0}
+        />
       </div>
       <div className="task-actions">
         <CardActions

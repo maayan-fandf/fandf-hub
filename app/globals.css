@@ -264,6 +264,107 @@ a:hover {
   flex-wrap: wrap;
 }
 
+/* ─── Inline thread-expansion (ThreadReplies) ─────────────────────────
+   The "💬 N" chip on comment / task / mention cards. Clickable — toggles
+   a nested list of replies rendered directly under the card. No page
+   navigation, no drawer. The read-only /api/comments/replies endpoint
+   powers it; write paths (reply/resolve/edit/delete) still go through
+   their existing integrations. */
+.thread-toggle {
+  cursor: pointer;
+  border: 1px solid transparent;
+  font: inherit;
+  transition: background 0.12s, border-color 0.12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.thread-toggle:hover {
+  border-color: var(--border);
+  background: var(--accent-soft);
+}
+.thread-toggle.is-open {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.thread-toggle-chev {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.thread-replies {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border-inline-start: 3px solid var(--border);
+  background: var(--surface-soft, var(--surface));
+  border-radius: 8px;
+}
+
+.thread-replies-loading,
+.thread-replies-empty,
+.thread-replies-error {
+  color: var(--muted);
+  font-size: 0.88rem;
+  padding: 0.4rem 0;
+  text-align: center;
+}
+.thread-replies-error {
+  color: var(--overdue);
+}
+
+.thread-replies-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.thread-reply {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  padding: 0.4rem 0;
+}
+.thread-reply + .thread-reply {
+  border-top: 1px dashed var(--border);
+  padding-top: 0.55rem;
+}
+
+.thread-reply-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.thread-reply-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.thread-reply-author {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.thread-reply-time {
+  font-size: 0.78rem;
+}
+
+.thread-reply-text {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 /* ─── Unified card-action row ────────────────────────────────────────
    Comment / task / mention cards all surface the same four actions:
    השב · סמן כפתור · ערוך · מחק. Rendered as icon-only buttons with Hebrew
@@ -1016,6 +1117,18 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
   color: var(--text);
   background: var(--accent-soft);
   text-decoration: none;
+}
+
+/* Active-tab indicator: the nav link for the page you're currently on gets
+   a filled accent-soft background + colored text + a subtle underline
+   accent, so "where am I?" is always answerable at a glance. */
+.topnav-link.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.topnav-link.is-active:hover {
+  color: var(--accent);
 }
 
 .topnav-external {

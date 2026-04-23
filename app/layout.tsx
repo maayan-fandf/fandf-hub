@@ -7,6 +7,7 @@ import NavMentionBadge from "@/components/NavMentionBadge";
 import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
+import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import { getMyProjects, type Project } from "@/lib/appsScript";
 
@@ -88,10 +89,13 @@ export default async function RootLayout({
               </Link>
             )}
             {email && <NavMorningLink />}
-            <Link href="/inbox" className="topnav-link topnav-link-with-badge">
+            <ActiveLink
+              href="/inbox"
+              className="topnav-link topnav-link-with-badge"
+            >
               🏷️ תיוגים
               {email && <NavMentionBadge />}
-            </Link>
+            </ActiveLink>
             {email && <NavAdminLink />}
             {dashboardUrl && (
               <a

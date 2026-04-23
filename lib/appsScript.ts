@@ -264,6 +264,9 @@ export type MentionItem = {
   resolved: boolean;
   /** ISO timestamp of the last body edit. Empty string / undefined when never edited. */
   edited_at?: string;
+  /** Number of replies on the thread root — drives the inline "💬 N" expand
+   *  indicator in the inbox. */
+  reply_count?: number;
   deep_link: string;
 };
 
@@ -316,6 +319,26 @@ export type ProjectComments = {
   total: number;
   me: { email: string; isAdmin: boolean };
 };
+
+/** Replies under a single parent comment, oldest-first. Returned by
+ *  `commentReplies` for the inline thread-expansion UI. */
+export type CommentReplies = {
+  project: string;
+  parent_id: string;
+  replies: CommentItem[];
+  total: number;
+  me: { email: string; isAdmin: boolean };
+};
+
+export function getCommentReplies(
+  parentCommentId: string,
+  project: string,
+): Promise<CommentReplies> {
+  return callApi<CommentReplies>("commentReplies", {
+    parentCommentId,
+    project,
+  });
+}
 
 export function getProjectComments(
   project: string,

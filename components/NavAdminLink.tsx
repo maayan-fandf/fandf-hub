@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import ActiveLink from "./ActiveLink";
 import { useEffect, useState } from "react";
 
 /**
@@ -32,8 +32,8 @@ export default function NavAdminLink() {
   if (!isAdmin) return null;
 
   return (
-    <Link href="/admin" className="topnav-link">
+    <ActiveLink href="/admin" className="topnav-link">
       ⚙️ ניהול
-    </Link>
+    </ActiveLink>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ActiveLink from "./ActiveLink";
 import type { Project } from "@/lib/appsScript";
 
 // 2-level projects dropdown in the top nav. The trigger is a real Link — click
@@ -12,8 +13,10 @@ export default function ProjectsNavMenu({ projects }: { projects: Project[] }) {
 
   return (
     <div className="projects-nav-menu">
-      <Link
+      <ActiveLink
         href="/"
+        match="exact"
+        matchAlso={["/projects"]}
         className="topnav-link projects-nav-trigger"
         aria-haspopup="menu"
       >
@@ -21,7 +24,7 @@ export default function ProjectsNavMenu({ projects }: { projects: Project[] }) {
         <span className="projects-nav-chev" aria-hidden>
           ▾
         </span>
-      </Link>
+      </ActiveLink>
       <div className="projects-nav-dropdown" role="menu">
         <Link href="/" className="projects-nav-all" role="menuitem">
           כל הפרויקטים ({projects.length})

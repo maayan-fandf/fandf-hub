@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import ActiveLink from "./ActiveLink";
 import { useEffect, useState } from "react";
 
 /**
@@ -35,8 +35,8 @@ export default function NavMorningLink() {
   if (!show) return null;
 
   return (
-    <Link href="/morning" className="topnav-link">
+    <ActiveLink href="/morning" className="topnav-link">
       ☀️ בוקר
-    </Link>
+    </ActiveLink>
   );
 }

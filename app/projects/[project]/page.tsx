@@ -14,6 +14,7 @@ import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
+import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
 
 export const dynamic = "force-dynamic";
@@ -311,9 +312,11 @@ function CommentsPreview({ comments }: { comments: CommentItem[] }) {
             <span className="time" title={c.timestamp}>
               {formatRelative(c.timestamp)}
             </span>
-            {c.reply_count > 0 && (
-              <span className="chip chip-muted">💬 {c.reply_count}</span>
-            )}
+            <ThreadReplies
+              parentCommentId={c.comment_id}
+              project={c.project}
+              count={c.reply_count}
+            />
             {c.edited_at && (
               <span
                 className="chip chip-muted"
@@ -380,6 +383,11 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
               <span className="time" title={m.timestamp}>
                 {formatRelative(m.timestamp)}
               </span>
+              <ThreadReplies
+                parentCommentId={actionTarget}
+                project={m.project}
+                count={m.reply_count ?? 0}
+              />
             </div>
             <div className="compact-comment-body">{truncate(m.body, 200)}</div>
             <div className="compact-comment-actions">
