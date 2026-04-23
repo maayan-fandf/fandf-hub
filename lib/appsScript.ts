@@ -10,6 +10,7 @@
  */
 
 import { auth } from "@/auth";
+import { unstable_cache } from "next/cache";
 
 type ApiOk<T> = T;
 type ApiError = { error: string; status: number };
@@ -32,13 +33,20 @@ export async function currentUserEmail(): Promise<string> {
   throw new Error("Not authenticated — sign in or set DEV_USER_EMAIL in .env.local");
 }
 
-async function callApi<T>(
+/**
+ * Call the Apps Script API with an explicit user email. Use this from inside
+ * an `unstable_cache` wrapper where the cached function body MUST be free of
+ * dynamic request-scoped reads (cookies, headers) — Next.js errors out if
+ * you try to read a session inside cache. Callers pass email as a cache key
+ * arg and forward it to this helper.
+ */
+async function callApiAs<T>(
+  user: string,
   action: string,
   params: Record<string, string> = {},
 ): Promise<T> {
   const base = assertEnv("APPS_SCRIPT_API_URL");
   const token = assertEnv("APPS_SCRIPT_API_TOKEN");
-  const user = await currentUserEmail();
 
   const url = new URL(base);
   url.searchParams.set("api", "1");
@@ -52,8 +60,8 @@ async function callApi<T>(
   // Apps Script exec URLs 302-redirect to googleusercontent.com — fetch follows by default.
   const res = await fetch(url.toString(), {
     method: "GET",
-    // Apps Script responses are cacheable but we want fresh data on each page load
-    // in dev. Tune to `{ revalidate: 30 }` once you're happy with the shape.
+    // Per-request `cache: "no-store"` by default — the caller (`callApi` or
+    // a `unstable_cache` wrapper) is responsible for any caching layer.
     cache: "no-store",
   });
 
@@ -72,6 +80,14 @@ async function callApi<T>(
     throw new Error(`Apps Script API error ${err.status}: ${err.error}`);
   }
   return data as T;
+}
+
+async function callApi<T>(
+  action: string,
+  params: Record<string, string> = {},
+): Promise<T> {
+  const user = await currentUserEmail();
+  return callApiAs<T>(user, action, params);
 }
 
 async function postApi<T>(
@@ -208,32 +224,51 @@ const EMPTY_ROSTER: ProjectRoster = {
   clientFacing: [],
 };
 
-export async function getMyProjects(): Promise<MyProjects> {
-  const raw = await callApi<MyProjectsRaw>("myProjects");
-  const projects: Project[] = (raw.projects ?? []).map((p) =>
-    typeof p === "string"
-      ? { name: p, company: "", chatSpaceUrl: "", roster: EMPTY_ROSTER }
-      : {
-          name: p.name,
-          company: p.company ?? "",
-          chatSpaceUrl: p.chat_space_url ?? "",
-          roster: {
-            mediaManager: p.roster?.mediaManager ?? "",
-            projectManagerFull: p.roster?.projectManagerFull ?? "",
-            internalOnly: p.roster?.internalOnly ?? [],
-            clientFacing: p.roster?.clientFacing ?? [],
+// Cache the myProjects fetch per-user for 60s. This call feeds BOTH the
+// home page AND the top-nav projects dropdown (via app/layout.tsx), so it
+// runs on every page render — an obvious place to short-circuit with a
+// cache. The key is the user's email so different users get separate
+// entries; the body of the wrapped fn must be free of dynamic reads
+// (cookies / headers) so we forward email explicitly via callApiAs.
+//
+// Invalidate with: revalidateTag("my-projects") — currently nothing in the
+// hub mutates project membership, so the 60s TTL handles the rare "user
+// was just added to a project" case on its own.
+const fetchMyProjectsCached = unstable_cache(
+  async (email: string): Promise<MyProjects> => {
+    const raw = await callApiAs<MyProjectsRaw>(email, "myProjects");
+    const projects: Project[] = (raw.projects ?? []).map((p) =>
+      typeof p === "string"
+        ? { name: p, company: "", chatSpaceUrl: "", roster: EMPTY_ROSTER }
+        : {
+            name: p.name,
+            company: p.company ?? "",
+            chatSpaceUrl: p.chat_space_url ?? "",
+            roster: {
+              mediaManager: p.roster?.mediaManager ?? "",
+              projectManagerFull: p.roster?.projectManagerFull ?? "",
+              internalOnly: p.roster?.internalOnly ?? [],
+              clientFacing: p.roster?.clientFacing ?? [],
+            },
           },
-        },
-  );
-  return {
-    projects,
-    isAdmin: raw.isAdmin,
-    isInternal: !!raw.isInternal,
-    isStaff: !!raw.isStaff,
-    isClient: !!raw.isClient,
-    person: raw.person ?? "",
-    email: raw.email,
-  };
+    );
+    return {
+      projects,
+      isAdmin: raw.isAdmin,
+      isInternal: !!raw.isInternal,
+      isStaff: !!raw.isStaff,
+      isClient: !!raw.isClient,
+      person: raw.person ?? "",
+      email: raw.email,
+    };
+  },
+  ["myProjects"],
+  { revalidate: 60, tags: ["my-projects"] },
+);
+
+export async function getMyProjects(): Promise<MyProjects> {
+  const email = await currentUserEmail();
+  return fetchMyProjectsCached(email);
 }
 
 export function getProjectTasks(project: string): Promise<ProjectTasks> {
