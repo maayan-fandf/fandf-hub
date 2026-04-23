@@ -72,6 +72,17 @@ export default async function ProjectOverviewPage({
         authuser: userEmail,
       })
     : "";
+  // Same URL with ?embed=1 added — used for the iframe only (not the
+  // external "open in new tab" link). Dashboard hides its global filter
+  // bar in embed mode since the URL already scopes to this project.
+  const dashboardEmbedUrl = dashboardBaseUrl
+    ? buildDashboardUrl(dashboardBaseUrl, {
+        company: companyForDashboard,
+        project: projectName,
+        authuser: userEmail,
+        embed: true,
+      })
+    : "";
 
   // If the tasks call failed, it's likely an access-denied — show the first error.
   const firstError =
@@ -222,7 +233,7 @@ export default async function ProjectOverviewPage({
             </a>
           </div>
           <MetricsIframe
-            src={dashboardFilteredUrl}
+            src={dashboardEmbedUrl}
             projectName={projectName}
             expectedEmail={userEmail}
           />
@@ -540,7 +551,14 @@ function extractError(err: unknown): string {
 /** Append project+company+authuser filters to the dashboard base URL. */
 function buildDashboardUrl(
   base: string,
-  filters: { company?: string; project?: string; authuser?: string },
+  filters: {
+    company?: string;
+    project?: string;
+    authuser?: string;
+    /** When true, the dashboard hides its sticky filter bar — useful for
+     *  iframe embedding since the URL already scopes to one project. */
+    embed?: boolean;
+  },
 ): string {
   let url: URL;
   try {
@@ -551,5 +569,6 @@ function buildDashboardUrl(
   if (filters.company) url.searchParams.set("company", filters.company);
   if (filters.project) url.searchParams.set("project", filters.project);
   if (filters.authuser) url.searchParams.set("authuser", filters.authuser);
+  if (filters.embed) url.searchParams.set("embed", "1");
   return url.toString();
 }
