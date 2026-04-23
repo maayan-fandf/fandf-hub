@@ -20,6 +20,7 @@ import ProjectFilterBar from "@/components/ProjectFilterBar";
 import OutOfScopeBanner from "@/components/OutOfScopeBanner";
 import { isPersonOnProject } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
+import { signIframeUrl } from "@/lib/iframeSign";
 
 export const dynamic = "force-dynamic";
 
@@ -98,17 +99,34 @@ export default async function ProjectOverviewPage({
         authuser: userEmail,
       })
     : "";
-  // Same URL with ?embed=1 added — used for the iframe only (not the
-  // external "open in new tab" link). Dashboard hides its global filter
-  // bar in embed mode since the URL already scopes to this project.
-  const dashboardEmbedUrl = dashboardBaseUrl
-    ? buildDashboardUrl(dashboardBaseUrl, {
-        company: companyForDashboard,
-        project: projectName,
-        authuser: userEmail,
-        embed: true,
-      })
-    : "";
+  // Iframe URL: points at the Hub API deployment (USER_DEPLOYING +
+  // ANYONE_ANONYMOUS) with ?iframe=1 + an HMAC-signed user/project/ts
+  // triplet. Works for external Gmail clients who can't hit the
+  // USER_ACCESSING dashboard deployment directly. See lib/iframeSign.ts
+  // for the signing contract (must match _iframeHmacSign_ in Code.js).
+  // Falls back to the legacy embed URL (plain embed=1 on the
+  // USER_ACCESSING deployment) if iframe signing env vars aren't set,
+  // so internal users keep working even in a misconfigured env.
+  const hubApiUrl = process.env.APPS_SCRIPT_API_URL ?? "";
+  const hubApiToken = process.env.APPS_SCRIPT_API_TOKEN ?? "";
+  const dashboardEmbedUrl =
+    hubApiUrl && hubApiToken && userEmail
+      ? signIframeUrl({
+          baseUrl: hubApiUrl,
+          token: hubApiToken,
+          email: userEmail,
+          project: projectName,
+          company: companyForDashboard,
+          embed: true,
+        })
+      : dashboardBaseUrl
+        ? buildDashboardUrl(dashboardBaseUrl, {
+            company: companyForDashboard,
+            project: projectName,
+            authuser: userEmail,
+            embed: true,
+          })
+        : "";
 
   // If the tasks call failed, it's likely an access-denied — show the first error.
   const firstError =
