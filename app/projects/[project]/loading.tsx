@@ -16,21 +16,13 @@ export default function ProjectLoading() {
         </div>
       </header>
 
-      <div className="stats-grid">
-        {(["tasks", "mentions", "comments"] as const).map((v) => (
-          <div key={v} className={`stat-tile stat-tile-${v}`}>
-            <span className="skeleton" style={{ width: "3rem", height: "1.8rem" }} />
-            <span className="skeleton" style={{ width: "8rem", height: "0.8rem", marginTop: "0.4rem" }} />
-          </div>
-        ))}
-      </div>
-
       <div className="project-sections">
         {[0, 1, 2].map((i) => (
           <section key={i} className="project-section" aria-hidden>
             <div className="section-head">
               <h2>
                 <span className="skeleton" style={{ width: "6rem", height: "1.1rem" }} />
+                <span className="skeleton" style={{ width: "1.5rem", height: "1.1rem", marginInlineStart: "0.4rem" }} />
               </h2>
             </div>
             <ul className="compact-list">

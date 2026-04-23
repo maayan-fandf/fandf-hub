@@ -177,12 +177,6 @@ export default async function ProjectOverviewPage({
 
       {isOutOfScope && <OutOfScopeBanner person={scopedPerson} />}
 
-      <div className="stats-grid">
-        <StatTile label="📋 משימות פתוחות" value={openTasks} variant="tasks" />
-        <StatTile label="🏷️ תיוגים פתוחים עבורך" value={openMentions} variant="mentions" />
-        <StatTile label='💬 סה"כ הערות' value={totalComments} variant="comments" />
-      </div>
-
       {/* Hidden when the project has nothing resolved yet AND the user isn't
           already in show-resolved mode — avoids showing an inert toggle on
           a fresh project. */}
@@ -199,7 +193,10 @@ export default async function ProjectOverviewPage({
       <div className="project-sections">
         <section className="project-section">
           <div className="section-head">
-            <h2>📋 משימות</h2>
+            <h2>
+              📋 משימות
+              <span className="section-count">{openTasks}</span>
+            </h2>
             <Link
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/tasks`}
@@ -221,7 +218,10 @@ export default async function ProjectOverviewPage({
 
         <section className="project-section">
           <div className="section-head">
-            <h2>🏷️ התיוגים שלך בפרויקט</h2>
+            <h2>
+              🏷️ התיוגים שלך בפרויקט
+              <span className="section-count">{openMentions}</span>
+            </h2>
             <Link className="section-link" href="/inbox">
               כל התיוגים ←
             </Link>
@@ -239,7 +239,10 @@ export default async function ProjectOverviewPage({
 
         <section className="project-section">
           <div className="section-head">
-            <h2>💬 הערות אחרונות</h2>
+            <h2>
+              💬 הערות אחרונות
+              <span className="section-count">{totalComments}</span>
+            </h2>
             <Link
               className="section-link"
               href={`/projects/${encodeURIComponent(projectName)}/timeline`}
@@ -581,24 +584,6 @@ function MentionsPreview({
 }
 
 /* ─── Small bits ─────────────────────────────────────────────────── */
-
-function StatTile({
-  label,
-  value,
-  variant,
-}: {
-  label: string;
-  value: number;
-  variant?: "tasks" | "mentions" | "comments";
-}) {
-  const cls = variant ? `stat-tile stat-tile-${variant}` : "stat-tile";
-  return (
-    <div className={cls}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
