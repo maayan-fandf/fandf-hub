@@ -120,6 +120,11 @@ export default async function ProjectOverviewPage({
     : "";
   const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}`;
   const dashboardEmbedUrl = isInternalUser ? legacyEmbedUrl : proxyEmbedUrl;
+  // "Open in new tab" link next to the metrics section. Internal users get
+  // the raw USER_ACCESSING /exec URL (preserves interactivity); external
+  // clients can't load that — route them to the proxy instead so the link
+  // still works from their browser.
+  const dashboardOpenUrl = isInternalUser ? dashboardFilteredUrl : proxyEmbedUrl;
 
   // If the tasks call failed, it's likely an access-denied — show the first error.
   const firstError =
@@ -306,13 +311,13 @@ export default async function ProjectOverviewPage({
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
           heading is enough. */}
-      {dashboardFilteredUrl && (
+      {dashboardEmbedUrl && (
         <section className="project-section project-section-metrics">
           <div className="section-head">
             <h2>📊 מטריקות</h2>
             <a
               className="section-link"
-              href={dashboardFilteredUrl}
+              href={dashboardOpenUrl}
               target="_blank"
               rel="noreferrer"
             >
