@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { tasksGet } from "@/lib/appsScript";
+import { tasksGet, tasksPeopleList } from "@/lib/appsScript";
 import TaskStatusActions from "@/components/TaskStatusActions";
+import TaskEditPanel from "@/components/TaskEditPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -16,16 +17,27 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default async function TaskDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ edit?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const decodedId = decodeURIComponent(id);
-  const res = await tasksGet(decodedId).catch((e: unknown) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.toLowerCase().includes("not found")) return null;
-    throw e;
-  });
+  const editing = sp.edit === "1";
+
+  // When we're entering edit mode we need the people list for the
+  // autocomplete datalist + chip picker. Parallel fetch — the people
+  // call is cheap enough (~60 entries across the whole portfolio).
+  const [res, peopleRes] = await Promise.all([
+    tasksGet(decodedId).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.toLowerCase().includes("not found")) return null;
+      throw e;
+    }),
+    editing ? tasksPeopleList().catch(() => ({ ok: false, people: [] })) : null,
+  ]);
   if (!res) notFound();
 
   const t = res.task;
@@ -84,8 +96,20 @@ export default async function TaskDetailPage({
               📁 תיקיית קבצים
             </a>
           )}
+          {!editing && (
+            <Link
+              href={`/tasks/${encodeURIComponent(t.id)}?edit=1`}
+              className="btn-ghost"
+            >
+              ✏️ ערוך
+            </Link>
+          )}
         </div>
       </header>
+
+      {editing && (
+        <TaskEditPanel task={t} people={peopleRes?.people ?? []} />
+      )}
 
       <section className="task-detail-grid">
         <div className="task-detail-main">
@@ -97,7 +121,7 @@ export default async function TaskDetailPage({
             </div>
           )}
 
-          <TaskStatusActions task={t} />
+          {!editing && <TaskStatusActions task={t} />}
 
           <section className="task-detail-history">
             <h3>היסטוריית סטטוסים</h3>

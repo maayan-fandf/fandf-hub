@@ -3920,6 +3920,17 @@ html[data-theme="dark"] .tasks-round-chip {
   color: #fff;
 }
 
+/* Task edit panel: same shell as the create form, shown above the
+   read-only grid when the URL carries ?edit=1. */
+.task-edit-panel { max-width: 920px; margin: 0 0 1.5em; }
+.task-edit-panel-head { margin-bottom: .6em; }
+.task-edit-panel-head h2 {
+  margin: 0 0 .2em; font-size: 1.15em;
+}
+.task-edit-panel-head .subtitle {
+  font-size: .85em; color: var(--muted); margin: 0;
+}
+
 /* Assignee chip-picker — workaround for the fact that <textarea list>
    is ignored by browsers (datalist only works on <input>). Users type
    directly in the textarea OR click a chip to toggle an email in/out
