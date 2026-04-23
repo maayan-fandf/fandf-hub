@@ -122,6 +122,11 @@ export default async function RootLayout({
               </Link>
             )}
             {email && <NavMorningLink />}
+            {email && (
+              <ActiveLink href="/tasks" className="topnav-link">
+                📋 משימות
+              </ActiveLink>
+            )}
             <ActiveLink
               href="/inbox"
               className="topnav-link topnav-link-with-badge"

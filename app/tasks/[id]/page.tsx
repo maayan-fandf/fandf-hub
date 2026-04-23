@@ -1,0 +1,134 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { tasksGet } from "@/lib/appsScript";
+import TaskStatusActions from "@/components/TaskStatusActions";
+
+export const dynamic = "force-dynamic";
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "טיוטה",
+  awaiting_approval: "ממתין לאישור",
+  in_progress: "בעבודה",
+  awaiting_clarification: "ממתין לבירור",
+  done: "בוצעה",
+  cancelled: "בוטל",
+};
+
+export default async function TaskDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const decodedId = decodeURIComponent(id);
+  const res = await tasksGet(decodedId).catch((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("not found")) return null;
+    throw e;
+  });
+  if (!res) notFound();
+
+  const t = res.task;
+  const statusLabel = STATUS_LABELS[t.status] || t.status;
+
+  return (
+    <main className="container">
+      <header className="page-header">
+        <div>
+          <div className="task-detail-crumbs">
+            <Link href="/tasks">← משימות</Link>
+            {" · "}
+            <Link href={`/projects/${encodeURIComponent(t.project)}`}>
+              {t.project}
+            </Link>
+          </div>
+          <h1 className="task-detail-title">{t.title}</h1>
+          <div className="subtitle">
+            <span className={`tasks-status-pill tasks-status-${t.status}`}>
+              {statusLabel}
+            </span>{" "}
+            · עדיפות {t.priority} · {t.department || "—"}{" "}
+            {t.requested_date ? `· מבוקש: ${t.requested_date}` : ""}
+          </div>
+        </div>
+        <div className="page-header-actions">
+          {t.drive_folder_url && (
+            <a
+              href={t.drive_folder_url}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-ghost"
+            >
+              📁 תיקיית קבצים
+            </a>
+          )}
+        </div>
+      </header>
+
+      <section className="task-detail-grid">
+        <div className="task-detail-main">
+          {t.description && (
+            <div className="task-detail-body">
+              {t.description.split("\n").map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+          )}
+
+          <TaskStatusActions task={t} />
+
+          <section className="task-detail-history">
+            <h3>היסטוריית סטטוסים</h3>
+            <ul>
+              {(t.status_history || []).map((h, i) => (
+                <li key={i}>
+                  <time>{h.at.slice(0, 16).replace("T", " ")}</time>
+                  {" · "}
+                  {shortName(h.by)} — {h.from || "—"} → <b>{STATUS_LABELS[h.to] || h.to}</b>
+                  {h.note ? ` · ${h.note}` : ""}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+
+        <aside className="task-detail-side">
+          <KV label="כותב" value={shortName(t.author_email)} />
+          <KV label="גורם מאשר" value={shortName(t.approver_email)} />
+          <KV
+            label="עובדים במשימה"
+            value={(t.assignees || []).map(shortName).join(", ") || "—"}
+          />
+          <KV label="סוג" value={t.kind} />
+          <KV label="מחלקה" value={t.department || "—"} />
+          <KV
+            label="סבב"
+            value={
+              t.round_number && t.round_number > 1
+                ? `#${t.round_number}${t.parent_id ? ` (נולד מ־${t.parent_id})` : ""}`
+                : "ראשון"
+            }
+          />
+          <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
+          <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
+          <KV label="id" value={t.id} />
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+function shortName(email: string): string {
+  if (!email) return "";
+  const at = email.indexOf("@");
+  return at > 0 ? email.slice(0, at) : email;
+}
+
+function KV({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="task-kv">
+      <dt>{label}</dt>
+      <dd>{value || "—"}</dd>
+    </div>
+  );
+}

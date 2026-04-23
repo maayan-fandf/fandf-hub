@@ -700,3 +700,140 @@ export function unsnoozeMorningSignal(
     signal_key: signalKey,
   });
 }
+
+/* ─── Tasks module ───────────────────────────────────────────────── */
+
+export type WorkTaskStatus =
+  | "draft"
+  | "awaiting_approval"
+  | "in_progress"
+  | "awaiting_clarification"
+  | "done"
+  | "cancelled";
+
+export type WorkTaskDepartment = "מדיה" | "קריאייטיב" | "UI/UX" | "תכנון" | "אחר";
+
+export type WorkTaskKind =
+  | "ad_creative"
+  | "landing_page"
+  | "video"
+  | "copy"
+  | "campaign_launch"
+  | "revision"
+  | "other";
+
+export type WorkTaskStatusHistoryEntry = {
+  at: string;
+  by: string;
+  from: string;
+  to: string;
+  note?: string;
+};
+
+export type WorkTask = {
+  id: string;
+  project: string;
+  title: string;
+  description: string;
+  department: string;
+  kind: string;
+  priority: number;
+  status: WorkTaskStatus;
+  author_email: string;
+  approver_email: string;
+  assignees: string[];
+  requested_date: string;
+  created_at: string;
+  updated_at: string;
+  parent_id: string;
+  round_number: number;
+  drive_folder_id: string;
+  drive_folder_url: string;
+  chat_space_id: string;
+  chat_task_name: string;
+  calendar_event_ids: Record<string, string>;
+  google_tasks: Record<string, { u: string; l: string; t: string; d: string }>;
+  status_history: WorkTaskStatusHistoryEntry[];
+  edited_at: string;
+};
+
+export type TasksListFilters = {
+  project?: string;
+  status?: WorkTaskStatus | "";
+  department?: string;
+  author?: string;
+  assignee?: string;
+};
+
+export function tasksList(
+  filters: TasksListFilters = {},
+): Promise<{ ok: boolean; tasks: WorkTask[]; count: number }> {
+  const params: Record<string, string> = {};
+  if (filters.project) params.project = filters.project;
+  if (filters.status) params.status = filters.status;
+  if (filters.department) params.department = filters.department;
+  if (filters.author) params.author = filters.author;
+  if (filters.assignee) params.assignee = filters.assignee;
+  return callApi<{ ok: boolean; tasks: WorkTask[]; count: number }>(
+    "tasksList",
+    params,
+  );
+}
+
+export function tasksGet(id: string): Promise<{ ok: boolean; task: WorkTask }> {
+  return callApi<{ ok: boolean; task: WorkTask }>("tasksGet", { id });
+}
+
+export type TasksCreateInput = {
+  project: string;
+  title: string;
+  description?: string;
+  department?: string;
+  kind?: WorkTaskKind | string;
+  priority?: number;
+  approver_email?: string;
+  assignees?: string[];
+  requested_date?: string;
+  parent_id?: string;
+  round_number?: number;
+};
+
+export function tasksCreate(
+  input: TasksCreateInput,
+): Promise<{ ok: boolean; task: WorkTask }> {
+  return postApi<{ ok: boolean; task: WorkTask }>("tasksCreate", {
+    payload: JSON.stringify({
+      ...input,
+      assignees: (input.assignees ?? []).join(","),
+    }),
+  });
+}
+
+export type TasksUpdatePatch = {
+  status?: WorkTaskStatus;
+  note?: string;
+  title?: string;
+  description?: string;
+  department?: string;
+  kind?: string;
+  priority?: number;
+  approver_email?: string;
+  assignees?: string[];
+  requested_date?: string;
+};
+
+export function tasksUpdate(
+  id: string,
+  patch: TasksUpdatePatch,
+): Promise<{ ok: boolean; task: WorkTask; changed: boolean }> {
+  return postApi<{ ok: boolean; task: WorkTask; changed: boolean }>(
+    "tasksUpdate",
+    {
+      id,
+      payload: JSON.stringify({
+        ...patch,
+        assignees: patch.assignees ? patch.assignees.join(",") : undefined,
+      }),
+    },
+  );
+}
