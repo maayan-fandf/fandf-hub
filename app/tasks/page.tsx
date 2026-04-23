@@ -1,9 +1,12 @@
 import Link from "next/link";
 import {
   tasksList,
+  tasksPeopleList,
   getMyProjects,
+  currentUserEmail,
   type WorkTask,
   type WorkTaskStatus,
+  type TasksPerson,
 } from "@/lib/appsScript";
 
 export const dynamic = "force-dynamic";
@@ -13,18 +16,24 @@ type Search = {
   project?: string;
   brief?: string;
   status?: string;
+  priority?: string;
   department?: string;
   author?: string;
+  approver?: string;
   project_manager?: string;
   assignee?: string;
+  /** `mine=0` opts out of the default "author = me" filter (Data-Plus-
+   *  style). When absent we treat it as `mine=1`. */
+  mine?: string;
 };
 
-// Data Plus's four lifecycle buckets, same Hebrew labels.
+// Data Plus's four lifecycle buckets, same Hebrew labels. Verb form
+// matters here: "בוצע" (passive past-masculine) — not "בוצעה" (feminine).
 const STATUS_BUCKETS: { key: WorkTaskStatus; label: string; tone: string }[] = [
   { key: "in_progress", label: "בעבודה", tone: "in_progress" },
   { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
   { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
-  { key: "done", label: "בוצעה", tone: "done" },
+  { key: "done", label: "בוצע", tone: "done" },
 ];
 
 export default async function TasksPage({
@@ -34,18 +43,24 @@ export default async function TasksPage({
 }) {
   const sp = await searchParams;
 
-  // Load tasks + the project list in parallel. projectList feeds the
-  // company/project dropdowns so they show *all* options the user has
-  // access to, not just the ones already represented in the filtered
-  // result set (which was the Phase 0 behaviour).
-  const [tasksRes, projectsRes] = await Promise.all([
+  const me = await currentUserEmail().catch(() => "");
+  // Author filter defaults to the logged-in user unless explicitly opted
+  // out via `?mine=0` or overridden with an explicit `?author=`. Matches
+  // the Data Plus behaviour where the filter loads with your own name.
+  const mineOptIn = sp.mine !== "0";
+  const effectiveAuthor =
+    sp.author !== undefined ? sp.author : mineOptIn ? me : "";
+
+  const [tasksRes, projectsRes, peopleRes] = await Promise.all([
     tasksList({
       company: sp.company || "",
       project: sp.project || "",
       brief: sp.brief || "",
       status: (sp.status as WorkTaskStatus) || "",
+      priority: sp.priority || "",
       department: sp.department || "",
-      author: sp.author || "",
+      author: effectiveAuthor,
+      approver: sp.approver || "",
       project_manager: sp.project_manager || "",
       assignee: sp.assignee || "",
     })
@@ -55,12 +70,10 @@ export default async function TasksPage({
         error: e instanceof Error ? e.message : String(e),
       })),
     getMyProjects().catch(() => null),
+    tasksPeopleList().catch(() => null),
   ]);
   const { tasks, error } = tasksRes;
 
-  // Company/project options from the Keys roster (all projects the user
-  // can see), not just the ones in the current result set — so the
-  // dropdowns stay usable after narrowing filters down to zero matches.
   const allProjects = projectsRes?.projects ?? [];
   const companyOptions = Array.from(
     new Set(allProjects.map((p) => p.company).filter(Boolean)),
@@ -74,8 +87,11 @@ export default async function TasksPage({
     ),
   ).sort();
   const departmentOptions = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
+  const people = peopleRes?.people ?? [];
 
-  // Bucketize.
+  // Bucketize + within each bucket group by company → project. The groups
+  // are emitted as inline sub-heading rows so the visual shape stays a
+  // single table (no nested tables) and column widths stay aligned.
   const byStatus: Record<string, WorkTask[]> = {};
   for (const b of STATUS_BUCKETS) byStatus[b.key] = [];
   const other: WorkTask[] = [];
@@ -95,9 +111,27 @@ export default async function TasksPage({
             משימות
           </h1>
           <div className="subtitle">
-            ניהול משימות — יצירה, אישור, ובקרת סטטוס. כל משימה מקבלת תיקייה
-            ב־Drive תחת <code dir="ltr">חברה / פרויקט / משימה</code>, אירוע ביומן
-            לכל מבצע, משימה ב־Google Tasks, ומייל לגורם המאשר.
+            ניהול משימות — כל משימה מקבלת תיקייה ב־Drive תחת{" "}
+            <code dir="ltr">חברה / פרויקט / משימה</code>, אירוע ביומן לכל
+            מבצע, משימה ב־Google Tasks, ומייל לגורם המאשר.
+            {mineOptIn && !sp.author && me && (
+              <>
+                {" "}
+                · מציג רק משימות שיצרת ({me.split("@")[0]}) —{" "}
+                <Link href={buildHref(sp, { mine: "0", author: "" })}>
+                  הצג את כולם
+                </Link>
+              </>
+            )}
+            {!mineOptIn && (
+              <>
+                {" "}
+                · מציג את כולם —{" "}
+                <Link href={buildHref(sp, { mine: "1", author: "" })}>
+                  חזרה לשלי
+                </Link>
+              </>
+            )}
           </div>
         </div>
         <div className="page-header-actions">
@@ -113,14 +147,17 @@ export default async function TasksPage({
           project: sp.project || "",
           brief: sp.brief || "",
           status: sp.status || "",
+          priority: sp.priority || "",
           department: sp.department || "",
-          author: sp.author || "",
+          author: sp.author ?? (mineOptIn ? me : ""),
+          approver: sp.approver || "",
           project_manager: sp.project_manager || "",
           assignee: sp.assignee || "",
         }}
         companies={companyOptions}
         projects={projectOptions}
         departments={departmentOptions}
+        people={people}
       />
 
       {error && (
@@ -143,6 +180,7 @@ export default async function TasksPage({
       {STATUS_BUCKETS.map((b) => {
         const list = byStatus[b.key] || [];
         if (!list.length) return null;
+        const groups = groupByCompanyProject(list);
         return (
           <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
             <h2 className="tasks-bucket-head">
@@ -154,7 +192,7 @@ export default async function TasksPage({
                 <thead>
                   <tr>
                     <th className="num">בריף</th>
-                    <th>חברה / פרויקט</th>
+                    <th>פרויקט</th>
                     <th>פרטי המשימה</th>
                     <th>מחלקות</th>
                     <th>עדיפות / תאריך</th>
@@ -166,8 +204,13 @@ export default async function TasksPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((t) => (
-                    <TaskRow key={t.id} task={t} showSubStatus={b.key === "in_progress"} />
+                  {groups.map(([company, projectGroups]) => (
+                    <CompanyGroup
+                      key={company || "(no-company)"}
+                      company={company}
+                      projectGroups={projectGroups}
+                      showSubStatus={b.key === "in_progress"}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -202,7 +245,10 @@ export default async function TasksPage({
                         {t.status}
                       </span>
                     </td>
-                    <td>{t.project}</td>
+                    <td>
+                      {t.company ? `${t.company} / ` : ""}
+                      {t.project}
+                    </td>
                     <td>
                       <Link href={`/tasks/${encodeURIComponent(t.id)}`}>
                         {t.title}
@@ -221,6 +267,96 @@ export default async function TasksPage({
   );
 }
 
+// Group bucket's tasks by company → project, preserving newest-first
+// order within each project group.
+function groupByCompanyProject(
+  tasks: WorkTask[],
+): [string, [string, WorkTask[]][]][] {
+  const byCompany = new Map<string, Map<string, WorkTask[]>>();
+  for (const t of tasks) {
+    const co = t.company || "";
+    if (!byCompany.has(co)) byCompany.set(co, new Map());
+    const byProj = byCompany.get(co)!;
+    if (!byProj.has(t.project)) byProj.set(t.project, []);
+    byProj.get(t.project)!.push(t);
+  }
+  const companies = Array.from(byCompany.keys()).sort((a, b) => {
+    // Empty company sinks to the bottom so "(no-company)" doesn't lead.
+    if (!a && b) return 1;
+    if (a && !b) return -1;
+    return a.localeCompare(b);
+  });
+  return companies.map((co) => {
+    const projMap = byCompany.get(co)!;
+    const projects = Array.from(projMap.keys()).sort();
+    return [co, projects.map((p) => [p, projMap.get(p)!] as [string, WorkTask[]])];
+  });
+}
+
+function CompanyGroup({
+  company,
+  projectGroups,
+  showSubStatus,
+}: {
+  company: string;
+  projectGroups: [string, WorkTask[]][];
+  showSubStatus: boolean;
+}) {
+  const totalCols = showSubStatus ? 10 : 9;
+  return (
+    <>
+      <tr className="tasks-company-header">
+        <td colSpan={totalCols}>
+          <span className="tasks-company-header-label">חברה</span>{" "}
+          <span className="tasks-company-header-name">
+            {company || "(ללא חברה)"}
+          </span>
+        </td>
+      </tr>
+      {projectGroups.map(([project, rows]) => (
+        <ProjectSubGroup
+          key={project}
+          project={project}
+          rows={rows}
+          showSubStatus={showSubStatus}
+          totalCols={totalCols}
+        />
+      ))}
+    </>
+  );
+}
+
+function ProjectSubGroup({
+  project,
+  rows,
+  showSubStatus,
+  totalCols,
+}: {
+  project: string;
+  rows: WorkTask[];
+  showSubStatus: boolean;
+  totalCols: number;
+}) {
+  return (
+    <>
+      <tr className="tasks-project-header">
+        <td colSpan={totalCols}>
+          <Link
+            href={`/projects/${encodeURIComponent(project)}`}
+            className="tasks-project-header-link"
+          >
+            {project}
+          </Link>
+          <span className="tasks-project-header-count">{rows.length}</span>
+        </td>
+      </tr>
+      {rows.map((t) => (
+        <TaskRow key={t.id} task={t} showSubStatus={showSubStatus} />
+      ))}
+    </>
+  );
+}
+
 function TaskRow({
   task,
   showSubStatus,
@@ -231,19 +367,7 @@ function TaskRow({
   return (
     <tr>
       <td className="num">{task.brief || task.id.slice(-6)}</td>
-      <td>
-        <div className="tasks-proj-cell">
-          {task.company && (
-            <span className="tasks-company">{task.company}</span>
-          )}
-          <Link
-            href={`/projects/${encodeURIComponent(task.project)}`}
-            className="tasks-project-link"
-          >
-            {task.project}
-          </Link>
-        </div>
-      </td>
+      <td className="tasks-project-cell-nested">{task.project}</td>
       <td className="title-cell">
         <Link
           href={`/tasks/${encodeURIComponent(task.id)}`}
@@ -325,36 +449,66 @@ function shortName(email: string): string {
   return at > 0 ? email.slice(0, at) : email;
 }
 
+// Build an href for /tasks with the current search params plus overrides.
+// Empty-string overrides drop the key entirely (URL stays clean).
+function buildHref(
+  current: Record<string, string | undefined>,
+  overrides: Record<string, string>,
+): string {
+  const merged: Record<string, string> = {};
+  for (const [k, v] of Object.entries(current)) {
+    if (v) merged[k] = v;
+  }
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === "") delete merged[k];
+    else merged[k] = v;
+  }
+  const qs = new URLSearchParams(merged).toString();
+  return qs ? `/tasks?${qs}` : "/tasks";
+}
+
 function TasksFilterBar({
   current,
   companies,
   projects,
   departments,
+  people,
 }: {
   current: {
     company: string;
     project: string;
     brief: string;
     status: string;
+    priority: string;
     department: string;
     author: string;
+    approver: string;
     project_manager: string;
     assignee: string;
   };
   companies: string[];
   projects: string[];
   departments: string[];
+  people: TasksPerson[];
 }) {
   const statuses = [
     { val: "", label: "כל הסטטוסים" },
     { val: "awaiting_approval", label: "ממתין לאישור" },
     { val: "awaiting_clarification", label: "ממתין לבירור" },
     { val: "in_progress", label: "בעבודה" },
-    { val: "done", label: "בוצעה" },
+    { val: "done", label: "בוצע" },
     { val: "cancelled", label: "בוטל" },
+  ];
+  const priorities = [
+    { val: "", label: "כל" },
+    { val: "1", label: "1 — גבוהה" },
+    { val: "2", label: "2 — רגילה" },
+    { val: "3", label: "3 — נמוכה" },
   ];
   return (
     <form method="GET" action="/tasks" className="tasks-filter-bar">
+      {/* Keep the opt-out of author-defaulting sticky across submits. */}
+      <input type="hidden" name="mine" value="0" />
       <label>
         בריף
         <input
@@ -398,6 +552,16 @@ function TasksFilterBar({
         </select>
       </label>
       <label>
+        עדיפות
+        <select name="priority" defaultValue={current.priority}>
+          {priorities.map((p) => (
+            <option key={p.val} value={p.val}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
         מחלקה
         <select name="department" defaultValue={current.department}>
           <option value="">הכל</option>
@@ -413,8 +577,19 @@ function TasksFilterBar({
         <input
           type="text"
           name="author"
-          placeholder="name@domain"
+          list="tasks-people"
+          placeholder={current.author || "name@domain"}
           defaultValue={current.author}
+        />
+      </label>
+      <label>
+        מאשר
+        <input
+          type="text"
+          name="approver"
+          list="tasks-people"
+          placeholder="name@domain"
+          defaultValue={current.approver}
         />
       </label>
       <label>
@@ -422,6 +597,7 @@ function TasksFilterBar({
         <input
           type="text"
           name="project_manager"
+          list="tasks-people"
           placeholder="name@domain"
           defaultValue={current.project_manager}
         />
@@ -431,10 +607,19 @@ function TasksFilterBar({
         <input
           type="text"
           name="assignee"
+          list="tasks-people"
           placeholder="name@domain"
           defaultValue={current.assignee}
         />
       </label>
+      {/* Shared datalist populates all four people inputs above. */}
+      <datalist id="tasks-people">
+        {people.map((p) => (
+          <option key={p.email} value={p.email}>
+            {p.name} · {p.role}
+          </option>
+        ))}
+      </datalist>
       <button type="submit" className="btn-primary">
         סנן
       </button>

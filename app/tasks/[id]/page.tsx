@@ -10,7 +10,7 @@ const STATUS_LABELS: Record<string, string> = {
   awaiting_approval: "ממתין לאישור",
   in_progress: "בעבודה",
   awaiting_clarification: "ממתין לבירור",
-  done: "בוצעה",
+  done: "בוצע",
   cancelled: "בוטל",
 };
 

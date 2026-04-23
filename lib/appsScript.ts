@@ -766,8 +766,10 @@ export type TasksListFilters = {
   project?: string;
   brief?: string;
   status?: WorkTaskStatus | "";
+  priority?: string; // "1" | "2" | "3" | ""
   department?: string;
   author?: string;
+  approver?: string;
   project_manager?: string;
   assignee?: string;
 };
@@ -780,8 +782,10 @@ export function tasksList(
   if (filters.project) params.project = filters.project;
   if (filters.brief) params.brief = filters.brief;
   if (filters.status) params.status = filters.status;
+  if (filters.priority) params.priority = filters.priority;
   if (filters.department) params.department = filters.department;
   if (filters.author) params.author = filters.author;
+  if (filters.approver) params.approver = filters.approver;
   if (filters.project_manager) params.project_manager = filters.project_manager;
   if (filters.assignee) params.assignee = filters.assignee;
   return callApi<{ ok: boolean; tasks: WorkTask[]; count: number }>(
@@ -792,6 +796,15 @@ export function tasksList(
 
 export function tasksGet(id: string): Promise<{ ok: boolean; task: WorkTask }> {
   return callApi<{ ok: boolean; task: WorkTask }>("tasksGet", { id });
+}
+
+export type TasksPerson = { email: string; name: string; role: string };
+
+export function tasksPeopleList(): Promise<{
+  ok: boolean;
+  people: TasksPerson[];
+}> {
+  return callApi<{ ok: boolean; people: TasksPerson[] }>("tasksPeopleList", {});
 }
 
 export type TasksCreateInput = {

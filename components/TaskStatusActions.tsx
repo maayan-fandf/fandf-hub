@@ -23,7 +23,7 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; t
     { to: "cancelled", label: "בטל", tone: "ghost" },
   ],
   in_progress: [
-    { to: "done", label: "✓ סיים — בוצעה", tone: "primary" },
+    { to: "done", label: "✓ סיים — בוצע", tone: "primary" },
     { to: "awaiting_clarification", label: "? צריך בירור", tone: "warn" },
     { to: "cancelled", label: "בטל", tone: "ghost" },
   ],
