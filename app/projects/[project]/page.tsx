@@ -16,18 +16,27 @@ import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
+import ProjectFilterBar from "@/components/ProjectFilterBar";
 
 export const dynamic = "force-dynamic";
 
 type Params = { project: string };
+type Search = { resolved?: string };
 
 export default async function ProjectOverviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<Params>;
+  searchParams: Promise<Search>;
 }) {
   const { project: projectParam } = await params;
   const projectName = decodeURIComponent(projectParam);
+  // `?resolved=1` flips the three preview sections below from open-only
+  // to open+resolved. Mirrors the Inbox "הצג סגורים" toggle so the
+  // pattern is uniform across the hub.
+  const sp = await searchParams;
+  const showResolved = sp.resolved === "1";
 
   // Fire four API calls in parallel — each one validates access independently,
   // so if the user is unauthorized we'll get consistent errors. getMyProjects
@@ -101,6 +110,18 @@ export default async function ProjectOverviewPage({
   const totalComments = commentsData?.total ?? 0;
   const openMentions = myMentionsOnProject.filter((m) => !m.resolved).length;
 
+  // Resolved-item count across the three preview sections. Drives the
+  // "(N)" badge on the filter-bar toggle so users see at a glance how
+  // much is currently hidden. Only top-level comments are countable
+  // here — replies inherit their parent's resolved state on the Apps
+  // Script side and aren't independently resolvable in the UI.
+  const resolvedTasks = tasks.filter((t) => t.resolved).length;
+  const resolvedMentions = myMentionsOnProject.filter((m) => m.resolved).length;
+  const resolvedComments = comments.filter(
+    (c) => !c.parent_id && c.resolved,
+  ).length;
+  const resolvedCount = resolvedTasks + resolvedMentions + resolvedComments;
+
   return (
     <main className="container">
       <header className="page-header">
@@ -143,6 +164,16 @@ export default async function ProjectOverviewPage({
         <StatTile label='💬 סה"כ הערות' value={totalComments} variant="comments" />
       </div>
 
+      {/* Hidden when the project has nothing resolved yet AND the user isn't
+          already in show-resolved mode — avoids showing an inert toggle on
+          a fresh project. */}
+      {(resolvedCount > 0 || showResolved) && (
+        <ProjectFilterBar
+          showResolved={showResolved}
+          resolvedCount={resolvedCount}
+        />
+      )}
+
       {/* Section order intentionally matches the stats row above (tasks /
           mentions / comments) so each column lines up with its count tile
           when the grid renders in RTL. */}
@@ -157,8 +188,16 @@ export default async function ProjectOverviewPage({
               פתח לוח ←
             </Link>
           </div>
-          <p className="section-subtitle">משימות פתוחות על שרשורים בפרויקט</p>
-          <TasksPreview tasks={tasks} today={tasksData?.today ?? today()} />
+          <p className="section-subtitle">
+            {showResolved
+              ? "כל המשימות בפרויקט (פתוחות וסגורות)"
+              : "משימות פתוחות על שרשורים בפרויקט"}
+          </p>
+          <TasksPreview
+            tasks={tasks}
+            today={tasksData?.today ?? today()}
+            showResolved={showResolved}
+          />
         </section>
 
         <section className="project-section">
@@ -168,8 +207,15 @@ export default async function ProjectOverviewPage({
               כל התיוגים ←
             </Link>
           </div>
-          <p className="section-subtitle">שרשורים שבהם תויגת ועוד לא סגרת</p>
-          <MentionsPreview mentions={myMentionsOnProject} />
+          <p className="section-subtitle">
+            {showResolved
+              ? "כל התיוגים בפרויקט (פתוחים וסגורים)"
+              : "שרשורים שבהם תויגת ועוד לא סגרת"}
+          </p>
+          <MentionsPreview
+            mentions={myMentionsOnProject}
+            showResolved={showResolved}
+          />
         </section>
 
         <section className="project-section">
@@ -182,8 +228,16 @@ export default async function ProjectOverviewPage({
               פתח ציר זמן ←
             </Link>
           </div>
-          <p className="section-subtitle">פעילות חדשה בפרויקט — הערות פתוחות</p>
-          <CommentsPreview comments={comments} projectName={projectName} />
+          <p className="section-subtitle">
+            {showResolved
+              ? "כל ההערות האחרונות בפרויקט (פתוחות וסגורות)"
+              : "פעילות חדשה בפרויקט — הערות פתוחות"}
+          </p>
+          <CommentsPreview
+            comments={comments}
+            projectName={projectName}
+            showResolved={showResolved}
+          />
           {totalComments > comments.length && (
             <div className="section-foot">
               מציג {comments.length} מתוך {totalComments}
@@ -245,19 +299,34 @@ export default async function ProjectOverviewPage({
 
 /* ─── Sections ───────────────────────────────────────────────────── */
 
-function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
-  const open = tasks.filter((t) => !t.resolved);
-  if (open.length === 0) {
-    return <div className="empty-small">🎉 אין משימות פתוחות!</div>;
+function TasksPreview({
+  tasks,
+  today,
+  showResolved,
+}: {
+  tasks: TaskItem[];
+  today: string;
+  showResolved: boolean;
+}) {
+  // When showResolved is on, include resolved tasks inline — they render
+  // with .compact-task.done styling already (via taskState). Otherwise
+  // filter to open only.
+  const pool = showResolved ? tasks : tasks.filter((t) => !t.resolved);
+  if (pool.length === 0) {
+    return (
+      <div className="empty-small">
+        {showResolved ? "🌿 אין משימות בפרויקט זה." : "🎉 אין משימות פתוחות!"}
+      </div>
+    );
   }
 
   // Group replies under their parent so the visual order mirrors the
   // thread structure: [top-level] → [its reply] → [its reply] → [next
   // top-level] ... Orphan replies (parent not in the visible window)
   // land at the end, still marked as replies.
-  const topLevel = open.filter((t) => !t.parent_id);
+  const topLevel = pool.filter((t) => !t.parent_id);
   const repliesByParent = new Map<string, TaskItem[]>();
-  for (const t of open) {
+  for (const t of pool) {
     if (!t.parent_id) continue;
     const list = repliesByParent.get(t.parent_id) ?? [];
     list.push(t);
@@ -314,22 +383,25 @@ function TasksPreview({ tasks, today }: { tasks: TaskItem[]; today: string }) {
 function CommentsPreview({
   comments,
   projectName,
+  showResolved,
 }: {
   comments: CommentItem[];
   projectName: string;
+  showResolved: boolean;
 }) {
-  // Default-hide resolved threads — they're still reachable via the "N
-  // פתורות →" link below, which jumps to the timeline with ?resolved=1.
-  // Keeps the preview focused on active conversations.
+  // Only top-level threads render in the preview; replies are reached via
+  // the inline ThreadReplies control on each thread. When showResolved is
+  // on, resolved threads are rendered inline (faded via .is-resolved).
   const topLevel = comments.filter((c) => !c.parent_id);
-  const open = topLevel.filter((c) => !c.resolved);
-  const resolvedCount = topLevel.length - open.length;
-  const top = open.slice(0, 8);
+  const visible = showResolved ? topLevel : topLevel.filter((c) => !c.resolved);
+  const resolvedCount = topLevel.filter((c) => c.resolved).length;
+  const top = visible.slice(0, 8);
 
   if (top.length === 0 && resolvedCount === 0) {
     return <div className="empty-small">💭 אין הערות בפרויקט זה עדיין.</div>;
   }
   if (top.length === 0) {
+    // showResolved is false here (otherwise visible would include them)
     return (
       <div className="empty-small">
         ✅ אין הערות פתוחות.{" "}
@@ -380,7 +452,7 @@ function CommentsPreview({
           </div>
         </li>
       ))}
-      {resolvedCount > 0 && (
+      {resolvedCount > 0 && !showResolved && (
         <li className="compact-comment compact-comment-footer">
           <Link
             href={`/projects/${encodeURIComponent(projectName)}/timeline?resolved=1`}
@@ -394,12 +466,20 @@ function CommentsPreview({
   );
 }
 
-function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
-  // Default-hide resolved mentions — they still exist on the inbox page
-  // under the "הצג סגורים" toggle. Preview stays focused on open tags.
-  const openMentions = mentions.filter((m) => !m.resolved);
-  const resolvedCount = mentions.length - openMentions.length;
-  const top = openMentions.slice(0, 5);
+function MentionsPreview({
+  mentions,
+  showResolved,
+}: {
+  mentions: MentionItem[];
+  showResolved: boolean;
+}) {
+  // Filter behavior mirrors the page-level filter bar: default hides
+  // resolved; toggle on to include them inline (fades via .is-resolved).
+  const visible = showResolved
+    ? mentions
+    : mentions.filter((m) => !m.resolved);
+  const resolvedCount = mentions.filter((m) => m.resolved).length;
+  const top = visible.slice(0, 5);
   if (top.length === 0 && resolvedCount === 0) {
     return (
       <div className="empty-small">
@@ -408,6 +488,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
     );
   }
   if (top.length === 0) {
+    // showResolved is false here (otherwise visible would include them)
     return (
       <div className="empty-small">
         ✅ אין תיוגים פתוחים עבורך בפרויקט זה.{" "}
@@ -469,7 +550,7 @@ function MentionsPreview({ mentions }: { mentions: MentionItem[] }) {
           </li>
         );
       })}
-      {resolvedCount > 0 && (
+      {resolvedCount > 0 && !showResolved && (
         <li className="compact-comment compact-comment-footer">
           <Link href="/inbox?resolved=1" className="section-link">
             + הצג {resolvedCount} {resolvedCount === 1 ? "תיוג פתור" : "תיוגים פתורים"} בתיבת התיוגים ←
