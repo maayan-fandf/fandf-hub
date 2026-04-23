@@ -3286,6 +3286,36 @@ a.section-link:hover {
   .metrics-frame-wrap {
     min-height: min(65vh, 520px);
   }
+
+  /* Morning alert rows: stack vertically so the title/detail column gets
+     full width instead of being squeezed to single-char wraps by the
+     copy-pill + dismiss-pill combo on the action side. */
+  .morning-signal {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .55em;
+  }
+  .morning-signal-actions {
+    align-self: flex-end;
+    flex-wrap: wrap;
+  }
+  .morning-signal-title,
+  .morning-signal-detail {
+    overflow-wrap: anywhere;
+  }
+
+  /* Morning card head: let title + meta + links each take a full row
+     instead of fighting for width. Drop the min-widths that force
+     wrap-before-fit on narrow viewports. */
+  .morning-card {
+    padding: .9em 1em;
+  }
+  .morning-card-head {
+    gap: .55em;
+  }
+  .morning-card-title { min-width: 0; }
+  .morning-card-meta { min-width: 0; width: 100%; }
+  .morning-card-links { width: 100%; }
 }
 
 /* Red-dot badge for open mentions on the תיוגים nav link */
