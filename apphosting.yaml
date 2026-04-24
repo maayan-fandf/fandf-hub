@@ -69,3 +69,38 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # ─── Direct Google Workspace access (bypasses Apps Script) ──────
+  # Service-account JSON with domain-wide delegation for /auth/tasks
+  # + /auth/spreadsheets (as of 2026-04-24). The hub reads + writes
+  # Sheets directly via `googleapis`, impersonating the caller's
+  # email so access-checks + row-level auth continue to work.
+  - variable: TASKS_SA_KEY_JSON
+    secret: TASKS_SA_KEY_JSON
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Main + Comments spreadsheet ids, canonical in code. Kept as env
+  # vars (not secrets — they're not secret) so they can be overridden
+  # per-environment without a code deploy.
+  - variable: SHEET_ID_MAIN
+    value: 15GKqEy8OelYtGuuiHYkSAR2xNNL4icwo-Wgiq1suW0Y
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: SHEET_ID_COMMENTS
+    value: 1ZpdfJhdYa6aD5iftTsGJuVMLTS9WlzHGZMevq5hrxGU
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Feature flag: when "1", the tasks read path talks to Sheets directly
+  # (fast). When "" or missing, it falls back to the Apps Script proxy
+  # (the current default). Start in dev, flip in prod after verifying.
+  - variable: USE_SA_TASKS_READS
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME

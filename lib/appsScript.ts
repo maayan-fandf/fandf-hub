@@ -777,9 +777,19 @@ export type TasksListFilters = {
   assignee?: string;
 };
 
-export function tasksList(
+export async function tasksList(
   filters: TasksListFilters = {},
 ): Promise<{ ok: boolean; tasks: WorkTask[]; count: number }> {
+  // Feature-flagged direct read path. Route through Sheets API when
+  // USE_SA_TASKS_READS=1 for ~10× latency win; fall back to the Apps
+  // Script proxy otherwise. Kept in this one place so every caller
+  // benefits without per-callsite changes.
+  const { useSATasksReads } = await import("@/lib/sa");
+  if (useSATasksReads()) {
+    const { tasksListDirect } = await import("@/lib/tasksDirect");
+    const user = await currentUserEmail();
+    return tasksListDirect(user, filters);
+  }
   const params: Record<string, string> = {};
   if (filters.company) params.company = filters.company;
   if (filters.project) params.project = filters.project;
@@ -797,16 +807,30 @@ export function tasksList(
   );
 }
 
-export function tasksGet(id: string): Promise<{ ok: boolean; task: WorkTask }> {
+export async function tasksGet(
+  id: string,
+): Promise<{ ok: boolean; task: WorkTask }> {
+  const { useSATasksReads } = await import("@/lib/sa");
+  if (useSATasksReads()) {
+    const { tasksGetDirect } = await import("@/lib/tasksDirect");
+    const user = await currentUserEmail();
+    return tasksGetDirect(user, id);
+  }
   return callApi<{ ok: boolean; task: WorkTask }>("tasksGet", { id });
 }
 
 export type TasksPerson = { email: string; name: string; role: string };
 
-export function tasksPeopleList(): Promise<{
+export async function tasksPeopleList(): Promise<{
   ok: boolean;
   people: TasksPerson[];
 }> {
+  const { useSATasksReads } = await import("@/lib/sa");
+  if (useSATasksReads()) {
+    const { tasksPeopleListDirect } = await import("@/lib/tasksDirect");
+    const user = await currentUserEmail();
+    return tasksPeopleListDirect(user);
+  }
   return callApi<{ ok: boolean; people: TasksPerson[] }>("tasksPeopleList", {});
 }
 

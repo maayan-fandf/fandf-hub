@@ -1,0 +1,118 @@
+/**
+ * Service-account auth with domain-wide delegation.
+ *
+ * The SA key (same JSON that lives on the Apps Script project under
+ * Script Property `SERVICE_ACCOUNT_KEY_JSON`) is read from the
+ * `TASKS_SA_KEY_JSON` env var. Production reads it from Google Cloud
+ * Secret Manager via apphosting.yaml; local dev reads it from
+ * `.env.local`.
+ *
+ * Each authClient is tied to ONE impersonated user + a fixed scope list.
+ * The clients are cached per (email, scopes) so repeated calls within
+ * the same Node process reuse the JWT without re-signing.
+ *
+ * Scopes currently wired through DWD (as of 2026-04-24):
+ *   - https://www.googleapis.com/auth/tasks         (original)
+ *   - https://www.googleapis.com/auth/spreadsheets  (new, for tasks reads)
+ *
+ * Add a new scope here only after it's also been added in
+ *   Workspace Admin → Security → API controls → Domain-wide delegation
+ * for client ID 102907403320696302169 ("fandf dashboard"). Without that,
+ * JWT token requests will succeed but the API calls will 403.
+ */
+
+import { google } from "googleapis";
+import type { JWT } from "google-auth-library";
+
+type SAKey = {
+  type: string;
+  project_id: string;
+  private_key_id: string;
+  private_key: string;
+  client_email: string;
+  client_id: string;
+  auth_uri: string;
+  token_uri: string;
+};
+
+let cachedKey: SAKey | null = null;
+
+function loadKey(): SAKey {
+  if (cachedKey) return cachedKey;
+  const raw = process.env.TASKS_SA_KEY_JSON;
+  if (!raw) {
+    throw new Error(
+      "TASKS_SA_KEY_JSON is not set. See hub-next/.env.local.example.",
+    );
+  }
+  try {
+    cachedKey = JSON.parse(raw) as SAKey;
+    return cachedKey;
+  } catch (e) {
+    throw new Error(
+      `TASKS_SA_KEY_JSON is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
+// In-process cache: JWT client per (subject, sorted-scopes) key.
+// Google's JWT client caches access tokens internally, so we just need
+// to avoid re-creating the client itself on every call.
+const clientCache = new Map<string, JWT>();
+
+function cacheKey(subject: string, scopes: string[]): string {
+  return `${subject}::${[...scopes].sort().join(",")}`;
+}
+
+/**
+ * Return a JWT client authorized to act as `subjectEmail` with the given
+ * scopes. `subjectEmail` must be a user inside the F&F Workspace domain
+ * — otherwise Google rejects the DWD token request.
+ *
+ * Scopes must exactly match what's authorized in Workspace Admin DWD.
+ * Mismatched scopes fail at call time with `unauthorized_client`.
+ */
+export function getSAClient(subjectEmail: string, scopes: string[]): JWT {
+  const k = cacheKey(subjectEmail, scopes);
+  const hit = clientCache.get(k);
+  if (hit) return hit;
+
+  const key = loadKey();
+  const jwt = new google.auth.JWT({
+    email: key.client_email,
+    key: key.private_key,
+    scopes,
+    subject: subjectEmail,
+  });
+  clientCache.set(k, jwt);
+  return jwt;
+}
+
+/**
+ * Convenience wrapper: returns a Sheets API client authorized as
+ * `subjectEmail` with the `spreadsheets` scope. Use for any sheet
+ * read/write.
+ */
+export function sheetsClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/spreadsheets",
+  ]);
+  return google.sheets({ version: "v4", auth });
+}
+
+/**
+ * Convenience wrapper for the Tasks API (scope: `tasks`). Reserved for a
+ * future Node-side rewrite of the existing `_dispatchTasksSa_` flow;
+ * not used yet.
+ */
+export function tasksApiClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/tasks",
+  ]);
+  return google.tasks({ version: "v1", auth });
+}
+
+/** True when the hub is configured to use the direct SA-backed reads. */
+export function useSATasksReads(): boolean {
+  return String(process.env.USE_SA_TASKS_READS || "").trim() === "1";
+}
