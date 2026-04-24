@@ -4630,21 +4630,21 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   cursor: pointer;
 }
 .drive-folder-row:hover { background: var(--surface, #fff); }
+.drive-folder-row:focus-visible {
+  outline: 2px solid var(--accent, #2a66d9);
+  outline-offset: 1px;
+}
 .drive-folder-row.is-selected {
   background: var(--accent-soft, #e7f0ff);
   outline: 1px solid var(--accent, #2a66d9);
 }
-.drive-folder-row input[type="radio"] { margin: 0; }
 .drive-folder-icon { font-size: 1.05em; }
 .drive-folder-name {
   flex: 1;
   text-align: start;
-  background: none;
-  border: none;
-  font: inherit;
   color: inherit;
-  cursor: pointer;
   padding: 0;
+  user-select: none;
 }
 .drive-folder-new-name {
   flex: 1;

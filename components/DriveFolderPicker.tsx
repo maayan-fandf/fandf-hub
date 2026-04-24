@@ -227,20 +227,16 @@ export default function DriveFolderPicker({
       )}
 
       {/* Create-new row — always visible once the picker is active,
-          even before the campaign folder exists. Selecting "new" is
-          the whole point of the picker in that state. */}
+          even before the campaign folder exists. Clicking anywhere in
+          the label focuses the name input, which via onFocus flips the
+          mode back to "new" (the label-wrapping pattern replaces the
+          old explicit radio). */}
       {(rootId || isPending) && (
         <label
           className={`drive-folder-row drive-folder-new${
             isNewMode ? " is-selected" : ""
           }`}
         >
-          <input
-            type="radio"
-            name="drive-folder-mode"
-            checked={isNewMode}
-            onChange={() => onChange({ mode: "new", name: defaultNewName })}
-          />
           <span className="drive-folder-icon">➕</span>
           <input
             type="text"
@@ -351,46 +347,47 @@ export default function DriveFolderPicker({
         {items.map((f) => {
           const isSelected = selectedExistingId === f.id;
           const isOpen = expanded.has(f.id);
+          // Clicking anywhere in the row selects the folder. The
+          // chevron button stops propagation so expand/collapse doesn't
+          // also trigger select.
           return (
             <li key={f.id} className="drive-folder-li" data-depth={depth}>
               <div
+                role="button"
+                tabIndex={0}
                 className={`drive-folder-row${isSelected ? " is-selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="drive-folder-mode"
-                  checked={isSelected}
-                  onChange={() =>
+                onClick={() =>
+                  onChange({
+                    mode: "existing",
+                    folderId: f.id,
+                    folderName: f.name,
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
                     onChange({
                       mode: "existing",
                       folderId: f.id,
                       folderName: f.name,
-                    })
+                    });
                   }
-                />
+                }}
+              >
                 <button
                   type="button"
                   className="drive-folder-chevron"
                   aria-label={isOpen ? "סגור" : "פתח"}
-                  onClick={() => toggleExpanded(f.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpanded(f.id);
+                  }}
                   disabled={!f.hasChildren}
                 >
                   {f.hasChildren ? (isOpen ? "▾" : "▸") : ""}
                 </button>
                 <span className="drive-folder-icon">📁</span>
-                <button
-                  type="button"
-                  className="drive-folder-name"
-                  onClick={() =>
-                    onChange({
-                      mode: "existing",
-                      folderId: f.id,
-                      folderName: f.name,
-                    })
-                  }
-                >
-                  {f.name}
-                </button>
+                <span className="drive-folder-name">{f.name}</span>
               </div>
               {isOpen && <div className="drive-folder-sub">{renderBranch(f.id, depth + 1)}</div>}
             </li>
