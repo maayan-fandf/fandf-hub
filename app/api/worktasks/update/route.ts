@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { tasksUpdate, type TasksUpdatePatch } from "@/lib/appsScript";
+import { useSATasksWrites } from "@/lib/sa";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,16 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Same flag-gated direct path as create.
+    if (useSATasksWrites()) {
+      const { tasksUpdateDirect } = await import("@/lib/tasksWriteDirect");
+      const result = await tasksUpdateDirect(
+        session.user.email,
+        body.id,
+        body.patch || {},
+      );
+      return NextResponse.json(result);
+    }
     const result = await tasksUpdate(body.id, body.patch || {});
     return NextResponse.json(result);
   } catch (e) {

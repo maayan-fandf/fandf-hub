@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { tasksCreate, type TasksCreateInput } from "@/lib/appsScript";
+import { useSATasksWrites } from "@/lib/sa";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,14 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Fast path: direct Google API calls via the DWD service account.
+    // Falls back to the Apps Script proxy when the flag is off, e.g.
+    // during rollout or if the write path needs to be reverted.
+    if (useSATasksWrites()) {
+      const { tasksCreateDirect } = await import("@/lib/tasksWriteDirect");
+      const result = await tasksCreateDirect(session.user.email, body);
+      return NextResponse.json(result);
+    }
     const result = await tasksCreate(body);
     return NextResponse.json(result);
   } catch (e) {

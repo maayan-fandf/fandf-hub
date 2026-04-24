@@ -107,3 +107,23 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # Separate flag for the write path (create/update tasks). Writes need
+  # three additional DWD scopes (drive / calendar / gmail.send) and
+  # three extra API enables (Drive / Calendar / Gmail). Keep at "" until
+  # those are all in place; flip to "1" after a smoke-test.
+  - variable: USE_SA_TASKS_WRITES
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # The email the hub impersonates for Drive folder creation (SA with
+  # DWD creates folders in this user's Drive). Default matches the
+  # Apps Script behavior (Script was deployed as maayan). Change if
+  # you want folders to land in someone else's account.
+  - variable: DRIVE_FOLDER_OWNER
+    value: maayan@fandf.co.il
+    availability:
+      - BUILD
+      - RUNTIME

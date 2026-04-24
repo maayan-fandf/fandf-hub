@@ -101,9 +101,8 @@ export function sheetsClient(subjectEmail: string) {
 }
 
 /**
- * Convenience wrapper for the Tasks API (scope: `tasks`). Reserved for a
- * future Node-side rewrite of the existing `_dispatchTasksSa_` flow;
- * not used yet.
+ * Convenience wrapper for the Tasks API (scope: `tasks`). Used by the
+ * direct write path to create Google Tasks on assignees' default lists.
  */
 export function tasksApiClient(subjectEmail: string) {
   const auth = getSAClient(subjectEmail, [
@@ -112,7 +111,60 @@ export function tasksApiClient(subjectEmail: string) {
   return google.tasks({ version: "v1", auth });
 }
 
+/**
+ * Drive API client. Used to create/lookup the per-task folder hierarchy
+ * (`F&F Tasks / <company> / <project> / <task-id — title>`). Usually
+ * impersonates the Drive-folder owner (DRIVE_FOLDER_OWNER env, defaults
+ * to maayan@fandf.co.il) so folders land in the same account as the
+ * legacy Apps Script flow.
+ */
+export function driveClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/drive",
+  ]);
+  return google.drive({ version: "v3", auth });
+}
+
+/**
+ * Calendar API client. Impersonates each assignee to create events on
+ * their primary calendar.
+ */
+export function calendarClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/calendar",
+  ]);
+  return google.calendar({ version: "v3", auth });
+}
+
+/**
+ * Gmail send-as client. Impersonates the email sender (usually the task
+ * author) so the approval-request email lands "from" a real person,
+ * matching the Apps Script MailApp behavior.
+ */
+export function gmailClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/gmail.send",
+  ]);
+  return google.gmail({ version: "v1", auth });
+}
+
 /** True when the hub is configured to use the direct SA-backed reads. */
 export function useSATasksReads(): boolean {
   return String(process.env.USE_SA_TASKS_READS || "").trim() === "1";
+}
+
+/** True when the hub is configured to use the direct SA-backed writes.
+ *  Separate from reads because writes require 3 additional DWD scopes
+ *  (drive, calendar, gmail.send) that may not be in place yet. */
+export function useSATasksWrites(): boolean {
+  return String(process.env.USE_SA_TASKS_WRITES || "").trim() === "1";
+}
+
+/** The email the hub impersonates for Drive folder creation. Defaults
+ *  to maayan@fandf.co.il so new folders land in the same account as
+ *  the legacy Apps Script flow. Override via env. */
+export function driveFolderOwner(): string {
+  return (
+    process.env.DRIVE_FOLDER_OWNER || "maayan@fandf.co.il"
+  ).toLowerCase().trim();
 }

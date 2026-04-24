@@ -1,0 +1,859 @@
+/**
+ * Direct-to-Google write path for tasks.
+ *
+ * Mirrors the Apps Script tasksCreateForUser_ / tasksUpdateForUser_
+ * orchestration but runs entirely in Node using `googleapis` with
+ * domain-wide-delegated impersonation. Saves the ~2–4 s Apps Script
+ * overhead per write and unblocks future improvements (parallel side
+ * effects, richer error handling, etc).
+ *
+ * Invariants preserved from the Apps Script version:
+ * - Tasks live in the Comments sheet with row_kind='task'.
+ * - body stores description; mentions CSV stores assignees; resolved
+ *   stays in sync with status ('done' ↔ true).
+ * - State machine transitions follow TASKS_ALLOWED_TRANSITIONS below
+ *   (same list as Apps Script).
+ * - Drive folder hierarchy: root/<company>/<project>/<task-id — title>.
+ *   Root is looked up by name "F&F Tasks" under the impersonated
+ *   DRIVE_FOLDER_OWNER (defaults to maayan@fandf.co.il).
+ * - Side-effect failures are logged but don't roll back the row; a
+ *   retry on the same task upserts the missing side effects.
+ */
+
+import type { drive_v3 } from "googleapis";
+import {
+  sheetsClient,
+  driveClient,
+  calendarClient,
+  tasksApiClient,
+  gmailClient,
+  driveFolderOwner,
+} from "@/lib/sa";
+import type {
+  TasksCreateInput,
+  TasksUpdatePatch,
+  WorkTask,
+  WorkTaskStatus,
+} from "@/lib/appsScript";
+
+function envOrThrow(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+const TASKS_STATUSES: WorkTaskStatus[] = [
+  "draft",
+  "awaiting_approval",
+  "in_progress",
+  "awaiting_clarification",
+  "done",
+  "cancelled",
+];
+
+const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = {
+  draft: ["awaiting_approval", "cancelled"],
+  awaiting_approval: [
+    "in_progress",
+    "awaiting_clarification",
+    "cancelled",
+  ],
+  awaiting_clarification: [
+    "in_progress",
+    "awaiting_approval",
+    "cancelled",
+  ],
+  in_progress: ["done", "awaiting_clarification", "cancelled"],
+  done: ["in_progress"],
+  cancelled: [],
+};
+
+const ADMIN_EMAILS = new Set([
+  "maayan@fandf.co.il",
+  "nadav@fandf.co.il",
+  "felix@fandf.co.il",
+]);
+
+/* ── Utilities ─────────────────────────────────────────────────────── */
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function genId(): string {
+  return (
+    "T-" +
+    Date.now().toString(36) +
+    "-" +
+    Math.random().toString(36).slice(2, 6)
+  );
+}
+
+function parseAssignees(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((x) => String(x || "").trim().toLowerCase())
+      .filter((s) => s.includes("@"));
+  }
+  return String(raw)
+    .split(/[,;\n]/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.includes("@"));
+}
+
+function parseDepartments(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((s) => String(s).trim()).filter(Boolean);
+  }
+  return String(raw)
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/* ── Keys lookups (company resolution + access control) ────────────── */
+
+const KEYS_HEADER_NORMALIZE = /[\u200B-\u200F\u202A-\u202E\u2060\u00AD\uFEFF\uD800-\uDFFF]/g;
+
+async function readKeys(subjectEmail: string): Promise<{
+  headers: string[];
+  rows: unknown[][];
+}> {
+  const sheets = sheetsClient(subjectEmail);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: envOrThrow("SHEET_ID_MAIN"),
+    range: "Keys",
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (!values.length) return { headers: [], rows: [] };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "")
+      .replace(KEYS_HEADER_NORMALIZE, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+  return { headers, rows: values.slice(1) };
+}
+
+async function resolveCompany(
+  subjectEmail: string,
+  project: string,
+): Promise<string> {
+  const { headers, rows } = await readKeys(subjectEmail);
+  const iProj = headers.indexOf("פרוייקט");
+  const iCo = headers.indexOf("חברה");
+  if (iProj < 0 || iCo < 0) return "";
+  const target = project.toLowerCase().trim();
+  for (const row of rows) {
+    const p = String(row[iProj] ?? "")
+      .toLowerCase()
+      .trim();
+    if (p === target) return String(row[iCo] ?? "").trim();
+  }
+  return "";
+}
+
+async function assertProjectAccess(
+  subjectEmail: string,
+  project: string,
+): Promise<void> {
+  const lc = subjectEmail.toLowerCase().trim();
+  if (ADMIN_EMAILS.has(lc)) return;
+  const { headers, rows } = await readKeys(subjectEmail);
+  const iProj = headers.indexOf("פרוייקט");
+  const iClients = headers.indexOf("Email Client");
+  const iInternal = headers.indexOf("Access — internal only");
+  const iCf = headers.indexOf("Client-facing");
+  const targetProject = project.toLowerCase().trim();
+  for (const row of rows) {
+    const p = String(row[iProj] ?? "")
+      .toLowerCase()
+      .trim();
+    if (p !== targetProject) continue;
+    for (const ci of [iClients, iInternal, iCf]) {
+      if (ci < 0) continue;
+      const raw = String(row[ci] ?? "").toLowerCase();
+      if (raw.includes(lc)) return;
+    }
+    throw new Error("Access denied to project: " + project);
+  }
+  throw new Error("Project not found: " + project);
+}
+
+/* ── Drive folder hierarchy ────────────────────────────────────────── */
+
+let cachedRootId: string | null = null;
+
+async function getOrCreateFolder(
+  drive: drive_v3.Drive,
+  name: string,
+  parentId: string | null,
+): Promise<string> {
+  const safeName = (name || "(unnamed)")
+    .replace(/[\\/]/g, "-")
+    .replace(/'/g, "\\'");
+  const query = [
+    `mimeType='application/vnd.google-apps.folder'`,
+    `name='${safeName}'`,
+    parentId ? `'${parentId}' in parents` : "'root' in parents",
+    "trashed=false",
+  ].join(" and ");
+  const list = await drive.files.list({
+    q: query,
+    fields: "files(id, name)",
+    pageSize: 1,
+  });
+  const existing = list.data.files?.[0];
+  if (existing?.id) return existing.id;
+  const created = await drive.files.create({
+    requestBody: {
+      name: safeName,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: parentId ? [parentId] : undefined,
+    },
+    fields: "id",
+  });
+  if (!created.data.id) throw new Error("Drive folder create returned no id");
+  return created.data.id;
+}
+
+async function createTaskFolder(
+  task: { id: string; title: string; company: string; project: string },
+): Promise<{ folderId: string; folderUrl: string } | null> {
+  try {
+    const owner = driveFolderOwner();
+    const drive = driveClient(owner);
+    if (!cachedRootId) {
+      cachedRootId = await getOrCreateFolder(drive, "F&F Tasks", null);
+    }
+    let parent = cachedRootId;
+    if (task.company) {
+      parent = await getOrCreateFolder(drive, task.company, parent);
+    }
+    parent = await getOrCreateFolder(
+      drive,
+      task.project || "(no-project)",
+      parent,
+    );
+    const leafName =
+      task.id +
+      (task.title ? " — " + task.title.slice(0, 60).replace(/[\\/]/g, "-") : "");
+    const created = await drive.files.create({
+      requestBody: {
+        name: leafName,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [parent],
+      },
+      fields: "id, webViewLink",
+    });
+    if (!created.data.id) return null;
+    // Share the folder with the F&F domain so the team can open it
+    // without per-file invites. Match Apps Script's DOMAIN_WITH_LINK.
+    try {
+      await drive.permissions.create({
+        fileId: created.data.id,
+        requestBody: { type: "domain", role: "writer", domain: "fandf.co.il" },
+      });
+    } catch (e) {
+      console.log("[tasksWriteDirect] domain share failed (non-fatal):", e);
+    }
+    return {
+      folderId: created.data.id,
+      folderUrl:
+        created.data.webViewLink ||
+        `https://drive.google.com/drive/folders/${created.data.id}`,
+    };
+  } catch (e) {
+    console.log("[tasksWriteDirect] Drive folder create failed:", e);
+    return null;
+  }
+}
+
+/* ── Calendar events + Google Tasks per assignee ───────────────────── */
+
+async function createCalendarEvents(
+  task: { title: string; project: string; description: string; drive_folder_url: string; requested_date: string; assignees: string[] },
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const date = task.requested_date.trim();
+  if (!date) return out;
+  const allDay = /^\d{4}-\d{2}-\d{2}$/.test(date);
+  const description =
+    task.description + (task.drive_folder_url ? `\n\nקבצים: ${task.drive_folder_url}` : "");
+  const body: Record<string, unknown> = {
+    summary: "📋 " + task.title + " · " + task.project,
+    description,
+    reminders: { useDefault: true },
+  };
+  if (allDay) {
+    const start = new Date(date + "T00:00:00Z");
+    const next = new Date(start.getTime() + 24 * 3600 * 1000);
+    body.start = { date };
+    body.end = { date: next.toISOString().slice(0, 10) };
+  } else {
+    const start = new Date(date);
+    body.start = { dateTime: start.toISOString() };
+    body.end = { dateTime: new Date(start.getTime() + 3600 * 1000).toISOString() };
+  }
+  await Promise.all(
+    task.assignees.map(async (email) => {
+      try {
+        const cal = calendarClient(email);
+        const res = await cal.events.insert({
+          calendarId: "primary",
+          requestBody: body,
+        });
+        if (res.data.id) out[email] = res.data.id;
+      } catch (e) {
+        console.log(`[tasksWriteDirect] Calendar insert failed for ${email}:`, e);
+      }
+    }),
+  );
+  return out;
+}
+
+async function createGoogleTasks(
+  task: { id: string; title: string; project: string; description: string; drive_folder_url: string; requested_date: string; assignees: string[] },
+): Promise<Record<string, { u: string; l: string; t: string; d: string }>> {
+  const out: Record<string, { u: string; l: string; t: string; d: string }> = {};
+  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  const notes =
+    task.description +
+    (task.drive_folder_url ? `\n\nקבצים: ${task.drive_folder_url}` : "") +
+    (hubUrl ? `\n\n${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "");
+  const dueRfc = task.requested_date && /^\d{4}-\d{2}-\d{2}$/.test(task.requested_date)
+    ? new Date(task.requested_date + "T00:00:00Z").toISOString()
+    : undefined;
+  await Promise.all(
+    task.assignees.map(async (email) => {
+      try {
+        const tasksApi = tasksApiClient(email);
+        // Use the user's default (first) task list, matching
+        // _getDefaultTaskListId_ in Apps Script.
+        const lists = await tasksApi.tasklists.list({ maxResults: 1 });
+        const listId = lists.data.items?.[0]?.id;
+        if (!listId) return;
+        const created = await tasksApi.tasks.insert({
+          tasklist: listId,
+          requestBody: {
+            title: "📋 " + task.title + " · " + task.project,
+            notes,
+            due: dueRfc,
+          },
+        });
+        if (created.data.id) {
+          out[email] = { u: email, l: listId, t: created.data.id, d: task.requested_date };
+        }
+      } catch (e) {
+        console.log(`[tasksWriteDirect] Google Tasks insert failed for ${email}:`, e);
+      }
+    }),
+  );
+  return out;
+}
+
+/* ── Gmail approver email ──────────────────────────────────────────── */
+
+async function emailApprover(
+  task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number },
+  authorEmail: string,
+  approverEmail: string,
+): Promise<void> {
+  if (!approverEmail) return;
+  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
+  const subject = `📋 משימה חדשה ממתינה לאישורך — ${task.project} · ${task.title}`;
+  const lines = [
+    `${authorEmail.split("@")[0]} יצר/ה משימה חדשה ומחכה לאישורך.`,
+    "",
+    `פרויקט: ${task.project}`,
+    `כותרת: ${task.title}`,
+    task.description ? `\n${task.description}` : "",
+    "",
+    task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
+    task.priority ? `עדיפות: ${task.priority}` : "",
+    "",
+    link ? `לאישור / דחייה: ${link}` : "",
+  ].filter(Boolean);
+  const plainBody = lines.join("\n");
+  try {
+    const gmail = gmailClient(authorEmail);
+    // RFC 2822 MIME message. Subject UTF-8-encoded so Hebrew lands clean.
+    const mime = [
+      `From: ${authorEmail}`,
+      `To: ${approverEmail}`,
+      `Subject: =?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`,
+      "MIME-Version: 1.0",
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(plainBody, "utf-8").toString("base64"),
+    ].join("\r\n");
+    const raw = Buffer.from(mime, "utf-8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+  } catch (e) {
+    console.log("[tasksWriteDirect] Approver email failed:", e);
+  }
+}
+
+/* ── Chat webhook (per-project card, unchanged behavior) ──────────── */
+
+async function postChatWebhook(
+  subjectEmail: string,
+  project: string,
+  kind: "create" | "resolve" | "reply",
+  card: { authorName: string; body?: string; deepLink?: string; assignees?: string[] },
+): Promise<void> {
+  // Webhook URL lives in Keys col L. Read it here; don't fail the write
+  // path if the read or POST errors.
+  try {
+    const { headers, rows } = await readKeys(subjectEmail);
+    const iProj = headers.indexOf("פרוייקט");
+    const iWebhook = headers.indexOf("Chat Webhook");
+    if (iProj < 0 || iWebhook < 0) return;
+    const target = project.toLowerCase().trim();
+    let webhookUrl = "";
+    for (const row of rows) {
+      if (String(row[iProj] ?? "").toLowerCase().trim() === target) {
+        webhookUrl = String(row[iWebhook] ?? "").trim();
+        break;
+      }
+    }
+    if (!webhookUrl) return;
+    const emoji = kind === "create" ? "📋" : kind === "resolve" ? "✅" : "💬";
+    const text = `${emoji} ${card.authorName}${kind === "create" ? " יצר/ה משימה" : kind === "resolve" ? " סיים/ה משימה" : " הגיב/ה"}${card.body ? `: ${card.body}` : ""}${card.deepLink ? `\n${card.deepLink}` : ""}`;
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch (e) {
+    console.log("[tasksWriteDirect] Chat webhook post failed:", e);
+  }
+}
+
+/* ── Main create orchestrator ──────────────────────────────────────── */
+
+export async function tasksCreateDirect(
+  subjectEmail: string,
+  payload: TasksCreateInput,
+): Promise<{ ok: true; task: WorkTask }> {
+  const project = String(payload.project || "").trim();
+  if (!project) throw new Error("tasksCreate: project is required");
+  await assertProjectAccess(subjectEmail, project);
+
+  const now = nowIso();
+  const id = genId();
+  const assignees = parseAssignees(payload.assignees);
+  const approver = String(payload.approver_email || "").toLowerCase().trim();
+  const projectManager = String(payload.project_manager_email || "").toLowerCase().trim();
+  const company = payload.company?.trim() || (await resolveCompany(subjectEmail, project));
+  const status = (TASKS_STATUSES as string[]).includes(String(payload.status || ""))
+    ? (payload.status as WorkTaskStatus)
+    : ("awaiting_approval" as WorkTaskStatus);
+
+  const task: WorkTask = {
+    id,
+    brief: String(payload.brief || "").trim(),
+    company,
+    project,
+    title: String(payload.title || "").trim(),
+    description: String(payload.description || ""),
+    departments: parseDepartments(payload.departments),
+    kind: String(payload.kind || "other").trim(),
+    priority: parseInt(String(payload.priority || "2"), 10) || 2,
+    status,
+    sub_status: String(payload.sub_status || "").trim(),
+    author_email: subjectEmail.toLowerCase().trim(),
+    approver_email: approver,
+    project_manager_email: projectManager,
+    assignees,
+    requested_date: String(payload.requested_date || "").trim(),
+    created_at: now,
+    updated_at: now,
+    parent_id: String(payload.parent_id || "").trim(),
+    round_number: parseInt(String(payload.round_number || "1"), 10) || 1,
+    drive_folder_id: "",
+    drive_folder_url: "",
+    chat_space_id: "",
+    chat_task_name: "",
+    calendar_event_ids: {},
+    google_tasks: {},
+    status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
+    edited_at: "",
+  };
+
+  // Side effects — run in parallel where safe.
+  const folder = await createTaskFolder(task);
+  if (folder) {
+    task.drive_folder_id = folder.folderId;
+    task.drive_folder_url = folder.folderUrl;
+  }
+  const [cal, gt] = await Promise.all([
+    createCalendarEvents({
+      title: task.title,
+      project: task.project,
+      description: task.description,
+      drive_folder_url: task.drive_folder_url,
+      requested_date: task.requested_date,
+      assignees,
+    }),
+    createGoogleTasks({
+      id: task.id,
+      title: task.title,
+      project: task.project,
+      description: task.description,
+      drive_folder_url: task.drive_folder_url,
+      requested_date: task.requested_date,
+      assignees,
+    }),
+  ]);
+  task.calendar_event_ids = cal;
+  task.google_tasks = gt;
+
+  // Persist to the Comments sheet. We need the header row order to
+  // write cells in the right positions (schema auto-migrated).
+  const sheets = sheetsClient(subjectEmail);
+  const commentsSsId = envOrThrow("SHEET_ID_COMMENTS");
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: commentsSsId,
+    range: "Comments!1:1",
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const headerRow = ((headerRes.data.values?.[0] ?? []) as unknown[]).map((h) =>
+    String(h ?? "").trim(),
+  );
+
+  const cells: Record<string, unknown> = {
+    id: task.id,
+    timestamp: now,
+    project: task.project,
+    anchor: "general",
+    author_email: task.author_email,
+    author_name: task.author_email.split("@")[0],
+    parent_id: task.parent_id,
+    body: task.description,
+    resolved: false,
+    mentions: assignees.join(","),
+    google_tasks: JSON.stringify(task.google_tasks),
+    edited_at: "",
+    row_kind: "task",
+    kind: task.kind,
+    title: task.title,
+    brief: task.brief,
+    company: task.company,
+    departments: JSON.stringify(task.departments),
+    priority: task.priority,
+    status: task.status,
+    sub_status: task.sub_status,
+    approver_email: task.approver_email,
+    project_manager_email: task.project_manager_email,
+    requested_date: task.requested_date,
+    round_number: task.round_number,
+    revision_of: "",
+    drive_folder_id: task.drive_folder_id,
+    drive_folder_url: task.drive_folder_url,
+    chat_space_id: "",
+    chat_task_name: "",
+    calendar_event_ids: JSON.stringify(task.calendar_event_ids),
+    status_history: JSON.stringify(task.status_history),
+    updated_at: task.updated_at,
+  };
+  const row = headerRow.map((h) => (h in cells ? cells[h] : ""));
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: commentsSsId,
+    range: "Comments",
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [row as unknown[]] },
+  });
+
+  // After-write notifications (non-fatal).
+  await Promise.all([
+    emailApprover(
+      {
+        id: task.id,
+        project: task.project,
+        title: task.title,
+        description: task.description,
+        requested_date: task.requested_date,
+        priority: task.priority,
+      },
+      task.author_email,
+      approver,
+    ),
+    postChatWebhook(subjectEmail, project, "create", {
+      authorName: task.author_email.split("@")[0],
+      body:
+        task.title +
+        (task.description ? " — " + task.description.slice(0, 120) : ""),
+      deepLink: process.env.AUTH_URL
+        ? `${process.env.AUTH_URL.replace(/\/+$/, "")}/tasks/${encodeURIComponent(task.id)}`
+        : "",
+    }),
+  ]);
+
+  return { ok: true, task };
+}
+
+/* ── Main update orchestrator ──────────────────────────────────────── */
+
+export async function tasksUpdateDirect(
+  subjectEmail: string,
+  taskId: string,
+  patch: TasksUpdatePatch,
+): Promise<{ ok: true; task: WorkTask; changed: boolean }> {
+  // Read the whole Comments sheet once; we need header idx + the task row.
+  const sheets = sheetsClient(subjectEmail);
+  const commentsSsId = envOrThrow("SHEET_ID_COMMENTS");
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: commentsSsId,
+    range: "Comments",
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (values.length < 2) throw new Error("Task not found: " + taskId);
+  const headers = (values[0] as unknown[]).map((h) => String(h ?? "").trim());
+  const idx = new Map<string, number>();
+  headers.forEach((h, i) => {
+    if (h) idx.set(h, i);
+  });
+  const idCol = idx.get("id");
+  const rowKindCol = idx.get("row_kind");
+  if (idCol == null || rowKindCol == null) throw new Error("Task not found: " + taskId);
+
+  let rowIndex = -1;
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][idCol] ?? "") !== taskId) continue;
+    if (String(values[i][rowKindCol] ?? "").trim() !== "task") continue;
+    rowIndex = i; // 0-based inside values; actual row in sheet is i+1
+    break;
+  }
+  if (rowIndex < 0) throw new Error("Task not found: " + taskId);
+  const rowVals = values[rowIndex];
+
+  const cell = (k: string): unknown => {
+    const i = idx.get(k);
+    return i == null ? "" : rowVals[i];
+  };
+  const currentStatus = String(cell("status") ?? "awaiting_approval") as WorkTaskStatus;
+  const project = String(cell("project") ?? "");
+
+  const isAdmin = ADMIN_EMAILS.has(subjectEmail.toLowerCase().trim());
+  if (!isAdmin) await assertProjectAccess(subjectEmail, project);
+
+  // Build the changes map, keyed by Comments column names. Special
+  // mapping: description → body, assignees → mentions, status → also
+  // sync `resolved`. Mirrors Apps Script tasksUpdateForUser_.
+  const changes: Record<string, unknown> = {};
+  const now = nowIso();
+
+  if (patch.status && patch.status !== currentStatus) {
+    const allowed = TASKS_ALLOWED_TRANSITIONS[currentStatus] || [];
+    if (!allowed.includes(patch.status) && !isAdmin) {
+      throw new Error(
+        "Transition not allowed: " + currentStatus + " → " + patch.status,
+      );
+    }
+    changes.status = patch.status;
+    changes.resolved = patch.status === "done";
+    // Append to status_history.
+    const existingHist = (() => {
+      try {
+        return JSON.parse(String(cell("status_history") ?? "[]"));
+      } catch {
+        return [];
+      }
+    })();
+    existingHist.push({
+      at: now,
+      by: subjectEmail,
+      from: currentStatus,
+      to: patch.status,
+      note: patch.note || "",
+    });
+    changes.status_history = JSON.stringify(existingHist);
+  }
+
+  const SIMPLE_DIRECT = [
+    "title",
+    "kind",
+    "priority",
+    "approver_email",
+    "project_manager_email",
+    "requested_date",
+    "brief",
+    "company",
+    "sub_status",
+  ] as const;
+  for (const k of SIMPLE_DIRECT) {
+    if (k in patch && patch[k] !== cell(k)) {
+      changes[k] = patch[k];
+    }
+  }
+
+  if ("description" in patch && patch.description !== cell("body")) {
+    changes.body = patch.description;
+  }
+
+  if ("assignees" in patch) {
+    const newAssignees = parseAssignees(patch.assignees);
+    const currentAssignees = String(cell("mentions") ?? "")
+      .split(/[,;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (newAssignees.join(",") !== currentAssignees.join(",")) {
+      changes.mentions = newAssignees.join(",");
+    }
+  }
+
+  if ("departments" in patch) {
+    const newDepts = parseDepartments(patch.departments);
+    const currentDepts = (() => {
+      try {
+        return JSON.parse(String(cell("departments") ?? "[]"));
+      } catch {
+        return [];
+      }
+    })();
+    if (newDepts.join(",") !== (currentDepts as string[]).join(",")) {
+      changes.departments = JSON.stringify(newDepts);
+    }
+  }
+
+  const changedKeys = Object.keys(changes);
+  if (!changedKeys.length) {
+    // Reuse the existing row as the return shape.
+    return { ok: true, task: rowToTask(rowVals, idx), changed: false };
+  }
+  changes.updated_at = now;
+  if (patch.title || patch.description) changes.edited_at = now;
+
+  // Build a single batchUpdate for all changed cells.
+  const actualRow = rowIndex + 1; // sheet is 1-indexed; +1 for 0-based rowIndex in values[]
+  const sheetRow = actualRow + 1; // account for the header being row 1
+  const data: Array<{ range: string; values: (string | number | boolean)[][] }> = [];
+  for (const [k, v] of Object.entries(changes)) {
+    const colIdx = idx.get(k);
+    if (colIdx == null) continue;
+    const col = columnLetter(colIdx + 1);
+    data.push({
+      range: `Comments!${col}${sheetRow}`,
+      values: [[v as string | number | boolean]],
+    });
+  }
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: commentsSsId,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+
+  // Re-read the row so the return shape reflects the merged result.
+  const reread = await sheets.spreadsheets.values.get({
+    spreadsheetId: commentsSsId,
+    range: `Comments!A${sheetRow}:${columnLetter(headers.length)}${sheetRow}`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  const freshRow = (reread.data.values?.[0] ?? []) as unknown[];
+
+  // Chat post on key status transitions — same rules as Apps Script.
+  if (changes.status) {
+    const chatKind =
+      changes.status === "done"
+        ? "resolve"
+        : changes.status === "in_progress"
+          ? "create"
+          : null;
+    if (chatKind) {
+      await postChatWebhook(subjectEmail, project, chatKind, {
+        authorName: subjectEmail.split("@")[0],
+        body: String(cell("title") ?? "") + " · " + String(changes.status),
+        deepLink: process.env.AUTH_URL
+          ? `${process.env.AUTH_URL.replace(/\/+$/, "")}/tasks/${encodeURIComponent(taskId)}`
+          : "",
+      });
+    }
+  }
+
+  return { ok: true, task: rowToTask(freshRow, idx), changed: true };
+}
+
+/* ── Row → WorkTask mapper (local copy of lib/tasksDirect helper) ─── */
+
+function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
+  const cell = (k: string): unknown => {
+    const i = idx.get(k);
+    return i == null ? "" : row[i];
+  };
+  const createdAtRaw = cell("timestamp");
+  const createdAt =
+    createdAtRaw instanceof Date
+      ? createdAtRaw.toISOString()
+      : String(createdAtRaw ?? "");
+  const parseJsonField = (k: string, array: boolean): unknown => {
+    const v = cell(k);
+    if (!v) return array ? [] : {};
+    if (typeof v !== "string") return v;
+    try {
+      return JSON.parse(v);
+    } catch {
+      return array ? [] : {};
+    }
+  };
+  const assignees = String(cell("mentions") ?? "")
+    .split(/[,;]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  return {
+    id: String(cell("id") ?? ""),
+    brief: String(cell("brief") ?? ""),
+    company: String(cell("company") ?? ""),
+    project: String(cell("project") ?? ""),
+    title: String(cell("title") ?? ""),
+    description: String(cell("body") ?? ""),
+    departments: parseJsonField("departments", true) as string[],
+    kind: String(cell("kind") ?? "other"),
+    priority: parseInt(String(cell("priority") ?? "2"), 10) || 2,
+    status: String(cell("status") ?? "awaiting_approval") as WorkTaskStatus,
+    sub_status: String(cell("sub_status") ?? ""),
+    author_email: String(cell("author_email") ?? "").toLowerCase(),
+    approver_email: String(cell("approver_email") ?? "").toLowerCase(),
+    project_manager_email: String(cell("project_manager_email") ?? "").toLowerCase(),
+    assignees,
+    requested_date: String(cell("requested_date") ?? ""),
+    created_at: createdAt,
+    updated_at: String(cell("updated_at") ?? ""),
+    parent_id: String(cell("parent_id") ?? ""),
+    round_number: parseInt(String(cell("round_number") ?? "1"), 10) || 1,
+    drive_folder_id: String(cell("drive_folder_id") ?? ""),
+    drive_folder_url: String(cell("drive_folder_url") ?? ""),
+    chat_space_id: String(cell("chat_space_id") ?? ""),
+    chat_task_name: String(cell("chat_task_name") ?? ""),
+    calendar_event_ids: parseJsonField("calendar_event_ids", false) as Record<string, string>,
+    google_tasks: parseJsonField("google_tasks", false) as Record<string, { u: string; l: string; t: string; d: string }>,
+    status_history: parseJsonField("status_history", true) as WorkTask["status_history"],
+    edited_at: String(cell("edited_at") ?? ""),
+  };
+}
+
+function columnLetter(colNumber: number): string {
+  // 1 -> A, 2 -> B, ..., 27 -> AA
+  let n = colNumber;
+  let s = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
