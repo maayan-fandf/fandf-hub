@@ -9,30 +9,30 @@ import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 // server will reject; the client just won't surface the button.
 const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; tone: string }[]> = {
   draft: [
-    { to: "awaiting_handling", label: "שלח למבצע", tone: "primary" },
-    { to: "cancelled", label: "בטל", tone: "ghost" },
+    { to: "awaiting_handling", label: "ממתין לטיפול", tone: "primary" },
+    { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   awaiting_handling: [
-    { to: "in_progress", label: "✓ התחל לעבוד", tone: "primary" },
-    { to: "cancelled", label: "בטל", tone: "ghost" },
+    { to: "in_progress", label: "בעבודה", tone: "primary" },
+    { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   in_progress: [
-    { to: "awaiting_approval", label: "✓ סיימתי — שלח לאישור", tone: "primary" },
-    { to: "awaiting_clarification", label: "? צריך בירור", tone: "warn" },
-    { to: "cancelled", label: "בטל", tone: "ghost" },
+    { to: "awaiting_approval", label: "ממתין לאישור", tone: "primary" },
+    { to: "awaiting_clarification", label: "ממתין לבירור", tone: "warn" },
+    { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   awaiting_clarification: [
-    { to: "in_progress", label: "✓ סיום בירור — חזור לעבודה", tone: "primary" },
-    { to: "awaiting_handling", label: "→ חזרה לטיפול", tone: "ghost" },
-    { to: "cancelled", label: "בטל", tone: "ghost" },
+    { to: "in_progress", label: "בעבודה", tone: "primary" },
+    { to: "awaiting_handling", label: "ממתין לטיפול", tone: "ghost" },
+    { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   awaiting_approval: [
-    { to: "done", label: "✓ אשר — בוצע", tone: "primary" },
-    { to: "in_progress", label: "↺ החזר לעבודה", tone: "warn" },
-    { to: "cancelled", label: "דחה", tone: "ghost" },
+    { to: "done", label: "בוצע", tone: "primary" },
+    { to: "in_progress", label: "בעבודה", tone: "warn" },
+    { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   done: [
-    { to: "in_progress", label: "פתח מחדש", tone: "ghost" },
+    { to: "in_progress", label: "בעבודה", tone: "ghost" },
   ],
   cancelled: [],
 };

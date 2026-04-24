@@ -14,32 +14,35 @@ import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 //   draft → awaiting_handling → in_progress → awaiting_approval → done
 //                                    ⇄
 //                             awaiting_clarification
+// Labels = the target state name (Hebrew). Data-Plus style: click the
+// pill, pick where the task goes next. No action-phrased verbs; the
+// state name alone is enough context.
 const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> = {
   draft: [
-    { to: "awaiting_handling", label: "שלח למבצע" },
-    { to: "cancelled", label: "בטל" },
+    { to: "awaiting_handling", label: "ממתין לטיפול" },
+    { to: "cancelled", label: "בוטל" },
   ],
   awaiting_handling: [
-    { to: "in_progress", label: "✓ התחל לעבוד" },
-    { to: "cancelled", label: "בטל" },
+    { to: "in_progress", label: "בעבודה" },
+    { to: "cancelled", label: "בוטל" },
   ],
   in_progress: [
-    { to: "awaiting_approval", label: "✓ סיימתי — שלח לאישור" },
-    { to: "awaiting_clarification", label: "? צריך בירור" },
-    { to: "cancelled", label: "בטל" },
+    { to: "awaiting_approval", label: "ממתין לאישור" },
+    { to: "awaiting_clarification", label: "ממתין לבירור" },
+    { to: "cancelled", label: "בוטל" },
   ],
   awaiting_clarification: [
-    { to: "in_progress", label: "✓ סיום בירור — חזור לעבודה" },
-    { to: "awaiting_handling", label: "→ חזרה לטיפול" },
-    { to: "cancelled", label: "בטל" },
+    { to: "in_progress", label: "בעבודה" },
+    { to: "awaiting_handling", label: "ממתין לטיפול" },
+    { to: "cancelled", label: "בוטל" },
   ],
   awaiting_approval: [
-    { to: "done", label: "✓ אשר — בוצע" },
-    { to: "in_progress", label: "↺ החזר לעבודה" },
-    { to: "cancelled", label: "דחה" },
+    { to: "done", label: "בוצע" },
+    { to: "in_progress", label: "בעבודה" },
+    { to: "cancelled", label: "בוטל" },
   ],
   done: [
-    { to: "in_progress", label: "פתח מחדש" },
+    { to: "in_progress", label: "בעבודה" },
   ],
   cancelled: [],
 };
@@ -189,7 +192,7 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
                 key={opt.to}
                 type="button"
                 role="menuitem"
-                className="tasks-status-cell-item"
+                className={`tasks-status-cell-item tasks-status-${opt.to}`}
                 disabled={busy !== null}
                 onClick={() => transition(opt.to, opt.label)}
               >

@@ -3858,19 +3858,22 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
   min-width: 14em;
   display: flex; flex-direction: column; gap: .15em;
 }
+/* Each menu item carries the target state's pill tone so the dropdown
+   looks like a color-coded palette of "where does this task go next". */
 .tasks-status-cell-item {
-  padding: .45em .7em;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text);
+  padding: .45em .9em;
+  border-radius: 999px;
+  border: 1px solid transparent;
   text-align: start;
   font: inherit;
-  font-size: .88em;
+  font-size: .85em;
+  font-weight: 600;
   cursor: pointer;
+  transition: transform .08s, box-shadow .12s;
 }
 .tasks-status-cell-item:hover:not(:disabled) {
-  background: var(--surface-soft);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, .12);
 }
 .tasks-status-cell-item:disabled { opacity: .5; cursor: wait; }
 .tasks-status-cell-err {
