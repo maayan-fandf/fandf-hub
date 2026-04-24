@@ -128,6 +128,14 @@ env:
       - BUILD
       - RUNTIME
 
+  # Routes getMyProjects (nav dropdown + home + every hub page) through
+  # direct Keys-tab reads. Saves ~1 s per page render.
+  - variable: USE_SA_PROJECTS_READS
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # The email the hub impersonates for Drive folder creation (SA with
   # DWD creates folders in this user's Drive). Default matches the
   # Apps Script behavior (Script was deployed as maayan). Change if

@@ -168,6 +168,14 @@ export function useSACommentsReads(): boolean {
   return String(process.env.USE_SA_COMMENTS_READS || "").trim() === "1";
 }
 
+/** True when `getMyProjects` reads the Keys tab directly via SA
+ *  instead of calling the Apps Script `myProjects` action. Runs on
+ *  every hub page render (nav dropdown + home) so the perf win is
+ *  broad. */
+export function useSAProjectsReads(): boolean {
+  return String(process.env.USE_SA_PROJECTS_READS || "").trim() === "1";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */

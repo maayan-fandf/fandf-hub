@@ -266,8 +266,22 @@ const fetchMyProjectsCached = unstable_cache(
   { revalidate: 60, tags: ["my-projects"] },
 );
 
+// Parallel cache for the direct-SA path. Keyed separately so flipping
+// USE_SA_PROJECTS_READS doesn't serve stale Apps-Script data. Same
+// 60s TTL; the Keys tab is effectively append-only so this rarely bites.
+const fetchMyProjectsDirectCached = unstable_cache(
+  async (email: string): Promise<MyProjects> => {
+    const { getMyProjectsDirect } = await import("@/lib/projectsDirect");
+    return getMyProjectsDirect(email);
+  },
+  ["myProjectsDirect"],
+  { revalidate: 60, tags: ["my-projects"] },
+);
+
 export async function getMyProjects(): Promise<MyProjects> {
   const email = await currentUserEmail();
+  const { useSAProjectsReads } = await import("@/lib/sa");
+  if (useSAProjectsReads()) return fetchMyProjectsDirectCached(email);
   return fetchMyProjectsCached(email);
 }
 
