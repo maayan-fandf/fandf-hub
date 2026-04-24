@@ -181,12 +181,11 @@ export default function TasksQueue({
               <tbody>
                 {other.map((t) => (
                   <tr key={t.id}>
+                    {/* Interactive status cell — cancelled tasks need a
+                        way to be revived; a read-only pill here was the
+                        reason "I don't see any way to un-cancel". */}
                     <td>
-                      <span
-                        className={`tasks-status-pill tasks-status-${t.status}`}
-                      >
-                        {t.status}
-                      </span>
+                      <TaskStatusCell task={t} />
                     </td>
                     <td>
                       {t.company ? `${t.company} / ` : ""}
