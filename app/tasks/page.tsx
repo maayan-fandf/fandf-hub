@@ -228,21 +228,9 @@ function TasksFilterBar({
     <form method="GET" action="/tasks" className="tasks-filter-bar">
       {/* Keep the opt-out of author-defaulting sticky across submits. */}
       <input type="hidden" name="mine" value="0" />
-      <label>
-        קמפיין
-        <input
-          type="text"
-          name="campaign"
-          list="tasks-campaigns-filter"
-          placeholder="הכל"
-          defaultValue={current.campaign}
-        />
-      </label>
-      <datalist id="tasks-campaigns-filter">
-        {campaignOptions.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
+      {/* Filter order mirrors the table columns below: חברה → פרויקט →
+          קמפיין → כותב → מחלקה → עדיפות → סטטוס → עובד מבצע → מאשר →
+          מנהל פרויקט. תאריך / נוצרה are display-only (no filter). */}
       <label>
         חברה
         <select name="company" defaultValue={current.company}>
@@ -266,11 +254,37 @@ function TasksFilterBar({
         </select>
       </label>
       <label>
-        סטטוס
-        <select name="status" defaultValue={current.status}>
-          {statuses.map((s) => (
-            <option key={s.val} value={s.val}>
-              {s.label}
+        קמפיין
+        <input
+          type="text"
+          name="campaign"
+          list="tasks-campaigns-filter"
+          placeholder="הכל"
+          defaultValue={current.campaign}
+        />
+      </label>
+      <datalist id="tasks-campaigns-filter">
+        {campaignOptions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <label>
+        כותב
+        <input
+          type="text"
+          name="author"
+          list="tasks-people"
+          placeholder={current.author || "name@domain"}
+          defaultValue={current.author}
+        />
+      </label>
+      <label>
+        מחלקה
+        <select name="department" defaultValue={current.department}>
+          <option value="">הכל</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
             </option>
           ))}
         </select>
@@ -286,24 +300,23 @@ function TasksFilterBar({
         </select>
       </label>
       <label>
-        מחלקה
-        <select name="department" defaultValue={current.department}>
-          <option value="">הכל</option>
-          {departments.map((d) => (
-            <option key={d} value={d}>
-              {d}
+        סטטוס
+        <select name="status" defaultValue={current.status}>
+          {statuses.map((s) => (
+            <option key={s.val} value={s.val}>
+              {s.label}
             </option>
           ))}
         </select>
       </label>
       <label>
-        כותב
+        עובד מבצע
         <input
           type="text"
-          name="author"
+          name="assignee"
           list="tasks-people"
-          placeholder={current.author || "name@domain"}
-          defaultValue={current.author}
+          placeholder="name@domain"
+          defaultValue={current.assignee}
         />
       </label>
       <label>
@@ -326,16 +339,6 @@ function TasksFilterBar({
           defaultValue={current.project_manager}
         />
       </label>
-      <label>
-        עובד מבצע
-        <input
-          type="text"
-          name="assignee"
-          list="tasks-people"
-          placeholder="name@domain"
-          defaultValue={current.assignee}
-        />
-      </label>
       {/* Shared datalist populates all four people inputs above. */}
       <datalist id="tasks-people">
         {people.map((p) => (
@@ -344,12 +347,14 @@ function TasksFilterBar({
           </option>
         ))}
       </datalist>
-      <button type="submit" className="btn-primary">
-        סנן
-      </button>
-      <Link href="/tasks" className="btn-ghost">
-        נקה
-      </Link>
+      <div className="tasks-filter-actions">
+        <button type="submit" className="btn-primary">
+          סנן
+        </button>
+        <Link href="/tasks" className="btn-ghost">
+          נקה
+        </Link>
+      </div>
     </form>
   );
 }

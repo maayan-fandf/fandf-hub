@@ -3719,7 +3719,14 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
 
 /* Queue view */
 .tasks-filter-bar {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75em 1em;
+  /* Grid mirrors the table column rhythm: 5 filters per row, 2 rows.
+     Each filter gets equal width regardless of label length so the
+     visual grid stays clean. The "סנן/נקה" buttons sit in their own
+     full-width row at the end. */
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .75em 1em;
+  align-items: end;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -3730,6 +3737,7 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   display: flex; flex-direction: column; gap: .3em;
   font-size: .82em; color: var(--muted);
   font-weight: 600;
+  min-width: 0;
 }
 .tasks-filter-bar select,
 .tasks-filter-bar input {
@@ -3739,7 +3747,14 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  min-width: 10em;
+  width: 100%;
+  min-width: 0;
+}
+.tasks-filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: .6em;
 }
 
 .tasks-bucket { margin-bottom: 2em; }
@@ -4788,12 +4803,17 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   .task-form-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
-  .tasks-filter-bar { padding: .7em .8em; gap: .5em; }
-  .tasks-filter-bar label { flex: 1 1 45%; min-width: 0; }
+  .tasks-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: .7em .8em; gap: .5em;
+  }
   .tasks-filter-bar select,
-  .tasks-filter-bar input { min-width: 0; width: 100%; font-size: 16px; }
+  .tasks-filter-bar input { font-size: 16px; }
   .tasks-table th,
   .tasks-table td { padding: .5em .6em; }
   .tasks-table th.num,
   .tasks-table td.num { display: none; }
+}
+@media (max-width: 1100px) and (min-width: 641px) {
+  .tasks-filter-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
