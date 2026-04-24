@@ -1,6 +1,12 @@
 import Link from "next/link";
-import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
+import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 import TaskStatusCell from "@/components/TaskStatusCell";
+import {
+  TaskPriorityCell,
+  TaskRequestedDateCell,
+  TaskApproverCell,
+  TaskAssigneesCell,
+} from "@/components/TaskInlineEditors";
 
 // Four canonical lifecycle buckets, ordered the way the team reads them.
 // Terminal states (`draft` / `cancelled`) surface in the "other" fold
@@ -41,6 +47,13 @@ type Props = {
    * page instead of forcing a wide horizontal scroll.
    */
   compact?: boolean;
+  /**
+   * People list — used by the inline-edit popovers on the assignees
+   * and approver cells. When empty, those cells fall back to plain
+   * text (no autocomplete). Callers should pass the same
+   * tasksPeopleList() payload they already fetch for the filter bar.
+   */
+  people?: TasksPerson[];
 };
 
 /**
@@ -58,6 +71,7 @@ export default function TasksQueue({
   emptyMessage = "אין משימות תואמות לסינון.",
   hideOther = false,
   compact = false,
+  people = [],
 }: Props) {
   // Bucketize once. Anything off the canonical list sinks into `other`.
   const byStatus: Record<string, WorkTask[]> = {};
@@ -119,13 +133,21 @@ export default function TasksQueue({
                         key={company || "(no-company)"}
                         company={company}
                         projectGroups={projectGroups}
+                        people={people}
                       />
                     ))
                   ) : (
                     list
                       .slice()
                       .sort((a, b) => b.created_at.localeCompare(a.created_at))
-                      .map((t) => <TaskRow key={t.id} task={t} compact={compact} />)
+                      .map((t) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          compact={compact}
+                          people={people}
+                        />
+                      ))
                   )}
                 </tbody>
               </table>
@@ -223,9 +245,11 @@ function groupByCompanyProject(
 function CompanyGroup({
   company,
   projectGroups,
+  people,
 }: {
   company: string;
   projectGroups: [string, WorkTask[]][];
+  people: TasksPerson[];
 }) {
   const totalCols = 12;
   return (
@@ -244,6 +268,7 @@ function CompanyGroup({
           project={project}
           rows={rows}
           totalCols={totalCols}
+          people={people}
         />
       ))}
     </>
@@ -254,10 +279,12 @@ function ProjectSubGroup({
   project,
   rows,
   totalCols,
+  people,
 }: {
   project: string;
   rows: WorkTask[];
   totalCols: number;
+  people: TasksPerson[];
 }) {
   return (
     <>
@@ -273,7 +300,7 @@ function ProjectSubGroup({
         </td>
       </tr>
       {rows.map((t) => (
-        <TaskRow key={t.id} task={t} />
+        <TaskRow key={t.id} task={t} people={people} />
       ))}
     </>
   );
@@ -284,9 +311,11 @@ function ProjectSubGroup({
 function TaskRow({
   task,
   compact = false,
+  people = [],
 }: {
   task: WorkTask;
   compact?: boolean;
+  people?: TasksPerson[];
 }) {
   return (
     <tr>
@@ -321,19 +350,23 @@ function TaskRow({
           : "—"}
       </td>
       <td className="priority-cell">
-        <span className={`tasks-priority-pill p${task.priority}`}>
-          {task.priority || "—"}
-        </span>
+        <TaskPriorityCell task={task} />
       </td>
-      <td className="date-cell">{task.requested_date || "—"}</td>
+      <td className="date-cell">
+        <TaskRequestedDateCell task={task} />
+      </td>
       {!compact && (
         <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
       )}
       <td>
         <TaskStatusCell task={task} />
       </td>
-      <td>{(task.assignees || []).map(shortName).join(", ") || "—"}</td>
-      <td>{shortName(task.approver_email) || "—"}</td>
+      <td>
+        <TaskAssigneesCell task={task} people={people} />
+      </td>
+      <td>
+        <TaskApproverCell task={task} people={people} />
+      </td>
       <td className="icons">
         <div className="tasks-row-icons">
           <Link

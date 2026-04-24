@@ -151,7 +151,7 @@ export default async function TasksPage({
       )}
 
       {!error && (
-        <TasksQueue tasks={tasks} groupByCompany={true} />
+        <TasksQueue tasks={tasks} groupByCompany={true} people={people} />
       )}
     </main>
   );

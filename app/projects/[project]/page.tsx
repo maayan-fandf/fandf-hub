@@ -5,6 +5,7 @@ import {
   getMyProjects,
   getMorningFeed,
   tasksList,
+  tasksPeopleList,
   type CommentItem,
   type MentionItem,
   type MorningProject,
@@ -50,14 +51,21 @@ export default async function ProjectOverviewPage({
   // an unauthorized caller gets consistent errors. Legacy getProjectTasks
   // (comment-mention Google-Tasks feed) was dropped — the work-management
   // tasks system owns the "משימות" section now.
-  const [commentsRes, mentionsRes, projectsRes, alertsRes, workTasksRes] =
-    await Promise.allSettled([
-      getProjectComments(projectName, 15),
-      getMyMentions(),
-      getMyProjects(),
-      getMorningFeed({ project: projectName }),
-      tasksList({ project: projectName }),
-    ]);
+  const [
+    commentsRes,
+    mentionsRes,
+    projectsRes,
+    alertsRes,
+    workTasksRes,
+    peopleRes,
+  ] = await Promise.allSettled([
+    getProjectComments(projectName, 15),
+    getMyMentions(),
+    getMyProjects(),
+    getMorningFeed({ project: projectName }),
+    tasksList({ project: projectName }),
+    tasksPeopleList(),
+  ]);
 
   const commentsData =
     commentsRes.status === "fulfilled" ? commentsRes.value : null;
@@ -69,6 +77,8 @@ export default async function ProjectOverviewPage({
     alertsRes.status === "fulfilled" ? alertsRes.value : null;
   const workTasksData =
     workTasksRes.status === "fulfilled" ? workTasksRes.value : null;
+  const peopleData =
+    peopleRes.status === "fulfilled" ? peopleRes.value : null;
   const projectAlerts: MorningProject | null =
     alertsData?.projects[0] ?? null;
 
@@ -232,6 +242,7 @@ export default async function ProjectOverviewPage({
             groupByCompany={false}
             hideOther
             compact
+            people={peopleData?.people ?? []}
             emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
           />
         </section>
