@@ -3814,7 +3814,6 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 /* Click-to-update status cell. Button carries the same background tone
    as the row's lifecycle status, but with a subtle hover + caret that
    makes it obvious it's interactive. Menu drops below the cell. */
-.tasks-status-cell { position: relative; display: inline-block; }
 .tasks-status-cell-btn {
   display: inline-flex; align-items: center; gap: .3em;
   padding: .2em .7em;
@@ -3844,11 +3843,11 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-btn.tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cell-btn.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
 
+/* Portaled to document.body and positioned via JS (position: fixed +
+   inline top/right). Keeps the menu above the table's overflow-x clip
+   and outside any stacking-context surprises from parent components. */
 .tasks-status-cell-menu {
-  position: absolute;
-  top: calc(100% + .3em);
-  inset-inline-end: 0;
-  z-index: 30;
+  z-index: 50;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -3873,17 +3872,13 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 }
 .tasks-status-cell-item:disabled { opacity: .5; cursor: wait; }
 .tasks-status-cell-err {
-  position: absolute;
-  top: calc(100% + .3em);
-  inset-inline-end: 0;
-  max-width: 20em;
+  margin-top: .3em;
   padding: .5em .7em;
   background: #fef2f2;
   color: #991b1b;
   border: 1px solid #fecaca;
   border-radius: 8px;
   font-size: .8em;
-  z-index: 30;
 }
 html[data-theme="dark"] .tasks-status-cell-err {
   background: #7f1d1d55;

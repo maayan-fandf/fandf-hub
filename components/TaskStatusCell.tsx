@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 
@@ -44,39 +45,70 @@ const STATUS_LABELS: Record<WorkTaskStatus, string> = {
 };
 
 /**
- * Inline status cell for the tasks queue. Click opens a small menu
- * showing the allowed transitions for the row's current status. Each
- * menu item POSTs to /api/worktasks/update and refreshes the list on
- * success. A short busy spinner swaps in while the request is open.
+ * Inline status cell for the tasks queue. Click opens a floating menu
+ * (via React portal to document.body) with the allowed transitions for
+ * the row's current status. The menu is positioned absolutely against
+ * the button's bounding rect so it escapes the table wrapper's
+ * overflow-x clip — which was cutting it off and pushing the row
+ * layout when rendered inline.
  *
  * Uses the row's `sub_status` as the visible label when set (matches
  * Data Plus's "אושר" / "ממתין לטיפול" inside the בעבודה bucket); falls
- * back to the status label otherwise. The pill's color tone always
- * comes from the canonical status so the bucket stays scannable.
+ * back to the status label otherwise.
  */
 export default function TaskStatusCell({ task }: { task: WorkTask }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(
+    null,
+  );
   const [busy, setBusy] = useState<WorkTaskStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click / Escape so the menu feels native.
+  // Close on outside click (anywhere outside BOTH the button and the
+  // portaled menu) / Escape / scroll. We recompute position on scroll
+  // instead of tracking it to avoid the menu drifting away from the
+  // button if the page scrolls behind it.
   useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    function onScrollOrResize() {
+      // Close on scroll instead of repositioning — simpler + less jitter.
+      setOpen(false);
+    }
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
     return () => {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
     };
+  }, [open]);
+
+  // Position the menu against the button's rect when it opens. Layout
+  // effect so the menu paints at the right place on first frame (no
+  // flicker).
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setCoords({
+      top: r.bottom + 4,
+      // RTL layout — align menu's right edge to the button's right edge.
+      right: window.innerWidth - r.right,
+    });
   }, [open]);
 
   const options = TRANSITIONS[task.status] ?? [];
@@ -86,9 +118,6 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   async function transition(to: WorkTaskStatus, label: string) {
     setBusy(to);
     setErr(null);
-    // No inline note prompt — we skip the window.prompt to keep the
-    // cell interaction tight. Notes can still be added on the detail
-    // page where there's room for a textarea.
     try {
       const res = await fetch("/api/worktasks/update", {
         method: "POST",
@@ -114,8 +143,9 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   }
 
   return (
-    <div className="tasks-status-cell" ref={rootRef}>
+    <>
       <button
+        ref={btnRef}
         type="button"
         className={`tasks-status-cell-btn tasks-status-${task.status}`}
         onClick={() => setOpen((o) => !o)}
@@ -129,23 +159,37 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
           </span>
         )}
       </button>
-      {open && options.length > 0 && (
-        <div className="tasks-status-cell-menu" role="menu">
-          {options.map((opt) => (
-            <button
-              key={opt.to}
-              type="button"
-              role="menuitem"
-              className="tasks-status-cell-item"
-              disabled={busy !== null}
-              onClick={() => transition(opt.to, opt.label)}
-            >
-              {busy === opt.to ? "…" : opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {err && <div className="tasks-status-cell-err">{err}</div>}
-    </div>
+      {open &&
+        options.length > 0 &&
+        coords &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="tasks-status-cell-menu"
+            role="menu"
+            style={{
+              position: "fixed",
+              top: `${coords.top}px`,
+              right: `${coords.right}px`,
+            }}
+          >
+            {options.map((opt) => (
+              <button
+                key={opt.to}
+                type="button"
+                role="menuitem"
+                className="tasks-status-cell-item"
+                disabled={busy !== null}
+                onClick={() => transition(opt.to, opt.label)}
+              >
+                {busy === opt.to ? "…" : opt.label}
+              </button>
+            ))}
+            {err && <div className="tasks-status-cell-err">{err}</div>}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
