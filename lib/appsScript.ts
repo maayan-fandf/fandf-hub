@@ -858,13 +858,18 @@ export type TasksCreateInput = {
   departments?: string[];    // multi-select; "מדיה, קריאייטיב" in Data Plus
   kind?: WorkTaskKind | string;
   priority?: number;
+  // Initial status for the task — defaults to 'awaiting_approval' when
+  // omitted. Accepting it on create lets admin tools seed tasks in any
+  // state (e.g. 'done' for backfilling historical data).
+  status?: WorkTaskStatus;
+  sub_status?: string;
   approver_email?: string;
   project_manager_email?: string;
   assignees?: string[];
   requested_date?: string;
-  sub_status?: string;
   parent_id?: string;
   round_number?: number;
+  revision_of?: string;
 };
 
 export function tasksCreate(
