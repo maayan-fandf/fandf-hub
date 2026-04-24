@@ -3756,6 +3756,23 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   justify-content: flex-end;
   gap: .6em;
 }
+/* Two-input date range that fits inside one filter cell. The inputs
+   share the cell width and shrink together; the em-dash separator
+   doesn't affect layout. */
+.tasks-filter-bar .filter-date-range .date-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: .3em;
+  min-width: 0;
+}
+.tasks-filter-bar .filter-date-range input[type="date"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.tasks-filter-bar .date-range-sep {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
 
 .tasks-bucket { margin-bottom: 2em; }
 .tasks-bucket-head {

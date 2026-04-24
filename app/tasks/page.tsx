@@ -24,6 +24,8 @@ type Search = {
   project_manager?: string;
   assignee?: string;
   campaign?: string;
+  requested_date_from?: string;
+  requested_date_to?: string;
   /** `mine=0` opts out of the default "author = me" filter (Data-Plus-
    *  style). When absent we treat it as `mine=1`. */
   mine?: string;
@@ -58,6 +60,8 @@ export default async function TasksPage({
       project_manager: sp.project_manager || "",
       assignee: sp.assignee || "",
       campaign: sp.campaign || "",
+      requested_date_from: sp.requested_date_from || "",
+      requested_date_to: sp.requested_date_to || "",
     })
       .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
       .catch((e: unknown) => ({
@@ -138,6 +142,8 @@ export default async function TasksPage({
           project_manager: sp.project_manager || "",
           assignee: sp.assignee || "",
           campaign: sp.campaign || "",
+          requested_date_from: sp.requested_date_from || "",
+          requested_date_to: sp.requested_date_to || "",
         }}
         companies={companyOptions}
         projects={projectOptions}
@@ -202,6 +208,8 @@ function TasksFilterBar({
     project_manager: string;
     assignee: string;
     campaign: string;
+    requested_date_from: string;
+    requested_date_to: string;
   };
   companies: string[];
   projects: string[];
@@ -298,6 +306,24 @@ function TasksFilterBar({
             </option>
           ))}
         </select>
+      </label>
+      <label className="filter-date-range">
+        תאריך מבוקש
+        <div className="date-range-inputs">
+          <input
+            type="date"
+            name="requested_date_from"
+            defaultValue={current.requested_date_from}
+            aria-label="מ"
+          />
+          <span className="date-range-sep">—</span>
+          <input
+            type="date"
+            name="requested_date_to"
+            defaultValue={current.requested_date_to}
+            aria-label="עד"
+          />
+        </div>
       </label>
       <label>
         סטטוס

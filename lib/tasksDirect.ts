@@ -245,6 +245,8 @@ export async function tasksListDirect(
     project_manager?: string;
     assignee?: string;
     campaign?: string;
+    requested_date_from?: string;
+    requested_date_to?: string;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
@@ -314,6 +316,22 @@ export async function tasksListDirect(
     if (filters.campaign) {
       const f = filters.campaign.trim();
       if ((t.campaign || "").trim() !== f) continue;
+    }
+    // Date-range filter on requested_date. Compares as YYYY-MM-DD
+    // strings (lexicographic == chronological for that format). Tasks
+    // without a requested_date are excluded when either bound is set.
+    if (filters.requested_date_from || filters.requested_date_to) {
+      const d = (t.requested_date || "").slice(0, 10);
+      if (!d) continue;
+      if (
+        filters.requested_date_from &&
+        d < filters.requested_date_from
+      ) {
+        continue;
+      }
+      if (filters.requested_date_to && d > filters.requested_date_to) {
+        continue;
+      }
     }
     tasks.push(t);
   }

@@ -844,6 +844,11 @@ export type TasksListFilters = {
   project_manager?: string;
   assignee?: string;
   campaign?: string;
+  /** Inclusive lower bound on `requested_date` (YYYY-MM-DD). Tasks
+   *  with no requested_date are excluded when either bound is set. */
+  requested_date_from?: string;
+  /** Inclusive upper bound on `requested_date` (YYYY-MM-DD). */
+  requested_date_to?: string;
 };
 
 export async function tasksList(
