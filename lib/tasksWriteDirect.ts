@@ -794,8 +794,17 @@ export async function tasksUpdateDirect(
   if (patch.title || patch.description) changes.edited_at = now;
 
   // Build a single batchUpdate for all changed cells.
-  const actualRow = rowIndex + 1; // sheet is 1-indexed; +1 for 0-based rowIndex in values[]
-  const sheetRow = actualRow + 1; // account for the header being row 1
+  //
+  // rowIndex is 0-based inside values[] where values[0] IS the header row.
+  // So sheet row number = rowIndex + 1 (values[0]=row 1, values[1]=row 2, …).
+  //
+  // The previous code double-counted — adding +1 for "0-based index" AND
+  // again for "header row 1" — which wrote every update to the row BELOW
+  // the intended task. That's why transitions appeared to silently no-op:
+  // the API returned success (with the next row's data re-read), but the
+  // task's actual row was never touched. User-visible symptom: "page
+  // refreshes but nothing happens".
+  const sheetRow = rowIndex + 1;
   const data: Array<{ range: string; values: (string | number | boolean)[][] }> = [];
   for (const [k, v] of Object.entries(changes)) {
     const colIdx = idx.get(k);
