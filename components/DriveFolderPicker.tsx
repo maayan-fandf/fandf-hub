@@ -41,11 +41,17 @@ export default function DriveFolderPicker({
   disabled,
   compact,
 }: Props) {
-  // Root folder ID at the campaign level. Null until resolve-campaign
-  // returns; "error" carries the failure message for display.
-  const [campaignFolder, setCampaignFolder] = useState<
-    { id: string; viewUrl: string } | null | { error: string }
-  >(null);
+  // Root folder ID at the campaign level. Can be:
+  //   - null = not yet resolved / no project
+  //   - { id, viewUrl } = campaign folder exists
+  //   - { pending: true } = folder doesn't exist yet (will be created on save)
+  //   - { error } = resolve failed
+  type CampaignState =
+    | null
+    | { id: string; viewUrl: string }
+    | { pending: true }
+    | { error: string };
+  const [campaignFolder, setCampaignFolder] = useState<CampaignState>(null);
   const [resolving, setResolving] = useState(false);
   const [children, setChildren] = useState<ChildrenState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -69,10 +75,18 @@ export default function DriveFolderPicker({
         body: JSON.stringify({ company, project, campaign }),
       });
       const data = (await res.json()) as
-        | { ok: true; folderId: string; viewUrl: string }
+        | { ok: true; folderId: string | null; viewUrl: string | null }
         | { ok: false; error: string };
-      if (!res.ok || !data.ok) throw new Error(("error" in data && data.error) || `HTTP ${res.status}`);
-      setCampaignFolder({ id: data.folderId, viewUrl: data.viewUrl });
+      if (!res.ok || !("ok" in data) || !data.ok) {
+        throw new Error(("error" in data && data.error) || `HTTP ${res.status}`);
+      }
+      if (data.folderId && data.viewUrl) {
+        setCampaignFolder({ id: data.folderId, viewUrl: data.viewUrl });
+      } else {
+        // Campaign folder doesn't exist yet — do NOT create it here.
+        // The task-create orchestrator will materialize it on save.
+        setCampaignFolder({ pending: true });
+      }
     } catch (e) {
       setCampaignFolder({ error: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -86,7 +100,13 @@ export default function DriveFolderPicker({
     lastKey.current = resolveKey;
     setChildren({});
     setExpanded(new Set());
-    void resolveCampaign();
+    // Debounce so typing into the free-text campaign field doesn't
+    // hammer the API with a resolve per keystroke. 350ms is the sweet
+    // spot — feels responsive, cheap per real pause.
+    const handle = setTimeout(() => {
+      void resolveCampaign();
+    }, 350);
+    return () => clearTimeout(handle);
   }, [resolveKey, disabled, resolveCampaign]);
 
   const loadChildren = useCallback(async (parentId: string) => {
@@ -108,9 +128,12 @@ export default function DriveFolderPicker({
     }
   }, []);
 
-  // Load the campaign folder's immediate children once resolved.
+  // Load the campaign folder's immediate children once resolved. Only
+  // runs for the happy-path `{ id, viewUrl }` state — pending / error
+  // have nothing to load.
   useEffect(() => {
-    if (!campaignFolder || "error" in campaignFolder) return;
+    if (!campaignFolder) return;
+    if ("error" in campaignFolder || "pending" in campaignFolder) return;
     if (children[campaignFolder.id] != null) return;
     void loadChildren(campaignFolder.id);
   }, [campaignFolder, children, loadChildren]);
@@ -168,7 +191,11 @@ export default function DriveFolderPicker({
     );
   }
 
-  const rootId = campaignFolder && !("error" in campaignFolder) ? campaignFolder.id : null;
+  const rootId =
+    campaignFolder && !("error" in campaignFolder) && !("pending" in campaignFolder)
+      ? campaignFolder.id
+      : null;
+  const isPending = !!campaignFolder && "pending" in campaignFolder;
   const isNewMode = value.mode === "new";
   const selectedExistingId =
     value.mode === "existing" ? value.folderId : "";
@@ -199,40 +226,46 @@ export default function DriveFolderPicker({
         </div>
       )}
 
-      {rootId && (
-        <>
-          {/* Create-new row */}
-          <label
-            className={`drive-folder-row drive-folder-new${
-              isNewMode ? " is-selected" : ""
-            }`}
-          >
-            <input
-              type="radio"
-              name="drive-folder-mode"
-              checked={isNewMode}
-              onChange={() => onChange({ mode: "new", name: defaultNewName })}
-            />
-            <span className="drive-folder-icon">➕</span>
-            <input
-              type="text"
-              className="drive-folder-new-name"
-              value={isNewMode ? value.name : defaultNewName}
-              onChange={(e) =>
-                onChange({ mode: "new", name: e.target.value })
-              }
-              onFocus={() =>
-                !isNewMode &&
-                onChange({ mode: "new", name: defaultNewName })
-              }
-              placeholder="שם תיקייה חדשה"
-            />
-          </label>
+      {/* Create-new row — always visible once the picker is active,
+          even before the campaign folder exists. Selecting "new" is
+          the whole point of the picker in that state. */}
+      {(rootId || isPending) && (
+        <label
+          className={`drive-folder-row drive-folder-new${
+            isNewMode ? " is-selected" : ""
+          }`}
+        >
+          <input
+            type="radio"
+            name="drive-folder-mode"
+            checked={isNewMode}
+            onChange={() => onChange({ mode: "new", name: defaultNewName })}
+          />
+          <span className="drive-folder-icon">➕</span>
+          <input
+            type="text"
+            className="drive-folder-new-name"
+            value={isNewMode ? value.name : defaultNewName}
+            onChange={(e) =>
+              onChange({ mode: "new", name: e.target.value })
+            }
+            onFocus={() =>
+              !isNewMode &&
+              onChange({ mode: "new", name: defaultNewName })
+            }
+            placeholder="שם תיקייה חדשה"
+          />
+        </label>
+      )}
 
-          <div className="drive-folder-tree">
-            {renderBranch(rootId, 0)}
-          </div>
-        </>
+      {isPending && (
+        <div className="drive-folder-hint">
+          תיקיית הקמפיין תיווצר אוטומטית בעת שמירת המשימה — אין תיקיות קיימות להצגה.
+        </div>
+      )}
+
+      {rootId && (
+        <div className="drive-folder-tree">{renderBranch(rootId, 0)}</div>
       )}
     </div>
   );

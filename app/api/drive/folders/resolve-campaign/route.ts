@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { resolveCampaignFolderId } from "@/lib/driveFolders";
+import { findCampaignFolderId } from "@/lib/driveFolders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +36,10 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const result = await resolveCampaignFolderId(session.user.email, {
+    // READ-ONLY. Returns { folderId: null } when any path segment is
+    // missing — do NOT auto-create here. The task-create orchestrator
+    // calls `ensureCampaignFolderId` later (at save time).
+    const result = await findCampaignFolderId(session.user.email, {
       company: String(body.company || "").trim(),
       project,
       campaign: String(body.campaign || "").trim(),

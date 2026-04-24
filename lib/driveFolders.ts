@@ -99,14 +99,52 @@ async function getOrCreate(
 }
 
 /**
- * Resolves (or creates) the campaign folder at
- * `<company>/<project>/<campaign>` inside the Shared Drive. Returns the
- * campaign folder's ID — the picker scopes all listings to this subtree.
+ * READ-ONLY lookup of the campaign folder at
+ * `<company>/<project>/<campaign>` inside the Shared Drive. Returns
+ * `null` for `folderId` if any segment is missing — the caller is
+ * expected to treat this as "not yet — will be created at task save
+ * time" and render an empty state.
  *
- * Missing intermediate folders are created on demand. If `campaign` is
- * empty, returns the project-level folder as the scope.
+ * This is the function called by the picker UI on every company /
+ * project / campaign change. It MUST NOT create folders — an earlier
+ * version called `ensureCampaignFolderId` here, which meant every
+ * keystroke in the campaign input silently materialized an empty
+ * folder at the project level. The cleanup-prone bug was caught in
+ * production testing on 2026-04-24.
+ *
+ * If `campaign` is empty, returns the project-level folder (or null if
+ * the project folder itself doesn't exist yet).
  */
-export async function resolveCampaignFolderId(
+export async function findCampaignFolderId(
+  subjectEmail: string,
+  args: { company: string; project: string; campaign: string },
+): Promise<{ folderId: string | null; viewUrl: string | null }> {
+  const sharedDriveId = tasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  let parent: string | null = sharedDriveId;
+  const co = args.company.trim();
+  if (co) {
+    parent = await findFolder(drive, parent, co, sharedDriveId);
+    if (!parent) return { folderId: null, viewUrl: null };
+  }
+  const proj = args.project.trim() || "(no-project)";
+  parent = await findFolder(drive, parent, proj, sharedDriveId);
+  if (!parent) return { folderId: null, viewUrl: null };
+  const campaign = args.campaign.trim();
+  if (campaign) {
+    parent = await findFolder(drive, parent, campaign, sharedDriveId);
+    if (!parent) return { folderId: null, viewUrl: null };
+  }
+  return { folderId: parent, viewUrl: driveFolderUrl(parent) };
+}
+
+/**
+ * Resolves (and creates if missing) the campaign folder. Only used on
+ * task save — never from the picker UI directly. Before this was
+ * split, the picker called this function on every keystroke in the
+ * campaign input and filled Drive with partial-name folders.
+ */
+export async function ensureCampaignFolderId(
   subjectEmail: string,
   args: { company: string; project: string; campaign: string },
 ): Promise<{ folderId: string; viewUrl: string }> {
