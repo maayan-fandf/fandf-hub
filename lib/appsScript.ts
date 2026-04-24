@@ -826,6 +826,10 @@ export type WorkTask = {
    *  pass; optional because the Apps Script fallback doesn't yet
    *  compute it. Missing / 0 → no badge. */
   comments_count?: number;
+  /** Optional campaign name — free-text, unique per project. Tasks
+   *  without a campaign still render; a new task's Drive folder lands
+   *  directly under the project folder in that case. */
+  campaign?: string;
 };
 
 export type TasksListFilters = {
@@ -839,6 +843,7 @@ export type TasksListFilters = {
   approver?: string;
   project_manager?: string;
   assignee?: string;
+  campaign?: string;
 };
 
 export async function tasksList(
@@ -934,6 +939,10 @@ export type TasksCreateInput = {
   parent_id?: string;
   round_number?: number;
   revision_of?: string;
+  /** Campaign name (free-text). Reuse an existing campaign in the
+   *  project or type a new one — the value is stored on the task row
+   *  and auto-surfaces in the picker for future tasks on this project. */
+  campaign?: string;
 };
 
 export function tasksCreate(
@@ -963,7 +972,40 @@ export type TasksUpdatePatch = {
   assignees?: string[];
   requested_date?: string;
   sub_status?: string;
+  campaign?: string;
 };
+
+/** Distinct campaigns that have at least one task on the given project,
+ *  most-recent-first. Populates the campaign picker's autocomplete in
+ *  the create/edit forms. */
+export type TaskCampaignsResult = {
+  project: string;
+  campaigns: string[];
+};
+
+export async function getTaskCampaigns(
+  project: string,
+): Promise<TaskCampaignsResult> {
+  const { useSATasksReads } = await import("@/lib/sa");
+  if (!useSATasksReads()) {
+    // Apps Script fallback doesn't have a dedicated action yet; compute
+    // client-side from a full tasksList if the flag flips off.
+    const { tasksList } = await import("@/lib/appsScript");
+    const res = await tasksList({ project });
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const t of res.tasks) {
+      const c = (t.campaign || "").trim();
+      if (!c || seen.has(c)) continue;
+      seen.add(c);
+      out.push(c);
+    }
+    return { project, campaigns: out };
+  }
+  const { tasksCampaignsDirect } = await import("@/lib/tasksDirect");
+  const user = await currentUserEmail();
+  return tasksCampaignsDirect(user, project);
+}
 
 export function tasksUpdate(
   id: string,

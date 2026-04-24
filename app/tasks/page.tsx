@@ -23,6 +23,7 @@ type Search = {
   approver?: string;
   project_manager?: string;
   assignee?: string;
+  campaign?: string;
   /** `mine=0` opts out of the default "author = me" filter (Data-Plus-
    *  style). When absent we treat it as `mine=1`. */
   mine?: string;
@@ -56,6 +57,7 @@ export default async function TasksPage({
       approver: sp.approver || "",
       project_manager: sp.project_manager || "",
       assignee: sp.assignee || "",
+      campaign: sp.campaign || "",
     })
       .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
       .catch((e: unknown) => ({
@@ -135,11 +137,15 @@ export default async function TasksPage({
           approver: sp.approver || "",
           project_manager: sp.project_manager || "",
           assignee: sp.assignee || "",
+          campaign: sp.campaign || "",
         }}
         companies={companyOptions}
         projects={projectOptions}
         departments={departmentOptions}
         people={people}
+        campaignOptions={Array.from(
+          new Set(tasks.map((t) => (t.campaign || "").trim()).filter(Boolean)),
+        ).sort()}
       />
 
       {error && (
@@ -182,6 +188,7 @@ function TasksFilterBar({
   projects,
   departments,
   people,
+  campaignOptions,
 }: {
   current: {
     company: string;
@@ -194,11 +201,13 @@ function TasksFilterBar({
     approver: string;
     project_manager: string;
     assignee: string;
+    campaign: string;
   };
   companies: string[];
   projects: string[];
   departments: string[];
   people: TasksPerson[];
+  campaignOptions: string[];
 }) {
   const statuses = [
     { val: "", label: "כל הסטטוסים" },
@@ -282,6 +291,21 @@ function TasksFilterBar({
           ))}
         </select>
       </label>
+      <label>
+        קמפיין
+        <input
+          type="text"
+          name="campaign"
+          list="tasks-campaigns-filter"
+          placeholder="הכל"
+          defaultValue={current.campaign}
+        />
+      </label>
+      <datalist id="tasks-campaigns-filter">
+        {campaignOptions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       <label>
         כותב
         <input

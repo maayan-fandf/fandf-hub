@@ -469,6 +469,11 @@ function TaskRow({
         >
           {task.title}
         </Link>
+        {task.campaign && (
+          <span className="tasks-campaign-chip" title="קמפיין">
+            📣 {task.campaign}
+          </span>
+        )}
         {task.round_number > 1 && (
           <span className="tasks-round-chip" title="סבב תיקונים">
             סבב #{task.round_number}

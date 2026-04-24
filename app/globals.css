@@ -4136,6 +4136,28 @@ html[data-theme="dark"] .tasks-round-chip {
   background: #451a0355; color: #fde68a;
 }
 
+/* Campaign chip (inline next to task title) — same shape as the
+   revision chip so they stack visually consistent. Uses a cool indigo
+   tone to stay distinct from status/priority/round colors. */
+.tasks-campaign-chip {
+  display: inline-block;
+  padding: .1em .55em;
+  margin-inline-start: .5em;
+  border-radius: 999px;
+  font-size: .72em;
+  font-weight: 600;
+  background: #e0e7ff;
+  color: #3730a3;
+  white-space: nowrap;
+  max-width: 18em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+html[data-theme="dark"] .tasks-campaign-chip {
+  background: #312e8155; color: #c7d2fe;
+}
+
 /* Sub-status pill: the "אושר" / "ממתין לטיפול" / etc. free-form label
    that Data Plus shows within בעבודה rows. */
 .tasks-substatus-pill {

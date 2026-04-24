@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 
@@ -52,6 +52,21 @@ export default function TaskEditPanel({
   const [subStatusCustom, setSubStatusCustom] = useState(
     SUB_STATUSES.includes(task.sub_status) ? "" : task.sub_status,
   );
+  const [campaign, setCampaign] = useState(task.campaign || "");
+  const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/tasks/campaigns?project=${encodeURIComponent(task.project)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        setCampaignOptions((data?.campaigns ?? []) as string[]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [task.project]);
 
   function toggleDept(d: string) {
     setDepartments((cur) =>
@@ -84,6 +99,7 @@ export default function TaskEditPanel({
       project_manager_email: projectManager,
       assignees: assigneeList,
       sub_status: subStatus,
+      campaign: campaign.trim(),
     };
 
     try {
@@ -155,6 +171,24 @@ export default function TaskEditPanel({
           />
         </label>
       </div>
+
+      <div className="task-form-row">
+        <label>
+          קמפיין
+          <input
+            type="text"
+            list="task-campaigns-edit"
+            value={campaign}
+            onChange={(e) => setCampaign(e.target.value)}
+            placeholder="בחר קמפיין קיים או הקלד חדש"
+          />
+        </label>
+      </div>
+      <datalist id="task-campaigns-edit">
+        {campaignOptions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
 
       <label>
         כותרת

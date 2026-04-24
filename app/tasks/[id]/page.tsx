@@ -145,6 +145,7 @@ export default async function TaskDetailPage({
         <aside className="task-detail-side">
           <KV label="חברה" value={t.company || "—"} />
           <KV label="פרויקט" value={t.project} />
+          <KV label="קמפיין" value={t.campaign || "—"} />
           <KV label="בריף" value={t.brief || "—"} />
           <KV label="כותב" value={shortName(t.author_email)} />
           <KV label="גורם מאשר" value={shortName(t.approver_email)} />

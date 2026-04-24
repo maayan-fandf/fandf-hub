@@ -112,6 +112,7 @@ function rowToTask(
     ) as Record<string, { u: string; l: string; t: string; d: string }>,
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
+    campaign: String(cell("campaign") ?? ""),
   };
 }
 
@@ -243,6 +244,7 @@ export async function tasksListDirect(
     approver?: string;
     project_manager?: string;
     assignee?: string;
+    campaign?: string;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
@@ -309,6 +311,10 @@ export async function tasksListDirect(
       const a = filters.assignee.toLowerCase();
       if (!t.assignees.some((e) => e.toLowerCase() === a)) continue;
     }
+    if (filters.campaign) {
+      const f = filters.campaign.trim();
+      if ((t.campaign || "").trim() !== f) continue;
+    }
     tasks.push(t);
   }
   tasks.sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -348,6 +354,51 @@ export async function tasksGetDirect(
     return { ok: true, task: t };
   }
   throw new Error("Task not found: " + taskId);
+}
+
+/**
+ * Distinct campaigns for a given project, derived from task rows.
+ * Campaigns auto-emerge from tasks — no separate storage table. A
+ * campaign is "remembered" as long as at least one task on the project
+ * references it. Ordered by most-recently-used (freshest task first)
+ * so the picker surfaces what the user likely wants.
+ */
+export async function tasksCampaignsDirect(
+  subjectEmail: string,
+  project: string,
+): Promise<{ project: string; campaigns: string[] }> {
+  const [{ rows, headerIdx }, scope] = await Promise.all([
+    readCommentsTab(subjectEmail),
+    getAccessScope(subjectEmail),
+  ]);
+
+  if (!scope.isAdmin && !scope.accessibleProjects.has(project)) {
+    throw new Error("Access denied to project: " + project);
+  }
+
+  const rowKindIdx = headerIdx.get("row_kind");
+  const projIdx = headerIdx.get("project");
+  const campaignIdx = headerIdx.get("campaign");
+  const tsIdx = headerIdx.get("timestamp");
+  if (rowKindIdx == null || projIdx == null || campaignIdx == null) {
+    return { project, campaigns: [] };
+  }
+
+  // Collect (campaign, most-recent-timestamp) pairs, then sort.
+  const latestByName = new Map<string, string>();
+  for (const row of rows) {
+    if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
+    if (String(row[projIdx] ?? "").trim() !== project) continue;
+    const name = String(row[campaignIdx] ?? "").trim();
+    if (!name) continue;
+    const ts = tsIdx != null ? toIsoDate(row[tsIdx]) : "";
+    const prev = latestByName.get(name);
+    if (!prev || ts > prev) latestByName.set(name, ts);
+  }
+  const campaigns = Array.from(latestByName.entries())
+    .sort((a, b) => b[1].localeCompare(a[1]))
+    .map(([name]) => name);
+  return { project, campaigns };
 }
 
 /**

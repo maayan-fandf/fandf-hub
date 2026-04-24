@@ -145,3 +145,14 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # Shared Drive where task folders live. Hierarchy inside:
+  #   <Shared Drive> / <company> / <project> / <campaign> / <task>
+  # (campaign level skipped if the task has no campaign set). The
+  # impersonated DRIVE_FOLDER_OWNER must have Content Manager role on
+  # this Shared Drive for folder creation to succeed.
+  - variable: TASKS_SHARED_DRIVE_ID
+    value: 0ANtdAz2D4gD_Uk9PVA
+    availability:
+      - BUILD
+      - RUNTIME

@@ -185,12 +185,27 @@ async function assertProjectAccess(
 
 /* ── Drive folder hierarchy ────────────────────────────────────────── */
 
-let cachedRootId: string | null = null;
+/**
+ * Task folders live inside a dedicated Shared Drive (ID in env
+ * TASKS_SHARED_DRIVE_ID). The hierarchy is:
+ *
+ *     <Shared Drive root> / <company> / <project> / <campaign> / <task>
+ *
+ * — with `<campaign>` skipped when the task has no campaign set. The
+ * Shared Drive's own membership settings handle access (no per-folder
+ * domain-share is needed). The impersonated `DRIVE_FOLDER_OWNER` must
+ * be a Content Manager on the Shared Drive for folder creation to
+ * succeed.
+ */
+function tasksSharedDriveId(): string | null {
+  return process.env.TASKS_SHARED_DRIVE_ID || null;
+}
 
-async function getOrCreateFolder(
+async function getOrCreateFolderInSharedDrive(
   drive: drive_v3.Drive,
   name: string,
-  parentId: string | null,
+  parentId: string,
+  sharedDriveId: string,
 ): Promise<string> {
   const safeName = (name || "(unnamed)")
     .replace(/[\\/]/g, "-")
@@ -198,13 +213,18 @@ async function getOrCreateFolder(
   const query = [
     `mimeType='application/vnd.google-apps.folder'`,
     `name='${safeName}'`,
-    parentId ? `'${parentId}' in parents` : "'root' in parents",
+    `'${parentId}' in parents`,
     "trashed=false",
   ].join(" and ");
   const list = await drive.files.list({
     q: query,
     fields: "files(id, name)",
     pageSize: 1,
+    // Required for Shared Drive queries.
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "drive",
+    driveId: sharedDriveId,
   });
   const existing = list.data.files?.[0];
   if (existing?.id) return existing.id;
@@ -212,32 +232,61 @@ async function getOrCreateFolder(
     requestBody: {
       name: safeName,
       mimeType: "application/vnd.google-apps.folder",
-      parents: parentId ? [parentId] : undefined,
+      parents: [parentId],
     },
     fields: "id",
+    supportsAllDrives: true,
   });
   if (!created.data.id) throw new Error("Drive folder create returned no id");
   return created.data.id;
 }
 
 async function createTaskFolder(
-  task: { id: string; title: string; company: string; project: string },
+  task: {
+    id: string;
+    title: string;
+    company: string;
+    project: string;
+    campaign?: string;
+  },
 ): Promise<{ folderId: string; folderUrl: string } | null> {
   try {
+    const sharedDriveId = tasksSharedDriveId();
+    if (!sharedDriveId) {
+      console.log(
+        "[tasksWriteDirect] TASKS_SHARED_DRIVE_ID not set — skipping Drive folder creation",
+      );
+      return null;
+    }
     const owner = driveFolderOwner();
     const drive = driveClient(owner);
-    if (!cachedRootId) {
-      cachedRootId = await getOrCreateFolder(drive, "F&F Tasks", null);
-    }
-    let parent = cachedRootId;
+
+    // Walk the hierarchy from Shared Drive root down.
+    let parent = sharedDriveId;
     if (task.company) {
-      parent = await getOrCreateFolder(drive, task.company, parent);
+      parent = await getOrCreateFolderInSharedDrive(
+        drive,
+        task.company,
+        parent,
+        sharedDriveId,
+      );
     }
-    parent = await getOrCreateFolder(
+    parent = await getOrCreateFolderInSharedDrive(
       drive,
       task.project || "(no-project)",
       parent,
+      sharedDriveId,
     );
+    const campaign = (task.campaign || "").trim();
+    if (campaign) {
+      parent = await getOrCreateFolderInSharedDrive(
+        drive,
+        campaign,
+        parent,
+        sharedDriveId,
+      );
+    }
+
     const leafName =
       task.id +
       (task.title ? " — " + task.title.slice(0, 60).replace(/[\\/]/g, "-") : "");
@@ -248,18 +297,9 @@ async function createTaskFolder(
         parents: [parent],
       },
       fields: "id, webViewLink",
+      supportsAllDrives: true,
     });
     if (!created.data.id) return null;
-    // Share the folder with the F&F domain so the team can open it
-    // without per-file invites. Match Apps Script's DOMAIN_WITH_LINK.
-    try {
-      await drive.permissions.create({
-        fileId: created.data.id,
-        requestBody: { type: "domain", role: "writer", domain: "fandf.co.il" },
-      });
-    } catch (e) {
-      console.log("[tasksWriteDirect] domain share failed (non-fatal):", e);
-    }
     return {
       folderId: created.data.id,
       folderUrl:
@@ -541,6 +581,7 @@ export async function tasksCreateDirect(
     google_tasks: {},
     status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
     edited_at: "",
+    campaign: String(payload.campaign || "").trim(),
   };
 
   // Side effects — run in parallel where safe.
@@ -618,6 +659,7 @@ export async function tasksCreateDirect(
     calendar_event_ids: JSON.stringify(task.calendar_event_ids),
     status_history: JSON.stringify(task.status_history),
     updated_at: task.updated_at,
+    campaign: task.campaign || "",
   };
   const row = headerRow.map((h) => (h in cells ? cells[h] : ""));
   await sheets.spreadsheets.values.append({
@@ -756,6 +798,7 @@ export async function tasksUpdateDirect(
     "brief",
     "company",
     "sub_status",
+    "campaign",
   ] as const;
   for (const k of SIMPLE_DIRECT) {
     if (k in patch && patch[k] !== cell(k)) {

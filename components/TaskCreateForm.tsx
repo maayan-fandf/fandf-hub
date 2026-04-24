@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson } from "@/lib/appsScript";
 
@@ -73,6 +73,30 @@ export default function TaskCreateForm({
   const [projectManager, setProjectManager] = useState(defaultPm);
   const [approver, setApprover] = useState("");
   const [assignees, setAssignees] = useState("");
+  const [campaign, setCampaign] = useState("");
+  // Existing campaigns for the selected project — populates the
+  // datalist autocomplete. Refetched whenever the project changes.
+  const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
+  useEffect(() => {
+    if (!project) {
+      setCampaignOptions([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/tasks/campaigns?project=${encodeURIComponent(project)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const list = (data?.campaigns ?? []) as string[];
+        setCampaignOptions(list);
+      })
+      .catch(() => {
+        /* ignore; free-text still works */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project]);
 
   const companyProjects = company ? byCompany.get(company) || [] : projects;
 
@@ -122,6 +146,7 @@ export default function TaskCreateForm({
       project_manager_email: projectManager,
       assignees: assigneeList,
       requested_date: String(fd.get("requested_date") || ""),
+      campaign: campaign.trim(),
     };
 
     try {
@@ -206,6 +231,29 @@ export default function TaskCreateForm({
           />
         </label>
       </div>
+
+      <div className="task-form-row">
+        <label>
+          קמפיין
+          <input
+            type="text"
+            list="task-campaigns"
+            value={campaign}
+            onChange={(e) => setCampaign(e.target.value)}
+            placeholder={
+              project
+                ? "בחר קמפיין קיים או הקלד חדש"
+                : "בחר פרויקט תחילה"
+            }
+            disabled={!project}
+          />
+        </label>
+      </div>
+      <datalist id="task-campaigns">
+        {campaignOptions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
 
       <label>
         כותרת
