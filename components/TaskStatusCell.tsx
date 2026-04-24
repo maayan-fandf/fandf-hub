@@ -43,7 +43,13 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[
   done: [
     { to: "in_progress", label: "בעבודה" },
   ],
-  cancelled: [],
+  // Revival paths for a cancelled task — rare but real (user flagged
+  // "there's no way to un-cancel"). Re-triage lands in awaiting_handling;
+  // pick-up-where-we-left-off goes straight to in_progress.
+  cancelled: [
+    { to: "awaiting_handling", label: "ממתין לטיפול" },
+    { to: "in_progress", label: "בעבודה" },
+  ],
 };
 
 const STATUS_LABELS: Record<WorkTaskStatus, string> = {

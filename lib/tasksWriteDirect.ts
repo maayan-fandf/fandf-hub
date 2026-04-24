@@ -63,7 +63,8 @@ const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = {
   awaiting_clarification: ["in_progress", "awaiting_handling", "cancelled"],
   awaiting_approval: ["done", "in_progress", "cancelled"],
   done: ["in_progress"],
-  cancelled: [],
+  // Revival paths for a cancelled task — re-triage or pick-up.
+  cancelled: ["awaiting_handling", "in_progress"],
 };
 
 const ADMIN_EMAILS = new Set([

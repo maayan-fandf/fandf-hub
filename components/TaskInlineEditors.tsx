@@ -42,16 +42,30 @@ async function postTaskUpdate(
 /* ── Priority (1 / 2 / 3) ──────────────────────────────────────────── */
 
 export function TaskPriorityCell({ task }: { task: WorkTask }) {
-  const [busy, setBusy] = useState(false);
+  // `pendingPriority` is the user's new pick — reflected in the trigger
+  // pill the moment they click, so the cell feels instant. On successful
+  // save we hard-reload, which re-mounts with the fresh value; on error
+  // we revert and surface the message.
+  const [pendingPriority, setPendingPriority] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  const displayedPriority = pendingPriority ?? task.priority;
+  const isPending = pendingPriority !== null;
 
   return (
     <InlineEditCell
-      title="לחץ לשינוי עדיפות"
+      title={isPending ? "מעדכן…" : "לחץ לשינוי עדיפות"}
       minWidth={10}
       display={
-        <span className={`tasks-priority-pill p${task.priority}`}>
-          {task.priority || "—"}
+        <span
+          className={`tasks-priority-pill p${displayedPriority}${isPending ? " is-pending" : ""}`}
+        >
+          {displayedPriority || "—"}
+          {isPending && (
+            <span className="tasks-status-cell-spinner" aria-hidden>
+              ⏳
+            </span>
+          )}
         </span>
       }
     >
@@ -63,21 +77,25 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
               <button
                 key={p}
                 type="button"
-                disabled={busy}
+                disabled={isPending}
                 className={`tasks-priority-pill p${p}${
                   p === task.priority ? " is-active" : ""
                 }`}
                 onClick={async () => {
                   if (p === task.priority) return close();
-                  setBusy(true);
+                  // OPTIMISTIC: flip the trigger pill immediately + close
+                  // the popover so the cell reflects the user's intent
+                  // before the ~2–10 s server fanout completes.
+                  setPendingPriority(p);
                   setErr(null);
+                  close();
                   const errMsg = await postTaskUpdate(task.id, {
                     priority: p,
                   });
-                  setBusy(false);
-                  if (errMsg) setErr(errMsg);
-                  else {
-                    close();
+                  if (errMsg) {
+                    setPendingPriority(null);
+                    setErr(errMsg);
+                  } else {
                     refreshPageAfterSave();
                   }
                 }}

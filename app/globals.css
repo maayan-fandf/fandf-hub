@@ -4330,6 +4330,12 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   font-variant-numeric: tabular-nums;
   font-size: .82em;
 }
+.tasks-priority-pill.is-pending {
+  opacity: .75;
+}
+.tasks-priority-pill.is-pending .tasks-status-cell-spinner {
+  margin-inline-start: .3em;
+}
 .tasks-priority-pill.p1 { background: #fee2e2; color: #991b1b; }
 .tasks-priority-pill.p2 { background: #e0f2fe; color: #075985; }
 .tasks-priority-pill.p3 { background: #f3f4f6; color: #374151; }

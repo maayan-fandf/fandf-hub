@@ -34,7 +34,11 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; t
   done: [
     { to: "in_progress", label: "בעבודה", tone: "ghost" },
   ],
-  cancelled: [],
+  // Revival paths for a cancelled task — rare but real.
+  cancelled: [
+    { to: "awaiting_handling", label: "ממתין לטיפול", tone: "primary" },
+    { to: "in_progress", label: "בעבודה", tone: "primary" },
+  ],
 };
 
 export default function TaskStatusActions({ task }: { task: WorkTask }) {
