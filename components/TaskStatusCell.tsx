@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 
 // Mirror of the Apps Script / tasksWriteDirect state machine so the
@@ -70,28 +69,19 @@ const STATUS_LABELS: Record<WorkTaskStatus, string> = {
  * back to the status label otherwise.
  */
 export default function TaskStatusCell({ task }: { task: WorkTask }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; right: number } | null>(
     null,
   );
-  // `pendingTo` is the OPTIMISTIC target state — rendered immediately on
-  // click, before the server roundtrip finishes. Cleared when the server
-  // confirms (task.status === pendingTo after router.refresh) or on error.
-  // The direct-SA write path takes 2–10 s because it fans out to Drive /
-  // Calendar / Gmail / Chat; without this instant feedback the UI looks
-  // frozen and users reported "nothing happens".
+  // `pendingTo` is the target state — rendered next to the old pill as
+  // a "← <target>" chip the instant the user picks it, so there's
+  // immediate feedback during the slow server fanout. Cleared only if
+  // the write errors; on success we do a hard reload which re-mounts
+  // the component from scratch with the new task data.
   const [pendingTo, setPendingTo] = useState<WorkTaskStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  // Clear the pending chip once the refreshed task data shows the new
-  // status. `task` comes from the server component above us — when
-  // router.refresh() completes, we re-render with the fresh task prop.
-  useEffect(() => {
-    if (pendingTo && task.status === pendingTo) setPendingTo(null);
-  }, [task.status, pendingTo]);
 
   // Close on outside click (anywhere outside BOTH the button and the
   // portaled menu) / Escape / scroll. We recompute position on scroll
@@ -163,7 +153,12 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
       if (!res.ok || !data.ok) {
         throw new Error("error" in data ? data.error : "Update failed");
       }
-      router.refresh();
+      // router.refresh() was leaving the spinner spinning indefinitely
+      // in prod — the /tasks data wasn't actually re-fetching on refresh
+      // despite `export const dynamic = "force-dynamic"`. Hard reload
+      // is less elegant but guarantees the user sees the new bucket
+      // placement + pill. Small page flash is the tradeoff.
+      window.location.reload();
     } catch (e) {
       setPendingTo(null);
       setErr(e instanceof Error ? e.message : String(e));

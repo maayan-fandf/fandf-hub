@@ -1,9 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import InlineEditCell from "@/components/InlineEditCell";
+
+// router.refresh() was silently no-op'ing on /tasks in production even
+// with `export const dynamic = "force-dynamic"` on the page, leaving
+// users staring at stale UI after a successful save. Hard reload is
+// the reliable fallback — small page flash for guaranteed correctness.
+function refreshPageAfterSave() {
+  window.location.reload();
+}
 
 /**
  * Shared POST helper. All four editors call the same update endpoint
@@ -35,7 +42,6 @@ async function postTaskUpdate(
 /* ── Priority (1 / 2 / 3) ──────────────────────────────────────────── */
 
 export function TaskPriorityCell({ task }: { task: WorkTask }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -72,7 +78,7 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
                   if (errMsg) setErr(errMsg);
                   else {
                     close();
-                    router.refresh();
+                    refreshPageAfterSave();
                   }
                 }}
               >
@@ -90,7 +96,6 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
 /* ── Requested date ────────────────────────────────────────────────── */
 
 export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
-  const router = useRouter();
   const [value, setValue] = useState(task.requested_date || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -136,7 +141,7 @@ export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
                 if (errMsg) setErr(errMsg);
                 else {
                   close();
-                  router.refresh();
+                  refreshPageAfterSave();
                 }
               }}
             >
@@ -159,7 +164,6 @@ export function TaskApproverCell({
   task: WorkTask;
   people: TasksPerson[];
 }) {
-  const router = useRouter();
   const [value, setValue] = useState(task.approver_email || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -214,7 +218,7 @@ export function TaskApproverCell({
                 if (errMsg) setErr(errMsg);
                 else {
                   close();
-                  router.refresh();
+                  refreshPageAfterSave();
                 }
               }}
             >
@@ -237,7 +241,6 @@ export function TaskAssigneesCell({
   task: WorkTask;
   people: TasksPerson[];
 }) {
-  const router = useRouter();
   const [list, setList] = useState<string[]>(task.assignees || []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -306,7 +309,7 @@ export function TaskAssigneesCell({
                 if (errMsg) setErr(errMsg);
                 else {
                   close();
-                  router.refresh();
+                  refreshPageAfterSave();
                 }
               }}
             >
