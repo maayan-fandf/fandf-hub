@@ -32,6 +32,11 @@ const STATUS_BUCKETS: {
   { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification", groupBy: "none" },
   { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval", groupBy: "approver" },
   { key: "done", label: "בוצע", tone: "done", groupBy: "company" },
+  // Cancelled used to live in the collapsed "other" fold, but now that
+  // it's a revivable state (awaiting_handling / in_progress targets in
+  // the menu) users need to see it — otherwise cancelling a task makes
+  // it look like it disappeared.
+  { key: "cancelled", label: "בוטל", tone: "cancelled", groupBy: "none" },
 ];
 
 type Props = {
@@ -165,7 +170,7 @@ export default function TasksQueue({
       {!hideOther && other.length > 0 && (
         <details className="tasks-other">
           <summary>
-            {other.length} משימות במצבים אחרים (טיוטה / בוטל) — לחץ להצגה
+            {other.length} טיוטות — לחץ להצגה
           </summary>
           <div className="tasks-table-wrap">
             <table className="tasks-table">

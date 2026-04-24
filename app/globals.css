@@ -3757,6 +3757,7 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
 .tasks-bucket-awaiting_clarification .tasks-bucket-head { border-inline-start-color: #dc2626; }
 .tasks-bucket-awaiting_approval .tasks-bucket-head { border-inline-start-color: #f59e0b; }
 .tasks-bucket-done .tasks-bucket-head { border-inline-start-color: #10b981; }
+.tasks-bucket-cancelled .tasks-bucket-head { border-inline-start-color: #9ca3af; }
 .tasks-bucket-count {
   background: rgba(0,0,0,.08);
   padding: 0 .55em;
