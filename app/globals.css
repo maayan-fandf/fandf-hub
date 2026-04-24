@@ -4748,6 +4748,16 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .task-form-extra[open] > summary::before { content: "▾ "; }
 .task-form-extra > summary::-webkit-details-marker { display: none; }
 
+.task-id-tail {
+  color: var(--muted);
+  font-size: .78em;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace);
+  background: var(--surface-soft, rgba(120,120,120,.12));
+  padding: .1em .45em;
+  border-radius: 3px;
+  letter-spacing: .02em;
+}
+
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }
   .task-form-row { grid-template-columns: 1fr; }

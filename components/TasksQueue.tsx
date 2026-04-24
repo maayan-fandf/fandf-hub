@@ -457,7 +457,15 @@ function TaskRow({
 }) {
   return (
     <tr>
-      <td className="num">{task.brief || task.id.slice(-6)}</td>
+      <td className="num">
+        {task.brief ? (
+          task.brief
+        ) : (
+          <span className="task-id-tail" title={task.id}>
+            {task.id.split("-").pop() || ""}
+          </span>
+        )}
+      </td>
       {/* Project cell omitted in compact mode (page is already scoped). */}
       {!compact && (
         <td className="tasks-project-cell-nested">{task.project}</td>
