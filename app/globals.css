@@ -3796,6 +3796,7 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-table tbody tr:hover { background: var(--surface-soft); }
 .tasks-table .num { font-variant-numeric: tabular-nums; color: var(--muted); width: 4em; }
 .tasks-table .date-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tasks-table .priority-cell { text-align: center; white-space: nowrap; }
 .tasks-table .title-cell { min-width: 16em; }
 .tasks-title-link {
   color: var(--text); font-weight: 600; text-decoration: none;

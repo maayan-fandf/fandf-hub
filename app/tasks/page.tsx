@@ -195,7 +195,9 @@ export default async function TasksPage({
                     <th>פרויקט</th>
                     <th>פרטי המשימה</th>
                     <th>מחלקות</th>
-                    <th>עדיפות / תאריך</th>
+                    <th>עדיפות</th>
+                    <th>תאריך מבוקש</th>
+                    <th>נוצרה</th>
                     {b.key === "in_progress" && <th>סטטוס</th>}
                     <th>עובדים</th>
                     <th>מאשר</th>
@@ -302,7 +304,10 @@ function CompanyGroup({
   projectGroups: [string, WorkTask[]][];
   showSubStatus: boolean;
 }) {
-  const totalCols = showSubStatus ? 10 : 9;
+  // 12 base cols (brief, project, details, depts, priority, requested,
+  // created, assignees, approver, author, actions) + 1 for בעבודה's
+  // sub-status slot. Bump these two if the table columns change.
+  const totalCols = showSubStatus ? 12 : 11;
   return (
     <>
       <tr className="tasks-company-header">
@@ -392,12 +397,13 @@ function TaskRow({
           ? (task.departments || []).join(", ")
           : "—"}
       </td>
-      <td className="date-cell">
+      <td className="priority-cell">
         <span className={`tasks-priority-pill p${task.priority}`}>
           {task.priority || "—"}
-        </span>{" "}
-        {task.requested_date || "—"}
+        </span>
       </td>
+      <td className="date-cell">{task.requested_date || "—"}</td>
+      <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
       {showSubStatus && (
         <td>
           {task.sub_status ? (
@@ -447,6 +453,15 @@ function shortName(email: string): string {
   if (!email) return "";
   const at = email.indexOf("@");
   return at > 0 ? email.slice(0, at) : email;
+}
+
+// Date part of the ISO created_at — YYYY-MM-DD. Falls back to "—" for
+// rows missing the field (happens on legacy rows pre-schema-v2).
+function formatCreatedAt(iso: string): string {
+  if (!iso) return "—";
+  // Handle both ISO 8601 ("2026-04-24T09:53:11.456Z") and date-only
+  // forms (some cells come back as Date → toISOString via the mapper).
+  return iso.slice(0, 10);
 }
 
 // Build an href for /tasks with the current search params plus overrides.
