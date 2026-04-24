@@ -4170,6 +4170,29 @@ html[data-theme="dark"] .tasks-round-chip {
   background: var(--surface-soft);
   border-color: var(--accent);
 }
+/* Comment-count badge — overlays top-right of the 💬 icon when the
+   task has at least one comment. Position matches standard
+   notification-chip conventions. */
+.tasks-row-icon.has-comments {
+  position: relative;
+}
+.tasks-row-icon-badge {
+  position: absolute;
+  top: -5px;
+  inset-inline-end: -5px;
+  min-width: 1.3em;
+  height: 1.3em;
+  padding: 0 .35em;
+  border-radius: 999px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: .7em;
+  font-weight: 700;
+  line-height: 1.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
 
 /* Multi-department chip picker in the new-task form — mirrors Data
    Plus's "departments can be multiple" semantics. */

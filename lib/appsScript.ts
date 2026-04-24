@@ -821,6 +821,11 @@ export type WorkTask = {
   google_tasks: Record<string, { u: string; l: string; t: string; d: string }>;
   status_history: WorkTaskStatusHistoryEntry[];
   edited_at: string;
+  /** Number of comment rows parented to this task (row_kind='' AND
+   *  parent_id=task.id). Populated by the direct-SA reader in a single
+   *  pass; optional because the Apps Script fallback doesn't yet
+   *  compute it. Missing / 0 → no badge. */
+  comments_count?: number;
 };
 
 export type TasksListFilters = {

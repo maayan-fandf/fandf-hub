@@ -527,10 +527,17 @@ function TaskRow({
           )}
           <Link
             href={`/tasks/${encodeURIComponent(task.id)}#history`}
-            className="tasks-row-icon"
-            title="היסטוריה + הערות"
+            className={`tasks-row-icon${task.comments_count ? " has-comments" : ""}`}
+            title={
+              task.comments_count
+                ? `${task.comments_count} תגובות`
+                : "היסטוריה + הערות"
+            }
           >
             💬
+            {task.comments_count ? (
+              <span className="tasks-row-icon-badge">{task.comments_count}</span>
+            ) : null}
           </Link>
         </div>
       </td>

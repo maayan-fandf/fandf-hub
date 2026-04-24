@@ -255,10 +255,27 @@ export async function tasksListDirect(
     return { ok: true, tasks: [], count: 0 };
   }
 
+  // Build the task-id → comment-count map in a single pass over the
+  // same rows. A comment parented to a task is row_kind='' with
+  // parent_id=taskId; task-parented replies are already filtered out
+  // from the projectComments feed but still live in the sheet.
+  const parentIdIdx = headerIdx.get("parent_id");
+  const commentsCount = new Map<string, number>();
+  if (parentIdIdx != null) {
+    for (const row of rows) {
+      const rk = String(row[rowKindIdx] ?? "").trim();
+      if (rk === "task") continue; // only count comment rows
+      const pid = String(row[parentIdIdx] ?? "");
+      if (!pid) continue;
+      commentsCount.set(pid, (commentsCount.get(pid) ?? 0) + 1);
+    }
+  }
+
   const tasks: WorkTask[] = [];
   for (const row of rows) {
     if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
     const t = rowToTask(row, headerIdx);
+    t.comments_count = commentsCount.get(t.id) ?? 0;
 
     // Non-admin access gate.
     if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) continue;
@@ -308,10 +325,22 @@ export async function tasksGetDirect(
   if (idIdx == null || rowKindIdx == null) {
     throw new Error("Task not found: " + taskId);
   }
+  // Same single-pass counting as tasksListDirect, scoped to this taskId.
+  const parentIdIdx = headerIdx.get("parent_id");
+  let commentsCount = 0;
+  if (parentIdIdx != null) {
+    for (const row of rows) {
+      const rk = String(row[rowKindIdx] ?? "").trim();
+      if (rk === "task") continue;
+      if (String(row[parentIdIdx] ?? "") !== taskId) continue;
+      commentsCount++;
+    }
+  }
   for (const row of rows) {
     if (String(row[idIdx] ?? "") !== taskId) continue;
     if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
     const t = rowToTask(row, headerIdx);
+    t.comments_count = commentsCount;
     const scope = await getAccessScope(subjectEmail);
     if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) {
       throw new Error("Access denied");
