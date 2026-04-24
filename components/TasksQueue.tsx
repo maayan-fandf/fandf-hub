@@ -135,7 +135,11 @@ export default function TasksQueue({
               <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
                 <thead>
                   <tr>
-                    <th className="num">מספר</th>
+                    {/* Company column on the portfolio queue. Hidden in
+                        compact mode (project pages already scoped to
+                        one company). When `brief` is set on a task it
+                        still renders as a chip in the title cell. */}
+                    {!compact && <th>חברה</th>}
                     {/* The "פרויקט" column is redundant when we're
                         already on a project-scoped page — the caller
                         sets compact to hide it. */}
@@ -457,15 +461,15 @@ function TaskRow({
 }) {
   return (
     <tr>
-      <td className="num">
-        {task.brief ? (
-          task.brief
-        ) : (
-          <span className="task-id-tail" title={task.id}>
-            {task.id.split("-").pop() || ""}
-          </span>
-        )}
-      </td>
+      {!compact && (
+        <td className="tasks-company-cell">
+          {task.company ? (
+            task.company
+          ) : (
+            <span className="task-empty-cell">—</span>
+          )}
+        </td>
+      )}
       {/* Project cell omitted in compact mode (page is already scoped). */}
       {!compact && (
         <td className="tasks-project-cell-nested">{task.project}</td>
@@ -477,6 +481,11 @@ function TaskRow({
         >
           {task.title}
         </Link>
+        {task.brief && (
+          <span className="tasks-brief-chip" title="בריף">
+            #{task.brief}
+          </span>
+        )}
         {task.campaign && (
           <span className="tasks-campaign-chip" title="קמפיין">
             📣 {task.campaign}

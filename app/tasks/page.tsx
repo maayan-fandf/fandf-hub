@@ -229,15 +229,20 @@ function TasksFilterBar({
       {/* Keep the opt-out of author-defaulting sticky across submits. */}
       <input type="hidden" name="mine" value="0" />
       <label>
-        בריף
+        קמפיין
         <input
           type="text"
-          name="brief"
-          placeholder="#"
-          defaultValue={current.brief}
-          style={{ width: "5em" }}
+          name="campaign"
+          list="tasks-campaigns-filter"
+          placeholder="הכל"
+          defaultValue={current.campaign}
         />
       </label>
+      <datalist id="tasks-campaigns-filter">
+        {campaignOptions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       <label>
         חברה
         <select name="company" defaultValue={current.company}>
@@ -291,21 +296,6 @@ function TasksFilterBar({
           ))}
         </select>
       </label>
-      <label>
-        קמפיין
-        <input
-          type="text"
-          name="campaign"
-          list="tasks-campaigns-filter"
-          placeholder="הכל"
-          defaultValue={current.campaign}
-        />
-      </label>
-      <datalist id="tasks-campaigns-filter">
-        {campaignOptions.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
       <label>
         כותב
         <input

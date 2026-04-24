@@ -4158,6 +4158,31 @@ html[data-theme="dark"] .tasks-campaign-chip {
   background: #312e8155; color: #c7d2fe;
 }
 
+/* Brief chip — sits next to the title when the task carries an
+   external reference number ("brief"). Cool grey to stay neutral
+   against the campaign + round chips. */
+.tasks-brief-chip {
+  display: inline-block;
+  padding: .1em .5em;
+  margin-inline-start: .5em;
+  border-radius: 999px;
+  font-size: .72em;
+  font-weight: 600;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace);
+  background: var(--surface-soft, #eef2f7);
+  color: var(--muted, #64748b);
+  vertical-align: middle;
+}
+html[data-theme="dark"] .tasks-brief-chip {
+  background: rgba(255,255,255,.08); color: #cbd5e1;
+}
+
+.tasks-company-cell {
+  font-weight: 600;
+  color: var(--text);
+}
+.task-empty-cell { color: var(--muted); }
+
 /* Sub-status pill: the "אושר" / "ממתין לטיפול" / etc. free-form label
    that Data Plus shows within בעבודה rows. */
 .tasks-substatus-pill {
