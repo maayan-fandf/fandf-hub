@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { tasksGet, tasksPeopleList } from "@/lib/appsScript";
 import TaskStatusActions from "@/components/TaskStatusActions";
 import TaskEditPanel from "@/components/TaskEditPanel";
+import TaskComments from "@/components/TaskComments";
 
 export const dynamic = "force-dynamic";
 
@@ -137,6 +138,8 @@ export default async function TaskDetailPage({
               ))}
             </ul>
           </section>
+
+          <TaskComments taskId={t.id} />
         </div>
 
         <aside className="task-detail-side">

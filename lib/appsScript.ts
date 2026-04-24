@@ -420,6 +420,29 @@ export async function getProjectComments(
   });
 }
 
+export type TaskComments = {
+  task_id: string;
+  project: string;
+  comments: CommentItem[];
+  me: { email: string; isAdmin: boolean };
+};
+
+/** Comments parented to a task (`parent_id === task.id`, `row_kind=''`).
+ *  SA-direct-only: there's no Apps Script action fallback — task comments
+ *  are a post-SA-migration feature and the flag is production-on. Flip the
+ *  flag off and this throws. */
+export async function getTaskComments(taskId: string): Promise<TaskComments> {
+  const { useSACommentsReads } = await import("@/lib/sa");
+  if (!useSACommentsReads()) {
+    throw new Error(
+      "getTaskComments requires USE_SA_COMMENTS_READS=1 (no Apps Script fallback yet).",
+    );
+  }
+  const { taskCommentsDirect } = await import("@/lib/commentsDirect");
+  const user = await currentUserEmail();
+  return taskCommentsDirect(user, taskId);
+}
+
 export type ReassignResult = {
   ok: boolean;
   noop?: boolean;

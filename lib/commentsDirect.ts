@@ -271,6 +271,90 @@ export async function myMentionsDirect(
   };
 }
 
+/* ── taskCommentsDirect ────────────────────────────────────────────── */
+
+/**
+ * Comments parented to a task (`row_kind='task'`). A task-comment is just a
+ * regular comment row (`row_kind=''`) whose `parent_id` is a task id —
+ * `postReplyForUser_` in Apps Script already handles the write side as-is.
+ * This reader filters the Comments sheet to those rows for a given task and
+ * enforces project-scoped access via the task's own `project` field.
+ */
+export async function taskCommentsDirect(
+  subjectEmail: string,
+  taskId: string,
+): Promise<{
+  task_id: string;
+  project: string;
+  comments: CommentItem[];
+  me: { email: string; isAdmin: boolean };
+}> {
+  const [{ rows, headerIdx }, scope] = await Promise.all([
+    readCommentsOnce(subjectEmail),
+    getAccessScope(subjectEmail),
+  ]);
+
+  const rowKindIdx = headerIdx.get("row_kind");
+
+  // First pass — locate the task row so we know its project for the access
+  // check. Tasks live in the same Comments sheet with row_kind='task'.
+  let taskProject = "";
+  for (const row of rows) {
+    const cell = cellGetter(row, headerIdx);
+    if (String(cell("id") ?? "") !== taskId) continue;
+    const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
+    if (rk !== "task") continue;
+    taskProject = String(cell("project") ?? "").trim();
+    break;
+  }
+  if (!taskProject) throw new Error("Task not found: " + taskId);
+
+  if (!scope.isAdmin && !scope.accessibleProjects.has(taskProject)) {
+    throw new Error("Access denied to project: " + taskProject);
+  }
+
+  // Second pass — collect comment rows (row_kind empty) whose parent is the task.
+  const comments: CommentItem[] = [];
+  for (const row of rows) {
+    const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
+    if (rk === "task") continue;
+    const cell = cellGetter(row, headerIdx);
+    if (String(cell("parent_id") ?? "") !== taskId) continue;
+
+    const id = String(cell("id") ?? "");
+    const project = String(cell("project") ?? "").trim();
+    const mentionsRaw = String(cell("mentions") ?? "");
+    comments.push({
+      comment_id: id,
+      project,
+      anchor: String(cell("anchor") ?? ""),
+      parent_id: taskId,
+      author_email: String(cell("author_email") ?? ""),
+      author_name: String(cell("author_name") ?? ""),
+      body: String(cell("body") ?? ""),
+      mentions: mentionsRaw
+        .split(/[,;]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+      timestamp: toIsoDate(cell("timestamp")),
+      resolved: Boolean(cell("resolved")),
+      reply_count: 0,
+      edited_at: toIsoDate(cell("edited_at")) || undefined,
+      deep_link: hubCommentUrl(project, id),
+    });
+  }
+
+  // Oldest-first: task comments read top-to-bottom like a chat log.
+  comments.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  return {
+    task_id: taskId,
+    project: taskProject,
+    comments,
+    me: { email: subjectEmail, isAdmin: scope.isAdmin },
+  };
+}
+
 /* ── projectMentionTasksDirect (legacy comment-mention Google Tasks) ─ */
 
 export async function projectMentionTasksDirect(

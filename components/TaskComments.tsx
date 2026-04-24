@@ -1,0 +1,94 @@
+import Avatar from "./Avatar";
+import TaskReplyComposer from "./TaskReplyComposer";
+import { getTaskComments } from "@/lib/appsScript";
+
+type Props = {
+  taskId: string;
+};
+
+export default async function TaskComments({ taskId }: Props) {
+  const data = await getTaskComments(taskId).catch((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: msg } as const;
+  });
+
+  if ("error" in data) {
+    return (
+      <section className="task-detail-comments">
+        <h3>דיון</h3>
+        <div className="task-comments-error">שגיאה בטעינת תגובות: {data.error}</div>
+      </section>
+    );
+  }
+
+  const { comments } = data;
+
+  return (
+    <section className="task-detail-comments">
+      <h3>
+        דיון{" "}
+        <span className="task-comments-count">
+          {comments.length > 0 ? `(${comments.length})` : ""}
+        </span>
+      </h3>
+
+      {comments.length === 0 && (
+        <div className="task-comments-empty">אין תגובות עדיין — התחל את הדיון.</div>
+      )}
+
+      {comments.length > 0 && (
+        <ul className="task-comments-list">
+          {comments.map((c) => (
+            <li key={c.comment_id} className="thread-reply">
+              <Avatar
+                name={c.author_email}
+                title={c.author_name || c.author_email}
+                size={26}
+              />
+              <div className="thread-reply-body">
+                <div className="thread-reply-head">
+                  <span className="thread-reply-author">
+                    {c.author_name || c.author_email}
+                  </span>
+                  <span className="thread-reply-time" title={c.timestamp}>
+                    {formatRelative(c.timestamp)}
+                  </span>
+                  {c.edited_at && (
+                    <span
+                      className="chip chip-muted"
+                      title={`נערך ${formatRelative(c.edited_at)}`}
+                    >
+                      📝 נערך
+                    </span>
+                  )}
+                </div>
+                <div className="thread-reply-text">
+                  {c.body.split("\n").map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <TaskReplyComposer taskId={taskId} />
+    </section>
+  );
+}
+
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const now = Date.now();
+  const diffSec = Math.round((now - then) / 1000);
+  if (diffSec < 60) return "עכשיו";
+  const mins = Math.round(diffSec / 60);
+  if (mins < 60) return `לפני ${mins} ד׳`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `לפני ${hrs} ש׳`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `לפני ${days} י׳`;
+  return new Date(iso).toLocaleDateString("he-IL");
+}
