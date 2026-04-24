@@ -184,18 +184,6 @@ export default function TaskEditPanel({
           />
         </label>
         <label>
-          בריף
-          <input
-            type="text"
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="10431"
-          />
-        </label>
-      </div>
-
-      <div className="task-form-row">
-        <label>
           קמפיין
           <input
             type="text"
@@ -211,6 +199,19 @@ export default function TaskEditPanel({
           <option key={c} value={c} />
         ))}
       </datalist>
+
+      <details className="task-form-extra" open={!!brief}>
+        <summary>שדות נוספים</summary>
+        <label>
+          בריף
+          <input
+            type="text"
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="10431"
+          />
+        </label>
+      </details>
 
       <div className="drive-folder-section">
         <div className="drive-folder-section-head">

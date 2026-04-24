@@ -4732,6 +4732,22 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .drive-folder-section-head strong { flex: 0 0 auto; }
 .drive-folder-section-head a { font-size: .85em; }
 
+.task-form-extra {
+  margin: .4em 0 .8em;
+  border-top: 1px dashed var(--border);
+  padding-top: .6em;
+}
+.task-form-extra > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .85em;
+  margin-bottom: .4em;
+  list-style: none;
+}
+.task-form-extra > summary::before { content: "▸ "; }
+.task-form-extra[open] > summary::before { content: "▾ "; }
+.task-form-extra > summary::-webkit-details-marker { display: none; }
+
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }
   .task-form-row { grid-template-columns: 1fr; }

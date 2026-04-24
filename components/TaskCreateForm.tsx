@@ -263,18 +263,6 @@ export default function TaskCreateForm({
         </label>
 
         <label>
-          בריף
-          <input
-            type="text"
-            name="brief"
-            placeholder="10431"
-            inputMode="text"
-          />
-        </label>
-      </div>
-
-      <div className="task-form-row">
-        <label>
           קמפיין
           <input
             type="text"
@@ -295,6 +283,19 @@ export default function TaskCreateForm({
           <option key={c} value={c} />
         ))}
       </datalist>
+
+      <details className="task-form-extra">
+        <summary>שדות נוספים</summary>
+        <label>
+          בריף
+          <input
+            type="text"
+            name="brief"
+            placeholder="10431"
+            inputMode="text"
+          />
+        </label>
+      </details>
 
       <DriveFolderPicker
         company={company}
