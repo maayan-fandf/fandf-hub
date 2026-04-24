@@ -75,6 +75,9 @@ env:
   # + /auth/spreadsheets (as of 2026-04-24). The hub reads + writes
   # Sheets directly via `googleapis`, impersonating the caller's
   # email so access-checks + row-level auth continue to work.
+  # GCP Secret Manager IAM: App Hosting runtime SA granted
+  # secretAccessor role via `firebase apphosting:secrets:grantaccess`
+  # on 2026-04-24. Re-run grantaccess if the backend is ever recreated.
   - variable: TASKS_SA_KEY_JSON
     secret: TASKS_SA_KEY_JSON
     availability:
