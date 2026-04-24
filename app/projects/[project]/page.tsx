@@ -10,10 +10,9 @@ import {
   type CommentItem,
   type MentionItem,
   type MorningProject,
-  type WorkTask,
-  type WorkTaskStatus,
 } from "@/lib/appsScript";
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
+import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
@@ -237,7 +236,12 @@ export default async function ProjectOverviewPage({
           <p className="section-subtitle">
             משימות עבודה פתוחות, מקובצות לפי סטטוס. לחץ על שם המשימה לפרטים.
           </p>
-          <WorkTasksPreview projectName={projectName} tasks={workTasks} />
+          <TasksQueue
+            tasks={workTasks}
+            groupByCompany={false}
+            hideOther
+            emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
+          />
         </section>
 
         <section className="project-section">
@@ -451,105 +455,6 @@ function TasksPreview({
   );
 }
 
-/**
- * Work-management tasks preview — groups open tasks by status bucket
- * (בעבודה / ממתין לאישור / ממתין לבירור) and shows a few per bucket with
- * a "see all" link to the full queue filtered to this project. The
- * done / cancelled buckets are omitted here since they're the terminal
- * states; get them via the full queue view.
- */
-function WorkTasksPreview({
-  projectName,
-  tasks,
-}: {
-  projectName: string;
-  tasks: WorkTask[];
-}) {
-  const OPEN_BUCKETS: { key: WorkTaskStatus; label: string; tone: string }[] = [
-    { key: "in_progress", label: "בעבודה", tone: "in_progress" },
-    { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
-    { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
-  ];
-  const byStatus: Record<string, WorkTask[]> = {};
-  for (const b of OPEN_BUCKETS) byStatus[b.key] = [];
-  for (const t of tasks) {
-    if (byStatus[t.status]) byStatus[t.status].push(t);
-  }
-  const anyOpen = OPEN_BUCKETS.some((b) => (byStatus[b.key] || []).length);
-  if (!anyOpen) {
-    return (
-      <div className="empty-small">
-        🎉 אין משימות פתוחות בפרויקט זה.{" "}
-        <Link href={`/tasks/new?project=${encodeURIComponent(projectName)}`}>
-          צור משימה חדשה →
-        </Link>
-      </div>
-    );
-  }
-  return (
-    <div className="work-tasks-preview">
-      {OPEN_BUCKETS.map((b) => {
-        const list = (byStatus[b.key] || [])
-          .slice()
-          .sort((a, b) => b.created_at.localeCompare(a.created_at))
-          .slice(0, 4);
-        if (!list.length) return null;
-        return (
-          <div
-            key={b.key}
-            className={`work-tasks-preview-bucket tasks-bucket-${b.tone}`}
-          >
-            <div className="work-tasks-preview-bucket-head">
-              <span
-                className={`tasks-status-pill tasks-status-${b.key}`}
-              >
-                {b.label}
-              </span>
-              <span className="work-tasks-preview-count">
-                {byStatus[b.key].length}
-              </span>
-            </div>
-            <ul className="work-tasks-preview-list">
-              {list.map((t) => (
-                <li key={t.id}>
-                  <Link
-                    href={`/tasks/${encodeURIComponent(t.id)}`}
-                    className="work-tasks-preview-link"
-                  >
-                    <span className="work-tasks-preview-title">
-                      {t.title || "(ללא כותרת)"}
-                    </span>
-                    <span className="work-tasks-preview-meta">
-                      {t.assignees.length > 0 && (
-                        <span className="chip">
-                          {t.assignees
-                            .map((e) => e.split("@")[0])
-                            .slice(0, 2)
-                            .join(", ")}
-                          {t.assignees.length > 2
-                            ? ` +${t.assignees.length - 2}`
-                            : ""}
-                        </span>
-                      )}
-                      {t.requested_date && (
-                        <span className="chip">{t.requested_date}</span>
-                      )}
-                      {t.sub_status && (
-                        <span className="tasks-substatus-pill">
-                          {t.sub_status}
-                        </span>
-                      )}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function CommentsPreview({
   comments,
