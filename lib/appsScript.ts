@@ -807,6 +807,21 @@ export function tasksPeopleList(): Promise<{
   return callApi<{ ok: boolean; people: TasksPerson[] }>("tasksPeopleList", {});
 }
 
+/** Bootstrap a Chat Space for a project. Requires the Google Chat API
+ *  advanced service to be enabled in the Apps Script project AND the
+ *  API to be enabled in the GCP project. Returns a diagnostic error
+ *  (`ok: false` + `howToFix`) if not — so the admin UI can explain
+ *  the setup step cleanly rather than dying. */
+export type ProjectSpaceCreateResult =
+  | { ok: true; space: { name: string; spaceUri?: string; displayName?: string } }
+  | { ok: false; error: string; howToFix?: string };
+
+export function projectSpaceCreate(
+  project: string,
+): Promise<ProjectSpaceCreateResult> {
+  return postApi<ProjectSpaceCreateResult>("projectSpaceCreate", { project });
+}
+
 export type TasksCreateInput = {
   project: string;
   title: string;

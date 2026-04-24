@@ -3920,6 +3920,81 @@ html[data-theme="dark"] .tasks-round-chip {
   color: #fff;
 }
 
+/* Chat Spaces admin page — project list grouped by company with per-row
+   "create space" buttons that call /api/worktasks/project-space-create. */
+.chat-spaces-notice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 1em 1.25em;
+  margin: 0 0 1.5em;
+}
+.chat-spaces-notice h3 { margin: 0 0 .5em; font-size: 1em; }
+.chat-spaces-notice ol { margin: .2em 0 .5em; padding-inline-start: 1.3em; }
+.chat-spaces-notice li { margin: .3em 0; font-size: .9em; }
+.chat-spaces-notice code {
+  background: var(--surface-soft);
+  padding: .1em .4em;
+  border-radius: 4px;
+  font-size: .9em;
+}
+.chat-spaces-notice .muted {
+  color: var(--muted); font-size: .85em; margin: .5em 0 0;
+}
+
+.chat-spaces-list { list-style: none; padding: 0; margin: 0; }
+.chat-spaces-company { margin-bottom: 1.5em; }
+.chat-spaces-company-head {
+  font-size: .95em;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin: 0 0 .4em;
+  padding-bottom: .3em;
+  border-bottom: 1px solid var(--border);
+}
+.chat-spaces-projects { list-style: none; padding: 0; margin: 0; }
+.chat-spaces-project {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 1em;
+  align-items: center;
+  padding: .75em 1em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: .5em;
+}
+.chat-spaces-project-name { font-weight: 600; }
+.chat-spaces-project-status { color: var(--muted); font-size: .9em; }
+.chat-spaces-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.chat-spaces-link:hover { text-decoration: underline; }
+.chat-spaces-error {
+  grid-column: 1 / -1;
+  margin-top: .6em;
+  padding: .6em .8em;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: .88em;
+  color: #991b1b;
+}
+.chat-spaces-howto { margin-top: .35em; font-size: .92em; color: #7f1d1d; }
+html[data-theme="dark"] .chat-spaces-error {
+  background: #7f1d1d40; color: #fecaca; border-color: #991b1b60;
+}
+html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
+
+@media (max-width: 640px) {
+  .chat-spaces-project { grid-template-columns: 1fr; gap: .3em; }
+}
+
 /* Task edit panel: same shell as the create form, shown above the
    read-only grid when the URL carries ?edit=1. */
 .task-edit-panel { max-width: 920px; margin: 0 0 1.5em; }
