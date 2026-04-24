@@ -721,6 +721,13 @@ export async function tasksUpdateDirect(
     }
     changes.status = patch.status;
     changes.resolved = patch.status === "done";
+    // Auto-clear the legacy `sub_status` modifier on any real status
+    // transition — otherwise a stale value like "אושר" (set when the
+    // task was at a different status) follows the task around and
+    // confuses the pill. If the caller is intentionally setting a new
+    // sub_status in the same patch, the SIMPLE_DIRECT loop below will
+    // overwrite this clear with the new value.
+    changes.sub_status = "";
     // Append to status_history.
     const existingHist = (() => {
       try {

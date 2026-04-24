@@ -70,9 +70,11 @@ const STATUS_LABELS: Record<WorkTaskStatus, string> = {
  * overflow-x clip — which was cutting it off and pushing the row
  * layout when rendered inline.
  *
- * Uses the row's `sub_status` as the visible label when set (matches
- * Data Plus's "אושר" / "ממתין לטיפול" inside the בעבודה bucket); falls
- * back to the status label otherwise.
+ * The pill shows the canonical status label. `sub_status` is a legacy
+ * freeform column (e.g. "אושר") that previously overrode the pill text,
+ * which caused "task in בעבודה bucket with pill saying אושר" confusion.
+ * Now sub_status renders as a small secondary chip alongside the pill
+ * when present, so the bucket + pill always match.
  */
 export default function TaskStatusCell({ task }: { task: WorkTask }) {
   const [open, setOpen] = useState(false);
@@ -134,8 +136,10 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   }, [open]);
 
   const options = TRANSITIONS[task.status] ?? [];
-  const displayLabel =
-    task.sub_status || STATUS_LABELS[task.status] || task.status;
+  // Always show the canonical status label — sub_status is surfaced
+  // separately below so the pill never lies about which bucket the
+  // row lives in.
+  const displayLabel = STATUS_LABELS[task.status] || task.status;
 
   async function transition(to: WorkTaskStatus, label: string) {
     // INSTANT feedback: close menu + flip the pill to the target state
@@ -208,6 +212,15 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
             aria-hidden
           >
             ← {pendingTargetLabel}
+          </span>
+        )}
+        {/* Legacy sub_status modifier — only rendered when set and not
+            pending a transition (pending clutter is enough). Shown as a
+            subordinate chip, never as a replacement for the canonical
+            status label. */}
+        {!pendingTo && task.sub_status && (
+          <span className="tasks-substatus-pill" title="sub_status">
+            {task.sub_status}
           </span>
         )}
       </span>
