@@ -3834,6 +3834,12 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-caret {
   font-size: .9em; opacity: .6;
 }
+.tasks-status-cell-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  flex-wrap: wrap;
+}
 .tasks-status-cell-spinner {
   font-size: .85em;
   animation: tasks-status-cell-spin 1.2s linear infinite;
@@ -3844,9 +3850,34 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
   to { transform: rotate(360deg); }
 }
 .tasks-status-cell-btn.is-pending {
-  opacity: .85;
+  opacity: .75;
   cursor: wait;
 }
+/* "→ בעבודה" chip that appears next to the still-old pill while the
+   write is in flight. Uses the target state's tone so the color hints
+   at where the task is about to land. */
+.tasks-status-cell-target {
+  display: inline-flex;
+  align-items: center;
+  padding: .15em .55em;
+  border-radius: 999px;
+  font-size: .78em;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: .9;
+  animation: tasks-status-cell-target-pulse 1.2s ease-in-out infinite;
+}
+@keyframes tasks-status-cell-target-pulse {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+.tasks-status-cell-target.tasks-status-draft { background: #f3f4f6; color: #374151; }
+.tasks-status-cell-target.tasks-status-awaiting_handling { background: #e2e8f0; color: #334155; }
+.tasks-status-cell-target.tasks-status-in_progress { background: #dbeafe; color: #1e40af; }
+.tasks-status-cell-target.tasks-status-awaiting_clarification { background: #fee2e2; color: #991b1b; }
+.tasks-status-cell-target.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
+.tasks-status-cell-target.tasks-status-done { background: #d1fae5; color: #065f46; }
+.tasks-status-cell-target.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
 .tasks-status-cell-err-inline {
   color: #c0392b;
   font-size: .78em;

@@ -170,36 +170,46 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
     }
   }
 
-  // Visible state: during the write we render the PENDING target, so
-  // the cell reflects the user's intent the instant they click.
-  const effectiveStatus = pendingTo ?? task.status;
-  const effectiveLabel = pendingTo
-    ? STATUS_LABELS[pendingTo]
-    : displayLabel;
+  // During the pending window we keep the OLD label + old pill color
+  // visible — the row is still sitting in its old bucket until the
+  // server re-fetch arrives, so flipping just the pill would create a
+  // "task in ממתין לטיפול with בעבודה pill" visual contradiction. We
+  // surface the target as a small "→ X" chip next to the pill instead.
+  const pendingTargetLabel = pendingTo ? STATUS_LABELS[pendingTo] : null;
 
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        className={`tasks-status-cell-btn tasks-status-${effectiveStatus}${pendingTo ? " is-pending" : ""}`}
-        onClick={() => !pendingTo && setOpen((o) => !o)}
-        disabled={pendingTo !== null}
-        title={pendingTo ? "מעדכן…" : "לחץ לשינוי סטטוס"}
-      >
-        {effectiveLabel}
-        {pendingTo ? (
-          <span className="tasks-status-cell-spinner" aria-hidden>
-            ⏳
-          </span>
-        ) : (
-          options.length > 0 && (
-            <span className="tasks-status-cell-caret" aria-hidden>
-              ▾
+      <span className="tasks-status-cell-wrap">
+        <button
+          ref={btnRef}
+          type="button"
+          className={`tasks-status-cell-btn tasks-status-${task.status}${pendingTo ? " is-pending" : ""}`}
+          onClick={() => !pendingTo && setOpen((o) => !o)}
+          disabled={pendingTo !== null}
+          title={pendingTo ? `מעדכן ל־${pendingTargetLabel}…` : "לחץ לשינוי סטטוס"}
+        >
+          {displayLabel}
+          {pendingTo ? (
+            <span className="tasks-status-cell-spinner" aria-hidden>
+              ⏳
             </span>
-          )
+          ) : (
+            options.length > 0 && (
+              <span className="tasks-status-cell-caret" aria-hidden>
+                ▾
+              </span>
+            )
+          )}
+        </button>
+        {pendingTo && (
+          <span
+            className={`tasks-status-cell-target tasks-status-${pendingTo}`}
+            aria-hidden
+          >
+            ← {pendingTargetLabel}
+          </span>
         )}
-      </button>
+      </span>
       {err && !pendingTo && (
         <div className="tasks-status-cell-err-inline" role="alert">
           {err}
