@@ -271,7 +271,16 @@ export async function getMyProjects(): Promise<MyProjects> {
   return fetchMyProjectsCached(email);
 }
 
-export function getProjectTasks(project: string): Promise<ProjectTasks> {
+export async function getProjectTasks(project: string): Promise<ProjectTasks> {
+  // Feature-flagged direct path. When USE_SA_COMMENTS_READS=1, read the
+  // Comments sheet directly and reconstruct the mention-task feed in
+  // Node — one Sheets call replaces an Apps Script round-trip.
+  const { useSACommentsReads } = await import("@/lib/sa");
+  if (useSACommentsReads()) {
+    const { projectMentionTasksDirect } = await import("@/lib/commentsDirect");
+    const user = await currentUserEmail();
+    return projectMentionTasksDirect(user, project);
+  }
   return callApi<ProjectTasks>("projectTasks", { project });
 }
 
@@ -311,7 +320,13 @@ export type MyMentions = {
   total: number;
 };
 
-export function getMyMentions(): Promise<MyMentions> {
+export async function getMyMentions(): Promise<MyMentions> {
+  const { useSACommentsReads } = await import("@/lib/sa");
+  if (useSACommentsReads()) {
+    const { myMentionsDirect } = await import("@/lib/commentsDirect");
+    const user = await currentUserEmail();
+    return myMentionsDirect(user);
+  }
   return callApi<MyMentions>("myMentions");
 }
 
@@ -375,10 +390,16 @@ export function getCommentReplies(
   });
 }
 
-export function getProjectComments(
+export async function getProjectComments(
   project: string,
   limit = 20,
 ): Promise<ProjectComments> {
+  const { useSACommentsReads } = await import("@/lib/sa");
+  if (useSACommentsReads()) {
+    const { projectCommentsDirect } = await import("@/lib/commentsDirect");
+    const user = await currentUserEmail();
+    return projectCommentsDirect(user, project, limit);
+  }
   return callApi<ProjectComments>("projectComments", {
     project,
     limit: String(limit),

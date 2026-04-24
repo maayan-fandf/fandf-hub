@@ -118,6 +118,16 @@ env:
       - BUILD
       - RUNTIME
 
+  # Routes getProjectComments / getMyMentions / getProjectTasks through
+  # direct Sheets reads (one Sheets API call replaces 3 Apps Script
+  # calls on every project page load). Shares the /auth/spreadsheets
+  # DWD scope with the tasks-read path — no new scope needed.
+  - variable: USE_SA_COMMENTS_READS
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # The email the hub impersonates for Drive folder creation (SA with
   # DWD creates folders in this user's Drive). Default matches the
   # Apps Script behavior (Script was deployed as maayan). Change if

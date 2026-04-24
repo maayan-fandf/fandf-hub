@@ -160,6 +160,14 @@ export function useSATasksWrites(): boolean {
   return String(process.env.USE_SA_TASKS_WRITES || "").trim() === "1";
 }
 
+/** True when the hub routes getProjectComments / getMyMentions /
+ *  getProjectTasks through direct Sheets reads instead of Apps Script.
+ *  Shares the /auth/spreadsheets DWD scope with reads; no new scope
+ *  needed to flip it on. */
+export function useSACommentsReads(): boolean {
+  return String(process.env.USE_SA_COMMENTS_READS || "").trim() === "1";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */

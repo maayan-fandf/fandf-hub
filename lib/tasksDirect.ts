@@ -142,7 +142,7 @@ async function readCommentsTab(subjectEmail: string): Promise<{
   return { headers, rows: values.slice(1), headerIdx };
 }
 
-async function readKeysRows(
+export async function readKeysRows(
   subjectEmail: string,
 ): Promise<{ headers: string[]; rows: unknown[][] }> {
   const sheets = sheetsClient(subjectEmail);
@@ -172,19 +172,19 @@ async function readKeysRows(
  * Admin list comes from hardcoded env for now (same as Apps Script
  * CONFIG.ADMIN_EMAILS). Extract to Secret Manager later if it grows.
  */
-const ADMIN_EMAILS = new Set([
+export const HUB_ADMIN_EMAILS = new Set([
   "maayan@fandf.co.il",
   "nadav@fandf.co.il",
   "felix@fandf.co.il",
 ]);
 
-async function getAccessScope(subjectEmail: string): Promise<{
+export async function getAccessScope(subjectEmail: string): Promise<{
   isAdmin: boolean;
   accessibleProjects: Set<string>;
   projectCompany: Map<string, string>;
 }> {
   const lc = subjectEmail.toLowerCase().trim();
-  const isAdmin = ADMIN_EMAILS.has(lc);
+  const isAdmin = HUB_ADMIN_EMAILS.has(lc);
   const { headers, rows } = await readKeysRows(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
