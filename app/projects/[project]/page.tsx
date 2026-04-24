@@ -5,10 +5,13 @@ import {
   getMyMentions,
   getMyProjects,
   getMorningFeed,
+  tasksList,
   type TaskItem,
   type CommentItem,
   type MentionItem,
   type MorningProject,
+  type WorkTask,
+  type WorkTaskStatus,
 } from "@/lib/appsScript";
 import CreateTaskDrawer from "@/components/CreateTaskDrawer";
 import Avatar from "@/components/Avatar";
@@ -46,17 +49,19 @@ export default async function ProjectOverviewPage({
   // should always resolve.
   const scopedPerson = await getScopedPerson(sp.person);
 
-  // Fire four API calls in parallel — each one validates access independently,
-  // so if the user is unauthorized we'll get consistent errors. getMyProjects
-  // is added so we can resolve the project's company for the dashboard iframe
-  // filter (needs ?company=X&project=Y).
-  const [tasksRes, commentsRes, mentionsRes, projectsRes, alertsRes] =
+  // Fire API calls in parallel. Each validates access independently, so
+  // an unauthorized caller gets consistent errors. workTasksRes is the
+  // new work-management Tasks feed (grouped by status bucket below);
+  // tasksRes is the legacy comment-mention Google-Tasks feed — kept for
+  // now so the "משימות מתיוגים" section stays populated.
+  const [tasksRes, commentsRes, mentionsRes, projectsRes, alertsRes, workTasksRes] =
     await Promise.allSettled([
       getProjectTasks(projectName),
       getProjectComments(projectName, 15),
       getMyMentions(),
       getMyProjects(),
       getMorningFeed({ project: projectName }),
+      tasksList({ project: projectName }),
     ]);
 
   const tasksData = tasksRes.status === "fulfilled" ? tasksRes.value : null;
@@ -68,6 +73,8 @@ export default async function ProjectOverviewPage({
     projectsRes.status === "fulfilled" ? projectsRes.value : null;
   const alertsData =
     alertsRes.status === "fulfilled" ? alertsRes.value : null;
+  const workTasksData =
+    workTasksRes.status === "fulfilled" ? workTasksRes.value : null;
   const projectAlerts: MorningProject | null =
     alertsData?.projects[0] ?? null;
 
@@ -138,8 +145,15 @@ export default async function ProjectOverviewPage({
   const comments = commentsData?.comments ?? [];
   const myMentionsOnProject =
     mentionsData?.mentions.filter((m) => m.project === projectName) ?? [];
+  const workTasks = workTasksData?.tasks ?? [];
 
   const openTasks = tasks.filter((t) => !t.resolved).length;
+  // Open work-tasks: anything not in a terminal state. Matches the queue's
+  // default (done / cancelled fall out; draft, awaiting_approval,
+  // awaiting_clarification, in_progress all count).
+  const openWorkTasks = workTasks.filter(
+    (t) => t.status !== "done" && t.status !== "cancelled",
+  ).length;
   const totalComments = commentsData?.total ?? 0;
   const openMentions = myMentionsOnProject.filter((m) => !m.resolved).length;
 
@@ -211,6 +225,25 @@ export default async function ProjectOverviewPage({
           <div className="section-head">
             <h2>
               📋 משימות
+              <span className="section-count">{openWorkTasks}</span>
+            </h2>
+            <Link
+              className="section-link"
+              href={`/tasks?project=${encodeURIComponent(projectName)}&mine=0`}
+            >
+              פתח את כל המשימות ←
+            </Link>
+          </div>
+          <p className="section-subtitle">
+            משימות עבודה פתוחות, מקובצות לפי סטטוס. לחץ על שם המשימה לפרטים.
+          </p>
+          <WorkTasksPreview projectName={projectName} tasks={workTasks} />
+        </section>
+
+        <section className="project-section">
+          <div className="section-head">
+            <h2>
+              💬 משימות מתיוגים
               <span className="section-count">{openTasks}</span>
             </h2>
             <Link
@@ -223,7 +256,7 @@ export default async function ProjectOverviewPage({
           <p className="section-subtitle">
             {showResolved
               ? "כל המשימות בפרויקט (פתוחות וסגורות)"
-              : "משימות פתוחות על שרשורים בפרויקט"}
+              : "משימות פתוחות על שרשורים בפרויקט (נוצרות מתיוגים ב־@ על הערות)"}
           </p>
           <TasksPreview
             tasks={tasks}
@@ -415,6 +448,106 @@ function TasksPreview({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * Work-management tasks preview — groups open tasks by status bucket
+ * (בעבודה / ממתין לאישור / ממתין לבירור) and shows a few per bucket with
+ * a "see all" link to the full queue filtered to this project. The
+ * done / cancelled buckets are omitted here since they're the terminal
+ * states; get them via the full queue view.
+ */
+function WorkTasksPreview({
+  projectName,
+  tasks,
+}: {
+  projectName: string;
+  tasks: WorkTask[];
+}) {
+  const OPEN_BUCKETS: { key: WorkTaskStatus; label: string; tone: string }[] = [
+    { key: "in_progress", label: "בעבודה", tone: "in_progress" },
+    { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
+    { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
+  ];
+  const byStatus: Record<string, WorkTask[]> = {};
+  for (const b of OPEN_BUCKETS) byStatus[b.key] = [];
+  for (const t of tasks) {
+    if (byStatus[t.status]) byStatus[t.status].push(t);
+  }
+  const anyOpen = OPEN_BUCKETS.some((b) => (byStatus[b.key] || []).length);
+  if (!anyOpen) {
+    return (
+      <div className="empty-small">
+        🎉 אין משימות פתוחות בפרויקט זה.{" "}
+        <Link href={`/tasks/new?project=${encodeURIComponent(projectName)}`}>
+          צור משימה חדשה →
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="work-tasks-preview">
+      {OPEN_BUCKETS.map((b) => {
+        const list = (byStatus[b.key] || [])
+          .slice()
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
+          .slice(0, 4);
+        if (!list.length) return null;
+        return (
+          <div
+            key={b.key}
+            className={`work-tasks-preview-bucket tasks-bucket-${b.tone}`}
+          >
+            <div className="work-tasks-preview-bucket-head">
+              <span
+                className={`tasks-status-pill tasks-status-${b.key}`}
+              >
+                {b.label}
+              </span>
+              <span className="work-tasks-preview-count">
+                {byStatus[b.key].length}
+              </span>
+            </div>
+            <ul className="work-tasks-preview-list">
+              {list.map((t) => (
+                <li key={t.id}>
+                  <Link
+                    href={`/tasks/${encodeURIComponent(t.id)}`}
+                    className="work-tasks-preview-link"
+                  >
+                    <span className="work-tasks-preview-title">
+                      {t.title || "(ללא כותרת)"}
+                    </span>
+                    <span className="work-tasks-preview-meta">
+                      {t.assignees.length > 0 && (
+                        <span className="chip">
+                          {t.assignees
+                            .map((e) => e.split("@")[0])
+                            .slice(0, 2)
+                            .join(", ")}
+                          {t.assignees.length > 2
+                            ? ` +${t.assignees.length - 2}`
+                            : ""}
+                        </span>
+                      )}
+                      {t.requested_date && (
+                        <span className="chip">{t.requested_date}</span>
+                      )}
+                      {t.sub_status && (
+                        <span className="tasks-substatus-pill">
+                          {t.sub_status}
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

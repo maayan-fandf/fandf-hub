@@ -3798,6 +3798,47 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-table .date-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tasks-table .priority-cell { text-align: center; white-space: nowrap; }
 
+/* Project-overview preview for work-management tasks. Lives inside a
+   .project-section so it inherits the surrounding padding; renders as
+   a small stack of per-bucket groups with a few rows in each. */
+.work-tasks-preview {
+  display: flex; flex-direction: column; gap: .9em;
+}
+.work-tasks-preview-bucket {
+  border-inline-start: 3px solid var(--border);
+  padding-inline-start: .8em;
+}
+.work-tasks-preview-bucket.tasks-bucket-in_progress { border-inline-start-color: #2563eb; }
+.work-tasks-preview-bucket.tasks-bucket-awaiting_approval { border-inline-start-color: #f59e0b; }
+.work-tasks-preview-bucket.tasks-bucket-awaiting_clarification { border-inline-start-color: #dc2626; }
+.work-tasks-preview-bucket-head {
+  display: flex; align-items: center; gap: .5em;
+  margin-bottom: .4em;
+}
+.work-tasks-preview-count {
+  color: var(--muted); font-size: .82em; font-variant-numeric: tabular-nums;
+}
+.work-tasks-preview-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: .3em;
+}
+.work-tasks-preview-link {
+  display: flex; flex-direction: column; gap: .2em;
+  padding: .4em .6em;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  transition: background .12s;
+}
+.work-tasks-preview-link:hover { background: var(--surface-soft); }
+.work-tasks-preview-title {
+  font-weight: 600; font-size: .9em;
+}
+.work-tasks-preview-meta {
+  display: flex; flex-wrap: wrap; gap: .3em;
+  font-size: .78em;
+}
+
 /* Click-to-update status cell. Button carries the same background tone
    as the row's lifecycle status, but with a subtle hover + caret that
    makes it obvious it's interactive. Menu drops below the cell. */
