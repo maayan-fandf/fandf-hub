@@ -14,6 +14,7 @@ type DraftRow = {
   canonicalName: string;
   draftName: string;
   draftEmail: string;
+  draftRole: string;
   isEditing: boolean;
   isBusy: boolean;
   error: string | null;
@@ -29,6 +30,7 @@ function rowsFromInitial(initial: NameEmailRow[]): DraftRow[] {
     canonicalName: r.full_name,
     draftName: r.full_name,
     draftEmail: r.email,
+    draftRole: r.role ?? "",
     isEditing: false,
     isBusy: false,
     error: null,
@@ -89,6 +91,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
         canonicalName: "",
         draftName: "",
         draftEmail: "",
+        draftRole: "",
         isEditing: true,
         isBusy: false,
         error: null,
@@ -128,7 +131,11 @@ export default function NamesToEmailsEditor({ initial }: Props) {
         const upsertRes = await fetch("/api/admin/names-to-emails", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fullName: newName, email: newEmail }),
+          body: JSON.stringify({
+            fullName: newName,
+            email: newEmail,
+            role: row.draftRole.trim(),
+          }),
         });
         if (!upsertRes.ok) {
           const data = (await upsertRes.json().catch(() => ({}))) as {
@@ -166,6 +173,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
           canonicalName: newName,
           draftName: newName,
           draftEmail: newEmail,
+          draftRole: row.draftRole.trim(),
           isEditing: false,
           isBusy: false,
           error: null,
@@ -227,13 +235,14 @@ export default function NamesToEmailsEditor({ initial }: Props) {
           <tr>
             <th>שם מלא</th>
             <th>אימייל</th>
+            <th>תפקיד</th>
             <th className="admin-table-actions-head">פעולות</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={3} className="empty-small">
+              <td colSpan={4} className="empty-small">
                 הרשימה ריקה. לחץ על &quot;הוסף שורה&quot;.
               </td>
             </tr>
@@ -285,6 +294,36 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                   />
                 ) : (
                   <span dir="ltr">{r.draftEmail}</span>
+                )}
+              </td>
+              <td>
+                {r.isEditing ? (
+                  <input
+                    type="text"
+                    className="admin-input"
+                    value={r.draftRole}
+                    dir="auto"
+                    placeholder="מנהל קמפיינים / מעצבת / לקוח…"
+                    onChange={(e) =>
+                      update(r.uiKey, { draftRole: e.target.value })
+                    }
+                    disabled={r.isBusy}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        save(r);
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelEdit(r.uiKey);
+                      }
+                    }}
+                  />
+                ) : r.draftRole ? (
+                  <span className="admin-role-chip" dir="auto">
+                    {r.draftRole}
+                  </span>
+                ) : (
+                  <span className="subtitle">—</span>
                 )}
               </td>
               <td className="admin-table-actions">

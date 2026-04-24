@@ -3093,6 +3093,20 @@ a.section-link:hover {
   pointer-events: none;
 }
 
+/* Read-only role chip in the names-to-emails editor. Looks like a pill
+   so it reads as a categorical value at a glance; keeps neutrally toned
+   so any role label (internal, client, מעצבת, …) works in the same spot. */
+.admin-role-chip {
+  display: inline-block;
+  padding: 0.15em 0.7em;
+  border-radius: 999px;
+  font-size: 0.82em;
+  font-weight: 600;
+  background: var(--surface-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
 .admin-input {
   width: 100%;
   padding: 0.4rem 0.55rem;

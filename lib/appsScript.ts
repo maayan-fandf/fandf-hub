@@ -554,7 +554,7 @@ export function searchContent(q: string, limit = 30): Promise<SearchResponse> {
 
 /* ─── Admin: names to emails ──────────────────────────────────────── */
 
-export type NameEmailRow = { full_name: string; email: string };
+export type NameEmailRow = { full_name: string; email: string; role?: string };
 export type NamesToEmailsList = { rows: NameEmailRow[] };
 
 export function adminListNamesToEmails(): Promise<NamesToEmailsList> {
@@ -567,15 +567,18 @@ export type UpsertNameToEmailResult = {
   updated?: boolean;
   full_name: string;
   email: string;
+  role?: string;
 };
 
 export function adminUpsertNameToEmail(args: {
   fullName: string;
   email: string;
+  role?: string;
 }): Promise<UpsertNameToEmailResult> {
   return postApi<UpsertNameToEmailResult>("adminUpsertNameToEmail", {
     fullName: args.fullName,
     email: args.email,
+    role: args.role ?? "",
   });
 }
 

@@ -26,13 +26,13 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { fullName?: string; email?: string };
+  let body: { fullName?: string; email?: string; role?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { fullName, email } = body;
+  const { fullName, email, role } = body;
   if (!fullName || !email) {
     return NextResponse.json(
       { error: "fullName and email required" },
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     );
   }
   try {
-    const result = await adminUpsertNameToEmail({ fullName, email });
+    const result = await adminUpsertNameToEmail({ fullName, email, role });
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
