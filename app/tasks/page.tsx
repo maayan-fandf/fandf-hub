@@ -8,6 +8,7 @@ import {
   type WorkTaskStatus,
   type TasksPerson,
 } from "@/lib/appsScript";
+import TaskStatusCell from "@/components/TaskStatusCell";
 
 export const dynamic = "force-dynamic";
 
@@ -191,17 +192,17 @@ export default async function TasksPage({
               <table className="tasks-table">
                 <thead>
                   <tr>
-                    <th className="num">בריף</th>
-                    <th>פרויקט</th>
+                    <th className="num">מספר המשימה</th>
+                    <th>פרטי הפרוייקט</th>
                     <th>פרטי המשימה</th>
+                    <th>כותב המשימה</th>
                     <th>מחלקות</th>
                     <th>עדיפות</th>
                     <th>תאריך מבוקש</th>
                     <th>נוצרה</th>
-                    {b.key === "in_progress" && <th>סטטוס</th>}
-                    <th>עובדים</th>
-                    <th>מאשר</th>
-                    <th>כותב</th>
+                    <th>סטטוס</th>
+                    <th>עובדים במשימה</th>
+                    <th>גורם מאשר</th>
                     <th className="icons">פעולות</th>
                   </tr>
                 </thead>
@@ -211,7 +212,6 @@ export default async function TasksPage({
                       key={company || "(no-company)"}
                       company={company}
                       projectGroups={projectGroups}
-                      showSubStatus={b.key === "in_progress"}
                     />
                   ))}
                 </tbody>
@@ -298,16 +298,14 @@ function groupByCompanyProject(
 function CompanyGroup({
   company,
   projectGroups,
-  showSubStatus,
 }: {
   company: string;
   projectGroups: [string, WorkTask[]][];
-  showSubStatus: boolean;
 }) {
-  // 12 base cols (brief, project, details, depts, priority, requested,
-  // created, assignees, approver, author, actions) + 1 for בעבודה's
-  // sub-status slot. Bump these two if the table columns change.
-  const totalCols = showSubStatus ? 12 : 11;
+  // Base columns: # / project / details / author / depts / priority /
+  // requested / created / status / workers / approver / actions. Bump
+  // totalCols here if the header row changes.
+  const totalCols = 12;
   return (
     <>
       <tr className="tasks-company-header">
@@ -323,7 +321,6 @@ function CompanyGroup({
           key={project}
           project={project}
           rows={rows}
-          showSubStatus={showSubStatus}
           totalCols={totalCols}
         />
       ))}
@@ -334,12 +331,10 @@ function CompanyGroup({
 function ProjectSubGroup({
   project,
   rows,
-  showSubStatus,
   totalCols,
 }: {
   project: string;
   rows: WorkTask[];
-  showSubStatus: boolean;
   totalCols: number;
 }) {
   return (
@@ -356,19 +351,13 @@ function ProjectSubGroup({
         </td>
       </tr>
       {rows.map((t) => (
-        <TaskRow key={t.id} task={t} showSubStatus={showSubStatus} />
+        <TaskRow key={t.id} task={t} />
       ))}
     </>
   );
 }
 
-function TaskRow({
-  task,
-  showSubStatus,
-}: {
-  task: WorkTask;
-  showSubStatus: boolean;
-}) {
+function TaskRow({ task }: { task: WorkTask }) {
   return (
     <tr>
       <td className="num">{task.brief || task.id.slice(-6)}</td>
@@ -392,6 +381,7 @@ function TaskRow({
           </div>
         )}
       </td>
+      <td>{shortName(task.author_email) || "—"}</td>
       <td>
         {(task.departments || []).length
           ? (task.departments || []).join(", ")
@@ -404,18 +394,11 @@ function TaskRow({
       </td>
       <td className="date-cell">{task.requested_date || "—"}</td>
       <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
-      {showSubStatus && (
-        <td>
-          {task.sub_status ? (
-            <span className="tasks-substatus-pill">{task.sub_status}</span>
-          ) : (
-            "—"
-          )}
-        </td>
-      )}
+      <td>
+        <TaskStatusCell task={task} />
+      </td>
       <td>{(task.assignees || []).map(shortName).join(", ") || "—"}</td>
       <td>{shortName(task.approver_email) || "—"}</td>
-      <td>{shortName(task.author_email) || "—"}</td>
       <td className="icons">
         <div className="tasks-row-icons">
           <Link

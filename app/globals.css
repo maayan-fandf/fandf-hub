@@ -3797,6 +3797,86 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-table .num { font-variant-numeric: tabular-nums; color: var(--muted); width: 4em; }
 .tasks-table .date-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tasks-table .priority-cell { text-align: center; white-space: nowrap; }
+
+/* Click-to-update status cell. Button carries the same background tone
+   as the row's lifecycle status, but with a subtle hover + caret that
+   makes it obvious it's interactive. Menu drops below the cell. */
+.tasks-status-cell { position: relative; display: inline-block; }
+.tasks-status-cell-btn {
+  display: inline-flex; align-items: center; gap: .3em;
+  padding: .2em .7em;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  font-size: .82em;
+  cursor: pointer;
+  transition: box-shadow .12s, transform .05s;
+}
+.tasks-status-cell-btn:hover:not(:disabled) {
+  box-shadow: 0 1px 4px rgba(15,23,42,.18);
+}
+.tasks-status-cell-btn:active:not(:disabled) { transform: translateY(1px); }
+.tasks-status-cell-btn:disabled { opacity: .6; cursor: wait; }
+.tasks-status-cell-caret {
+  font-size: .9em; opacity: .6;
+}
+
+/* Inherit the lifecycle-status color tones from the existing pill
+   classes so the cell reads the same in both display + edit modes. */
+.tasks-status-cell-btn.tasks-status-draft { background: #f3f4f6; color: #374151; }
+.tasks-status-cell-btn.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
+.tasks-status-cell-btn.tasks-status-awaiting_clarification { background: #fee2e2; color: #991b1b; }
+.tasks-status-cell-btn.tasks-status-in_progress { background: #dbeafe; color: #1e40af; }
+.tasks-status-cell-btn.tasks-status-done { background: #d1fae5; color: #065f46; }
+.tasks-status-cell-btn.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+
+.tasks-status-cell-menu {
+  position: absolute;
+  top: calc(100% + .3em);
+  inset-inline-end: 0;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15,23,42,.22);
+  padding: .3em;
+  min-width: 14em;
+  display: flex; flex-direction: column; gap: .15em;
+}
+.tasks-status-cell-item {
+  padding: .45em .7em;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  font: inherit;
+  font-size: .88em;
+  cursor: pointer;
+}
+.tasks-status-cell-item:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+.tasks-status-cell-item:disabled { opacity: .5; cursor: wait; }
+.tasks-status-cell-err {
+  position: absolute;
+  top: calc(100% + .3em);
+  inset-inline-end: 0;
+  max-width: 20em;
+  padding: .5em .7em;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: .8em;
+  z-index: 30;
+}
+html[data-theme="dark"] .tasks-status-cell-err {
+  background: #7f1d1d55;
+  color: #fca5a5;
+  border-color: #991b1b80;
+}
 .tasks-table .title-cell { min-width: 16em; }
 .tasks-title-link {
   color: var(--text); font-weight: 600; text-decoration: none;
