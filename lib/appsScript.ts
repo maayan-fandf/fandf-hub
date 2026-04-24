@@ -943,6 +943,15 @@ export type TasksCreateInput = {
    *  project or type a new one — the value is stored on the task row
    *  and auto-surfaces in the picker for future tasks on this project. */
   campaign?: string;
+  /** Existing Drive folder to point the task at. When provided the
+   *  server skips auto-creating a task folder and persists this ID as
+   *  `drive_folder_id` (with the folder's webViewLink as
+   *  `drive_folder_url`). Direct-SA write path only. */
+  drive_folder_id?: string;
+  /** Override for the auto-generated folder name used when a new
+   *  folder is created (i.e. when `drive_folder_id` is absent).
+   *  Ignored if `drive_folder_id` is set. Direct-SA write path only. */
+  drive_folder_name?: string;
 };
 
 export function tasksCreate(
@@ -973,6 +982,10 @@ export type TasksUpdatePatch = {
   requested_date?: string;
   sub_status?: string;
   campaign?: string;
+  /** Re-point the task at a different Drive folder. Server re-reads
+   *  the folder's webViewLink and updates `drive_folder_url` to match.
+   *  Direct-SA write path only. */
+  drive_folder_id?: string;
 };
 
 /** Distinct campaigns that have at least one task on the given project,

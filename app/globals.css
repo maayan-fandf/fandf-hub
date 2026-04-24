@@ -4560,6 +4560,177 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   padding-top: .8em;
   border-top: 1px dashed var(--border);
 }
+.reply-uploading {
+  color: var(--muted);
+  font-size: .82em;
+  margin-inline-start: .6em;
+}
+.task-comment-image-link {
+  display: inline-block;
+  margin: .3em 0;
+  max-width: 100%;
+}
+.task-comment-image {
+  display: block;
+  max-width: min(420px, 100%);
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft, #f5f5f5);
+  object-fit: contain;
+}
+.thread-reply-text a {
+  color: var(--accent, #2a66d9);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Drive folder picker ─────────────────────────────────────── */
+.drive-folder-picker {
+  margin: .6em 0 1em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .8em 1em;
+  background: var(--surface-soft, #fafafa);
+}
+.drive-folder-picker.is-compact {
+  padding: .6em .8em;
+}
+.drive-folder-picker.is-disabled {
+  opacity: .6;
+  pointer-events: none;
+}
+.drive-folder-head {
+  display: flex;
+  align-items: baseline;
+  gap: .8em;
+  margin-bottom: .5em;
+}
+.drive-folder-head strong { font-size: .95em; }
+.drive-folder-subtle { color: var(--muted); font-size: .82em; }
+.drive-folder-hint { color: var(--muted); font-size: .85em; padding: .3em 0; }
+.drive-folder-error { color: var(--danger, #c33); font-size: .85em; padding: .3em 0; }
+.drive-folder-link {
+  color: var(--accent, #2a66d9);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0 .4em;
+  cursor: pointer;
+  font: inherit;
+}
+.drive-folder-row {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  padding: .35em .4em;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.drive-folder-row:hover { background: var(--surface, #fff); }
+.drive-folder-row.is-selected {
+  background: var(--accent-soft, #e7f0ff);
+  outline: 1px solid var(--accent, #2a66d9);
+}
+.drive-folder-row input[type="radio"] { margin: 0; }
+.drive-folder-icon { font-size: 1.05em; }
+.drive-folder-name {
+  flex: 1;
+  text-align: start;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.drive-folder-new-name {
+  flex: 1;
+  font: inherit;
+  padding: .25em .5em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface, #fff);
+  min-width: 0;
+}
+.drive-folder-chevron {
+  width: 1.2em;
+  text-align: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+  font-size: .85em;
+}
+.drive-folder-chevron:disabled { visibility: hidden; cursor: default; }
+.drive-folder-ul { list-style: none; padding: 0; margin: 0; }
+.drive-folder-li { padding: 0; margin: 0; }
+.drive-folder-li[data-depth="1"] { padding-inline-start: 1.2em; }
+.drive-folder-li[data-depth="2"] { padding-inline-start: 2.4em; }
+.drive-folder-li[data-depth="3"] { padding-inline-start: 3.6em; }
+.drive-folder-li[data-depth="4"] { padding-inline-start: 4.8em; }
+.drive-folder-tree { margin-top: .4em; }
+.drive-folder-creating {
+  display: flex;
+  gap: .4em;
+  align-items: center;
+  padding: .3em .4em;
+}
+.drive-folder-creating input[type="text"] {
+  flex: 1;
+  font: inherit;
+  padding: .25em .5em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface, #fff);
+}
+.drive-folder-btn {
+  padding: .25em .7em;
+  border-radius: 4px;
+  border: 1px solid var(--accent, #2a66d9);
+  background: var(--accent, #2a66d9);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: .85em;
+}
+.drive-folder-btn-ghost {
+  padding: .25em .7em;
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+  font-size: .82em;
+}
+.drive-folder-btn-ghost:hover { color: var(--text); border-color: var(--text); }
+.drive-folder-empty {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  padding: .25em .4em;
+}
+.drive-folder-add { padding: .2em .4em .5em; }
+.drive-folder-sub { margin-inline-start: .4em; }
+.drive-folder-new .drive-folder-new-name:focus { outline: 2px solid var(--accent, #2a66d9); outline-offset: 1px; }
+
+.drive-folder-section {
+  margin: .8em 0 .4em;
+  padding: .6em .8em;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+.drive-folder-section-head {
+  display: flex;
+  align-items: center;
+  gap: .8em;
+}
+.drive-folder-section-head strong { flex: 0 0 auto; }
+.drive-folder-section-head a { font-size: .85em; }
 
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }

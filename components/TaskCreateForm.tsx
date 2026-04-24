@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson } from "@/lib/appsScript";
+import DriveFolderPicker, {
+  type FolderPickerValue,
+} from "./DriveFolderPicker";
 
 const DEPARTMENTS = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 const KINDS = [
@@ -74,6 +77,38 @@ export default function TaskCreateForm({
   const [approver, setApprover] = useState("");
   const [assignees, setAssignees] = useState("");
   const [campaign, setCampaign] = useState("");
+  const [title, setTitle] = useState("");
+  // Folder selection. Default is "new" with an auto-generated name;
+  // user can either accept it, edit the name, or click an existing
+  // folder in the tree to reuse it.
+  const suggestedFolderName =
+    title.trim().slice(0, 60) || "משימה חדשה";
+  const [folderSelection, setFolderSelection] = useState<FolderPickerValue>({
+    mode: "new",
+    name: "",
+  });
+  // Keep the "new" name tracking the title until the user types a
+  // custom folder name (or picks an existing folder). That way the
+  // first-time user gets a sensible name for free.
+  const [folderNameUserEdited, setFolderNameUserEdited] = useState(false);
+  useEffect(() => {
+    if (folderNameUserEdited) return;
+    setFolderSelection((cur) =>
+      cur.mode === "new"
+        ? { mode: "new", name: suggestedFolderName }
+        : cur,
+    );
+  }, [suggestedFolderName, folderNameUserEdited]);
+  function handleFolderChange(v: FolderPickerValue) {
+    if (
+      v.mode === "new" &&
+      v.name !== suggestedFolderName &&
+      v.name !== ""
+    ) {
+      setFolderNameUserEdited(true);
+    }
+    setFolderSelection(v);
+  }
   // Existing campaigns for the selected project — populates the
   // datalist autocomplete. Refetched whenever the project changes.
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
@@ -133,11 +168,11 @@ export default function TaskCreateForm({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       project: project,
       company: company, // falls back to Keys lookup server-side if empty
       brief: String(fd.get("brief") || ""),
-      title: String(fd.get("title") || ""),
+      title: title,
       description: String(fd.get("description") || ""),
       departments,
       kind: String(fd.get("kind") || ""),
@@ -148,6 +183,12 @@ export default function TaskCreateForm({
       requested_date: String(fd.get("requested_date") || ""),
       campaign: campaign.trim(),
     };
+    if (folderSelection.mode === "existing" && folderSelection.folderId) {
+      payload.drive_folder_id = folderSelection.folderId;
+    } else if (folderSelection.mode === "new") {
+      const name = folderSelection.name.trim();
+      if (name) payload.drive_folder_name = name;
+    }
 
     try {
       const res = await fetch("/api/worktasks/create", {
@@ -255,12 +296,24 @@ export default function TaskCreateForm({
         ))}
       </datalist>
 
+      <DriveFolderPicker
+        company={company}
+        project={project}
+        campaign={campaign}
+        defaultNewName={suggestedFolderName}
+        value={folderSelection}
+        onChange={handleFolderChange}
+        disabled={!project}
+      />
+
       <label>
         כותרת
         <input
           type="text"
           name="title"
           required
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
           placeholder="לדוגמה: Minisite_desktop — דף נחיתה לקמפיין כפר אז״ר"
         />
       </label>

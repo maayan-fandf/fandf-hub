@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
+import DriveFolderPicker, {
+  type FolderPickerValue,
+} from "./DriveFolderPicker";
 
 const DEPARTMENTS = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 const KINDS = [
@@ -54,6 +57,15 @@ export default function TaskEditPanel({
   );
   const [campaign, setCampaign] = useState(task.campaign || "");
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
+  // Folder picker is shown in its own section below; in edit-mode we
+  // only patch `drive_folder_id` if the user actually picks a different
+  // folder. Default selection reflects whatever the task points at.
+  const [folderSelection, setFolderSelection] = useState<FolderPickerValue>(
+    task.drive_folder_id
+      ? { mode: "existing", folderId: task.drive_folder_id }
+      : { mode: "new", name: task.title || task.id },
+  );
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/tasks/campaigns?project=${encodeURIComponent(task.project)}`)
@@ -87,7 +99,7 @@ export default function TaskEditPanel({
     const subStatus =
       subStatusSelect === "__custom__" ? subStatusCustom : subStatusSelect;
 
-    const patch = {
+    const patch: Record<string, unknown> = {
       title,
       description,
       brief,
@@ -101,6 +113,16 @@ export default function TaskEditPanel({
       sub_status: subStatus,
       campaign: campaign.trim(),
     };
+    // Only include drive_folder_id if the user actually picked a
+    // different existing folder — no-op otherwise. Re-pointing to "new"
+    // is deliberately not supported from the edit panel for now.
+    if (
+      folderSelection.mode === "existing" &&
+      folderSelection.folderId &&
+      folderSelection.folderId !== task.drive_folder_id
+    ) {
+      patch.drive_folder_id = folderSelection.folderId;
+    }
 
     try {
       const res = await fetch("/api/worktasks/update", {
@@ -189,6 +211,40 @@ export default function TaskEditPanel({
           <option key={c} value={c} />
         ))}
       </datalist>
+
+      <div className="drive-folder-section">
+        <div className="drive-folder-section-head">
+          <strong>תיקיית Drive</strong>
+          {task.drive_folder_url && (
+            <a
+              href={task.drive_folder_url}
+              target="_blank"
+              rel="noreferrer"
+              className="drive-folder-link"
+            >
+              פתח תיקייה נוכחית ↗
+            </a>
+          )}
+          <button
+            type="button"
+            className="drive-folder-btn-ghost"
+            onClick={() => setShowFolderPicker((v) => !v)}
+          >
+            {showFolderPicker ? "סגור" : "החלף תיקייה"}
+          </button>
+        </div>
+        {showFolderPicker && (
+          <DriveFolderPicker
+            compact
+            company={task.company || ""}
+            project={task.project}
+            campaign={campaign}
+            defaultNewName={task.title || task.id}
+            value={folderSelection}
+            onChange={setFolderSelection}
+          />
+        )}
+      </div>
 
       <label>
         כותרת

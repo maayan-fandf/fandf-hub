@@ -248,6 +248,9 @@ async function createTaskFolder(
     company: string;
     project: string;
     campaign?: string;
+    /** Optional override for the leaf folder name. Defaults to
+     *  `<task.id> — <title(0..60)>`, matching the legacy behavior. */
+    folderNameOverride?: string;
   },
 ): Promise<{ folderId: string; folderUrl: string } | null> {
   try {
@@ -287,9 +290,13 @@ async function createTaskFolder(
       );
     }
 
-    const leafName =
-      task.id +
-      (task.title ? " — " + task.title.slice(0, 60).replace(/[\\/]/g, "-") : "");
+    const overrideName = (task.folderNameOverride || "").trim();
+    const leafName = overrideName
+      ? overrideName.replace(/[\\/]/g, "-").slice(0, 120)
+      : task.id +
+        (task.title
+          ? " — " + task.title.slice(0, 60).replace(/[\\/]/g, "-")
+          : "");
     const created = await drive.files.create({
       requestBody: {
         name: leafName,
@@ -585,10 +592,39 @@ export async function tasksCreateDirect(
   };
 
   // Side effects — run in parallel where safe.
-  const folder = await createTaskFolder(task);
-  if (folder) {
-    task.drive_folder_id = folder.folderId;
-    task.drive_folder_url = folder.folderUrl;
+  //
+  // Drive folder:
+  //   - If the caller pinned `drive_folder_id` (folder picker "existing"
+  //     mode), reuse it — just fetch its webViewLink so we can persist
+  //     a stable URL alongside the ID.
+  //   - Otherwise create a new folder. `drive_folder_name` overrides the
+  //     auto-generated `<task-id> — <title>` leaf name.
+  const pinnedFolderId = String(payload.drive_folder_id || "").trim();
+  if (pinnedFolderId) {
+    try {
+      const { getFolderRef } = await import("@/lib/driveFolders");
+      const ref = await getFolderRef(subjectEmail, pinnedFolderId);
+      task.drive_folder_id = ref.id;
+      task.drive_folder_url = ref.viewUrl;
+    } catch (e) {
+      console.log(
+        "[tasksWriteDirect] Pinned folder lookup failed, continuing with empty Drive fields:",
+        e,
+      );
+    }
+  } else {
+    const folder = await createTaskFolder({
+      id: task.id,
+      title: task.title,
+      company: task.company,
+      project: task.project,
+      campaign: task.campaign,
+      folderNameOverride: String(payload.drive_folder_name || "").trim(),
+    });
+    if (folder) {
+      task.drive_folder_id = folder.folderId;
+      task.drive_folder_url = folder.folderUrl;
+    }
   }
   const [cal, gt] = await Promise.all([
     createCalendarEvents({
@@ -832,6 +868,29 @@ export async function tasksUpdateDirect(
     })();
     if (newDepts.join(",") !== (currentDepts as string[]).join(",")) {
       changes.departments = JSON.stringify(newDepts);
+    }
+  }
+
+  // Re-point Drive folder. Lookup the new folder's webViewLink so the
+  // stored URL stays in sync with the ID. A lookup failure doesn't block
+  // the rest of the patch — we just leave the URL blank and log.
+  if ("drive_folder_id" in patch) {
+    const nextId = String(patch.drive_folder_id || "").trim();
+    const currentId = String(cell("drive_folder_id") ?? "").trim();
+    if (nextId && nextId !== currentId) {
+      try {
+        const { getFolderRef } = await import("@/lib/driveFolders");
+        const ref = await getFolderRef(subjectEmail, nextId);
+        changes.drive_folder_id = ref.id;
+        changes.drive_folder_url = ref.viewUrl;
+      } catch (e) {
+        console.log(
+          "[tasksWriteDirect] Re-point folder lookup failed:",
+          e,
+        );
+        changes.drive_folder_id = nextId;
+        changes.drive_folder_url = "";
+      }
     }
   }
 
