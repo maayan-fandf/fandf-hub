@@ -3752,9 +3752,10 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   background: var(--surface-soft);
   margin: 0;
 }
+.tasks-bucket-awaiting_handling .tasks-bucket-head { border-inline-start-color: #64748b; }
 .tasks-bucket-in_progress .tasks-bucket-head { border-inline-start-color: #2563eb; }
-.tasks-bucket-awaiting_approval .tasks-bucket-head { border-inline-start-color: #f59e0b; }
 .tasks-bucket-awaiting_clarification .tasks-bucket-head { border-inline-start-color: #dc2626; }
+.tasks-bucket-awaiting_approval .tasks-bucket-head { border-inline-start-color: #f59e0b; }
 .tasks-bucket-done .tasks-bucket-head { border-inline-start-color: #10b981; }
 .tasks-bucket-count {
   background: rgba(0,0,0,.08);
@@ -3837,9 +3838,10 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 /* Inherit the lifecycle-status color tones from the existing pill
    classes so the cell reads the same in both display + edit modes. */
 .tasks-status-cell-btn.tasks-status-draft { background: #f3f4f6; color: #374151; }
-.tasks-status-cell-btn.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
-.tasks-status-cell-btn.tasks-status-awaiting_clarification { background: #fee2e2; color: #991b1b; }
+.tasks-status-cell-btn.tasks-status-awaiting_handling { background: #e2e8f0; color: #334155; }
 .tasks-status-cell-btn.tasks-status-in_progress { background: #dbeafe; color: #1e40af; }
+.tasks-status-cell-btn.tasks-status-awaiting_clarification { background: #fee2e2; color: #991b1b; }
+.tasks-status-cell-btn.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-cell-btn.tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cell-btn.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
 
@@ -4253,9 +4255,10 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   font-size: .82em;
 }
 .tasks-status-draft { background: #f3f4f6; color: #374151; }
-.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
-.tasks-status-awaiting_clarification { background: #fee2e2; color: #991b1b; }
+.tasks-status-awaiting_handling { background: #e2e8f0; color: #334155; }
 .tasks-status-in_progress { background: #dbeafe; color: #1e40af; }
+.tasks-status-awaiting_clarification { background: #fee2e2; color: #991b1b; }
+.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
 

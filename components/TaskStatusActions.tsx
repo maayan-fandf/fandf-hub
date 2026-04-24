@@ -9,23 +9,27 @@ import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 // server will reject; the client just won't surface the button.
 const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; tone: string }[]> = {
   draft: [
-    { to: "awaiting_approval", label: "שלח לאישור", tone: "primary" },
+    { to: "awaiting_handling", label: "שלח למבצע", tone: "primary" },
     { to: "cancelled", label: "בטל", tone: "ghost" },
   ],
-  awaiting_approval: [
-    { to: "in_progress", label: "✓ אשר — העבר לעבודה", tone: "primary" },
-    { to: "awaiting_clarification", label: "? בקש בירור", tone: "warn" },
-    { to: "cancelled", label: "דחה", tone: "ghost" },
-  ],
-  awaiting_clarification: [
-    { to: "in_progress", label: "✓ סיום בירור — עבור לעבודה", tone: "primary" },
-    { to: "awaiting_approval", label: "→ חזרה לאישור", tone: "ghost" },
+  awaiting_handling: [
+    { to: "in_progress", label: "✓ התחל לעבוד", tone: "primary" },
     { to: "cancelled", label: "בטל", tone: "ghost" },
   ],
   in_progress: [
-    { to: "done", label: "✓ סיים — בוצע", tone: "primary" },
+    { to: "awaiting_approval", label: "✓ סיימתי — שלח לאישור", tone: "primary" },
     { to: "awaiting_clarification", label: "? צריך בירור", tone: "warn" },
     { to: "cancelled", label: "בטל", tone: "ghost" },
+  ],
+  awaiting_clarification: [
+    { to: "in_progress", label: "✓ סיום בירור — חזור לעבודה", tone: "primary" },
+    { to: "awaiting_handling", label: "→ חזרה לטיפול", tone: "ghost" },
+    { to: "cancelled", label: "בטל", tone: "ghost" },
+  ],
+  awaiting_approval: [
+    { to: "done", label: "✓ אשר — בוצע", tone: "primary" },
+    { to: "in_progress", label: "↺ החזר לעבודה", tone: "warn" },
+    { to: "cancelled", label: "דחה", tone: "ghost" },
   ],
   done: [
     { to: "in_progress", label: "פתח מחדש", tone: "ghost" },

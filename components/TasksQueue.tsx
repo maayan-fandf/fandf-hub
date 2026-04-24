@@ -8,13 +8,16 @@ import {
   TaskAssigneesCell,
 } from "@/components/TaskInlineEditors";
 
-// Four canonical lifecycle buckets, ordered the way the team reads them.
-// Terminal states (`draft` / `cancelled`) surface in the "other" fold
-// instead so open work stays visually dominant.
+// Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
+// left on screen) the way work actually flows:
+//   ממתין לטיפול → בעבודה → ממתין לאישור → בוצע, with ממתין לבירור
+// parked alongside as the blocked-for-info bucket.
+// Terminal states (`draft` / `cancelled`) surface in the "other" fold.
 const STATUS_BUCKETS: { key: WorkTaskStatus; label: string; tone: string }[] = [
+  { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling" },
   { key: "in_progress", label: "בעבודה", tone: "in_progress" },
-  { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
   { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
+  { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
   { key: "done", label: "בוצע", tone: "done" },
 ];
 

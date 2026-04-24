@@ -743,9 +743,10 @@ export function unsnoozeMorningSignal(
 
 export type WorkTaskStatus =
   | "draft"
-  | "awaiting_approval"
+  | "awaiting_handling"
   | "in_progress"
   | "awaiting_clarification"
+  | "awaiting_approval"
   | "done"
   | "cancelled";
 

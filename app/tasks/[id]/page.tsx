@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "טיוטה",
-  awaiting_approval: "ממתין לאישור",
+  awaiting_handling: "ממתין לטיפול",
   in_progress: "בעבודה",
   awaiting_clarification: "ממתין לבירור",
+  awaiting_approval: "ממתין לאישור",
   done: "בוצע",
   cancelled: "בוטל",
 };

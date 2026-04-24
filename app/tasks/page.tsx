@@ -202,9 +202,10 @@ function TasksFilterBar({
 }) {
   const statuses = [
     { val: "", label: "כל הסטטוסים" },
-    { val: "awaiting_approval", label: "ממתין לאישור" },
-    { val: "awaiting_clarification", label: "ממתין לבירור" },
+    { val: "awaiting_handling", label: "ממתין לטיפול" },
     { val: "in_progress", label: "בעבודה" },
+    { val: "awaiting_clarification", label: "ממתין לבירור" },
+    { val: "awaiting_approval", label: "ממתין לאישור" },
     { val: "done", label: "בוצע" },
     { val: "cancelled", label: "בוטל" },
   ];

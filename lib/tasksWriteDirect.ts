@@ -44,26 +44,24 @@ function envOrThrow(name: string): string {
 
 const TASKS_STATUSES: WorkTaskStatus[] = [
   "draft",
-  "awaiting_approval",
+  "awaiting_handling",
   "in_progress",
   "awaiting_clarification",
+  "awaiting_approval",
   "done",
   "cancelled",
 ];
 
+// Mirror of Apps Script TASKS_ALLOWED_TRANSITIONS. Lifecycle flow:
+//   draft → awaiting_handling → in_progress → awaiting_approval → done
+//                                    ⇄
+//                             awaiting_clarification
 const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = {
-  draft: ["awaiting_approval", "cancelled"],
-  awaiting_approval: [
-    "in_progress",
-    "awaiting_clarification",
-    "cancelled",
-  ],
-  awaiting_clarification: [
-    "in_progress",
-    "awaiting_approval",
-    "cancelled",
-  ],
-  in_progress: ["done", "awaiting_clarification", "cancelled"],
+  draft: ["awaiting_handling", "cancelled"],
+  awaiting_handling: ["in_progress", "cancelled"],
+  in_progress: ["awaiting_approval", "awaiting_clarification", "cancelled"],
+  awaiting_clarification: ["in_progress", "awaiting_handling", "cancelled"],
+  awaiting_approval: ["done", "in_progress", "cancelled"],
   done: ["in_progress"],
   cancelled: [],
 };
@@ -356,36 +354,25 @@ async function createGoogleTasks(
   return out;
 }
 
-/* ── Gmail approver email ──────────────────────────────────────────── */
+/* ── Gmail notifications ───────────────────────────────────────────── */
 
-async function emailApprover(
-  task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number },
+/**
+ * Shared Gmail send. Impersonates `authorEmail` so the "From" is a
+ * real person on the team (not the service account). UTF-8 subject
+ * properly base64-encoded so Hebrew lands clean.
+ */
+async function sendMimeMail(
   authorEmail: string,
-  approverEmail: string,
+  toEmail: string,
+  subject: string,
+  plainBody: string,
 ): Promise<void> {
-  if (!approverEmail) return;
-  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
-  const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
-  const subject = `📋 משימה חדשה ממתינה לאישורך — ${task.project} · ${task.title}`;
-  const lines = [
-    `${authorEmail.split("@")[0]} יצר/ה משימה חדשה ומחכה לאישורך.`,
-    "",
-    `פרויקט: ${task.project}`,
-    `כותרת: ${task.title}`,
-    task.description ? `\n${task.description}` : "",
-    "",
-    task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
-    task.priority ? `עדיפות: ${task.priority}` : "",
-    "",
-    link ? `לאישור / דחייה: ${link}` : "",
-  ].filter(Boolean);
-  const plainBody = lines.join("\n");
   try {
     const gmail = gmailClient(authorEmail);
     // RFC 2822 MIME message. Subject UTF-8-encoded so Hebrew lands clean.
     const mime = [
       `From: ${authorEmail}`,
-      `To: ${approverEmail}`,
+      `To: ${toEmail}`,
       `Subject: =?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`,
       "MIME-Version: 1.0",
       'Content-Type: text/plain; charset="UTF-8"',
@@ -400,8 +387,69 @@ async function emailApprover(
       .replace(/=+$/, "");
     await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
   } catch (e) {
-    console.log("[tasksWriteDirect] Approver email failed:", e);
+    console.log("[tasksWriteDirect] email send failed:", e);
   }
+}
+
+/**
+ * Ping every assignee on create — "you have a new task."
+ */
+async function emailAssignees(
+  task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number; drive_folder_url: string; assignees: string[] },
+  authorEmail: string,
+): Promise<void> {
+  if (!task.assignees.length) return;
+  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
+  const subject = `📋 משימה חדשה עבורך — ${task.project} · ${task.title}`;
+  const plainBody = [
+    `${authorEmail.split("@")[0]} שיבץ/ה אותך למשימה חדשה.`,
+    "",
+    `פרויקט: ${task.project}`,
+    `כותרת: ${task.title}`,
+    task.description ? `\n${task.description}` : "",
+    "",
+    task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
+    task.priority ? `עדיפות: ${task.priority}` : "",
+    "",
+    link ? `פרטי המשימה: ${link}` : "",
+    task.drive_folder_url ? `תיקיית קבצים: ${task.drive_folder_url}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  await Promise.all(
+    task.assignees.map((to) => sendMimeMail(authorEmail, to, subject, plainBody)),
+  );
+}
+
+/**
+ * Ping the approver when the task transitions INTO awaiting_approval —
+ * "please review this finished work."
+ */
+async function emailApprover(
+  task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number },
+  actorEmail: string,
+  approverEmail: string,
+): Promise<void> {
+  if (!approverEmail) return;
+  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
+  const subject = `📋 משימה ממתינה לאישורך — ${task.project} · ${task.title}`;
+  const plainBody = [
+    `${actorEmail.split("@")[0]} סיים/ה את העבודה ומחכה לאישורך.`,
+    "",
+    `פרויקט: ${task.project}`,
+    `כותרת: ${task.title}`,
+    task.description ? `\n${task.description}` : "",
+    "",
+    task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
+    task.priority ? `עדיפות: ${task.priority}` : "",
+    "",
+    link ? `לסקירה + אישור / החזרה לעבודה: ${link}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  await sendMimeMail(actorEmail, approverEmail, subject, plainBody);
 }
 
 /* ── Chat webhook (per-project card, unchanged behavior) ──────────── */
@@ -456,9 +504,12 @@ export async function tasksCreateDirect(
   const approver = String(payload.approver_email || "").toLowerCase().trim();
   const projectManager = String(payload.project_manager_email || "").toLowerCase().trim();
   const company = payload.company?.trim() || (await resolveCompany(subjectEmail, project));
+  // Default entry state is awaiting_handling — the assignee has a new
+  // task to do. awaiting_approval is reserved for the end-of-cycle
+  // review step.
   const status = (TASKS_STATUSES as string[]).includes(String(payload.status || ""))
     ? (payload.status as WorkTaskStatus)
-    : ("awaiting_approval" as WorkTaskStatus);
+    : ("awaiting_handling" as WorkTaskStatus);
 
   const task: WorkTask = {
     id,
@@ -576,9 +627,11 @@ export async function tasksCreateDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
-  // After-write notifications (non-fatal).
+  // After-write notifications (non-fatal). On create we email the
+  // assignees ("you have a new task") — the approver gets a separate
+  // email later when the status transitions to awaiting_approval.
   await Promise.all([
-    emailApprover(
+    emailAssignees(
       {
         id: task.id,
         project: task.project,
@@ -586,9 +639,10 @@ export async function tasksCreateDirect(
         description: task.description,
         requested_date: task.requested_date,
         priority: task.priority,
+        drive_folder_url: task.drive_folder_url,
+        assignees: task.assignees,
       },
       task.author_email,
-      approver,
     ),
     postChatWebhook(subjectEmail, project, "create", {
       authorName: task.author_email.split("@")[0],
@@ -772,7 +826,9 @@ export async function tasksUpdateDirect(
         ? "resolve"
         : changes.status === "in_progress"
           ? "create"
-          : null;
+          : changes.status === "awaiting_approval"
+            ? "reply"
+            : null;
     if (chatKind) {
       await postChatWebhook(subjectEmail, project, chatKind, {
         authorName: subjectEmail.split("@")[0],
@@ -782,6 +838,25 @@ export async function tasksUpdateDirect(
           : "",
       });
     }
+  }
+
+  // Email the approver when work transitions into awaiting_approval —
+  // that's when they need to act. Build a lean task shape from the
+  // fresh row so the email reflects any simultaneous field patches.
+  if (changes.status === "awaiting_approval") {
+    const fresh = rowToTask(freshRow, idx);
+    await emailApprover(
+      {
+        id: fresh.id,
+        project: fresh.project,
+        title: fresh.title,
+        description: fresh.description,
+        requested_date: fresh.requested_date,
+        priority: fresh.priority,
+      },
+      subjectEmail,
+      fresh.approver_email,
+    );
   }
 
   return { ok: true, task: rowToTask(freshRow, idx), changed: true };

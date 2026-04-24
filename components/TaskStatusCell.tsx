@@ -9,25 +9,34 @@ import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 // dropdown only offers transitions that the server will accept. Any
 // transition that lands out-of-sync with the server is rejected
 // server-side and we surface the error inline.
+//
+// F&F lifecycle (2026-04-24):
+//   draft → awaiting_handling → in_progress → awaiting_approval → done
+//                                    ⇄
+//                             awaiting_clarification
 const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> = {
   draft: [
-    { to: "awaiting_approval", label: "שלח לאישור" },
+    { to: "awaiting_handling", label: "שלח למבצע" },
     { to: "cancelled", label: "בטל" },
   ],
-  awaiting_approval: [
-    { to: "in_progress", label: "✓ אשר — העבר לעבודה" },
-    { to: "awaiting_clarification", label: "? בקש בירור" },
-    { to: "cancelled", label: "דחה" },
-  ],
-  awaiting_clarification: [
-    { to: "in_progress", label: "✓ סיום בירור — עבור לעבודה" },
-    { to: "awaiting_approval", label: "→ חזרה לאישור" },
+  awaiting_handling: [
+    { to: "in_progress", label: "✓ התחל לעבוד" },
     { to: "cancelled", label: "בטל" },
   ],
   in_progress: [
-    { to: "done", label: "✓ סיים — בוצע" },
+    { to: "awaiting_approval", label: "✓ סיימתי — שלח לאישור" },
     { to: "awaiting_clarification", label: "? צריך בירור" },
     { to: "cancelled", label: "בטל" },
+  ],
+  awaiting_clarification: [
+    { to: "in_progress", label: "✓ סיום בירור — חזור לעבודה" },
+    { to: "awaiting_handling", label: "→ חזרה לטיפול" },
+    { to: "cancelled", label: "בטל" },
+  ],
+  awaiting_approval: [
+    { to: "done", label: "✓ אשר — בוצע" },
+    { to: "in_progress", label: "↺ החזר לעבודה" },
+    { to: "cancelled", label: "דחה" },
   ],
   done: [
     { to: "in_progress", label: "פתח מחדש" },
@@ -37,9 +46,10 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[
 
 const STATUS_LABELS: Record<WorkTaskStatus, string> = {
   draft: "טיוטה",
-  awaiting_approval: "ממתין לאישור",
+  awaiting_handling: "ממתין לטיפול",
   in_progress: "בעבודה",
   awaiting_clarification: "ממתין לבירור",
+  awaiting_approval: "ממתין לאישור",
   done: "בוצע",
   cancelled: "בוטל",
 };
