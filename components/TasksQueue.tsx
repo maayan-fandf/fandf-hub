@@ -13,12 +13,25 @@ import {
 //   ממתין לטיפול → בעבודה → ממתין לאישור → בוצע, with ממתין לבירור
 // parked alongside as the blocked-for-info bucket.
 // Terminal states (`draft` / `cancelled`) surface in the "other" fold.
-const STATUS_BUCKETS: { key: WorkTaskStatus; label: string; tone: string }[] = [
-  { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling" },
-  { key: "in_progress", label: "בעבודה", tone: "in_progress" },
-  { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
-  { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
-  { key: "done", label: "בוצע", tone: "done" },
+//
+// `groupBy` picks the sub-grouping axis inside each bucket. Chosen per
+// state by what's actionable in that state — e.g. in `ממתין לאישור`,
+// the approver's name is the information the viewer cares about (who's
+// blocking whom). In `ממתין לטיפול` / `בעבודה`, the assignee is what
+// matters (who owns it). `company` keeps the portfolio's company →
+// project grouping used elsewhere on the queue page.
+type GroupAxis = "assignee" | "approver" | "company" | "none";
+const STATUS_BUCKETS: {
+  key: WorkTaskStatus;
+  label: string;
+  tone: string;
+  groupBy: GroupAxis;
+}[] = [
+  { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling", groupBy: "assignee" },
+  { key: "in_progress", label: "בעבודה", tone: "in_progress", groupBy: "assignee" },
+  { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification", groupBy: "none" },
+  { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval", groupBy: "approver" },
+  { key: "done", label: "בוצע", tone: "done", groupBy: "company" },
 ];
 
 type Props = {
@@ -101,6 +114,12 @@ export default function TasksQueue({
       {STATUS_BUCKETS.map((b) => {
         const list = byStatus[b.key] || [];
         if (!list.length) return null;
+        // Per-bucket axis picks the sub-header the rows cluster under.
+        // On project pages (groupByCompany=false) a `company` axis still
+        // resolves — it just collapses to a single project sub-header —
+        // so we don't need a separate branch for that mode.
+        const axis: GroupAxis =
+          b.groupBy === "company" && !groupByCompany ? "none" : b.groupBy;
         return (
           <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
             <h2 className="tasks-bucket-head">
@@ -130,28 +149,12 @@ export default function TasksQueue({
                   </tr>
                 </thead>
                 <tbody>
-                  {groupByCompany ? (
-                    groupByCompanyProject(list).map(([company, projectGroups]) => (
-                      <CompanyGroup
-                        key={company || "(no-company)"}
-                        company={company}
-                        projectGroups={projectGroups}
-                        people={people}
-                      />
-                    ))
-                  ) : (
-                    list
-                      .slice()
-                      .sort((a, b) => b.created_at.localeCompare(a.created_at))
-                      .map((t) => (
-                        <TaskRow
-                          key={t.id}
-                          task={t}
-                          compact={compact}
-                          people={people}
-                        />
-                      ))
-                  )}
+                  <BucketBody
+                    tasks={list}
+                    axis={axis}
+                    compact={compact}
+                    people={people}
+                  />
                 </tbody>
               </table>
             </div>
@@ -208,6 +211,134 @@ export default function TasksQueue({
 }
 
 /* ── Grouping helpers ────────────────────────────────────────────── */
+
+/**
+ * Renders the body of a single status bucket, sub-grouped on the axis
+ * chosen per bucket (assignee / approver / company / none). The sub-
+ * header is Data-Plus-style: a single row across the whole table width
+ * labelling what the grouping is (e.g. "באישור של: ספיר יצחקוב").
+ */
+function BucketBody({
+  tasks,
+  axis,
+  compact,
+  people,
+}: {
+  tasks: WorkTask[];
+  axis: GroupAxis;
+  compact: boolean;
+  people: TasksPerson[];
+}) {
+  const totalCols = 12;
+
+  if (axis === "none") {
+    const sorted = tasks
+      .slice()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return (
+      <>
+        {sorted.map((t) => (
+          <TaskRow key={t.id} task={t} compact={compact} people={people} />
+        ))}
+      </>
+    );
+  }
+
+  if (axis === "company") {
+    return (
+      <>
+        {groupByCompanyProject(tasks).map(([company, projectGroups]) => (
+          <CompanyGroup
+            key={company || "(no-company)"}
+            company={company}
+            projectGroups={projectGroups}
+            people={people}
+          />
+        ))}
+      </>
+    );
+  }
+
+  // Person-axis sub-grouping (assignee or approver).
+  const groups = groupByPerson(tasks, axis);
+  return (
+    <>
+      {groups.map(([personEmail, rows]) => (
+        <PersonGroup
+          key={personEmail || "(none)"}
+          label={axis === "approver" ? "באישור של" : "אצל"}
+          personEmail={personEmail}
+          rows={rows}
+          totalCols={totalCols}
+          compact={compact}
+          people={people}
+        />
+      ))}
+    </>
+  );
+}
+
+function groupByPerson(
+  tasks: WorkTask[],
+  axis: "assignee" | "approver",
+): [string, WorkTask[]][] {
+  const byPerson = new Map<string, WorkTask[]>();
+  for (const t of tasks) {
+    const key =
+      axis === "approver"
+        ? (t.approver_email || "").toLowerCase().trim()
+        : ((t.assignees || [])[0] || "").toLowerCase().trim();
+    if (!byPerson.has(key)) byPerson.set(key, []);
+    byPerson.get(key)!.push(t);
+  }
+  // Unassigned sinks to the bottom so real people lead.
+  const keys = Array.from(byPerson.keys()).sort((a, b) => {
+    if (!a && b) return 1;
+    if (a && !b) return -1;
+    return a.localeCompare(b);
+  });
+  return keys.map((k) => [
+    k,
+    byPerson
+      .get(k)!
+      .slice()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+  ]);
+}
+
+function PersonGroup({
+  label,
+  personEmail,
+  rows,
+  totalCols,
+  compact,
+  people,
+}: {
+  label: string;
+  personEmail: string;
+  rows: WorkTask[];
+  totalCols: number;
+  compact: boolean;
+  people: TasksPerson[];
+}) {
+  const displayName = personEmail
+    ? shortName(personEmail)
+    : "(לא משויך)";
+  return (
+    <>
+      <tr className="tasks-person-header">
+        <td colSpan={totalCols}>
+          <span className="tasks-person-header-label">{label}:</span>{" "}
+          <span className="tasks-person-header-name">{displayName}</span>
+          <span className="tasks-person-header-count">{rows.length}</span>
+        </td>
+      </tr>
+      {rows.map((t) => (
+        <TaskRow key={t.id} task={t} compact={compact} people={people} />
+      ))}
+    </>
+  );
+}
 
 function groupByCompanyProject(
   tasks: WorkTask[],

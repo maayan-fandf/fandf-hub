@@ -75,10 +75,23 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   const [coords, setCoords] = useState<{ top: number; right: number } | null>(
     null,
   );
-  const [busy, setBusy] = useState<WorkTaskStatus | null>(null);
+  // `pendingTo` is the OPTIMISTIC target state — rendered immediately on
+  // click, before the server roundtrip finishes. Cleared when the server
+  // confirms (task.status === pendingTo after router.refresh) or on error.
+  // The direct-SA write path takes 2–10 s because it fans out to Drive /
+  // Calendar / Gmail / Chat; without this instant feedback the UI looks
+  // frozen and users reported "nothing happens".
+  const [pendingTo, setPendingTo] = useState<WorkTaskStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Clear the pending chip once the refreshed task data shows the new
+  // status. `task` comes from the server component above us — when
+  // router.refresh() completes, we re-render with the fresh task prop.
+  useEffect(() => {
+    if (pendingTo && task.status === pendingTo) setPendingTo(null);
+  }, [task.status, pendingTo]);
 
   // Close on outside click (anywhere outside BOTH the button and the
   // portaled menu) / Escape / scroll. We recompute position on scroll
@@ -129,7 +142,11 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
     task.sub_status || STATUS_LABELS[task.status] || task.status;
 
   async function transition(to: WorkTaskStatus, label: string) {
-    setBusy(to);
+    // INSTANT feedback: close menu + flip the pill to the target state
+    // before the fetch starts. Server fanout is slow; we'll reconcile
+    // when refresh() completes.
+    setOpen(false);
+    setPendingTo(to);
     setErr(null);
     try {
       const res = await fetch("/api/worktasks/update", {
@@ -146,32 +163,48 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
       if (!res.ok || !data.ok) {
         throw new Error("error" in data ? data.error : "Update failed");
       }
-      setOpen(false);
       router.refresh();
     } catch (e) {
+      setPendingTo(null);
       setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
     }
   }
+
+  // Visible state: during the write we render the PENDING target, so
+  // the cell reflects the user's intent the instant they click.
+  const effectiveStatus = pendingTo ?? task.status;
+  const effectiveLabel = pendingTo
+    ? STATUS_LABELS[pendingTo]
+    : displayLabel;
 
   return (
     <>
       <button
         ref={btnRef}
         type="button"
-        className={`tasks-status-cell-btn tasks-status-${task.status}`}
-        onClick={() => setOpen((o) => !o)}
-        disabled={busy !== null}
-        title="לחץ לשינוי סטטוס"
+        className={`tasks-status-cell-btn tasks-status-${effectiveStatus}${pendingTo ? " is-pending" : ""}`}
+        onClick={() => !pendingTo && setOpen((o) => !o)}
+        disabled={pendingTo !== null}
+        title={pendingTo ? "מעדכן…" : "לחץ לשינוי סטטוס"}
       >
-        {displayLabel}
-        {options.length > 0 && (
-          <span className="tasks-status-cell-caret" aria-hidden>
-            ▾
+        {effectiveLabel}
+        {pendingTo ? (
+          <span className="tasks-status-cell-spinner" aria-hidden>
+            ⏳
           </span>
+        ) : (
+          options.length > 0 && (
+            <span className="tasks-status-cell-caret" aria-hidden>
+              ▾
+            </span>
+          )
         )}
       </button>
+      {err && !pendingTo && (
+        <div className="tasks-status-cell-err-inline" role="alert">
+          {err}
+        </div>
+      )}
       {open &&
         options.length > 0 &&
         coords &&
@@ -193,13 +226,11 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
                 type="button"
                 role="menuitem"
                 className={`tasks-status-cell-item tasks-status-${opt.to}`}
-                disabled={busy !== null}
                 onClick={() => transition(opt.to, opt.label)}
               >
-                {busy === opt.to ? "…" : opt.label}
+                {opt.label}
               </button>
             ))}
-            {err && <div className="tasks-status-cell-err">{err}</div>}
           </div>,
           document.body,
         )}

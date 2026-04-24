@@ -3834,6 +3834,27 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-caret {
   font-size: .9em; opacity: .6;
 }
+.tasks-status-cell-spinner {
+  font-size: .85em;
+  animation: tasks-status-cell-spin 1.2s linear infinite;
+  display: inline-block;
+}
+@keyframes tasks-status-cell-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.tasks-status-cell-btn.is-pending {
+  opacity: .85;
+  cursor: wait;
+}
+.tasks-status-cell-err-inline {
+  color: #c0392b;
+  font-size: .78em;
+  margin-top: .25em;
+  padding: .2em .4em;
+  background: rgba(192, 57, 43, .08);
+  border-radius: 4px;
+}
 
 /* Inherit the lifecycle-status color tones from the existing pill
    classes so the cell reads the same in both display + edit modes. */
@@ -4025,6 +4046,41 @@ html[data-theme="dark"] .inline-edit-err {
   font-variant-numeric: tabular-nums;
   font-size: .82em;
 }
+/* Person sub-header — used inside buckets that group by assignee
+   (ממתין לטיפול / בעבודה) or approver (ממתין לאישור). Visual weight
+   sits between company-header and project-header so the three levels
+   (bucket > person > row) stay readable together. */
+.tasks-person-header td {
+  padding: .55em .85em .3em;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  font-size: .82em;
+}
+.tasks-table tbody > tr.tasks-person-header:first-child td { border-top: none; }
+.tasks-person-header-label {
+  color: var(--muted);
+  font-size: .76em;
+  font-weight: 600;
+  letter-spacing: .02em;
+  margin-inline-end: .35em;
+}
+.tasks-person-header-name {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 1em;
+}
+.tasks-person-header-count {
+  display: inline-block;
+  margin-inline-start: .6em;
+  padding: 0 .55em;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: .82em;
+}
+
 /* Task rows within a project group: gentle inset + de-emphasize the
    per-row project cell since the group header already shows it. */
 .tasks-project-cell-nested {
