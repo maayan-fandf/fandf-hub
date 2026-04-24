@@ -1,12 +1,10 @@
 import Link from "next/link";
 import {
-  getProjectTasks,
   getProjectComments,
   getMyMentions,
   getMyProjects,
   getMorningFeed,
   tasksList,
-  type TaskItem,
   type CommentItem,
   type MentionItem,
   type MorningProject,
@@ -49,13 +47,11 @@ export default async function ProjectOverviewPage({
   const scopedPerson = await getScopedPerson(sp.person);
 
   // Fire API calls in parallel. Each validates access independently, so
-  // an unauthorized caller gets consistent errors. workTasksRes is the
-  // new work-management Tasks feed (grouped by status bucket below);
-  // tasksRes is the legacy comment-mention Google-Tasks feed — kept for
-  // now so the "משימות מתיוגים" section stays populated.
-  const [tasksRes, commentsRes, mentionsRes, projectsRes, alertsRes, workTasksRes] =
+  // an unauthorized caller gets consistent errors. Legacy getProjectTasks
+  // (comment-mention Google-Tasks feed) was dropped — the work-management
+  // tasks system owns the "משימות" section now.
+  const [commentsRes, mentionsRes, projectsRes, alertsRes, workTasksRes] =
     await Promise.allSettled([
-      getProjectTasks(projectName),
       getProjectComments(projectName, 15),
       getMyMentions(),
       getMyProjects(),
@@ -63,7 +59,6 @@ export default async function ProjectOverviewPage({
       tasksList({ project: projectName }),
     ]);
 
-  const tasksData = tasksRes.status === "fulfilled" ? tasksRes.value : null;
   const commentsData =
     commentsRes.status === "fulfilled" ? commentsRes.value : null;
   const mentionsData =
@@ -132,21 +127,19 @@ export default async function ProjectOverviewPage({
   // still works from their browser.
   const dashboardOpenUrl = isInternalUser ? dashboardFilteredUrl : proxyEmbedUrl;
 
-  // If the tasks call failed, it's likely an access-denied — show the first error.
+  // If a core call failed, it's likely an access-denied — show the first error.
   const firstError =
-    tasksRes.status === "rejected"
-      ? extractError(tasksRes.reason)
-      : commentsRes.status === "rejected"
-        ? extractError(commentsRes.reason)
+    commentsRes.status === "rejected"
+      ? extractError(commentsRes.reason)
+      : workTasksRes.status === "rejected"
+        ? extractError(workTasksRes.reason)
         : null;
 
-  const tasks = tasksData?.tasks ?? [];
   const comments = commentsData?.comments ?? [];
   const myMentionsOnProject =
     mentionsData?.mentions.filter((m) => m.project === projectName) ?? [];
   const workTasks = workTasksData?.tasks ?? [];
 
-  const openTasks = tasks.filter((t) => !t.resolved).length;
   // Open work-tasks: anything not in a terminal state. Matches the queue's
   // default (done / cancelled fall out; draft, awaiting_approval,
   // awaiting_clarification, in_progress all count).
@@ -156,17 +149,15 @@ export default async function ProjectOverviewPage({
   const totalComments = commentsData?.total ?? 0;
   const openMentions = myMentionsOnProject.filter((m) => !m.resolved).length;
 
-  // Resolved-item count across the three preview sections. Drives the
-  // "(N)" badge on the filter-bar toggle so users see at a glance how
-  // much is currently hidden. Only top-level comments are countable
-  // here — replies inherit their parent's resolved state on the Apps
-  // Script side and aren't independently resolvable in the UI.
-  const resolvedTasks = tasks.filter((t) => t.resolved).length;
+  // Resolved-item count across the two remaining preview sections (mentions
+  // + comments). Drives the "(N)" badge on the filter-bar toggle so users
+  // see at a glance how much is currently hidden. Only top-level comments
+  // are countable here — replies inherit their parent's resolved state.
   const resolvedMentions = myMentionsOnProject.filter((m) => m.resolved).length;
   const resolvedComments = comments.filter(
     (c) => !c.parent_id && c.resolved,
   ).length;
-  const resolvedCount = resolvedTasks + resolvedMentions + resolvedComments;
+  const resolvedCount = resolvedMentions + resolvedComments;
 
   return (
     <main className="container">
@@ -240,32 +231,8 @@ export default async function ProjectOverviewPage({
             tasks={workTasks}
             groupByCompany={false}
             hideOther
+            compact
             emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
-          />
-        </section>
-
-        <section className="project-section">
-          <div className="section-head">
-            <h2>
-              💬 משימות מתיוגים
-              <span className="section-count">{openTasks}</span>
-            </h2>
-            <Link
-              className="section-link"
-              href={`/projects/${encodeURIComponent(projectName)}/tasks`}
-            >
-              פתח לוח ←
-            </Link>
-          </div>
-          <p className="section-subtitle">
-            {showResolved
-              ? "כל המשימות בפרויקט (פתוחות וסגורות)"
-              : "משימות פתוחות על שרשורים בפרויקט (נוצרות מתיוגים ב־@ על הערות)"}
-          </p>
-          <TasksPreview
-            tasks={tasks}
-            today={tasksData?.today ?? today()}
-            showResolved={showResolved}
           />
         </section>
 
@@ -373,88 +340,6 @@ export default async function ProjectOverviewPage({
 }
 
 /* ─── Sections ───────────────────────────────────────────────────── */
-
-function TasksPreview({
-  tasks,
-  today,
-  showResolved,
-}: {
-  tasks: TaskItem[];
-  today: string;
-  showResolved: boolean;
-}) {
-  // When showResolved is on, include resolved tasks inline — they render
-  // with .compact-task.done styling already (via taskState). Otherwise
-  // filter to open only.
-  const pool = showResolved ? tasks : tasks.filter((t) => !t.resolved);
-  if (pool.length === 0) {
-    return (
-      <div className="empty-small">
-        {showResolved ? "🌿 אין משימות בפרויקט זה." : "🎉 אין משימות פתוחות!"}
-      </div>
-    );
-  }
-
-  // Group replies under their parent so the visual order mirrors the
-  // thread structure: [top-level] → [its reply] → [its reply] → [next
-  // top-level] ... Orphan replies (parent not in the visible window)
-  // land at the end, still marked as replies.
-  const topLevel = pool.filter((t) => !t.parent_id);
-  const repliesByParent = new Map<string, TaskItem[]>();
-  for (const t of pool) {
-    if (!t.parent_id) continue;
-    const list = repliesByParent.get(t.parent_id) ?? [];
-    list.push(t);
-    repliesByParent.set(t.parent_id, list);
-  }
-  const ordered: TaskItem[] = [];
-  for (const t of topLevel) {
-    ordered.push(t);
-    const replies = repliesByParent.get(t.comment_id);
-    if (replies) ordered.push(...replies);
-    repliesByParent.delete(t.comment_id);
-  }
-  // Any replies whose parent isn't in the visible set.
-  for (const replies of repliesByParent.values()) ordered.push(...replies);
-  const visible = ordered.slice(0, 6);
-
-  return (
-    <ul className="compact-list">
-      {visible.map((t) => {
-        const state = taskState(t, today);
-        const isReply = !!t.parent_id;
-        return (
-          <li
-            key={t.comment_id + "|" + t.assignee_email}
-            className={`compact-task ${state} ${isReply ? "is-reply" : ""}`}
-          >
-            <div className="compact-task-title">
-              {isReply && (
-                <span className="compact-task-reply-arrow" aria-hidden>
-                  ↪{" "}
-                </span>
-              )}
-              {t.deep_link ? (
-                <a href={t.deep_link} target="_blank" rel="noreferrer">
-                  {truncate(t.title, 100) || "(ללא תוכן)"}
-                </a>
-              ) : (
-                truncate(t.title, 100) || "(ללא תוכן)"
-              )}
-            </div>
-            <div className="compact-task-meta">
-              <span className="chip">{t.assignee_name}</span>
-              {t.due && (
-                <span className={`chip due-${state}`}>{formatDue(t.due, today)}</span>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 
 function CommentsPreview({
   comments,
@@ -638,27 +523,6 @@ function MentionsPreview({
 }
 
 /* ─── Small bits ─────────────────────────────────────────────────── */
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function taskState(
-  t: TaskItem,
-  today: string,
-): "done" | "overdue" | "due-today" | "" {
-  if (t.resolved) return "done";
-  if (!t.due) return "";
-  if (t.due < today) return "overdue";
-  if (t.due === today) return "due-today";
-  return "";
-}
-
-function formatDue(due: string, today: string): string {
-  if (due === today) return "יעד היום";
-  if (due < today) return `עבר היעד (${due})`;
-  return `יעד ${due}`;
-}
 
 function truncate(s: string, n: number): string {
   if (!s) return "";

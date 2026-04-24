@@ -3798,6 +3798,19 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-table .date-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tasks-table .priority-cell { text-align: center; white-space: nowrap; }
 
+/* Compact queue — used on /projects/[project] where the tasks section
+   sits alongside mentions/comments and a full 12-col table forces a
+   wide horizontal scroll. Drops the project + created-at columns,
+   shrinks cell padding, and skips the per-row description preview so
+   each row is ~one line. */
+.tasks-table-compact th,
+.tasks-table-compact td {
+  padding: .45em .55em;
+  font-size: .86em;
+}
+.tasks-table-compact th { font-size: .72em; }
+.tasks-table-compact .title-cell { min-width: 12em; }
+
 /* Click-to-update status cell. Button carries the same background tone
    as the row's lifecycle status, but with a subtle hover + caret that
    makes it obvious it's interactive. Menu drops below the cell. */

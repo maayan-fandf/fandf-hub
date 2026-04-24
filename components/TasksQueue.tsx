@@ -33,6 +33,14 @@ type Props = {
    * to false so the main queue keeps showing it.
    */
   hideOther?: boolean;
+  /**
+   * Compact layout — smaller column padding, drops the redundant
+   * "פרויקט" column (implied when the caller is a project-scoped page)
+   * and the description preview. Used on /projects/[project] so the
+   * queue section sits cleanly alongside the other sections on the
+   * page instead of forcing a wide horizontal scroll.
+   */
+  compact?: boolean;
 };
 
 /**
@@ -49,6 +57,7 @@ export default function TasksQueue({
   groupByCompany = true,
   emptyMessage = "אין משימות תואמות לסינון.",
   hideOther = false,
+  compact = false,
 }: Props) {
   // Bucketize once. Anything off the canonical list sinks into `other`.
   const byStatus: Record<string, WorkTask[]> = {};
@@ -82,21 +91,24 @@ export default function TasksQueue({
               <span className="tasks-bucket-count">{list.length}</span>
             </h2>
             <div className="tasks-table-wrap">
-              <table className="tasks-table">
+              <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
                 <thead>
                   <tr>
-                    <th className="num">מספר המשימה</th>
+                    <th className="num">מספר</th>
+                    {/* The "פרויקט" column is redundant when we're
+                        already on a project-scoped page — the caller
+                        sets compact to hide it. */}
                     {groupByCompany && <th>פרטי הפרוייקט</th>}
-                    {!groupByCompany && <th>פרויקט</th>}
+                    {!groupByCompany && !compact && <th>פרויקט</th>}
                     <th>פרטי המשימה</th>
-                    <th>כותב המשימה</th>
+                    <th>כותב</th>
                     <th>מחלקות</th>
                     <th>עדיפות</th>
-                    <th>תאריך מבוקש</th>
-                    <th>נוצרה</th>
+                    <th>תאריך</th>
+                    {!compact && <th>נוצרה</th>}
                     <th>סטטוס</th>
-                    <th>עובדים במשימה</th>
-                    <th>גורם מאשר</th>
+                    <th>עובדים</th>
+                    <th>מאשר</th>
                     <th className="icons">פעולות</th>
                   </tr>
                 </thead>
@@ -113,7 +125,7 @@ export default function TasksQueue({
                     list
                       .slice()
                       .sort((a, b) => b.created_at.localeCompare(a.created_at))
-                      .map((t) => <TaskRow key={t.id} task={t} />)
+                      .map((t) => <TaskRow key={t.id} task={t} compact={compact} />)
                   )}
                 </tbody>
               </table>
@@ -269,11 +281,20 @@ function ProjectSubGroup({
 
 /* ── Row + helpers ───────────────────────────────────────────────── */
 
-function TaskRow({ task }: { task: WorkTask }) {
+function TaskRow({
+  task,
+  compact = false,
+}: {
+  task: WorkTask;
+  compact?: boolean;
+}) {
   return (
     <tr>
       <td className="num">{task.brief || task.id.slice(-6)}</td>
-      <td className="tasks-project-cell-nested">{task.project}</td>
+      {/* Project cell omitted in compact mode (page is already scoped). */}
+      {!compact && (
+        <td className="tasks-project-cell-nested">{task.project}</td>
+      )}
       <td className="title-cell">
         <Link
           href={`/tasks/${encodeURIComponent(task.id)}`}
@@ -286,7 +307,7 @@ function TaskRow({ task }: { task: WorkTask }) {
             סבב #{task.round_number}
           </span>
         )}
-        {task.description && (
+        {!compact && task.description && (
           <div className="tasks-desc-preview">
             {task.description.slice(0, 90)}
             {task.description.length > 90 ? "…" : ""}
@@ -305,7 +326,9 @@ function TaskRow({ task }: { task: WorkTask }) {
         </span>
       </td>
       <td className="date-cell">{task.requested_date || "—"}</td>
-      <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
+      {!compact && (
+        <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
+      )}
       <td>
         <TaskStatusCell task={task} />
       </td>
