@@ -4794,6 +4794,73 @@ html[data-theme="dark"] .tasks-dept-chip {
 .task-actions h3 { margin: 0 0 .7em; font-size: 1em; }
 .task-actions-row { display: flex; flex-wrap: wrap; gap: .6em; }
 
+/* Sticky in-page tab strip on /tasks/[id]. Sits inside .task-detail-main
+   and pins to the top of the viewport (just below the global topnav)
+   when the user scrolls past the description body. Anchors jump to the
+   three sub-sections; active tab tracks the section nearest the top of
+   the viewport via IntersectionObserver in TaskDetailTabs. */
+.task-detail-tabs {
+  position: sticky;
+  /* The global .topnav is sticky at top:0 with z-index:20 and is
+     ~3.25rem tall. Park the tab strip just below it. */
+  top: 3.25rem;
+  z-index: 5;
+  display: flex;
+  gap: .35em;
+  /* Bleed into the card edges so the sticky bar feels full-width inside
+     .task-detail-main (which has 1.5em padding). */
+  margin: 0 -1.5em 1.2em;
+  padding: .55em 1.5em;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  /* Match the card's rounded top — without this the sticky bar shows
+     square corners overlapping the card's rounded corners. */
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+.task-detail-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: .35em .85em;
+  font-size: .9em;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.task-detail-tab:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.task-detail-tab.is-active {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Sub-section blocks below the tabs. Each has a generous top margin so
+   when the user clicks a tab + smooth-scroll lands on the heading,
+   there's breathing room above the heading inside the visible area. */
+.task-detail-section {
+  /* scroll-margin so anchor-jumps don't tuck the heading under the
+     sticky tab strip. Roughly: topnav height + tab strip height + gap. */
+  scroll-margin-top: 7rem;
+  margin-bottom: 1.5em;
+}
+.task-detail-section:last-child {
+  margin-bottom: 0;
+}
+.task-detail-files-empty h3 {
+  font-size: .95em;
+  margin: 0 0 .5em;
+}
+.task-detail-files-empty .muted {
+  color: var(--muted);
+  font-size: .9em;
+  margin: 0;
+}
+
 .task-detail-history {
   margin-top: 2em;
   border-top: 1px solid var(--border);

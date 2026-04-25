@@ -5,6 +5,7 @@ import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
+import TaskDetailTabs from "@/components/TaskDetailTabs";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 
@@ -130,7 +131,23 @@ export default async function TaskDetailPage({
             </div>
           )}
 
-          <section className="task-detail-history">
+          {/* Sticky in-page tab strip — anchor-jumps to the three
+              sub-sections below + highlights the section the reader is
+              currently looking at. Sections are rendered in tab order
+              (דיון → היסטוריה → קבצים) so DOM order matches navigation. */}
+          <TaskDetailTabs />
+
+          <section
+            id="task-discussion"
+            className="task-detail-section task-detail-section-discussion"
+          >
+            <TaskComments taskId={t.id} />
+          </section>
+
+          <section
+            id="task-history"
+            className="task-detail-section task-detail-history"
+          >
             <h3>היסטוריית סטטוסים</h3>
             <ul>
               {(t.status_history || []).map((h, i) => (
@@ -144,15 +161,23 @@ export default async function TaskDetailPage({
             </ul>
           </section>
 
-          {t.drive_folder_id && (
-            <TaskDriveComments
-              taskId={t.id}
-              driveFolderId={t.drive_folder_id}
-              driveFolderUrl={t.drive_folder_url}
-            />
-          )}
-
-          <TaskComments taskId={t.id} />
+          <section
+            id="task-files"
+            className="task-detail-section task-detail-section-files"
+          >
+            {t.drive_folder_id ? (
+              <TaskDriveComments
+                taskId={t.id}
+                driveFolderId={t.drive_folder_id}
+                driveFolderUrl={t.drive_folder_url}
+              />
+            ) : (
+              <div className="task-detail-files-empty">
+                <h3>📁 קבצים</h3>
+                <p className="muted">למשימה זו עוד אין תיקיית קבצים ב-Drive.</p>
+              </div>
+            )}
+          </section>
         </div>
 
         <aside className="task-detail-side">
