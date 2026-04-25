@@ -499,41 +499,10 @@ export function setTaskDue(args: {
   return postApi<SetDueResult>("setTaskDue", args);
 }
 
-export type ResolveCommentResult = {
-  ok: boolean;
-  comment_id: string;
-  resolved: boolean;
-};
-
-export function resolveComment(args: {
-  commentId: string;
-  resolved: boolean;
-}): Promise<ResolveCommentResult> {
-  // Apps Script coerces everything to string; pass "true"/"false" explicitly.
-  return postApi<ResolveCommentResult>("resolveComment", {
-    commentId: args.commentId,
-    resolved: args.resolved ? "true" : "false",
-  });
-}
-
-export type PostReplyResult = {
-  ok: boolean;
-  comment_id: string;
-  parent_id: string;
-  project: string;
-  body: string;
-  timestamp: string;
-};
-
-export function postReply(args: {
-  parentCommentId: string;
-  body: string;
-}): Promise<PostReplyResult> {
-  return postApi<PostReplyResult>("postReply", {
-    parentCommentId: args.parentCommentId,
-    body: args.body,
-  });
-}
+// (resolveComment / postReply Apps Script wrappers were here. Removed
+// after 5090d39 cut the cord — comment writes now route through the
+// direct-SA helpers in lib/commentsWriteDirect.ts. Both the wrappers
+// and their Result types had no callers outside this file.)
 
 export type Assignee = {
   email: string;
@@ -552,63 +521,9 @@ export function getProjectAssignees(project: string): Promise<ProjectAssignees> 
   return callApi<ProjectAssignees>("projectAssignees", { project });
 }
 
-export type CreateTaskResult = {
-  ok: boolean;
-  comment_id: string;
-  project: string;
-  body: string;
-  /** Emails that were valid + accepted. Unrecognized emails are silently dropped. */
-  assignees: string[];
-  /** Sanitized YYYY-MM-DD, or "" if no due date. */
-  due: string;
-  timestamp: string;
-};
-
-export function createTask(args: {
-  project: string;
-  body: string;
-  /** Emails to @-mention (triggers Google Tasks creation for internal emails). */
-  assignees: string[];
-  /** YYYY-MM-DD, or "" / omit for no due date. */
-  due?: string;
-}): Promise<CreateTaskResult> {
-  return postApi<CreateTaskResult>("createTask", {
-    project: args.project,
-    body: args.body,
-    assignees: args.assignees.join(","),
-    due: args.due ?? "",
-  });
-}
-
-export type DeleteCommentResult = {
-  ok: boolean;
-  comment_id: string;
-  deleted_replies: number;
-  deleted_tasks: number;
-};
-
-export function deleteComment(commentId: string): Promise<DeleteCommentResult> {
-  return postApi<DeleteCommentResult>("deleteComment", { commentId });
-}
-
-export type EditCommentResult = {
-  ok: boolean;
-  noop?: boolean;
-  comment_id: string;
-  body: string;
-  edited_at: string;
-  synced_tasks?: number;
-};
-
-export function editComment(args: {
-  commentId: string;
-  body: string;
-}): Promise<EditCommentResult> {
-  return postApi<EditCommentResult>("editComment", {
-    commentId: args.commentId,
-    body: args.body,
-  });
-}
+// (createTask / deleteComment / editComment Apps Script wrappers were
+// here. Same fate as resolveComment / postReply above — replaced by
+// the direct-SA path in lib/commentsWriteDirect.ts.)
 
 export type SearchResult = {
   comment_id: string;

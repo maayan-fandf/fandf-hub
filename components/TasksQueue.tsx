@@ -35,36 +35,36 @@ import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 // parked alongside as the blocked-for-info bucket.
 // Terminal states (`draft` / `cancelled`) surface in the "other" fold.
 //
-// `groupBy` picks the sub-grouping axis inside each bucket. Chosen per
-// state by what's actionable in that state — e.g. in `ממתין לאישור`,
-// the approver's name is the information the viewer cares about (who's
-// blocking whom). In `ממתין לטיפול` / `בעבודה`, the assignee is what
-// matters (who owns it). `company` keeps the portfolio's company →
-// project grouping used elsewhere on the queue page.
-//
 // `archiveAfterDays` (when set) splits the bucket: rows with
 // `updated_at` newer than the cutoff render normally; older rows
 // collapse into a single <details> fold below them so the queue
 // doesn't grow unboundedly with terminal-state work.
-type GroupAxis = "assignee" | "approver" | "company" | "none";
+//
+// Note: there used to be a per-bucket `groupBy` axis (assignee /
+// approver / company / none) that would split each bucket into sub-
+// header bands. Once rank-based manual ordering replaced the
+// chronological within-bucket sort, sub-groups fought with rank — a
+// dragged row could land in a "different person's" visual band even
+// though its rank was correct. Sub-grouping is now permanently off;
+// the per-row company / assignee / approver columns surface the same
+// facts without overriding rank order.
 const ARCHIVE_AFTER_DAYS = 14;
 const STATUS_BUCKETS: {
   key: WorkTaskStatus;
   label: string;
   tone: string;
-  groupBy: GroupAxis;
   archiveAfterDays?: number;
 }[] = [
-  { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling", groupBy: "assignee" },
-  { key: "in_progress", label: "בעבודה", tone: "in_progress", groupBy: "assignee" },
-  { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification", groupBy: "none" },
-  { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval", groupBy: "approver" },
-  { key: "done", label: "בוצע", tone: "done", groupBy: "company", archiveAfterDays: ARCHIVE_AFTER_DAYS },
+  { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling" },
+  { key: "in_progress", label: "בעבודה", tone: "in_progress" },
+  { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
+  { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
+  { key: "done", label: "בוצע", tone: "done", archiveAfterDays: ARCHIVE_AFTER_DAYS },
   // Cancelled used to live in the collapsed "other" fold, but now that
   // it's a revivable state (awaiting_handling / in_progress targets in
   // the menu) users need to see it — otherwise cancelling a task makes
   // it look like it disappeared.
-  { key: "cancelled", label: "בוטל", tone: "cancelled", groupBy: "none", archiveAfterDays: ARCHIVE_AFTER_DAYS },
+  { key: "cancelled", label: "בוטל", tone: "cancelled", archiveAfterDays: ARCHIVE_AFTER_DAYS },
 ];
 
 /** Split a list of terminal-state tasks into "recent" + "older". Uses
@@ -266,13 +266,6 @@ export default function TasksQueue({
       {STATUS_BUCKETS.map((b) => {
         const list = byStatusMap[b.key] || [];
         if (!list.length) return null;
-        // Sub-grouping (company / person / approver) is now off — rank
-        // is the primary within-bucket sort axis, and sub-headers fight
-        // with it (a dragged row could land in a different sub-group's
-        // visual band even though rank is correct). The per-row company
-        // / assignee / approver columns still surface the same facts
-        // without forcing a grouping that disagrees with rank order.
-        const axis: GroupAxis = "none";
         // Terminal-state buckets (done / cancelled) split into recent
         // + older — older rows live behind a fold so the queue doesn't
         // accumulate visual debt over time.
@@ -319,7 +312,6 @@ export default function TasksQueue({
                     <tbody>
                       <BucketBody
                         tasks={recent}
-                        axis={axis}
                         compact={compact}
                         people={people}
                         driveName={driveName}
@@ -361,7 +353,6 @@ export default function TasksQueue({
                       <tbody>
                         <BucketBody
                           tasks={older}
-                          axis={axis}
                           compact={compact}
                           people={people}
                           driveName={driveName}
@@ -423,140 +414,30 @@ export default function TasksQueue({
   );
 }
 
-/* ── Grouping helpers ────────────────────────────────────────────── */
+/* ── Bucket body ─────────────────────────────────────────────────── */
 
 /**
- * Renders the body of a single status bucket, sub-grouped on the axis
- * chosen per bucket (assignee / approver / company / none). The sub-
- * header is Data-Plus-style: a single row across the whole table width
- * labelling what the grouping is (e.g. "באישור של: ספיר יצחקוב").
+ * Renders the rows for a single status bucket, sorted by rank
+ * ascending. There used to be sub-grouping helpers here (assignee /
+ * approver / company sub-headers) but rank-based ordering replaced
+ * them — sub-headers fought with rank, see the STATUS_BUCKETS comment
+ * for the rationale.
  */
 function BucketBody({
   tasks,
-  axis,
   compact,
   people,
   driveName,
 }: {
   tasks: WorkTask[];
-  axis: GroupAxis;
   compact: boolean;
   people: TasksPerson[];
   driveName: string;
 }) {
-  // 13 columns: 1 drag-handle + 12 data columns. Sub-headers span the
-  // whole row across all columns. Bumped from 12 when drag-to-reorder
-  // landed in the table view.
-  const totalCols = 13;
-
-  if (axis === "none") {
-    const sorted = tasks.slice().sort(compareByRank);
-    return (
-      <>
-        {sorted.map((t) => (
-          <TaskRow
-            key={t.id}
-            task={t}
-            compact={compact}
-            people={people}
-            driveName={driveName}
-          />
-        ))}
-      </>
-    );
-  }
-
-  if (axis === "company") {
-    return (
-      <>
-        {groupByCompanyProject(tasks).map(([company, projectGroups]) => (
-          <CompanyGroup
-            key={company || "(no-company)"}
-            company={company}
-            projectGroups={projectGroups}
-            people={people}
-            driveName={driveName}
-          />
-        ))}
-      </>
-    );
-  }
-
-  // Person-axis sub-grouping (assignee or approver).
-  const groups = groupByPerson(tasks, axis);
+  const sorted = tasks.slice().sort(compareByRank);
   return (
     <>
-      {groups.map(([personEmail, rows]) => (
-        <PersonGroup
-          key={personEmail || "(none)"}
-          label={axis === "approver" ? "באישור של" : "אצל"}
-          personEmail={personEmail}
-          rows={rows}
-          totalCols={totalCols}
-          compact={compact}
-          people={people}
-          driveName={driveName}
-        />
-      ))}
-    </>
-  );
-}
-
-function groupByPerson(
-  tasks: WorkTask[],
-  axis: "assignee" | "approver",
-): [string, WorkTask[]][] {
-  const byPerson = new Map<string, WorkTask[]>();
-  for (const t of tasks) {
-    const key =
-      axis === "approver"
-        ? (t.approver_email || "").toLowerCase().trim()
-        : ((t.assignees || [])[0] || "").toLowerCase().trim();
-    if (!byPerson.has(key)) byPerson.set(key, []);
-    byPerson.get(key)!.push(t);
-  }
-  // Unassigned sinks to the bottom so real people lead.
-  const keys = Array.from(byPerson.keys()).sort((a, b) => {
-    if (!a && b) return 1;
-    if (a && !b) return -1;
-    return a.localeCompare(b);
-  });
-  return keys.map((k) => [
-    k,
-    byPerson.get(k)!.slice().sort(compareByRank),
-  ]);
-}
-
-function PersonGroup({
-  label,
-  personEmail,
-  rows,
-  totalCols,
-  compact,
-  people,
-  driveName,
-}: {
-  label: string;
-  personEmail: string;
-  rows: WorkTask[];
-  totalCols: number;
-  compact: boolean;
-  people: TasksPerson[];
-  driveName: string;
-}) {
-  const displayName = personEmail
-    ? shortName(personEmail)
-    : "(לא משויך)";
-  return (
-    <>
-      <tr className="tasks-person-header">
-        <td colSpan={totalCols}>
-          <span className="tasks-person-header-label">{label}:</span>{" "}
-          <span className="tasks-person-header-name">{displayName}</span>
-          <span className="tasks-person-header-count">{rows.length}</span>
-        </td>
-      </tr>
-      {rows.map((t) => (
+      {sorted.map((t) => (
         <TaskRow
           key={t.id}
           task={t}
@@ -564,108 +445,6 @@ function PersonGroup({
           people={people}
           driveName={driveName}
         />
-      ))}
-    </>
-  );
-}
-
-function groupByCompanyProject(
-  tasks: WorkTask[],
-): [string, [string, WorkTask[]][]][] {
-  const byCompany = new Map<string, Map<string, WorkTask[]>>();
-  for (const t of tasks) {
-    const co = t.company || "";
-    if (!byCompany.has(co)) byCompany.set(co, new Map());
-    const byProj = byCompany.get(co)!;
-    if (!byProj.has(t.project)) byProj.set(t.project, []);
-    byProj.get(t.project)!.push(t);
-  }
-  const companies = Array.from(byCompany.keys()).sort((a, b) => {
-    // Empty company sinks to the bottom so "(no-company)" doesn't lead.
-    if (!a && b) return 1;
-    if (a && !b) return -1;
-    return a.localeCompare(b);
-  });
-  return companies.map((co) => {
-    const projMap = byCompany.get(co)!;
-    const projects = Array.from(projMap.keys()).sort();
-    return [
-      co,
-      projects.map(
-        (p) =>
-          [p, projMap.get(p)!.slice().sort(compareByRank)] as [
-            string,
-            WorkTask[],
-          ],
-      ),
-    ];
-  });
-}
-
-function CompanyGroup({
-  company,
-  projectGroups,
-  people,
-  driveName,
-}: {
-  company: string;
-  projectGroups: [string, WorkTask[]][];
-  people: TasksPerson[];
-  driveName: string;
-}) {
-  const totalCols = 13;
-  return (
-    <>
-      <tr className="tasks-company-header">
-        <td colSpan={totalCols}>
-          <span className="tasks-company-header-label">חברה</span>{" "}
-          <span className="tasks-company-header-name">
-            {company || "(ללא חברה)"}
-          </span>
-        </td>
-      </tr>
-      {projectGroups.map(([project, rows]) => (
-        <ProjectSubGroup
-          key={project}
-          project={project}
-          rows={rows}
-          totalCols={totalCols}
-          people={people}
-          driveName={driveName}
-        />
-      ))}
-    </>
-  );
-}
-
-function ProjectSubGroup({
-  project,
-  rows,
-  totalCols,
-  people,
-  driveName,
-}: {
-  project: string;
-  rows: WorkTask[];
-  totalCols: number;
-  people: TasksPerson[];
-  driveName: string;
-}) {
-  return (
-    <>
-      <tr className="tasks-project-header">
-        <td colSpan={totalCols}>
-          <Link
-            href={`/projects/${encodeURIComponent(project)}`}
-            className="tasks-project-header-link"
-          >
-            {project}
-          </Link>
-          <span className="tasks-project-header-count">{rows.length}</span>
-        </td>
-      </tr>
-      {rows.map((t) => (
-        <TaskRow key={t.id} task={t} people={people} driveName={driveName} />
       ))}
     </>
   );

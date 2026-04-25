@@ -4216,87 +4216,11 @@ html[data-theme="dark"] .inline-edit-err {
   color: var(--muted); font-size: .9em; margin-top: .2em;
 }
 
-/* Nested grouping: company sub-header row → project sub-header row → tasks.
-   Keeps everything in one <table> so column widths stay aligned. */
-.tasks-company-header td {
-  padding: .75em .85em .35em;
-  background: var(--surface-soft);
-  border-bottom: 1px solid var(--border);
-  border-top: 2px solid var(--border);
-  font-size: .8em;
-}
-.tasks-company-header-label {
-  color: var(--muted);
-  text-transform: uppercase;
-  font-size: .72em;
-  font-weight: 700;
-  letter-spacing: .04em;
-  margin-inline-end: .5em;
-}
-.tasks-company-header-name {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 1.05em;
-}
-/* Drop the double-top-border for the first company header in each bucket. */
-.tasks-table tbody > tr.tasks-company-header:first-child td { border-top: none; }
-
-.tasks-project-header td {
-  padding: .45em .85em .35em 1.6em;
-  background: var(--surface);
-  border-bottom: 1px dashed var(--border);
-  font-size: .88em;
-}
-.tasks-project-header-link {
-  color: var(--text);
-  text-decoration: none;
-  font-weight: 600;
-}
-.tasks-project-header-link:hover { text-decoration: underline; }
-.tasks-project-header-count {
-  display: inline-block;
-  margin-inline-start: .5em;
-  padding: 0 .55em;
-  border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-size: .82em;
-}
-/* Person sub-header — used inside buckets that group by assignee
-   (ממתין לטיפול / בעבודה) or approver (ממתין לאישור). Visual weight
-   sits between company-header and project-header so the three levels
-   (bucket > person > row) stay readable together. */
-.tasks-person-header td {
-  padding: .55em .85em .3em;
-  background: var(--surface-soft);
-  border-bottom: 1px solid var(--border);
-  border-top: 1px solid var(--border);
-  font-size: .82em;
-}
-.tasks-table tbody > tr.tasks-person-header:first-child td { border-top: none; }
-.tasks-person-header-label {
-  color: var(--muted);
-  font-size: .76em;
-  font-weight: 600;
-  letter-spacing: .02em;
-  margin-inline-end: .35em;
-}
-.tasks-person-header-name {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 1em;
-}
-.tasks-person-header-count {
-  display: inline-block;
-  margin-inline-start: .6em;
-  padding: 0 .55em;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-size: .82em;
-}
+/* (The tasks-company-header / tasks-project-header / tasks-person-header
+   nested-grouping styles lived here previously. Removed alongside the
+   dead CompanyGroup / PersonGroup / ProjectSubGroup helpers in
+   TasksQueue.tsx — sub-grouping was permanently turned off when rank-
+   based ordering replaced the chronological within-bucket sort.) */
 
 /* Task rows within a project group: gentle inset + de-emphasize the
    per-row project cell since the group header already shows it. */

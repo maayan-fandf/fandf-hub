@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { resolveComment } from "@/lib/appsScript";
+import { auth } from "@/auth";
+import { resolveCommentDirect } from "@/lib/commentsWriteDirect";
 
 export const dynamic = "force-dynamic";
 
@@ -18,17 +19,24 @@ export default async function ResolvePage({
   const commentId = decodeURIComponent(raw);
   const project = rawProject ? decodeURIComponent(rawProject) : "";
 
-  // Auto-resolve on page load. resolveComment is idempotent — re-clicking the
-  // Chat card link just re-sets `resolved=true`, which is a no-op on an
-  // already-resolved row. The hub doesn't prefetch this route from anywhere,
-  // so there's no risk of an accidental prefetch triggering the action.
+  // Auto-resolve on page load. resolveCommentDirect is idempotent —
+  // re-clicking the Chat card link just re-sets resolved=true, which is
+  // a no-op on an already-resolved row. The hub doesn't prefetch this
+  // route from anywhere, so there's no risk of an accidental prefetch
+  // triggering the action.
   let ok = true;
   let errMsg = "";
-  try {
-    await resolveComment({ commentId, resolved: true });
-  } catch (e) {
+  const session = await auth();
+  if (!session?.user?.email) {
     ok = false;
-    errMsg = e instanceof Error ? e.message : String(e);
+    errMsg = "לא מחובר/ת";
+  } else {
+    try {
+      await resolveCommentDirect(session.user.email, commentId, true);
+    } catch (e) {
+      ok = false;
+      errMsg = e instanceof Error ? e.message : String(e);
+    }
   }
 
   return (
