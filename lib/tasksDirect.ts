@@ -25,6 +25,7 @@
  * Apps Script.
  */
 
+import { cache } from "react";
 import {
   type WorkTask,
   type WorkTaskStatus,
@@ -126,32 +127,42 @@ function rowToTask(
   };
 }
 
-async function readCommentsTab(subjectEmail: string): Promise<{
-  headers: string[];
-  rows: unknown[][];
-  headerIdx: Map<string, number>;
-}> {
-  const sheets = sheetsClient(subjectEmail);
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    range: "Comments",
-    // Return Date objects as ISO strings, numbers as numbers.
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (res.data.values ?? []) as unknown[][];
-  if (!values.length) {
-    return { headers: [], rows: [], headerIdx: new Map() };
-  }
-  const headers = (values[0] as unknown[]).map((h) =>
-    String(h ?? "").trim(),
-  );
-  const headerIdx = new Map<string, number>();
-  headers.forEach((h, i) => {
-    if (h) headerIdx.set(h, i);
-  });
-  return { headers, rows: values.slice(1), headerIdx };
-}
+// Per-request memoized read of the Comments tab. Both tasksList and
+// tasksGet (and now the round-siblings lookup on /tasks/[id]) hit
+// this; without dedup, opening a task page burns 2-3 Sheets reads of
+// the same tab. React's cache() collapses concurrent calls within one
+// request to a single shared promise — same pattern as readKeysCached
+// in lib/keys.ts.
+const readCommentsTab = cache(
+  async (
+    subjectEmail: string,
+  ): Promise<{
+    headers: string[];
+    rows: unknown[][];
+    headerIdx: Map<string, number>;
+  }> => {
+    const sheets = sheetsClient(subjectEmail);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: "Comments",
+      // Return Date objects as ISO strings, numbers as numbers.
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    const values = (res.data.values ?? []) as unknown[][];
+    if (!values.length) {
+      return { headers: [], rows: [], headerIdx: new Map() };
+    }
+    const headers = (values[0] as unknown[]).map((h) =>
+      String(h ?? "").trim(),
+    );
+    const headerIdx = new Map<string, number>();
+    headers.forEach((h, i) => {
+      if (h) headerIdx.set(h, i);
+    });
+    return { headers, rows: values.slice(1), headerIdx };
+  },
+);
 
 // readKeysRows() previously did its own Sheets fetch — now re-exported
 // from the shared cached helper so multiple callers in one request

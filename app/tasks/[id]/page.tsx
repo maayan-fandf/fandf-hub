@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { tasksGet, tasksPeopleList } from "@/lib/appsScript";
+import { tasksGet, tasksList, tasksPeopleList } from "@/lib/appsScript";
+import type { WorkTask } from "@/lib/appsScript";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
@@ -39,6 +40,18 @@ export default async function TaskDetailPage({
   if (!res) notFound();
 
   const t = res.task;
+
+  // Round chain: only fetch project tasks when the current task is part
+  // of a multi-round chain (round_number > 1 OR has descendants —
+  // checking the latter requires the fetch, so we only run it when
+  // round_number > 1 since that's the more common case where siblings
+  // matter). The fetch hits the same Comments tab tasksGet just read
+  // from; readCommentsTab is now per-request cached so this is
+  // effectively free.
+  const roundChain =
+    t.round_number > 1 || t.parent_id
+      ? await fetchRoundChain(t).catch(() => [])
+      : [];
 
   return (
     <main className="container">
@@ -211,14 +224,7 @@ export default async function TaskDetailPage({
           <SideBlock title="פרטים">
             <KV label="סוג" value={t.kind} />
             <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
-            <KV
-              label="סבב"
-              value={
-                t.round_number && t.round_number > 1
-                  ? `#${t.round_number}${t.parent_id ? ` (נולד מ־${t.parent_id})` : ""}`
-                  : "ראשון"
-              }
-            />
+            <RoundRow task={t} chain={roundChain} />
             <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
             <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
             <IdCopyRow id={t.id} />
@@ -334,5 +340,113 @@ function PersonChip({ email, filterKey }: { email: string; filterKey: string }) 
       <Avatar name={email} title={email} size={22} />
       <span className="task-person-chip-name">{shortName(email)}</span>
     </Link>
+  );
+}
+
+/**
+ * Walks the parent_id chain rooted at `t` and returns every task in
+ * the round-chain (root + all descendants), sorted by round_number.
+ *
+ * `parent_id` semantics aren't strictly defined by the schema — it
+ * could in principle point to either the immediate predecessor or
+ * the chain root. To handle both we walk UP from `t` (following
+ * parent_id until we hit "" or a missing id) to find the root, then
+ * fan DOWN from the root via BFS.
+ *
+ * Falls back to an empty list on any fetch error so the side panel
+ * still renders cleanly.
+ */
+async function fetchRoundChain(t: WorkTask): Promise<WorkTask[]> {
+  if (!t.project) return [];
+  const list = await tasksList({ project: t.project });
+  const allTasks = list.tasks;
+  if (allTasks.length === 0) return [];
+  const byId = new Map(allTasks.map((x) => [x.id, x]));
+
+  // Walk UP to root.
+  let root: WorkTask = byId.get(t.id) ?? t;
+  let safety = 20;
+  while (root.parent_id && safety-- > 0) {
+    const next = byId.get(root.parent_id);
+    if (!next || next.id === root.id) break;
+    root = next;
+  }
+
+  // Fan DOWN from root via BFS.
+  const visited = new Set<string>([root.id]);
+  const chain: WorkTask[] = [root];
+  const queue: string[] = [root.id];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const x of allTasks) {
+      if (x.parent_id === id && !visited.has(x.id)) {
+        visited.add(x.id);
+        chain.push(x);
+        queue.push(x.id);
+      }
+    }
+  }
+
+  return chain.sort(
+    (a, b) => (a.round_number || 0) - (b.round_number || 0),
+  );
+}
+
+/**
+ * Side-panel "סבב" row. Three render modes:
+ *   1. Single-round task with no descendants → "ראשון"
+ *   2. Multi-round task (has parent_id or chain length > 1) → current
+ *      round number + a clickable list of every round in the chain,
+ *      with the current task styled as inert.
+ *   3. Round 1 task that HAS descendants (chain.length > 1) → same as
+ *      mode 2 (chain list, current is the root).
+ */
+function RoundRow({
+  task,
+  chain,
+}: {
+  task: WorkTask;
+  chain: WorkTask[];
+}) {
+  if (chain.length <= 1 && task.round_number <= 1) {
+    return <KV label="סבב" value="ראשון" />;
+  }
+  return (
+    <div className="task-kv">
+      <dt>סבב</dt>
+      <dd>
+        <div className="task-round-current">#{task.round_number || "?"}</div>
+        {chain.length > 1 && (
+          <div className="task-round-chain">
+            <span className="task-round-chain-label">שרשור:</span>
+            {chain.map((c) => {
+              const isCurrent = c.id === task.id;
+              if (isCurrent) {
+                return (
+                  <span
+                    key={c.id}
+                    className="task-round-link is-current"
+                    title={c.title || c.id}
+                    aria-current="true"
+                  >
+                    #{c.round_number || "?"}
+                  </span>
+                );
+              }
+              return (
+                <Link
+                  key={c.id}
+                  href={`/tasks/${encodeURIComponent(c.id)}`}
+                  className="task-round-link"
+                  title={c.title || c.id}
+                >
+                  #{c.round_number || "?"}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </dd>
+    </div>
   );
 }

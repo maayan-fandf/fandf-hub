@@ -4664,6 +4664,53 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
      the relationship. */
 }
 
+/* Round-chain row — current round on top + clickable chain of every
+   sibling round in the same parent_id thread. Each round chip links
+   to that task; the current task is shown as inert with `is-current`
+   styling. Empty when the task has no siblings (round 1 alone). */
+.task-round-current {
+  font-weight: 700;
+  color: var(--text);
+}
+.task-round-chain {
+  margin-top: .35em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35em;
+  font-size: .85em;
+}
+.task-round-chain-label {
+  color: var(--muted);
+  font-size: .82em;
+  margin-inline-end: .15em;
+}
+.task-round-link {
+  display: inline-flex;
+  align-items: center;
+  padding: .15em .55em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: .85em;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bg);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.task-round-link:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--text);
+}
+.task-round-link.is-current {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+  cursor: default;
+}
+
 /* id row — collapse the previously-equal-weighted dt/dd into a
    monospace + copy-button pair. The id is mostly opaque so users
    glance past it; surfacing it as a copy affordance instead of a flat
