@@ -10,6 +10,7 @@ import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
+import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
 import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
@@ -87,6 +88,10 @@ export default async function TaskDetailPage({
           </div>
           <div className="task-detail-title-row">
             <h1 className="task-detail-title">{t.title}</h1>
+            {/* Tiny 🔗 button to copy the canonical task URL. Sits to
+                the visual-left of the title (start of line in RTL is
+                right, so this is at the END of the title row). */}
+            <CopyTaskLinkButton />
             {/* Inline status cell — same component the kanban + queue
                 use, so this header doubles as the action surface. The
                 separate TaskStatusActions panel that used to sit below

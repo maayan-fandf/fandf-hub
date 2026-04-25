@@ -4664,6 +4664,26 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
      the relationship. */
 }
 
+/* Tiny 🔗 button next to the task title — copies the canonical URL.
+   Sized to sit comfortably between the title and the status pill
+   without competing for attention. */
+.task-link-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: .25em .55em;
+  font-size: .9em;
+  line-height: 1;
+  color: var(--muted);
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.task-link-copy:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--text);
+}
+
 /* Round-chain row — current round on top + clickable chain of every
    sibling round in the same parent_id thread. Each round chip links
    to that task; the current task is shown as inert with `is-current`
