@@ -3,6 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { NameEmailRow } from "@/lib/appsScript";
+import {
+  CANONICAL_ROLE_OPTIONS,
+  classifyRoleText,
+  defaultViewLabel,
+} from "@/lib/userRoleHelpers";
 
 type Props = { initial: NameEmailRow[] };
 
@@ -230,19 +235,46 @@ export default function NamesToEmailsEditor({ initial }: Props) {
     <div className="admin-editor">
       {globalError && <div className="error">{globalError}</div>}
 
+      <details className="admin-role-help">
+        <summary>
+          ערכי תפקיד קנוניים — בחר אחד כדי שהמערכת תזהה את ברירת המחדל בתצוגה
+        </summary>
+        <ul>
+          {CANONICAL_ROLE_OPTIONS.map((o) => (
+            <li key={o.value}>
+              <code>{o.value}</code> — {o.hint}
+            </li>
+          ))}
+        </ul>
+        <p className="subtitle">
+          כל ערך אחר ייכנס ל-Sheets כפי שהוקלד, והמערכת תנסה לסווג אותו אוטומטית
+          (למשל <code>media</code> → קריאייטיב, <code>client manager</code> → מנהל).
+          אם הסיווג לא מצליח, ברירת המחדל היא &quot;משימות שיצרת&quot;.
+        </p>
+      </details>
+
+      <datalist id="role-suggestions">
+        {CANONICAL_ROLE_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.hint}
+          </option>
+        ))}
+      </datalist>
+
       <table className="admin-table">
         <thead>
           <tr>
             <th>שם מלא</th>
             <th>אימייל</th>
             <th>תפקיד</th>
+            <th>ברירת מחדל בתצוגה</th>
             <th className="admin-table-actions-head">פעולות</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={4} className="empty-small">
+              <td colSpan={5} className="empty-small">
                 הרשימה ריקה. לחץ על &quot;הוסף שורה&quot;.
               </td>
             </tr>
@@ -301,9 +333,10 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                   <input
                     type="text"
                     className="admin-input"
+                    list="role-suggestions"
                     value={r.draftRole}
                     dir="auto"
-                    placeholder="מנהל קמפיינים / מעצבת / לקוח…"
+                    placeholder="קריאייטיב / מנהל / לקוח…"
                     onChange={(e) =>
                       update(r.uiKey, { draftRole: e.target.value })
                     }
@@ -325,6 +358,17 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                 ) : (
                   <span className="subtitle">—</span>
                 )}
+              </td>
+              <td>
+                {(() => {
+                  const cls = classifyRoleText(r.draftRole);
+                  const cn = `admin-default-chip admin-default-${cls}`;
+                  return (
+                    <span className={cn} title={defaultViewLabel(cls)}>
+                      {defaultViewLabel(cls)}
+                    </span>
+                  );
+                })()}
               </td>
               <td className="admin-table-actions">
                 {r.isEditing ? (

@@ -25,13 +25,9 @@
 
 import { sheetsClient } from "@/lib/sa";
 import { HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
+import { classifyRoleText, type UserRole } from "@/lib/userRoleHelpers";
 
-export type UserRole =
-  | "admin"
-  | "manager"
-  | "creative"
-  | "client"
-  | "unknown";
+export type { UserRole } from "@/lib/userRoleHelpers";
 
 const ROLE_CACHE = new Map<string, { role: UserRole; expiresAt: number }>();
 const TTL_MS = 5 * 60 * 1000;
@@ -43,39 +39,6 @@ function envOrThrow(name: string): string {
 }
 
 const KEYS_HEADER_CLEAN = /[\u200B-\u200F\u202A-\u202E\u2060\u00AD\uFEFF\uD800-\uDFFF]/g;
-
-/**
- * Map a free-text role label (Hebrew or English) to one of our roles.
- * Returns "unknown" if the label doesn't match any keyword family.
- */
-function classifyRoleText(roleText: string): UserRole {
-  const r = (roleText || "").trim().toLowerCase();
-  if (!r) return "unknown";
-  // Manager — campaign / account / project / agency-side ops.
-  if (
-    /\bmanag/.test(r) ||
-    /מנהל/.test(r) ||
-    /אקאונט/.test(r) ||
-    /account/.test(r) ||
-    /campaign/.test(r) ||
-    /קמפיינ/.test(r)
-  ) {
-    return "manager";
-  }
-  // Creative — design / copy / video / motion / illustration.
-  if (
-    /design|מעצב|מעצבת|graphic/.test(r) ||
-    /\bcopy\b|קופי/.test(r) ||
-    /video|וידאו|מוצר וידאו|אנימצ/.test(r) ||
-    /illustr|אומנ/.test(r) ||
-    /creative|קריאייטיב/.test(r) ||
-    /\bui\b|\bux\b/.test(r)
-  ) {
-    return "creative";
-  }
-  if (/client|לקוח/.test(r)) return "client";
-  return "unknown";
-}
 
 /**
  * Returns every display name registered against `subjectEmail` in the

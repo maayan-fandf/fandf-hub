@@ -4976,6 +4976,61 @@ html[data-theme="dark"] .chip-resolved {
   padding-inline-start: .8em;
 }
 
+/* ── names-to-emails admin: role help + default-view chip ──────── */
+.admin-role-help {
+  margin: 0 0 1em;
+  padding: .6em .9em;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft, rgba(120,120,120,.06));
+}
+.admin-role-help > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+.admin-role-help ul {
+  margin: .6em 0 .4em;
+  padding-inline-start: 1.2em;
+}
+.admin-role-help li { margin-bottom: .2em; }
+.admin-role-help code {
+  background: var(--surface, #fff);
+  padding: .05em .35em;
+  border-radius: 3px;
+  font-size: .9em;
+}
+
+.admin-default-chip {
+  display: inline-block;
+  padding: .15em .55em;
+  border-radius: 999px;
+  font-size: .78em;
+  font-weight: 600;
+  background: var(--surface-soft, rgba(120,120,120,.12));
+  color: var(--muted);
+}
+.admin-default-admin {
+  background: rgba(124, 58, 237, .15);
+  color: #6d28d9;
+}
+.admin-default-manager {
+  background: rgba(245, 158, 11, .15);
+  color: #b45309;
+}
+.admin-default-creative {
+  background: rgba(37, 99, 235, .15);
+  color: #1d4ed8;
+}
+.admin-default-client {
+  background: rgba(16, 185, 129, .15);
+  color: #047857;
+}
+html[data-theme="dark"] .admin-default-admin { background: rgba(167,139,250,.2); color:#c4b5fd; }
+html[data-theme="dark"] .admin-default-manager { background: rgba(251,191,36,.2); color:#fde68a; }
+html[data-theme="dark"] .admin-default-creative { background: rgba(96,165,250,.2); color:#bfdbfe; }
+html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2); color:#a7f3d0; }
+
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }
   .task-form-row { grid-template-columns: 1fr; }
