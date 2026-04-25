@@ -343,8 +343,22 @@ async function syncGoogleTasksStatus(
 ): Promise<void> {
   const entries = Object.values(googleTasks || {});
   if (entries.length === 0) return;
-  await Promise.all(
+  // Per-assignee gtasks_sync gate: if a user disabled Google Tasks
+  // sync in their gear menu, leave their entry alone.
+  const { getUserPrefs } = await import("@/lib/userPrefs");
+  const allowedEntries = await Promise.all(
     entries.map(async (gt) => {
+      try {
+        const p = await getUserPrefs(gt.u);
+        return p.gtasks_sync ? gt : null;
+      } catch {
+        return gt; // fail-open
+      }
+    }),
+  );
+  await Promise.all(
+    allowedEntries.map(async (gt) => {
+      if (!gt) return;
       try {
         const tasksApi = tasksApiClient(gt.u);
         await tasksApi.tasks.patch({
@@ -405,11 +419,30 @@ async function createCalendarEvents(
   return out;
 }
 
+async function filterByGtasksPref(emails: string[]): Promise<string[]> {
+  if (emails.length === 0) return [];
+  const { getUserPrefs } = await import("@/lib/userPrefs");
+  const out: string[] = [];
+  for (const e of emails) {
+    try {
+      const p = await getUserPrefs(e);
+      if (p.gtasks_sync) out.push(e);
+    } catch {
+      out.push(e); // fail-open
+    }
+  }
+  return out;
+}
+
 async function createGoogleTasks(
   task: { id: string; title: string; project: string; description: string; drive_folder_url: string; requested_date: string; assignees: string[] },
 ): Promise<Record<string, { u: string; l: string; t: string; d: string }>> {
   const out: Record<string, { u: string; l: string; t: string; d: string }> = {};
   const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  // Each assignee owns whether the hub puts entries in their personal
+  // Google Tasks list — gate per-recipient.
+  const allowed = await filterByGtasksPref(task.assignees);
+  if (allowed.length === 0) return out;
   const notes =
     task.description +
     (task.drive_folder_url ? `\n\nקבצים: ${task.drive_folder_url}` : "") +
@@ -423,7 +456,7 @@ async function createGoogleTasks(
     ? new Date(datePart + "T00:00:00Z").toISOString()
     : undefined;
   await Promise.all(
-    task.assignees.map(async (email) => {
+    allowed.map(async (email) => {
       try {
         const tasksApi = tasksApiClient(email);
         // Use the user's default (first) task list, matching
@@ -487,14 +520,33 @@ async function sendMimeMail(
   }
 }
 
+async function filterByEmailPref(emails: string[]): Promise<string[]> {
+  if (emails.length === 0) return [];
+  const { getUserPrefs } = await import("@/lib/userPrefs");
+  const out: string[] = [];
+  for (const e of emails) {
+    try {
+      const p = await getUserPrefs(e);
+      if (p.email_notifications) out.push(e);
+    } catch {
+      // Fail-open — if we can't read prefs, keep the recipient.
+      out.push(e);
+    }
+  }
+  return out;
+}
+
 /**
  * Ping every assignee on create — "you have a new task."
+ * Skips recipients who turned off email_notifications in their gear menu.
  */
 async function emailAssignees(
   task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number; drive_folder_url: string; assignees: string[] },
   authorEmail: string,
 ): Promise<void> {
   if (!task.assignees.length) return;
+  const allowed = await filterByEmailPref(task.assignees);
+  if (allowed.length === 0) return;
   const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
   const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
   const subject = `📋 משימה חדשה עבורך — ${task.project} · ${task.title}`;
@@ -514,7 +566,7 @@ async function emailAssignees(
     .filter(Boolean)
     .join("\n");
   await Promise.all(
-    task.assignees.map((to) => sendMimeMail(authorEmail, to, subject, plainBody)),
+    allowed.map((to) => sendMimeMail(authorEmail, to, subject, plainBody)),
   );
 }
 
@@ -528,6 +580,10 @@ async function emailApprover(
   approverEmail: string,
 ): Promise<void> {
   if (!approverEmail) return;
+  // Respect the approver's email_notifications preference. They may
+  // still rely on the chat-card / hub UI as a notification channel.
+  const allowed = await filterByEmailPref([approverEmail]);
+  if (allowed.length === 0) return;
   const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
   const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
   const subject = `📋 משימה ממתינה לאישורך — ${task.project} · ${task.title}`;

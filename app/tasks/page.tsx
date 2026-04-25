@@ -9,6 +9,7 @@ import {
   type TasksPerson,
 } from "@/lib/appsScript";
 import { getUserRole, type UserRole } from "@/lib/userRole";
+import { getUserPrefs } from "@/lib/userPrefs";
 import TasksQueue from "@/components/TasksQueue";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,17 @@ export default async function TasksPage({
   const sp = await searchParams;
 
   const me = await currentUserEmail().catch(() => "");
+  // "View as" support — when the user has set view_as_email in their
+  // prefs (gear menu in the topnav), every default filter on this
+  // page is computed against that identity instead of the session
+  // user. Use case: a manager reviewing an employee's queue, or a
+  // task manager covering for a peer. Data access is unaffected;
+  // this only flips the default filter values.
+  const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
+  const viewAs = prefs?.view_as_email || "";
+  const effectiveMe = viewAs || me;
+  const isViewingAs = !!viewAs && viewAs !== me;
+
   // Role-aware default filter: each role has a different "what
   // matters to me right now" axis. Admins see what they authored
   // (Data Plus default — admins typically brief tasks in). Managers
@@ -48,26 +60,26 @@ export default async function TasksPage({
   // to them. Clients fall back to the no-default behavior since
   // they're already access-gated to their projects.
   // `?mine=0` opts out of all role defaults (the "show all" path).
-  const role: UserRole = me ? await getUserRole(me).catch(() => "unknown") : "unknown";
+  const role: UserRole = effectiveMe ? await getUserRole(effectiveMe).catch(() => "unknown") : "unknown";
   const mineOptIn = sp.mine !== "0";
 
   const effectiveAuthor =
     sp.author !== undefined
       ? sp.author
       : mineOptIn && (role === "admin" || role === "unknown")
-        ? me
+        ? effectiveMe
         : "";
   const effectiveApprover =
     sp.approver !== undefined
       ? sp.approver
       : mineOptIn && role === "manager"
-        ? me
+        ? effectiveMe
         : "";
   const effectiveAssignee =
     sp.assignee !== undefined
       ? sp.assignee
       : mineOptIn && role === "creative"
-        ? me
+        ? effectiveMe
         : "";
 
   const [tasksRes, projectsRes, peopleRes] = await Promise.all([
@@ -125,10 +137,11 @@ export default async function TasksPage({
             ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
             ב־Google Tasks לכל מבצע (מסומנת כהושלמה אוטומטית כשהמשימה
             עוברת ל&quot;בוצע&quot;), ומייל לגורם המאשר.
-            {mineOptIn && me && (
+            {mineOptIn && effectiveMe && (
               <RoleDefaultHint
                 role={role}
-                me={me}
+                me={effectiveMe}
+                isViewingAs={isViewingAs}
                 hasExplicitAuthor={sp.author !== undefined}
                 hasExplicitApprover={sp.approver !== undefined}
                 hasExplicitAssignee={sp.assignee !== undefined}
@@ -214,6 +227,7 @@ export default async function TasksPage({
 function RoleDefaultHint({
   role,
   me,
+  isViewingAs,
   hasExplicitAuthor,
   hasExplicitApprover,
   hasExplicitAssignee,
@@ -221,6 +235,7 @@ function RoleDefaultHint({
 }: {
   role: UserRole;
   me: string;
+  isViewingAs: boolean;
   hasExplicitAuthor: boolean;
   hasExplicitApprover: boolean;
   hasExplicitAssignee: boolean;
@@ -229,11 +244,17 @@ function RoleDefaultHint({
   const handle = me.split("@")[0];
   let text = "";
   if (role === "manager" && !hasExplicitApprover) {
-    text = `מציג משימות שמחכות לאישורך (${handle})`;
+    text = isViewingAs
+      ? `מציג משימות שמחכות לאישור של ${handle}`
+      : `מציג משימות שמחכות לאישורך (${handle})`;
   } else if (role === "creative" && !hasExplicitAssignee) {
-    text = `מציג משימות שמשובצות אצלך (${handle})`;
+    text = isViewingAs
+      ? `מציג משימות שמשובצות אצל ${handle}`
+      : `מציג משימות שמשובצות אצלך (${handle})`;
   } else if ((role === "admin" || role === "unknown") && !hasExplicitAuthor) {
-    text = `מציג משימות שיצרת (${handle})`;
+    text = isViewingAs
+      ? `מציג משימות ש-${handle} יצר/ה`
+      : `מציג משימות שיצרת (${handle})`;
   }
   if (!text) return null;
   return (

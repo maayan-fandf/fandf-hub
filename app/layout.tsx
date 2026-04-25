@@ -9,6 +9,7 @@ import NavMentionBadge from "@/components/NavMentionBadge";
 import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
+import UserSettingsMenu from "@/components/UserSettingsMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
@@ -147,6 +148,7 @@ export default async function RootLayout({
             )}
             {email && (
               <div className="topnav-user">
+                <UserSettingsMenu myEmail={email} />
                 <ThemeToggle />
                 <span
                   className="topnav-hint"

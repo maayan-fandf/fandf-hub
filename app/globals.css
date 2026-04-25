@@ -5098,6 +5098,141 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   100% { width: 260px; height: 260px; opacity: 0; border-width: 1px; }
 }
 
+/* ── User settings gear (topnav) ──────────────────────────────── */
+.settings-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.settings-menu-trigger {
+  background: none;
+  border: 1px solid transparent;
+  padding: .25em .5em;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.05em;
+  line-height: 1;
+  position: relative;
+  color: inherit;
+}
+.settings-menu-trigger:hover {
+  background: var(--surface-soft, rgba(120,120,120,.1));
+}
+.settings-menu-trigger.is-viewing-as {
+  border-color: var(--accent, #2a66d9);
+  background: var(--accent-soft, rgba(42,102,217,.1));
+}
+.settings-menu-dot {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #2a66d9);
+  border: 2px solid var(--surface, #fff);
+}
+
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 1000;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.12);
+  padding: .5em;
+  min-width: 320px;
+  max-width: 380px;
+}
+.settings-menu-loading {
+  padding: 1em;
+  color: var(--muted);
+  text-align: center;
+  font-size: .9em;
+}
+.settings-menu-section {
+  padding: .5em .6em;
+  border-bottom: 1px solid var(--border);
+}
+.settings-menu-section:last-child {
+  border-bottom: none;
+}
+.settings-menu-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: .6em;
+  padding: .5em 0;
+  cursor: pointer;
+  user-select: none;
+}
+.settings-menu-toggle input[type="checkbox"] {
+  margin-top: .2em;
+  cursor: pointer;
+}
+.settings-menu-toggle-label {
+  flex: 1;
+  font-size: .9em;
+  color: var(--text);
+}
+.settings-menu-toggle-label small {
+  display: block;
+  color: var(--muted);
+  font-size: .82em;
+  margin-top: .15em;
+  font-weight: 400;
+}
+.settings-menu-label {
+  font-size: .9em;
+  color: var(--text);
+  margin-bottom: .4em;
+  font-weight: 600;
+}
+.settings-menu-label small {
+  display: block;
+  color: var(--muted);
+  font-size: .82em;
+  margin-top: .15em;
+  font-weight: 400;
+}
+.settings-menu-input {
+  width: 100%;
+  padding: .4em .6em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .9em;
+}
+.settings-menu-input:focus {
+  outline: 2px solid var(--accent, #2a66d9);
+  outline-offset: 1px;
+}
+.settings-menu-link {
+  background: none;
+  border: none;
+  color: var(--accent, #2a66d9);
+  font-size: .82em;
+  cursor: pointer;
+  padding: .3em 0 0;
+  text-decoration: underline;
+  font: inherit;
+}
+.settings-menu-link:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+.settings-menu-error {
+  padding: .5em .6em;
+  margin: .3em 0 0;
+  background: rgba(220, 38, 38, .1);
+  color: var(--danger, #c33);
+  border-radius: 6px;
+  font-size: .82em;
+}
+
 /* ── Date + optional time-of-day pair ─────────────────────────── */
 .task-form-date-time .date-time-inputs,
 .inline-edit-date-time {
