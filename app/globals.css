@@ -4701,6 +4701,88 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   font-weight: 700;
 }
 .task-kv dd { margin: 0; color: var(--text); word-break: break-word; }
+.task-kv-empty { color: var(--muted); }
+
+/* Title row pairs the H1 with an interactive status pill (lifted from
+   the kanban / queue) so the page header doubles as the action surface
+   instead of a separate panel below. */
+.task-detail-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem .85rem;
+  margin-top: .2em;
+}
+.task-detail-title-row .task-detail-title {
+  margin: 0;
+}
+
+/* Meta chip strip — replaces the long inline "· עדיפות 2 · קריאייטיב, מדיה ·
+   מבוקש: …" string with discrete chips for priority / department(s) /
+   date / round. Same visual vocabulary the kanban card uses. */
+.task-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4em .55em;
+  align-items: center;
+  margin-top: .5em;
+}
+.tasks-dept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .2em;
+  font-size: .78em;
+  font-weight: 600;
+  padding: .15em .55em;
+  border-radius: 999px;
+  background: rgba(0,0,0,.05);
+  color: var(--text);
+}
+html[data-theme="dark"] .tasks-dept-chip {
+  background: rgba(255,255,255,.06);
+}
+.task-meta-date {
+  display: inline-flex;
+  align-items: center;
+  gap: .2em;
+  font-size: .82em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* People chips in the side panel — Avatar + display name, link
+   click-through to /tasks?<filter>=<email>. Hover surfaces the full
+   email via the title attribute on the wrapping link. */
+.task-people-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35em;
+}
+.task-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  padding: .2em .55em .2em .25em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-weight: 500;
+  font-size: .85em;
+  text-decoration: none;
+  transition: background .12s, border-color .12s;
+}
+.task-person-chip:hover {
+  background: var(--surface-soft);
+  border-color: var(--text);
+  text-decoration: none;
+}
+.task-person-chip-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12em;
+}
 
 .task-actions {
   margin: 1.5em 0;
@@ -5966,13 +6048,47 @@ html[data-theme="dark"] .kanban-column-count {
   font-size: .75rem;
   color: var(--muted);
 }
-.kanban-card-priority {
-  font-size: 1.1em;
-  line-height: 1;
+/* Priority signal — chip in the chips row + colored start-side edge on
+   the card itself. p2 (normal) is the visual default; only p1 / p3
+   override. The edge widens to 4px so it's readable across a column
+   without making p2 cards feel offset (they keep the standard 1px
+   border). */
+.kanban-card-priority-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: .15em .55em;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: 0;
 }
-.kanban-card-priority-high { color: #dc2626; }
-.kanban-card-priority-normal { color: #6b7280; }
-.kanban-card-priority-low { color: #9ca3af; }
+.kanban-card-priority-chip.high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.kanban-card-priority-chip.low {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+html[data-theme="dark"] .kanban-card-priority-chip.high {
+  background: #7f1d1d55;
+  color: #fca5a5;
+}
+html[data-theme="dark"] .kanban-card-priority-chip.low {
+  background: rgba(255,255,255,.08);
+  color: var(--muted);
+}
+.kanban-card-edge-high {
+  border-inline-start-width: 4px;
+  border-inline-start-color: #dc2626;
+}
+.kanban-card-edge-low {
+  border-inline-start-width: 3px;
+  border-inline-start-color: #9ca3af;
+  border-inline-start-style: dashed;
+}
 .kanban-card-date {
   display: inline-flex;
   align-items: center;

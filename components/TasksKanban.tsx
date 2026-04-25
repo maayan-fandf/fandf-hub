@@ -293,17 +293,23 @@ function KanbanCard({
     style.opacity = 0;
   }
 
-  const priorityLabel =
-    task.priority === 1 ? "גבוהה" : task.priority === 3 ? "נמוכה" : "רגילה";
+  // Priority drives both the inline chip and the card's start-side edge.
+  // p1 (high) = red solid edge + 🔥 גבוהה chip; p3 (low) = grey dashed
+  // edge + ⏬ נמוכה chip; p2 (normal) = no chip, default border. The
+  // dot in the foot row was redundant once the chip carries the label
+  // and the edge gives a glanceable signal across a busy column.
   const priorityClass =
     task.priority === 1 ? "high" : task.priority === 3 ? "low" : "normal";
+  const showPriorityChip = priorityClass !== "normal";
+  const hasChips =
+    task.brief || task.campaign || task.round_number > 1 || showPriorityChip;
   const assignees = task.assignees || [];
 
   return (
     <article
       ref={setNodeRef}
       style={style}
-      className={`kanban-card${isOverlay ? " is-overlay" : ""}${isDragging ? " is-dragging" : ""}`}
+      className={`kanban-card kanban-card-edge-${priorityClass}${isOverlay ? " is-overlay" : ""}${isDragging ? " is-dragging" : ""}`}
       {...attributes}
       {...listeners}
     >
@@ -324,8 +330,16 @@ function KanbanCard({
           {task.project && <span>{task.project}</span>}
         </div>
       )}
-      {(task.brief || task.campaign || task.round_number > 1) && (
+      {hasChips && (
         <div className="kanban-card-chips">
+          {showPriorityChip && (
+            <span
+              className={`kanban-card-priority-chip ${priorityClass}`}
+              title="עדיפות"
+            >
+              {priorityClass === "high" ? "🔥 גבוהה" : "⏬ נמוכה"}
+            </span>
+          )}
           {task.brief && (
             <span className="tasks-brief-chip" title="בריף">
               #{task.brief}
@@ -344,9 +358,6 @@ function KanbanCard({
         </div>
       )}
       <div className="kanban-card-foot">
-        <span className={`kanban-card-priority kanban-card-priority-${priorityClass}`} title={`עדיפות ${priorityLabel}`}>
-          ●
-        </span>
         {task.requested_date && (
           <span className="kanban-card-date" title="תאריך מבוקש">
             📅 {task.requested_date}

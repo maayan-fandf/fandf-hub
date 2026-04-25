@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { tasksGet, tasksPeopleList } from "@/lib/appsScript";
-import TaskStatusActions from "@/components/TaskStatusActions";
+import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
+import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,6 @@ export default async function TaskDetailPage({
   if (!res) notFound();
 
   const t = res.task;
-  const statusLabel = STATUS_LABELS[t.status] || t.status;
 
   return (
     <main className="container">
@@ -67,27 +67,30 @@ export default async function TaskDetailPage({
             </Link>
             {t.brief && <> {" · "} בריף #{t.brief}</>}
           </div>
-          <h1 className="task-detail-title">{t.title}</h1>
-          <div className="subtitle">
-            <span className={`tasks-status-pill tasks-status-${t.status}`}>
-              {statusLabel}
+          <div className="task-detail-title-row">
+            <h1 className="task-detail-title">{t.title}</h1>
+            {/* Inline status cell — same component the kanban + queue
+                use, so this header doubles as the action surface. The
+                separate TaskStatusActions panel that used to sit below
+                is gone (redundant once the pill is interactive). */}
+            <TaskStatusCell task={t} />
+          </div>
+          <div className="subtitle task-detail-meta">
+            <span className={`tasks-priority-pill p${t.priority}`} title="עדיפות">
+              {t.priority === 1 ? "🔥 גבוהה" : t.priority === 3 ? "⏬ נמוכה" : "רגילה"}
             </span>
-            {t.sub_status && (
-              <>
-                {" "}
-                <span className="tasks-substatus-pill">{t.sub_status}</span>
-              </>
-            )}{" "}
-            · עדיפות {t.priority} ·{" "}
-            {(t.departments || []).join(", ") || "—"}{" "}
-            {t.requested_date
-              ? `· מבוקש: ${t.requested_date.replace("T", " ")}`
-              : ""}
+            {(t.departments || []).map((d) => (
+              <span key={d} className="tasks-dept-chip" title="מחלקה">
+                🏷️ {d}
+              </span>
+            ))}
+            {t.requested_date && (
+              <span className="task-meta-date" title="תאריך מבוקש">
+                📅 {t.requested_date.replace("T", " ")}
+              </span>
+            )}
             {t.round_number > 1 && (
-              <>
-                {" "}
-                · <span className="tasks-round-chip">סבב #{t.round_number}</span>
-              </>
+              <span className="tasks-round-chip">סבב #{t.round_number}</span>
             )}
           </div>
         </div>
@@ -127,8 +130,6 @@ export default async function TaskDetailPage({
             </div>
           )}
 
-          {!editing && <TaskStatusActions task={t} />}
-
           <section className="task-detail-history">
             <h3>היסטוריית סטטוסים</h3>
             <ul>
@@ -159,12 +160,25 @@ export default async function TaskDetailPage({
           <KV label="פרויקט" value={t.project} />
           <KV label="קמפיין" value={t.campaign || "—"} />
           <KV label="בריף" value={t.brief || "—"} />
-          <KV label="כותב" value={shortName(t.author_email)} />
-          <KV label="גורם מאשר" value={shortName(t.approver_email)} />
-          <KV label="מנהל פרויקט" value={shortName(t.project_manager_email)} />
-          <KV
+          <PersonRow
+            label="כותב"
+            email={t.author_email}
+            filterKey="author"
+          />
+          <PersonRow
+            label="גורם מאשר"
+            email={t.approver_email}
+            filterKey="approver"
+          />
+          <PersonRow
+            label="מנהל פרויקט"
+            email={t.project_manager_email}
+            filterKey="project_manager"
+          />
+          <PeopleRow
             label="עובדים במשימה"
-            value={(t.assignees || []).map(shortName).join(", ") || "—"}
+            emails={t.assignees || []}
+            filterKey="assignee"
           />
           <KV label="סוג" value={t.kind} />
           <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
@@ -197,5 +211,76 @@ function KV({ label, value }: { label: string; value: string }) {
       <dt>{label}</dt>
       <dd>{value || "—"}</dd>
     </div>
+  );
+}
+
+/**
+ * Side-panel row for a single person field (כותב / מאשר / מנהל פרויקט).
+ * Renders as an avatar chip linking back to /tasks filtered by that
+ * person — clicking jumps from "this task" to "everything they own /
+ * authored / are approving". Tooltip carries the full email so the
+ * shortened display name is recoverable on hover.
+ */
+function PersonRow({
+  label,
+  email,
+  filterKey,
+}: {
+  label: string;
+  email: string;
+  filterKey: string;
+}) {
+  return (
+    <div className="task-kv">
+      <dt>{label}</dt>
+      <dd>
+        {email ? (
+          <PersonChip email={email} filterKey={filterKey} />
+        ) : (
+          <span className="task-kv-empty">—</span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/** Multi-person variant for the assignees row. */
+function PeopleRow({
+  label,
+  emails,
+  filterKey,
+}: {
+  label: string;
+  emails: string[];
+  filterKey: string;
+}) {
+  return (
+    <div className="task-kv">
+      <dt>{label}</dt>
+      <dd>
+        {emails.length === 0 ? (
+          <span className="task-kv-empty">—</span>
+        ) : (
+          <div className="task-people-row">
+            {emails.map((email) => (
+              <PersonChip key={email} email={email} filterKey={filterKey} />
+            ))}
+          </div>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+function PersonChip({ email, filterKey }: { email: string; filterKey: string }) {
+  return (
+    <Link
+      href={`/tasks?${filterKey}=${encodeURIComponent(email)}`}
+      className="task-person-chip"
+      title={email}
+    >
+      <Avatar name={email} title={email} size={22} />
+      <span className="task-person-chip-name">{shortName(email)}</span>
+    </Link>
   );
 }
