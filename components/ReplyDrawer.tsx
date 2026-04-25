@@ -56,6 +56,16 @@ export default function ReplyDrawer({
       return;
     }
     setError(null);
+
+    // Snappier UX: close the drawer the instant the user hits send and
+    // run the fetch in the background. The drawer's "שולח…" state was
+    // the most visible source of perceived latency on comment writes —
+    // even with the post-5090d39 cord-cut the API is ~1 s, so the user
+    // was watching the drawer wait for a beat. With the drawer gone the
+    // action feels done; router.refresh() materializes the actual reply
+    // a moment later. On error we reopen the drawer with the body
+    // restored so the user can retry without retyping.
+    closeDrawer();
     startTransition(async () => {
       try {
         const res = await fetch("/api/comments/reply", {
@@ -67,10 +77,11 @@ export default function ReplyDrawer({
           const data = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(data.error || `Request failed (${res.status})`);
         }
-        closeDrawer();
         router.refresh();
       } catch (err) {
+        setValue(body);
         setError(err instanceof Error ? err.message : String(err));
+        setOpen(true);
       }
     });
   }

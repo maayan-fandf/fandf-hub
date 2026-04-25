@@ -88,6 +88,12 @@ export default function EditDrawer({
       return;
     }
     setError(null);
+
+    // Optimistic close — see ReplyDrawer.submit for the rationale. The
+    // edited body is already on the user's screen (they typed it); the
+    // server reconciliation arrives via router.refresh() right after.
+    // On error we reopen with the edited body restored.
+    closeDrawer();
     startTransition(async () => {
       try {
         const res = await fetch("/api/comments/edit", {
@@ -99,10 +105,11 @@ export default function EditDrawer({
           const data = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(data.error || `Request failed (${res.status})`);
         }
-        closeDrawer();
         router.refresh();
       } catch (err) {
+        setValue(body);
         setError(err instanceof Error ? err.message : String(err));
+        setOpen(true);
       }
     });
   }
