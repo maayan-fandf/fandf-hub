@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
-import { fireConfetti } from "@/lib/confetti";
+import { fireConfetti, firePulse } from "@/lib/confetti";
 
 // Mirror of Apps Script TASKS_ALLOWED_TRANSITIONS — kept in sync so the UI
 // only offers transitions the server will accept. If they diverge the
@@ -70,12 +70,14 @@ export default function TaskStatusActions({ task }: { task: WorkTask }) {
       if (!res.ok || !data.ok) {
         throw new Error("error" in data ? data.error : "Failed to update");
       }
-      // Confetti for transitions to `done`. The detail page doesn't
-      // hard-reload — router.refresh() picks up new state in place —
-      // so we don't block on the burst here; it animates over the
-      // refresh.
+      // Confetti for `done`, lighter pulse for `awaiting_approval`.
+      // The detail page doesn't hard-reload — router.refresh() picks
+      // up new state in place — so we don't block on either burst;
+      // they animate over the refresh.
       if (to === "done") {
         fireConfetti();
+      } else if (to === "awaiting_approval") {
+        firePulse();
       }
       router.refresh();
     } catch (e) {

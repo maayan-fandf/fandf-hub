@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
-import { fireConfetti } from "@/lib/confetti";
+import { fireConfetti, firePulse } from "@/lib/confetti";
 
 // Mirror of the Apps Script / tasksWriteDirect state machine so the
 // dropdown only offers transitions that the server will accept. Any
@@ -166,13 +166,19 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
       }
       // Celebrate transitions to `done` — fire confetti from the pill's
       // location and hold the reload long enough for the burst to play
-      // (~1.3s; respects prefers-reduced-motion via the helper).
+      // (~1.3s; respects prefers-reduced-motion via the helper). The
+      // handoff to `awaiting_approval` gets a smaller "send-off" pulse
+      // — same DOM trick, three amber rings, ~900ms.
+      const rect = btnRef.current?.getBoundingClientRect();
+      const origin = rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : undefined;
       if (to === "done") {
-        const r = btnRef.current?.getBoundingClientRect();
-        fireConfetti(
-          r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : undefined,
-        );
+        fireConfetti(origin);
         await new Promise((resolve) => setTimeout(resolve, 1300));
+      } else if (to === "awaiting_approval") {
+        firePulse(origin);
+        await new Promise((resolve) => setTimeout(resolve, 700));
       }
       // router.refresh() was leaving the spinner spinning indefinitely
       // in prod — the /tasks data wasn't actually re-fetching on refresh

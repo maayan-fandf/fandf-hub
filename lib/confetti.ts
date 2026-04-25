@@ -70,3 +70,43 @@ export function fireConfetti(origin?: { x: number; y: number }): void {
   document.body.appendChild(container);
   window.setTimeout(() => container.remove(), ANIMATION_MS + 200);
 }
+
+/**
+ * Lighter "send-off" pulse for transitions to `awaiting_approval` —
+ * the user just punted to the approver. Three staggered amber rings
+ * expand from the click origin and fade out. Subtle on purpose; the
+ * full confetti is reserved for `done`.
+ */
+export function firePulse(
+  origin?: { x: number; y: number },
+  color = "#f59e0b",
+): void {
+  if (typeof document === "undefined") return;
+  if (
+    typeof window !== "undefined" &&
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    return;
+  }
+
+  const ox = origin?.x ?? window.innerWidth / 2;
+  const oy = origin?.y ?? window.innerHeight / 3;
+
+  const container = document.createElement("div");
+  container.className = "pulse-burst-container";
+  container.setAttribute("aria-hidden", "true");
+
+  for (let i = 0; i < 3; i++) {
+    const ring = document.createElement("span");
+    ring.className = "pulse-ring";
+    ring.style.left = `${ox}px`;
+    ring.style.top = `${oy}px`;
+    ring.style.borderColor = color;
+    ring.style.animationDelay = `${i * 90}ms`;
+    container.appendChild(ring);
+  }
+
+  document.body.appendChild(container);
+  window.setTimeout(() => container.remove(), 1100);
+}
