@@ -266,12 +266,13 @@ export default function TasksQueue({
       {STATUS_BUCKETS.map((b) => {
         const list = byStatusMap[b.key] || [];
         if (!list.length) return null;
-        // Per-bucket axis picks the sub-header the rows cluster under.
-        // On project pages (groupByCompany=false) a `company` axis still
-        // resolves — it just collapses to a single project sub-header —
-        // so we don't need a separate branch for that mode.
-        const axis: GroupAxis =
-          b.groupBy === "company" && !groupByCompany ? "none" : b.groupBy;
+        // Sub-grouping (company / person / approver) is now off — rank
+        // is the primary within-bucket sort axis, and sub-headers fight
+        // with it (a dragged row could land in a different sub-group's
+        // visual band even though rank is correct). The per-row company
+        // / assignee / approver columns still surface the same facts
+        // without forcing a grouping that disagrees with rank order.
+        const axis: GroupAxis = "none";
         // Terminal-state buckets (done / cancelled) split into recent
         // + older — older rows live behind a fold so the queue doesn't
         // accumulate visual debt over time.
