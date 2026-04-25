@@ -45,9 +45,9 @@ export default async function NewTaskPage({
             משימה חדשה
           </h1>
           <div className="subtitle">
-            ברירת המחדל — &quot;ממתין לאישור&quot;. בעת יצירה: תיקייה ב־Drive
-            תחת <code dir="ltr">חברה / פרויקט / משימה</code>, מייל לגורם המאשר,
-            אירוע ב־Google Calendar + משימה ב־Google Tasks לכל מבצע.
+            ברירת המחדל — &quot;ממתין לטיפול&quot;. בעת יצירה: תיקייה ב־Drive
+            לפי הבחירה (קיימת או חדשה), מייל למבצעים, ומשימה ב־Google Tasks
+            לכל מבצע (מסומנת כהושלמה כשהמשימה עוברת ל-&quot;בוצע&quot;).
           </div>
         </div>
         <div className="page-header-actions">

@@ -21,6 +21,8 @@ import ProjectFilterBar from "@/components/ProjectFilterBar";
 import OutOfScopeBanner from "@/components/OutOfScopeBanner";
 import { isPersonOnProject } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
+import { findCampaignFolderId } from "@/lib/driveFolders";
+import { currentUserEmail } from "@/lib/appsScript";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +99,32 @@ export default async function ProjectOverviewPage({
   const companyForDashboard = projectMeta?.company ?? "";
   const chatSpaceUrl = projectMeta?.chatSpaceUrl ?? "";
   const userEmail = projectsData?.email ?? "";
+
+  // Resolve the project's Drive folder URL — best-effort lookup so the
+  // header's "Drive" button deep-links to the right place. Falls back
+  // to a global Drive search by project name if no folder exists yet
+  // (e.g. project hasn't had a task created with USE_SA_TASKS_WRITES).
+  let driveFolderUrl = "";
+  if (companyForDashboard && projectName) {
+    try {
+      const me = await currentUserEmail().catch(() => "");
+      if (me) {
+        const found = await findCampaignFolderId(me, {
+          company: companyForDashboard,
+          project: projectName,
+          campaign: "",
+        });
+        if (found.viewUrl) driveFolderUrl = found.viewUrl;
+      }
+    } catch {
+      // swallow — we'll fall back to the search URL below
+    }
+  }
+  if (!driveFolderUrl) {
+    driveFolderUrl =
+      "https://drive.google.com/drive/search?q=" +
+      encodeURIComponent(projectName);
+  }
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
   // `authuser` hints Google to load the iframe under *this* account if the
   // browser is signed into multiple Google accounts. If it's signed into the
@@ -182,18 +210,46 @@ export default async function ProjectOverviewPage({
           </div>
         </div>
         <div className="header-actions">
+          {/* Primary action: open the proper task creator scoped to
+              this project. Lands on /tasks/new with the project pre-
+              selected via search param. */}
+          <Link
+            href={`/tasks/new?project=${encodeURIComponent(projectName)}`}
+            className="btn-primary btn-sm"
+            title="פתח את יוצר המשימות עם הפרויקט מוגדר מראש"
+          >
+            + משימה חדשה
+          </Link>
+          {/* Comment / mention drawer — formerly mislabelled "+ משימה
+              חדשה". It actually creates a top-level comment with
+              @-mentions, which spawns Google Tasks for the mentioned
+              users. Renaming to "+ הערה" is honest about its actual
+              role: a quick note, not a tracked task. */}
+          <CreateTaskDrawer project={projectName} />
+          <a
+            className="btn-ghost btn-sm"
+            href={driveFolderUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={
+              driveFolderUrl.includes("drive.google.com/drive/search")
+                ? "פתח חיפוש Drive עבור הפרויקט"
+                : "פתח את תיקיית הפרויקט ב-Drive"
+            }
+          >
+            📁 Drive
+          </a>
           {chatSpaceUrl && (
             <a
-              className="btn-chat"
+              className="btn-ghost btn-sm"
               href={chatSpaceUrl}
               target="_blank"
               rel="noreferrer"
               title="פתח את שיחת הפרויקט ב-Google Chat"
             >
-              💬 פתח בצ׳אט
+              💬 צ׳אט
             </a>
           )}
-          <CreateTaskDrawer project={projectName} />
         </div>
       </header>
 

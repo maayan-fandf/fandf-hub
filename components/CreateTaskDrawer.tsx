@@ -271,11 +271,11 @@ export default function CreateTaskDrawer({ project }: Props) {
     return (
       <button
         type="button"
-        className="reply-btn reply-btn-primary"
+        className="btn-ghost btn-sm"
         onClick={openDrawer}
-        title="צור משימה חדשה בפרויקט זה"
+        title="הוסף הערה עם תיוגים — נשלחת כ-Google Task לכל מתויג"
       >
-        + משימה חדשה
+        + הערה
       </button>
     );
   }
