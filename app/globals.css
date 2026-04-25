@@ -5744,3 +5744,294 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
 @media (max-width: 1100px) and (min-width: 641px) {
   .tasks-filter-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ─── /tasks header arrangement ─────────────────────────────────────
+   Title cluster on the right (RTL start) carries the H1 + the small
+   view toggle inline next to it. The + משימה חדשה primary action sits
+   in `.header-actions` on the visual left, mirroring how the project
+   page (/projects/[name]) lays out its header. */
+.tasks-page-header-titlerow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem .75rem;
+}
+.tasks-page-header-titlerow h1 {
+  margin: 0;
+}
+
+.tasks-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-soft, #f3f4f6);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.tasks-view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  padding: .35em .75em;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.tasks-view-toggle-btn:hover {
+  text-decoration: none;
+  color: var(--text);
+}
+.tasks-view-toggle-btn.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+html[data-theme="dark"] .tasks-view-toggle {
+  background: rgba(255,255,255,.04);
+}
+html[data-theme="dark"] .tasks-view-toggle-btn.is-active {
+  background: var(--surface);
+}
+
+/* ─── Kanban board ───────────────────────────────────────────────────
+   Six lifecycle columns side-by-side. The board itself owns the
+   horizontal scroll so the page never gets one — that keeps the filter
+   bar + header in place while the user scrolls between columns.
+   Column body owns vertical scroll so a long backlog in one column
+   doesn't push the other columns down. */
+.kanban-board {
+  display: flex;
+  flex-direction: row;
+  gap: .9em;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: .8em;
+  /* Smooth scroll-snap so swiping/scrolling lands on column boundaries. */
+  scroll-snap-type: x proximity;
+  /* The flex children determine height; the board itself shouldn't grow
+     beyond what fits in the viewport so the column scrollbars work. */
+  align-items: stretch;
+}
+.kanban-column {
+  flex: 0 0 16em;
+  min-width: 16em;
+  max-width: 22em;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-soft, #f9fafb);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--border);
+  border-radius: 12px;
+  scroll-snap-align: start;
+  /* Column max-height is bounded so its body scrolls instead of the
+     page. 70vh leaves room for header + filter bar above. */
+  max-height: 70vh;
+  transition: background .12s, border-color .12s;
+}
+.kanban-column.is-drop-target {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: #2563eb;
+}
+.kanban-column-awaiting_handling { border-top-color: #64748b; }
+.kanban-column-in_progress { border-top-color: #2563eb; }
+.kanban-column-awaiting_clarification { border-top-color: #dc2626; }
+.kanban-column-awaiting_approval { border-top-color: #f59e0b; }
+.kanban-column-done { border-top-color: #10b981; }
+.kanban-column-cancelled { border-top-color: #9ca3af; }
+
+.kanban-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5em;
+  padding: .7em .85em .55em;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: .9rem;
+  color: var(--text);
+}
+.kanban-column-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kanban-column-count {
+  background: rgba(0,0,0,.06);
+  border-radius: 999px;
+  padding: .1em .55em;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+html[data-theme="dark"] .kanban-column-count {
+  background: rgba(255,255,255,.1);
+}
+
+.kanban-column-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: .55em .55em .85em;
+  display: flex;
+  flex-direction: column;
+  gap: .55em;
+  min-height: 4em;
+}
+.kanban-column-empty {
+  text-align: center;
+  font-size: .8rem;
+  color: var(--muted);
+  padding: 1.2em .5em;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.kanban-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .65em .75em;
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  transition: box-shadow .12s, transform .08s;
+  touch-action: none;
+}
+.kanban-card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+.kanban-card.is-overlay {
+  cursor: grabbing;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  transform: rotate(1.5deg);
+}
+.kanban-card.is-dragging {
+  /* Hidden while the DragOverlay clone is shown; opacity flip happens
+     inline so the empty slot still preserves layout. */
+  pointer-events: none;
+}
+
+.kanban-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: .35em;
+}
+.kanban-card-title {
+  flex: 1 1 auto;
+  font-weight: 600;
+  font-size: .9rem;
+  color: var(--text);
+  line-height: 1.3;
+  text-decoration: none;
+  /* Two-line clamp keeps cards uniform; full title is in the tooltip
+     of the link target. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.kanban-card-title:hover {
+  text-decoration: underline;
+}
+
+.kanban-card-project {
+  font-size: .75rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: .15em;
+}
+
+.kanban-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3em;
+}
+
+.kanban-card-foot {
+  display: flex;
+  align-items: center;
+  gap: .55em;
+  margin-top: .15em;
+  flex-wrap: wrap;
+  font-size: .75rem;
+  color: var(--muted);
+}
+.kanban-card-priority {
+  font-size: 1.1em;
+  line-height: 1;
+}
+.kanban-card-priority-high { color: #dc2626; }
+.kanban-card-priority-normal { color: #6b7280; }
+.kanban-card-priority-low { color: #9ca3af; }
+.kanban-card-date {
+  display: inline-flex;
+  align-items: center;
+  gap: .2em;
+}
+.kanban-card-assignees {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.kanban-card-assignees > .avatar:not(:first-child) {
+  margin-inline-start: -6px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.kanban-card-assignees-more {
+  margin-inline-start: 4px;
+  font-size: .7rem;
+  color: var(--muted);
+}
+
+.kanban-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: .55em .85em;
+  margin-bottom: .75em;
+  font-size: .85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5em;
+}
+html[data-theme="dark"] .kanban-error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.4);
+}
+.kanban-error-dismiss {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  padding: 0 .25em;
+}
+
+/* Mobile — same horizontal-scroll metaphor as desktop, just narrower
+   columns so each one is reachable without too much swipe. Cards still
+   draggable via the @dnd-kit TouchSensor. */
+@media (max-width: 700px) {
+  .kanban-column {
+    flex: 0 0 14em;
+    min-width: 14em;
+    max-height: 75vh;
+  }
+  .tasks-view-toggle {
+    font-size: .7rem;
+  }
+}

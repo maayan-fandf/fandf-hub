@@ -12,6 +12,8 @@ import { getUserRole, type UserRole } from "@/lib/userRole";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { getSharedDriveName } from "@/lib/driveFolders";
 import TasksQueue from "@/components/TasksQueue";
+import TasksKanban from "@/components/TasksKanban";
+import TasksViewToggle from "@/components/TasksViewToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,9 @@ type Search = {
   /** `mine=0` opts out of the default "author = me" filter (Data-Plus-
    *  style). When absent we treat it as `mine=1`. */
   mine?: string;
+  /** `view=kanban` switches to the drag-and-drop board; default is the
+   *  Data-Plus-style table queue. */
+  view?: string;
 };
 
 
@@ -124,17 +129,21 @@ export default async function TasksPage({
   ).sort();
   const departmentOptions = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
   const people = peopleRes?.people ?? [];
+  const view: "kanban" | "table" = sp.view === "kanban" ? "kanban" : "table";
 
   return (
     <main className="container">
-      <header className="page-header">
-        <div>
-          <h1>
-            <span className="emoji" aria-hidden>
-              📋
-            </span>
-            משימות
-          </h1>
+      <header className="page-header tasks-page-header">
+        <div className="tasks-page-header-main">
+          <div className="tasks-page-header-titlerow">
+            <h1>
+              <span className="emoji" aria-hidden>
+                📋
+              </span>
+              משימות
+            </h1>
+            <TasksViewToggle current={view} searchParams={sp} />
+          </div>
           <div className="subtitle">
             ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
             ב־Google Tasks לכל מבצע (מסומנת כהושלמה אוטומטית כשהמשימה
@@ -173,7 +182,7 @@ export default async function TasksPage({
             )}
           </div>
         </div>
-        <div className="page-header-actions">
+        <div className="header-actions">
           <Link href="/tasks/new" className="btn-primary">
             + משימה חדשה
           </Link>
@@ -213,7 +222,11 @@ export default async function TasksPage({
         </div>
       )}
 
-      {!error && (
+      {!error && view === "kanban" && (
+        <TasksKanban tasks={tasks} people={people} />
+      )}
+
+      {!error && view === "table" && (
         <TasksQueue
           tasks={tasks}
           groupByCompany={true}

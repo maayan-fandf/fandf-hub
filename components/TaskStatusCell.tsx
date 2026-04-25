@@ -17,7 +17,7 @@ import { fireConfetti, firePulse } from "@/lib/confetti";
 // Labels = the target state name (Hebrew). Data-Plus style: click the
 // pill, pick where the task goes next. No action-phrased verbs; the
 // state name alone is enough context.
-const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> = {
+export const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> = {
   draft: [
     { to: "awaiting_handling", label: "ממתין לטיפול" },
     { to: "cancelled", label: "בוטל" },
@@ -55,7 +55,7 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[
   ],
 };
 
-const STATUS_LABELS: Record<WorkTaskStatus, string> = {
+export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
   draft: "טיוטה",
   awaiting_handling: "ממתין לטיפול",
   in_progress: "בעבודה",
