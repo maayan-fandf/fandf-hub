@@ -372,6 +372,7 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
             resolved={t.resolved}
             body={t.body}
             deleteItemLabel="את המשימה"
+            canConvertToTask={false}
           />
         </div>
       </div>

@@ -92,6 +92,57 @@ function hubCommentUrl(project: string, commentId: string): string {
   return `${base}/projects/${encodeURIComponent(project)}/timeline#c=${encodeURIComponent(commentId)}`;
 }
 
+/* ── getCommentByIdDirect ──────────────────────────────────────────── */
+
+/** Lean payload for the "convert comment to task" pre-fill flow on
+ *  /tasks/new. Just the fields the create form cares about — no replies,
+ *  no resolved state, no spawned-task refs. */
+export type CommentSeed = {
+  id: string;
+  project: string;
+  body: string;
+  mentions: string[];
+  author_email: string;
+  author_name: string;
+};
+
+/** Single-row fetch by comment id, used when /tasks/new is opened with
+ *  `?from_comment=<id>` to pre-populate the create form. Returns null
+ *  if the row doesn't exist or the caller can't access its project. */
+export async function getCommentByIdDirect(
+  subjectEmail: string,
+  commentId: string,
+): Promise<CommentSeed | null> {
+  const [{ rows, headerIdx }, scope] = await Promise.all([
+    readCommentsOnce(subjectEmail),
+    getAccessScope(subjectEmail),
+  ]);
+  const idIdx = headerIdx.get("id");
+  if (idIdx == null) return null;
+  const target = String(commentId || "").trim();
+  for (const row of rows) {
+    if (String(row[idIdx] ?? "").trim() !== target) continue;
+    const cell = cellGetter(row, headerIdx);
+    const project = String(cell("project") ?? "").trim();
+    if (!project) return null;
+    if (!scope.isAdmin && !scope.accessibleProjects.has(project)) return null;
+    const mentionsCsv = String(cell("mentions") ?? "");
+    const mentions = mentionsCsv
+      .split(/[,;\n]/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.includes("@"));
+    return {
+      id: String(cell("id") ?? ""),
+      project,
+      body: String(cell("body") ?? ""),
+      mentions,
+      author_email: String(cell("author_email") ?? "").toLowerCase(),
+      author_name: String(cell("author_name") ?? ""),
+    };
+  }
+  return null;
+}
+
 /* ── projectCommentsDirect ─────────────────────────────────────────── */
 
 export async function projectCommentsDirect(

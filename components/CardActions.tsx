@@ -2,6 +2,7 @@ import ReplyDrawer from "@/components/ReplyDrawer";
 import ResolveButton from "@/components/ResolveButton";
 import EditDrawer from "@/components/EditDrawer";
 import DeleteButton from "@/components/DeleteButton";
+import ConvertToTaskButton from "@/components/ConvertToTaskButton";
 
 type Props = {
   /** Reply / resolve / delete target — usually the thread root. */
@@ -26,6 +27,10 @@ type Props = {
   /** When true, the ✓ shows the resolved state as read-only (no un-resolve).
    *  Default false — most places allow toggling. */
   readOnlyWhenResolved?: boolean;
+  /** Whether to surface the "📋 המר למשימה" promote-to-task button. Comments
+   *  + mentions get it; task cards (which use the same row) don't, since
+   *  converting a task into a task makes no sense. Default true. */
+  canConvertToTask?: boolean;
 };
 
 /**
@@ -43,6 +48,7 @@ export default function CardActions({
   canReply = true,
   editLocked = false,
   readOnlyWhenResolved = false,
+  canConvertToTask = true,
 }: Props) {
   return (
     <div className="card-actions">
@@ -59,6 +65,9 @@ export default function CardActions({
         locked={editLocked || resolved}
         iconOnly
       />
+      {canConvertToTask && (
+        <ConvertToTaskButton commentId={editCommentId ?? commentId} />
+      )}
       <DeleteButton
         commentId={commentId}
         itemLabel={deleteItemLabel}

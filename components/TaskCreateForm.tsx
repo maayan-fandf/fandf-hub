@@ -34,11 +34,24 @@ type ProjectOption = {
 export default function TaskCreateForm({
   projects,
   defaultProject,
+  defaultDescription = "",
+  defaultAssignees = "",
+  defaultTitle = "",
   people,
   currentUserEmail,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
+  /** Pre-fill the description textarea — used by the "convert comment
+   *  to task" flow on /tasks/new?from_comment=X. */
+  defaultDescription?: string;
+  /** Pre-fill the assignees field as a CSV. The comment's `mentions`
+   *  field maps directly here. */
+  defaultAssignees?: string;
+  /** Pre-fill the title — typically the first line of the source
+   *  comment, truncated. The user almost always edits this before
+   *  saving, but a starting point beats an empty field. */
+  defaultTitle?: string;
   people: TasksPerson[];
   currentUserEmail: string;
 }) {
@@ -80,9 +93,9 @@ export default function TaskCreateForm({
   const [departments, setDepartments] = useState<string[]>([]);
   const [projectManager, setProjectManager] = useState(defaultPm);
   const [approver, setApprover] = useState("");
-  const [assignees, setAssignees] = useState("");
+  const [assignees, setAssignees] = useState(defaultAssignees);
   const [campaign, setCampaign] = useState("");
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle);
   // Folder selection. Default is "new" with an auto-generated name;
   // user can either accept it, edit the name, or click an existing
   // folder in the tree to reuse it.
@@ -342,6 +355,7 @@ export default function TaskCreateForm({
           name="description"
           rows={5}
           placeholder="מה צריך לעשות, מה הקונטקסט, קישורים רלוונטיים…"
+          defaultValue={defaultDescription}
         />
       </label>
 

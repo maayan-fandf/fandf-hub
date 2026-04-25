@@ -269,6 +269,7 @@ function TaskCard({
           resolved={task.resolved}
           body={task.body}
           deleteItemLabel="את המשימה"
+          canConvertToTask={false}
         />
       </div>
     </li>
