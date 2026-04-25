@@ -8,6 +8,7 @@ import {
   type WorkTaskStatus,
   type TasksPerson,
 } from "@/lib/appsScript";
+import { getUserRole, type UserRole } from "@/lib/userRole";
 import TasksQueue from "@/components/TasksQueue";
 
 export const dynamic = "force-dynamic";
@@ -40,12 +41,34 @@ export default async function TasksPage({
   const sp = await searchParams;
 
   const me = await currentUserEmail().catch(() => "");
-  // Author filter defaults to the logged-in user unless explicitly opted
-  // out via `?mine=0` or overridden with an explicit `?author=`. Matches
-  // the Data Plus behaviour where the filter loads with your own name.
+  // Role-aware default filter: each role has a different "what
+  // matters to me right now" axis. Admins see what they authored
+  // (Data Plus default — admins typically brief tasks in). Managers
+  // see tasks waiting their approval. Creatives see tasks assigned
+  // to them. Clients fall back to the no-default behavior since
+  // they're already access-gated to their projects.
+  // `?mine=0` opts out of all role defaults (the "show all" path).
+  const role: UserRole = me ? await getUserRole(me).catch(() => "unknown") : "unknown";
   const mineOptIn = sp.mine !== "0";
+
   const effectiveAuthor =
-    sp.author !== undefined ? sp.author : mineOptIn ? me : "";
+    sp.author !== undefined
+      ? sp.author
+      : mineOptIn && (role === "admin" || role === "unknown")
+        ? me
+        : "";
+  const effectiveApprover =
+    sp.approver !== undefined
+      ? sp.approver
+      : mineOptIn && role === "manager"
+        ? me
+        : "";
+  const effectiveAssignee =
+    sp.assignee !== undefined
+      ? sp.assignee
+      : mineOptIn && role === "creative"
+        ? me
+        : "";
 
   const [tasksRes, projectsRes, peopleRes] = await Promise.all([
     tasksList({
@@ -56,9 +79,9 @@ export default async function TasksPage({
       priority: sp.priority || "",
       department: sp.department || "",
       author: effectiveAuthor,
-      approver: sp.approver || "",
+      approver: effectiveApprover,
       project_manager: sp.project_manager || "",
-      assignee: sp.assignee || "",
+      assignee: effectiveAssignee,
       campaign: sp.campaign || "",
       requested_date_from: sp.requested_date_from || "",
       requested_date_to: sp.requested_date_to || "",
@@ -102,21 +125,34 @@ export default async function TasksPage({
             ניהול משימות — כל משימה מקבלת תיקייה ב־Drive תחת{" "}
             <code dir="ltr">חברה / פרויקט / משימה</code>, אירוע ביומן לכל
             מבצע, משימה ב־Google Tasks, ומייל לגורם המאשר.
-            {mineOptIn && !sp.author && me && (
-              <>
-                {" "}
-                · מציג רק משימות שיצרת ({me.split("@")[0]}) —{" "}
-                <Link href={buildHref(sp, { mine: "0", author: "" })}>
-                  הצג את כולם
-                </Link>
-              </>
+            {mineOptIn && me && (
+              <RoleDefaultHint
+                role={role}
+                me={me}
+                hasExplicitAuthor={sp.author !== undefined}
+                hasExplicitApprover={sp.approver !== undefined}
+                hasExplicitAssignee={sp.assignee !== undefined}
+                showAllHref={buildHref(sp, {
+                  mine: "0",
+                  author: "",
+                  approver: "",
+                  assignee: "",
+                })}
+              />
             )}
             {!mineOptIn && (
               <>
                 {" "}
                 · מציג את כולם —{" "}
-                <Link href={buildHref(sp, { mine: "1", author: "" })}>
-                  חזרה לשלי
+                <Link
+                  href={buildHref(sp, {
+                    mine: "1",
+                    author: "",
+                    approver: "",
+                    assignee: "",
+                  })}
+                >
+                  חזרה לברירת מחדל
                 </Link>
               </>
             )}
@@ -137,10 +173,10 @@ export default async function TasksPage({
           status: sp.status || "",
           priority: sp.priority || "",
           department: sp.department || "",
-          author: sp.author ?? (mineOptIn ? me : ""),
-          approver: sp.approver || "",
+          author: effectiveAuthor,
+          approver: effectiveApprover,
           project_manager: sp.project_manager || "",
-          assignee: sp.assignee || "",
+          assignee: effectiveAssignee,
           campaign: sp.campaign || "",
           requested_date_from: sp.requested_date_from || "",
           requested_date_to: sp.requested_date_to || "",
@@ -169,6 +205,45 @@ export default async function TasksPage({
   );
 }
 
+
+/**
+ * Renders the "מציג רק…" subtitle line + the "show all" opt-out, with
+ * copy tailored to the user's role. Shown when the page is in its
+ * default (`mine=1`) state and a role-default actually applies.
+ */
+function RoleDefaultHint({
+  role,
+  me,
+  hasExplicitAuthor,
+  hasExplicitApprover,
+  hasExplicitAssignee,
+  showAllHref,
+}: {
+  role: UserRole;
+  me: string;
+  hasExplicitAuthor: boolean;
+  hasExplicitApprover: boolean;
+  hasExplicitAssignee: boolean;
+  showAllHref: string;
+}) {
+  const handle = me.split("@")[0];
+  let text = "";
+  if (role === "manager" && !hasExplicitApprover) {
+    text = `מציג משימות שמחכות לאישורך (${handle})`;
+  } else if (role === "creative" && !hasExplicitAssignee) {
+    text = `מציג משימות שמשובצות אצלך (${handle})`;
+  } else if ((role === "admin" || role === "unknown") && !hasExplicitAuthor) {
+    text = `מציג משימות שיצרת (${handle})`;
+  }
+  if (!text) return null;
+  return (
+    <>
+      {" "}
+      · {text} —{" "}
+      <Link href={showAllHref}>הצג את כולם</Link>
+    </>
+  );
+}
 
 // Build an href for /tasks with the current search params plus overrides.
 // Empty-string overrides drop the key entirely (URL stays clean).
