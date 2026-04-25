@@ -1,10 +1,12 @@
 import Link from "next/link";
 import {
+  currentUserEmail,
   getMorningFeed,
   getMyProjects,
   type MorningFeed,
   type MorningProject,
 } from "@/lib/appsScript";
+import { getUserPrefs } from "@/lib/userPrefs";
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import MorningSignalRow from "@/components/MorningSignalRow";
@@ -27,9 +29,19 @@ export default async function MorningPage({
   // inbox, and nav dropdown.
   const scopedPerson = await getScopedPerson(sp.person);
 
+  // Honor the gear-menu "view as" pref so the morning page mirrors
+  // /tasks and / when impersonating. Without this the feed always
+  // came back as the session user even when view_as was set.
+  const me = await currentUserEmail().catch(() => "");
+  const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
+  const viewAs = prefs?.view_as_email || "";
+  const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
+
   const [feedRes, projectsRes] = await Promise.allSettled([
-    getMorningFeed({ scope }),
-    scopedPerson ? getMyProjects() : Promise.resolve(null),
+    getMorningFeed({ scope, overrideEmail }),
+    scopedPerson || overrideEmail
+      ? getMyProjects(overrideEmail)
+      : Promise.resolve(null),
   ]);
   const data: MorningFeed | null =
     feedRes.status === "fulfilled" ? feedRes.value : null;

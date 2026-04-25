@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Prefs = {
   email_notifications: boolean;
@@ -35,8 +35,13 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Controlled draft for the view_as input — separate from `prefs`
+  // so we can autosave with a debounce as the user types without
+  // refetching prefs on every keystroke.
+  const [viewAsDraft, setViewAsDraft] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
   const loadedRef = useRef(false);
+  const viewAsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open || loadedRef.current) return;
@@ -80,6 +85,7 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
         throw new Error(("error" in prefsData && prefsData.error) || "prefs fetch failed");
       }
       setPrefs(prefsData.prefs);
+      setViewAsDraft(prefsData.prefs.view_as_email || "");
       if (peopleRes.ok && "ok" in peopleData && peopleData.ok) {
         setPeople(peopleData.people);
       }
@@ -89,18 +95,48 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
     }
   }
 
+  // Schedule a debounced save for view_as_email so the user's typing
+  // gets persisted within ~600ms of stopping, even if they navigate
+  // away before pressing Tab/clicking out. Combined with `keepalive`
+  // on the fetch, this catches the common "type, click nav link, see
+  // wrong data" race.
+  const scheduleViewAsSave = useCallback(
+    (value: string) => {
+      if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
+      viewAsTimerRef.current = setTimeout(() => {
+        const trimmed = value.trim();
+        if (trimmed === (prefs?.view_as_email || "")) return;
+        // Only auto-save when the value parses as an email (or is
+        // explicitly empty for "act as self"). Avoids writing partial
+        // strings like "nada" while the user is mid-typing.
+        if (trimmed === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+          void save({ view_as_email: trimmed });
+        }
+      }, 600);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [prefs?.view_as_email],
+  );
+
   async function save(partial: Partial<Prefs>) {
     if (!prefs) return;
     setError(null);
     setBusy(Object.keys(partial).join(","));
-    // Optimistic update
+    // Optimistic update — UI flips before the round-trip. If the
+    // server rejects we re-load and restore the truth below.
     const optimistic = { ...prefs, ...partial };
     setPrefs(optimistic);
     try {
+      // `keepalive: true` keeps the request in flight even if the user
+      // navigates immediately after toggling — common for view_as,
+      // where the user types an email then clicks a nav link before
+      // the input's onBlur completes. Without keepalive, the fetch
+      // would be aborted and the pref never reaches the sheet.
       const res = await fetch("/api/me/prefs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(partial),
+        keepalive: true,
       });
       const data = (await res.json()) as
         | { ok: true; prefs: Prefs }
@@ -178,12 +214,21 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
                   list="settings-menu-people"
                   className="settings-menu-input"
                   placeholder="email או השאר ריק כדי להציג את עצמך"
-                  defaultValue={prefs.view_as_email}
+                  value={viewAsDraft}
                   dir="ltr"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setViewAsDraft(v);
+                    scheduleViewAsSave(v);
+                  }}
                   onBlur={(e) => {
+                    // Cancel any pending debounce and commit immediately
+                    // — onBlur fires when the user clicks away or moves
+                    // focus, so they expect their value to be saved now.
+                    if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
                     const v = e.currentTarget.value.trim();
                     if (v !== prefs.view_as_email) {
-                      save({ view_as_email: v });
+                      void save({ view_as_email: v });
                     }
                   }}
                   onKeyDown={(e) => {
@@ -202,7 +247,11 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
                   <button
                     type="button"
                     className="settings-menu-link"
-                    onClick={() => save({ view_as_email: "" })}
+                    onClick={() => {
+                      if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
+                      setViewAsDraft("");
+                      void save({ view_as_email: "" });
+                    }}
                     disabled={busy === "view_as_email"}
                   >
                     חזור להציג את עצמי ({myEmail})

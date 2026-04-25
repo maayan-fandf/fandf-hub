@@ -729,12 +729,23 @@ export type MorningFeed = {
   projects: MorningProject[];
 };
 
-export function getMorningFeed(
-  opts: { scope?: "mine" | "all"; project?: string } = {},
+export async function getMorningFeed(
+  opts: {
+    scope?: "mine" | "all";
+    project?: string;
+    /** Override identity for the gear-menu "view as" feature. When set,
+     *  the feed is fetched as if this email made the request — same
+     *  scope rules as the session user, just keyed to a different
+     *  person's roster. */
+    overrideEmail?: string;
+  } = {},
 ): Promise<MorningFeed> {
   const params: Record<string, string> = {};
   if (opts.scope) params.scope = opts.scope;
   if (opts.project) params.project = opts.project;
+  if (opts.overrideEmail) {
+    return callApiAs<MorningFeed>(opts.overrideEmail, "morningFeed", params);
+  }
   return callApi<MorningFeed>("morningFeed", params);
 }
 
