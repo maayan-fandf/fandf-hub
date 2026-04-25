@@ -3961,11 +3961,12 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: .88em;
+  font-size: .82em;
+  table-layout: auto;
 }
 .tasks-table th,
 .tasks-table td {
-  padding: .7em .85em;
+  padding: .5em .55em;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
   text-align: start;
@@ -4206,7 +4207,7 @@ html[data-theme="dark"] .inline-edit-err {
   color: #fca5a5;
   border-color: #991b1b80;
 }
-.tasks-table .title-cell { min-width: 16em; }
+.tasks-table .title-cell { min-width: 12em; }
 .tasks-title-link {
   color: var(--text); font-weight: 600; text-decoration: none;
 }
@@ -4384,17 +4385,17 @@ html[data-theme="dark"] .tasks-brief-chip {
 .tasks-table th.icons,
 .tasks-table td.icons { width: 1%; white-space: nowrap; }
 .tasks-row-icons {
-  display: inline-flex; gap: .25em;
+  display: inline-flex; gap: .15em;
 }
 .tasks-row-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 2em; height: 2em;
+  width: 1.7em; height: 1.7em;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   text-decoration: none;
-  font-size: .95em;
+  font-size: .9em;
   transition: background .12s, border-color .12s;
 }
 .tasks-row-icon:hover {
@@ -5164,19 +5165,27 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   padding: .15em .25em 0;
 }
 
-/* Hover-only row affordance — used by /tasks for the per-row "open in
-   Explorer" button. Always rendered (so SR users can still reach it on
-   focus), but visually hidden until hover/focus-within so the row
-   doesn't feel cluttered with always-on icons. */
-.tasks-row-hover-only {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .12s ease;
+/* Per-row copy-local-path button on the /tasks queue. Sized down to
+   match the 2em × 2em icon strip so the row width doesn't grow and
+   force a horizontal scroll. */
+.tasks-row-icons .copy-local-path-wrap { display: inline-flex; }
+.tasks-row-icons .copy-local-path-btn {
+  width: 1.7em;
+  height: 1.7em;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: .9em;
+  line-height: 1;
 }
-.tasks-table tr:hover .tasks-row-hover-only,
-.tasks-table tr:focus-within .tasks-row-hover-only {
-  opacity: 1;
-  pointer-events: auto;
+.tasks-row-icons .copy-local-path-btn:hover {
+  background: var(--surface-soft);
+  border-color: var(--accent);
 }
 
 /* Department-filter banner shown above the assignee chips when one or

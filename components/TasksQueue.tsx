@@ -669,12 +669,10 @@ function TaskRow({
             </a>
           )}
           {localPath && (
-            <span className="tasks-row-hover-only" aria-hidden={false}>
-              <CopyLocalPathButton
-                path={localPath}
-                title="העתק נתיב מקומי — Drive Desktop"
-              />
-            </span>
+            <CopyLocalPathButton
+              path={localPath}
+              title="העתק נתיב מקומי — Drive Desktop"
+            />
           )}
           <Link
             href={`/tasks/${encodeURIComponent(task.id)}#history`}
