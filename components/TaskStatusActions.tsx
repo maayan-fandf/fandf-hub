@@ -15,11 +15,13 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; t
   ],
   awaiting_handling: [
     { to: "in_progress", label: "בעבודה", tone: "primary" },
+    { to: "awaiting_clarification", label: "ממתין לבירור", tone: "warn" },
     { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   in_progress: [
     { to: "awaiting_approval", label: "ממתין לאישור", tone: "primary" },
     { to: "awaiting_clarification", label: "ממתין לבירור", tone: "warn" },
+    { to: "awaiting_handling", label: "ממתין לטיפול", tone: "ghost" },
     { to: "cancelled", label: "בוטל", tone: "ghost" },
   ],
   awaiting_clarification: [

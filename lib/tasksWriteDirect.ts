@@ -54,12 +54,23 @@ const TASKS_STATUSES: WorkTaskStatus[] = [
 
 // Mirror of Apps Script TASKS_ALLOWED_TRANSITIONS. Lifecycle flow:
 //   draft → awaiting_handling → in_progress → awaiting_approval → done
-//                                    ⇄
-//                             awaiting_clarification
+//                       ⇅                ⇅
+//                       awaiting_clarification
+//
+// Two "step back" transitions surface in real workflows:
+//   - awaiting_handling → awaiting_clarification: briefed in but
+//     blocked before work starts (e.g. waiting on a design brief).
+//   - in_progress       → awaiting_handling:     started but had to
+//     drop the task and put it back in the queue for someone else.
 const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = {
   draft: ["awaiting_handling", "cancelled"],
-  awaiting_handling: ["in_progress", "cancelled"],
-  in_progress: ["awaiting_approval", "awaiting_clarification", "cancelled"],
+  awaiting_handling: ["in_progress", "awaiting_clarification", "cancelled"],
+  in_progress: [
+    "awaiting_approval",
+    "awaiting_clarification",
+    "awaiting_handling",
+    "cancelled",
+  ],
   awaiting_clarification: ["in_progress", "awaiting_handling", "cancelled"],
   awaiting_approval: ["done", "in_progress", "cancelled"],
   done: ["in_progress"],
