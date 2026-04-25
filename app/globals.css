@@ -5031,6 +5031,47 @@ html[data-theme="dark"] .admin-default-manager { background: rgba(251,191,36,.2)
 html[data-theme="dark"] .admin-default-creative { background: rgba(96,165,250,.2); color:#bfdbfe; }
 html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2); color:#a7f3d0; }
 
+/* ── Confetti burst (task → done celebration) ─────────────────── */
+.confetti-burst-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 9999;
+}
+.confetti-piece {
+  --dx: 0px;
+  --dy: 0px;
+  --rot: 0deg;
+  --scale: 1;
+  position: absolute;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  pointer-events: none;
+  transform-origin: center;
+  opacity: .95;
+  animation: confetti-fly 1.4s cubic-bezier(.18,.7,.4,1) forwards;
+  will-change: transform, opacity;
+}
+@keyframes confetti-fly {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(var(--scale));
+    opacity: 1;
+  }
+  35% {
+    transform: translate(calc(var(--dx) * .55), var(--dy)) rotate(calc(var(--rot) * .5)) scale(var(--scale));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), 80vh) rotate(var(--rot)) scale(calc(var(--scale) * .85));
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti-burst-container { display: none; }
+}
+
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }
   .task-form-row { grid-template-columns: 1fr; }

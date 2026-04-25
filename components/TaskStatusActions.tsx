@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
+import { fireConfetti } from "@/lib/confetti";
 
 // Mirror of Apps Script TASKS_ALLOWED_TRANSITIONS — kept in sync so the UI
 // only offers transitions the server will accept. If they diverge the
@@ -68,6 +69,13 @@ export default function TaskStatusActions({ task }: { task: WorkTask }) {
         | { ok: false; error: string };
       if (!res.ok || !data.ok) {
         throw new Error("error" in data ? data.error : "Failed to update");
+      }
+      // Confetti for transitions to `done`. The detail page doesn't
+      // hard-reload — router.refresh() picks up new state in place —
+      // so we don't block on the burst here; it animates over the
+      // refresh.
+      if (to === "done") {
+        fireConfetti();
       }
       router.refresh();
     } catch (e) {
