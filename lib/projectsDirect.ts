@@ -37,13 +37,49 @@ function envOrThrow(name: string): string {
 /** Parse a Google Chat webhook URL into the shareable space link format
  *  the hub renders. Mirrors the `_chatSpaceUrlFromWebhook_` helper on
  *  the Apps Script side. Returns "" when the URL doesn't match. */
-function chatSpaceUrlFromWebhook(webhookUrl: string): string {
+export function chatSpaceUrlFromWebhook(webhookUrl: string): string {
   if (!webhookUrl) return "";
   const match = webhookUrl.match(
     /chat\.googleapis\.com\/v1\/spaces\/([A-Za-z0-9_-]+)\//,
   );
   if (!match) return "";
   return `https://mail.google.com/chat/u/0/#chat/space/${match[1]}`;
+}
+
+/**
+ * Look up the Google Chat space deep link for a single project. Used
+ * by /tasks/[id] to render an "open in chat" button without going
+ * through the full getMyProjectsDirect assembly.
+ *
+ * Reads Keys via the shared cached helper, so this is effectively
+ * free when called on a page that already touched Keys (every task /
+ * project page does, via assertProjectAccess + getMyProjects).
+ *
+ * Returns "" when:
+ * - Keys lookup fails (project not found, no Chat Webhook column)
+ * - The webhook cell is empty
+ * - The webhook URL doesn't match the expected /v1/spaces/<id>/ shape
+ */
+export async function getProjectChatSpaceUrl(
+  subjectEmail: string,
+  project: string,
+): Promise<string> {
+  const target = (project || "").toLowerCase().trim();
+  if (!target) return "";
+  try {
+    const { headers, rows } = await readKeysRows(subjectEmail);
+    const iProj = headers.indexOf("פרוייקט");
+    const iWebhook = headers.indexOf("Chat Webhook");
+    if (iProj < 0 || iWebhook < 0) return "";
+    for (const row of rows) {
+      const name = String(row[iProj] ?? "").toLowerCase().trim();
+      if (name !== target) continue;
+      return chatSpaceUrlFromWebhook(String(row[iWebhook] ?? "").trim());
+    }
+  } catch {
+    // Non-fatal — page just renders without the button.
+  }
+  return "";
 }
 
 /** Split a "Name1, Name2" roster cell into an array of trimmed names.

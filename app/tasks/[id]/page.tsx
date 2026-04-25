@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { auth } from "@/auth";
 import { tasksGet, tasksList, tasksPeopleList } from "@/lib/appsScript";
 import type { WorkTask } from "@/lib/appsScript";
+import { getProjectChatSpaceUrl } from "@/lib/projectsDirect";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
@@ -48,10 +50,20 @@ export default async function TaskDetailPage({
   // matter). The fetch hits the same Comments tab tasksGet just read
   // from; readCommentsTab is now per-request cached so this is
   // effectively free.
-  const roundChain =
+  //
+  // Also: project Chat space URL — derived from the Keys "Chat Webhook"
+  // cell. Reads Keys (cached) so it doesn't add a Sheets call when
+  // anything else on the page already touched Keys.
+  const session = await auth();
+  const subjectEmail = session?.user?.email ?? "";
+  const [roundChain, chatSpaceUrl] = await Promise.all([
     t.round_number > 1 || t.parent_id
-      ? await fetchRoundChain(t).catch(() => [])
-      : [];
+      ? fetchRoundChain(t).catch(() => [])
+      : Promise.resolve([]),
+    subjectEmail
+      ? getProjectChatSpaceUrl(subjectEmail, t.project).catch(() => "")
+      : Promise.resolve(""),
+  ]);
 
   return (
     <main className="container">
@@ -101,6 +113,17 @@ export default async function TaskDetailPage({
           </div>
         </div>
         <div className="page-header-actions">
+          {chatSpaceUrl && (
+            <a
+              href={chatSpaceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-ghost"
+              title={`פתח את חלל ה-Chat של ${t.project}`}
+            >
+              💬 פתח ב-Chat
+            </a>
+          )}
           {t.drive_folder_url && (
             <a
               href={t.drive_folder_url}

@@ -6496,4 +6496,58 @@ html[data-theme="dark"] .kanban-error {
   .tasks-view-toggle {
     font-size: .7rem;
   }
+
+  /* Narrow-viewport tweaks for the /tasks/[id] sub-components added
+     in this session. The topnav wraps onto 2-3 rows on small screens
+     (its flex-wrap:wrap on .topnav-inner), which makes the tab
+     strip's sticky `top: 3.25rem` overlap the bottom of the wrapped
+     topnav. Drop sticky on narrow — users scroll less far on phones
+     anyway, and the tab strip stays useful as an in-flow nav row. */
+  .task-detail-tabs {
+    position: relative;
+    top: auto;
+    /* Squeeze the bleed since the card padding is tighter on mobile. */
+    margin: 0 -1em 1em;
+    padding: .5em 1em;
+    gap: .25em;
+  }
+  .task-detail-tab {
+    /* Allow wrapping onto two rows if needed; the labels are short
+       enough that 3-on-one-row is fine on most phones, but tablets
+       in portrait can be ambiguous. */
+    flex: 1 1 auto;
+    text-align: center;
+    padding: .35em .55em;
+    font-size: .85em;
+  }
+
+  /* Side panel: blocks already collapse below the main content via
+     the existing .task-detail-grid → 1fr at <900px. Just tighten the
+     edit-mode banner so it doesn't dominate on a narrow phone. */
+  .task-detail-side-banner {
+    font-size: .8em;
+    padding: .45em .65em;
+  }
+
+  /* Status history timeline — content already wraps via flex-wrap;
+     just slightly tighten padding so the dots have room without
+     creating a ton of vertical scroll. */
+  .task-status-history-item {
+    padding-block: .4em;
+    padding-inline-end: 1.3em;
+  }
+
+  /* Round-chain chips — wrap already, but add a touch of breathing
+     room between the "שרשור:" label and the chips on a fresh row. */
+  .task-round-chain {
+    margin-top: .25em;
+    gap: .3em;
+  }
+
+  /* Page-header actions row: when the user has 3 buttons (Chat /
+     Drive / Edit) it was tight on narrow viewports. Let it wrap. */
+  .page-header-actions {
+    flex-wrap: wrap;
+    gap: .35em;
+  }
 }
