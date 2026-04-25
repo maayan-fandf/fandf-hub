@@ -8,13 +8,18 @@ import {
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
+  closestCorners,
   useSensor,
   useSensors,
-  useDraggable,
   useDroppable,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 import { STATUS_LABELS } from "@/components/TaskStatusCell";
 import Avatar from "@/components/Avatar";
@@ -109,15 +114,22 @@ export default function TasksKanban({
     setDraggingId(null);
     if (!e.over) return;
     const overId = String(e.over.id);
+    if (overId === id) return;
 
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
 
     // Resolve the drop into (targetStatus, insertBeforeId | null).
-    // - Drop on a column (`col:<status>`) → status of that column,
-    //   insert at end (no neighbor).
     // - Drop on a card → status of that card's column, insert just
-    //   above that card (insertBeforeId = card.id).
+    //   above that card (insertBeforeId = card.id). Cross-column moves
+    //   work the same way: target column is wherever the over-card
+    //   currently lives.
+    // - Drop on a column body (`col:<status>`) with no card under the
+    //   pointer → drop the dragged card AT THE END of that column.
+    //   This is the "drop on empty space" path; with `closestCorners`
+    //   collision the closest card wins as long as the pointer is
+    //   anywhere near a card, so this branch only fires on truly empty
+    //   columns or far-from-cards drops.
     let targetStatus: WorkTaskStatus;
     let insertBeforeId: string | null = null;
     if (overId.startsWith("col:")) {
@@ -203,7 +215,12 @@ export default function TasksKanban({
   }
 
   return (
-    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
       {error && (
         <div className="kanban-error" role="alert">
           {error}
@@ -252,6 +269,11 @@ function KanbanColumn({
   peopleByEmail: Map<string, TasksPerson>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${column.key}` });
+  // Items list for the SortableContext — cards reorder visually within
+  // this list during drag (verticalListSortingStrategy shifts neighbors
+  // out of the way). Without this wrapper, dropping in any gap between
+  // cards falls back to the column droppable and lands at the bottom.
+  const itemIds = tasks.map((t) => t.id);
   return (
     <section
       ref={setNodeRef}
@@ -263,13 +285,15 @@ function KanbanColumn({
         <span className="kanban-column-count">{tasks.length}</span>
       </header>
       <div className="kanban-column-body">
-        {tasks.length === 0 ? (
-          <div className="kanban-column-empty">אין משימות</div>
-        ) : (
-          tasks.map((t) => (
-            <KanbanCard key={t.id} task={t} peopleByEmail={peopleByEmail} />
-          ))
-        )}
+        <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+          {tasks.length === 0 ? (
+            <div className="kanban-column-empty">אין משימות</div>
+          ) : (
+            tasks.map((t) => (
+              <KanbanCard key={t.id} task={t} peopleByEmail={peopleByEmail} />
+            ))
+          )}
+        </SortableContext>
       </div>
     </section>
   );
@@ -286,14 +310,15 @@ function KanbanCard({
   peopleByEmail: Map<string, TasksPerson>;
   isOverlay?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: task.id });
 
-  // While the original card is being dragged, hide it from its column
-  // so only the DragOverlay clone is visible. Otherwise the user sees
-  // two copies of the card until drop.
-  const style: React.CSSProperties = {};
+  // While the original card is being dragged, hide it from its column so
+  // only the DragOverlay clone is visible. Otherwise the user sees two
+  // copies of the card until drop. Other (non-dragged) cards in the same
+  // SortableContext shift via `transform` to preview the drop position
+  // — the `transition` prop animates that shift smoothly.
+  const style: React.CSSProperties = { transition };
   if (transform && !isOverlay) {
     style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0)`;
   }

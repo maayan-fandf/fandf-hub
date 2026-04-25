@@ -35,11 +35,31 @@
  * - createMention: caller must have project access.
  */
 
+import { after } from "next/server";
 import {
   sheetsClient,
   tasksApiClient,
   gmailClient,
 } from "@/lib/sa";
+import { readKeysCached } from "@/lib/keys";
+
+/**
+ * Run `fn` after the response has been flushed to the user. Wraps Next 15's
+ * `after()` so we can keep the call site readable and centralize error
+ * handling — deferred work errors must never crash the route handler.
+ *
+ * Used for notification side-effects (Gmail, Chat webhooks) and best-effort
+ * Google Tasks syncs that don't gate the user-visible response.
+ */
+function deferAfterResponse(fn: () => Promise<void>): void {
+  after(async () => {
+    try {
+      await fn();
+    } catch (e) {
+      console.log("[commentsWriteDirect] deferred work failed:", e);
+    }
+  });
+}
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -94,39 +114,13 @@ function parseAssignees(raw: unknown): string[] {
 
 /* ── Keys access control (project membership) ──────────────────────── */
 
-// Strip zero-width / RTL-mark / surrogate noise that creeps into Hebrew
-// cells via copy-paste. Same pattern as tasksWriteDirect.ts.
-const KEYS_HEADER_NORMALIZE = /[​-‏‪-‮⁠­﻿\uD800-\uDFFF]/g;
-
-async function readKeys(subjectEmail: string): Promise<{
-  headers: string[];
-  rows: unknown[][];
-}> {
-  const sheets = sheetsClient(subjectEmail);
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: envOrThrow("SHEET_ID_MAIN"),
-    range: "Keys",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (res.data.values ?? []) as unknown[][];
-  if (!values.length) return { headers: [], rows: [] };
-  const headers = (values[0] as unknown[]).map((h) =>
-    String(h ?? "")
-      .replace(KEYS_HEADER_NORMALIZE, "")
-      .replace(/\s+/g, " ")
-      .trim(),
-  );
-  return { headers, rows: values.slice(1) };
-}
-
 async function assertProjectAccess(
   subjectEmail: string,
   project: string,
 ): Promise<void> {
   const lc = subjectEmail.toLowerCase().trim();
   if (ADMIN_EMAILS.has(lc)) return;
-  const { headers, rows } = await readKeys(subjectEmail);
+  const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iClients = headers.indexOf("Email Client");
   const iInternal = headers.indexOf("Access — internal only");
@@ -263,7 +257,7 @@ async function postChatWebhook(
   card: { authorName: string; body?: string; deepLink?: string },
 ): Promise<void> {
   try {
-    const { headers, rows } = await readKeys(subjectEmail);
+    const { headers, rows } = await readKeysCached(subjectEmail);
     const iProj = headers.indexOf("פרוייקט");
     const iWebhook = headers.indexOf("Chat Webhook");
     if (iProj < 0 || iWebhook < 0) return;
@@ -498,30 +492,34 @@ export async function postReplyDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
-  // Best-effort notifications: parent author by email + project's chat webhook.
+  // Notifications run after the response is flushed — they're best-effort
+  // and the user shouldn't wait on Gmail / Chat round-trips.
   const me = subjectEmail.toLowerCase().trim();
-  if (parentAuthor && parentAuthor !== me) {
-    const allowed = await filterByEmailPref([parentAuthor]);
-    if (allowed.length > 0) {
-      const link = hubCommentUrl(parentProject, parentCommentId);
-      await sendMimeMail(
-        me,
-        parentAuthor,
-        `💬 תגובה חדשה לשרשור — ${parentProject}`,
-        [
-          `${me.split("@")[0]} הגיב/ה לשרשור: "${parentBodyShort}"`,
-          "",
-          body.trim(),
-          "",
-          link ? `שרשור מלא: ${link}` : "",
-        ].filter(Boolean).join("\n"),
-      );
+  const trimmedBody = body.trim();
+  deferAfterResponse(async () => {
+    if (parentAuthor && parentAuthor !== me) {
+      const allowed = await filterByEmailPref([parentAuthor]);
+      if (allowed.length > 0) {
+        const link = hubCommentUrl(parentProject, parentCommentId);
+        await sendMimeMail(
+          me,
+          parentAuthor,
+          `💬 תגובה חדשה לשרשור — ${parentProject}`,
+          [
+            `${me.split("@")[0]} הגיב/ה לשרשור: "${parentBodyShort}"`,
+            "",
+            trimmedBody,
+            "",
+            link ? `שרשור מלא: ${link}` : "",
+          ].filter(Boolean).join("\n"),
+        );
+      }
     }
-  }
-  await postChatWebhook(subjectEmail, parentProject, "reply", {
-    authorName: me.split("@")[0],
-    body: body.trim().slice(0, 120),
-    deepLink: hubCommentUrl(parentProject, parentCommentId),
+    await postChatWebhook(subjectEmail, parentProject, "reply", {
+      authorName: me.split("@")[0],
+      body: trimmedBody.slice(0, 120),
+      deepLink: hubCommentUrl(parentProject, parentCommentId),
+    });
   });
 
   return {
@@ -529,7 +527,7 @@ export async function postReplyDirect(
     comment_id: id,
     parent_id: parentCommentId,
     project: parentProject,
-    body: body.trim(),
+    body: trimmedBody,
     timestamp: now,
   };
 }
@@ -567,7 +565,9 @@ export async function resolveCommentDirect(
     requestBody: { values: [[resolved]] },
   });
 
-  // If this is a top-level comment with spawned Google Tasks, cascade.
+  // If this is a top-level comment with spawned Google Tasks, cascade the
+  // status change + post a Chat ping. Both are after-response — the user
+  // already saw their resolved toggle land via the Sheet write above.
   const parentId = String(row[idx.get("parent_id") ?? -1] ?? "").trim();
   if (!parentId) {
     const gtRaw = row[idx.get("google_tasks") ?? -1];
@@ -577,18 +577,20 @@ export async function resolveCommentDirect(
     } catch {
       gt = {};
     }
-    if (Object.keys(gt).length > 0) {
-      await syncGoogleTasksStatus(gt, resolved ? "completed" : "needsAction");
-    }
-    if (resolved) {
-      const me = subjectEmail.toLowerCase().trim();
-      const bodyShort = String(row[idx.get("body") ?? -1] ?? "").slice(0, 80);
-      await postChatWebhook(subjectEmail, project, "resolve", {
-        authorName: me.split("@")[0],
-        body: bodyShort,
-        deepLink: hubCommentUrl(project, commentId),
-      });
-    }
+    const bodyShort = String(row[idx.get("body") ?? -1] ?? "").slice(0, 80);
+    const me = subjectEmail.toLowerCase().trim();
+    deferAfterResponse(async () => {
+      if (Object.keys(gt).length > 0) {
+        await syncGoogleTasksStatus(gt, resolved ? "completed" : "needsAction");
+      }
+      if (resolved) {
+        await postChatWebhook(subjectEmail, project, "resolve", {
+          authorName: me.split("@")[0],
+          body: bodyShort,
+          deepLink: hubCommentUrl(project, commentId),
+        });
+      }
+    });
   }
 
   return { ok: true, comment_id: commentId, resolved };
@@ -630,17 +632,19 @@ export async function deleteCommentDirect(
     }
   }
 
-  // Best-effort: delete spawned Google Tasks before removing rows.
-  let deletedTasks = 0;
+  // Parse spawned Google Tasks refs now (we still own `row`); the actual
+  // delete-tasks API calls happen after the response is flushed since no
+  // client consumes deleted_tasks and the user perceives "deleted" the
+  // moment the row vanishes from their view.
+  let gtToDelete: Record<string, GTaskRef> = {};
   const gtRaw = row[idx.get("google_tasks") ?? -1];
   try {
-    const gt: Record<string, GTaskRef> =
-      typeof gtRaw === "string" ? JSON.parse(gtRaw) : ((gtRaw as Record<string, GTaskRef>) || {});
-    if (Object.keys(gt).length > 0) {
-      deletedTasks = await deleteGoogleTasks(gt);
-    }
+    gtToDelete =
+      typeof gtRaw === "string"
+        ? JSON.parse(gtRaw)
+        : ((gtRaw as Record<string, GTaskRef>) || {});
   } catch {
-    // ignore
+    gtToDelete = {};
   }
 
   // Delete the rows in descending order so indices don't shift.
@@ -663,11 +667,17 @@ export async function deleteCommentDirect(
     },
   });
 
+  if (Object.keys(gtToDelete).length > 0) {
+    deferAfterResponse(async () => {
+      await deleteGoogleTasks(gtToDelete);
+    });
+  }
+
   return {
     ok: true,
     comment_id: commentId,
     deleted_replies: replyRowIndices.length,
-    deleted_tasks: deletedTasks,
+    deleted_tasks: Object.keys(gtToDelete).length,
   };
 }
 
@@ -748,23 +758,30 @@ export async function editCommentDirect(
     requestBody: { valueInputOption: "RAW", data },
   });
 
-  // Sync spawned Google Tasks notes (top-level only).
-  let syncedTasks = 0;
+  // Sync spawned Google Tasks notes (top-level only) after the response —
+  // the edit body is already in the Sheet, so the user's view reflects the
+  // new text on next render. Personal Google Tasks lists update in
+  // background.
+  let queuedTaskSync = 0;
   if (!parentId) {
     const gtRaw = row[idx.get("google_tasks") ?? -1];
     try {
       const gt: Record<string, GTaskRef> =
         typeof gtRaw === "string" ? JSON.parse(gtRaw) : ((gtRaw as Record<string, GTaskRef>) || {});
       if (Object.keys(gt).length > 0) {
-        syncedTasks = await patchGoogleTaskNotes(
-          gt,
-          newBody.trim(),
-          project,
-          hubCommentUrl(project, commentId),
-        );
+        queuedTaskSync = Object.keys(gt).length;
+        const trimmedNewBody = newBody.trim();
+        deferAfterResponse(async () => {
+          await patchGoogleTaskNotes(
+            gt,
+            trimmedNewBody,
+            project,
+            hubCommentUrl(project, commentId),
+          );
+        });
       }
     } catch {
-      // ignore
+      // ignore — bad JSON in google_tasks cell just means no sync to queue
     }
   }
 
@@ -773,7 +790,7 @@ export async function editCommentDirect(
     comment_id: commentId,
     body: newBody.trim(),
     edited_at: now,
-    synced_tasks: syncedTasks,
+    synced_tasks: queuedTaskSync,
   };
 }
 
@@ -853,41 +870,43 @@ export async function createMentionDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
-  // Notify each mentioned user (respect email pref).
-  const allowedEmail = await filterByEmailPref(assignees);
-  if (allowedEmail.length > 0) {
-    const link = hubCommentUrl(project, id);
-    await Promise.all(
-      allowedEmail.map((to) =>
-        sendMimeMail(
-          me,
-          to,
-          `💬 תויגת בתגובה — ${project}`,
-          [
-            `${me.split("@")[0]} תייג/ה אותך:`,
-            "",
-            args.body.trim(),
-            "",
-            due ? `תאריך: ${due}` : "",
-            link ? `שרשור מלא: ${link}` : "",
-          ].filter(Boolean).join("\n"),
+  // Notifications (per-mention emails + project Chat webhook) run after
+  // the response is flushed.
+  const trimmedBody = args.body.trim();
+  deferAfterResponse(async () => {
+    const allowedEmail = await filterByEmailPref(assignees);
+    if (allowedEmail.length > 0) {
+      const link = hubCommentUrl(project, id);
+      await Promise.all(
+        allowedEmail.map((to) =>
+          sendMimeMail(
+            me,
+            to,
+            `💬 תויגת בתגובה — ${project}`,
+            [
+              `${me.split("@")[0]} תייג/ה אותך:`,
+              "",
+              trimmedBody,
+              "",
+              due ? `תאריך: ${due}` : "",
+              link ? `שרשור מלא: ${link}` : "",
+            ].filter(Boolean).join("\n"),
+          ),
         ),
-      ),
-    );
-  }
-
-  // Chat webhook for the project (single ping for the whole post).
-  await postChatWebhook(subjectEmail, project, "create", {
-    authorName: me.split("@")[0],
-    body: args.body.trim().slice(0, 120),
-    deepLink: hubCommentUrl(project, id),
+      );
+    }
+    await postChatWebhook(subjectEmail, project, "create", {
+      authorName: me.split("@")[0],
+      body: trimmedBody.slice(0, 120),
+      deepLink: hubCommentUrl(project, id),
+    });
   });
 
   return {
     ok: true,
     comment_id: id,
     project,
-    body: args.body.trim(),
+    body: trimmedBody,
     assignees,
     due,
     timestamp: now,

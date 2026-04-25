@@ -25,6 +25,7 @@
 
 import { sheetsClient } from "@/lib/sa";
 import { HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
+import { readKeysCached } from "@/lib/keys";
 import { classifyRoleText, type UserRole } from "@/lib/userRoleHelpers";
 
 export type { UserRole } from "@/lib/userRoleHelpers";
@@ -89,20 +90,8 @@ async function inferRoleFromKeys(
   subjectEmail: string,
   displayNames: string[],
 ): Promise<UserRole> {
-  const sheets = sheetsClient(subjectEmail);
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: envOrThrow("SHEET_ID_MAIN"),
-    range: "Keys",
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  const rows = (res.data.values ?? []) as unknown[][];
-  if (rows.length < 2) return "unknown";
-  const headers = (rows[0] as unknown[]).map((h) =>
-    String(h ?? "")
-      .replace(KEYS_HEADER_CLEAN, "")
-      .replace(/\s+/g, " ")
-      .trim(),
-  );
+  const { headers, rows } = await readKeysCached(subjectEmail);
+  if (rows.length === 0) return "unknown";
   const iCampMgr = headers.indexOf("מנהל קמפיינים");
   const iAcctMgr =
     headers.indexOf("EMAIL Manager") >= 0
@@ -121,7 +110,10 @@ async function inferRoleFromKeys(
   let isManager = false;
   let isClient = false;
 
-  for (const row of rows.slice(1)) {
+  // readKeysCached returns rows already stripped of the header — iterate
+  // directly. The original implementation read raw values and used
+  // rows.slice(1) to skip the header itself.
+  for (const row of rows) {
     if (!isManager) {
       for (const ci of [iCampMgr, iAcctMgr]) {
         if (ci < 0) continue;

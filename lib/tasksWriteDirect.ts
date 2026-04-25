@@ -29,6 +29,7 @@ import {
   gmailClient,
   driveFolderOwner,
 } from "@/lib/sa";
+import { readKeysCached } from "@/lib/keys";
 import type {
   TasksCreateInput,
   TasksUpdatePatch,
@@ -113,35 +114,15 @@ function parseDepartments(raw: unknown): string[] {
 
 /* ── Keys lookups (company resolution + access control) ────────────── */
 
-const KEYS_HEADER_NORMALIZE = /[\u200B-\u200F\u202A-\u202E\u2060\u00AD\uFEFF\uD800-\uDFFF]/g;
+// (Keys reads now go through `readKeysCached` from @/lib/keys, which
+// dedupes via React's cache() across all callers within one request.)
 
-async function readKeys(subjectEmail: string): Promise<{
-  headers: string[];
-  rows: unknown[][];
-}> {
-  const sheets = sheetsClient(subjectEmail);
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: envOrThrow("SHEET_ID_MAIN"),
-    range: "Keys",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (res.data.values ?? []) as unknown[][];
-  if (!values.length) return { headers: [], rows: [] };
-  const headers = (values[0] as unknown[]).map((h) =>
-    String(h ?? "")
-      .replace(KEYS_HEADER_NORMALIZE, "")
-      .replace(/\s+/g, " ")
-      .trim(),
-  );
-  return { headers, rows: values.slice(1) };
-}
 
 async function resolveCompany(
   subjectEmail: string,
   project: string,
 ): Promise<string> {
-  const { headers, rows } = await readKeys(subjectEmail);
+  const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
   if (iProj < 0 || iCo < 0) return "";
@@ -161,7 +142,7 @@ async function assertProjectAccess(
 ): Promise<void> {
   const lc = subjectEmail.toLowerCase().trim();
   if (ADMIN_EMAILS.has(lc)) return;
-  const { headers, rows } = await readKeys(subjectEmail);
+  const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iClients = headers.indexOf("Email Client");
   const iInternal = headers.indexOf("Access — internal only");
@@ -603,7 +584,7 @@ async function postChatWebhook(
   // Webhook URL lives in Keys col L. Read it here; don't fail the write
   // path if the read or POST errors.
   try {
-    const { headers, rows } = await readKeys(subjectEmail);
+    const { headers, rows } = await readKeysCached(subjectEmail);
     const iProj = headers.indexOf("פרוייקט");
     const iWebhook = headers.indexOf("Chat Webhook");
     if (iProj < 0 || iWebhook < 0) return;

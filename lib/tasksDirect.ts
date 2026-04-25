@@ -31,6 +31,7 @@ import {
   type TasksPerson,
 } from "@/lib/appsScript";
 import { sheetsClient } from "@/lib/sa";
+import { readKeysCached } from "@/lib/keys";
 
 const JSON_ARRAY_FIELDS = new Set(["departments", "status_history"]);
 const JSON_OBJECT_FIELDS = new Set(["calendar_event_ids", "google_tasks"]);
@@ -152,27 +153,12 @@ async function readCommentsTab(subjectEmail: string): Promise<{
   return { headers, rows: values.slice(1), headerIdx };
 }
 
-export async function readKeysRows(
-  subjectEmail: string,
-): Promise<{ headers: string[]; rows: unknown[][] }> {
-  const sheets = sheetsClient(subjectEmail);
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: envOrThrow("SHEET_ID_MAIN"),
-    range: "Keys",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (res.data.values ?? []) as unknown[][];
-  if (!values.length) return { headers: [], rows: [] };
-  const headers = (values[0] as unknown[]).map((h) =>
-    String(h ?? "")
-      // Match Apps Script's Keys header normalization — strip invisibles.
-      .replace(/[\u200B-\u200F\u202A-\u202E\u2060\u00AD\uFEFF\uD800-\uDFFF]/g, "")
-      .replace(/\s+/g, " ")
-      .trim(),
-  );
-  return { headers, rows: values.slice(1) };
-}
+// readKeysRows() previously did its own Sheets fetch — now re-exported
+// from the shared cached helper so multiple callers in one request
+// (e.g. project page → access scope → write gate) collapse to a single
+// Sheets API GET. See lib/keys.ts for rationale.
+export { readKeysCached as readKeysRows } from "@/lib/keys";
+
 
 /**
  * Return the set of projects the caller has access to (any Keys
@@ -195,7 +181,7 @@ export async function getAccessScope(subjectEmail: string): Promise<{
 }> {
   const lc = subjectEmail.toLowerCase().trim();
   const isAdmin = HUB_ADMIN_EMAILS.has(lc);
-  const { headers, rows } = await readKeysRows(subjectEmail);
+  const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
   const iCamp = headers.indexOf("מנהל קמפיינים");

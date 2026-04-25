@@ -293,7 +293,7 @@ export default function CreateTaskDrawer({ project }: Props) {
     >
       <div className="create-task-modal" role="dialog" aria-modal="true">
         <div className="create-task-head">
-          <h2>משימה חדשה · {project}</h2>
+          <h2>הערה חדשה · {project}</h2>
           <button
             type="button"
             className="create-task-close"

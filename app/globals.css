@@ -5965,6 +5965,54 @@ html[data-theme="dark"] .kanban-column-count {
   gap: .55em;
   min-height: 4em;
 }
+
+/* Quiet, theme-aware scrollbars on the kanban board (horizontal) and
+   each column body (vertical). The default OS chrome — chunky arrow
+   buttons, light grey track, opaque thumb — fights with the dark
+   surface and sits visually between columns where it shouldn't be. */
+.kanban-board,
+.kanban-column-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.kanban-board::-webkit-scrollbar,
+.kanban-column-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.kanban-board::-webkit-scrollbar-track,
+.kanban-column-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kanban-board::-webkit-scrollbar-thumb,
+.kanban-column-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  /* Inset so the thumb looks slimmer than the gutter — gives it room to
+     "breathe" against the column edge without changing the scroll
+     hit-area. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.kanban-board::-webkit-scrollbar-thumb:hover,
+.kanban-column-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text);
+  background-clip: padding-box;
+  /* Slight transparency on hover so it never fully obscures content
+     underneath when the column is short. */
+  opacity: .55;
+}
+/* Hide the up/down arrow buttons that ship by default on Windows
+   Chromium — they're rarely used and add visual weight. */
+.kanban-board::-webkit-scrollbar-button,
+.kanban-column-body::-webkit-scrollbar-button {
+  display: none;
+}
+.kanban-board::-webkit-scrollbar-corner,
+.kanban-column-body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .kanban-column-empty {
   text-align: center;
   font-size: .8rem;
