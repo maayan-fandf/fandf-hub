@@ -801,6 +801,24 @@ export async function tasksCreateDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
+  // "Convert comment to task" — Flavor C migration. Re-parent the
+  // source comment + every direct reply to the new task id, so the
+  // entire conversation moves under the task verbatim. Best-effort:
+  // a migration error is logged but doesn't fail the create (the task
+  // already exists; user can re-trigger or manually move replies).
+  const sourceCommentId = String(payload.from_comment || "").trim();
+  if (sourceCommentId) {
+    try {
+      const { migrateCommentThreadDirect } = await import("@/lib/commentsDirect");
+      await migrateCommentThreadDirect(subjectEmail, sourceCommentId, task.id);
+    } catch (e) {
+      console.log(
+        "[tasksWriteDirect] migrateCommentThread failed:",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+
   // After-write notifications (non-fatal). On create we email the
   // assignees ("you have a new task") — the approver gets a separate
   // email later when the status transitions to awaiting_approval.

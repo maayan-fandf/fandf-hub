@@ -143,6 +143,84 @@ export async function getCommentByIdDirect(
   return null;
 }
 
+/* ── migrateCommentThreadDirect ────────────────────────────────────── */
+
+function columnLetter(colNumber: number): string {
+  // 1 -> A, 27 -> AA. Used to build A1 ranges for batchUpdate.
+  let n = colNumber;
+  let s = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * Move an entire comment thread (root + replies) under a newly-created
+ * task. Used by the convert-to-task flow:
+ *
+ *   - Source comment row C: parent_id "" → newTaskId
+ *   - Each reply Rn (parent_id = C.id): → newTaskId
+ *
+ * Result: every row that was previously part of the C-thread becomes a
+ * direct reply on the task, preserving identity / timestamps / authors.
+ * The original 2-level hierarchy (root→replies) flattens into the task's
+ * 1-level reply list, in original chronological order.
+ *
+ * Best-effort: if the source comment is not found, returns silently
+ * (the task creation itself already succeeded; caller doesn't roll back).
+ */
+export async function migrateCommentThreadDirect(
+  subjectEmail: string,
+  sourceCommentId: string,
+  newTaskId: string,
+): Promise<{ migrated: number }> {
+  const sheets = sheetsClient(subjectEmail);
+  const ssId = envOrThrow("SHEET_ID_COMMENTS");
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: ssId,
+    range: "Comments",
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (values.length < 2) return { migrated: 0 };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "").trim(),
+  );
+  const idIdx = headers.indexOf("id");
+  const parentIdx = headers.indexOf("parent_id");
+  if (idIdx < 0 || parentIdx < 0) return { migrated: 0 };
+  const parentCol = columnLetter(parentIdx + 1);
+
+  // Collect every row whose id == sourceCommentId OR whose parent_id ==
+  // sourceCommentId. The first set has 0 or 1 entries (the root); the
+  // second set is the replies. Both move to parent_id = newTaskId.
+  const updates: Array<{ range: string; values: [[string]] }> = [];
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const rowId = String(row[idIdx] ?? "").trim();
+    const rowParent = String(row[parentIdx] ?? "").trim();
+    const isRoot = rowId === sourceCommentId;
+    const isReply = rowParent === sourceCommentId;
+    if (!isRoot && !isReply) continue;
+    // Sheet row number = i + 1 (values[0] is the header row).
+    const sheetRow = i + 1;
+    updates.push({
+      range: `Comments!${parentCol}${sheetRow}`,
+      values: [[newTaskId]],
+    });
+  }
+  if (updates.length === 0) return { migrated: 0 };
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: ssId,
+    requestBody: { valueInputOption: "RAW", data: updates },
+  });
+  return { migrated: updates.length };
+}
+
 /* ── projectCommentsDirect ─────────────────────────────────────────── */
 
 export async function projectCommentsDirect(

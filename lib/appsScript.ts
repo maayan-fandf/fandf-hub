@@ -1021,6 +1021,13 @@ export type TasksCreateInput = {
    *  folder is created (i.e. when `drive_folder_id` is absent).
    *  Ignored if `drive_folder_id` is set. Direct-SA write path only. */
   drive_folder_name?: string;
+  /** When set, after the task row is appended the server migrates the
+   *  source comment thread under the new task: the root comment row
+   *  re-parents to the task id, and every reply (parent_id = source)
+   *  re-parents to the task id too. Effect: the entire conversation
+   *  moves under the task verbatim, in chronological order, with row
+   *  identities + timestamps preserved. Direct-SA path only. */
+  from_comment?: string;
 };
 
 export function tasksCreate(

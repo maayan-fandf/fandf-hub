@@ -37,6 +37,7 @@ export default function TaskCreateForm({
   defaultDescription = "",
   defaultAssignees = "",
   defaultTitle = "",
+  fromComment = "",
   people,
   currentUserEmail,
 }: {
@@ -52,6 +53,10 @@ export default function TaskCreateForm({
    *  comment, truncated. The user almost always edits this before
    *  saving, but a starting point beats an empty field. */
   defaultTitle?: string;
+  /** When set, the create payload includes `from_comment` so the
+   *  server migrates the source comment + its replies under the new
+   *  task. Empty string skips the migration (plain create). */
+  fromComment?: string;
   people: TasksPerson[];
   currentUserEmail: string;
 }) {
@@ -233,6 +238,11 @@ export default function TaskCreateForm({
       requested_date: requestedDate,
       campaign: campaign.trim(),
     };
+    if (fromComment) {
+      // Server re-parents the source comment + its replies under the
+      // newly-created task id (Flavor C migration).
+      payload.from_comment = fromComment;
+    }
     if (folderSelection.mode === "existing" && folderSelection.folderId) {
       payload.drive_folder_id = folderSelection.folderId;
     } else if (folderSelection.mode === "new") {

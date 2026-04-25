@@ -77,7 +77,9 @@ export default async function NewTaskPage({
               <>
                 ממיר/ה תגובה של <b>{commentSeed.author_name || commentSeed.author_email}</b>
                 {" "}בפרויקט <b>{commentSeed.project}</b>. השדות ממולאים מתוך
-                התגובה — ערוך את הכותרת והשלם את שאר הפרטים.
+                התגובה — ערוך את הכותרת והשלם את שאר הפרטים. בעת יצירה,
+                כל שרשור הדיון (התגובה המקורית + כל ההתייחסויות אליה)
+                יועבר תחת המשימה החדשה.
               </>
             ) : (
               <>
@@ -101,6 +103,7 @@ export default async function NewTaskPage({
         defaultDescription={seedDescription}
         defaultAssignees={seedAssignees}
         defaultTitle={seedTitle}
+        fromComment={commentSeed?.id || ""}
         people={peopleRes?.people ?? []}
         currentUserEmail={me}
       />
