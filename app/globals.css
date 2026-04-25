@@ -3351,6 +3351,13 @@ a.section-link:hover {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+/* Tasks badge — uses the accent color so it's visually distinct
+   from the mentions badge (red dot = tags, indigo dot = tasks).
+   Same shape so they read as a "family" rather than competing
+   alarms. */
+.nav-badge-tasks {
+  background: var(--accent, #2a66d9);
+}
 
 /* ─── Morning dashboard ─────────────────────────────────────────── */
 .morning-filter-bar {

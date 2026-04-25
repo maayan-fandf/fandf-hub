@@ -8,6 +8,7 @@ import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
+import NavTasksBadge from "@/components/NavTasksBadge";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
 import UserSettingsMenu from "@/components/UserSettingsMenu";
 import ActiveLink from "@/components/ActiveLink";
@@ -124,8 +125,12 @@ export default async function RootLayout({
             )}
             {email && <NavMorningLink />}
             {email && (
-              <ActiveLink href="/tasks" className="topnav-link">
+              <ActiveLink
+                href="/tasks"
+                className="topnav-link topnav-link-with-badge"
+              >
                 📋 משימות
+                <NavTasksBadge />
               </ActiveLink>
             )}
             <ActiveLink
