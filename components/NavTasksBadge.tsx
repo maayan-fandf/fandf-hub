@@ -7,12 +7,15 @@ type Counts = {
   total: number;
   awaiting_handling: number;
   awaiting_clarification: number;
+  awaiting_approval: number;
 };
 
 /**
- * Badge next to the "משימות" topnav link — shows the count of pending
- * tasks the user (or their view-as identity) is the assignee on, in
- * states that explicitly call for action (ממתין לטיפול + ממתין לבירור).
+ * Badge next to the "משימות" topnav link — combined count of every
+ * state where the user (or their view-as identity) needs to act:
+ *   - assignee on ממתין לטיפול / ממתין לבירור (do the work, or
+ *     unblock it)
+ *   - approver on ממתין לאישור (review + approve / send back)
  *
  * Refreshes on pathname change so navigating to /tasks, ticking some
  * off, then leaving updates the count without a full reload. Same
@@ -37,6 +40,7 @@ export default function NavTasksBadge() {
             total: data.total,
             awaiting_handling: data.breakdown.awaiting_handling ?? 0,
             awaiting_clarification: data.breakdown.awaiting_clarification ?? 0,
+            awaiting_approval: data.breakdown.awaiting_approval ?? 0,
           });
         }
       } catch {
@@ -58,6 +62,9 @@ export default function NavTasksBadge() {
   }
   if (counts.awaiting_clarification > 0) {
     parts.push(`${counts.awaiting_clarification} ממתינות לבירור`);
+  }
+  if (counts.awaiting_approval > 0) {
+    parts.push(`${counts.awaiting_approval} ממתינות לאישורך`);
   }
   const title = parts.join(" · ");
 

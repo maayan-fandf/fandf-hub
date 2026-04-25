@@ -7,12 +7,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Count of "tasks on my plate that need movement" — used by the
- * topnav משימות badge. Tasks count when the user (or whoever they're
- * viewing-as) is an assignee AND the status is awaiting_handling or
- * awaiting_clarification (the two states that explicitly call for
- * the assignee to act). awaiting_approval is intentionally excluded:
- * it's the approver's plate, not the assignee's.
+ * Count of "tasks needing my action" — used by the topnav משימות
+ * badge. Three buckets:
+ *
+ *   - awaiting_handling   — I'm the assignee, work hasn't started.
+ *   - awaiting_clarification — I'm the assignee, blocked on info.
+ *   - awaiting_approval   — I'm the approver, finished work to review.
+ *
+ * Total combines all three. Tooltip on the badge breaks them out so
+ * the user sees what's behind the number at a glance.
  */
 export async function GET() {
   const session = await auth();
@@ -29,21 +32,24 @@ export async function GET() {
     const prefs = await getUserPrefs(sessionEmail).catch(() => null);
     const targetEmail = prefs?.view_as_email || sessionEmail;
 
-    // Two API calls — one per status — since the filter only takes a
-    // single status. Cheap enough at this scale; the caller debounces
-    // (refetches on pathname change, not constantly).
-    const [handling, clarif] = await Promise.all([
+    // One tasksList call per status; the filter takes a single status.
+    // Three round-trips total — cheap at this scale, and the caller
+    // debounces (re-fetches on pathname change, not constantly).
+    const [handling, clarif, approval] = await Promise.all([
       tasksList({ assignee: targetEmail, status: "awaiting_handling" }),
       tasksList({ assignee: targetEmail, status: "awaiting_clarification" }),
+      tasksList({ approver: targetEmail, status: "awaiting_approval" }),
     ]);
     const handlingCount = handling.tasks?.length ?? 0;
     const clarifCount = clarif.tasks?.length ?? 0;
+    const approvalCount = approval.tasks?.length ?? 0;
     return NextResponse.json({
       ok: true,
-      total: handlingCount + clarifCount,
+      total: handlingCount + clarifCount + approvalCount,
       breakdown: {
         awaiting_handling: handlingCount,
         awaiting_clarification: clarifCount,
+        awaiting_approval: approvalCount,
       },
       target_email: targetEmail,
     });
