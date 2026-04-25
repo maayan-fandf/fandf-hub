@@ -65,15 +65,37 @@ function cacheKey(subject: string, scopes: string[]): string {
 }
 
 /**
+ * Pick the email to impersonate via DWD. The SA can only delegate to
+ * users inside the F&F Workspace domain — outside emails (personal
+ * Gmail addresses for external clients) blow up with
+ * `unauthorized_client`. For those callers we impersonate the
+ * configured Drive-folder owner instead.
+ *
+ * Access control isn't compromised: every direct-read helper takes the
+ * original requested email as a separate argument and gates results
+ * against Keys columns. The "effective" email here only decides whose
+ * Workspace identity makes the API call.
+ */
+function effectiveSubject(requestedEmail: string): string {
+  const lc = requestedEmail.toLowerCase().trim();
+  if (lc.endsWith("@fandf.co.il")) return requestedEmail;
+  // External user: impersonate the team's bot identity.
+  return driveFolderOwner();
+}
+
+/**
  * Return a JWT client authorized to act as `subjectEmail` with the given
- * scopes. `subjectEmail` must be a user inside the F&F Workspace domain
- * — otherwise Google rejects the DWD token request.
+ * scopes. For external (non-@fandf.co.il) callers the SA impersonates
+ * a fixed F&F identity (`DRIVE_FOLDER_OWNER`) — DWD can't delegate to
+ * personal Gmail accounts. Caller is responsible for separately
+ * gating the data they read against the original email.
  *
  * Scopes must exactly match what's authorized in Workspace Admin DWD.
  * Mismatched scopes fail at call time with `unauthorized_client`.
  */
 export function getSAClient(subjectEmail: string, scopes: string[]): JWT {
-  const k = cacheKey(subjectEmail, scopes);
+  const subject = effectiveSubject(subjectEmail);
+  const k = cacheKey(subject, scopes);
   const hit = clientCache.get(k);
   if (hit) return hit;
 
@@ -82,7 +104,7 @@ export function getSAClient(subjectEmail: string, scopes: string[]): JWT {
     email: key.client_email,
     key: key.private_key,
     scopes,
-    subject: subjectEmail,
+    subject,
   });
   clientCache.set(k, jwt);
   return jwt;
