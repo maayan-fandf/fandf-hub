@@ -10,6 +10,7 @@ import {
 } from "@/lib/appsScript";
 import { getUserRole, type UserRole } from "@/lib/userRole";
 import { getUserPrefs } from "@/lib/userPrefs";
+import { getSharedDriveName } from "@/lib/driveFolders";
 import TasksQueue from "@/components/TasksQueue";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +83,7 @@ export default async function TasksPage({
         ? effectiveMe
         : "";
 
-  const [tasksRes, projectsRes, peopleRes] = await Promise.all([
+  const [tasksRes, projectsRes, peopleRes, driveName] = await Promise.all([
     tasksList({
       company: sp.company || "",
       project: sp.project || "",
@@ -105,6 +106,7 @@ export default async function TasksPage({
       })),
     getMyProjects().catch(() => null),
     tasksPeopleList().catch(() => null),
+    me ? getSharedDriveName(me).catch(() => "") : Promise.resolve(""),
   ]);
   const { tasks, error } = tasksRes;
 
@@ -212,7 +214,12 @@ export default async function TasksPage({
       )}
 
       {!error && (
-        <TasksQueue tasks={tasks} groupByCompany={true} people={people} />
+        <TasksQueue
+          tasks={tasks}
+          groupByCompany={true}
+          people={people}
+          driveName={driveName}
+        />
       )}
     </main>
   );

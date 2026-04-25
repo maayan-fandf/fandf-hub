@@ -4925,7 +4925,291 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .drive-folder-add { padding: .2em .4em .5em; }
 .drive-folder-sub { margin-inline-start: .4em; }
-.drive-folder-new .drive-folder-new-name:focus { outline: 2px solid var(--accent, #2a66d9); outline-offset: 1px; }
+.drive-folder-new-name:focus { outline: 2px solid var(--accent, #2a66d9); outline-offset: 1px; }
+
+.drive-folder-mode-switch {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  background: var(--surface, #fff);
+  margin-bottom: .7em;
+}
+.drive-folder-mode-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  padding: .35em .9em;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+  font-size: .9em;
+  transition: background .15s, color .15s;
+}
+.drive-folder-mode-btn:hover { color: var(--text); }
+.drive-folder-mode-btn.is-active {
+  background: var(--accent, #2a66d9);
+  color: #fff;
+}
+.drive-folder-mode-btn.is-active:hover { color: #fff; }
+.drive-folder-mode-icon { font-size: 1em; line-height: 1; }
+
+.drive-folder-new-block {
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+}
+.drive-folder-new-label {
+  display: flex;
+  flex-direction: column;
+  gap: .2em;
+}
+.drive-folder-new-label-text {
+  font-size: .82em;
+  color: var(--muted);
+}
+.drive-folder-context {
+  font-size: .82em;
+  color: var(--muted);
+  padding-inline-start: .15em;
+}
+.drive-folder-existing-block {
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+}
+.drive-folder-selected-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  align-self: flex-start;
+  padding: .25em .7em;
+  border-radius: 999px;
+  background: var(--accent-soft, #e7f0ff);
+  color: var(--accent, #2a66d9);
+  font-size: .85em;
+}
+.drive-folder-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35em;
+  font-size: .82em;
+  color: var(--muted);
+  padding: .2em .15em .35em;
+}
+.drive-folder-breadcrumb-root { font-weight: 500; }
+.drive-folder-breadcrumb-sep { color: var(--muted); opacity: .6; }
+.drive-folder-breadcrumb-current { color: var(--text); font-weight: 500; }
+.drive-folder-root-row {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+}
+.drive-folder-root-row .drive-folder-name { font-weight: 600; }
+.drive-folder-root-tag {
+  font-size: .72em;
+  color: var(--muted);
+  padding: .1em .5em;
+  border-radius: 999px;
+  background: var(--surface-soft, #f4f4f4);
+  border: 1px solid var(--border);
+}
+.drive-folder-chevron-fixed { cursor: default; opacity: .55; }
+
+.drive-folder-tip {
+  margin-top: .4em;
+  padding: .4em .7em;
+  font-size: .8em;
+  color: var(--muted);
+  background: var(--surface-soft, #fafafa);
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+}
+.drive-folder-creating-block {
+  display: flex;
+  flex-direction: column;
+  gap: .25em;
+  padding: .35em .4em .5em;
+  background: var(--accent-soft, #e7f0ff);
+  border-radius: 6px;
+  margin: .2em 0;
+}
+.drive-folder-creating-caption {
+  font-size: .78em;
+  color: var(--muted);
+  padding-inline-start: .25em;
+}
+.drive-folder-creating-caption strong { color: var(--text); }
+.drive-folder-creating-block .drive-folder-creating { padding: 0; }
+
+/* CampaignCombobox — see components/CampaignCombobox.tsx */
+.combobox {
+  position: relative;
+  display: block;
+}
+.combobox.is-disabled { opacity: .6; pointer-events: none; }
+.combobox-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.combobox-input {
+  width: 100%;
+  font: inherit;
+  padding: .55em .8em;
+  padding-inline-end: 2.2em; /* leave room for the chevron */
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text);
+}
+.combobox-input:focus {
+  outline: 2px solid var(--accent, #2a66d9);
+  outline-offset: 1px;
+}
+.combobox-chevron {
+  position: absolute;
+  inset-inline-end: .25em;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.8em;
+  height: 1.8em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .9em;
+  border-radius: 4px;
+}
+.combobox-chevron:hover { background: var(--surface-soft, #f4f4f4); color: var(--text); }
+.combobox.is-open .combobox-chevron { transform: translateY(-50%) rotate(180deg); }
+.combobox-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  inset-inline-end: 0;
+  z-index: 30;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  max-height: 320px;
+  overflow: auto;
+  padding: .25em 0;
+}
+.combobox-hint {
+  padding: .35em .8em;
+  font-size: .75em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft, #fafafa);
+}
+.combobox-list { list-style: none; padding: 0; margin: 0; }
+.combobox-empty {
+  padding: .5em .8em;
+  color: var(--muted);
+  font-size: .85em;
+}
+.combobox-option {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  padding: .45em .8em;
+  cursor: pointer;
+  font-size: .92em;
+}
+.combobox-option:hover,
+.combobox-option.is-highlight { background: var(--accent-soft, #e7f0ff); }
+.combobox-option.is-selected { font-weight: 600; }
+.combobox-option-icon { opacity: .8; font-size: 1em; }
+.combobox-option-text { flex: 1; min-width: 0; }
+.combobox-option-tag {
+  font-size: .7em;
+  padding: .1em .55em;
+  border-radius: 999px;
+  background: var(--accent-soft, #e7f0ff);
+  color: var(--accent, #2a66d9);
+  white-space: nowrap;
+}
+.combobox-option-create {
+  border-bottom: 1px solid var(--border);
+  color: var(--accent, #2a66d9);
+}
+.combobox-option-create:hover,
+.combobox-option-create.is-highlight {
+  background: var(--accent-soft, #e7f0ff);
+}
+.combobox-option-meta { color: var(--muted); font-weight: normal; }
+.combobox-option-secondary { opacity: .75; }
+.combobox-divider {
+  padding: .25em .8em;
+  font-size: .72em;
+  color: var(--muted);
+  background: var(--surface-soft, #fafafa);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+.combobox-selected-name {
+  font-size: .78em;
+  color: var(--muted);
+  padding: .15em .25em 0;
+}
+
+/* Hover-only row affordance — used by /tasks for the per-row "open in
+   Explorer" button. Always rendered (so SR users can still reach it on
+   focus), but visually hidden until hover/focus-within so the row
+   doesn't feel cluttered with always-on icons. */
+.tasks-row-hover-only {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.tasks-table tr:hover .tasks-row-hover-only,
+.tasks-table tr:focus-within .tasks-row-hover-only {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Department-filter banner shown above the assignee chips when one or
+   more departments are selected. */
+.task-form-dept-filter-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35em;
+  font-size: .82em;
+  color: var(--muted);
+  margin: .35em 0 .25em;
+}
+.task-form-dept-filter-pill {
+  padding: .1em .55em;
+  border-radius: 999px;
+  background: var(--accent-soft, #e7f0ff);
+  color: var(--accent, #2a66d9);
+  font-size: .85em;
+}
+.task-form-dept-filter-empty {
+  color: var(--danger, #c33);
+  margin-inline-start: .3em;
+}
+.task-form-required {
+  color: var(--danger, #c33);
+  margin-inline-start: .15em;
+}
+.task-form-label-hint {
+  color: var(--muted);
+  font-weight: normal;
+  font-size: .82em;
+}
 
 .drive-folder-section {
   margin: .8em 0 .4em;

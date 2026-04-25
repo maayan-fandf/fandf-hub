@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
+import CampaignCombobox from "./CampaignCombobox";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -197,20 +198,17 @@ export default function TaskEditPanel({
         </label>
         <label>
           קמפיין
-          <input
-            type="text"
-            list="task-campaigns-edit"
+          <CampaignCombobox
             value={campaign}
-            onChange={(e) => setCampaign(e.target.value)}
+            onChange={setCampaign}
+            options={campaignOptions}
             placeholder="בחר קמפיין קיים או הקלד חדש"
+            hint={
+              campaignOptions.length > 0 ? "ממוין מהחדש לישן" : undefined
+            }
           />
         </label>
       </div>
-      <datalist id="task-campaigns-edit">
-        {campaignOptions.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
 
       <details className="task-form-extra" open={!!brief}>
         <summary>שדות נוספים</summary>

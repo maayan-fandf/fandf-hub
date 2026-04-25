@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
+import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import {
   TaskPriorityCell,
   TaskRequestedDateCell,
@@ -104,6 +105,13 @@ type Props = {
    * tasksPeopleList() payload they already fetch for the filter bar.
    */
   people?: TasksPerson[];
+  /**
+   * Shared-drive name for the Drive Desktop local-path button on each
+   * row. When empty (e.g. SA doesn't resolve it), the row's "open in
+   * Explorer" button is hidden. Path format:
+   *   G:\Shared drives\<driveName>\<company>\<project>[\<campaign>]
+   */
+  driveName?: string;
 };
 
 /**
@@ -122,6 +130,7 @@ export default function TasksQueue({
   hideOther = false,
   compact = false,
   people = [],
+  driveName = "",
 }: Props) {
   // Bucketize once. Anything off the canonical list sinks into `other`.
   const byStatus: Record<string, WorkTask[]> = {};
@@ -199,6 +208,7 @@ export default function TasksQueue({
                       axis={axis}
                       compact={compact}
                       people={people}
+                      driveName={driveName}
                     />
                   </tbody>
                 </table>
@@ -234,6 +244,7 @@ export default function TasksQueue({
                         axis={axis}
                         compact={compact}
                         people={people}
+                        driveName={driveName}
                       />
                     </tbody>
                   </table>
@@ -304,11 +315,13 @@ function BucketBody({
   axis,
   compact,
   people,
+  driveName,
 }: {
   tasks: WorkTask[];
   axis: GroupAxis;
   compact: boolean;
   people: TasksPerson[];
+  driveName: string;
 }) {
   const totalCols = 12;
 
@@ -319,7 +332,13 @@ function BucketBody({
     return (
       <>
         {sorted.map((t) => (
-          <TaskRow key={t.id} task={t} compact={compact} people={people} />
+          <TaskRow
+            key={t.id}
+            task={t}
+            compact={compact}
+            people={people}
+            driveName={driveName}
+          />
         ))}
       </>
     );
@@ -334,6 +353,7 @@ function BucketBody({
             company={company}
             projectGroups={projectGroups}
             people={people}
+            driveName={driveName}
           />
         ))}
       </>
@@ -353,6 +373,7 @@ function BucketBody({
           totalCols={totalCols}
           compact={compact}
           people={people}
+          driveName={driveName}
         />
       ))}
     </>
@@ -394,6 +415,7 @@ function PersonGroup({
   totalCols,
   compact,
   people,
+  driveName,
 }: {
   label: string;
   personEmail: string;
@@ -401,6 +423,7 @@ function PersonGroup({
   totalCols: number;
   compact: boolean;
   people: TasksPerson[];
+  driveName: string;
 }) {
   const displayName = personEmail
     ? shortName(personEmail)
@@ -415,7 +438,13 @@ function PersonGroup({
         </td>
       </tr>
       {rows.map((t) => (
-        <TaskRow key={t.id} task={t} compact={compact} people={people} />
+        <TaskRow
+          key={t.id}
+          task={t}
+          compact={compact}
+          people={people}
+          driveName={driveName}
+        />
       ))}
     </>
   );
@@ -461,10 +490,12 @@ function CompanyGroup({
   company,
   projectGroups,
   people,
+  driveName,
 }: {
   company: string;
   projectGroups: [string, WorkTask[]][];
   people: TasksPerson[];
+  driveName: string;
 }) {
   const totalCols = 12;
   return (
@@ -484,6 +515,7 @@ function CompanyGroup({
           rows={rows}
           totalCols={totalCols}
           people={people}
+          driveName={driveName}
         />
       ))}
     </>
@@ -495,11 +527,13 @@ function ProjectSubGroup({
   rows,
   totalCols,
   people,
+  driveName,
 }: {
   project: string;
   rows: WorkTask[];
   totalCols: number;
   people: TasksPerson[];
+  driveName: string;
 }) {
   return (
     <>
@@ -515,7 +549,7 @@ function ProjectSubGroup({
         </td>
       </tr>
       {rows.map((t) => (
-        <TaskRow key={t.id} task={t} people={people} />
+        <TaskRow key={t.id} task={t} people={people} driveName={driveName} />
       ))}
     </>
   );
@@ -527,11 +561,24 @@ function TaskRow({
   task,
   compact = false,
   people = [],
+  driveName = "",
 }: {
   task: WorkTask;
   compact?: boolean;
   people?: TasksPerson[];
+  driveName?: string;
 }) {
+  // Drive Desktop local path. We deliberately don't include the
+  // task-specific subfolder (drive_folder_url is a web URL, not a path);
+  // the user can drill into it once Explorer opens at the campaign
+  // level. The path is omitted entirely when the SA couldn't resolve
+  // the shared-drive name (driveName === "").
+  const localPath =
+    driveName && task.project
+      ? `G:\\Shared drives\\${driveName}\\${task.company || ""}\\${task.project}${
+          task.campaign ? `\\${task.campaign}` : ""
+        }`
+      : "";
   return (
     <tr>
       {!compact && (
@@ -620,6 +667,14 @@ function TaskRow({
             >
               <GoogleDriveIcon size="1em" />
             </a>
+          )}
+          {localPath && (
+            <span className="tasks-row-hover-only" aria-hidden={false}>
+              <CopyLocalPathButton
+                path={localPath}
+                title="העתק נתיב מקומי — Drive Desktop"
+              />
+            </span>
           )}
           <Link
             href={`/tasks/${encodeURIComponent(task.id)}#history`}

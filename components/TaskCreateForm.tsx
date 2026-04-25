@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson } from "@/lib/appsScript";
+import CampaignCombobox from "./CampaignCombobox";
+import PersonCombobox from "./PersonCombobox";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
 
-const DEPARTMENTS = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
+/** Hardcoded fallback used only when the names-to-emails sheet has no
+ *  Role column populated. Real departments come from the people list
+ *  (see `departmentOptions` below) so they stay in sync with the sheet. */
+const DEPARTMENTS_FALLBACK = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 const KINDS = [
   { val: "ad_creative", label: "קריאייטיב פרסומי" },
   { val: "landing_page", label: "דף נחיתה" },
@@ -81,8 +86,7 @@ export default function TaskCreateForm({
   // Folder selection. Default is "new" with an auto-generated name;
   // user can either accept it, edit the name, or click an existing
   // folder in the tree to reuse it.
-  const suggestedFolderName =
-    title.trim().slice(0, 60) || "משימה חדשה";
+  const suggestedFolderName = title.trim().slice(0, 60);
   const [folderSelection, setFolderSelection] = useState<FolderPickerValue>({
     mode: "new",
     name: "",
@@ -134,6 +138,30 @@ export default function TaskCreateForm({
   }, [project]);
 
   const companyProjects = company ? byCompany.get(company) || [] : projects;
+
+  // Departments derived from the live `Role` column on names-to-emails.
+  // Falls back to the legacy hardcoded list when no roles are populated
+  // (so the form never renders chip-less). This is what makes the
+  // department choice and the worker chips below actually agree on the
+  // set of categories — request #4 from the queue.
+  const departmentOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of people) {
+      const r = (p.role || "").trim();
+      if (r) set.add(r);
+    }
+    if (set.size === 0) return DEPARTMENTS_FALLBACK;
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
+  }, [people]);
+
+  // Worker chips (and the assignee combobox secondary list) narrow to
+  // people whose role matches one of the selected departments. Empty
+  // selection = show everyone, keeping the existing behavior.
+  const filteredPeople = useMemo(() => {
+    if (departments.length === 0) return people;
+    const wanted = new Set(departments.map((d) => d.toLowerCase()));
+    return people.filter((p) => wanted.has((p.role || "").toLowerCase()));
+  }, [people, departments]);
 
   function toggleDept(d: string) {
     setDepartments((cur) =>
@@ -226,15 +254,6 @@ export default function TaskCreateForm({
     <form className="task-form" onSubmit={onSubmit}>
       {error && <div className="error">{error}</div>}
 
-      {/* Shared datalist for all four people inputs below. */}
-      <datalist id="tasks-people">
-        {people.map((p) => (
-          <option key={p.email} value={p.email}>
-            {p.name} · {p.role}
-          </option>
-        ))}
-      </datalist>
-
       <div className="task-form-row">
         <label>
           חברה
@@ -273,25 +292,24 @@ export default function TaskCreateForm({
 
         <label>
           קמפיין
-          <input
-            type="text"
-            list="task-campaigns"
+          <CampaignCombobox
             value={campaign}
-            onChange={(e) => setCampaign(e.target.value)}
+            onChange={setCampaign}
+            options={campaignOptions}
             placeholder={
               project
                 ? "בחר קמפיין קיים או הקלד חדש"
                 : "בחר פרויקט תחילה"
             }
             disabled={!project}
+            hint={
+              campaignOptions.length > 0
+                ? "ממוין מהחדש לישן"
+                : undefined
+            }
           />
         </label>
       </div>
-      <datalist id="task-campaigns">
-        {campaignOptions.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
 
       <details className="task-form-extra">
         <summary>שדות נוספים</summary>
@@ -306,18 +324,8 @@ export default function TaskCreateForm({
         </label>
       </details>
 
-      <DriveFolderPicker
-        company={company}
-        project={project}
-        campaign={campaign}
-        defaultNewName={suggestedFolderName}
-        value={folderSelection}
-        onChange={handleFolderChange}
-        disabled={!project}
-      />
-
       <label>
-        כותרת
+        כותרת <span className="task-form-required" aria-hidden>*</span>
         <input
           type="text"
           name="title"
@@ -337,10 +345,23 @@ export default function TaskCreateForm({
         />
       </label>
 
+      <DriveFolderPicker
+        company={company}
+        project={project}
+        campaign={campaign}
+        defaultNewName={suggestedFolderName}
+        value={folderSelection}
+        onChange={handleFolderChange}
+        disabled={!project}
+      />
+
       <label>
-        מחלקות (ניתן לבחור יותר מאחת, כמו ב־Data Plus)
+        מחלקות{" "}
+        <span className="task-form-label-hint">
+          (ניתן לבחור יותר מאחת — בחירה תסנן את רשימת העובדים בהמשך)
+        </span>
         <div className="task-form-dept-row">
-          {DEPARTMENTS.map((d) => (
+          {departmentOptions.map((d) => (
             <button
               key={d}
               type="button"
@@ -393,23 +414,22 @@ export default function TaskCreateForm({
       <div className="task-form-row">
         <label>
           גורם מאשר
-          <input
-            type="text"
-            list="tasks-people"
+          <PersonCombobox
             value={approver}
-            onChange={(e) => setApprover(e.target.value)}
-            placeholder="name@fandf.co.il"
+            onChange={setApprover}
+            options={people}
+            placeholder="חפש לפי שם או מייל"
           />
         </label>
 
         <label>
           מנהל פרויקט
-          <input
-            type="text"
-            list="tasks-people"
+          <PersonCombobox
             value={projectManager}
-            onChange={(e) => setProjectManager(e.target.value)}
-            placeholder="name@fandf.co.il"
+            onChange={setProjectManager}
+            options={people}
+            placeholder="חפש לפי שם או מייל"
+            hint={defaultPm ? "ברירת מחדל: מנהל הפרויקט מ־Keys" : undefined}
           />
         </label>
 
@@ -421,9 +441,24 @@ export default function TaskCreateForm({
             onChange={(e) => setAssignees(e.target.value)}
             placeholder="felix@fandf.co.il, nadav@fandf.co.il"
           />
-          {people.length > 0 && (
+          {departments.length > 0 && (
+            <div className="task-form-dept-filter-line">
+              מסונן לפי{" "}
+              {departments.map((d) => (
+                <span key={d} className="task-form-dept-filter-pill">
+                  {d}
+                </span>
+              ))}
+              {filteredPeople.length === 0 && (
+                <span className="task-form-dept-filter-empty">
+                  אין עובדים תחת מחלקות אלה — בחר אחרות או הסר סינון
+                </span>
+              )}
+            </div>
+          )}
+          {filteredPeople.length > 0 && (
             <div className="task-form-assignee-chips">
-              {people.slice(0, 24).map((p) => {
+              {filteredPeople.slice(0, 24).map((p) => {
                 const already = assignees
                   .split(/[,;\n]/)
                   .map((s) => s.trim().toLowerCase())
