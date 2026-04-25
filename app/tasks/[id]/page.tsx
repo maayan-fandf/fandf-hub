@@ -6,6 +6,7 @@ import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
+import IdCopyRow from "@/components/IdCopyRow";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 
@@ -180,47 +181,91 @@ export default async function TaskDetailPage({
           </section>
         </div>
 
-        <aside className="task-detail-side">
-          <KV label="חברה" value={t.company || "—"} />
-          <KV label="פרויקט" value={t.project} />
-          <KV label="קמפיין" value={t.campaign || "—"} />
-          <KV label="בריף" value={t.brief || "—"} />
-          <PersonRow
-            label="כותב"
-            email={t.author_email}
-            filterKey="author"
-          />
-          <PersonRow
-            label="גורם מאשר"
-            email={t.approver_email}
-            filterKey="approver"
-          />
-          <PersonRow
-            label="מנהל פרויקט"
-            email={t.project_manager_email}
-            filterKey="project_manager"
-          />
-          <PeopleRow
-            label="עובדים במשימה"
-            emails={t.assignees || []}
-            filterKey="assignee"
-          />
-          <KV label="סוג" value={t.kind} />
-          <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
-          <KV
-            label="סבב"
-            value={
-              t.round_number && t.round_number > 1
-                ? `#${t.round_number}${t.parent_id ? ` (נולד מ־${t.parent_id})` : ""}`
-                : "ראשון"
-            }
-          />
-          <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
-          <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
-          <KV label="id" value={t.id} />
+        <aside
+          className={`task-detail-side${editing ? " is-edit-mode" : ""}`}
+          aria-label="פרטי המשימה"
+        >
+          {/* Edit-mode banner: when ?edit=1 the form below the header
+              owns the live state; the side panel still shows the
+              server-side values, which look interactive but aren't.
+              Greying it out + a clear banner makes the relationship
+              explicit. */}
+          {editing && (
+            <div className="task-detail-side-banner" role="status">
+              ✏️ מצב עריכה — עדכון יוצג לאחר שמירה
+            </div>
+          )}
+
+          <SideBlock title="אנשים">
+            <PersonRow
+              label="כותב"
+              email={t.author_email}
+              filterKey="author"
+            />
+            <PersonRow
+              label="גורם מאשר"
+              email={t.approver_email}
+              filterKey="approver"
+            />
+            <PersonRow
+              label="מנהל פרויקט"
+              email={t.project_manager_email}
+              filterKey="project_manager"
+            />
+            <PeopleRow
+              label="עובדים במשימה"
+              emails={t.assignees || []}
+              filterKey="assignee"
+            />
+          </SideBlock>
+
+          <SideBlock title="שיוך">
+            <KV label="חברה" value={t.company || "—"} />
+            <KV label="פרויקט" value={t.project} />
+            <KV label="קמפיין" value={t.campaign || "—"} />
+            <KV label="בריף" value={t.brief || "—"} />
+          </SideBlock>
+
+          <SideBlock title="פרטים">
+            <KV label="סוג" value={t.kind} />
+            <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
+            <KV
+              label="סבב"
+              value={
+                t.round_number && t.round_number > 1
+                  ? `#${t.round_number}${t.parent_id ? ` (נולד מ־${t.parent_id})` : ""}`
+                  : "ראשון"
+              }
+            />
+            <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
+            <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
+            <IdCopyRow id={t.id} />
+          </SideBlock>
         </aside>
       </section>
     </main>
+  );
+}
+
+/**
+ * Visual grouping wrapper for the side panel. Splits the previously-
+ * flat list of 14 dt/dd rows into three semantic blocks (אנשים / שיוך
+ * / פרטים) so the eye doesn't have to scan a wall of equally-weighted
+ * labels to find what it needs. The block heading is intentionally
+ * subtle — same color as the dt labels, just a touch larger.
+ */
+function SideBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="task-detail-side-block">
+      <h3 className="task-detail-side-block-title">{title}</h3>
+      <div className="task-detail-side-block-body">{children}</div>
+    </section>
   );
 }
 

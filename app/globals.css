@@ -4692,6 +4692,89 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   font-size: .9em;
   align-self: start;
 }
+/* Side-panel hierarchy — three semantic blocks (אנשים / שיוך / פרטים)
+   instead of one flat list of 14 equally-weighted dt/dd rows. The
+   block title sits above each group, kept small + muted so it labels
+   the section without competing visually with the data inside. */
+.task-detail-side-block {
+  display: flex;
+  flex-direction: column;
+  gap: .55em;
+}
+.task-detail-side-block-title {
+  font-size: .72em;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin: 0;
+  padding-bottom: .25em;
+  border-bottom: 1px dashed var(--border);
+}
+.task-detail-side-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: .55em;
+}
+
+/* Edit-mode banner + dimmed-content state — when ?edit=1 the form
+   below the page header owns the live state; the side panel is a
+   read-only snapshot of the SERVER values until save. Without a
+   visual distinction the panel looks interactive but isn't, which
+   reads as "stale UI". Greying it out + the banner tells the truth. */
+.task-detail-side-banner {
+  background: rgba(245, 158, 11, .12);
+  border: 1px solid rgba(245, 158, 11, .35);
+  color: var(--text);
+  border-radius: 8px;
+  padding: .55em .75em;
+  font-size: .85em;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.task-detail-side.is-edit-mode .task-detail-side-block {
+  opacity: .55;
+  /* No pointer-events:none — the PersonRow links should still be
+     clickable as a navigation escape hatch ("jump to everything I'm
+     approving" while editing this one). The dimming alone signals
+     the relationship. */
+}
+
+/* id row — collapse the previously-equal-weighted dt/dd into a
+   monospace + copy-button pair. The id is mostly opaque so users
+   glance past it; surfacing it as a copy affordance instead of a flat
+   row matches actual usage (occasional Slack ping / cross-tab ref). */
+.task-kv-id dd {
+  display: flex;
+  align-items: center;
+  gap: .4em;
+  flex-wrap: wrap;
+}
+.task-id-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8em;
+  color: var(--muted);
+  background: var(--bg);
+  padding: .15em .45em;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  word-break: break-all;
+}
+.task-id-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: .1em .35em;
+  font-size: .85em;
+  line-height: 1;
+  transition: background .12s ease, border-color .12s ease;
+}
+.task-id-copy:hover {
+  background: var(--surface-soft);
+  border-color: var(--text);
+}
+
 .task-kv { display: flex; flex-direction: column; gap: .15em; }
 .task-kv dt {
   font-size: .75em;
