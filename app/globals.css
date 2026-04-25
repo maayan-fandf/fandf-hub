@@ -3708,8 +3708,32 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   font: inherit;
   font-weight: 500;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
 }
 .btn-warn:hover { filter: brightness(1.05); }
+
+/* Size modifiers that compose with btn-primary / btn-ghost / btn-warn.
+   Use `.btn-primary.btn-sm` for inline contexts (table footers, tight
+   page headers) where the default `.7rem 1.2rem` padding feels heavy.
+   Goal: keep the visual family — same color, radius, hover — while
+   right-sizing for context. */
+.btn-primary.btn-sm,
+.btn-ghost.btn-sm,
+.btn-warn.btn-sm {
+  padding: .4rem .85rem;
+  font-size: .9em;
+  gap: .4rem;
+}
+.btn-primary.btn-xs,
+.btn-ghost.btn-xs,
+.btn-warn.btn-xs {
+  padding: .25rem .65rem;
+  font-size: .82em;
+  border-radius: 6px;
+  gap: .3rem;
+}
 
 .page-header-actions {
   display: flex;

@@ -375,7 +375,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                   <>
                     <button
                       type="button"
-                      className="reply-btn reply-btn-primary"
+                      className="btn-primary btn-xs"
                       onClick={() => save(r)}
                       disabled={r.isBusy}
                     >
@@ -383,7 +383,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                     </button>
                     <button
                       type="button"
-                      className="reply-btn reply-btn-ghost"
+                      className="btn-ghost btn-xs"
                       onClick={() => cancelEdit(r.uiKey)}
                       disabled={r.isBusy}
                     >
@@ -394,7 +394,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                   <>
                     <button
                       type="button"
-                      className="reply-btn"
+                      className="btn-ghost btn-xs"
                       onClick={() => beginEdit(r.uiKey)}
                       disabled={r.isBusy}
                     >
@@ -423,7 +423,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
       <div className="admin-editor-foot">
         <button
           type="button"
-          className="reply-btn"
+          className="btn-primary btn-sm"
           onClick={addRow}
           disabled={isPending}
         >
