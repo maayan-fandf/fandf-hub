@@ -113,6 +113,15 @@ function rowToTask(
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),
+    rank: (() => {
+      const raw = cell("rank");
+      const parsed =
+        raw === "" || raw == null ? NaN : parseFloat(String(raw));
+      if (Number.isFinite(parsed)) return parsed;
+      // Fallback: derive from created_at (newer = smaller = top).
+      const ms = Date.parse(toIsoDate(cell("timestamp")));
+      return Number.isFinite(ms) ? -ms : Number.MAX_SAFE_INTEGER / 2;
+    })(),
   };
 }
 

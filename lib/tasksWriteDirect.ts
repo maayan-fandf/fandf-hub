@@ -52,31 +52,19 @@ const TASKS_STATUSES: WorkTaskStatus[] = [
   "cancelled",
 ];
 
-// Mirror of Apps Script TASKS_ALLOWED_TRANSITIONS. Lifecycle flow:
-//   draft → awaiting_handling → in_progress → awaiting_approval → done
-//                       ⇅                ⇅
-//                       awaiting_clarification
-//
-// Two "step back" transitions surface in real workflows:
-//   - awaiting_handling → awaiting_clarification: briefed in but
-//     blocked before work starts (e.g. waiting on a design brief).
-//   - in_progress       → awaiting_handling:     started but had to
-//     drop the task and put it back in the queue for someone else.
-const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = {
-  draft: ["awaiting_handling", "cancelled"],
-  awaiting_handling: ["in_progress", "awaiting_clarification", "cancelled"],
-  in_progress: [
-    "awaiting_approval",
-    "awaiting_clarification",
-    "awaiting_handling",
-    "cancelled",
-  ],
-  awaiting_clarification: ["in_progress", "awaiting_handling", "cancelled"],
-  awaiting_approval: ["done", "in_progress", "cancelled"],
-  done: ["in_progress"],
-  // Revival paths for a cancelled task — re-triage or pick-up.
-  cancelled: ["awaiting_handling", "in_progress"],
-};
+// Open lifecycle — every status routes to every other status (minus
+// self). Previously this was a hand-curated graph that rejected
+// "non-canonical" moves; the team's actual workflow turned out to need
+// arbitrary jumps (e.g. drag from done back to awaiting_handling), so
+// the whitelist became a friction source instead of a guard. Client
+// mirror in TaskStatusCell.tsx is generated the same way.
+const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> =
+  Object.fromEntries(
+    TASKS_STATUSES.map((from) => [
+      from,
+      TASKS_STATUSES.filter((to) => to !== from),
+    ]),
+  ) as Record<WorkTaskStatus, WorkTaskStatus[]>;
 
 const ADMIN_EMAILS = new Set([
   "maayan@fandf.co.il",
@@ -759,6 +747,12 @@ export async function tasksCreateDirect(
     String(h ?? "").trim(),
   );
 
+  // Default rank for a new task: enter at the TOP of its status bucket.
+  // We derive a value smaller than any current rank in the same status
+  // (negative timestamps mean smaller = newer); the explicit drag-and-
+  // drop UI overrides this once the user repositions the card.
+  const newTaskRank = -Date.parse(now);
+
   const cells: Record<string, unknown> = {
     id: task.id,
     timestamp: now,
@@ -794,7 +788,10 @@ export async function tasksCreateDirect(
     status_history: JSON.stringify(task.status_history),
     updated_at: task.updated_at,
     campaign: task.campaign || "",
+    rank: newTaskRank,
   };
+  // Reflect rank back on the in-memory task so callers see it.
+  task.rank = newTaskRank;
   const row = headerRow.map((h) => (h in cells ? cells[h] : ""));
   await sheets.spreadsheets.values.append({
     spreadsheetId: commentsSsId,
@@ -933,6 +930,7 @@ export async function tasksUpdateDirect(
     "company",
     "sub_status",
     "campaign",
+    "rank",
   ] as const;
   for (const k of SIMPLE_DIRECT) {
     if (k in patch && patch[k] !== cell(k)) {
@@ -1269,6 +1267,20 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 
+  // Rank fallback — if the sheet has no `rank` column yet (or this row
+  // hasn't been ranked), derive a default from `created_at`. Newer
+  // tasks get a smaller number so they sort to the top by default,
+  // matching the previous chronological behavior. Once a user drags
+  // anything, the explicit rank takes over for that row.
+  const rankRaw = cell("rank");
+  const parsedRank =
+    rankRaw === "" || rankRaw == null ? NaN : parseFloat(String(rankRaw));
+  const fallbackRank = (() => {
+    const ms = Date.parse(String(createdAtRaw ?? ""));
+    if (!Number.isFinite(ms)) return Number.MAX_SAFE_INTEGER / 2;
+    // Negate so newer (larger ms) becomes smaller (sorts first).
+    return -ms;
+  })();
   return {
     id: String(cell("id") ?? ""),
     brief: String(cell("brief") ?? ""),
@@ -1298,6 +1310,8 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     google_tasks: parseJsonField("google_tasks", false) as Record<string, { u: string; l: string; t: string; d: string }>,
     status_history: parseJsonField("status_history", true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
+    campaign: String(cell("campaign") ?? ""),
+    rank: Number.isFinite(parsedRank) ? parsedRank : fallbackRank,
   };
 }
 

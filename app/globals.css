@@ -6089,6 +6089,32 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
   border-inline-start-color: #9ca3af;
   border-inline-start-style: dashed;
 }
+
+/* "🆕 חדש" chip — small green pill that surfaces tasks created in the
+   last 24 hours. Replaces the chronological within-column sort signal
+   we lost when we moved to rank-based ordering. */
+.kanban-card-new-chip,
+.tasks-new-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: .15em .55em;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: #d1fae5;
+  color: #065f46;
+}
+html[data-theme="dark"] .kanban-card-new-chip,
+html[data-theme="dark"] .tasks-new-chip {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+}
+.tasks-new-chip {
+  margin-inline-start: .5em;
+  font-size: .7rem;
+}
 .kanban-card-date {
   display: inline-flex;
   align-items: center;

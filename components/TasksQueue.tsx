@@ -328,7 +328,12 @@ function BucketBody({
   if (axis === "none") {
     const sorted = tasks
       .slice()
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      .sort((a, b) => {
+        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
+        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return b.created_at.localeCompare(a.created_at);
+      });
     return (
       <>
         {sorted.map((t) => (
@@ -601,6 +606,11 @@ function TaskRow({
         >
           {task.title}
         </Link>
+        {isCreatedWithin24h(task.created_at) && (
+          <span className="tasks-new-chip" title="נוצרה ב־24 שעות האחרונות">
+            🆕 חדש
+          </span>
+        )}
         {task.brief && (
           <span className="tasks-brief-chip" title="בריף">
             #{task.brief}
@@ -692,6 +702,15 @@ function TaskRow({
       </td>
     </tr>
   );
+}
+
+/** Within the last 24h — same window the kanban card uses for the
+ *  "🆕 חדש" chip. Now that within-bucket sort is rank-driven (not
+ *  chronological), this badge restores the "what just landed" signal. */
+function isCreatedWithin24h(iso: string): boolean {
+  const ms = Date.parse(iso || "");
+  if (!Number.isFinite(ms)) return false;
+  return Date.now() - ms < 24 * 60 * 60 * 1000;
 }
 
 function shortName(email: string): string {

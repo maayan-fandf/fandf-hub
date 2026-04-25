@@ -887,6 +887,13 @@ export type WorkTask = {
    *  without a campaign still render; a new task's Drive folder lands
    *  directly under the project folder in that case. */
   campaign?: string;
+  /** Manual sort order — float, lower = higher priority on screen.
+   *  Drag-to-reorder on kanban + table sorts within each status bucket
+   *  by this value (asc). Missing values fall back to a derived rank
+   *  from `created_at` so older / un-ranked tasks sink. The 3-tier
+   *  `priority` field stays orthogonal: it's a flag for "on fire"
+   *  without dictating screen order. */
+  rank?: number;
 };
 
 export type TasksListFilters = {
@@ -1048,6 +1055,9 @@ export type TasksUpdatePatch = {
    *  the folder's webViewLink and updates `drive_folder_url` to match.
    *  Direct-SA write path only. */
   drive_folder_id?: string;
+  /** Manual sort rank. Drag-to-reorder on kanban / table issues this
+   *  patch with the new computed midpoint. Lower = higher on screen. */
+  rank?: number;
 };
 
 /** Distinct campaigns that have at least one task on the given project,

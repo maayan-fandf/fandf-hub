@@ -16,9 +16,48 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
-import { STATUS_LABELS, TRANSITIONS } from "@/components/TaskStatusCell";
+import { STATUS_LABELS } from "@/components/TaskStatusCell";
 import Avatar from "@/components/Avatar";
 import { fireConfetti, firePulse } from "@/lib/confetti";
+
+/** Step used when a card is inserted at the very top or very bottom of
+ *  a column (no neighbor on one side to average against). 1000 is wide
+ *  enough that float drift from repeated midpoint inserts won't run
+ *  out of precision for any realistic team's lifetime. */
+const RANK_STEP = 1000;
+
+/**
+ * Compute the rank value for a card being inserted into the column
+ * `colTasks` (already sorted by rank ascending) just before the card
+ * with id `insertBeforeId`. Pass `null` to append at the bottom.
+ *
+ * - Empty column → 0
+ * - Top of column → first.rank - RANK_STEP
+ * - Bottom of column → last.rank + RANK_STEP
+ * - Between two cards → midpoint of their ranks
+ */
+function computeInsertRank(
+  colTasks: WorkTask[],
+  insertBeforeId: string | null,
+): number {
+  if (colTasks.length === 0) return 0;
+  if (insertBeforeId === null) {
+    const last = colTasks[colTasks.length - 1];
+    return (last.rank ?? 0) + RANK_STEP;
+  }
+  const idx = colTasks.findIndex((t) => t.id === insertBeforeId);
+  if (idx === -1) {
+    // Fallback: target not found, append.
+    const last = colTasks[colTasks.length - 1];
+    return (last.rank ?? 0) + RANK_STEP;
+  }
+  const after = colTasks[idx];
+  const before = idx > 0 ? colTasks[idx - 1] : null;
+  if (!before) return (after.rank ?? 0) - RANK_STEP;
+  const a = before.rank ?? 0;
+  const b = after.rank ?? 0;
+  return (a + b) / 2;
+}
 
 type ColumnDef = {
   key: WorkTaskStatus;
@@ -85,10 +124,17 @@ export default function TasksKanban({
     for (const t of tasks) {
       if (map[t.status]) map[t.status].push(t);
     }
-    // Newest-first within each column — the column IS the grouping axis,
-    // so within-column ordering is just chronological.
+    // Within each column: sort by manual rank ascending (lower = top).
+    // Tie-break by created_at desc so brand-new tasks float above older
+    // un-ranked ones with the same fallback rank. Drag-and-drop updates
+    // the rank field directly so this sort stays the source of truth.
     for (const k of Object.keys(map)) {
-      map[k].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      map[k].sort((a, b) => {
+        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
+        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return b.created_at.localeCompare(a.created_at);
+      });
     }
     return map;
   }, [tasks]);
@@ -107,54 +153,58 @@ export default function TasksKanban({
     setDraggingId(null);
     if (!e.over) return;
     const overId = String(e.over.id);
-    // Drop targets are columns (id = `col:<status>`) or other cards
-    // (id = task.id). For a card-on-card drop, treat it as a drop on
-    // that card's column.
-    let targetStatus: WorkTaskStatus | null = null;
+
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+
+    // Resolve the drop into (targetStatus, insertBeforeId | null).
+    // - Drop on a column (`col:<status>`) → status of that column,
+    //   insert at end (no neighbor).
+    // - Drop on a card → status of that card's column, insert just
+    //   above that card (insertBeforeId = card.id).
+    let targetStatus: WorkTaskStatus;
+    let insertBeforeId: string | null = null;
     if (overId.startsWith("col:")) {
       targetStatus = overId.slice(4) as WorkTaskStatus;
     } else {
       const target = tasks.find((t) => t.id === overId);
-      if (target) targetStatus = target.status;
-    }
-    if (!targetStatus) return;
-
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-    if (task.status === targetStatus) return;
-
-    // Validate against the same transition table the inline status
-    // pill uses. If the drop is illegal we don't even attempt the
-    // server write — surface a one-line hint and the card snaps back.
-    const allowed = (TRANSITIONS[task.status] || []).some(
-      (t) => t.to === targetStatus,
-    );
-    if (!allowed) {
-      setError(
-        `לא ניתן להעביר מ-"${STATUS_LABELS[task.status]}" ל-"${STATUS_LABELS[targetStatus]}".`,
-      );
-      return;
+      if (!target) return;
+      targetStatus = target.status;
+      insertBeforeId = target.id;
     }
 
-    // Optimistic local update — flips the card into the target column
-    // before the fetch round-trip lands.
+    // Compute new rank from the column's currently-rendered order
+    // (already sorted by rank asc in `byStatus`).
+    const colTasks = (byStatus[targetStatus] || []).filter((t) => t.id !== id);
+    const newRank = computeInsertRank(colTasks, insertBeforeId);
+
+    const sameStatus = task.status === targetStatus;
+    const sameRank = task.rank === newRank;
+    if (sameStatus && sameRank) return;
+
+    // Optimistic local update — flips status + rank before the fetch
+    // round-trip lands.
     const prev = tasks;
     const next = tasks.map((t) =>
-      t.id === id ? { ...t, status: targetStatus! } : t,
+      t.id === id ? { ...t, status: targetStatus, rank: newRank } : t,
     );
     setTasks(next);
+
+    const patch: { status?: WorkTaskStatus; rank?: number; note?: string } = {
+      rank: newRank,
+    };
+    if (!sameStatus) {
+      patch.status = targetStatus;
+      patch.note = `kanban: ${STATUS_LABELS[targetStatus]}`;
+    } else {
+      patch.note = `kanban: reorder`;
+    }
 
     try {
       const res = await fetch("/api/worktasks/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id,
-          patch: {
-            status: targetStatus,
-            note: `kanban: ${STATUS_LABELS[targetStatus]}`,
-          },
-        }),
+        body: JSON.stringify({ id, patch }),
       });
       const data = (await res.json()) as
         | { ok: true }
@@ -165,10 +215,12 @@ export default function TasksKanban({
       // Reuse the same celebration cues the inline pill fires so kanban
       // moves feel as alive as table moves. Origin is the page center
       // because the dragged card has already been re-parented by now.
-      if (targetStatus === "done") {
-        fireConfetti();
-      } else if (targetStatus === "awaiting_approval") {
-        firePulse();
+      if (!sameStatus) {
+        if (targetStatus === "done") {
+          fireConfetti();
+        } else if (targetStatus === "awaiting_approval") {
+          firePulse();
+        }
       }
     } catch (err) {
       setTasks(prev);
@@ -301,8 +353,21 @@ function KanbanCard({
   const priorityClass =
     task.priority === 1 ? "high" : task.priority === 3 ? "low" : "normal";
   const showPriorityChip = priorityClass !== "normal";
+  // Surface a small "🆕 חדש" chip on tasks created in the last 24h.
+  // Manual rank ordering replaced the chronological within-column sort,
+  // so we lost the implicit "new = on top" signal — this puts it back
+  // visually without forcing it into the sort.
+  const isNew = (() => {
+    const ms = Date.parse(task.created_at);
+    if (!Number.isFinite(ms)) return false;
+    return Date.now() - ms < 24 * 60 * 60 * 1000;
+  })();
   const hasChips =
-    task.brief || task.campaign || task.round_number > 1 || showPriorityChip;
+    isNew ||
+    task.brief ||
+    task.campaign ||
+    task.round_number > 1 ||
+    showPriorityChip;
   const assignees = task.assignees || [];
 
   return (
@@ -332,6 +397,11 @@ function KanbanCard({
       )}
       {hasChips && (
         <div className="kanban-card-chips">
+          {isNew && (
+            <span className="kanban-card-new-chip" title="נוצרה ב־24 שעות האחרונות">
+              🆕 חדש
+            </span>
+          )}
           {showPriorityChip && (
             <span
               className={`kanban-card-priority-chip ${priorityClass}`}

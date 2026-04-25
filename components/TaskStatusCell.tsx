@@ -5,56 +5,12 @@ import { createPortal } from "react-dom";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 import { fireConfetti, firePulse } from "@/lib/confetti";
 
-// Mirror of the Apps Script / tasksWriteDirect state machine so the
-// dropdown only offers transitions that the server will accept. Any
-// transition that lands out-of-sync with the server is rejected
-// server-side and we surface the error inline.
-//
-// F&F lifecycle (2026-04-24):
-//   draft → awaiting_handling → in_progress → awaiting_approval → done
-//                                    ⇄
-//                             awaiting_clarification
-// Labels = the target state name (Hebrew). Data-Plus style: click the
-// pill, pick where the task goes next. No action-phrased verbs; the
-// state name alone is enough context.
-export const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> = {
-  draft: [
-    { to: "awaiting_handling", label: "ממתין לטיפול" },
-    { to: "cancelled", label: "בוטל" },
-  ],
-  awaiting_handling: [
-    { to: "in_progress", label: "בעבודה" },
-    { to: "awaiting_clarification", label: "ממתין לבירור" },
-    { to: "cancelled", label: "בוטל" },
-  ],
-  in_progress: [
-    { to: "awaiting_approval", label: "ממתין לאישור" },
-    { to: "awaiting_clarification", label: "ממתין לבירור" },
-    { to: "awaiting_handling", label: "ממתין לטיפול" },
-    { to: "cancelled", label: "בוטל" },
-  ],
-  awaiting_clarification: [
-    { to: "in_progress", label: "בעבודה" },
-    { to: "awaiting_handling", label: "ממתין לטיפול" },
-    { to: "cancelled", label: "בוטל" },
-  ],
-  awaiting_approval: [
-    { to: "done", label: "בוצע" },
-    { to: "in_progress", label: "בעבודה" },
-    { to: "cancelled", label: "בוטל" },
-  ],
-  done: [
-    { to: "in_progress", label: "בעבודה" },
-  ],
-  // Revival paths for a cancelled task — rare but real (user flagged
-  // "there's no way to un-cancel"). Re-triage lands in awaiting_handling;
-  // pick-up-where-we-left-off goes straight to in_progress.
-  cancelled: [
-    { to: "awaiting_handling", label: "ממתין לטיפול" },
-    { to: "in_progress", label: "בעבודה" },
-  ],
-};
-
+// Open lifecycle — every status routes to every other status (minus
+// self). The previous whitelist was forcing the team into a single
+// happy-path narrative ("you can only go from awaiting_approval to
+// done") that didn't match reality. Now any drag / pill-click is
+// allowed; the user owns the workflow. Server-side gate in
+// tasksWriteDirect.ts mirrors the same all-to-all policy.
 export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
   draft: "טיוטה",
   awaiting_handling: "ממתין לטיפול",
@@ -64,6 +20,27 @@ export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
   done: "בוצע",
   cancelled: "בוטל",
 };
+
+const ALL_STATUSES: WorkTaskStatus[] = [
+  "awaiting_handling",
+  "in_progress",
+  "awaiting_clarification",
+  "awaiting_approval",
+  "done",
+  "cancelled",
+  "draft",
+];
+
+export const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> =
+  Object.fromEntries(
+    ALL_STATUSES.map((from) => [
+      from,
+      ALL_STATUSES.filter((to) => to !== from).map((to) => ({
+        to,
+        label: STATUS_LABELS[to],
+      })),
+    ]),
+  ) as Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]>;
 
 /**
  * Inline status cell for the tasks queue. Click opens a floating menu
