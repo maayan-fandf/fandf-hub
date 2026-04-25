@@ -7,20 +7,11 @@ import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
+import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "טיוטה",
-  awaiting_handling: "ממתין לטיפול",
-  in_progress: "בעבודה",
-  awaiting_clarification: "ממתין לבירור",
-  awaiting_approval: "ממתין לאישור",
-  done: "בוצע",
-  cancelled: "בוטל",
-};
 
 export default async function TaskDetailPage({
   params,
@@ -150,16 +141,7 @@ export default async function TaskDetailPage({
             className="task-detail-section task-detail-history"
           >
             <h3>היסטוריית סטטוסים</h3>
-            <ul>
-              {(t.status_history || []).map((h, i) => (
-                <li key={i}>
-                  <time>{h.at.slice(0, 16).replace("T", " ")}</time>
-                  {" · "}
-                  {shortName(h.by)} — {h.from || "—"} → <b>{STATUS_LABELS[h.to] || h.to}</b>
-                  {h.note ? ` · ${h.note}` : ""}
-                </li>
-              ))}
-            </ul>
+            <TaskStatusHistory history={t.status_history || []} />
           </section>
 
           <section

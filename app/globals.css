@@ -4950,16 +4950,137 @@ html[data-theme="dark"] .tasks-dept-chip {
   padding-top: 1em;
 }
 .task-detail-history h3 { font-size: .95em; margin: 0 0 .7em; }
-.task-detail-history ul { list-style: none; padding: 0; margin: 0; font-size: .86em; }
-.task-detail-history li {
-  padding: .4em 0;
-  border-bottom: 1px dashed var(--border);
+
+/* Vertical timeline replacement for the old flat-dashed-list status
+   history. Each event is a colored dot (drawn from the same palette
+   the inline status pill uses) connected by a vertical line — the
+   dot's hue carries "status" information without needing the label.
+   Reverse-chronological so the newest event is at the top. */
+.task-status-history-empty {
+  font-size: .86em;
+  color: var(--muted);
+  font-style: italic;
+}
+.task-status-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  position: relative;
+}
+.task-status-history-item {
+  position: relative;
+  /* RTL: dot sits on the right edge, content fans to the left.
+     padding-inline-start is the visual-left padding (where text goes)
+     and padding-inline-end leaves room for the dot on the right. */
+  padding-inline-end: 1.5em;
+  padding-inline-start: 0;
+  padding-block: .55em;
+  font-size: .86em;
   color: var(--muted);
 }
-.task-detail-history time {
+/* Connecting line between dots. Drawn on the item itself, behind the
+   dot, stretching top→bottom of the item; suppressed on the last item
+   so the line doesn't dangle below the final entry. */
+.task-status-history-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-end: .47em; /* aligns with dot center (dot is .94em wide) */
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.task-status-history-item:last-child::before {
+  bottom: 50%;
+}
+.task-status-history-item:first-child::before {
+  top: 50%;
+}
+.task-status-history-item:only-child::before {
+  display: none;
+}
+.task-status-history-dot {
+  position: absolute;
+  inset-inline-end: 0;
+  top: .85em;
+  width: .95em;
+  height: .95em;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  /* Saturated tone — pale pill backgrounds (var(--bg) range) read as
+     "missing data" when scaled to dot size. These match each status's
+     pill TEXT color for higher contrast on small surfaces. */
+  background: #94a3b8;
+  z-index: 1;
+}
+.tasks-status-dot-draft         { background: #6b7280; }
+.tasks-status-dot-awaiting_handling     { background: #475569; }
+.tasks-status-dot-in_progress           { background: #2563eb; }
+.tasks-status-dot-awaiting_clarification{ background: #dc2626; }
+.tasks-status-dot-awaiting_approval     { background: #d97706; }
+.tasks-status-dot-done                  { background: #059669; }
+.tasks-status-dot-cancelled             { background: #9ca3af; }
+
+.task-status-history-content {
+  display: flex;
+  flex-direction: column;
+  gap: .15em;
+}
+.task-status-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35em;
+  align-items: baseline;
+  font-size: 1em;
+}
+.task-status-history-status {
+  color: var(--text);
+  font-weight: 700;
+}
+.task-status-history-arrow {
+  color: var(--muted);
+  font-size: .9em;
+}
+.task-status-history-from {
+  color: var(--muted);
+  font-weight: 500;
+}
+.task-status-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35em;
+  align-items: baseline;
+  font-size: .82em;
+  color: var(--muted);
+}
+.task-status-history-time {
   font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.task-status-history-by {
   color: var(--text);
   font-weight: 600;
+}
+.task-status-history-note {
+  color: var(--muted);
+  font-style: italic;
+}
+.task-status-history-toggle {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  padding: .35em .85em;
+  font-size: .82em;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: .5em;
+  margin-inline-end: 1.5em;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.task-status-history-toggle:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--text);
 }
 
 .task-detail-comments {
