@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveComment } from "@/lib/appsScript";
+import { auth } from "@/auth";
+import { resolveCommentDirect } from "@/lib/commentsWriteDirect";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
   let body: { commentId?: string; resolved?: boolean };
   try {
     body = await req.json();
@@ -18,7 +25,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await resolveComment({ commentId, resolved });
+    const result = await resolveCommentDirect(
+      session.user.email,
+      commentId,
+      resolved,
+    );
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

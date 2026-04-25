@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTask } from "@/lib/appsScript";
+import { auth } from "@/auth";
+import { createMentionDirect } from "@/lib/commentsWriteDirect";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * Legacy "create comment with @mentions" endpoint — kept under
+ * /api/tasks/create for compatibility with the existing
+ * CreateTaskDrawer client component (which is actually a comment
+ * creator with mention parsing, not a work-task creator).
+ *
+ * The new structured-task system lives under /api/worktasks/create.
+ */
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
   let body: {
     project?: string;
     body?: string;
@@ -42,7 +57,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await createTask({
+    const result = await createMentionDirect(session.user.email, {
       project,
       body: taskBody,
       assignees,
