@@ -135,12 +135,14 @@ export default async function ProjectOverviewPage({
       "https://drive.google.com/drive/search?q=" +
       encodeURIComponent(projectName);
   }
-  // Build the in-Drive local path. The mount point varies per machine
-  // (Windows: G:\; Mac: /Volumes/GoogleDrive/) — we copy the suffix
-  // and let the user paste under their own Drive root.
+  // Build the absolute Windows path the user pastes into File
+  // Explorer's address bar. F&F's Drive Desktop setup mounts at G:\,
+  // matching every workstation we've checked. If a Mac user ever
+  // hits this, they paste it into Finder's "Go to" dialog and adapt
+  // the prefix manually — niche enough to ignore for now.
   const localPath =
     sharedDriveName && companyForDashboard && projectName
-      ? `Shared drives\\${sharedDriveName}\\${companyForDashboard}\\${projectName}`
+      ? `G:\\Shared drives\\${sharedDriveName}\\${companyForDashboard}\\${projectName}`
       : "";
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
   // `authuser` hints Google to load the iframe under *this* account if the

@@ -3754,8 +3754,12 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   vertical-align: middle;
 }
 
-/* Compact "copy local path" sibling button — icon-only, slightly
-   muted unless hovered or just-clicked (animated success state). */
+/* Compact "copy local path" button — clipboard icon by default,
+   flips to "✓ הועתק" on success. */
+.copy-local-path-wrap {
+  position: relative;
+  display: inline-flex;
+}
 .copy-local-path-btn {
   font-size: .9em;
   padding: .3rem .55rem;
@@ -3768,6 +3772,87 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
 html[data-theme="dark"] .copy-local-path-btn.is-copied {
   background: rgba(16,185,129,.2);
   color: #6ee7b7;
+}
+
+/* Post-click hint popover — walks the user through the paste flow
+   (browsers can't open File Explorer programmatically, so a clear
+   "Win+E → Ctrl+L → paste" prompt is the practical fallback). */
+.copy-local-path-hint {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  z-index: 1000;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  padding: .8em 1em;
+  min-width: 280px;
+  max-width: 360px;
+  font-size: .88em;
+  text-align: start;
+  animation: copy-hint-pop .18s cubic-bezier(.18,.7,.4,1);
+}
+@keyframes copy-hint-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.copy-local-path-hint-head {
+  font-weight: 600;
+  color: #047857;
+  margin-bottom: .5em;
+}
+html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
+.copy-local-path-hint-steps {
+  margin: 0 1.4em .5em;
+  padding: 0;
+  color: var(--text);
+}
+.copy-local-path-hint-steps li {
+  margin: .2em 0;
+  line-height: 1.5;
+}
+.copy-local-path-hint-steps kbd {
+  display: inline-block;
+  padding: .1em .4em;
+  margin: 0 .1em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-soft, rgba(120,120,120,.1));
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace);
+  font-size: .82em;
+  font-weight: 600;
+  color: var(--text);
+}
+.copy-local-path-hint-path {
+  display: block;
+  background: var(--surface-soft, rgba(120,120,120,.1));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .35em .6em;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace);
+  font-size: .85em;
+  color: var(--muted);
+  word-break: break-all;
+  user-select: all;
+}
+.copy-local-path-hint-close {
+  position: absolute;
+  top: 6px;
+  inset-inline-start: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 1em;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+.copy-local-path-hint-close:hover {
+  background: var(--surface-soft, rgba(120,120,120,.1));
+  color: var(--text);
 }
 
 /* Drive icon at row-icon size — make sure it inherits the row-icon
