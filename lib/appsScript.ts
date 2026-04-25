@@ -278,8 +278,11 @@ const fetchMyProjectsDirectCached = unstable_cache(
   { revalidate: 60, tags: ["my-projects"] },
 );
 
-export async function getMyProjects(): Promise<MyProjects> {
-  const email = await currentUserEmail();
+export async function getMyProjects(overrideEmail?: string): Promise<MyProjects> {
+  // `overrideEmail` powers the gear-menu "view as" feature on the
+  // home page — the projects list reflects whoever's identity the
+  // session user is impersonating, instead of their own.
+  const email = overrideEmail || (await currentUserEmail());
   const { useSAProjectsReads } = await import("@/lib/sa");
   if (useSAProjectsReads()) return fetchMyProjectsDirectCached(email);
   return fetchMyProjectsCached(email);

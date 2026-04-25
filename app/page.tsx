@@ -5,10 +5,12 @@ import {
   getMyProjects,
   getMyCounts,
   getMorningFeed,
+  currentUserEmail,
   type Project,
   type MyCountsPerProject,
   type MorningFeed,
 } from "@/lib/appsScript";
+import { getUserPrefs } from "@/lib/userPrefs";
 import { companyColorSlot } from "@/lib/colors";
 import { isPersonOnProject } from "@/lib/scope";
 
@@ -34,10 +36,18 @@ export default async function HomePage({
   searchParams: Promise<HomeSearch>;
 }) {
   const sp = await searchParams;
+  // Honor the gear-menu "view as" pref so the home page mirrors the
+  // /tasks default-filter behavior. Failures fall back to the session
+  // user's own identity — view-as is best-effort, not a security gate.
+  const me = await currentUserEmail().catch(() => "");
+  const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
+  const viewAs = prefs?.view_as_email || "";
+  const isViewingAs = !!viewAs && viewAs !== me;
+
   // Kick off projects + counts in parallel so the morning-feed scope (which
   // depends on isStaff/isAdmin from the projects call) can be chosen after.
   const [projectsRes, countsRes] = await Promise.allSettled([
-    getMyProjects(),
+    getMyProjects(viewAs || undefined),
     getMyCounts(),
   ]);
   const dataEarly = projectsRes.status === "fulfilled" ? projectsRes.value : null;
@@ -201,6 +211,12 @@ export default async function HomePage({
             <div className="subtitle">
               מחובר כ-<span dir="ltr">{data.email}</span>
               {data.isAdmin && " · 👑 אדמין"}
+              {isViewingAs && (
+                <>
+                  {" "}· 👁️ <b>מציג כ-<span dir="ltr">{viewAs}</span></b> (שינוי
+                  בגלגל ההגדרות)
+                </>
+              )}
             </div>
           )}
         </div>
