@@ -3742,6 +3742,42 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   gap: .3rem;
 }
 
+/* Buttons that lead with the Drive logo (an inline SVG) — keep the
+   icon flush to the start edge with a slightly tighter gap so the
+   colored mark reads as part of a single label rather than two
+   independent elements. */
+.btn-with-drive-icon {
+  gap: .45rem;
+}
+.btn-with-drive-icon svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Compact "copy local path" sibling button — icon-only, slightly
+   muted unless hovered or just-clicked (animated success state). */
+.copy-local-path-btn {
+  font-size: .9em;
+  padding: .3rem .55rem;
+}
+.copy-local-path-btn.is-copied {
+  background: rgba(16,185,129,.12);
+  border-color: #10b981;
+  color: #047857;
+}
+html[data-theme="dark"] .copy-local-path-btn.is-copied {
+  background: rgba(16,185,129,.2);
+  color: #6ee7b7;
+}
+
+/* Drive icon at row-icon size — make sure it inherits the row-icon
+   sizing rather than the default 1em. */
+.tasks-row-icon-drive svg {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: middle;
+}
+
 .page-header-actions {
   display: flex;
   gap: .6em;

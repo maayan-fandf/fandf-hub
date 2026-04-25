@@ -242,6 +242,40 @@ export async function createChildFolder(
 }
 
 /**
+ * Returns the configured Shared Drive's display name. Cached for 1
+ * hour in-process — the name effectively never changes.
+ *
+ * Used to construct the user-facing local path when Google Drive for
+ * Desktop is installed: the in-Drive path is the same on every
+ * machine (`Shared drives/<name>/<company>/<project>`); only the
+ * mount point differs (G:\ on Windows, /Volumes/GoogleDrive/ on Mac).
+ * The "copy local path" button copies the in-Drive suffix.
+ */
+let _sharedDriveNameCache: { name: string; expiresAt: number } | null = null;
+
+export async function getSharedDriveName(
+  subjectEmail: string,
+): Promise<string> {
+  const sharedDriveId = process.env.TASKS_SHARED_DRIVE_ID;
+  if (!sharedDriveId) return "";
+  if (_sharedDriveNameCache && _sharedDriveNameCache.expiresAt > Date.now()) {
+    return _sharedDriveNameCache.name;
+  }
+  try {
+    const drive = driveClient(driveFolderOwner() || subjectEmail);
+    const res = await drive.drives.get({
+      driveId: sharedDriveId,
+      fields: "name",
+    });
+    const name = res.data.name || "";
+    _sharedDriveNameCache = { name, expiresAt: Date.now() + 60 * 60 * 1000 };
+    return name;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Reads a folder's current name + webViewLink. Used when a task is
  * re-pointed to an existing folder so we can persist a stable
  * `drive_folder_url` alongside the ID.

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 import TaskStatusCell from "@/components/TaskStatusCell";
+import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import {
   TaskPriorityCell,
   TaskRequestedDateCell,
@@ -613,10 +614,11 @@ function TaskRow({
               href={task.drive_folder_url}
               target="_blank"
               rel="noreferrer"
-              className="tasks-row-icon"
+              className="tasks-row-icon tasks-row-icon-drive"
               title="תיקיית קבצים ב־Drive"
+              aria-label="תיקיית קבצים ב־Drive"
             >
-              📁
+              <GoogleDriveIcon size="1em" />
             </a>
           )}
           <Link

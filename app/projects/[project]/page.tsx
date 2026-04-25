@@ -21,8 +21,10 @@ import ProjectFilterBar from "@/components/ProjectFilterBar";
 import OutOfScopeBanner from "@/components/OutOfScopeBanner";
 import { isPersonOnProject } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
-import { findCampaignFolderId } from "@/lib/driveFolders";
+import { findCampaignFolderId, getSharedDriveName } from "@/lib/driveFolders";
 import { currentUserEmail } from "@/lib/appsScript";
+import CopyLocalPathButton from "@/components/CopyLocalPathButton";
+import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -104,17 +106,25 @@ export default async function ProjectOverviewPage({
   // header's "Drive" button deep-links to the right place. Falls back
   // to a global Drive search by project name if no folder exists yet
   // (e.g. project hasn't had a task created with USE_SA_TASKS_WRITES).
+  // Also pull the Shared Drive's display name so we can construct the
+  // local "Shared drives/<DriveName>/<company>/<project>" path the
+  // user pastes into File Explorer when Drive Desktop is installed.
   let driveFolderUrl = "";
+  let sharedDriveName = "";
   if (companyForDashboard && projectName) {
     try {
       const me = await currentUserEmail().catch(() => "");
       if (me) {
-        const found = await findCampaignFolderId(me, {
-          company: companyForDashboard,
-          project: projectName,
-          campaign: "",
-        });
+        const [found, name] = await Promise.all([
+          findCampaignFolderId(me, {
+            company: companyForDashboard,
+            project: projectName,
+            campaign: "",
+          }),
+          getSharedDriveName(me).catch(() => ""),
+        ]);
         if (found.viewUrl) driveFolderUrl = found.viewUrl;
+        if (name) sharedDriveName = name;
       }
     } catch {
       // swallow — we'll fall back to the search URL below
@@ -125,6 +135,13 @@ export default async function ProjectOverviewPage({
       "https://drive.google.com/drive/search?q=" +
       encodeURIComponent(projectName);
   }
+  // Build the in-Drive local path. The mount point varies per machine
+  // (Windows: G:\; Mac: /Volumes/GoogleDrive/) — we copy the suffix
+  // and let the user paste under their own Drive root.
+  const localPath =
+    sharedDriveName && companyForDashboard && projectName
+      ? `Shared drives\\${sharedDriveName}\\${companyForDashboard}\\${projectName}`
+      : "";
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
   // `authuser` hints Google to load the iframe under *this* account if the
   // browser is signed into multiple Google accounts. If it's signed into the
@@ -227,7 +244,7 @@ export default async function ProjectOverviewPage({
               role: a quick note, not a tracked task. */}
           <CreateTaskDrawer project={projectName} />
           <a
-            className="btn-ghost btn-sm"
+            className="btn-ghost btn-sm btn-with-drive-icon"
             href={driveFolderUrl}
             target="_blank"
             rel="noreferrer"
@@ -237,8 +254,14 @@ export default async function ProjectOverviewPage({
                 : "פתח את תיקיית הפרויקט ב-Drive"
             }
           >
-            📁 Drive
+            <GoogleDriveIcon size="1.05em" /> Drive
           </a>
+          {localPath && (
+            <CopyLocalPathButton
+              path={localPath}
+              title="העתק נתיב מקומי — Drive Desktop"
+            />
+          )}
           {chatSpaceUrl && (
             <a
               className="btn-ghost btn-sm"

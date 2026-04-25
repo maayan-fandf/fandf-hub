@@ -5,6 +5,7 @@ import TaskStatusActions from "@/components/TaskStatusActions";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
+import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -96,9 +97,9 @@ export default async function TaskDetailPage({
               href={t.drive_folder_url}
               target="_blank"
               rel="noreferrer"
-              className="btn-ghost"
+              className="btn-ghost btn-with-drive-icon"
             >
-              📁 תיקיית קבצים
+              <GoogleDriveIcon size="1.05em" /> תיקיית קבצים
             </a>
           )}
           {!editing && (
