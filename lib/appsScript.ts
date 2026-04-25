@@ -359,7 +359,18 @@ export type MyCounts = {
   byProject: Record<string, MyCountsPerProject>;
 };
 
-export function getMyCounts(): Promise<MyCounts> {
+export async function getMyCounts(
+  overrideEmail?: string,
+): Promise<MyCounts> {
+  const { useSACommentsReads } = await import("@/lib/sa");
+  const email = overrideEmail || (await currentUserEmail());
+  if (useSACommentsReads()) {
+    const { getMyCountsDirect } = await import("@/lib/commentsDirect");
+    return getMyCountsDirect(email);
+  }
+  if (overrideEmail) {
+    return callApiAs<MyCounts>(overrideEmail, "myCounts");
+  }
   return callApi<MyCounts>("myCounts");
 }
 

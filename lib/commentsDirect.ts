@@ -465,3 +465,131 @@ export async function projectMentionTasksDirect(
     today,
   };
 }
+
+/* ── getMyCountsDirect ───────────────────────────────────────────────── */
+
+/**
+ * Direct-SA implementation of `myCounts`. Reads the Comments sheet
+ * once, builds per-project tallies of:
+ *   - openTasks: count of legacy comment-mention spawned Google Tasks
+ *     on unresolved threads (admin-gated to projects the user can see).
+ *   - openMentions: count of unresolved threads (or replies under
+ *     unresolved roots) where the user is in `mentions`.
+ *
+ * Mirrors `getMyCountsForUser_` in dashboard-clasp Code.js exactly so
+ * the wrapper in lib/appsScript.ts can branch on USE_SA_COMMENTS_READS
+ * without changing the response shape.
+ *
+ * Ignores `row_kind='task'` rows — those belong to the new task system
+ * and aren't counted in this legacy "open tasks" tally.
+ */
+import type { MyCounts } from "@/lib/appsScript";
+
+export async function getMyCountsDirect(
+  subjectEmail: string,
+): Promise<MyCounts> {
+  const target = subjectEmail.toLowerCase().trim();
+  const [{ rows, headerIdx }, scope] = await Promise.all([
+    readCommentsOnce(subjectEmail),
+    getAccessScope(subjectEmail),
+  ]);
+
+  const rowKindIdx = headerIdx.get("row_kind");
+  const idIdx = headerIdx.get("id");
+  const parentIdx = headerIdx.get("parent_id");
+  const projectIdx = headerIdx.get("project");
+  const resolvedIdx = headerIdx.get("resolved");
+  const mentionsIdx = headerIdx.get("mentions");
+  const googleTasksIdx = headerIdx.get("google_tasks");
+
+  // First pass: index all comment rows by id so a reply can look up
+  // its root's resolved state. Skip task rows.
+  type Raw = {
+    id: string;
+    parent_id: string;
+    project: string;
+    resolved: boolean;
+    mentions: string[];
+    googleTasksLen: number;
+  };
+  const all: Raw[] = [];
+  for (const row of rows) {
+    if (rowKindIdx != null && String(row[rowKindIdx] ?? "").trim() === "task") {
+      continue;
+    }
+    const id = idIdx != null ? String(row[idIdx] ?? "") : "";
+    if (!id) continue;
+    const project = projectIdx != null ? String(row[projectIdx] ?? "") : "";
+    const parent_id = parentIdx != null ? String(row[parentIdx] ?? "") : "";
+    const resolved = resolvedIdx != null ? Boolean(row[resolvedIdx]) : false;
+    const mentionsRaw =
+      mentionsIdx != null ? String(row[mentionsIdx] ?? "") : "";
+    const mentions = mentionsRaw
+      .split(/[,;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    let googleTasksLen = 0;
+    if (googleTasksIdx != null) {
+      const v = row[googleTasksIdx];
+      if (v) {
+        try {
+          const parsed = JSON.parse(String(v));
+          if (Array.isArray(parsed)) googleTasksLen = parsed.length;
+          else if (parsed && typeof parsed === "object") {
+            googleTasksLen = Object.keys(parsed).length;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    all.push({ id, parent_id, project, resolved, mentions, googleTasksLen });
+  }
+
+  const byId = new Map<string, Raw>();
+  for (const r of all) byId.set(r.id, r);
+
+  const byProject: Record<string, { openTasks: number; openMentions: number }> =
+    {};
+  let totalTasks = 0;
+  let totalMentions = 0;
+
+  for (const c of all) {
+    if (!c.project) continue;
+    const projKey = c.project.toLowerCase().trim();
+    const canSeeProject = scope.isAdmin || scope.accessibleProjects.has(c.project);
+
+    if (!byProject[c.project]) {
+      byProject[c.project] = { openTasks: 0, openMentions: 0 };
+    }
+
+    // openTasks: legacy comment-mention Google Tasks count on
+    // unresolved threads. Admin sees all; non-admins gated by Keys.
+    if (canSeeProject && !c.resolved && c.googleTasksLen > 0) {
+      byProject[c.project].openTasks += c.googleTasksLen;
+      totalTasks += c.googleTasksLen;
+    }
+
+    // openMentions: this user is mentioned + the thread root is open.
+    if (target && c.mentions.includes(target)) {
+      const root = c.parent_id ? byId.get(c.parent_id) ?? c : c;
+      if (!root.resolved) {
+        byProject[c.project].openMentions++;
+        totalMentions++;
+      }
+    }
+    void projKey; // keep TS happy if we ever extend on this var
+  }
+
+  // Strip projects with zero of both counts.
+  const pruned: Record<string, { openTasks: number; openMentions: number }> = {};
+  for (const [p, v] of Object.entries(byProject)) {
+    if (v.openTasks > 0 || v.openMentions > 0) pruned[p] = v;
+  }
+
+  return {
+    me: { email: subjectEmail, isAdmin: scope.isAdmin },
+    total: { openTasks: totalTasks, openMentions: totalMentions },
+    byProject: pruned,
+  };
+}

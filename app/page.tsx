@@ -43,25 +43,34 @@ export default async function HomePage({
   const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
   const viewAs = prefs?.view_as_email || "";
   const isViewingAs = !!viewAs && viewAs !== me;
+  const effectiveMe = viewAs || me;
 
-  // Kick off projects + counts in parallel so the morning-feed scope (which
-  // depends on isStaff/isAdmin from the projects call) can be chosen after.
-  const [projectsRes, countsRes] = await Promise.allSettled([
-    getMyProjects(viewAs || undefined),
-    getMyCounts(),
+  // Decide morning scope cheaply — without waiting for getMyProjects.
+  // Admins (HUB_ADMIN_EMAILS) + @fandf.co.il domain users get scope=all
+  // (they have access to everything); everyone else gets scope=mine.
+  // Matches the previous "isAdmin || isStaff" check closely enough for
+  // the morning feed; the projects call still applies access control
+  // downstream regardless. The win: all three reads now run truly in
+  // parallel, removing the serial 3+s wait.
+  const HUB_ADMIN_EMAILS = new Set([
+    "maayan@fandf.co.il",
+    "nadav@fandf.co.il",
+    "felix@fandf.co.il",
   ]);
-  const dataEarly = projectsRes.status === "fulfilled" ? projectsRes.value : null;
-  // Morning feed scope: staff/admin need "all" so the endIso map covers
-  // projects they're browsing via the person filter; clients always see only
-  // their own projects so "mine" is sufficient.
+  const lcEffectiveMe = effectiveMe.toLowerCase().trim();
   const morningScope: "all" | "mine" =
-    dataEarly && (dataEarly.isAdmin || dataEarly.isStaff) ? "all" : "mine";
-  const morningRes = await Promise.allSettled([
+    HUB_ADMIN_EMAILS.has(lcEffectiveMe) || lcEffectiveMe.endsWith("@fandf.co.il")
+      ? "all"
+      : "mine";
+
+  const [projectsRes, countsRes, morningRes] = await Promise.allSettled([
+    getMyProjects(viewAs || undefined),
+    getMyCounts(viewAs || undefined),
     // Morning feed powers alert badges AND the "hide ended" filter (via
-    // endIso). Returns empty for clients (gated internal-only) so we silently
-    // swallow access errors.
-    getMorningFeed({ scope: morningScope }),
-  ]).then((r) => r[0]);
+    // endIso). Returns empty for clients (gated internal-only) so we
+    // silently swallow access errors.
+    getMorningFeed({ scope: morningScope, overrideEmail: viewAs || undefined }),
+  ]);
 
   const data = projectsRes.status === "fulfilled" ? projectsRes.value : null;
   const counts = countsRes.status === "fulfilled" ? countsRes.value : null;
