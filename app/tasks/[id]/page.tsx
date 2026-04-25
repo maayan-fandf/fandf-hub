@@ -4,6 +4,7 @@ import { tasksGet, tasksPeopleList } from "@/lib/appsScript";
 import TaskStatusActions from "@/components/TaskStatusActions";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
+import TaskDriveComments from "@/components/TaskDriveComments";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +139,14 @@ export default async function TaskDetailPage({
               ))}
             </ul>
           </section>
+
+          {t.drive_folder_id && (
+            <TaskDriveComments
+              taskId={t.id}
+              driveFolderId={t.drive_folder_id}
+              driveFolderUrl={t.drive_folder_url}
+            />
+          )}
 
           <TaskComments taskId={t.id} />
         </div>

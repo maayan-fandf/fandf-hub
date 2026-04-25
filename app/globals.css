@@ -4815,6 +4815,167 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   letter-spacing: .02em;
 }
 
+/* ── Drive comments mirror (read-only) ─────────────────────────── */
+.drive-comments-section {
+  margin: 1.2em 0 1em;
+  padding: .9em 1em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.drive-comments-head {
+  display: flex;
+  align-items: center;
+  gap: .8em;
+  margin-bottom: .8em;
+}
+.drive-comments-head h3 {
+  margin: 0;
+  font-size: 1.05em;
+}
+.drive-comments-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: .9em;
+}
+.drive-comments-folder-link {
+  margin-inline-start: auto;
+  color: var(--accent, #2a66d9);
+  font-size: .85em;
+  text-decoration: underline;
+}
+.drive-comments-error {
+  color: var(--danger, #c33);
+  font-size: .86em;
+}
+
+.drive-comments-file {
+  margin-top: .9em;
+  padding-top: .8em;
+  border-top: 1px dashed var(--border);
+}
+.drive-comments-file:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.drive-comments-file-head {
+  display: flex;
+  align-items: center;
+  gap: .55em;
+  margin-bottom: .5em;
+}
+.drive-comments-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.drive-comments-icon {
+  width: 18px;
+  height: 18px;
+}
+.drive-comments-file-name {
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+.drive-comments-file-name:hover { text-decoration: underline; }
+.drive-comments-thread-count {
+  color: var(--muted);
+  font-size: .8em;
+}
+
+.drive-comments-thread-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+.drive-comments-thread.is-resolved .drive-comment-bubble {
+  opacity: .6;
+}
+.drive-comments-thread.is-resolved .drive-comment-body {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+}
+
+.drive-comment-bubble {
+  padding: .55em .75em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft, rgba(120,120,120,.06));
+}
+.drive-comment-head {
+  display: flex;
+  align-items: center;
+  gap: .45em;
+  margin-bottom: .35em;
+  font-size: .85em;
+}
+.drive-comment-spacer { flex: 1; }
+.drive-comment-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.drive-comment-avatar-fallback {
+  background: var(--accent-soft, #c7d2fe);
+  color: var(--accent, #2a66d9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: .85em;
+  text-transform: uppercase;
+}
+.drive-comment-author { font-weight: 600; color: var(--text); }
+.drive-comment-time { color: var(--muted); }
+.drive-comment-deep-link {
+  color: var(--accent, #2a66d9);
+  font-size: .8em;
+  text-decoration: underline;
+}
+.drive-comment-quote {
+  margin: .4em 0;
+  padding: .35em .7em;
+  border-inline-start: 3px solid var(--border);
+  color: var(--muted);
+  font-size: .85em;
+  font-style: italic;
+}
+.drive-comment-body p {
+  margin: 0 0 .25em;
+  color: var(--text);
+  line-height: 1.4;
+}
+.chip-resolved {
+  background: rgba(16,185,129,.15);
+  color: #047857;
+  padding: .1em .55em;
+  border-radius: 999px;
+  font-size: .72em;
+}
+html[data-theme="dark"] .chip-resolved {
+  background: rgba(16,185,129,.2); color: #6ee7b7;
+}
+
+.drive-comments-replies {
+  list-style: none;
+  padding: 0;
+  margin: .5em 0 0;
+  margin-inline-start: 2em;
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: .8em;
+}
+
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }
   .task-form-row { grid-template-columns: 1fr; }
