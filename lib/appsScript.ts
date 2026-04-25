@@ -359,15 +359,25 @@ export type MyCounts = {
   byProject: Record<string, MyCountsPerProject>;
 };
 
+// Cache the direct-SA counts read for 60s per (email) — open-task /
+// open-mention tallies don't change minute-to-minute, and most home-
+// page visits within the same hour will hit this cache. ~5ms cache
+// hits replace ~400ms uncached Sheets reads.
+const fetchMyCountsDirectCached = unstable_cache(
+  async (email: string): Promise<MyCounts> => {
+    const { getMyCountsDirect } = await import("@/lib/commentsDirect");
+    return getMyCountsDirect(email);
+  },
+  ["myCountsDirect"],
+  { revalidate: 60, tags: ["my-counts"] },
+);
+
 export async function getMyCounts(
   overrideEmail?: string,
 ): Promise<MyCounts> {
   const { useSACommentsReads } = await import("@/lib/sa");
   const email = overrideEmail || (await currentUserEmail());
-  if (useSACommentsReads()) {
-    const { getMyCountsDirect } = await import("@/lib/commentsDirect");
-    return getMyCountsDirect(email);
-  }
+  if (useSACommentsReads()) return fetchMyCountsDirectCached(email);
   if (overrideEmail) {
     return callApiAs<MyCounts>(overrideEmail, "myCounts");
   }
@@ -740,6 +750,28 @@ export type MorningFeed = {
   projects: MorningProject[];
 };
 
+// Cache the morning feed for 60s per (email, scope, project). The
+// feed is heavy on the Apps Script side (~6s) because it does
+// per-project benchmark math. Caching keeps the first hit per minute
+// at full cost but every other home-page render in the same window
+// returns near-instantly. The cache key encodes all three params so
+// view-as / scope changes / per-project queries don't collide.
+const fetchMorningFeedCached = unstable_cache(
+  async (cacheKey: string): Promise<MorningFeed> => {
+    const { email, scope, project } = JSON.parse(cacheKey) as {
+      email: string;
+      scope?: string;
+      project?: string;
+    };
+    const params: Record<string, string> = {};
+    if (scope) params.scope = scope;
+    if (project) params.project = project;
+    return callApiAs<MorningFeed>(email, "morningFeed", params);
+  },
+  ["morningFeed"],
+  { revalidate: 60, tags: ["morning-feed"] },
+);
+
 export async function getMorningFeed(
   opts: {
     scope?: "mine" | "all";
@@ -751,13 +783,13 @@ export async function getMorningFeed(
     overrideEmail?: string;
   } = {},
 ): Promise<MorningFeed> {
-  const params: Record<string, string> = {};
-  if (opts.scope) params.scope = opts.scope;
-  if (opts.project) params.project = opts.project;
-  if (opts.overrideEmail) {
-    return callApiAs<MorningFeed>(opts.overrideEmail, "morningFeed", params);
-  }
-  return callApi<MorningFeed>("morningFeed", params);
+  const email = opts.overrideEmail || (await currentUserEmail());
+  const cacheKey = JSON.stringify({
+    email,
+    scope: opts.scope,
+    project: opts.project,
+  });
+  return fetchMorningFeedCached(cacheKey);
 }
 
 export type DismissResult = {
