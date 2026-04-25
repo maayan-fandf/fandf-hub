@@ -546,7 +546,7 @@ async function emailAssignees(
     task.description ? `\n${task.description}` : "",
     "",
     task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
-    task.priority ? `עדיפות: ${task.priority}` : "",
+    task.priority ? `דחיפות: ${task.priority}` : "",
     "",
     link ? `פרטי המשימה: ${link}` : "",
     task.drive_folder_url ? `תיקיית קבצים: ${task.drive_folder_url}` : "",
@@ -583,7 +583,7 @@ async function emailApprover(
     task.description ? `\n${task.description}` : "",
     "",
     task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
-    task.priority ? `עדיפות: ${task.priority}` : "",
+    task.priority ? `דחיפות: ${task.priority}` : "",
     "",
     link ? `לסקירה + אישור / החזרה לעבודה: ${link}` : "",
   ]

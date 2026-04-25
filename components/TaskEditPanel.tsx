@@ -307,7 +307,7 @@ export default function TaskEditPanel({
         </label>
 
         <label>
-          עדיפות
+          דחיפות
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value)}

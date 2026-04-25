@@ -6115,6 +6115,36 @@ html[data-theme="dark"] .tasks-new-chip {
   margin-inline-start: .5em;
   font-size: .7rem;
 }
+
+/* Drag handle in the table view — narrow column at the row's start
+   that wears the grab cursor, otherwise the row is fully clickable.
+   The grip glyph is muted by default and brightens on row hover so
+   the affordance stays discoverable without competing with the title. */
+.drag-handle-col {
+  width: 1.6em;
+  padding: 0 !important;
+}
+.drag-handle-cell {
+  width: 1.6em;
+  padding: 0 .25em !important;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.drag-handle-cell:active {
+  cursor: grabbing;
+}
+.drag-handle-grip {
+  display: inline-block;
+  color: var(--border);
+  font-size: .9em;
+  letter-spacing: -2px;
+  transition: color .12s;
+}
+.tasks-table tbody tr:hover .drag-handle-grip {
+  color: var(--muted);
+}
 .kanban-card-date {
   display: inline-flex;
   align-items: center;

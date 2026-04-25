@@ -1,4 +1,22 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
@@ -9,6 +27,7 @@ import {
   TaskApproverCell,
   TaskAssigneesCell,
 } from "@/components/TaskInlineEditors";
+import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 
 // Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
 // left on screen) the way work actually flows:
@@ -124,7 +143,7 @@ type Props = {
  * table body so column widths stay aligned without nested tables.
  */
 export default function TasksQueue({
-  tasks,
+  tasks: initialTasks,
   groupByCompany = true,
   emptyMessage = "אין משימות תואמות לסינון.",
   hideOther = false,
@@ -132,13 +151,88 @@ export default function TasksQueue({
   people = [],
   driveName = "",
 }: Props) {
+  // Local task state lets us optimistically reorder rows on drop and
+  // revert on server error — same pattern the kanban uses. Initial
+  // value is the server-rendered list passed in by the page.
+  const [tasks, setTasks] = useState(initialTasks);
+  const [error, setError] = useState<string | null>(null);
+
+  // 8px activation distance keeps a click on a row's title link from
+  // accidentally starting a drag — pointer movement past the threshold
+  // is the trigger. Touch sensor uses a longer delay so taps don't
+  // grab rows on mobile.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor),
+  );
+
   // Bucketize once. Anything off the canonical list sinks into `other`.
-  const byStatus: Record<string, WorkTask[]> = {};
-  for (const b of STATUS_BUCKETS) byStatus[b.key] = [];
-  const other: WorkTask[] = [];
-  for (const t of tasks) {
-    if (byStatus[t.status]) byStatus[t.status].push(t);
-    else other.push(t);
+  const byStatus = useMemo(() => {
+    const map: Record<string, WorkTask[]> = {};
+    for (const b of STATUS_BUCKETS) map[b.key] = [];
+    const out: WorkTask[] = [];
+    for (const t of tasks) {
+      if (map[t.status]) map[t.status].push(t);
+      else out.push(t);
+    }
+    return { byStatus: map, other: out };
+  }, [tasks]);
+
+  async function onDragEnd(e: DragEndEvent) {
+    setError(null);
+    if (!e.over) return;
+    const draggedId = String(e.active.id);
+    const overId = String(e.over.id);
+    if (draggedId === overId) return;
+
+    const dragged = tasks.find((t) => t.id === draggedId);
+    if (!dragged) return;
+
+    // Drop targets in the table are always other rows in the same
+    // bucket (each SortableContext is scoped per-bucket). We compute
+    // the new rank from the bucket's currently-rendered order, sorted
+    // by rank ascending.
+    const bucketTasks = (byStatus.byStatus[dragged.status] || [])
+      .filter((t) => t.id !== draggedId)
+      .slice()
+      .sort(compareByRank);
+
+    const overIdx = bucketTasks.findIndex((t) => t.id === overId);
+    if (overIdx === -1) return;
+    // We always insert before the over-row — that's the standard
+    // verticalListSortingStrategy behavior; user's eye lands on the
+    // target, the dropped row takes its place.
+    const newRank = computeInsertRank(bucketTasks, overId);
+
+    if (dragged.rank === newRank) return;
+
+    // Optimistic local update.
+    const prev = tasks;
+    const next = tasks.map((t) =>
+      t.id === draggedId ? { ...t, rank: newRank } : t,
+    );
+    setTasks(next);
+
+    try {
+      const res = await fetch("/api/worktasks/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: draggedId,
+          patch: { rank: newRank, note: "list: reorder" },
+        }),
+      });
+      const data = (await res.json()) as
+        | { ok: true }
+        | { ok: false; error: string };
+      if (!res.ok || !data.ok) {
+        throw new Error("error" in data ? data.error : "Update failed");
+      }
+    } catch (err) {
+      setTasks(prev);
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   if (tasks.length === 0) {
@@ -152,10 +246,25 @@ export default function TasksQueue({
     );
   }
 
+  const { byStatus: byStatusMap, other } = byStatus;
+
   return (
-    <>
+    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      {error && (
+        <div className="kanban-error" role="alert">
+          {error}
+          <button
+            type="button"
+            className="kanban-error-dismiss"
+            onClick={() => setError(null)}
+            aria-label="סגור"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {STATUS_BUCKETS.map((b) => {
-        const list = byStatus[b.key] || [];
+        const list = byStatusMap[b.key] || [];
         if (!list.length) return null;
         // Per-bucket axis picks the sub-header the rows cluster under.
         // On project pages (groupByCompany=false) a `company` axis still
@@ -177,59 +286,27 @@ export default function TasksQueue({
             </h2>
             {recent.length > 0 && (
               <div className="tasks-table-wrap">
-                <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
-                  <thead>
-                    <tr>
-                      {/* Company column on the portfolio queue. Hidden in
-                          compact mode (project pages already scoped to
-                          one company). When `brief` is set on a task it
-                          still renders as a chip in the title cell. */}
-                      {!compact && <th>חברה</th>}
-                      {/* The "פרויקט" column is redundant when we're
-                          already on a project-scoped page — the caller
-                          sets compact to hide it. */}
-                      {groupByCompany && <th>פרטי הפרוייקט</th>}
-                      {!groupByCompany && !compact && <th>פרויקט</th>}
-                      <th>פרטי המשימה</th>
-                      <th>כותב</th>
-                      <th>מחלקות</th>
-                      <th>עדיפות</th>
-                      <th>תאריך</th>
-                      {!compact && <th>נוצרה</th>}
-                      <th>סטטוס</th>
-                      <th>עובדים</th>
-                      <th>מאשר</th>
-                      <th className="icons">פעולות</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <BucketBody
-                      tasks={recent}
-                      axis={axis}
-                      compact={compact}
-                      people={people}
-                      driveName={driveName}
-                    />
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {older.length > 0 && (
-              <details className="tasks-archive-fold">
-                <summary>
-                  {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${b.archiveAfterDays} יום) — לחץ להצגה`}
-                </summary>
-                <div className="tasks-table-wrap">
+                <SortableContext
+                  items={recent.slice().sort(compareByRank).map((t) => t.id)}
+                  strategy={verticalListSortingStrategy}
+                >
                   <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
                     <thead>
                       <tr>
+                        <th className="drag-handle-col" aria-hidden></th>
+                        {/* Company column on the portfolio queue. Hidden in
+                            compact mode (project pages already scoped to
+                            one company). */}
                         {!compact && <th>חברה</th>}
+                        {/* The "פרויקט" column is redundant when we're
+                            already on a project-scoped page — the caller
+                            sets compact to hide it. */}
                         {groupByCompany && <th>פרטי הפרוייקט</th>}
                         {!groupByCompany && !compact && <th>פרויקט</th>}
                         <th>פרטי המשימה</th>
                         <th>כותב</th>
                         <th>מחלקות</th>
-                        <th>עדיפות</th>
+                        <th>דחיפות</th>
                         <th>תאריך</th>
                         {!compact && <th>נוצרה</th>}
                         <th>סטטוס</th>
@@ -240,7 +317,7 @@ export default function TasksQueue({
                     </thead>
                     <tbody>
                       <BucketBody
-                        tasks={older}
+                        tasks={recent}
                         axis={axis}
                         compact={compact}
                         people={people}
@@ -248,6 +325,49 @@ export default function TasksQueue({
                       />
                     </tbody>
                   </table>
+                </SortableContext>
+              </div>
+            )}
+            {older.length > 0 && (
+              <details className="tasks-archive-fold">
+                <summary>
+                  {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${b.archiveAfterDays} יום) — לחץ להצגה`}
+                </summary>
+                <div className="tasks-table-wrap">
+                  <SortableContext
+                    items={older.slice().sort(compareByRank).map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
+                      <thead>
+                        <tr>
+                          <th className="drag-handle-col" aria-hidden></th>
+                          {!compact && <th>חברה</th>}
+                          {groupByCompany && <th>פרטי הפרוייקט</th>}
+                          {!groupByCompany && !compact && <th>פרויקט</th>}
+                          <th>פרטי המשימה</th>
+                          <th>כותב</th>
+                          <th>מחלקות</th>
+                          <th>דחיפות</th>
+                          <th>תאריך</th>
+                          {!compact && <th>נוצרה</th>}
+                          <th>סטטוס</th>
+                          <th>עובדים</th>
+                          <th>מאשר</th>
+                          <th className="icons">פעולות</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <BucketBody
+                          tasks={older}
+                          axis={axis}
+                          compact={compact}
+                          people={people}
+                          driveName={driveName}
+                        />
+                      </tbody>
+                    </table>
+                  </SortableContext>
                 </div>
               </details>
             )}
@@ -298,7 +418,7 @@ export default function TasksQueue({
           </div>
         </details>
       )}
-    </>
+    </DndContext>
   );
 }
 
@@ -323,17 +443,13 @@ function BucketBody({
   people: TasksPerson[];
   driveName: string;
 }) {
-  const totalCols = 12;
+  // 13 columns: 1 drag-handle + 12 data columns. Sub-headers span the
+  // whole row across all columns. Bumped from 12 when drag-to-reorder
+  // landed in the table view.
+  const totalCols = 13;
 
   if (axis === "none") {
-    const sorted = tasks
-      .slice()
-      .sort((a, b) => {
-        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
-        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
-        if (ra !== rb) return ra - rb;
-        return b.created_at.localeCompare(a.created_at);
-      });
+    const sorted = tasks.slice().sort(compareByRank);
     return (
       <>
         {sorted.map((t) => (
@@ -406,10 +522,7 @@ function groupByPerson(
   });
   return keys.map((k) => [
     k,
-    byPerson
-      .get(k)!
-      .slice()
-      .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    byPerson.get(k)!.slice().sort(compareByRank),
   ]);
 }
 
@@ -479,13 +592,10 @@ function groupByCompanyProject(
       co,
       projects.map(
         (p) =>
-          [
-            p,
-            projMap
-              .get(p)!
-              .slice()
-              .sort((a, b) => b.created_at.localeCompare(a.created_at)),
-          ] as [string, WorkTask[]],
+          [p, projMap.get(p)!.slice().sort(compareByRank)] as [
+            string,
+            WorkTask[],
+          ],
       ),
     ];
   });
@@ -502,7 +612,7 @@ function CompanyGroup({
   people: TasksPerson[];
   driveName: string;
 }) {
-  const totalCols = 12;
+  const totalCols = 13;
   return (
     <>
       <tr className="tasks-company-header">
@@ -573,6 +683,19 @@ function TaskRow({
   people?: TasksPerson[];
   driveName?: string;
 }) {
+  // useSortable wires this row into the bucket-scoped SortableContext
+  // upstream. We apply transform+transition so the row visually shifts
+  // as the user drags through the list (verticalListSortingStrategy
+  // computes the offsets); listeners go on the drag-handle cell so the
+  // rest of the row stays fully clickable for the link / inline editors.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: task.id });
+  const rowStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : undefined,
+  };
+
   // Drive Desktop local path. We deliberately don't include the
   // task-specific subfolder (drive_folder_url is a web URL, not a path);
   // the user can drill into it once Explorer opens at the campaign
@@ -585,7 +708,10 @@ function TaskRow({
         }`
       : "";
   return (
-    <tr>
+    <tr ref={setNodeRef} style={rowStyle} {...attributes}>
+      <td className="drag-handle-cell" {...listeners} aria-label="גרור לשינוי סדר">
+        <span className="drag-handle-grip" aria-hidden>⋮⋮</span>
+      </td>
       {!compact && (
         <td className="tasks-company-cell">
           {task.company ? (

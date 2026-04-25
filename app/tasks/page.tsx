@@ -353,7 +353,7 @@ function TasksFilterBar({
       {/* Keep the opt-out of author-defaulting sticky across submits. */}
       <input type="hidden" name="mine" value="0" />
       {/* Filter order mirrors the table columns below: חברה → פרויקט →
-          קמפיין → כותב → מחלקה → עדיפות → סטטוס → עובד מבצע → מאשר →
+          קמפיין → כותב → מחלקה → דחיפות → סטטוס → עובד מבצע → מאשר →
           מנהל פרויקט. תאריך / נוצרה are display-only (no filter). */}
       <label>
         חברה
@@ -414,7 +414,7 @@ function TasksFilterBar({
         </select>
       </label>
       <label>
-        עדיפות
+        דחיפות
         <select name="priority" defaultValue={current.priority}>
           {priorities.map((p) => (
             <option key={p.val} value={p.val}>

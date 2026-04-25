@@ -54,7 +54,7 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
 
   return (
     <InlineEditCell
-      title={isPending ? "מעדכן…" : "לחץ לשינוי עדיפות"}
+      title={isPending ? "מעדכן…" : "לחץ לשינוי דחיפות"}
       minWidth={10}
       display={
         <span
@@ -71,7 +71,7 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
     >
       {(close) => (
         <div className="inline-edit-body">
-          <div className="inline-edit-label">עדיפות</div>
+          <div className="inline-edit-label">דחיפות</div>
           <div className="inline-edit-priority-row">
             {[1, 2, 3].map((p) => (
               <button

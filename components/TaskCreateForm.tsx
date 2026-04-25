@@ -389,7 +389,7 @@ export default function TaskCreateForm({
         </label>
 
         <label>
-          עדיפות
+          דחיפות
           <select name="priority" defaultValue="2">
             <option value="1">1 — גבוהה</option>
             <option value="2">2 — רגילה</option>

@@ -76,7 +76,7 @@ export default async function TaskDetailPage({
             <TaskStatusCell task={t} />
           </div>
           <div className="subtitle task-detail-meta">
-            <span className={`tasks-priority-pill p${t.priority}`} title="עדיפות">
+            <span className={`tasks-priority-pill p${t.priority}`} title="דחיפות">
               {t.priority === 1 ? "🔥 גבוהה" : t.priority === 3 ? "⏬ נמוכה" : "רגילה"}
             </span>
             {(t.departments || []).map((d) => (
