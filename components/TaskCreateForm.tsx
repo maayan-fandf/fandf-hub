@@ -168,6 +168,15 @@ export default function TaskCreateForm({
       .map((s) => s.trim())
       .filter(Boolean);
 
+    // Combine optional time-of-day with the date. Stored as either
+    // "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" depending on whether a time
+    // was entered. The Google-Tasks side only respects the date; the
+    // hub-side renders the time when present.
+    const dateRaw = String(fd.get("requested_date") || "").trim();
+    const timeRaw = String(fd.get("requested_time") || "").trim();
+    const requestedDate =
+      dateRaw && timeRaw ? `${dateRaw}T${timeRaw}` : dateRaw;
+
     const payload: Record<string, unknown> = {
       project: project,
       company: company, // falls back to Keys lookup server-side if empty
@@ -180,7 +189,7 @@ export default function TaskCreateForm({
       approver_email: approver,
       project_manager_email: projectManager,
       assignees: assigneeList,
-      requested_date: String(fd.get("requested_date") || ""),
+      requested_date: requestedDate,
       campaign: campaign.trim(),
     };
     if (folderSelection.mode === "existing" && folderSelection.folderId) {
@@ -367,9 +376,17 @@ export default function TaskCreateForm({
           </select>
         </label>
 
-        <label>
+        <label className="task-form-date-time">
           תאריך מבוקש
-          <input type="date" name="requested_date" />
+          <div className="date-time-inputs">
+            <input type="date" name="requested_date" />
+            <input
+              type="time"
+              name="requested_time"
+              aria-label="שעה (אופציונלי)"
+              title="שעה (אופציונלי)"
+            />
+          </div>
         </label>
       </div>
 

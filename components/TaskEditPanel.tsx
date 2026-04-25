@@ -41,7 +41,14 @@ export default function TaskEditPanel({
   );
   const [kind, setKind] = useState(task.kind || "other");
   const [priority, setPriority] = useState(String(task.priority || 2));
-  const [requestedDate, setRequestedDate] = useState(task.requested_date || "");
+  // requested_date is stored as YYYY-MM-DD or YYYY-MM-DDTHH:MM.
+  // Split into separate inputs for the form so users can clear one
+  // without the other. Recombined on save.
+  const initialRaw = task.requested_date || "";
+  const initialDate = initialRaw.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || "";
+  const initialTime = initialRaw.match(/[T\s](\d{2}:\d{2})/)?.[1] || "";
+  const [requestedDate, setRequestedDate] = useState(initialDate);
+  const [requestedTime, setRequestedTime] = useState(initialTime);
   const [approver, setApprover] = useState(task.approver_email || "");
   const [projectManager, setProjectManager] = useState(
     task.project_manager_email || "",
@@ -99,6 +106,11 @@ export default function TaskEditPanel({
     const subStatus =
       subStatusSelect === "__custom__" ? subStatusCustom : subStatusSelect;
 
+    const combinedRequestedDate =
+      requestedDate && requestedTime
+        ? `${requestedDate}T${requestedTime}`
+        : requestedDate;
+
     const patch: Record<string, unknown> = {
       title,
       description,
@@ -106,7 +118,7 @@ export default function TaskEditPanel({
       departments,
       kind,
       priority: Number(priority),
-      requested_date: requestedDate,
+      requested_date: combinedRequestedDate,
       approver_email: approver,
       project_manager_email: projectManager,
       assignees: assigneeList,
@@ -308,13 +320,22 @@ export default function TaskEditPanel({
           </select>
         </label>
 
-        <label>
+        <label className="task-form-date-time">
           תאריך מבוקש
-          <input
-            type="date"
-            value={requestedDate}
-            onChange={(e) => setRequestedDate(e.target.value)}
-          />
+          <div className="date-time-inputs">
+            <input
+              type="date"
+              value={requestedDate}
+              onChange={(e) => setRequestedDate(e.target.value)}
+            />
+            <input
+              type="time"
+              value={requestedTime}
+              onChange={(e) => setRequestedTime(e.target.value)}
+              aria-label="שעה (אופציונלי)"
+              title="שעה (אופציונלי)"
+            />
+          </div>
         </label>
       </div>
 

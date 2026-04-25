@@ -319,6 +319,38 @@ async function createTaskFolder(
   }
 }
 
+/**
+ * Mark each assignee's Google Task as completed (or revive) based on
+ * the new task status. The hub task carries `google_tasks` =
+ * `{ email: { l: tasklist, t: taskId } }` set at create-time. For
+ * each entry we patch the personal Tasks API entry — best-effort, an
+ * assignee who deleted their entry just gets skipped.
+ */
+async function syncGoogleTasksStatus(
+  googleTasks: Record<string, { u: string; l: string; t: string; d: string }>,
+  desired: "completed" | "needsAction",
+): Promise<void> {
+  const entries = Object.values(googleTasks || {});
+  if (entries.length === 0) return;
+  await Promise.all(
+    entries.map(async (gt) => {
+      try {
+        const tasksApi = tasksApiClient(gt.u);
+        await tasksApi.tasks.patch({
+          tasklist: gt.l,
+          task: gt.t,
+          requestBody: { status: desired },
+        });
+      } catch (e) {
+        console.log(
+          `[tasksWriteDirect] Google Tasks patch (${desired}) failed for ${gt.u}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }),
+  );
+}
+
 /* ── Calendar events + Google Tasks per assignee ───────────────────── */
 
 async function createCalendarEvents(
@@ -371,8 +403,13 @@ async function createGoogleTasks(
     task.description +
     (task.drive_folder_url ? `\n\nקבצים: ${task.drive_folder_url}` : "") +
     (hubUrl ? `\n\n${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "");
-  const dueRfc = task.requested_date && /^\d{4}-\d{2}-\d{2}$/.test(task.requested_date)
-    ? new Date(task.requested_date + "T00:00:00Z").toISOString()
+  // `requested_date` may be either "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM".
+  // Google Tasks `due` only persists the date portion (the API doc is
+  // explicit about that), so we strip any time and send it as midnight
+  // UTC. The time-of-day stays only on the hub side for display.
+  const datePart = (task.requested_date || "").match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  const dueRfc = datePart
+    ? new Date(datePart + "T00:00:00Z").toISOString()
     : undefined;
   await Promise.all(
     task.assignees.map(async (email) => {
@@ -626,26 +663,20 @@ export async function tasksCreateDirect(
       task.drive_folder_url = folder.folderUrl;
     }
   }
-  const [cal, gt] = await Promise.all([
-    createCalendarEvents({
-      title: task.title,
-      project: task.project,
-      description: task.description,
-      drive_folder_url: task.drive_folder_url,
-      requested_date: task.requested_date,
-      assignees,
-    }),
-    createGoogleTasks({
-      id: task.id,
-      title: task.title,
-      project: task.project,
-      description: task.description,
-      drive_folder_url: task.drive_folder_url,
-      requested_date: task.requested_date,
-      assignees,
-    }),
-  ]);
-  task.calendar_event_ids = cal;
+  // Calendar events were creating noise on every assignee's calendar
+  // when the Google Tasks due-date already covers the same need with
+  // less clutter. Calendar code stays in `createCalendarEvents` for
+  // possible revival but is no longer called on create.
+  const gt = await createGoogleTasks({
+    id: task.id,
+    title: task.title,
+    project: task.project,
+    description: task.description,
+    drive_folder_url: task.drive_folder_url,
+    requested_date: task.requested_date,
+    assignees,
+  });
+  task.calendar_event_ids = {};
   task.google_tasks = gt;
 
   // Persist to the Comments sheet. We need the header row order to
@@ -976,6 +1007,24 @@ export async function tasksUpdateDirect(
       subjectEmail,
       fresh.approver_email,
     );
+  }
+
+  // Keep each assignee's personal Google Tasks list in sync with the
+  // hub status. done / cancelled → mark completed (so the entry stops
+  // nagging in their Tasks panel); revival to in_progress / awaiting_*
+  // → re-open. Best-effort; failures don't block the response.
+  if (changes.status) {
+    const fresh = rowToTask(freshRow, idx);
+    if (changes.status === "done" || changes.status === "cancelled") {
+      await syncGoogleTasksStatus(fresh.google_tasks, "completed");
+    } else if (
+      changes.status === "in_progress" ||
+      changes.status === "awaiting_handling" ||
+      changes.status === "awaiting_clarification" ||
+      changes.status === "awaiting_approval"
+    ) {
+      await syncGoogleTasksStatus(fresh.google_tasks, "needsAction");
+    }
   }
 
   return { ok: true, task: rowToTask(freshRow, idx), changed: true };

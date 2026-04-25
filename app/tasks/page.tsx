@@ -122,9 +122,9 @@ export default async function TasksPage({
             משימות
           </h1>
           <div className="subtitle">
-            ניהול משימות — כל משימה מקבלת תיקייה ב־Drive תחת{" "}
-            <code dir="ltr">חברה / פרויקט / משימה</code>, אירוע ביומן לכל
-            מבצע, משימה ב־Google Tasks, ומייל לגורם המאשר.
+            ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
+            ב־Google Tasks לכל מבצע (מסומנת כהושלמה אוטומטית כשהמשימה
+            עוברת ל&quot;בוצע&quot;), ומייל לגורם המאשר.
             {mineOptIn && me && (
               <RoleDefaultHint
                 role={role}

@@ -79,7 +79,9 @@ export default async function TaskDetailPage({
             )}{" "}
             · עדיפות {t.priority} ·{" "}
             {(t.departments || []).join(", ") || "—"}{" "}
-            {t.requested_date ? `· מבוקש: ${t.requested_date}` : ""}
+            {t.requested_date
+              ? `· מבוקש: ${t.requested_date.replace("T", " ")}`
+              : ""}
             {t.round_number > 1 && (
               <>
                 {" "}

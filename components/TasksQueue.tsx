@@ -20,24 +20,52 @@ import {
 // blocking whom). In `ממתין לטיפול` / `בעבודה`, the assignee is what
 // matters (who owns it). `company` keeps the portfolio's company →
 // project grouping used elsewhere on the queue page.
+//
+// `archiveAfterDays` (when set) splits the bucket: rows with
+// `updated_at` newer than the cutoff render normally; older rows
+// collapse into a single <details> fold below them so the queue
+// doesn't grow unboundedly with terminal-state work.
 type GroupAxis = "assignee" | "approver" | "company" | "none";
+const ARCHIVE_AFTER_DAYS = 14;
 const STATUS_BUCKETS: {
   key: WorkTaskStatus;
   label: string;
   tone: string;
   groupBy: GroupAxis;
+  archiveAfterDays?: number;
 }[] = [
   { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling", groupBy: "assignee" },
   { key: "in_progress", label: "בעבודה", tone: "in_progress", groupBy: "assignee" },
   { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification", groupBy: "none" },
   { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval", groupBy: "approver" },
-  { key: "done", label: "בוצע", tone: "done", groupBy: "company" },
+  { key: "done", label: "בוצע", tone: "done", groupBy: "company", archiveAfterDays: ARCHIVE_AFTER_DAYS },
   // Cancelled used to live in the collapsed "other" fold, but now that
   // it's a revivable state (awaiting_handling / in_progress targets in
   // the menu) users need to see it — otherwise cancelling a task makes
   // it look like it disappeared.
-  { key: "cancelled", label: "בוטל", tone: "cancelled", groupBy: "none" },
+  { key: "cancelled", label: "בוטל", tone: "cancelled", groupBy: "none", archiveAfterDays: ARCHIVE_AFTER_DAYS },
 ];
+
+/** Split a list of terminal-state tasks into "recent" + "older". Uses
+ *  `updated_at` (ISO) as the freshness signal — that's the timestamp
+ *  set when the status flipped to done/cancelled. Falls back to
+ *  `created_at` for tasks somehow missing an updated_at. */
+function partitionByAge(
+  tasks: WorkTask[],
+  thresholdDays: number,
+): { recent: WorkTask[]; older: WorkTask[] } {
+  const cutoff = Date.now() - thresholdDays * 24 * 60 * 60 * 1000;
+  const recent: WorkTask[] = [];
+  const older: WorkTask[] = [];
+  for (const t of tasks) {
+    const stamp = t.updated_at || t.created_at;
+    const ms = stamp ? new Date(stamp).getTime() : NaN;
+    if (Number.isFinite(ms) && ms >= cutoff) recent.push(t);
+    else if (Number.isFinite(ms)) older.push(t);
+    else recent.push(t); // fail-open if we can't parse the timestamp
+  }
+  return { recent, older };
+}
 
 type Props = {
   tasks: WorkTask[];
@@ -125,48 +153,92 @@ export default function TasksQueue({
         // so we don't need a separate branch for that mode.
         const axis: GroupAxis =
           b.groupBy === "company" && !groupByCompany ? "none" : b.groupBy;
+        // Terminal-state buckets (done / cancelled) split into recent
+        // + older — older rows live behind a fold so the queue doesn't
+        // accumulate visual debt over time.
+        const { recent, older } = b.archiveAfterDays
+          ? partitionByAge(list, b.archiveAfterDays)
+          : { recent: list, older: [] };
         return (
           <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
             <h2 className="tasks-bucket-head">
               {b.label}
               <span className="tasks-bucket-count">{list.length}</span>
             </h2>
-            <div className="tasks-table-wrap">
-              <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
-                <thead>
-                  <tr>
-                    {/* Company column on the portfolio queue. Hidden in
-                        compact mode (project pages already scoped to
-                        one company). When `brief` is set on a task it
-                        still renders as a chip in the title cell. */}
-                    {!compact && <th>חברה</th>}
-                    {/* The "פרויקט" column is redundant when we're
-                        already on a project-scoped page — the caller
-                        sets compact to hide it. */}
-                    {groupByCompany && <th>פרטי הפרוייקט</th>}
-                    {!groupByCompany && !compact && <th>פרויקט</th>}
-                    <th>פרטי המשימה</th>
-                    <th>כותב</th>
-                    <th>מחלקות</th>
-                    <th>עדיפות</th>
-                    <th>תאריך</th>
-                    {!compact && <th>נוצרה</th>}
-                    <th>סטטוס</th>
-                    <th>עובדים</th>
-                    <th>מאשר</th>
-                    <th className="icons">פעולות</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <BucketBody
-                    tasks={list}
-                    axis={axis}
-                    compact={compact}
-                    people={people}
-                  />
-                </tbody>
-              </table>
-            </div>
+            {recent.length > 0 && (
+              <div className="tasks-table-wrap">
+                <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
+                  <thead>
+                    <tr>
+                      {/* Company column on the portfolio queue. Hidden in
+                          compact mode (project pages already scoped to
+                          one company). When `brief` is set on a task it
+                          still renders as a chip in the title cell. */}
+                      {!compact && <th>חברה</th>}
+                      {/* The "פרויקט" column is redundant when we're
+                          already on a project-scoped page — the caller
+                          sets compact to hide it. */}
+                      {groupByCompany && <th>פרטי הפרוייקט</th>}
+                      {!groupByCompany && !compact && <th>פרויקט</th>}
+                      <th>פרטי המשימה</th>
+                      <th>כותב</th>
+                      <th>מחלקות</th>
+                      <th>עדיפות</th>
+                      <th>תאריך</th>
+                      {!compact && <th>נוצרה</th>}
+                      <th>סטטוס</th>
+                      <th>עובדים</th>
+                      <th>מאשר</th>
+                      <th className="icons">פעולות</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <BucketBody
+                      tasks={recent}
+                      axis={axis}
+                      compact={compact}
+                      people={people}
+                    />
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {older.length > 0 && (
+              <details className="tasks-archive-fold">
+                <summary>
+                  {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${b.archiveAfterDays} יום) — לחץ להצגה`}
+                </summary>
+                <div className="tasks-table-wrap">
+                  <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
+                    <thead>
+                      <tr>
+                        {!compact && <th>חברה</th>}
+                        {groupByCompany && <th>פרטי הפרוייקט</th>}
+                        {!groupByCompany && !compact && <th>פרויקט</th>}
+                        <th>פרטי המשימה</th>
+                        <th>כותב</th>
+                        <th>מחלקות</th>
+                        <th>עדיפות</th>
+                        <th>תאריך</th>
+                        {!compact && <th>נוצרה</th>}
+                        <th>סטטוס</th>
+                        <th>עובדים</th>
+                        <th>מאשר</th>
+                        <th className="icons">פעולות</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <BucketBody
+                        tasks={older}
+                        axis={axis}
+                        compact={compact}
+                        people={people}
+                      />
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
           </section>
         );
       })}

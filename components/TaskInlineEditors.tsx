@@ -114,7 +114,13 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
 /* ── Requested date ────────────────────────────────────────────────── */
 
 export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
-  const [value, setValue] = useState(task.requested_date || "");
+  // requested_date can be "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" — split
+  // for editing, recombine on save.
+  const initialRaw = task.requested_date || "";
+  const initialDate = initialRaw.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || "";
+  const initialTime = initialRaw.match(/[T\s](\d{2}:\d{2})/)?.[1] || "";
+  const [date, setDate] = useState(initialDate);
+  const [time, setTime] = useState(initialTime);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -122,19 +128,36 @@ export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
     <InlineEditCell
       title="לחץ לשינוי תאריך מבוקש"
       minWidth={14}
-      display={<span>{task.requested_date || "—"}</span>}
+      display={
+        <span>
+          {initialDate || "—"}
+          {initialTime && (
+            <span className="task-time-chip"> · {initialTime}</span>
+          )}
+        </span>
+      }
     >
       {(close) => (
         <div className="inline-edit-body">
           <div className="inline-edit-label">תאריך מבוקש</div>
-          <input
-            type="date"
-            className="inline-edit-input"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={busy}
-            autoFocus
-          />
+          <div className="inline-edit-date-time">
+            <input
+              type="date"
+              className="inline-edit-input"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              disabled={busy}
+              autoFocus
+            />
+            <input
+              type="time"
+              className="inline-edit-input"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              disabled={busy}
+              aria-label="שעה (אופציונלי)"
+            />
+          </div>
           <div className="inline-edit-actions">
             <button
               type="button"
@@ -149,11 +172,12 @@ export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
               className="btn-primary"
               disabled={busy}
               onClick={async () => {
-                if (value === task.requested_date) return close();
+                const combined = date && time ? `${date}T${time}` : date;
+                if (combined === task.requested_date) return close();
                 setBusy(true);
                 setErr(null);
                 const errMsg = await postTaskUpdate(task.id, {
-                  requested_date: value,
+                  requested_date: combined,
                 });
                 setBusy(false);
                 if (errMsg) setErr(errMsg);

@@ -5098,6 +5098,53 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   100% { width: 260px; height: 260px; opacity: 0; border-width: 1px; }
 }
 
+/* ── Date + optional time-of-day pair ─────────────────────────── */
+.task-form-date-time .date-time-inputs,
+.inline-edit-date-time {
+  display: flex;
+  gap: .35em;
+  align-items: center;
+  min-width: 0;
+}
+.task-form-date-time .date-time-inputs input[type="date"],
+.task-form-date-time .date-time-inputs input[type="time"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.task-form-date-time .date-time-inputs input[type="time"] {
+  flex: 0 1 7em;
+}
+.inline-edit-date-time input { width: 100%; }
+.inline-edit-date-time input[type="time"] { max-width: 8em; }
+.task-time-chip {
+  color: var(--muted);
+  font-size: .85em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fold for old terminal-state tasks (done/cancelled > 14 days). */
+.tasks-archive-fold {
+  margin: .4em 0 .2em;
+}
+.tasks-archive-fold > summary {
+  cursor: pointer;
+  padding: .55em .85em;
+  border-radius: 8px;
+  background: var(--surface-soft, rgba(120,120,120,.07));
+  color: var(--muted);
+  font-size: .9em;
+  list-style: none;
+  border: 1px dashed var(--border);
+}
+.tasks-archive-fold > summary::-webkit-details-marker { display: none; }
+.tasks-archive-fold > summary::before { content: "▸ "; margin-inline-end: .3em; }
+.tasks-archive-fold[open] > summary::before { content: "▾ "; }
+.tasks-archive-fold > summary:hover { color: var(--text); }
+.tasks-archive-fold[open] > .tasks-table-wrap {
+  margin-top: .5em;
+  opacity: .85;
+}
+
 @media (max-width: 900px) {
   .task-detail-grid { grid-template-columns: 1fr; }
   .task-form-row { grid-template-columns: 1fr; }
