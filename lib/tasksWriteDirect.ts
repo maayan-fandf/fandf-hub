@@ -888,6 +888,10 @@ export async function tasksUpdateDirect(
     changes.body = patch.description;
   }
 
+  // Track if assignees changed so the after-write block can email
+  // newcomers (we only know the merged set after side-effect work).
+  let assigneeAdded: string[] = [];
+  let assigneeRemoved: string[] = [];
   if ("assignees" in patch) {
     const newAssignees = parseAssignees(patch.assignees);
     const currentAssignees = String(cell("mentions") ?? "")
@@ -896,6 +900,128 @@ export async function tasksUpdateDirect(
       .filter(Boolean);
     if (newAssignees.join(",") !== currentAssignees.join(",")) {
       changes.mentions = newAssignees.join(",");
+
+      // Diff the lists and sync each side's Google Tasks list:
+      //   - removed: mark their entry completed (gentler than delete —
+      //     keeps history visible) and drop from `google_tasks`.
+      //   - added: create a fresh Google Task on their list and append.
+      // Without this, removed assignees keep an orphan that can fire
+      // the reverse-direction poller into transitioning the hub task
+      // to done if they tick it off — a real correctness bug, not just
+      // a tidiness issue.
+      assigneeRemoved = currentAssignees.filter((e) => !newAssignees.includes(e));
+      assigneeAdded = newAssignees.filter((e) => !currentAssignees.includes(e));
+
+      const currentGT = (() => {
+        try {
+          const v = cell("google_tasks");
+          if (!v) return {};
+          const parsed = typeof v === "string" ? JSON.parse(v) : v;
+          return parsed && typeof parsed === "object"
+            ? (parsed as Record<string, { u: string; l: string; t: string; d: string }>)
+            : {};
+        } catch {
+          return {};
+        }
+      })();
+
+      // Mark removed assignees' Google Tasks completed (best-effort)
+      // and drop them from the map.
+      const cleanedGT: Record<string, { u: string; l: string; t: string; d: string }> = {};
+      for (const [email, ref] of Object.entries(currentGT)) {
+        if (newAssignees.includes(email)) {
+          cleanedGT[email] = ref;
+          continue;
+        }
+        try {
+          const tasksApi = tasksApiClient(ref.u || email);
+          await tasksApi.tasks.patch({
+            tasklist: ref.l,
+            task: ref.t,
+            requestBody: { status: "completed" },
+          });
+        } catch (e) {
+          console.log(
+            `[tasksWriteDirect] could not complete removed assignee's Google Task (${email}):`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+
+      // Create Google Tasks for newly-added assignees. Pull title /
+      // description / requested_date / drive_folder_url from the
+      // post-patch view so reassign-and-rename in one save lands the
+      // new entry with the new metadata.
+      if (assigneeAdded.length > 0) {
+        const mergedTitle = String(changes.title ?? cell("title") ?? "");
+        const mergedDescription = String(changes.body ?? cell("body") ?? "");
+        const mergedRequestedDate = String(
+          changes.requested_date ?? cell("requested_date") ?? "",
+        );
+        const mergedProject = String(cell("project") ?? "");
+        const driveUrl = String(cell("drive_folder_url") ?? "");
+        try {
+          const fresh = await createGoogleTasks({
+            id: taskId,
+            title: mergedTitle,
+            project: mergedProject,
+            description: mergedDescription,
+            drive_folder_url: driveUrl,
+            requested_date: mergedRequestedDate,
+            assignees: assigneeAdded,
+          });
+          for (const [email, ref] of Object.entries(fresh)) {
+            cleanedGT[email] = ref;
+          }
+        } catch (e) {
+          console.log(
+            "[tasksWriteDirect] createGoogleTasks for added assignees failed:",
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+
+      changes.google_tasks = JSON.stringify(cleanedGT);
+
+      // Append a status_history entry noting the reassignment so the
+      // audit log captures who joined / left the task.
+      const histRaw = String(cell("status_history") ?? "[]");
+      let hist: WorkTask["status_history"];
+      try {
+        hist = JSON.parse(histRaw);
+        if (!Array.isArray(hist)) hist = [];
+      } catch {
+        hist = [];
+      }
+      // If the same patch already pushed a status-change entry, splice
+      // ours in alongside so both events show up in order.
+      if (changes.status_history) {
+        try {
+          hist = JSON.parse(String(changes.status_history));
+          if (!Array.isArray(hist)) hist = [];
+        } catch {
+          hist = [];
+        }
+      }
+      const noteParts: string[] = [];
+      if (assigneeRemoved.length) {
+        noteParts.push(
+          "removed: " + assigneeRemoved.map((e) => e.split("@")[0]).join(", "),
+        );
+      }
+      if (assigneeAdded.length) {
+        noteParts.push(
+          "added: " + assigneeAdded.map((e) => e.split("@")[0]).join(", "),
+        );
+      }
+      hist.push({
+        at: now,
+        by: subjectEmail,
+        from: "",
+        to: "",
+        note: "reassigned · " + noteParts.join(" · "),
+      });
+      changes.status_history = JSON.stringify(hist);
     }
   }
 
@@ -1017,6 +1143,25 @@ export async function tasksUpdateDirect(
       },
       subjectEmail,
       fresh.approver_email,
+    );
+  }
+
+  // Email newly-added assignees so they hear about the reassignment
+  // outside the hub UI — same shape as the on-create heads-up.
+  if (assigneeAdded.length > 0) {
+    const fresh = rowToTask(freshRow, idx);
+    await emailAssignees(
+      {
+        id: fresh.id,
+        project: fresh.project,
+        title: fresh.title,
+        description: fresh.description,
+        requested_date: fresh.requested_date,
+        priority: fresh.priority,
+        drive_folder_url: fresh.drive_folder_url,
+        assignees: assigneeAdded,
+      },
+      subjectEmail,
     );
   }
 
