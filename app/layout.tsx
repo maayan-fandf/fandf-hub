@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { cookies } from "next/headers";
 import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
 import KeyboardHelp from "@/components/KeyboardHelp";
@@ -15,7 +14,7 @@ import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
 import { getMyProjects, type Project } from "@/lib/appsScript";
-import { isPersonOnProject, SCOPE_PERSON_COOKIE } from "@/lib/scope";
+import { getUserPrefs } from "@/lib/userPrefs";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -49,39 +48,25 @@ export default async function RootLayout({
   const email = session?.user?.email ?? null;
 
   // Prefetch the user's projects server-side so the nav dropdown opens
-  // instantly. Next dedupes the `myProjects` call with the one /page.tsx
-  // makes, so this is free when landing on the home page.
+  // instantly. Honors the gear-menu "view as" pref so the top-nav projects
+  // list mirrors the home grid + /tasks default filter — single source of
+  // truth for "who am I acting as". Next dedupes the `myProjects` call with
+  // the one /page.tsx makes, so this is free when landing on the home page.
   let navProjects: Project[] = [];
   if (email) {
+    let viewAs = "";
     try {
-      const data = await getMyProjects();
+      const prefs = await getUserPrefs(email);
+      viewAs = prefs.view_as_email || "";
+    } catch {
+      /* prefs read failed — fall back to acting as self */
+    }
+    try {
+      const data = await getMyProjects(viewAs || undefined);
       navProjects = data.projects;
     } catch {
       navProjects = [];
     }
-  }
-
-  // Respect the cross-hub person scope — set by the home-page filter via
-  // a cookie (see HomeFilterBar.writeScopeCookie). When present, narrow
-  // the nav's projects dropdown to projects where that person is on the
-  // roster; otherwise the nav would show all 37 while the home grid shows
-  // only the user's 23, which is what the user called out as a bug. Empty
-  // cookie = "show all" (same as ?person=__all__).
-  try {
-    const cookieStore = await cookies();
-    const scopedPerson = decodeURIComponent(
-      cookieStore.get(SCOPE_PERSON_COOKIE)?.value ?? "",
-    ).trim();
-    if (scopedPerson) {
-      const filtered = navProjects.filter((p) =>
-        isPersonOnProject(p, scopedPerson),
-      );
-      // Guard against stale cookie (person no longer on any project) — fall
-      // back to the full list so the dropdown never goes empty.
-      if (filtered.length > 0) navProjects = filtered;
-    }
-  } catch {
-    /* malformed cookie or decode error — ignore and show full list */
   }
 
   const dashboardBase = process.env.DASHBOARD_URL ?? "";

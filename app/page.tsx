@@ -12,10 +12,8 @@ import {
 } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { companyColorSlot } from "@/lib/colors";
-import { isPersonOnProject } from "@/lib/scope";
 
 type AlertCounts = { severe: number; warn: number; info: number };
-type HomeSearch = { person?: string };
 
 export const dynamic = "force-dynamic";
 
@@ -30,15 +28,11 @@ function isProjectEndedByIso(endIso: string | undefined): boolean {
   return end < cutoff;
 }
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<HomeSearch>;
-}) {
-  const sp = await searchParams;
+export default async function HomePage() {
   // Honor the gear-menu "view as" pref so the home page mirrors the
-  // /tasks default-filter behavior. Failures fall back to the session
-  // user's own identity — view-as is best-effort, not a security gate.
+  // /tasks default-filter behavior and the top-nav projects list. Failures
+  // fall back to the session user's own identity — view-as is best-effort,
+  // not a security gate.
   const me = await currentUserEmail().catch(() => "");
   const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
   const viewAs = prefs?.view_as_email || "";
@@ -88,50 +82,10 @@ export default async function HomePage({
     redirect("/unauthorized");
   }
 
-  // Person filter — defaults to the current user's name. `?person=__all__`
-  // is the explicit "show every project" sentinel. Clients have no person-
-  // filtering (their list is already scoped by the server).
-  const canFilterPerson = !!data && (data.isStaff || data.isAdmin);
-  const requestedPerson = sp.person;
-  const selectedPerson: string =
-    !canFilterPerson || !data
-      ? ""
-      : requestedPerson === "__all__"
-        ? ""
-        : requestedPerson !== undefined
-          ? requestedPerson
-          : data.person || "";
-  const visibleProjects: Project[] = data
-    ? selectedPerson
-      ? data.projects.filter((p) => isPersonOnProject(p, selectedPerson))
-      : data.projects
-    : [];
-  // If filtering stripped everything (e.g. selected a person with no projects),
-  // fall back to the full list so the page isn't empty.
-  const effectiveProjects =
-    selectedPerson && visibleProjects.length === 0 && data
-      ? data.projects
-      : visibleProjects;
-  const filterFellBack =
-    !!selectedPerson && visibleProjects.length === 0 && !!data;
-  const grouped = data ? groupByCompany(effectiveProjects) : [];
-  const mineCount = data
-    ? data.projects.filter((p) => isPersonOnProject(p, data.person)).length
-    : 0;
-
-  // Unique list of people across all projects' rosters. Powers the dropdown
-  // options (excluding the current user who gets a dedicated "שלי" option).
-  const peopleSet = new Set<string>();
-  if (data) {
-    for (const p of data.projects) {
-      const r = p.roster;
-      if (r.mediaManager) peopleSet.add(r.mediaManager);
-      if (r.projectManagerFull) peopleSet.add(r.projectManagerFull);
-      for (const n of r.internalOnly) if (n) peopleSet.add(n);
-      for (const n of r.clientFacing) if (n) peopleSet.add(n);
-    }
-  }
-  const allPeople = Array.from(peopleSet);
+  // Per-person scoping is now driven entirely by the gear-menu "view as"
+  // pref above (passed into getMyProjects). The home grid renders whatever
+  // projects came back — no client-side person filter on top.
+  const grouped = data ? groupByCompany(data.projects) : [];
 
   // endIso map from the morning feed — powers the hide-ended filter.
   const endIsoByProject = new Map<string, string>();
@@ -229,22 +183,8 @@ export default async function HomePage({
             </div>
           )}
         </div>
-        {canFilterPerson && data && (
-          <HomeFilterBar
-            people={allPeople}
-            selected={selectedPerson}
-            currentUser={data.person}
-            totalCount={data.projects.length}
-            mineCount={mineCount}
-          />
-        )}
+        <HomeFilterBar />
       </header>
-
-      {filterFellBack && (
-        <div className="info-banner">
-          ℹ️ לא נמצאו פרויקטים עבור <b>{selectedPerson}</b> — מציג את כל התיק.
-        </div>
-      )}
 
       {error && (
         <div className="error">
