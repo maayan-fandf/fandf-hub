@@ -3956,6 +3956,50 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   flex: 0 0 auto;
 }
 
+/* People sub-group inside the filter bar — a fieldset that spans
+   the full grid width and contains the four person-related axes
+   (כותב / עובד מבצע / מאשר / מעורב במשימה). Visual frame makes
+   the grouping obvious so users scanning for "who" find them
+   together instead of hunting across rows. */
+.tasks-filter-people-group {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75em 1em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5em 0.85em 0.85em;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.015);
+}
+html[data-theme="dark"] .tasks-filter-people-group {
+  background: rgba(255, 255, 255, 0.025);
+}
+.tasks-filter-people-legend {
+  font-size: 0.78em;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 0.4em;
+  text-transform: none;
+}
+.tasks-filter-people-group label {
+  /* fieldset's default styles can clobber the parent grid label
+     styling; reapply just the bits we care about. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  font-size: 0.82em;
+  color: var(--muted);
+  font-weight: 600;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .tasks-filter-people-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0.4em 0.6em 0.6em;
+  }
+}
+
 .tasks-bucket { margin-bottom: 2em; }
 .tasks-bucket-head {
   display: flex; align-items: center; gap: .6em;

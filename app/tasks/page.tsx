@@ -34,6 +34,11 @@ type Search = {
   approver?: string;
   project_manager?: string;
   assignee?: string;
+  /** Picks anyone "involved" — author OR approver OR PM OR
+   *  assignee OR mentioned in the task's discussion. Replaces the
+   *  old project-manager-only filter from the UI; the underlying
+   *  project_manager param still works for legacy URLs. */
+  involved_with?: string;
   campaign?: string;
   requested_date_from?: string;
   requested_date_to?: string;
@@ -122,6 +127,7 @@ export default async function TasksPage({
       requested_date_from: sp.requested_date_from || "",
       requested_date_to: sp.requested_date_to || "",
       relevant_to_me: relevantToMe,
+      involved_with: sp.involved_with || "",
     })
       .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
       .catch((e: unknown) => ({
@@ -299,6 +305,7 @@ export default async function TasksPage({
           approver: effectiveApprover,
           project_manager: sp.project_manager || "",
           assignee: effectiveAssignee,
+          involved_with: sp.involved_with || "",
           campaign: sp.campaign || "",
           requested_date_from: sp.requested_date_from || "",
           requested_date_to: sp.requested_date_to || "",
@@ -460,6 +467,7 @@ function TasksFilterBar({
     approver: string;
     project_manager: string;
     assignee: string;
+    involved_with: string;
     campaign: string;
     requested_date_from: string;
     requested_date_to: string;
@@ -512,13 +520,16 @@ function TasksFilterBar({
         )}
       </summary>
       <form method="GET" action="/tasks" className="tasks-filter-bar">
-      {/* Filter order mirrors the table columns below: חברה → פרויקט →
-          קמפיין → כותב → מחלקה → דחיפות → סטטוס → עובד מבצע → מאשר →
-          מנהל פרויקט. תאריך / נוצרה are display-only (no filter).
-          Note: we intentionally do NOT hidden-input `mine=0` here — it
-          previously silently disabled the role-default after any filter
-          submit. The "הצג את כולם" link in the subtitle is the only
-          path to opt out of relevant_to_me. */}
+      {/* Field order: project/categorization first, then people in a
+          visually-grouped <fieldset>. The four people-related axes
+          (כותב / עובד מבצע / מאשר / מעורב במשימה) live together so
+          users scanning for "who" don't have to chase them across
+          rows. The previous "מנהל פרויקט" filter is replaced by the
+          broader "מעורב במשימה" — same input shape, same datalist,
+          but the server-side OR matches author OR approver OR PM
+          OR assignee OR mentioned-in-discussion. The
+          project_manager URL param still works for legacy links;
+          new UI just doesn't surface it. */}
       <label>
         חברה
         <select name="company" defaultValue={current.company}>
@@ -557,22 +568,22 @@ function TasksFilterBar({
         ))}
       </datalist>
       <label>
-        כותב
-        <input
-          type="text"
-          name="author"
-          list="tasks-people"
-          placeholder={current.author || "name@domain"}
-          defaultValue={current.author}
-        />
-      </label>
-      <label>
         מחלקה
         <select name="department" defaultValue={current.department}>
           <option value="">הכל</option>
           {departments.map((d) => (
             <option key={d} value={d}>
               {d}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        סטטוס
+        <select name="status" defaultValue={current.status}>
+          {statuses.map((s) => (
+            <option key={s.val} value={s.val}>
+              {s.label}
             </option>
           ))}
         </select>
@@ -605,47 +616,52 @@ function TasksFilterBar({
           />
         </div>
       </label>
-      <label>
-        סטטוס
-        <select name="status" defaultValue={current.status}>
-          {statuses.map((s) => (
-            <option key={s.val} value={s.val}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        עובד מבצע
-        <input
-          type="text"
-          name="assignee"
-          list="tasks-people"
-          placeholder="name@domain"
-          defaultValue={current.assignee}
-        />
-      </label>
-      <label>
-        מאשר
-        <input
-          type="text"
-          name="approver"
-          list="tasks-people"
-          placeholder="name@domain"
-          defaultValue={current.approver}
-        />
-      </label>
-      <label>
-        מנהל פרויקט
-        <input
-          type="text"
-          name="project_manager"
-          list="tasks-people"
-          placeholder="name@domain"
-          defaultValue={current.project_manager}
-        />
-      </label>
-      {/* Shared datalist populates all four people inputs above. */}
+
+      <fieldset className="tasks-filter-people-group">
+        <legend className="tasks-filter-people-legend">אנשים</legend>
+        <label>
+          כותב
+          <input
+            type="text"
+            name="author"
+            list="tasks-people"
+            placeholder={current.author || "name@domain"}
+            defaultValue={current.author}
+          />
+        </label>
+        <label>
+          עובד מבצע
+          <input
+            type="text"
+            name="assignee"
+            list="tasks-people"
+            placeholder="name@domain"
+            defaultValue={current.assignee}
+          />
+        </label>
+        <label>
+          מאשר
+          <input
+            type="text"
+            name="approver"
+            list="tasks-people"
+            placeholder="name@domain"
+            defaultValue={current.approver}
+          />
+        </label>
+        <label>
+          מעורב במשימה
+          <input
+            type="text"
+            name="involved_with"
+            list="tasks-people"
+            placeholder="name@domain"
+            defaultValue={current.involved_with}
+            title="כל המשימות שאדם זה מעורב בהן — כותב / מאשר / מנהל פרויקט / עובד מבצע / או תויג בדיון"
+          />
+        </label>
+      </fieldset>
+      {/* Shared datalist populates every person input above. */}
       <datalist id="tasks-people">
         {people.map((p) => (
           <option key={p.email} value={p.email}>

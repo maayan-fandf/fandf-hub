@@ -309,6 +309,15 @@ export async function tasksListDirect(
      *  ALSO an assignee on some task sees both sets at once instead
      *  of having to flip between filters. */
     relevant_to_me?: string;
+    /** Broader OR-filter: author OR approver OR project_manager OR
+     *  any assignee OR mentioned-in-any-discussion-comment.
+     *  Powers the /tasks "מעורב במשימה" picker — finds every task
+     *  someone touched, regardless of role. The mention check
+     *  walks the same in-memory rows we already loaded for tasks
+     *  (comment rows on the Comments sheet have row_kind='' and
+     *  parent_id pointing at the task), so the cost is one extra
+     *  pass over rows we'd read anyway. */
+    involved_with?: string;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
@@ -325,8 +334,14 @@ export async function tasksListDirect(
   // same rows. A comment parented to a task is row_kind='' with
   // parent_id=taskId; task-parented replies are already filtered out
   // from the projectComments feed but still live in the sheet.
+  // Same pass also collects task ids where `involved_with` was
+  // mentioned in any reply, so the involved-with filter below can
+  // be a single Set lookup per task.
   const parentIdIdx = headerIdx.get("parent_id");
+  const mentionsIdx = headerIdx.get("mentions");
   const commentsCount = new Map<string, number>();
+  const involvedWith = (filters.involved_with || "").toLowerCase().trim();
+  const mentionedTaskIds = new Set<string>();
   if (parentIdIdx != null) {
     for (const row of rows) {
       const rk = String(row[rowKindIdx] ?? "").trim();
@@ -334,6 +349,12 @@ export async function tasksListDirect(
       const pid = String(row[parentIdIdx] ?? "");
       if (!pid) continue;
       commentsCount.set(pid, (commentsCount.get(pid) ?? 0) + 1);
+      if (involvedWith && mentionsIdx != null) {
+        const mentions = String(row[mentionsIdx] ?? "").toLowerCase();
+        if (mentions.includes(involvedWith)) {
+          mentionedTaskIds.add(pid);
+        }
+      }
     }
   }
 
@@ -381,6 +402,17 @@ export async function tasksListDirect(
       const isApprover = t.approver_email === r;
       const isAssignee = t.assignees.some((e) => e.toLowerCase() === r);
       if (!isAuthor && !isApprover && !isAssignee) continue;
+    }
+    if (involvedWith) {
+      const isAuthor = t.author_email === involvedWith;
+      const isApprover = t.approver_email === involvedWith;
+      const isPm = t.project_manager_email === involvedWith;
+      const isAssignee = t.assignees.some(
+        (e) => e.toLowerCase() === involvedWith,
+      );
+      const isMentioned = mentionedTaskIds.has(t.id);
+      if (!isAuthor && !isApprover && !isPm && !isAssignee && !isMentioned)
+        continue;
     }
     if (filters.campaign) {
       const f = filters.campaign.trim();

@@ -835,6 +835,11 @@ export type TasksListFilters = {
    *  honored on the direct-read path; the legacy proxy path (Apps
    *  Script) falls back to no filter (returns the access-scoped set). */
   relevant_to_me?: string;
+  /** Broader OR-filter: author OR approver OR project_manager OR
+   *  any assignee OR mentioned-in-any-discussion-comment. Powers
+   *  the /tasks "מעורב במשימה" picker — surfaces every task someone
+   *  touched regardless of role. Direct-read path only. */
+  involved_with?: string;
 };
 
 export async function tasksList(
