@@ -118,23 +118,22 @@ async function assertProjectAccess(
   subjectEmail: string,
   project: string,
 ): Promise<void> {
-  const lc = subjectEmail.toLowerCase().trim();
-  if (ADMIN_EMAILS.has(lc)) return;
+  // Delegate to the shared getAccessScope (lib/tasksDirect.ts) so the
+  // write gate uses the same display-name resolution and @fandf.co.il
+  // domain blanket the read paths use.
+  const { getAccessScope } = await import("@/lib/tasksDirect");
+  const scope = await getAccessScope(subjectEmail);
+  if (scope.isAdmin) return;
+  if (scope.accessibleProjects.has(project)) return;
+  // Confirm the project actually exists before reporting access denial.
   const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
-  const iClients = headers.indexOf("Email Client");
-  const iInternal = headers.indexOf("Access — internal only");
-  const iCf = headers.indexOf("Client-facing");
   const targetProject = project.toLowerCase().trim();
   for (const row of rows) {
     const p = String(row[iProj] ?? "").toLowerCase().trim();
-    if (p !== targetProject) continue;
-    for (const ci of [iClients, iInternal, iCf]) {
-      if (ci < 0) continue;
-      const raw = String(row[ci] ?? "").toLowerCase();
-      if (raw.includes(lc)) return;
+    if (p === targetProject) {
+      throw new Error("Access denied to project: " + project);
     }
-    throw new Error("Access denied to project: " + project);
   }
   throw new Error("Project not found: " + project);
 }
