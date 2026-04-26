@@ -8,6 +8,7 @@ import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
+import TaskAttachments from "@/components/TaskAttachments";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
 import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
@@ -189,17 +190,18 @@ export default async function TaskDetailPage({
             id="task-files"
             className="task-detail-section task-detail-section-files"
           >
-            {t.drive_folder_id ? (
+            <TaskAttachments
+              taskId={t.id}
+              taskTitle={t.title}
+              driveFolderId={t.drive_folder_id}
+              driveFolderUrl={t.drive_folder_url}
+            />
+            {t.drive_folder_id && (
               <TaskDriveComments
                 taskId={t.id}
                 driveFolderId={t.drive_folder_id}
                 driveFolderUrl={t.drive_folder_url}
               />
-            ) : (
-              <div className="task-detail-files-empty">
-                <h3>📁 קבצים</h3>
-                <p className="muted">למשימה זו עוד אין תיקיית קבצים ב-Drive.</p>
-              </div>
             )}
           </section>
         </div>
