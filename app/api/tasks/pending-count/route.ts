@@ -7,15 +7,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Count of "tasks needing my action" — used by the topnav משימות
- * badge. Three buckets:
+ * Count of "open tasks involving me" — used by the topnav משימות
+ * badge. Aligns with the home page's "משימות פתוחות" tile so a user
+ * who sees "2 open tasks" on home sees the same 2 on the badge.
  *
- *   - awaiting_handling   — I'm the assignee, work hasn't started.
- *   - awaiting_clarification — I'm the assignee, blocked on info.
- *   - awaiting_approval   — I'm the approver, finished work to review.
+ * Definition: any non-terminal task (status != done && != cancelled)
+ * where I'm involved — author OR approver OR project_manager OR
+ * assignee OR mentioned in the task's discussion. The breakdown
+ * tooltip surfaces what's behind the number so action items
+ * (awaiting_handling / awaiting_clarification for assignees,
+ * awaiting_approval for approvers) still stand out at a glance.
  *
- * Total combines all three. Tooltip on the badge breaks them out so
- * the user sees what's behind the number at a glance.
+ * Previous version only counted action-needed tasks (assignee on
+ * handling/clarification + approver on approval) — that didn't
+ * match home tile semantics, so users with open tasks where they
+ * were author or PM saw "no badge" even though the tile read 2.
  */
 export async function GET() {
   const session = await auth();
@@ -28,24 +34,37 @@ export async function GET() {
   }
   try {
     // Respect the gear-menu view_as so the badge mirrors what /tasks
-    // would actually show as the user's pending queue.
+    // would actually show as the user's open queue.
     const prefs = await getUserPrefs(sessionEmail).catch(() => null);
     const targetEmail = prefs?.view_as_email || sessionEmail;
 
-    // One tasksList call per status; the filter takes a single status.
-    // Three round-trips total — cheap at this scale, and the caller
-    // debounces (re-fetches on pathname change, not constantly).
-    const [handling, clarif, approval] = await Promise.all([
-      tasksList({ assignee: targetEmail, status: "awaiting_handling" }),
-      tasksList({ assignee: targetEmail, status: "awaiting_clarification" }),
-      tasksList({ approver: targetEmail, status: "awaiting_approval" }),
-    ]);
-    const handlingCount = handling.tasks?.length ?? 0;
-    const clarifCount = clarif.tasks?.length ?? 0;
-    const approvalCount = approval.tasks?.length ?? 0;
+    // Single tasksList call: every task this user is involved with
+    // (matches the new /tasks "מעורב במשימה" filter — author OR
+    // approver OR PM OR assignee OR mentioned in discussion).
+    // Then we filter out terminal states and bucket the open ones
+    // by status for the tooltip breakdown.
+    const result = await tasksList({ involved_with: targetEmail });
+    const open = (result.tasks || []).filter(
+      (t) => t.status !== "done" && t.status !== "cancelled",
+    );
+    const handlingCount = open.filter(
+      (t) =>
+        t.status === "awaiting_handling" &&
+        t.assignees.some((e) => e.toLowerCase() === targetEmail.toLowerCase()),
+    ).length;
+    const clarifCount = open.filter(
+      (t) =>
+        t.status === "awaiting_clarification" &&
+        t.assignees.some((e) => e.toLowerCase() === targetEmail.toLowerCase()),
+    ).length;
+    const approvalCount = open.filter(
+      (t) =>
+        t.status === "awaiting_approval" &&
+        t.approver_email.toLowerCase() === targetEmail.toLowerCase(),
+    ).length;
     return NextResponse.json({
       ok: true,
-      total: handlingCount + clarifCount + approvalCount,
+      total: open.length,
       breakdown: {
         awaiting_handling: handlingCount,
         awaiting_clarification: clarifCount,
