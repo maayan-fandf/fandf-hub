@@ -11,9 +11,13 @@ import {
 import { getUserRole, type UserRole } from "@/lib/userRole";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { getSharedDriveName } from "@/lib/driveFolders";
-import TasksQueue from "@/components/TasksQueue";
+import TasksQueue, {
+  type TasksSortKey,
+  type TasksSortOrder,
+} from "@/components/TasksQueue";
 import TasksKanban from "@/components/TasksKanban";
 import TasksViewToggle from "@/components/TasksViewToggle";
+import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +41,12 @@ type Search = {
   /** `view=kanban` switches to the drag-and-drop board; default is the
    *  Data-Plus-style table queue. */
   view?: string;
+  /** Sort axis applied within each status bucket on the table view.
+   *  Defaults to `rank` (drag-driven manual order). Other values:
+   *  title | priority | requested_date | created_at | updated_at. */
+  sort?: string;
+  /** asc | desc — column-specific default if absent. */
+  order?: string;
 };
 
 
@@ -131,8 +141,22 @@ export default async function TasksPage({
       ).map((p) => p.name),
     ),
   ).sort();
-  const departmentOptions = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
   const people = peopleRes?.people ?? [];
+  // Departments derived from the live `Role` column on names-to-emails
+  // (same source TaskCreateForm uses). Falls back to the legacy hardcoded
+  // list when no roles are populated, so the dropdown never empties — and
+  // the filter bar's options stay in sync with what the create-task form
+  // actually offers.
+  const DEPARTMENTS_FALLBACK = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
+  const departmentSet = new Set<string>();
+  for (const p of people) {
+    const r = (p.role || "").trim();
+    if (r) departmentSet.add(r);
+  }
+  const departmentOptions =
+    departmentSet.size === 0
+      ? DEPARTMENTS_FALLBACK
+      : Array.from(departmentSet).sort((a, b) => a.localeCompare(b, "he"));
   const view: "kanban" | "table" = sp.view === "kanban" ? "kanban" : "table";
 
   return (
@@ -187,6 +211,13 @@ export default async function TasksPage({
           </div>
         </div>
         <div className="header-actions">
+          {driveName && (
+            <CopyLocalPathButton
+              path={`G:\\Shared drives\\${driveName}`}
+              label="📂 פתח ב-Explorer"
+              title="העתק נתיב לשורש ה-Shared Drive ופתח ב-File Explorer"
+            />
+          )}
           <Link href="/tasks/new" className="btn-primary btn-sm">
             + משימה חדשה
           </Link>
@@ -236,6 +267,9 @@ export default async function TasksPage({
           groupByCompany={true}
           people={people}
           driveName={driveName}
+          sort={parseSort(sp.sort)}
+          sortOrder={parseOrder(sp.order)}
+          searchParams={sp as Record<string, string | undefined>}
         />
       )}
     </main>
@@ -289,6 +323,26 @@ function RoleDefaultHint({
       <Link href={showAllHref}>הצג את כולם</Link>
     </>
   );
+}
+
+// Whitelisted sort axes; anything else falls back to "rank" so a
+// hand-rolled URL can't crash the renderer.
+function parseSort(raw: string | undefined): TasksSortKey {
+  switch (raw) {
+    case "title":
+    case "priority":
+    case "requested_date":
+    case "created_at":
+    case "updated_at":
+      return raw;
+    default:
+      return "rank";
+  }
+}
+
+function parseOrder(raw: string | undefined): TasksSortOrder | undefined {
+  if (raw === "asc" || raw === "desc") return raw;
+  return undefined;
 }
 
 // Build an href for /tasks with the current search params plus overrides.

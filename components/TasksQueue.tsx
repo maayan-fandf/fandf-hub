@@ -18,6 +18,18 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
+
+/** Sort axes exposed via clickable column headers. `rank` is the
+ *  drag-driven manual order (default); the rest sort within each
+ *  status bucket. */
+export type TasksSortKey =
+  | "rank"
+  | "title"
+  | "priority"
+  | "requested_date"
+  | "created_at"
+  | "updated_at";
+export type TasksSortOrder = "asc" | "desc";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
@@ -131,7 +143,74 @@ type Props = {
    *   G:\Shared drives\<driveName>\<company>\<project>[\<campaign>]
    */
   driveName?: string;
+  /**
+   * Sort axis applied within each status bucket. "rank" (default)
+   * uses drag-driven manual order; any other value disables drag
+   * because the rank-based reorder would be invisible to the user
+   * under a non-rank sort.
+   */
+  sort?: TasksSortKey;
+  sortOrder?: TasksSortOrder;
+  /**
+   * Existing search params on /tasks. Used to build the Link hrefs on
+   * sortable column headers — toggling preserves filters. Omit on
+   * surfaces that don't support URL-driven sort (e.g. project pages).
+   */
+  searchParams?: Record<string, string | undefined>;
 };
+
+/** Default order per sort axis: dates default to descending (newest
+ *  first), priority defaults to ascending (1=high first), title
+ *  defaults to alpha asc. Keeps the first click on a column behave
+ *  the way most users expect. */
+function defaultOrderFor(sort: TasksSortKey): TasksSortOrder {
+  switch (sort) {
+    case "requested_date":
+    case "created_at":
+    case "updated_at":
+      return "desc";
+    default:
+      return "asc";
+  }
+}
+
+/** Build the /tasks href that resets sort to rank, preserving every
+ *  other current search param. */
+function buildResetSortHref(
+  current: Record<string, string | undefined>,
+): string {
+  const merged: Record<string, string> = {};
+  for (const [k, v] of Object.entries(current)) {
+    if (!v) continue;
+    if (k === "sort" || k === "order") continue;
+    merged[k] = v;
+  }
+  const qs = new URLSearchParams(merged).toString();
+  return qs ? `/tasks?${qs}` : "/tasks";
+}
+
+/** Build a comparator for a non-rank sort axis. Returns null for
+ *  `rank`, in which case callers fall back to compareByRank. */
+function comparatorFor(
+  sort: TasksSortKey,
+  order: TasksSortOrder,
+): ((a: WorkTask, b: WorkTask) => number) | null {
+  if (sort === "rank") return null;
+  const dir = order === "desc" ? -1 : 1;
+  switch (sort) {
+    case "title":
+      return (a, b) => dir * a.title.localeCompare(b.title, "he");
+    case "priority":
+      return (a, b) => dir * ((a.priority || 99) - (b.priority || 99));
+    case "requested_date":
+      return (a, b) =>
+        dir * ((a.requested_date || "").localeCompare(b.requested_date || ""));
+    case "created_at":
+      return (a, b) => dir * a.created_at.localeCompare(b.created_at);
+    case "updated_at":
+      return (a, b) => dir * a.updated_at.localeCompare(b.updated_at);
+  }
+}
 
 /**
  * The Data-Plus-style tasks queue, rendered as grouped lifecycle
@@ -150,12 +229,25 @@ export default function TasksQueue({
   compact = false,
   people = [],
   driveName = "",
+  sort = "rank",
+  sortOrder,
+  searchParams,
 }: Props) {
   // Local task state lets us optimistically reorder rows on drop and
   // revert on server error — same pattern the kanban uses. Initial
   // value is the server-rendered list passed in by the page.
   const [tasks, setTasks] = useState(initialTasks);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolve the order for the current sort axis. When the caller
+  // passes a sort but no order, fall back to the column's natural
+  // default direction.
+  const effectiveOrder: TasksSortOrder = sortOrder || defaultOrderFor(sort);
+  const sortFn = useMemo(
+    () => comparatorFor(sort, effectiveOrder),
+    [sort, effectiveOrder],
+  );
+  const dragEnabled = sort === "rank";
 
   // 8px activation distance keeps a click on a row's title link from
   // accidentally starting a drag — pointer movement past the threshold
@@ -277,48 +369,31 @@ export default function TasksQueue({
             <h2 className="tasks-bucket-head">
               {b.label}
               <span className="tasks-bucket-count">{list.length}</span>
+              {sort !== "rank" && searchParams && (
+                <Link
+                  href={buildResetSortHref(searchParams)}
+                  scroll={false}
+                  className="tasks-bucket-sort-reset"
+                  title="חזור למיון ברירת המחדל (סדר ידני)"
+                >
+                  ↺ סדר ידני
+                </Link>
+              )}
             </h2>
             {recent.length > 0 && (
               <div className="tasks-table-wrap">
-                <SortableContext
-                  items={recent.slice().sort(compareByRank).map((t) => t.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
-                    <thead>
-                      <tr>
-                        <th className="drag-handle-col" aria-hidden></th>
-                        {/* Company column on the portfolio queue. Hidden in
-                            compact mode (project pages already scoped to
-                            one company). */}
-                        {!compact && <th>חברה</th>}
-                        {/* The "פרויקט" column is redundant when we're
-                            already on a project-scoped page — the caller
-                            sets compact to hide it. */}
-                        {groupByCompany && <th>פרטי הפרוייקט</th>}
-                        {!groupByCompany && !compact && <th>פרויקט</th>}
-                        <th>פרטי המשימה</th>
-                        <th>כותב</th>
-                        <th>מחלקות</th>
-                        <th>דחיפות</th>
-                        <th>תאריך</th>
-                        {!compact && <th>נוצרה</th>}
-                        <th>סטטוס</th>
-                        <th>עובדים</th>
-                        <th>מאשר</th>
-                        <th className="icons">פעולות</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <BucketBody
-                        tasks={recent}
-                        compact={compact}
-                        people={people}
-                        driveName={driveName}
-                      />
-                    </tbody>
-                  </table>
-                </SortableContext>
+                <SortableTableSection
+                  rows={recent}
+                  compact={compact}
+                  groupByCompany={groupByCompany}
+                  people={people}
+                  driveName={driveName}
+                  sort={sort}
+                  sortOrder={effectiveOrder}
+                  sortFn={sortFn}
+                  searchParams={searchParams}
+                  dragEnabled={dragEnabled}
+                />
               </div>
             )}
             {older.length > 0 && (
@@ -327,39 +402,18 @@ export default function TasksQueue({
                   {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${b.archiveAfterDays} יום) — לחץ להצגה`}
                 </summary>
                 <div className="tasks-table-wrap">
-                  <SortableContext
-                    items={older.slice().sort(compareByRank).map((t) => t.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
-                      <thead>
-                        <tr>
-                          <th className="drag-handle-col" aria-hidden></th>
-                          {!compact && <th>חברה</th>}
-                          {groupByCompany && <th>פרטי הפרוייקט</th>}
-                          {!groupByCompany && !compact && <th>פרויקט</th>}
-                          <th>פרטי המשימה</th>
-                          <th>כותב</th>
-                          <th>מחלקות</th>
-                          <th>דחיפות</th>
-                          <th>תאריך</th>
-                          {!compact && <th>נוצרה</th>}
-                          <th>סטטוס</th>
-                          <th>עובדים</th>
-                          <th>מאשר</th>
-                          <th className="icons">פעולות</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <BucketBody
-                          tasks={older}
-                          compact={compact}
-                          people={people}
-                          driveName={driveName}
-                        />
-                      </tbody>
-                    </table>
-                  </SortableContext>
+                  <SortableTableSection
+                    rows={older}
+                    compact={compact}
+                    groupByCompany={groupByCompany}
+                    people={people}
+                    driveName={driveName}
+                    sort={sort}
+                    sortOrder={effectiveOrder}
+                    sortFn={sortFn}
+                    searchParams={searchParams}
+                    dragEnabled={dragEnabled}
+                  />
                 </div>
               </details>
             )}
@@ -423,27 +477,182 @@ export default function TasksQueue({
  * them — sub-headers fought with rank, see the STATUS_BUCKETS comment
  * for the rationale.
  */
+
+/** Wraps the table + thead + tbody for one section (recent or
+ *  archived rows of a single bucket). Owns the SortableContext too —
+ *  drag-reorder is enabled only when sorting by rank, since dragging
+ *  under a column-driven sort doesn't visibly affect order and just
+ *  confuses the user. */
+function SortableTableSection({
+  rows,
+  compact,
+  groupByCompany,
+  people,
+  driveName,
+  sort,
+  sortOrder,
+  sortFn,
+  searchParams,
+  dragEnabled,
+}: {
+  rows: WorkTask[];
+  compact: boolean;
+  groupByCompany: boolean;
+  people: TasksPerson[];
+  driveName: string;
+  sort: TasksSortKey;
+  sortOrder: TasksSortOrder;
+  sortFn: ((a: WorkTask, b: WorkTask) => number) | null;
+  searchParams?: Record<string, string | undefined>;
+  dragEnabled: boolean;
+}) {
+  const ordered = sortFn
+    ? rows.slice().sort(sortFn)
+    : rows.slice().sort(compareByRank);
+  const head = (
+    <thead>
+      <tr>
+        {dragEnabled && <th className="drag-handle-col" aria-hidden></th>}
+        {!compact && <th>חברה</th>}
+        {groupByCompany && <th>פרטי הפרוייקט</th>}
+        {!groupByCompany && !compact && <th>פרויקט</th>}
+        <SortableTh
+          column="title"
+          label="פרטי המשימה"
+          sort={sort}
+          sortOrder={sortOrder}
+          searchParams={searchParams}
+        />
+        <th>כותב</th>
+        <th>מחלקות</th>
+        <SortableTh
+          column="priority"
+          label="דחיפות"
+          sort={sort}
+          sortOrder={sortOrder}
+          searchParams={searchParams}
+        />
+        <SortableTh
+          column="requested_date"
+          label="תאריך"
+          sort={sort}
+          sortOrder={sortOrder}
+          searchParams={searchParams}
+        />
+        {!compact && (
+          <SortableTh
+            column="created_at"
+            label="נוצרה"
+            sort={sort}
+            sortOrder={sortOrder}
+            searchParams={searchParams}
+          />
+        )}
+        <th>סטטוס</th>
+        <th>עובדים</th>
+        <th>מאשר</th>
+        <th className="icons">פעולות</th>
+      </tr>
+    </thead>
+  );
+  const body = (
+    <BucketBody
+      tasks={ordered}
+      compact={compact}
+      people={people}
+      driveName={driveName}
+      dragEnabled={dragEnabled}
+    />
+  );
+  const table = (
+    <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
+      {head}
+      <tbody>{body}</tbody>
+    </table>
+  );
+  if (!dragEnabled) return table;
+  return (
+    <SortableContext
+      items={ordered.map((t) => t.id)}
+      strategy={verticalListSortingStrategy}
+    >
+      {table}
+    </SortableContext>
+  );
+}
+
+/** A single column header that's clickable when `searchParams` is
+ *  provided (URL-driven sort). Click toggles asc/desc on the active
+ *  column, or sets this column as the new sort axis with its default
+ *  direction. Without `searchParams` (e.g. when used on a project
+ *  page that doesn't expose URL sort), renders as plain text. */
+function SortableTh({
+  column,
+  label,
+  sort,
+  sortOrder,
+  searchParams,
+}: {
+  column: TasksSortKey;
+  label: string;
+  sort: TasksSortKey;
+  sortOrder: TasksSortOrder;
+  searchParams?: Record<string, string | undefined>;
+}) {
+  if (!searchParams) {
+    return <th>{label}</th>;
+  }
+  const isActive = sort === column;
+  const nextOrder: TasksSortOrder = isActive
+    ? sortOrder === "asc"
+      ? "desc"
+      : "asc"
+    : defaultOrderFor(column);
+  const merged: Record<string, string> = {};
+  for (const [k, v] of Object.entries(searchParams)) {
+    if (v) merged[k] = v;
+  }
+  merged.sort = column;
+  merged.order = nextOrder;
+  const qs = new URLSearchParams(merged).toString();
+  const href = qs ? `/tasks?${qs}` : "/tasks";
+  return (
+    <th className={`sortable-th${isActive ? " is-active" : ""}`}>
+      <Link href={href} scroll={false} className="sortable-th-link">
+        {label}
+        <span className="sortable-th-indicator" aria-hidden>
+          {isActive ? (sortOrder === "desc" ? " ▼" : " ▲") : ""}
+        </span>
+      </Link>
+    </th>
+  );
+}
+
 function BucketBody({
   tasks,
   compact,
   people,
   driveName,
+  dragEnabled = true,
 }: {
   tasks: WorkTask[];
   compact: boolean;
   people: TasksPerson[];
   driveName: string;
+  dragEnabled?: boolean;
 }) {
-  const sorted = tasks.slice().sort(compareByRank);
+  // Caller (SortableTableSection) already sorted into the right order
+  // for the active sort axis; we just render in the order received.
   return (
     <>
-      {sorted.map((t) => (
+      {tasks.map((t) => (
         <TaskRow
           key={t.id}
           task={t}
           compact={compact}
           people={people}
           driveName={driveName}
+          dragEnabled={dragEnabled}
         />
       ))}
     </>
@@ -457,24 +666,28 @@ function TaskRow({
   compact = false,
   people = [],
   driveName = "",
+  dragEnabled = true,
 }: {
   task: WorkTask;
   compact?: boolean;
   people?: TasksPerson[];
   driveName?: string;
+  dragEnabled?: boolean;
 }) {
-  // useSortable wires this row into the bucket-scoped SortableContext
-  // upstream. We apply transform+transition so the row visually shifts
-  // as the user drags through the list (verticalListSortingStrategy
-  // computes the offsets); listeners go on the drag-handle cell so the
-  // rest of the row stays fully clickable for the link / inline editors.
+  // useSortable always runs (rules of hooks), but we ignore its bindings
+  // when drag is disabled — i.e. when the queue is sorted by something
+  // other than rank. Under a non-rank sort, dragging would reorder the
+  // task's stored rank invisibly, so we hide the handle and skip the
+  // attributes / listeners on the row.
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
-  const rowStyle: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.45 : undefined,
-  };
+  const rowStyle: React.CSSProperties = dragEnabled
+    ? {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.45 : undefined,
+      }
+    : {};
 
   // Drive Desktop local path. We deliberately don't include the
   // task-specific subfolder (drive_folder_url is a web URL, not a path);
@@ -488,10 +701,16 @@ function TaskRow({
         }`
       : "";
   return (
-    <tr ref={setNodeRef} style={rowStyle} {...attributes}>
-      <td className="drag-handle-cell" {...listeners} aria-label="גרור לשינוי סדר">
-        <span className="drag-handle-grip" aria-hidden>⋮⋮</span>
-      </td>
+    <tr
+      ref={dragEnabled ? setNodeRef : undefined}
+      style={rowStyle}
+      {...(dragEnabled ? attributes : {})}
+    >
+      {dragEnabled && (
+        <td className="drag-handle-cell" {...listeners} aria-label="גרור לשינוי סדר">
+          <span className="drag-handle-grip" aria-hidden>⋮⋮</span>
+        </td>
+      )}
       {!compact && (
         <td className="tasks-company-cell">
           {task.company ? (
