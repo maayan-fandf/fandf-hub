@@ -6588,6 +6588,222 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
   border-inline-start-style: dashed;
 }
 
+/* ─── Tasks Calendar (month grid) ───────────────────────────────────
+   Reuses the .tasks-status-* color palette indirectly via per-status
+   variants on .tasks-calendar-event so chips match the table/kanban
+   tone. Layout is a 7-column CSS grid; cells are uniform-height so
+   the grid doesn't shift around as task counts vary. */
+.tasks-calendar {
+  margin-top: .5em;
+}
+.tasks-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: .8em;
+  flex-wrap: wrap;
+}
+.tasks-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+}
+.tasks-calendar-title {
+  margin: 0;
+  font-size: 1.25em;
+  font-weight: 700;
+  min-width: 9ch;
+  text-align: center;
+}
+.tasks-calendar-meta {
+  display: flex;
+  align-items: center;
+  gap: .8em;
+}
+.tasks-calendar-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.tasks-calendar-weekrow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+.tasks-calendar-weekrow:last-child { border-bottom: none; }
+.tasks-calendar-weekrow-head {
+  background: var(--surface-soft, var(--surface));
+  font-weight: 600;
+  font-size: .85em;
+  color: var(--muted);
+}
+.tasks-calendar-weekday {
+  padding: .5em .6em;
+  text-align: center;
+  border-inline-start: 1px solid var(--border);
+}
+.tasks-calendar-weekday:first-child { border-inline-start: none; }
+
+.tasks-calendar-cell {
+  min-height: 7.2em;
+  padding: .35em .45em .45em;
+  border-inline-start: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: .2em;
+  position: relative;
+  background: var(--surface);
+}
+.tasks-calendar-cell:first-child { border-inline-start: none; }
+.tasks-calendar-cell.is-other-month {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.02));
+  color: var(--muted);
+}
+.tasks-calendar-cell.is-today {
+  background: rgba(79, 70, 229, 0.06);
+}
+.tasks-calendar-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .85em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: .15em;
+}
+.tasks-calendar-cell.is-today .tasks-calendar-day-num {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  width: 1.6em;
+  height: 1.6em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tasks-calendar-day-count {
+  font-size: .75em;
+  background: var(--surface-soft, rgba(0,0,0,.05));
+  border-radius: 999px;
+  padding: 0 .5em;
+  color: var(--text);
+}
+.tasks-calendar-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .15em;
+}
+.tasks-calendar-event {
+  display: flex;
+  align-items: center;
+  gap: .25em;
+  padding: .15em .45em;
+  border-radius: 6px;
+  font-size: .78em;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--surface-soft, rgba(0,0,0,.04));
+  border-inline-start: 3px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tasks-calendar-event:hover {
+  background: rgba(79, 70, 229, 0.08);
+}
+.tasks-calendar-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tasks-calendar-event-flag { flex: 0 0 auto; }
+
+/* Per-status accent borders — match the same palette used for the
+   tasks-bucket / kanban-column borders so the calendar feels of-a-
+   piece with the other views. */
+.tasks-calendar-event-awaiting_handling { border-inline-start-color: #64748b; }
+.tasks-calendar-event-in_progress { border-inline-start-color: #2563eb; background: rgba(37, 99, 235, 0.08); }
+.tasks-calendar-event-awaiting_clarification { border-inline-start-color: #dc2626; background: rgba(220, 38, 38, 0.08); }
+.tasks-calendar-event-awaiting_approval { border-inline-start-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.tasks-calendar-event-done { border-inline-start-color: #10b981; opacity: 0.65; text-decoration: line-through; }
+.tasks-calendar-event-cancelled { border-inline-start-color: #9ca3af; opacity: 0.55; text-decoration: line-through; }
+.tasks-calendar-event-draft { border-inline-start-color: #9ca3af; opacity: 0.7; }
+
+.tasks-calendar-overflow {
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: .78em;
+  color: var(--accent);
+  padding: .1em .35em;
+  text-align: start;
+}
+.tasks-calendar-overflow:hover { text-decoration: underline; }
+.tasks-calendar-overflow-list {
+  position: absolute;
+  inset-inline-start: .35em;
+  inset-inline-end: .35em;
+  top: 100%;
+  z-index: 5;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .4em;
+  list-style: none;
+  margin: .25em 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: .15em;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tasks-calendar-undated {
+  margin-top: 1em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .6em .9em;
+  background: var(--surface);
+}
+.tasks-calendar-undated summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+.tasks-calendar-undated-list {
+  list-style: none;
+  margin: .6em 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .25em;
+}
+
+@media (max-width: 640px) {
+  .tasks-calendar-cell { min-height: 5em; padding: .25em .3em; }
+  .tasks-calendar-event { font-size: .72em; padding: .1em .35em; }
+  .tasks-calendar-weekday { padding: .35em .3em; font-size: .8em; }
+  .tasks-calendar-day-count { display: none; }
+  .tasks-calendar-event-title {
+    /* On phones the cell is too narrow for full task titles — let the
+       title wrap to 2 lines so urgent items don't collapse to ellipsis. */
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+  }
+}
+
 /* "🆕 חדש" chip — small green pill that surfaces tasks created in the
    last 24 hours. Replaces the chronological within-column sort signal
    we lost when we moved to rank-based ordering. */

@@ -3,29 +3,30 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
-type View = "table" | "kanban";
+type View = "table" | "kanban" | "calendar";
 
 type Props = {
   current: View;
   /** Existing search params on /tasks. We preserve everything except
-   *  `view`, so toggling between table and kanban keeps the user's
-   *  filters / role-defaults intact. */
+   *  `view`, so toggling between views keeps the user's filters /
+   *  role-defaults intact. */
   searchParams: Record<string, string | undefined>;
 };
 
 /**
  * Segmented control next to the page title that switches the queue
- * between the table and the kanban board. Client component because we
- * call `router.refresh()` after `router.push()` so the user always sees
- * fresh data when switching views — without it, Next's RSC prefetch
- * cache could serve a stale payload from a few seconds earlier (e.g.
- * after a status change in another tab the toggled view would lag).
+ * between the table, kanban board, and calendar view. Client component
+ * because we call `router.refresh()` after `router.push()` so the user
+ * always sees fresh data when switching views — without it, Next's RSC
+ * prefetch cache could serve a stale payload from a few seconds earlier
+ * (e.g. after a status change in another tab the toggled view would lag).
  */
 export default function TasksViewToggle({ current, searchParams }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const tableHref = buildHref(searchParams, { view: "" });
   const kanbanHref = buildHref(searchParams, { view: "kanban" });
+  const calendarHref = buildHref(searchParams, { view: "calendar" });
 
   function navigate(href: string, target: View) {
     if (target === current) return;
@@ -62,6 +63,17 @@ export default function TasksViewToggle({ current, searchParams }: Props) {
       >
         <span aria-hidden>🗂️</span>
         קנבן
+      </button>
+      <button
+        type="button"
+        onClick={() => navigate(calendarHref, "calendar")}
+        className={`tasks-view-toggle-btn${current === "calendar" ? " is-active" : ""}`}
+        aria-current={current === "calendar" ? "page" : undefined}
+        role="tab"
+        aria-selected={current === "calendar"}
+      >
+        <span aria-hidden>📅</span>
+        לוח שנה
       </button>
     </div>
   );

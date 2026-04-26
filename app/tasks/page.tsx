@@ -16,6 +16,7 @@ import TasksQueue, {
   type TasksSortOrder,
 } from "@/components/TasksQueue";
 import TasksKanban from "@/components/TasksKanban";
+import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 
@@ -38,9 +39,12 @@ type Search = {
   /** `mine=0` opts out of the default "author = me" filter (Data-Plus-
    *  style). When absent we treat it as `mine=1`. */
   mine?: string;
-  /** `view=kanban` switches to the drag-and-drop board; default is the
-   *  Data-Plus-style table queue. */
+  /** `view=kanban` switches to the drag-and-drop board, `view=calendar`
+   *  to the month-grid; default is the Data-Plus-style table queue. */
   view?: string;
+  /** Calendar month — YYYY-MM. Honored only when view=calendar.
+   *  Default is the current month. */
+  month?: string;
   /** Sort axis applied within each status bucket on the table view.
    *  Defaults to `rank` (drag-driven manual order). Other values:
    *  title | priority | requested_date | created_at | updated_at. */
@@ -157,7 +161,12 @@ export default async function TasksPage({
     departmentSet.size === 0
       ? DEPARTMENTS_FALLBACK
       : Array.from(departmentSet).sort((a, b) => a.localeCompare(b, "he"));
-  const view: "kanban" | "table" = sp.view === "kanban" ? "kanban" : "table";
+  const view: "kanban" | "table" | "calendar" =
+    sp.view === "kanban"
+      ? "kanban"
+      : sp.view === "calendar"
+        ? "calendar"
+        : "table";
 
   return (
     <main className="container">
@@ -269,6 +278,14 @@ export default async function TasksPage({
           driveName={driveName}
           sort={parseSort(sp.sort)}
           sortOrder={parseOrder(sp.order)}
+          searchParams={sp as Record<string, string | undefined>}
+        />
+      )}
+
+      {!error && view === "calendar" && (
+        <TasksCalendar
+          tasks={tasks}
+          initialMonth={sp.month}
           searchParams={sp as Record<string, string | undefined>}
         />
       )}
