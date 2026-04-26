@@ -3932,6 +3932,16 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   width: 100%;
   min-width: 0;
 }
+/* Active-filter cue — when a select/input has a non-default value the
+   server stamps `data-active="1"` on it. Subtle accent tint + accent
+   border so users can scan the bar and instantly see which filters
+   are narrowing the result set (the tasks-filter-summary-badge counts
+   them on mobile; this is the desktop-equivalent affordance). */
+.tasks-filter-bar select[data-active],
+.tasks-filter-bar input[data-active] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
 .tasks-filter-actions {
   grid-column: 1 / -1;
   display: flex;

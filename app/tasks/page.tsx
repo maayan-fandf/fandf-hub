@@ -530,9 +530,17 @@ function TasksFilterBar({
           OR assignee OR mentioned-in-discussion. The
           project_manager URL param still works for legacy links;
           new UI just doesn't surface it. */}
+      {/* `data-active="1"` on any field whose current value is non-empty —
+          CSS uses it to tint the field with --accent-soft so users can
+          scan at a glance which filters are narrowing the result set
+          (otherwise it's easy to miss e.g. a stuck חברה filter). */}
       <label>
         חברה
-        <select name="company" defaultValue={current.company}>
+        <select
+          name="company"
+          defaultValue={current.company}
+          data-active={current.company ? "1" : undefined}
+        >
           <option value="">הכל</option>
           {companies.map((c) => (
             <option key={c} value={c}>
@@ -543,7 +551,11 @@ function TasksFilterBar({
       </label>
       <label>
         פרויקט
-        <select name="project" defaultValue={current.project}>
+        <select
+          name="project"
+          defaultValue={current.project}
+          data-active={current.project ? "1" : undefined}
+        >
           <option value="">הכל</option>
           {projects.map((p) => (
             <option key={p} value={p}>
@@ -560,6 +572,7 @@ function TasksFilterBar({
           list="tasks-campaigns-filter"
           placeholder="הכל"
           defaultValue={current.campaign}
+          data-active={current.campaign ? "1" : undefined}
         />
       </label>
       <datalist id="tasks-campaigns-filter">
@@ -569,7 +582,11 @@ function TasksFilterBar({
       </datalist>
       <label>
         מחלקה
-        <select name="department" defaultValue={current.department}>
+        <select
+          name="department"
+          defaultValue={current.department}
+          data-active={current.department ? "1" : undefined}
+        >
           <option value="">הכל</option>
           {departments.map((d) => (
             <option key={d} value={d}>
@@ -580,7 +597,11 @@ function TasksFilterBar({
       </label>
       <label>
         סטטוס
-        <select name="status" defaultValue={current.status}>
+        <select
+          name="status"
+          defaultValue={current.status}
+          data-active={current.status ? "1" : undefined}
+        >
           {statuses.map((s) => (
             <option key={s.val} value={s.val}>
               {s.label}
@@ -590,7 +611,11 @@ function TasksFilterBar({
       </label>
       <label>
         דחיפות
-        <select name="priority" defaultValue={current.priority}>
+        <select
+          name="priority"
+          defaultValue={current.priority}
+          data-active={current.priority ? "1" : undefined}
+        >
           {priorities.map((p) => (
             <option key={p.val} value={p.val}>
               {p.label}
@@ -605,6 +630,7 @@ function TasksFilterBar({
             type="date"
             name="requested_date_from"
             defaultValue={current.requested_date_from}
+            data-active={current.requested_date_from ? "1" : undefined}
             aria-label="מ"
           />
           <span className="date-range-sep">—</span>
@@ -612,6 +638,7 @@ function TasksFilterBar({
             type="date"
             name="requested_date_to"
             defaultValue={current.requested_date_to}
+            data-active={current.requested_date_to ? "1" : undefined}
             aria-label="עד"
           />
         </div>
@@ -627,6 +654,7 @@ function TasksFilterBar({
             list="tasks-people"
             placeholder={current.author || "name@domain"}
             defaultValue={current.author}
+            data-active={current.author ? "1" : undefined}
           />
         </label>
         <label>
@@ -637,6 +665,7 @@ function TasksFilterBar({
             list="tasks-people"
             placeholder="name@domain"
             defaultValue={current.assignee}
+            data-active={current.assignee ? "1" : undefined}
           />
         </label>
         <label>
@@ -647,6 +676,7 @@ function TasksFilterBar({
             list="tasks-people"
             placeholder="name@domain"
             defaultValue={current.approver}
+            data-active={current.approver ? "1" : undefined}
           />
         </label>
         <label>
@@ -657,6 +687,7 @@ function TasksFilterBar({
             list="tasks-people"
             placeholder="name@domain"
             defaultValue={current.involved_with}
+            data-active={current.involved_with ? "1" : undefined}
             title="כל המשימות שאדם זה מעורב בהן — כותב / מאשר / מנהל פרויקט / עובד מבצע / או תויג בדיון"
           />
         </label>
