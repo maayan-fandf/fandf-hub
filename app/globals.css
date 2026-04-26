@@ -347,6 +347,19 @@ a:hover {
   margin-bottom: 0.2rem;
   flex-wrap: wrap;
 }
+.thread-reply-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+  /* Subtle until hovered — keep the head row uncluttered when scanning. */
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.thread-reply:hover .thread-reply-actions,
+.thread-reply-actions:focus-within {
+  opacity: 1;
+}
 
 .thread-reply-author {
   font-weight: 600;

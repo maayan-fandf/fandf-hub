@@ -1,5 +1,7 @@
 import Avatar from "./Avatar";
 import TaskReplyComposer from "./TaskReplyComposer";
+import EditDrawer from "./EditDrawer";
+import DeleteButton from "./DeleteButton";
 import { getTaskComments } from "@/lib/appsScript";
 
 type Props = {
@@ -21,7 +23,9 @@ export default async function TaskComments({ taskId }: Props) {
     );
   }
 
-  const { comments } = data;
+  const { comments, me } = data;
+  const myEmail = (me?.email || "").toLowerCase();
+  const isAdmin = !!me?.isAdmin;
 
   return (
     <section className="task-detail-comments">
@@ -38,34 +42,57 @@ export default async function TaskComments({ taskId }: Props) {
 
       {comments.length > 0 && (
         <ul className="task-comments-list">
-          {comments.map((c) => (
-            <li key={c.comment_id} className="thread-reply">
-              <Avatar
-                name={c.author_email}
-                title={c.author_name || c.author_email}
-                size={26}
-              />
-              <div className="thread-reply-body">
-                <div className="thread-reply-head">
-                  <span className="thread-reply-author">
-                    {c.author_name || c.author_email}
-                  </span>
-                  <span className="thread-reply-time" title={c.timestamp}>
-                    {formatRelative(c.timestamp)}
-                  </span>
-                  {c.edited_at && (
-                    <span
-                      className="chip chip-muted"
-                      title={`נערך ${formatRelative(c.edited_at)}`}
-                    >
-                      📝 נערך
+          {comments.map((c) => {
+            const canEdit =
+              !!myEmail && c.author_email.toLowerCase() === myEmail;
+            const canDelete = canEdit || isAdmin;
+            return (
+              <li key={c.comment_id} className="thread-reply">
+                <Avatar
+                  name={c.author_email}
+                  title={c.author_name || c.author_email}
+                  size={26}
+                />
+                <div className="thread-reply-body">
+                  <div className="thread-reply-head">
+                    <span className="thread-reply-author">
+                      {c.author_name || c.author_email}
                     </span>
-                  )}
+                    <span className="thread-reply-time" title={c.timestamp}>
+                      {formatRelative(c.timestamp)}
+                    </span>
+                    {c.edited_at && (
+                      <span
+                        className="chip chip-muted"
+                        title={`נערך ${formatRelative(c.edited_at)}`}
+                      >
+                        📝 נערך
+                      </span>
+                    )}
+                    {(canEdit || canDelete) && (
+                      <span className="thread-reply-actions">
+                        {canEdit && (
+                          <EditDrawer
+                            commentId={c.comment_id}
+                            initialBody={c.body}
+                            iconOnly
+                          />
+                        )}
+                        {canDelete && (
+                          <DeleteButton
+                            commentId={c.comment_id}
+                            itemLabel="את ההערה"
+                            iconOnly
+                          />
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <div className="thread-reply-text">{renderBody(c.body)}</div>
                 </div>
-                <div className="thread-reply-text">{renderBody(c.body)}</div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
 

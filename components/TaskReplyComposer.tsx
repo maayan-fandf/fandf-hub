@@ -70,8 +70,18 @@ export default function TaskReplyComposer({ taskId }: Props) {
         const msg = ("error" in data && data.error) || `העלאה נכשלה (${res.status})`;
         throw new Error(msg);
       }
-      const isImage = (file.type || data.mimeType || "").startsWith("image/");
       const safeName = (data.name || file.name || "file").replace(/[\[\]()]/g, "");
+      // Image detection — try mime type first, fall back to extension.
+      // Some upload paths (drag from another browser tab, certain
+      // clipboard sources) leave file.type empty and the server stores
+      // the file as application/octet-stream, which made our previous
+      // mime-only check render real images as boring file links.
+      const mimeType = (file.type || data.mimeType || "").toLowerCase();
+      const fromMime = mimeType.startsWith("image/");
+      const fromExt = /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(
+        safeName,
+      );
+      const isImage = fromMime || fromExt;
       const token = isImage
         ? `\n![${safeName}](${data.viewUrl})\n`
         : `\n[📎 ${safeName}](${data.viewUrl})\n`;
