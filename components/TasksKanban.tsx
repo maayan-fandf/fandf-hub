@@ -254,8 +254,13 @@ export default function TasksKanban({
       )}
       <div className="kanban-board">
         {COLUMNS.map((col) => {
-          const isTerminal = col.key === "done" || col.key === "cancelled";
-          if (isTerminal && !showArchive) return null;
+          // "done" stays visible on the kanban regardless of the
+          // archive pref — dragging to done is the primary completion
+          // gesture and the green column is part of the satisfying
+          // workflow signal. Only "cancelled" collapses behind the
+          // archive pill (rare + terminal deadweight that piles up).
+          const isHideable = col.key === "cancelled";
+          if (isHideable && !showArchive) return null;
           return (
             <KanbanColumn
               key={col.key}
@@ -265,15 +270,10 @@ export default function TasksKanban({
             />
           );
         })}
-        {/* Archive expand/collapse affordance. When the user has
-            hide_archived on, the done + cancelled columns are
-            replaced by a thin pill the user can click to peek;
-            once expanded, the pill flips to "כווץ" so the user
-            can collapse without flipping the global pref. */}
+        {/* Archive expand/collapse affordance — only cancelled
+            lives behind it now, so the count + label reflect that. */}
         {hideArchived && (() => {
-          const archivedTotal =
-            (byStatus["done"]?.length || 0) +
-            (byStatus["cancelled"]?.length || 0);
+          const archivedTotal = byStatus["cancelled"]?.length || 0;
           if (!archiveExpanded && archivedTotal === 0) return null;
           return (
             <button
@@ -285,8 +285,8 @@ export default function TasksKanban({
               aria-expanded={archiveExpanded}
               title={
                 archiveExpanded
-                  ? "כווץ את עמודות הארכיון"
-                  : `${archivedTotal} משימות בארכיון מוסתרות — לחץ להצגה`
+                  ? "כווץ את עמודת הארכיון"
+                  : `${archivedTotal} משימות בוטלו מוסתרות — לחץ להצגה`
               }
             >
               <span aria-hidden>📦</span>
