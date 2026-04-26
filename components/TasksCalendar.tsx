@@ -2,6 +2,18 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 
 type Props = {
@@ -60,16 +72,37 @@ const MAX_PER_CELL = 3;
  *   - Clicking a day cell → expand drawer in a popover (max 3 chips
  *     visible per cell; "+N" overflow opens the day drawer).
  *
- * No drag for status change here — calendar is read-mostly for now.
- * Adding click-to-reschedule is a separate follow-up because it needs
- * server writes + an optimistic-update layer.
+ * Drag-to-reschedule:
+ *   - Each chip is draggable, each day cell is droppable.
+ *   - Drop sets task.requested_date to the target day's YYYY-MM-DD.
+ *   - Drop on the "ללא תאריך" panel clears requested_date.
+ *   - Optimistic local update; reverts + shows error if the server
+ *     rejects (e.g. transient network failure).
+ *   - 8px activation distance keeps a click-to-open from accidentally
+ *     starting a drag, mirroring TasksKanban's tuning.
  */
 export default function TasksCalendar({
-  tasks,
+  tasks: initialTasks,
   initialMonth,
   searchParams,
 }: Props) {
   const [activeDay, setActiveDay] = useState<string>("");
+  // Lift tasks to local state so drag-to-reschedule can update the
+  // grid optimistically before the server roundtrip lands. The parent
+  // page passes in the server-rendered list as the seed.
+  const [tasks, setTasks] = useState(initialTasks);
+  const [error, setError] = useState<string | null>(null);
+
+  // dnd-kit sensors. Same activation thresholds as the table view so
+  // a click on a chip's title still navigates to /tasks/[id] without
+  // accidentally grabbing the chip.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    }),
+    useSensor(KeyboardSensor),
+  );
 
   const today = useMemo(() => toIsoDate(new Date()), []);
   const month = parseMonth(initialMonth) || monthFromIso(today);
@@ -105,6 +138,65 @@ export default function TasksCalendar({
     return { byDay, undated };
   }, [tasks]);
 
+  /** Drop handler — `event.over.id` is the droppable id we set below
+   *  ("day:<iso>" for a day cell, "undated" for the panel). The
+   *  active draggable's id is the task id. */
+  async function onDragEnd(e: DragEndEvent) {
+    setError(null);
+    if (!e.over) return;
+    const taskId = String(e.active.id);
+    const overId = String(e.over.id);
+    const dragged = tasks.find((t) => t.id === taskId);
+    if (!dragged) return;
+
+    let nextDate = "";
+    if (overId === "undated") {
+      nextDate = "";
+    } else if (overId.startsWith("day:")) {
+      nextDate = overId.slice(4);
+    } else {
+      return;
+    }
+    const currentDate = (dragged.requested_date || "").slice(0, 10);
+    if (currentDate === nextDate) return;
+
+    // Optimistic. We replace just the requested_date so the chip
+    // hops to its new cell immediately; the rest of the row is
+    // reused until the next page-render reconciles against the
+    // server.
+    const prev = tasks;
+    const next = tasks.map((t) =>
+      t.id === taskId ? { ...t, requested_date: nextDate } : t,
+    );
+    setTasks(next);
+
+    try {
+      const res = await fetch("/api/worktasks/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: taskId,
+          patch: {
+            requested_date: nextDate,
+            note: nextDate
+              ? `calendar: reschedule → ${nextDate}`
+              : "calendar: clear requested date",
+          },
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `Update failed (${res.status})`);
+      }
+    } catch (err) {
+      setTasks(prev);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   const totalInMonth = useMemo(() => {
     let n = 0;
     for (const week of grid) {
@@ -127,152 +219,247 @@ export default function TasksCalendar({
   const monthLabel = `${MONTHS_HE[monthIdx]} ${year}`;
 
   return (
-    <section className="tasks-calendar">
-      <header className="tasks-calendar-head">
-        <div className="tasks-calendar-nav">
-          <Link href={prevMonthHref} className="btn-ghost btn-sm" scroll={false}>
-            ‹ קודם
-          </Link>
-          <h2 className="tasks-calendar-title">{monthLabel}</h2>
-          <Link href={nextMonthHref} className="btn-ghost btn-sm" scroll={false}>
-            הבא ›
-          </Link>
-        </div>
-        <div className="tasks-calendar-meta">
-          <span className="muted">{totalInMonth} משימות בחודש זה</span>
-          <Link href={todayHref} className="btn-ghost btn-sm" scroll={false}>
-            היום
-          </Link>
-        </div>
-      </header>
+    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      <section className="tasks-calendar">
+        <header className="tasks-calendar-head">
+          <div className="tasks-calendar-nav">
+            <Link href={prevMonthHref} className="btn-ghost btn-sm" scroll={false}>
+              ‹ קודם
+            </Link>
+            <h2 className="tasks-calendar-title">{monthLabel}</h2>
+            <Link href={nextMonthHref} className="btn-ghost btn-sm" scroll={false}>
+              הבא ›
+            </Link>
+          </div>
+          <div className="tasks-calendar-meta">
+            <span className="muted">{totalInMonth} משימות בחודש זה</span>
+            <Link href={todayHref} className="btn-ghost btn-sm" scroll={false}>
+              היום
+            </Link>
+          </div>
+        </header>
 
-      <div
-        className="tasks-calendar-grid"
-        role="grid"
-        aria-label={`לוח שנה ${monthLabel}`}
-      >
-        <div className="tasks-calendar-weekrow tasks-calendar-weekrow-head" role="row">
-          {WEEKDAYS_HE.map((d) => (
-            <div key={d} className="tasks-calendar-weekday" role="columnheader">
-              {d}
+        {error && (
+          <div className="tasks-calendar-error" role="alert">
+            ⚠️ {error}
+            <button
+              type="button"
+              className="tasks-calendar-error-dismiss"
+              onClick={() => setError(null)}
+              aria-label="סגור"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <div
+          className="tasks-calendar-grid"
+          role="grid"
+          aria-label={`לוח שנה ${monthLabel}`}
+        >
+          <div className="tasks-calendar-weekrow tasks-calendar-weekrow-head" role="row">
+            {WEEKDAYS_HE.map((d) => (
+              <div key={d} className="tasks-calendar-weekday" role="columnheader">
+                {d}
+              </div>
+            ))}
+          </div>
+          {grid.map((week, wi) => (
+            <div key={wi} className="tasks-calendar-weekrow" role="row">
+              {week.map((day) => {
+                const dayTasks = byDay.get(day.iso) || [];
+                const visible = dayTasks.slice(0, MAX_PER_CELL);
+                const overflow = dayTasks.length - visible.length;
+                const isToday = day.iso === today;
+                const isOpen = activeDay === day.iso;
+                return (
+                  <DroppableDayCell
+                    key={day.iso}
+                    iso={day.iso}
+                    inMonth={day.inMonth}
+                    isToday={isToday}
+                    isOpen={isOpen}
+                  >
+                    <div className="tasks-calendar-cell-head">
+                      <span className="tasks-calendar-day-num">{day.dayNum}</span>
+                      {dayTasks.length > 0 && (
+                        <span
+                          className="tasks-calendar-day-count"
+                          title={`${dayTasks.length} משימות`}
+                          aria-label={`${dayTasks.length} משימות`}
+                        >
+                          {dayTasks.length}
+                        </span>
+                      )}
+                    </div>
+                    <ul className="tasks-calendar-events">
+                      {visible.map((t) => (
+                        <li key={t.id}>
+                          <DraggableEvent task={t} />
+                        </li>
+                      ))}
+                      {overflow > 0 && (
+                        <li>
+                          <button
+                            type="button"
+                            className="tasks-calendar-overflow"
+                            onClick={() =>
+                              setActiveDay(isOpen ? "" : day.iso)
+                            }
+                            aria-expanded={isOpen}
+                          >
+                            {isOpen ? "סגור" : `+${overflow} נוספות`}
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                    {isOpen && overflow > 0 && (
+                      <ul className="tasks-calendar-overflow-list">
+                        {dayTasks.slice(MAX_PER_CELL).map((t) => (
+                          <li key={t.id}>
+                            <DraggableEvent task={t} hideFlag />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </DroppableDayCell>
+                );
+              })}
             </div>
           ))}
         </div>
-        {grid.map((week, wi) => (
-          <div key={wi} className="tasks-calendar-weekrow" role="row">
-            {week.map((day) => {
-              const dayTasks = byDay.get(day.iso) || [];
-              const visible = dayTasks.slice(0, MAX_PER_CELL);
-              const overflow = dayTasks.length - visible.length;
-              const isToday = day.iso === today;
-              const isOpen = activeDay === day.iso;
-              return (
-                <div
-                  key={day.iso}
-                  role="gridcell"
-                  className={`tasks-calendar-cell${
-                    day.inMonth ? "" : " is-other-month"
-                  }${isToday ? " is-today" : ""}${isOpen ? " is-open" : ""}`}
-                >
-                  <div className="tasks-calendar-cell-head">
-                    <span className="tasks-calendar-day-num">{day.dayNum}</span>
-                    {dayTasks.length > 0 && (
-                      <span
-                        className="tasks-calendar-day-count"
-                        title={`${dayTasks.length} משימות`}
-                        aria-label={`${dayTasks.length} משימות`}
-                      >
-                        {dayTasks.length}
-                      </span>
-                    )}
-                  </div>
-                  <ul className="tasks-calendar-events">
-                    {visible.map((t) => (
-                      <li key={t.id}>
-                        <Link
-                          href={`/tasks/${encodeURIComponent(t.id)}`}
-                          className={`tasks-calendar-event tasks-calendar-event-${t.status}`}
-                          title={`${t.project} · ${t.title}${
-                            t.priority === 1 ? " · 🔥 גבוהה" : ""
-                          }`}
-                        >
-                          {t.priority === 1 && (
-                            <span aria-hidden className="tasks-calendar-event-flag">
-                              🔥
-                            </span>
-                          )}
-                          <span className="tasks-calendar-event-title">{t.title}</span>
-                        </Link>
-                      </li>
-                    ))}
-                    {overflow > 0 && (
-                      <li>
-                        <button
-                          type="button"
-                          className="tasks-calendar-overflow"
-                          onClick={() =>
-                            setActiveDay(isOpen ? "" : day.iso)
-                          }
-                          aria-expanded={isOpen}
-                        >
-                          {isOpen ? "סגור" : `+${overflow} נוספות`}
-                        </button>
-                      </li>
-                    )}
-                  </ul>
-                  {isOpen && overflow > 0 && (
-                    <ul className="tasks-calendar-overflow-list">
-                      {dayTasks.slice(MAX_PER_CELL).map((t) => (
-                        <li key={t.id}>
-                          <Link
-                            href={`/tasks/${encodeURIComponent(t.id)}`}
-                            className={`tasks-calendar-event tasks-calendar-event-${t.status}`}
-                          >
-                            <span className="tasks-calendar-event-title">{t.title}</span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
+
+        <UndatedPanel undated={undated} />
+
+        {tasks.length === 0 && (
+          <div className="empty">
+            <span className="emoji" aria-hidden>
+              🌿
+            </span>
+            אין משימות תואמות לסינון.
           </div>
-        ))}
+        )}
+      </section>
+    </DndContext>
+  );
+}
+
+/** A day cell — the droppable target for drag-to-reschedule. The
+ *  droppable id encodes the date (`day:YYYY-MM-DD`); the drop handler
+ *  pulls the date out and patches the task's requested_date. */
+function DroppableDayCell({
+  iso,
+  inMonth,
+  isToday,
+  isOpen,
+  children,
+}: {
+  iso: string;
+  inMonth: boolean;
+  isToday: boolean;
+  isOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day:${iso}` });
+  return (
+    <div
+      ref={setNodeRef}
+      role="gridcell"
+      className={`tasks-calendar-cell${inMonth ? "" : " is-other-month"}${
+        isToday ? " is-today" : ""
+      }${isOpen ? " is-open" : ""}${isOver ? " is-drop-target" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A single event chip — draggable so users can re-schedule by
+ *  pulling it onto another day. The 8px MouseSensor activation
+ *  threshold keeps a normal click on the title firing the Link
+ *  navigation; only meaningful pointer movement starts a drag. */
+function DraggableEvent({
+  task,
+  hideFlag = false,
+}: {
+  task: WorkTask;
+  hideFlag?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: task.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.45 : undefined,
+    cursor: "grab",
+  };
+  return (
+    <Link
+      ref={setNodeRef}
+      href={`/tasks/${encodeURIComponent(task.id)}`}
+      style={style}
+      className={`tasks-calendar-event tasks-calendar-event-${task.status}`}
+      title={`${task.project} · ${task.title}${
+        task.priority === 1 ? " · 🔥 גבוהה" : ""
+      }${" · גרור ליום אחר כדי לדחות"}`}
+      {...attributes}
+      {...listeners}
+      // Stop propagation so the underlying gridcell's click doesn't
+      // double-handle. dnd-kit's listeners already swallow the event
+      // when a drag starts, so this only matters for plain clicks.
+      onClick={(e) => e.stopPropagation()}
+    >
+      {task.priority === 1 && !hideFlag && (
+        <span aria-hidden className="tasks-calendar-event-flag">
+          🔥
+        </span>
+      )}
+      <span className="tasks-calendar-event-title">{task.title}</span>
+    </Link>
+  );
+}
+
+/** "ללא תאריך" panel — also acts as a droppable target. Dropping a
+ *  scheduled task here clears its requested_date. The chips inside
+ *  are themselves draggable so a user can re-schedule a previously
+ *  un-dated task by pulling it to a day. */
+function UndatedPanel({ undated }: { undated: WorkTask[] }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "undated" });
+  if (undated.length === 0) {
+    // Render an empty zone too so users discover the "drop here to
+    // unschedule" affordance even when there's nothing un-dated yet.
+    return (
+      <div
+        ref={setNodeRef}
+        className={`tasks-calendar-undated tasks-calendar-undated-empty${
+          isOver ? " is-drop-target" : ""
+        }`}
+        aria-label="גרור לכאן כדי להסיר תאריך"
+      >
+        <span className="muted">
+          {isOver ? "שחרר כדי להסיר תאריך" : "גרור משימה לכאן כדי להסיר תאריך"}
+        </span>
       </div>
-
-      {undated.length > 0 && (
-        <details className="tasks-calendar-undated">
-          <summary>
-            ללא תאריך מבוקש{" "}
-            <span className="muted">({undated.length})</span>
-          </summary>
-          <ul className="tasks-calendar-undated-list">
-            {undated.map((t) => (
-              <li key={t.id}>
-                <Link
-                  href={`/tasks/${encodeURIComponent(t.id)}`}
-                  className={`tasks-calendar-event tasks-calendar-event-${t.status}`}
-                >
-                  <span className="tasks-calendar-event-title">
-                    {t.project} · {t.title}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      {tasks.length === 0 && (
-        <div className="empty">
-          <span className="emoji" aria-hidden>
-            🌿
-          </span>
-          אין משימות תואמות לסינון.
-        </div>
-      )}
-    </section>
+    );
+  }
+  return (
+    <details
+      ref={setNodeRef}
+      className={`tasks-calendar-undated${isOver ? " is-drop-target" : ""}`}
+      open
+    >
+      <summary>
+        ללא תאריך מבוקש{" "}
+        <span className="muted">({undated.length})</span>
+      </summary>
+      <ul className="tasks-calendar-undated-list">
+        {undated.map((t) => (
+          <li key={t.id}>
+            <DraggableEvent task={t} />
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

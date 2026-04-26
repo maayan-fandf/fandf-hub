@@ -6732,6 +6732,50 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
 .tasks-calendar-cell.is-today {
   background: rgba(79, 70, 229, 0.06);
 }
+/* Drag-to-reschedule: cell highlights when a chip is hovering over
+   it. Border + background flip in lockstep with the kanban column's
+   drop-target style so the affordance feels of-a-piece. */
+.tasks-calendar-cell.is-drop-target {
+  background: rgba(37, 99, 235, 0.1);
+  outline: 2px dashed #2563eb;
+  outline-offset: -2px;
+}
+.tasks-calendar-undated.is-drop-target,
+.tasks-calendar-undated-empty.is-drop-target {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: #2563eb;
+}
+.tasks-calendar-undated-empty {
+  margin-top: 1em;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 0.9em 1em;
+  text-align: center;
+  font-size: 0.9em;
+  color: var(--muted);
+  background: var(--surface);
+  transition: background 0.15s, border-color 0.15s;
+}
+.tasks-calendar-error {
+  margin-bottom: 0.6em;
+  padding: 0.55em 0.9em;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.92em;
+}
+.tasks-calendar-error-dismiss {
+  margin-inline-start: auto;
+  background: transparent;
+  border: 0;
+  font-size: 1.1em;
+  cursor: pointer;
+  color: inherit;
+}
 .tasks-calendar-cell-head {
   display: flex;
   align-items: center;
