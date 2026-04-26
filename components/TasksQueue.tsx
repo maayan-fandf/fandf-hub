@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   KeyboardSensor,
@@ -238,6 +239,7 @@ export default function TasksQueue({
   // value is the server-rendered list passed in by the page.
   const [tasks, setTasks] = useState(initialTasks);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   // Resolve the order for the current sort axis. When the caller
   // passes a sort but no order, fall back to the column's natural
@@ -247,7 +249,12 @@ export default function TasksQueue({
     () => comparatorFor(sort, effectiveOrder),
     [sort, effectiveOrder],
   );
-  const dragEnabled = sort === "rank";
+  // Drag is always enabled — under a non-rank sort, dropping still
+  // updates the row's rank and we auto-flip the URL back to rank
+  // sort so the user sees the new manual order. Without the auto-
+  // flip, the rank update would be invisible (the active sort would
+  // override). See onDragEnd's post-success branch.
+  const dragEnabled = true;
 
   // 8px activation distance keeps a click on a row's title link from
   // accidentally starting a drag — pointer movement past the threshold
@@ -320,6 +327,22 @@ export default function TasksQueue({
         | { ok: false; error: string };
       if (!res.ok || !data.ok) {
         throw new Error("error" in data ? data.error : "Update failed");
+      }
+      // If the user was sorted by something other than rank, the
+      // rank update we just saved would be invisible until they
+      // reset sort manually. Auto-reset so the drag's outcome
+      // shows up immediately. Preserve every other URL param so
+      // filters / view stay intact.
+      if (sort !== "rank" && searchParams) {
+        const merged: Record<string, string> = {};
+        for (const [k, v] of Object.entries(searchParams)) {
+          if (!v) continue;
+          if (k === "sort" || k === "order") continue;
+          merged[k] = v;
+        }
+        const qs = new URLSearchParams(merged).toString();
+        router.push(qs ? `/tasks?${qs}` : "/tasks");
+        router.refresh();
       }
     } catch (err) {
       setTasks(prev);
