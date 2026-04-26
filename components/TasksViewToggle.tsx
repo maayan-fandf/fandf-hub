@@ -1,9 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
 type View = "table" | "kanban" | "calendar";
+
+const VIEW_LABELS: Record<View, string> = {
+  table: "רשימה",
+  kanban: "קנבן",
+  calendar: "לוח שנה",
+};
 
 type Props = {
   current: View;
@@ -24,12 +30,17 @@ type Props = {
 export default function TasksViewToggle({ current, searchParams }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [announce, setAnnounce] = useState("");
   const tableHref = buildHref(searchParams, { view: "" });
   const kanbanHref = buildHref(searchParams, { view: "kanban" });
   const calendarHref = buildHref(searchParams, { view: "calendar" });
 
   function navigate(href: string, target: View) {
     if (target === current) return;
+    // Announce to screen readers — without this, the visual change
+    // is silent for keyboard / NVDA / VoiceOver users. The aria-live
+    // region below picks up the message and reads it once.
+    setAnnounce(`עוברים לתצוגת ${VIEW_LABELS[target]}`);
     startTransition(() => {
       router.push(href);
       router.refresh();
@@ -42,6 +53,12 @@ export default function TasksViewToggle({ current, searchParams }: Props) {
       role="tablist"
       aria-label="תצוגה"
     >
+      {/* Screen-reader-only live region — announces view changes
+          for keyboard / AT users since the visual transition is
+          silent. polite = wait for current speech to finish. */}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {announce}
+      </span>
       <button
         type="button"
         onClick={() => navigate(tableHref, "table")}

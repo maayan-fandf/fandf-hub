@@ -168,6 +168,19 @@ export default async function TasksPage({
         ? "calendar"
         : "table";
 
+  // Sort fallback chain — explicit URL param > persisted user pref >
+  // hard default ("rank" / column-natural direction). Reading from
+  // prefs lets the table remember "I sorted by עדיפות yesterday"
+  // without forcing a query string everywhere.
+  const persistedSort = parseSort(prefs?.tasks_sort);
+  const persistedOrder = parseOrder(prefs?.tasks_sort_order);
+  const effectiveSort: TasksSortKey = sp.sort
+    ? parseSort(sp.sort)
+    : persistedSort;
+  const effectiveSortOrder: TasksSortOrder | undefined = sp.order
+    ? parseOrder(sp.order)
+    : persistedOrder;
+
   return (
     <main className="container">
       <header className="page-header tasks-page-header">
@@ -282,8 +295,8 @@ export default async function TasksPage({
           groupByCompany={true}
           people={people}
           driveName={driveName}
-          sort={parseSort(sp.sort)}
-          sortOrder={parseOrder(sp.order)}
+          sort={effectiveSort}
+          sortOrder={effectiveSortOrder}
           searchParams={sp as Record<string, string | undefined>}
         />
       )}

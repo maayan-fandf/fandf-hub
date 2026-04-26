@@ -30,6 +30,16 @@ export type UserPrefs = {
    *  visiting /notifications without losing anything. Empty = no
    *  snooze active. */
   notifications_snooze_until: string;
+  /** Last-used sort axis on the /tasks table view. Empty = "rank"
+   *  (the manual drag-driven order). Persisted so column-header
+   *  sorting survives a navigation away and back. The URL param
+   *  always takes precedence — this is the fallback when no
+   *  param is present. */
+  tasks_sort: string;
+  /** Last-used sort direction on /tasks. "asc" / "desc" / empty.
+   *  Empty falls back to the column's natural default direction
+   *  (dates desc, others asc). */
+  tasks_sort_order: string;
 };
 
 const DEFAULT_PREFS: UserPrefs = {
@@ -37,6 +47,8 @@ const DEFAULT_PREFS: UserPrefs = {
   gtasks_sync: true,
   view_as_email: "",
   notifications_snooze_until: "",
+  tasks_sort: "",
+  tasks_sort_order: "",
 };
 
 const TAB = "User Preferences";
@@ -46,6 +58,8 @@ const HEADERS = [
   "gtasks_sync",
   "view_as_email",
   "notifications_snooze_until",
+  "tasks_sort",
+  "tasks_sort_order",
   "updated_at",
 ];
 
@@ -146,6 +160,8 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
     const iSync = headers.indexOf("gtasks_sync");
     const iViewAs = headers.indexOf("view_as_email");
     const iSnooze = headers.indexOf("notifications_snooze_until");
+    const iSort = headers.indexOf("tasks_sort");
+    const iOrder = headers.indexOf("tasks_sort_order");
     if (iEmail < 0) return prefs;
     for (const row of rows) {
       const e = String(row[iEmail] ?? "").toLowerCase().trim();
@@ -162,6 +178,9 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
           : "",
         notifications_snooze_until:
           iSnooze >= 0 ? String(row[iSnooze] ?? "").trim() : "",
+        tasks_sort: iSort >= 0 ? String(row[iSort] ?? "").trim() : "",
+        tasks_sort_order:
+          iOrder >= 0 ? String(row[iOrder] ?? "").trim() : "",
       };
       break;
     }
@@ -217,6 +236,8 @@ export async function setUserPrefs(
     if (rowIndex < 0) return { ...DEFAULT_PREFS };
     const r = values[rowIndex];
     const iSnoozeExisting = headers.indexOf("notifications_snooze_until");
+    const iSortExisting = headers.indexOf("tasks_sort");
+    const iOrderExisting = headers.indexOf("tasks_sort_order");
     return {
       email_notifications: asBool(
         r[headers.indexOf("email_notifications")],
@@ -233,6 +254,10 @@ export async function setUserPrefs(
         iSnoozeExisting >= 0
           ? String(r[iSnoozeExisting] ?? "").trim()
           : "",
+      tasks_sort:
+        iSortExisting >= 0 ? String(r[iSortExisting] ?? "").trim() : "",
+      tasks_sort_order:
+        iOrderExisting >= 0 ? String(r[iOrderExisting] ?? "").trim() : "",
     };
   })();
   const merged: UserPrefs = { ...existing, ...partial };
@@ -241,6 +266,8 @@ export async function setUserPrefs(
   merged.notifications_snooze_until = String(
     merged.notifications_snooze_until || "",
   ).trim();
+  merged.tasks_sort = String(merged.tasks_sort || "").trim();
+  merged.tasks_sort_order = String(merged.tasks_sort_order || "").trim();
 
   // Build the row in header order. Future-proof against extra columns
   // by writing only what we know about; preserve other cells if present.
@@ -251,6 +278,8 @@ export async function setUserPrefs(
     gtasks_sync: merged.gtasks_sync,
     view_as_email: merged.view_as_email,
     notifications_snooze_until: merged.notifications_snooze_until,
+    tasks_sort: merged.tasks_sort,
+    tasks_sort_order: merged.tasks_sort_order,
     updated_at: now,
   };
   const newRow: unknown[] = headers.map((h) =>

@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -259,11 +260,17 @@ export default function TasksQueue({
   // 8px activation distance keeps a click on a row's title link from
   // accidentally starting a drag — pointer movement past the threshold
   // is the trigger. Touch sensor uses a longer delay so taps don't
-  // grab rows on mobile.
+  // grab rows on mobile. Keyboard sensor uses dnd-kit's sortable
+  // coordinate getter so arrow keys move the focused row through the
+  // list one step at a time — Space/Enter to grab + drop, Esc to
+  // cancel. Drag handles below are tabIndex={0} so power users can
+  // reorder without a mouse.
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   // Bucketize once. Anything off the canonical list sinks into `other`.
@@ -608,7 +615,11 @@ function SortableTableSection({
  *  provided (URL-driven sort). Click toggles asc/desc on the active
  *  column, or sets this column as the new sort axis with its default
  *  direction. Without `searchParams` (e.g. when used on a project
- *  page that doesn't expose URL sort), renders as plain text. */
+ *  page that doesn't expose URL sort), renders as plain text.
+ *
+ *  Also persists the choice to /api/me/prefs in the background so
+ *  the column-sort survives a navigation away and back — no need to
+ *  carry ?sort=…&order=… in every link the user follows from /tasks. */
 function SortableTh({
   column,
   label,
@@ -641,7 +652,12 @@ function SortableTh({
   const href = qs ? `/tasks?${qs}` : "/tasks";
   return (
     <th className={`sortable-th${isActive ? " is-active" : ""}`}>
-      <Link href={href} scroll={false} className="sortable-th-link">
+      <Link
+        href={href}
+        scroll={false}
+        className="sortable-th-link"
+        onClick={() => persistSortPref(column, nextOrder)}
+      >
         {label}
         <span className="sortable-th-indicator" aria-hidden>
           {isActive ? (sortOrder === "desc" ? " ▼" : " ▲") : ""}
@@ -649,6 +665,23 @@ function SortableTh({
       </Link>
     </th>
   );
+}
+
+/** Fire-and-forget POST to /api/me/prefs so the user's column-sort
+ *  choice survives a navigation. `keepalive` keeps the request in
+ *  flight even if the click triggers an immediate route change. */
+function persistSortPref(sort: TasksSortKey, order: TasksSortOrder): void {
+  void fetch("/api/me/prefs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      tasks_sort: sort === "rank" ? "" : sort,
+      tasks_sort_order: sort === "rank" ? "" : order,
+    }),
+    keepalive: true,
+  }).catch(() => {
+    /* best-effort — sort persistence isn't worth surfacing an error */
+  });
 }
 
 function BucketBody({
@@ -727,10 +760,15 @@ function TaskRow({
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
       style={rowStyle}
-      {...(dragEnabled ? attributes : {})}
     >
       {dragEnabled && (
-        <td className="drag-handle-cell" {...listeners} aria-label="גרור לשינוי סדר">
+        <td
+          className="drag-handle-cell"
+          {...attributes}
+          {...listeners}
+          tabIndex={0}
+          aria-label="גרור לשינוי סדר — Space לתפיסה, חיצים להזזה, Enter לשחרור"
+        >
           <span className="drag-handle-grip" aria-hidden>⋮⋮</span>
         </td>
       )}
