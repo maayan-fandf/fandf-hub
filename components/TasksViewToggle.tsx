@@ -108,6 +108,14 @@ function buildHref(
     if (v === "") delete merged[k];
     else merged[k] = v;
   }
+  // Strip view-specific params when toggling away — keeps the URL
+  // honest so a user on /tasks?month=... after switching back from
+  // the calendar doesn't think their list is somehow filtered by
+  // month (the table ignores it, but the param sticking around
+  // looks like a filter and confused users in practice). `month`
+  // is calendar-only.
+  const targetView = merged.view || "";
+  if (targetView !== "calendar") delete merged.month;
   const qs = new URLSearchParams(merged).toString();
   return qs ? `/tasks?${qs}` : "/tasks";
 }
