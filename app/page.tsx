@@ -12,6 +12,7 @@ import {
 } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { companyColorSlot } from "@/lib/colors";
+import { scopeProjectsToPerson } from "@/lib/scope";
 
 type AlertCounts = { severe: number; warn: number; info: number };
 
@@ -82,10 +83,15 @@ export default async function HomePage() {
     redirect("/unauthorized");
   }
 
-  // Per-person scoping is now driven entirely by the gear-menu "view as"
-  // pref above (passed into getMyProjects). The home grid renders whatever
-  // projects came back — no client-side person filter on top.
-  const grouped = data ? groupByCompany(data.projects) : [];
+  // Per-person scoping is driven by the gear-menu "view as" pref above
+  // (passed into getMyProjects). For @fandf.co.il staff the API returns
+  // ALL internal projects via the blanket-access pass — narrow that to
+  // "projects where this person is actually on the roster" so the home
+  // grid stays a personal dashboard, not the access list.
+  const visibleProjects = data
+    ? scopeProjectsToPerson(data.projects, data.person, data.isClient)
+    : [];
+  const grouped = data ? groupByCompany(visibleProjects) : [];
 
   // endIso map from the morning feed — powers the hide-ended filter.
   const endIsoByProject = new Map<string, string>();

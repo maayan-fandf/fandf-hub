@@ -15,6 +15,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
 import { getMyProjects, type Project } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
+import { scopeProjectsToPerson } from "@/lib/scope";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -63,7 +64,11 @@ export default async function RootLayout({
     }
     try {
       const data = await getMyProjects(viewAs || undefined);
-      navProjects = data.projects;
+      // Mirror the home grid: narrow @fandf.co.il staff's blanket access
+      // list to projects where this person is actually on the roster, so
+      // the nav dropdown is a personal view rather than dumping all 37
+      // internal projects on every staff member.
+      navProjects = scopeProjectsToPerson(data.projects, data.person, data.isClient);
     } catch {
       navProjects = [];
     }

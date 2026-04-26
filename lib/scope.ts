@@ -56,3 +56,27 @@ export function scopedProjectNames(
   }
   return s.size > 0 ? s : null;
 }
+
+/**
+ * Personal-dashboard scope: narrow a `getMyProjects` response to "projects
+ * where this person is actually on the roster". Used by the home grid +
+ * top-nav projects dropdown so they don't dump the entire access list on
+ * @fandf.co.il staff (who are granted blanket internal-project access by
+ * `getMyProjectsDirect` for navigation purposes — the home/nav surfaces
+ * want a personal view, not an access list).
+ *
+ * Clients are returned unchanged — their list is already access-gated by
+ * email server-side and they're not on rosters as people. Empty `person`
+ * also returns the full list. If the filter would strip every project
+ * (e.g. an admin not on any project's roster), we fall back to the full
+ * list so the page isn't misleadingly empty.
+ */
+export function scopeProjectsToPerson(
+  projects: Project[],
+  personName: string,
+  isClient: boolean,
+): Project[] {
+  if (isClient || !personName) return projects;
+  const filtered = projects.filter((p) => isPersonOnProject(p, personName));
+  return filtered.length > 0 ? filtered : projects;
+}
