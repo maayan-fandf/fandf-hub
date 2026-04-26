@@ -192,7 +192,19 @@ export async function getAccessScope(subjectEmail: string): Promise<{
 }> {
   const lc = subjectEmail.toLowerCase().trim();
   const isAdmin = HUB_ADMIN_EMAILS.has(lc);
-  const { headers, rows } = await readKeysCached(subjectEmail);
+  // Resolve the caller's display name(s) so we can match Google People
+  // chip cells (cols C / D) and CSV name cells (cols J / K) — e.g. an
+  // account-manager listed as "Itay Stein" in EMAIL Manager. Without
+  // this, a non-admin manager's accessibleProjects came back EMPTY,
+  // which made every /tasks/[id] load 500 with "Access denied" and
+  // hid every relevant task on /tasks. Internal F&F users also get a
+  // domain-blanket pass (matches getMyProjectsDirect's intent — staff
+  // can navigate to any internal project).
+  const isInternal = lc.endsWith("@fandf.co.il");
+  const [{ headers, rows }, displayNames] = await Promise.all([
+    readKeysCached(subjectEmail),
+    isAdmin ? Promise.resolve([] as string[]) : getDisplayNamesForEmailLazy(subjectEmail),
+  ]);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
   const iCamp = headers.indexOf("מנהל קמפיינים");
@@ -206,6 +218,9 @@ export async function getAccessScope(subjectEmail: string): Promise<{
 
   const accessible = new Set<string>();
   const companies = new Map<string, string>();
+  const lcNames = displayNames
+    .map((n) => n.toLowerCase().trim())
+    .filter(Boolean);
 
   for (const row of rows) {
     const project = String(row[iProj] ?? "").trim();
@@ -217,22 +232,57 @@ export async function getAccessScope(subjectEmail: string): Promise<{
       accessible.add(project);
       continue;
     }
-    // Non-admin: match the caller's email against any roster column.
-    // Col C / D contain Google-People chips (display names, not emails)
-    // — we can't resolve those on the non-admin read-path without a
-    // names→emails lookup. For Phase 1 we only check the email columns
-    // (E / J / K), which covers client access + internal emails. Admins
-    // see everything anyway.
-    const emailCols = [iClients, iInternal, iCf].filter((i) => i >= 0);
-    for (const ci of emailCols) {
+
+    let matched = false;
+    // Email-substring match against cols E (clients) and J / K
+    // (internal/client-facing CSV of emails).
+    for (const ci of [iClients, iInternal, iCf]) {
+      if (ci < 0) continue;
       const raw = String(row[ci] ?? "").toLowerCase();
       if (raw.includes(lc)) {
-        accessible.add(project);
+        matched = true;
         break;
       }
     }
+    // Display-name match against cols C / D (single chip) and J / K
+    // (CSV — names sometimes appear there alongside emails).
+    if (!matched && lcNames.length > 0) {
+      for (const ci of [iCamp, iAcct]) {
+        if (ci < 0) continue;
+        const cell = String(row[ci] ?? "").toLowerCase().trim();
+        if (cell && lcNames.includes(cell)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched && lcNames.length > 0) {
+      for (const ci of [iInternal, iCf]) {
+        if (ci < 0) continue;
+        const csv = String(row[ci] ?? "")
+          .toLowerCase()
+          .split(/[,;\n]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (lcNames.some((n) => csv.includes(n))) {
+          matched = true;
+          break;
+        }
+      }
+    }
+    // Domain blanket: internal F&F can navigate to any internal project
+    // even if not on the roster. Mirrors getMyProjectsDirect's behavior.
+    if (!matched && isInternal) matched = true;
+    if (matched) accessible.add(project);
   }
   return { isAdmin, accessibleProjects: accessible, projectCompany: companies };
+}
+
+// Lazy-imported to dodge a circular import — projectsDirect.ts pulls
+// readKeysRows / HUB_ADMIN_EMAILS from this file.
+async function getDisplayNamesForEmailLazy(email: string): Promise<string[]> {
+  const { getDisplayNamesForEmail } = await import("@/lib/projectsDirect");
+  return getDisplayNamesForEmail(email);
 }
 
 /* ─── Public API (mirrors lib/appsScript.ts tasksList / tasksGet / tasksPeopleList) ─ */

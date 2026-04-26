@@ -101,30 +101,24 @@ export default function TaskCreateForm({
   const [assignees, setAssignees] = useState(defaultAssignees);
   const [campaign, setCampaign] = useState("");
   const [title, setTitle] = useState(defaultTitle);
-  // Folder selection. Default is "new" with an auto-generated name;
-  // user can either accept it, edit the name, or click an existing
-  // folder in the tree to reuse it. When the campaign's Drive folder
-  // doesn't exist yet, default the new-folder name to the campaign
-  // name (since the campaign + leaf folders are both freshly created
-  // at save time and naming the leaf after the campaign is the more
-  // useful starting point) — otherwise default to the task title.
-  const [campaignFolderState, setCampaignFolderState] = useState<
-    "exists" | "missing" | "unknown"
-  >("unknown");
-  const suggestedFolderName = useMemo(() => {
-    const trimmedCampaign = campaign.trim();
-    if (campaignFolderState === "missing" && trimmedCampaign) {
-      return trimmedCampaign.slice(0, 60);
-    }
-    return title.trim().slice(0, 60);
-  }, [campaign, campaignFolderState, title]);
+  // Folder selection. Default is "use existing campaign folder" with
+  // an empty folderId — the picker auto-selects the campaign folder
+  // when it resolves (or, when the campaign folder doesn't exist yet,
+  // the server creates it on save and uses it directly — no leaf
+  // sub-folder gets created in either case unless the user opts into
+  // "תיקייה חדשה" mode and types a name. This was the previous source
+  // of duplicate sub-folders matching the campaign name.
+  const suggestedFolderName = useMemo(
+    () => title.trim().slice(0, 60),
+    [title],
+  );
   const [folderSelection, setFolderSelection] = useState<FolderPickerValue>({
-    mode: "new",
-    name: "",
+    mode: "existing",
+    folderId: "",
+    folderName: "",
   });
-  // Keep the "new" name tracking the title until the user types a
-  // custom folder name (or picks an existing folder). That way the
-  // first-time user gets a sensible name for free.
+  // Track whether the user has manually edited the new-folder name.
+  // Once edited, stop overwriting it with the title-derived suggestion.
   const [folderNameUserEdited, setFolderNameUserEdited] = useState(false);
   useEffect(() => {
     if (folderNameUserEdited) return;
@@ -389,7 +383,6 @@ export default function TaskCreateForm({
         defaultNewName={suggestedFolderName}
         value={folderSelection}
         onChange={handleFolderChange}
-        onCampaignFolderState={setCampaignFolderState}
         disabled={!project}
       />
 

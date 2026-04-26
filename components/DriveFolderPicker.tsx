@@ -13,12 +13,6 @@ type Props = {
   defaultNewName: string;
   value: FolderPickerValue;
   onChange: (v: FolderPickerValue) => void;
-  /** Notifies the parent whether the campaign folder already exists in
-   *  Drive ("exists"), is missing and will be auto-created on save
-   *  ("missing"), or hasn't been resolved yet (no callback fired).
-   *  Lets the parent tweak its UX — e.g. default the new-folder name
-   *  to the campaign name when no campaign folder exists yet. */
-  onCampaignFolderState?: (state: "exists" | "missing") => void;
   disabled?: boolean;
   compact?: boolean;
 };
@@ -39,7 +33,6 @@ export default function DriveFolderPicker({
   defaultNewName,
   value,
   onChange,
-  onCampaignFolderState,
   disabled,
   compact,
 }: Props) {
@@ -84,17 +77,15 @@ export default function DriveFolderPicker({
       }
       if (data.folderId && data.viewUrl) {
         setCampaignFolder({ id: data.folderId, viewUrl: data.viewUrl });
-        onCampaignFolderState?.("exists");
       } else {
         setCampaignFolder({ pending: true });
-        onCampaignFolderState?.("missing");
       }
     } catch (e) {
       setCampaignFolder({ error: e instanceof Error ? e.message : String(e) });
     } finally {
       setResolving(false);
     }
-  }, [company, project, campaign, onCampaignFolderState]);
+  }, [company, project, campaign]);
 
   useEffect(() => {
     if (disabled) return;
@@ -133,6 +124,26 @@ export default function DriveFolderPicker({
     if (children[campaignFolder.id] != null) return;
     void loadChildren(campaignFolder.id);
   }, [campaignFolder, children, loadChildren]);
+
+  // Auto-select the campaign folder when it resolves AND the parent
+  // hasn't picked anything yet. Default UX: "use the campaign folder"
+  // is the implicit choice so the form's submit just sends drive_folder_id
+  // = campaign folder ID. Only fires once per resolved folder ID.
+  const autoSelectedFor = useRef<string>("");
+  useEffect(() => {
+    if (!campaignFolder) return;
+    if ("error" in campaignFolder || "pending" in campaignFolder) return;
+    if (autoSelectedFor.current === campaignFolder.id) return;
+    if (value.mode !== "existing") return;
+    if (value.folderId) return;
+    autoSelectedFor.current = campaignFolder.id;
+    onChange({
+      mode: "existing",
+      folderId: campaignFolder.id,
+      folderName: campaign || project || "תיקייה",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignFolder]);
 
   function toggleExpanded(id: string) {
     setExpanded((s) => {
@@ -273,7 +284,7 @@ export default function DriveFolderPicker({
       {mode === "new" && (
         <div className="drive-folder-new-block">
           <label className="drive-folder-new-label">
-            <span className="drive-folder-new-label-text">שם התיקייה החדשה</span>
+            <span className="drive-folder-new-label-text">שם תת־התיקייה החדשה</span>
             <input
               type="text"
               className="drive-folder-new-name"
@@ -281,12 +292,12 @@ export default function DriveFolderPicker({
               onChange={(e) =>
                 onChange({ mode: "new", name: e.target.value })
               }
-              placeholder={defaultNewName || "שם תיקייה חדשה"}
+              placeholder={defaultNewName || "שם תת־תיקייה"}
             />
           </label>
           <div className="drive-folder-context">
-            תיווצר {contextLabel}
-            {isPending && " (התיקייה תיפתח אוטומטית בעת שמירה)"}
+            תיווצר תת־תיקייה {contextLabel}
+            {isPending && " (תיקיית הקמפיין תיווצר אוטומטית בעת שמירה)"}
           </div>
         </div>
       )}
@@ -295,7 +306,8 @@ export default function DriveFolderPicker({
         <div className="drive-folder-existing-block">
           {isPending && (
             <div className="drive-folder-hint">
-              עדיין אין תיקיית קמפיין — אין מה לבחור. עבור ל&quot;תיקייה חדשה&quot; או שמור עם הטקסט המוצע.
+              ✅ תיקיית הקמפיין תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
+              ניתן גם לעבור ל&quot;תיקייה חדשה&quot; כדי ליצור תת־תיקייה ייעודית למשימה.
             </div>
           )}
           {rootId && (

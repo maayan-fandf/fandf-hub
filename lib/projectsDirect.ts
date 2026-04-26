@@ -93,6 +93,46 @@ function splitRosterCell(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+/** Read the names_to_emails tab and return EVERY display name registered
+ *  against `subjectEmail`. A user can have multiple aliases (e.g. an
+ *  "Itay Stein" chip plus an "Itay" chip in different rows). All of them
+ *  matter when matching the user against Keys cols C / D / J / K. */
+export async function getDisplayNamesForEmail(
+  subjectEmail: string,
+): Promise<string[]> {
+  try {
+    const sheets = sheetsClient(subjectEmail);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: "names to emails",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const values = (res.data.values ?? []) as unknown[][];
+    if (values.length < 2) return [];
+    const headers = (values[0] as unknown[]).map((h) =>
+      String(h ?? "").trim().toLowerCase(),
+    );
+    const iName = headers.findIndex((h) =>
+      ["full name", "name", "full_name", "fullname"].includes(h),
+    );
+    const iEmail = headers.findIndex((h) =>
+      ["email", "e-mail", "mail"].includes(h),
+    );
+    if (iName < 0 || iEmail < 0) return [];
+    const lc = subjectEmail.toLowerCase().trim();
+    const out: string[] = [];
+    for (let i = 1; i < values.length; i++) {
+      const email = String(values[i][iEmail] ?? "").toLowerCase().trim();
+      if (email !== lc) continue;
+      const name = String(values[i][iName] ?? "").trim();
+      if (name) out.push(name);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 /** Read the names_to_emails tab (Comments spreadsheet) to resolve the
  *  caller's display name. Matches what the Apps Script handler returns
  *  in `person` — helps the home page default-filter to the user's own

@@ -228,8 +228,14 @@ async function createTaskFolder(
     company: string;
     project: string;
     campaign?: string;
-    /** Optional override for the leaf folder name. Defaults to
-     *  `<task.id> — <title(0..60)>`, matching the legacy behavior. */
+    /** Override for the leaf folder name. When set, a sub-folder with
+     *  this name is created under the campaign folder (the user opted
+     *  in to a per-task organizing folder). When empty AND a campaign
+     *  is present, the campaign folder itself is used as the task's
+     *  Drive folder (default UX — no leaf, no duplication). When empty
+     *  AND no campaign is set, falls back to the legacy `<id> — <title>`
+     *  leaf under the project so tasks without a campaign still get a
+     *  unique folder. */
     folderNameOverride?: string;
   },
 ): Promise<{ folderId: string; folderUrl: string } | null> {
@@ -261,6 +267,7 @@ async function createTaskFolder(
       sharedDriveId,
     );
     const campaign = (task.campaign || "").trim();
+    let campaignFolderId = "";
     if (campaign) {
       parent = await getOrCreateFolderInSharedDrive(
         drive,
@@ -268,9 +275,27 @@ async function createTaskFolder(
         parent,
         sharedDriveId,
       );
+      campaignFolderId = parent;
     }
 
     const overrideName = (task.folderNameOverride || "").trim();
+    // Default UX: no override + campaign present → use the campaign
+    // folder directly. The form defaults to "use existing campaign
+    // folder" mode and only sends an override name when the user
+    // explicitly opted into a sub-folder.
+    if (!overrideName && campaignFolderId) {
+      const meta = await drive.files.get({
+        fileId: campaignFolderId,
+        fields: "id, webViewLink",
+        supportsAllDrives: true,
+      });
+      return {
+        folderId: campaignFolderId,
+        folderUrl:
+          meta.data.webViewLink ||
+          `https://drive.google.com/drive/folders/${campaignFolderId}`,
+      };
+    }
     const leafName = overrideName
       ? overrideName.replace(/[\\/]/g, "-").slice(0, 120)
       : task.id +
