@@ -24,12 +24,19 @@ export type UserPrefs = {
   email_notifications: boolean;
   gtasks_sync: boolean;
   view_as_email: string;
+  /** ISO timestamp until which the topnav bell badge stays muted.
+   *  Notifications still get written + email still flows; the snooze
+   *  affects badge visibility only, so the user can opt back in by
+   *  visiting /notifications without losing anything. Empty = no
+   *  snooze active. */
+  notifications_snooze_until: string;
 };
 
 const DEFAULT_PREFS: UserPrefs = {
   email_notifications: true,
   gtasks_sync: true,
   view_as_email: "",
+  notifications_snooze_until: "",
 };
 
 const TAB = "User Preferences";
@@ -38,6 +45,7 @@ const HEADERS = [
   "email_notifications",
   "gtasks_sync",
   "view_as_email",
+  "notifications_snooze_until",
   "updated_at",
 ];
 
@@ -137,6 +145,7 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
     const iNotif = headers.indexOf("email_notifications");
     const iSync = headers.indexOf("gtasks_sync");
     const iViewAs = headers.indexOf("view_as_email");
+    const iSnooze = headers.indexOf("notifications_snooze_until");
     if (iEmail < 0) return prefs;
     for (const row of rows) {
       const e = String(row[iEmail] ?? "").toLowerCase().trim();
@@ -151,6 +160,8 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
         view_as_email: iViewAs >= 0
           ? String(row[iViewAs] ?? "").toLowerCase().trim()
           : "",
+        notifications_snooze_until:
+          iSnooze >= 0 ? String(row[iSnooze] ?? "").trim() : "",
       };
       break;
     }
@@ -205,6 +216,7 @@ export async function setUserPrefs(
   const existing: UserPrefs = (() => {
     if (rowIndex < 0) return { ...DEFAULT_PREFS };
     const r = values[rowIndex];
+    const iSnoozeExisting = headers.indexOf("notifications_snooze_until");
     return {
       email_notifications: asBool(
         r[headers.indexOf("email_notifications")],
@@ -217,11 +229,18 @@ export async function setUserPrefs(
       view_as_email: String(
         r[headers.indexOf("view_as_email")] ?? "",
       ).toLowerCase().trim(),
+      notifications_snooze_until:
+        iSnoozeExisting >= 0
+          ? String(r[iSnoozeExisting] ?? "").trim()
+          : "",
     };
   })();
   const merged: UserPrefs = { ...existing, ...partial };
   // Normalize view_as_email — empty string clears it.
   merged.view_as_email = String(merged.view_as_email || "").toLowerCase().trim();
+  merged.notifications_snooze_until = String(
+    merged.notifications_snooze_until || "",
+  ).trim();
 
   // Build the row in header order. Future-proof against extra columns
   // by writing only what we know about; preserve other cells if present.
@@ -231,6 +250,7 @@ export async function setUserPrefs(
     email_notifications: merged.email_notifications,
     gtasks_sync: merged.gtasks_sync,
     view_as_email: merged.view_as_email,
+    notifications_snooze_until: merged.notifications_snooze_until,
     updated_at: now,
   };
   const newRow: unknown[] = headers.map((h) =>

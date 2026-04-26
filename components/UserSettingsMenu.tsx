@@ -6,6 +6,7 @@ type Prefs = {
   email_notifications: boolean;
   gtasks_sync: boolean;
   view_as_email: string;
+  notifications_snooze_until: string;
 };
 
 type Person = { email: string; name: string; role: string };
@@ -14,7 +15,43 @@ const DEFAULT_PREFS: Prefs = {
   email_notifications: true,
   gtasks_sync: true,
   view_as_email: "",
+  notifications_snooze_until: "",
 };
+
+/** Snooze options offered in the gear menu. Stored as an absolute ISO
+ *  timestamp on the user's prefs row so refreshes / new sessions
+ *  honor the same window. Empty value = no snooze. */
+const SNOOZE_OPTIONS: { val: string; label: string; ms: number }[] = [
+  { val: "", label: "אל תשתיק", ms: 0 },
+  { val: "1h", label: "שעה", ms: 60 * 60 * 1000 },
+  { val: "today", label: "עד סוף היום", ms: 0 /* computed at click */ },
+  { val: "7d", label: "7 ימים", ms: 7 * 24 * 60 * 60 * 1000 },
+];
+
+/** Resolve a snooze button label ("1h" / "today" / "7d" / "") to the
+ *  ISO timestamp we should persist. Empty input clears the snooze. */
+function computeSnoozeUntil(val: string): string {
+  if (!val) return "";
+  if (val === "today") {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return end.toISOString();
+  }
+  const opt = SNOOZE_OPTIONS.find((o) => o.val === val);
+  if (!opt || !opt.ms) return "";
+  return new Date(Date.now() + opt.ms).toISOString();
+}
+
+/** True when the persisted ISO matches the bucket the user is hovering.
+ *  We treat any non-empty future ISO as the "active" state for ALL
+ *  non-empty options together — the precise bucket isn't preserved on
+ *  the row, so highlight collapses to "snoozed" vs "not snoozed". */
+function isSnoozeActive(persistedIso: string, optionVal: string): boolean {
+  const isCurrentlySnoozed =
+    !!persistedIso && new Date(persistedIso).getTime() > Date.now();
+  if (optionVal === "") return !isCurrentlySnoozed;
+  return isCurrentlySnoozed;
+}
 
 /**
  * Topnav gear menu — per-user settings:
@@ -202,6 +239,60 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
                     <small>הוספה ועדכון של משימות ברשימת ה-Tasks האישית</small>
                   </span>
                 </label>
+              </div>
+
+              <div className="settings-menu-section">
+                <div className="settings-menu-label">
+                  השתק התראות בהאב
+                  <small>
+                    ההתראות עדיין נשמרות תחת 🔔 — רק הסימון האדום יושתק
+                  </small>
+                </div>
+                <div
+                  className="settings-menu-snooze-row"
+                  role="radiogroup"
+                  aria-label="השתק התראות"
+                >
+                  {SNOOZE_OPTIONS.map((opt) => {
+                    const active = isSnoozeActive(
+                      prefs.notifications_snooze_until,
+                      opt.val,
+                    );
+                    return (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={`settings-menu-snooze-btn${active ? " is-active" : ""}`}
+                        onClick={() => {
+                          const until = computeSnoozeUntil(opt.val);
+                          void save({ notifications_snooze_until: until });
+                        }}
+                        disabled={busy === "notifications_snooze_until"}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {prefs.notifications_snooze_until &&
+                  new Date(prefs.notifications_snooze_until).getTime() >
+                    Date.now() && (
+                    <div className="settings-menu-hint">
+                      🔕 מושתק עד{" "}
+                      <span dir="ltr">
+                        {new Date(
+                          prefs.notifications_snooze_until,
+                        ).toLocaleString("he-IL", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  )}
               </div>
 
               <div className="settings-menu-section">

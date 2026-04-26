@@ -631,93 +631,143 @@ async function filterByEmailPref(emails: string[]): Promise<string[]> {
   return out;
 }
 
-/**
- * Ping every assignee on create — "you have a new task."
- * Skips recipients who turned off email_notifications in their gear menu.
- */
-async function emailAssignees(
-  task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number; drive_folder_url: string; assignees: string[] },
-  authorEmail: string,
-): Promise<void> {
-  if (!task.assignees.length) return;
-  const allowed = await filterByEmailPref(task.assignees);
-  if (allowed.length === 0) return;
-  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
-  const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
-  const subject = `📋 משימה חדשה עבורך — ${task.project} · ${task.title}`;
-  const plainBody = [
-    `${authorEmail.split("@")[0]} שיבץ/ה אותך למשימה חדשה.`,
-    "",
-    `פרויקט: ${task.project}`,
-    `כותרת: ${task.title}`,
-    task.description ? `\n${task.description}` : "",
-    "",
-    task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
-    task.priority ? `דחיפות: ${task.priority}` : "",
-    "",
-    link ? `פרטי המשימה: ${link}` : "",
-    task.drive_folder_url ? `תיקיית קבצים: ${task.drive_folder_url}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const htmlBody = renderTaskEmailHtml({
-    intro: `${escapeHtml(authorEmail.split("@")[0])} שיבץ/ה אותך למשימה חדשה.`,
-    project: task.project,
-    title: task.title,
-    description: task.description,
-    requested_date: task.requested_date,
-    priority: task.priority,
-    primaryHref: link,
-    primaryLabel: "פתח את המשימה",
-    driveHref: task.drive_folder_url,
-  });
-  await Promise.all(
-    allowed.map((to) => sendMimeMail(authorEmail, to, subject, plainBody, htmlBody)),
-  );
+/* ── Notification dispatch (replaces the older emailAssignees /
+   emailApprover helpers — now routed through lib/notifications so
+   every email also writes a row to the Notifications tab + bell
+   badge). The legacy filterByEmailPref call inside each helper is
+   gone too: notifyOnce reads the email_notifications pref itself,
+   so the gating logic lives in one place. ─────────────────── */
+
+function buildTaskBody(task: {
+  description: string;
+  requested_date: string;
+  priority: number;
+}): string {
+  const parts: string[] = [];
+  if (task.description) parts.push(task.description.slice(0, 280));
+  if (task.requested_date) parts.push(`תאריך מבוקש: ${task.requested_date}`);
+  if (task.priority) parts.push(`דחיפות: ${task.priority}`);
+  return parts.join("\n");
 }
 
-/**
- * Ping the approver when the task transitions INTO awaiting_approval —
- * "please review this finished work."
- */
-async function emailApprover(
-  task: { id: string; project: string; title: string; description: string; requested_date: string; priority: number },
+function taskHubUrl(taskId: string): string {
+  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  return hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(taskId)}` : "";
+}
+
+async function notifyTaskAssigned(
+  task: {
+    id: string;
+    project: string;
+    title: string;
+    description: string;
+    requested_date: string;
+    priority: number;
+    assignees: string[];
+  },
   actorEmail: string,
+): Promise<void> {
+  if (!task.assignees.length) return;
+  const { notifyOnce } = await import("@/lib/notifications");
+  const link = taskHubUrl(task.id);
+  const body = buildTaskBody(task);
+  for (const to of task.assignees) {
+    await notifyOnce({
+      kind: "task_assigned",
+      forEmail: to,
+      actorEmail,
+      taskId: task.id,
+      project: task.project,
+      title: task.title,
+      body,
+      link,
+    });
+  }
+}
+
+async function notifyTaskUnassigned(
+  task: { id: string; project: string; title: string },
+  removedAssignees: string[],
+  actorEmail: string,
+): Promise<void> {
+  if (!removedAssignees.length) return;
+  const { notifyOnce } = await import("@/lib/notifications");
+  const link = taskHubUrl(task.id);
+  for (const to of removedAssignees) {
+    await notifyOnce({
+      kind: "task_unassigned",
+      forEmail: to,
+      actorEmail,
+      taskId: task.id,
+      project: task.project,
+      title: task.title,
+      body: "",
+      link,
+    });
+  }
+}
+
+async function notifyTaskAwaitingApproval(
+  task: {
+    id: string;
+    project: string;
+    title: string;
+    description: string;
+    requested_date: string;
+    priority: number;
+  },
   approverEmail: string,
+  actorEmail: string,
 ): Promise<void> {
   if (!approverEmail) return;
-  // Respect the approver's email_notifications preference. They may
-  // still rely on the chat-card / hub UI as a notification channel.
-  const allowed = await filterByEmailPref([approverEmail]);
-  if (allowed.length === 0) return;
-  const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
-  const link = hubUrl ? `${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "";
-  const subject = `📋 משימה ממתינה לאישורך — ${task.project} · ${task.title}`;
-  const plainBody = [
-    `${actorEmail.split("@")[0]} סיים/ה את העבודה ומחכה לאישורך.`,
-    "",
-    `פרויקט: ${task.project}`,
-    `כותרת: ${task.title}`,
-    task.description ? `\n${task.description}` : "",
-    "",
-    task.requested_date ? `תאריך מבוקש: ${task.requested_date}` : "",
-    task.priority ? `דחיפות: ${task.priority}` : "",
-    "",
-    link ? `לסקירה + אישור / החזרה לעבודה: ${link}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const htmlBody = renderTaskEmailHtml({
-    intro: `${escapeHtml(actorEmail.split("@")[0])} סיים/ה את העבודה ומחכה לאישורך.`,
+  const { notifyOnce } = await import("@/lib/notifications");
+  await notifyOnce({
+    kind: "task_awaiting_approval",
+    forEmail: approverEmail,
+    actorEmail,
+    taskId: task.id,
     project: task.project,
     title: task.title,
-    description: task.description,
-    requested_date: task.requested_date,
-    priority: task.priority,
-    primaryHref: link,
-    primaryLabel: "סקירה + אישור / החזרה לעבודה",
+    body: buildTaskBody(task),
+    link: taskHubUrl(task.id),
   });
-  await sendMimeMail(actorEmail, approverEmail, subject, plainBody, htmlBody);
+}
+
+async function notifyTaskAudience(
+  kind: "task_returned" | "task_done" | "task_cancelled",
+  task: {
+    id: string;
+    project: string;
+    title: string;
+    description: string;
+    requested_date: string;
+    priority: number;
+    author_email: string;
+    assignees: string[];
+  },
+  actorEmail: string,
+): Promise<void> {
+  // Audience = the author + every current assignee. Self-mention
+  // dedup happens inside notifyOnce, so the actor never gets pinged.
+  const audience = new Set<string>();
+  if (task.author_email) audience.add(task.author_email.toLowerCase());
+  for (const e of task.assignees) audience.add(e.toLowerCase());
+  if (audience.size === 0) return;
+  const { notifyOnce } = await import("@/lib/notifications");
+  const link = taskHubUrl(task.id);
+  const body = buildTaskBody(task);
+  for (const to of audience) {
+    await notifyOnce({
+      kind,
+      forEmail: to,
+      actorEmail,
+      taskId: task.id,
+      project: task.project,
+      title: task.title,
+      body,
+      link,
+    });
+  }
 }
 
 /* ── Chat webhook (per-project card, unchanged behavior) ──────────── */
@@ -947,11 +997,13 @@ export async function tasksCreateDirect(
     }
   }
 
-  // After-write notifications (non-fatal). On create we email the
-  // assignees ("you have a new task") — the approver gets a separate
-  // email later when the status transitions to awaiting_approval.
+  // After-write notifications (non-fatal). On create we ping the
+  // assignees ("you have a new task") via the unified notifyOnce
+  // pipeline — same dispatch writes a Notifications row + sends
+  // email when the recipient hasn't muted it. Approver gets a
+  // separate notification later when status flips to awaiting_approval.
   await Promise.all([
-    emailAssignees(
+    notifyTaskAssigned(
       {
         id: task.id,
         project: task.project,
@@ -959,7 +1011,6 @@ export async function tasksCreateDirect(
         description: task.description,
         requested_date: task.requested_date,
         priority: task.priority,
-        drive_folder_url: task.drive_folder_url,
         assignees: task.assignees,
       },
       task.author_email,
@@ -1327,30 +1378,47 @@ export async function tasksUpdateDirect(
     }
   }
 
-  // Email the approver when work transitions into awaiting_approval —
-  // that's when they need to act. Build a lean task shape from the
-  // fresh row so the email reflects any simultaneous field patches.
-  if (changes.status === "awaiting_approval") {
+  // Status-change notifications. Routed through the unified notifyOnce
+  // pipeline so each kind writes a Notifications row + sends email
+  // (gated by the recipient's email_notifications pref). Audience for
+  // returned/done/cancelled is author + current assignees.
+  if (changes.status) {
     const fresh = rowToTask(freshRow, idx);
-    await emailApprover(
-      {
-        id: fresh.id,
-        project: fresh.project,
-        title: fresh.title,
-        description: fresh.description,
-        requested_date: fresh.requested_date,
-        priority: fresh.priority,
-      },
-      subjectEmail,
-      fresh.approver_email,
-    );
+    const previousStatus = String(cell("status") ?? "");
+    if (changes.status === "awaiting_approval") {
+      await notifyTaskAwaitingApproval(
+        {
+          id: fresh.id,
+          project: fresh.project,
+          title: fresh.title,
+          description: fresh.description,
+          requested_date: fresh.requested_date,
+          priority: fresh.priority,
+        },
+        fresh.approver_email,
+        subjectEmail,
+      );
+    } else if (
+      previousStatus === "awaiting_approval" &&
+      (changes.status === "in_progress" ||
+        changes.status === "awaiting_handling" ||
+        changes.status === "awaiting_clarification")
+    ) {
+      // Approver bounced the work back — author + assignees should know.
+      await notifyTaskAudience("task_returned", fresh, subjectEmail);
+    } else if (changes.status === "done") {
+      await notifyTaskAudience("task_done", fresh, subjectEmail);
+    } else if (changes.status === "cancelled") {
+      await notifyTaskAudience("task_cancelled", fresh, subjectEmail);
+    }
   }
 
-  // Email newly-added assignees so they hear about the reassignment
-  // outside the hub UI — same shape as the on-create heads-up.
+  // Reassignment notifications. New assignees → task_assigned;
+  // removed assignees → task_unassigned. Both go through notifyOnce
+  // and write a Notifications row in addition to the email.
   if (assigneeAdded.length > 0) {
     const fresh = rowToTask(freshRow, idx);
-    await emailAssignees(
+    await notifyTaskAssigned(
       {
         id: fresh.id,
         project: fresh.project,
@@ -1358,9 +1426,16 @@ export async function tasksUpdateDirect(
         description: fresh.description,
         requested_date: fresh.requested_date,
         priority: fresh.priority,
-        drive_folder_url: fresh.drive_folder_url,
         assignees: assigneeAdded,
       },
+      subjectEmail,
+    );
+  }
+  if (assigneeRemoved.length > 0) {
+    const fresh = rowToTask(freshRow, idx);
+    await notifyTaskUnassigned(
+      { id: fresh.id, project: fresh.project, title: fresh.title },
+      assigneeRemoved,
       subjectEmail,
     );
   }

@@ -5,6 +5,7 @@ import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
+import NavBellBadge from "@/components/NavBellBadge";
 import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
 import NavTasksBadge from "@/components/NavTasksBadge";
@@ -130,6 +131,15 @@ export default async function RootLayout({
               🏷️ תיוגים
               {email && <NavMentionBadge />}
             </ActiveLink>
+            {email && (
+              <ActiveLink
+                href="/notifications"
+                className="topnav-link topnav-link-with-badge"
+              >
+                🔔 התראות
+                <NavBellBadge />
+              </ActiveLink>
+            )}
             {email && <NavAdminLink />}
             {dashboardUrl && (
               <a

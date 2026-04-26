@@ -428,6 +428,29 @@ function hubCommentUrl(project: string, commentId: string): string {
   return `${base}/projects/${encodeURIComponent(project)}/timeline#c=${encodeURIComponent(commentId)}`;
 }
 
+function hubTaskUrl(taskId: string): string {
+  const base = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  if (!base) return "";
+  return `${base}/tasks/${encodeURIComponent(taskId)}`;
+}
+
+/** Pull `@<email>` patterns out of a comment body. The picker UI can
+ *  insert these as visible tokens (e.g. when you tap a person from the
+ *  autocomplete dropdown); raw typed `@maayan@fandf.co.il` also works.
+ *  Returns lowercased, deduplicated emails. Doesn't validate against
+ *  the project roster — that's the caller's job (notifyOnce drops
+ *  self-mentions; per-project gating happens via existing access
+ *  controls when the recipient opens the deep-link). */
+function parseMentionsFromBody(body: string): string[] {
+  const out = new Set<string>();
+  const re = /@([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    out.add(m[1].toLowerCase());
+  }
+  return Array.from(out);
+}
+
 /* ── Public: postReplyDirect ───────────────────────────────────────── */
 
 export type PostReplyResult = {
@@ -465,17 +488,36 @@ export async function postReplyDirect(
 
   const id = genCommentId();
   const now = nowIso();
+  const me = subjectEmail.toLowerCase().trim();
+  const trimmedBody = body.trim();
+  // Parse @<email> patterns out of the body so task-discussion replies
+  // (and any other reply) can tag people. The picker UI can come later;
+  // even raw @maayan@fandf.co.il is enough for the data layer to work.
+  const parsedMentions = parseMentionsFromBody(trimmedBody).filter(
+    (e) => e !== me, // self-mentions never notify
+  );
+  // If the parent is a task row, deep-link to the task page so the
+  // notification "Open" button lands the recipient in the discussion
+  // section directly. Detected by row_kind on the parent row.
+  const parentRowKind = String(
+    parentRow[idx.get("row_kind") ?? -1] ?? "",
+  ).trim();
+  const parentIsTask = parentRowKind === "task";
+  const replyLink = parentIsTask
+    ? hubTaskUrl(parentCommentId)
+    : hubCommentUrl(parentProject, parentCommentId);
+
   const cells: Record<string, unknown> = {
     id,
     timestamp: now,
     project: parentProject,
     anchor: "general",
-    author_email: subjectEmail.toLowerCase().trim(),
+    author_email: me,
     author_name: subjectEmail.split("@")[0],
     parent_id: parentCommentId,
-    body: body.trim(),
+    body: trimmedBody,
     resolved: false,
-    mentions: "",
+    mentions: parsedMentions.join(","),
     google_tasks: "{}",
     edited_at: "",
     row_kind: "",
@@ -493,31 +535,45 @@ export async function postReplyDirect(
 
   // Notifications run after the response is flushed — they're best-effort
   // and the user shouldn't wait on Gmail / Chat round-trips.
-  const me = subjectEmail.toLowerCase().trim();
-  const trimmedBody = body.trim();
   deferAfterResponse(async () => {
-    if (parentAuthor && parentAuthor !== me) {
-      const allowed = await filterByEmailPref([parentAuthor]);
-      if (allowed.length > 0) {
-        const link = hubCommentUrl(parentProject, parentCommentId);
-        await sendMimeMail(
-          me,
-          parentAuthor,
-          `💬 תגובה חדשה לשרשור — ${parentProject}`,
-          [
-            `${me.split("@")[0]} הגיב/ה לשרשור: "${parentBodyShort}"`,
-            "",
-            trimmedBody,
-            "",
-            link ? `שרשור מלא: ${link}` : "",
-          ].filter(Boolean).join("\n"),
-        );
-      }
+    const { notifyOnce } = await import("@/lib/notifications");
+    // Reply notification → parent author (skipped if same person OR a
+    // mention already covers them — mention takes precedence).
+    if (
+      parentAuthor &&
+      parentAuthor !== me &&
+      !parsedMentions.includes(parentAuthor)
+    ) {
+      await notifyOnce({
+        kind: "comment_reply",
+        forEmail: parentAuthor,
+        actorEmail: me,
+        taskId: parentIsTask ? parentCommentId : "",
+        commentId: id,
+        project: parentProject,
+        title: parentBodyShort,
+        body: trimmedBody.slice(0, 280),
+        link: replyLink,
+      });
+    }
+    // Mention notifications → each parsed @<email>.
+    for (const recipient of parsedMentions) {
+      await notifyOnce({
+        kind: "mention",
+        forEmail: recipient,
+        actorEmail: me,
+        taskId: parentIsTask ? parentCommentId : "",
+        commentId: id,
+        project: parentProject,
+        title: parentBodyShort,
+        body: trimmedBody.slice(0, 280),
+        link: replyLink,
+      });
     }
     await postChatWebhook(subjectEmail, parentProject, "reply", {
       authorName: me.split("@")[0],
       body: trimmedBody.slice(0, 120),
-      deepLink: hubCommentUrl(parentProject, parentCommentId),
+      deepLink: replyLink,
     });
   });
 
@@ -869,35 +925,30 @@ export async function createMentionDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
-  // Notifications (per-mention emails + project Chat webhook) run after
-  // the response is flushed.
+  // Notifications run after the response is flushed. Each mentioned
+  // assignee gets a `mention` notification (writes a row to the
+  // Notifications tab + sends email when their pref allows). Chat
+  // webhook still fires per-project as before.
   const trimmedBody = args.body.trim();
+  const link = hubCommentUrl(project, id);
   deferAfterResponse(async () => {
-    const allowedEmail = await filterByEmailPref(assignees);
-    if (allowedEmail.length > 0) {
-      const link = hubCommentUrl(project, id);
-      await Promise.all(
-        allowedEmail.map((to) =>
-          sendMimeMail(
-            me,
-            to,
-            `💬 תויגת בתגובה — ${project}`,
-            [
-              `${me.split("@")[0]} תייג/ה אותך:`,
-              "",
-              trimmedBody,
-              "",
-              due ? `תאריך: ${due}` : "",
-              link ? `שרשור מלא: ${link}` : "",
-            ].filter(Boolean).join("\n"),
-          ),
-        ),
-      );
+    const { notifyOnce } = await import("@/lib/notifications");
+    for (const recipient of assignees) {
+      await notifyOnce({
+        kind: "mention",
+        forEmail: recipient,
+        actorEmail: me,
+        commentId: id,
+        project,
+        title: due ? `תאריך: ${due}` : "",
+        body: trimmedBody.slice(0, 280),
+        link,
+      });
     }
     await postChatWebhook(subjectEmail, project, "create", {
       authorName: me.split("@")[0],
       body: trimmedBody.slice(0, 120),
-      deepLink: hubCommentUrl(project, id),
+      deepLink: link,
     });
   });
 
