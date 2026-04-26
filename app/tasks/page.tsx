@@ -183,7 +183,7 @@ export default async function TasksPage({
           </div>
         </div>
         <div className="header-actions">
-          <Link href="/tasks/new" className="btn-primary">
+          <Link href="/tasks/new" className="btn-primary btn-sm">
             + משימה חדשה
           </Link>
         </div>

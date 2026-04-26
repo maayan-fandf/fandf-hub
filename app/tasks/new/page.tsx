@@ -90,8 +90,8 @@ export default async function NewTaskPage({
             )}
           </div>
         </div>
-        <div className="page-header-actions">
-          <Link href="/tasks" className="btn-ghost">
+        <div className="header-actions">
+          <Link href="/tasks" className="btn-ghost btn-sm">
             ← חזרה לרשימה
           </Link>
         </div>

@@ -117,13 +117,13 @@ export default async function TaskDetailPage({
             )}
           </div>
         </div>
-        <div className="page-header-actions">
+        <div className="header-actions">
           {chatSpaceUrl && (
             <a
               href={chatSpaceUrl}
               target="_blank"
               rel="noreferrer"
-              className="btn-ghost"
+              className="btn-ghost btn-sm"
               title={`פתח את חלל ה-Chat של ${t.project}`}
             >
               💬 פתח ב-Chat
@@ -134,7 +134,7 @@ export default async function TaskDetailPage({
               href={t.drive_folder_url}
               target="_blank"
               rel="noreferrer"
-              className="btn-ghost btn-with-drive-icon"
+              className="btn-ghost btn-sm btn-with-drive-icon"
             >
               <GoogleDriveIcon size="1.05em" /> תיקיית קבצים
             </a>
@@ -142,7 +142,7 @@ export default async function TaskDetailPage({
           {!editing && (
             <Link
               href={`/tasks/${encodeURIComponent(t.id)}?edit=1`}
-              className="btn-ghost"
+              className="btn-ghost btn-sm"
             >
               ✏️ ערוך
             </Link>

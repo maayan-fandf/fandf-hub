@@ -3863,12 +3863,6 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   vertical-align: middle;
 }
 
-.page-header-actions {
-  display: flex;
-  gap: .6em;
-  align-items: center;
-}
-
 /* Queue view */
 .tasks-filter-bar {
   /* Grid mirrors the table column rhythm: 5 filters per row, 2 rows.
@@ -6564,10 +6558,4 @@ html[data-theme="dark"] .kanban-error {
     gap: .3em;
   }
 
-  /* Page-header actions row: when the user has 3 buttons (Chat /
-     Drive / Edit) it was tight on narrow viewports. Let it wrap. */
-  .page-header-actions {
-    flex-wrap: wrap;
-    gap: .35em;
-  }
 }
