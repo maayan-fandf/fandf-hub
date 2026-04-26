@@ -3863,7 +3863,30 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   vertical-align: middle;
 }
 
-/* Queue view */
+/* Queue view — filter disclosure wrapper. The <details>/<summary>
+   pair is invisible on desktop (the form always shows) and turns
+   into a tap-target chip on mobile that toggles the form. */
+.tasks-filter-disclosure { margin: 0 0 1.5em; }
+.tasks-filter-disclosure > summary {
+  display: none; /* desktop default; mobile @media re-enables it */
+  list-style: none;
+}
+.tasks-filter-disclosure > summary::-webkit-details-marker { display: none; }
+.tasks-filter-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 .45em;
+  margin-inline-start: .5em;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: .8em;
+  font-weight: 700;
+}
+
 .tasks-filter-bar {
   /* Grid mirrors the table column rhythm: 5 filters per row, 2 rows.
      Each filter gets equal width regardless of label length so the
@@ -3877,7 +3900,7 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: .9em 1em;
-  margin: 0 0 1.5em;
+  /* No margin — the .tasks-filter-disclosure wrapper owns spacing. */
 }
 .tasks-filter-bar label {
   display: flex; flex-direction: column; gap: .3em;
@@ -6193,6 +6216,7 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   .tasks-filter-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: .7em .8em; gap: .5em;
+    margin-top: .6em;
   }
   .tasks-filter-bar select,
   .tasks-filter-bar input { font-size: 16px; }
@@ -6200,6 +6224,41 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   .tasks-table td { padding: .5em .6em; }
   .tasks-table th.num,
   .tasks-table td.num { display: none; }
+
+  /* Filter bar disclosure: summary becomes a tap-target chip, the
+     form (<.tasks-filter-bar>) is hidden until the user opens the
+     details. Native <details> handles all the show/hide for free. */
+  .tasks-filter-disclosure > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: .35em;
+    padding: .55em .9em;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+  }
+  .tasks-filter-disclosure[open] > summary {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Kanban: stop horizontal-scrolling on phones — stack the columns
+     vertically as full-width sections with their own collapsibility
+     via native scroll. Cross-column drag becomes drag down/up. */
+  .kanban-board {
+    flex-direction: column;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+  .kanban-column {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+  }
 }
 @media (max-width: 1100px) and (min-width: 641px) {
   .tasks-filter-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); }

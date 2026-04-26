@@ -407,8 +407,33 @@ function TasksFilterBar({
     { val: "2", label: "2 — רגילה" },
     { val: "3", label: "3 — נמוכה" },
   ];
+  // Count active filters for the mobile-disclosure summary badge.
+  // Excludes purely-presentational params (view, sort, order, mine).
+  const activeFilterCount = Object.entries(current).reduce(
+    (n, [, v]) => (v ? n + 1 : n),
+    0,
+  );
   return (
-    <form method="GET" action="/tasks" className="tasks-filter-bar">
+    // <details> gives us a CSS-only collapse on mobile — the form is
+    // hidden behind the summary on narrow viewports and always-open on
+    // desktop (CSS hides the summary at >640px). Native open-state
+    // persists via the user's interaction, no JS required.
+    <details
+      className="tasks-filter-disclosure"
+      open={activeFilterCount === 0 ? undefined : true}
+    >
+      <summary className="tasks-filter-summary">
+        <span>🔍 סינון</span>
+        {activeFilterCount > 0 && (
+          <span
+            className="tasks-filter-summary-badge"
+            aria-label={`${activeFilterCount} מסננים פעילים`}
+          >
+            {activeFilterCount}
+          </span>
+        )}
+      </summary>
+      <form method="GET" action="/tasks" className="tasks-filter-bar">
       {/* Filter order mirrors the table columns below: חברה → פרויקט →
           קמפיין → כותב → מחלקה → דחיפות → סטטוס → עובד מבצע → מאשר →
           מנהל פרויקט. תאריך / נוצרה are display-only (no filter).
@@ -561,6 +586,7 @@ function TasksFilterBar({
           נקה
         </Link>
       </div>
-    </form>
+      </form>
+    </details>
   );
 }
