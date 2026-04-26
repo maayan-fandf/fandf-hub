@@ -355,11 +355,13 @@ function TasksFilterBar({
   ];
   return (
     <form method="GET" action="/tasks" className="tasks-filter-bar">
-      {/* Keep the opt-out of author-defaulting sticky across submits. */}
-      <input type="hidden" name="mine" value="0" />
       {/* Filter order mirrors the table columns below: חברה → פרויקט →
           קמפיין → כותב → מחלקה → דחיפות → סטטוס → עובד מבצע → מאשר →
-          מנהל פרויקט. תאריך / נוצרה are display-only (no filter). */}
+          מנהל פרויקט. תאריך / נוצרה are display-only (no filter).
+          Note: we intentionally do NOT hidden-input `mine=0` here — it
+          previously silently disabled the role-default after any filter
+          submit. The "הצג את כולם" link in the subtitle is the only
+          path to opt out of relevant_to_me. */}
       <label>
         חברה
         <select name="company" defaultValue={current.company}>
@@ -498,7 +500,10 @@ function TasksFilterBar({
         <button type="submit" className="btn-primary">
           סנן
         </button>
-        <Link href="/tasks" className="btn-ghost">
+        {/* "Clear" should genuinely clear — i.e. opt out of the role
+            default too. /tasks alone re-applies relevant_to_me, which
+            confuses users who expect "clear" to show every task. */}
+        <Link href="/tasks?mine=0" className="btn-ghost">
           נקה
         </Link>
       </div>

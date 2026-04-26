@@ -1,4 +1,7 @@
-import Link from "next/link";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 
 type View = "table" | "kanban";
 
@@ -12,31 +15,54 @@ type Props = {
 
 /**
  * Segmented control next to the page title that switches the queue
- * between the table and the kanban board. Pure server component — both
- * options are plain links so the choice persists in the URL and survives
- * full reloads (which the inline status pill triggers on writes).
+ * between the table and the kanban board. Client component because we
+ * call `router.refresh()` after `router.push()` so the user always sees
+ * fresh data when switching views — without it, Next's RSC prefetch
+ * cache could serve a stale payload from a few seconds earlier (e.g.
+ * after a status change in another tab the toggled view would lag).
  */
 export default function TasksViewToggle({ current, searchParams }: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const tableHref = buildHref(searchParams, { view: "" });
   const kanbanHref = buildHref(searchParams, { view: "kanban" });
+
+  function navigate(href: string, target: View) {
+    if (target === current) return;
+    startTransition(() => {
+      router.push(href);
+      router.refresh();
+    });
+  }
+
   return (
-    <div className="tasks-view-toggle" role="tablist" aria-label="תצוגה">
-      <Link
-        href={tableHref}
+    <div
+      className={`tasks-view-toggle${isPending ? " is-pending" : ""}`}
+      role="tablist"
+      aria-label="תצוגה"
+    >
+      <button
+        type="button"
+        onClick={() => navigate(tableHref, "table")}
         className={`tasks-view-toggle-btn${current === "table" ? " is-active" : ""}`}
         aria-current={current === "table" ? "page" : undefined}
+        role="tab"
+        aria-selected={current === "table"}
       >
         <span aria-hidden>📋</span>
         רשימה
-      </Link>
-      <Link
-        href={kanbanHref}
+      </button>
+      <button
+        type="button"
+        onClick={() => navigate(kanbanHref, "kanban")}
         className={`tasks-view-toggle-btn${current === "kanban" ? " is-active" : ""}`}
         aria-current={current === "kanban" ? "page" : undefined}
+        role="tab"
+        aria-selected={current === "kanban"}
       >
         <span aria-hidden>🗂️</span>
         קנבן
-      </Link>
+      </button>
     </div>
   );
 }
