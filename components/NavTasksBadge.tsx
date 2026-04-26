@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 type Counts = {
@@ -24,6 +24,7 @@ type Counts = {
 export default function NavTasksBadge() {
   const pathname = usePathname();
   const [counts, setCounts] = useState<Counts | null>(null);
+  const spanRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,24 +53,45 @@ export default function NavTasksBadge() {
     };
   }, [pathname]);
 
-  if (!counts || counts.total <= 0) return null;
-
   // Tooltip breaks down by status so the user sees what's behind the
   // number at a glance.
   const parts: string[] = [];
-  if (counts.awaiting_handling > 0) {
-    parts.push(`${counts.awaiting_handling} ממתינות לטיפול`);
+  if (counts && counts.awaiting_handling > 0) {
+    parts.push(`${counts.awaiting_handling} לטיפול`);
   }
-  if (counts.awaiting_clarification > 0) {
-    parts.push(`${counts.awaiting_clarification} ממתינות לבירור`);
+  if (counts && counts.awaiting_clarification > 0) {
+    parts.push(`${counts.awaiting_clarification} לבירור`);
   }
-  if (counts.awaiting_approval > 0) {
-    parts.push(`${counts.awaiting_approval} ממתינות לאישורך`);
+  if (counts && counts.awaiting_approval > 0) {
+    parts.push(`${counts.awaiting_approval} לאישור`);
   }
   const title = parts.join(" · ");
 
+  // Promote the breakdown to the parent <a> so hovering anywhere on the
+  // "משימות" link surfaces it — not just the small pill. Native title
+  // is good-enough here; a custom tooltip would be overkill for nav
+  // chrome that's hovered briefly.
+  useEffect(() => {
+    const el = spanRef.current;
+    if (!el) return;
+    const link = el.closest("a");
+    if (!link) return;
+    if (title) link.setAttribute("title", title);
+    else link.removeAttribute("title");
+    return () => {
+      link.removeAttribute("title");
+    };
+  }, [title]);
+
+  if (!counts || counts.total <= 0) return null;
+
   return (
-    <span className="nav-badge nav-badge-tasks" aria-label={title} title={title}>
+    <span
+      ref={spanRef}
+      className="nav-badge nav-badge-tasks"
+      aria-label={title}
+      title={title}
+    >
       {counts.total > 99 ? "99+" : counts.total}
     </span>
   );
