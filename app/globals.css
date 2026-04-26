@@ -6326,43 +6326,61 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   margin: 0;
 }
 
+/* Segmented control for the tasks view picker. Container is a
+   subtle pill; inactive segments are transparent with muted text;
+   the active segment uses the accent color for a clear "selected"
+   thumb. The previous styling tried to differentiate via a
+   surface-colored thumb on a surface-soft background, which barely
+   showed in dark mode and made the active state read as just
+   another button. Flipping to accent-on-active gives the toggle
+   group a real "pressed" feel. */
 .tasks-view-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  background: var(--surface-soft, #f3f4f6);
+  gap: 0;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px;
-  font-size: .75rem;
+  font-size: .8rem;
   font-weight: 600;
-  letter-spacing: 0;
 }
 .tasks-view-toggle-btn {
   display: inline-flex;
   align-items: center;
   gap: .35em;
-  padding: .35em .75em;
+  padding: .4em .9em;
   border-radius: 999px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
-  transition: background .12s, color .12s;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
 }
-.tasks-view-toggle-btn:hover {
+.tasks-view-toggle-btn:hover:not(.is-active) {
+  background: rgba(79, 70, 229, .08);
+  color: var(--accent);
   text-decoration: none;
-  color: var(--text);
 }
 .tasks-view-toggle-btn.is-active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(79, 70, 229, .35);
 }
 html[data-theme="dark"] .tasks-view-toggle {
-  background: rgba(255,255,255,.04);
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.12);
 }
 html[data-theme="dark"] .tasks-view-toggle-btn.is-active {
-  background: var(--surface);
+  background: var(--accent);
+  color: #fff;
+}
+html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
+  background: rgba(99, 102, 241, .18);
+  color: #c7d2fe;
 }
 
 /* ─── Kanban board ───────────────────────────────────────────────────
