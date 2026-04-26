@@ -35,6 +35,7 @@ export type TasksSortOrder = "asc" | "desc";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
+import TasksBulkBar from "@/components/TasksBulkBar";
 import {
   TaskPriorityCell,
   TaskRequestedDateCell,
@@ -241,6 +242,23 @@ export default function TasksQueue({
   const [tasks, setTasks] = useState(initialTasks);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  // Bulk-selection state. A row's checkbox toggles its id in/out of
+  // this Set; the floating action bar reads `.size` for visibility +
+  // count and the Set itself when fanning out an action over the
+  // /api/worktasks/update endpoint. Selection is local to this view —
+  // navigations clear it, which is the desired UX.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  function toggleSelected(id: string) {
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
 
   // Resolve the order for the current sort axis. When the caller
   // passes a sort but no order, fall back to the column's natural
@@ -423,6 +441,8 @@ export default function TasksQueue({
                   sortFn={sortFn}
                   searchParams={searchParams}
                   dragEnabled={dragEnabled}
+                  selectedIds={selectedIds}
+                  onToggleSelected={toggleSelected}
                 />
               </div>
             )}
@@ -443,6 +463,8 @@ export default function TasksQueue({
                     sortFn={sortFn}
                     searchParams={searchParams}
                     dragEnabled={dragEnabled}
+                    selectedIds={selectedIds}
+                    onToggleSelected={toggleSelected}
                   />
                 </div>
               </details>
@@ -451,6 +473,11 @@ export default function TasksQueue({
         );
       })}
 
+      <TasksBulkBar
+        selectedIds={selectedIds}
+        people={people}
+        onClear={clearSelection}
+      />
       {!hideOther && other.length > 0 && (
         <details className="tasks-other">
           <summary>
@@ -524,6 +551,8 @@ function SortableTableSection({
   sortFn,
   searchParams,
   dragEnabled,
+  selectedIds,
+  onToggleSelected,
 }: {
   rows: WorkTask[];
   compact: boolean;
@@ -535,13 +564,47 @@ function SortableTableSection({
   sortFn: ((a: WorkTask, b: WorkTask) => number) | null;
   searchParams?: Record<string, string | undefined>;
   dragEnabled: boolean;
+  selectedIds: Set<string>;
+  onToggleSelected: (id: string) => void;
 }) {
   const ordered = sortFn
     ? rows.slice().sort(sortFn)
     : rows.slice().sort(compareByRank);
+  // Header checkbox controls "select all visible in this section".
+  // When all rows are already selected, clicking it deselects this
+  // section's rows; otherwise it adds them.
+  const allSelected =
+    ordered.length > 0 && ordered.every((t) => selectedIds.has(t.id));
+  const someSelected =
+    !allSelected && ordered.some((t) => selectedIds.has(t.id));
+  function toggleAll() {
+    if (allSelected) {
+      for (const t of ordered) {
+        if (selectedIds.has(t.id)) onToggleSelected(t.id);
+      }
+    } else {
+      for (const t of ordered) {
+        if (!selectedIds.has(t.id)) onToggleSelected(t.id);
+      }
+    }
+  }
   const head = (
     <thead>
       <tr>
+        <th className="bulk-select-col" aria-label="בחירה מרובה">
+          <input
+            type="checkbox"
+            className="bulk-select-checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = someSelected;
+            }}
+            onChange={toggleAll}
+            aria-label={
+              allSelected ? "בטל בחירה" : "סמן את כל השורות בקטע זה"
+            }
+          />
+        </th>
         {dragEnabled && <th className="drag-handle-col" aria-hidden></th>}
         {!compact && <th>חברה</th>}
         {groupByCompany && <th>פרטי הפרוייקט</th>}
@@ -592,6 +655,8 @@ function SortableTableSection({
       people={people}
       driveName={driveName}
       dragEnabled={dragEnabled}
+      selectedIds={selectedIds}
+      onToggleSelected={onToggleSelected}
     />
   );
   const table = (
@@ -690,12 +755,16 @@ function BucketBody({
   people,
   driveName,
   dragEnabled = true,
+  selectedIds,
+  onToggleSelected,
 }: {
   tasks: WorkTask[];
   compact: boolean;
   people: TasksPerson[];
   driveName: string;
   dragEnabled?: boolean;
+  selectedIds: Set<string>;
+  onToggleSelected: (id: string) => void;
 }) {
   // Caller (SortableTableSection) already sorted into the right order
   // for the active sort axis; we just render in the order received.
@@ -709,6 +778,8 @@ function BucketBody({
           people={people}
           driveName={driveName}
           dragEnabled={dragEnabled}
+          selected={selectedIds.has(t.id)}
+          onToggleSelected={onToggleSelected}
         />
       ))}
     </>
@@ -723,12 +794,16 @@ function TaskRow({
   people = [],
   driveName = "",
   dragEnabled = true,
+  selected = false,
+  onToggleSelected,
 }: {
   task: WorkTask;
   compact?: boolean;
   people?: TasksPerson[];
   driveName?: string;
   dragEnabled?: boolean;
+  selected?: boolean;
+  onToggleSelected?: (id: string) => void;
 }) {
   // useSortable always runs (rules of hooks), but we ignore its bindings
   // when drag is disabled — i.e. when the queue is sorted by something
@@ -760,7 +835,20 @@ function TaskRow({
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
       style={rowStyle}
+      className={selected ? "is-selected" : undefined}
     >
+      <td className="bulk-select-cell">
+        <input
+          type="checkbox"
+          className="bulk-select-checkbox"
+          checked={selected}
+          onChange={() => onToggleSelected?.(task.id)}
+          aria-label={selected ? `בטל בחירה — ${task.title}` : `בחר ${task.title}`}
+          // Stop propagation so a checkbox click doesn't bubble into
+          // any row-level handlers (drag, link clicks).
+          onClick={(e) => e.stopPropagation()}
+        />
+      </td>
       {dragEnabled && (
         <td
           className="drag-handle-cell"
