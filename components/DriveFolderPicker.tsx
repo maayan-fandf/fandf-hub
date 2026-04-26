@@ -13,6 +13,12 @@ type Props = {
   defaultNewName: string;
   value: FolderPickerValue;
   onChange: (v: FolderPickerValue) => void;
+  /** Notifies the parent whether the campaign folder already exists in
+   *  Drive ("exists"), is missing and will be auto-created on save
+   *  ("missing"), or hasn't been resolved yet (no callback fired).
+   *  Lets the parent tweak its UX — e.g. default the new-folder name
+   *  to the campaign name when no campaign folder exists yet. */
+  onCampaignFolderState?: (state: "exists" | "missing") => void;
   disabled?: boolean;
   compact?: boolean;
 };
@@ -33,6 +39,7 @@ export default function DriveFolderPicker({
   defaultNewName,
   value,
   onChange,
+  onCampaignFolderState,
   disabled,
   compact,
 }: Props) {
@@ -77,15 +84,17 @@ export default function DriveFolderPicker({
       }
       if (data.folderId && data.viewUrl) {
         setCampaignFolder({ id: data.folderId, viewUrl: data.viewUrl });
+        onCampaignFolderState?.("exists");
       } else {
         setCampaignFolder({ pending: true });
+        onCampaignFolderState?.("missing");
       }
     } catch (e) {
       setCampaignFolder({ error: e instanceof Error ? e.message : String(e) });
     } finally {
       setResolving(false);
     }
-  }, [company, project, campaign]);
+  }, [company, project, campaign, onCampaignFolderState]);
 
   useEffect(() => {
     if (disabled) return;

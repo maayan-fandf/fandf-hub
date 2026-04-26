@@ -103,8 +103,21 @@ export default function TaskCreateForm({
   const [title, setTitle] = useState(defaultTitle);
   // Folder selection. Default is "new" with an auto-generated name;
   // user can either accept it, edit the name, or click an existing
-  // folder in the tree to reuse it.
-  const suggestedFolderName = title.trim().slice(0, 60);
+  // folder in the tree to reuse it. When the campaign's Drive folder
+  // doesn't exist yet, default the new-folder name to the campaign
+  // name (since the campaign + leaf folders are both freshly created
+  // at save time and naming the leaf after the campaign is the more
+  // useful starting point) — otherwise default to the task title.
+  const [campaignFolderState, setCampaignFolderState] = useState<
+    "exists" | "missing" | "unknown"
+  >("unknown");
+  const suggestedFolderName = useMemo(() => {
+    const trimmedCampaign = campaign.trim();
+    if (campaignFolderState === "missing" && trimmedCampaign) {
+      return trimmedCampaign.slice(0, 60);
+    }
+    return title.trim().slice(0, 60);
+  }, [campaign, campaignFolderState, title]);
   const [folderSelection, setFolderSelection] = useState<FolderPickerValue>({
     mode: "new",
     name: "",
@@ -376,6 +389,7 @@ export default function TaskCreateForm({
         defaultNewName={suggestedFolderName}
         value={folderSelection}
         onChange={handleFolderChange}
+        onCampaignFolderState={setCampaignFolderState}
         disabled={!project}
       />
 
