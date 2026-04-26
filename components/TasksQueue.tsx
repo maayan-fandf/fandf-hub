@@ -725,31 +725,48 @@ function TaskRow({
         <td className="tasks-project-cell-nested">{task.project}</td>
       )}
       <td className="title-cell">
-        <Link
-          href={`/tasks/${encodeURIComponent(task.id)}`}
-          className="tasks-title-link"
-        >
-          {task.title}
-        </Link>
-        {isCreatedWithin24h(task.created_at) && (
-          <span className="tasks-new-chip" title="נוצרה ב־24 שעות האחרונות">
-            🆕 חדש
-          </span>
-        )}
-        {task.brief && (
-          <span className="tasks-brief-chip" title="בריף">
-            #{task.brief}
-          </span>
-        )}
-        {task.campaign && (
-          <span className="tasks-campaign-chip" title="קמפיין">
-            📣 {task.campaign}
-          </span>
-        )}
-        {task.round_number > 1 && (
-          <span className="tasks-round-chip" title="סבב תיקונים">
-            סבב #{task.round_number}
-          </span>
+        {/* Title + chip cluster split into two rows: the title link
+            owns the first line so the (often long) task name doesn't
+            get crushed when 3-4 chips also live in this cell. The
+            chips wrap onto a second row underneath, separated by a
+            small gap. Description preview goes below them as before. */}
+        <div className="tasks-title-row">
+          <Link
+            href={`/tasks/${encodeURIComponent(task.id)}`}
+            className="tasks-title-link"
+          >
+            {task.title}
+          </Link>
+        </div>
+        {(isCreatedWithin24h(task.created_at) ||
+          task.brief ||
+          task.campaign ||
+          task.round_number > 1) && (
+          <div className="tasks-title-chips">
+            {isCreatedWithin24h(task.created_at) && (
+              <span
+                className="tasks-new-chip"
+                title="נוצרה ב־24 שעות האחרונות"
+              >
+                🆕 חדש
+              </span>
+            )}
+            {task.brief && (
+              <span className="tasks-brief-chip" title="בריף">
+                #{task.brief}
+              </span>
+            )}
+            {task.campaign && (
+              <span className="tasks-campaign-chip" title="קמפיין">
+                📣 {task.campaign}
+              </span>
+            )}
+            {task.round_number > 1 && (
+              <span className="tasks-round-chip" title="סבב תיקונים">
+                סבב #{task.round_number}
+              </span>
+            )}
+          </div>
         )}
         {!compact && task.description && (
           <div className="tasks-desc-preview">

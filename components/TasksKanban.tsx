@@ -279,6 +279,7 @@ function KanbanColumn({
       ref={setNodeRef}
       className={`kanban-column kanban-column-${column.tone}${isOver ? " is-drop-target" : ""}`}
       aria-label={column.label}
+      data-empty={tasks.length === 0 ? "1" : "0"}
     >
       <header className="kanban-column-head">
         <span className="kanban-column-label">{column.label}</span>

@@ -185,6 +185,12 @@ export default async function TasksPage({
             ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
             ב־Google Tasks לכל מבצע (מסומנת כהושלמה אוטומטית כשהמשימה
             עוברת ל&quot;בוצע&quot;), ומייל לגורם המאשר.
+            {isViewingAs && (
+              <>
+                {" "}· 👁️ <b>מציג כ-<span dir="ltr">{viewAs}</span></b>
+                {" "}(שינוי בגלגל ההגדרות)
+              </>
+            )}
             {mineOptIn && effectiveMe && (
               <RoleDefaultHint
                 role={role}
@@ -432,13 +438,13 @@ function TasksFilterBar({
   );
   return (
     // <details> gives us a CSS-only collapse on mobile — the form is
-    // hidden behind the summary on narrow viewports and always-open on
-    // desktop (CSS hides the summary at >640px). Native open-state
-    // persists via the user's interaction, no JS required.
-    <details
-      className="tasks-filter-disclosure"
-      open={activeFilterCount === 0 ? undefined : true}
-    >
+    // hidden behind the summary on narrow viewports. We always set
+    // `open` so the form is visible by default; on desktop the
+    // summary is `display: none`, so the user can't accidentally
+    // collapse it. On mobile, clicking the summary toggles. The
+    // previous "open only when filters active" logic was a bug — it
+    // hid the form on desktop too whenever no filters were set.
+    <details className="tasks-filter-disclosure" open>
       <summary className="tasks-filter-summary">
         <span>🔍 סינון</span>
         {activeFilterCount > 0 && (

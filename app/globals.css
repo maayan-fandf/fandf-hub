@@ -4268,10 +4268,26 @@ html[data-theme="dark"] .inline-edit-err {
   border-color: #991b1b80;
 }
 .tasks-table .title-cell { min-width: 12em; }
+.tasks-title-row {
+  /* The title gets its own line so chips below can't push it into
+     a tiny 8em pinch when the cell is narrow. */
+  display: block;
+  min-width: 0;
+}
 .tasks-title-link {
   color: var(--text); font-weight: 600; text-decoration: none;
+  /* Allow long titles to wrap inside the cell width. */
+  display: inline;
+  overflow-wrap: anywhere;
 }
 .tasks-title-link:hover { text-decoration: underline; }
+.tasks-title-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  margin-top: 0.2em;
+  align-items: center;
+}
 .tasks-desc-preview {
   color: var(--muted); font-size: .9em; margin-top: .2em;
 }
@@ -6369,6 +6385,37 @@ html[data-theme="dark"] .tasks-view-toggle-btn.is-active {
 .kanban-column.is-drop-target {
   background: rgba(37, 99, 235, 0.06);
   border-color: #2563eb;
+}
+
+/* Empty columns shrink to a slim hover-expand pill so they stop
+   eating real estate when several lifecycle states have zero
+   work, while still acting as drag-drop targets. Hover or
+   drop-target state expands them back to full width. */
+.kanban-column[data-empty="1"] {
+  flex: 0 0 7em;
+  min-width: 7em;
+  max-width: 9em;
+  opacity: 0.55;
+  transition: flex-basis 0.18s ease, min-width 0.18s ease, max-width 0.18s ease, opacity 0.18s ease;
+}
+.kanban-column[data-empty="1"]:hover,
+.kanban-column[data-empty="1"]:focus-within,
+.kanban-column[data-empty="1"].is-drop-target {
+  flex: 0 0 14em;
+  min-width: 14em;
+  max-width: 22em;
+  opacity: 1;
+}
+@media (max-width: 640px) {
+  /* On mobile the board is already stacked vertically; force empty
+     columns back to full width so taps land cleanly. */
+  .kanban-column[data-empty="1"],
+  .kanban-column[data-empty="1"]:hover {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    opacity: 0.85;
+  }
 }
 .kanban-column-awaiting_handling { border-top-color: #64748b; }
 .kanban-column-in_progress { border-top-color: #2563eb; }
