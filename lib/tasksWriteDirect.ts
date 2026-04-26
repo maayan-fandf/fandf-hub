@@ -464,20 +464,51 @@ async function sendMimeMail(
   toEmail: string,
   subject: string,
   plainBody: string,
+  htmlBody?: string,
 ): Promise<void> {
   try {
     const gmail = gmailClient(authorEmail);
     // RFC 2822 MIME message. Subject UTF-8-encoded so Hebrew lands clean.
-    const mime = [
+    // When htmlBody is provided, send multipart/alternative so clients can
+    // render the rich version with proper <a href> anchors. The plain
+    // version remains as a fallback. The HTML form sidesteps the bidi
+    // mangling we hit with Hebrew text + raw URL on the same line — some
+    // clients auto-link the URL and grab adjacent punctuation, breaking
+    // the click target.
+    const headers = [
       `From: ${authorEmail}`,
       `To: ${toEmail}`,
       `Subject: =?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`,
       "MIME-Version: 1.0",
-      'Content-Type: text/plain; charset="UTF-8"',
-      "Content-Transfer-Encoding: base64",
-      "",
-      Buffer.from(plainBody, "utf-8").toString("base64"),
-    ].join("\r\n");
+    ];
+    let mime: string;
+    if (htmlBody) {
+      const boundary = `=_F_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      mime = [
+        ...headers,
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        "",
+        `--${boundary}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        Buffer.from(plainBody, "utf-8").toString("base64"),
+        `--${boundary}`,
+        'Content-Type: text/html; charset="UTF-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        Buffer.from(htmlBody, "utf-8").toString("base64"),
+        `--${boundary}--`,
+      ].join("\r\n");
+    } else {
+      mime = [
+        ...headers,
+        'Content-Type: text/plain; charset="UTF-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        Buffer.from(plainBody, "utf-8").toString("base64"),
+      ].join("\r\n");
+    }
     const raw = Buffer.from(mime, "utf-8")
       .toString("base64")
       .replace(/\+/g, "-")
@@ -487,6 +518,76 @@ async function sendMimeMail(
   } catch (e) {
     console.log("[tasksWriteDirect] email send failed:", e);
   }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Render the HTML body for task notification emails. Uses RTL-aware
+ * inline styles, a clearly-bounded `<a>` anchor for the primary CTA,
+ * and an explicit lang/dir attribute on the root so clients render
+ * Hebrew correctly. Inputs are escaped — callers can pass intro as
+ * pre-escaped HTML via the renderTaskEmailHtml.intro field.
+ */
+function renderTaskEmailHtml(opts: {
+  /** Pre-escaped HTML for the intro line. */
+  intro: string;
+  project: string;
+  title: string;
+  description: string;
+  requested_date: string;
+  priority: number;
+  primaryHref: string;
+  primaryLabel: string;
+  driveHref?: string;
+}): string {
+  const rows: string[] = [];
+  rows.push(`<p style="margin:0 0 12px">${opts.intro}</p>`);
+  rows.push(
+    `<p style="margin:0 0 6px"><b>פרויקט:</b> ${escapeHtml(opts.project)}</p>`,
+  );
+  rows.push(
+    `<p style="margin:0 0 6px"><b>כותרת:</b> ${escapeHtml(opts.title)}</p>`,
+  );
+  if (opts.description) {
+    rows.push(
+      `<p style="margin:8px 0 12px;white-space:pre-wrap">${escapeHtml(opts.description)}</p>`,
+    );
+  }
+  if (opts.requested_date) {
+    rows.push(
+      `<p style="margin:0 0 6px"><b>תאריך מבוקש:</b> ${escapeHtml(opts.requested_date)}</p>`,
+    );
+  }
+  if (opts.priority) {
+    rows.push(
+      `<p style="margin:0 0 6px"><b>דחיפות:</b> ${opts.priority}</p>`,
+    );
+  }
+  if (opts.primaryHref) {
+    rows.push(
+      `<p style="margin:18px 0 8px"><a href="${escapeHtml(opts.primaryHref)}" style="display:inline-block;padding:10px 16px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">${escapeHtml(opts.primaryLabel)}</a></p>`,
+    );
+  }
+  if (opts.driveHref) {
+    rows.push(
+      `<p style="margin:8px 0 0"><a href="${escapeHtml(opts.driveHref)}">📁 תיקיית קבצים</a></p>`,
+    );
+  }
+  return [
+    "<!doctype html>",
+    '<html lang="he" dir="rtl"><head><meta charset="utf-8"></head>',
+    '<body style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a">',
+    rows.join("\n"),
+    "</body></html>",
+  ].join("");
 }
 
 async function filterByEmailPref(emails: string[]): Promise<string[]> {
@@ -534,8 +635,19 @@ async function emailAssignees(
   ]
     .filter(Boolean)
     .join("\n");
+  const htmlBody = renderTaskEmailHtml({
+    intro: `${escapeHtml(authorEmail.split("@")[0])} שיבץ/ה אותך למשימה חדשה.`,
+    project: task.project,
+    title: task.title,
+    description: task.description,
+    requested_date: task.requested_date,
+    priority: task.priority,
+    primaryHref: link,
+    primaryLabel: "פתח את המשימה",
+    driveHref: task.drive_folder_url,
+  });
   await Promise.all(
-    allowed.map((to) => sendMimeMail(authorEmail, to, subject, plainBody)),
+    allowed.map((to) => sendMimeMail(authorEmail, to, subject, plainBody, htmlBody)),
   );
 }
 
@@ -570,7 +682,17 @@ async function emailApprover(
   ]
     .filter(Boolean)
     .join("\n");
-  await sendMimeMail(actorEmail, approverEmail, subject, plainBody);
+  const htmlBody = renderTaskEmailHtml({
+    intro: `${escapeHtml(actorEmail.split("@")[0])} סיים/ה את העבודה ומחכה לאישורך.`,
+    project: task.project,
+    title: task.title,
+    description: task.description,
+    requested_date: task.requested_date,
+    priority: task.priority,
+    primaryHref: link,
+    primaryLabel: "סקירה + אישור / החזרה לעבודה",
+  });
+  await sendMimeMail(actorEmail, approverEmail, subject, plainBody, htmlBody);
 }
 
 /* ── Chat webhook (per-project card, unchanged behavior) ──────────── */

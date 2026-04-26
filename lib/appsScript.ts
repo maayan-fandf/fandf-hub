@@ -828,6 +828,13 @@ export type TasksListFilters = {
   requested_date_from?: string;
   /** Inclusive upper bound on `requested_date` (YYYY-MM-DD). */
   requested_date_to?: string;
+  /** OR-filter across author/approver/assignee. When set, a task
+   *  passes if its author_email, approver_email, OR any assignee
+   *  email matches. Used by /tasks default view so a manager who is
+   *  ALSO an assignee on some task sees both sets at once. Only
+   *  honored on the direct-read path; the legacy proxy path (Apps
+   *  Script) falls back to no filter (returns the access-scoped set). */
+  relevant_to_me?: string;
 };
 
 export async function tasksList(

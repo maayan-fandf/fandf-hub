@@ -59,34 +59,37 @@ export default async function TasksPage({
   const effectiveMe = viewAs || me;
   const isViewingAs = !!viewAs && viewAs !== me;
 
-  // Role-aware default filter: each role has a different "what
-  // matters to me right now" axis. Admins see what they authored
-  // (Data Plus default — admins typically brief tasks in). Managers
-  // see tasks waiting their approval. Creatives see tasks assigned
-  // to them. Clients fall back to the no-default behavior since
-  // they're already access-gated to their projects.
-  // `?mine=0` opts out of all role defaults (the "show all" path).
+  // Role-aware default filter. Two flavors:
+  //   - Creative role → assignee=me (focused: a creative cares about
+  //     what's on their plate, full stop).
+  //   - Everyone else (manager / admin / unknown) → relevant_to_me=me,
+  //     an OR-filter across author/approver/assignee. So a manager who
+  //     authors briefs AND occasionally gets tasks assigned sees both
+  //     in their default view, instead of having to flip filters.
+  //   - Clients have no default (already access-gated to their projects).
+  // `?mine=0` opts out of all defaults (the "show all" path).
   const role: UserRole = effectiveMe ? await getUserRole(effectiveMe).catch(() => "unknown") : "unknown";
   const mineOptIn = sp.mine !== "0";
+  const userSetExplicitMineFilter =
+    sp.author !== undefined ||
+    sp.approver !== undefined ||
+    sp.assignee !== undefined;
 
-  const effectiveAuthor =
-    sp.author !== undefined
-      ? sp.author
-      : mineOptIn && (role === "admin" || role === "unknown")
-        ? effectiveMe
-        : "";
-  const effectiveApprover =
-    sp.approver !== undefined
-      ? sp.approver
-      : mineOptIn && role === "manager"
-        ? effectiveMe
-        : "";
+  const effectiveAuthor = sp.author !== undefined ? sp.author : "";
+  const effectiveApprover = sp.approver !== undefined ? sp.approver : "";
   const effectiveAssignee =
     sp.assignee !== undefined
       ? sp.assignee
       : mineOptIn && role === "creative"
         ? effectiveMe
         : "";
+  const relevantToMe =
+    !userSetExplicitMineFilter &&
+    mineOptIn &&
+    effectiveMe &&
+    (role === "manager" || role === "admin" || role === "unknown")
+      ? effectiveMe
+      : "";
 
   const [tasksRes, projectsRes, peopleRes, driveName] = await Promise.all([
     tasksList({
@@ -103,6 +106,7 @@ export default async function TasksPage({
       campaign: sp.campaign || "",
       requested_date_from: sp.requested_date_from || "",
       requested_date_to: sp.requested_date_to || "",
+      relevant_to_me: relevantToMe,
     })
       .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
       .catch((e: unknown) => ({
@@ -262,19 +266,20 @@ function RoleDefaultHint({
   showAllHref: string;
 }) {
   const handle = me.split("@")[0];
+  const hasExplicit =
+    hasExplicitAuthor || hasExplicitApprover || hasExplicitAssignee;
+  if (hasExplicit) return null;
   let text = "";
-  if (role === "manager" && !hasExplicitApprover) {
-    text = isViewingAs
-      ? `מציג משימות שמחכות לאישור של ${handle}`
-      : `מציג משימות שמחכות לאישורך (${handle})`;
-  } else if (role === "creative" && !hasExplicitAssignee) {
+  if (role === "creative") {
     text = isViewingAs
       ? `מציג משימות שמשובצות אצל ${handle}`
       : `מציג משימות שמשובצות אצלך (${handle})`;
-  } else if ((role === "admin" || role === "unknown") && !hasExplicitAuthor) {
+  } else if (role === "manager" || role === "admin" || role === "unknown") {
+    // OR-default: tasks where the user is author OR approver OR
+    // assignee. Hint copy is role-agnostic since the filter is.
     text = isViewingAs
-      ? `מציג משימות ש-${handle} יצר/ה`
-      : `מציג משימות שיצרת (${handle})`;
+      ? `מציג משימות הקשורות ל-${handle} (יוצר/ת, מאשר/ת או מבצע/ת)`
+      : `מציג משימות הקשורות אליך (${handle})`;
   }
   if (!text) return null;
   return (

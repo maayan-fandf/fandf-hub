@@ -253,6 +253,12 @@ export async function tasksListDirect(
     campaign?: string;
     requested_date_from?: string;
     requested_date_to?: string;
+    /** OR-filter across author/approver/assignee. When set, a task
+     *  passes if its author_email, approver_email, OR any assignee
+     *  email matches. Used by /tasks default view so a manager who is
+     *  ALSO an assignee on some task sees both sets at once instead
+     *  of having to flip between filters. */
+    relevant_to_me?: string;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
@@ -318,6 +324,13 @@ export async function tasksListDirect(
     if (filters.assignee) {
       const a = filters.assignee.toLowerCase();
       if (!t.assignees.some((e) => e.toLowerCase() === a)) continue;
+    }
+    if (filters.relevant_to_me) {
+      const r = filters.relevant_to_me.toLowerCase();
+      const isAuthor = t.author_email === r;
+      const isApprover = t.approver_email === r;
+      const isAssignee = t.assignees.some((e) => e.toLowerCase() === r);
+      if (!isAuthor && !isApprover && !isAssignee) continue;
     }
     if (filters.campaign) {
       const f = filters.campaign.trim();
