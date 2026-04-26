@@ -40,6 +40,18 @@ export type UserPrefs = {
    *  Empty falls back to the column's natural default direction
    *  (dates desc, others asc). */
   tasks_sort_order: string;
+  /** When true, /tasks collapses done/cancelled buckets on the
+   *  table, hides the done/cancelled columns on the kanban behind
+   *  an "📦 ארכיון" expand pill, and dims those events more
+   *  aggressively on the calendar. Status-explicit URLs (?status
+   *  =done) override and force them visible regardless. Default
+   *  ON — fresh installs get a tidy queue immediately. */
+  hide_archived: boolean;
+  /** Days a task can sit in done/cancelled before it's considered
+   *  archived. Drives the table's per-bucket "+N ישנות" fold + the
+   *  archive count badge. Stored as a string of digits so the
+   *  sheet read stays simple; parseInt with default 14. */
+  archive_after_days: string;
 };
 
 const DEFAULT_PREFS: UserPrefs = {
@@ -49,6 +61,8 @@ const DEFAULT_PREFS: UserPrefs = {
   notifications_snooze_until: "",
   tasks_sort: "",
   tasks_sort_order: "",
+  hide_archived: true,
+  archive_after_days: "14",
 };
 
 const TAB = "User Preferences";
@@ -60,6 +74,8 @@ const HEADERS = [
   "notifications_snooze_until",
   "tasks_sort",
   "tasks_sort_order",
+  "hide_archived",
+  "archive_after_days",
   "updated_at",
 ];
 
@@ -162,6 +178,8 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
     const iSnooze = headers.indexOf("notifications_snooze_until");
     const iSort = headers.indexOf("tasks_sort");
     const iOrder = headers.indexOf("tasks_sort_order");
+    const iHideArch = headers.indexOf("hide_archived");
+    const iArchDays = headers.indexOf("archive_after_days");
     if (iEmail < 0) return prefs;
     for (const row of rows) {
       const e = String(row[iEmail] ?? "").toLowerCase().trim();
@@ -181,6 +199,15 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
         tasks_sort: iSort >= 0 ? String(row[iSort] ?? "").trim() : "",
         tasks_sort_order:
           iOrder >= 0 ? String(row[iOrder] ?? "").trim() : "",
+        hide_archived:
+          iHideArch >= 0
+            ? asBool(row[iHideArch], DEFAULT_PREFS.hide_archived)
+            : DEFAULT_PREFS.hide_archived,
+        archive_after_days:
+          iArchDays >= 0
+            ? String(row[iArchDays] ?? "").trim() ||
+              DEFAULT_PREFS.archive_after_days
+            : DEFAULT_PREFS.archive_after_days,
       };
       break;
     }
@@ -238,6 +265,8 @@ export async function setUserPrefs(
     const iSnoozeExisting = headers.indexOf("notifications_snooze_until");
     const iSortExisting = headers.indexOf("tasks_sort");
     const iOrderExisting = headers.indexOf("tasks_sort_order");
+    const iHideArchExisting = headers.indexOf("hide_archived");
+    const iArchDaysExisting = headers.indexOf("archive_after_days");
     return {
       email_notifications: asBool(
         r[headers.indexOf("email_notifications")],
@@ -258,6 +287,15 @@ export async function setUserPrefs(
         iSortExisting >= 0 ? String(r[iSortExisting] ?? "").trim() : "",
       tasks_sort_order:
         iOrderExisting >= 0 ? String(r[iOrderExisting] ?? "").trim() : "",
+      hide_archived:
+        iHideArchExisting >= 0
+          ? asBool(r[iHideArchExisting], DEFAULT_PREFS.hide_archived)
+          : DEFAULT_PREFS.hide_archived,
+      archive_after_days:
+        iArchDaysExisting >= 0
+          ? String(r[iArchDaysExisting] ?? "").trim() ||
+            DEFAULT_PREFS.archive_after_days
+          : DEFAULT_PREFS.archive_after_days,
     };
   })();
   const merged: UserPrefs = { ...existing, ...partial };
@@ -268,6 +306,12 @@ export async function setUserPrefs(
   ).trim();
   merged.tasks_sort = String(merged.tasks_sort || "").trim();
   merged.tasks_sort_order = String(merged.tasks_sort_order || "").trim();
+  // Clamp archive_after_days to a sensible range — a typo'd 99999
+  // would hide nothing; 0 would hide everything terminal-state.
+  const archDays = parseInt(String(merged.archive_after_days || "14"), 10);
+  merged.archive_after_days = String(
+    Number.isFinite(archDays) ? Math.max(1, Math.min(365, archDays)) : 14,
+  );
 
   // Build the row in header order. Future-proof against extra columns
   // by writing only what we know about; preserve other cells if present.
@@ -280,6 +324,8 @@ export async function setUserPrefs(
     notifications_snooze_until: merged.notifications_snooze_until,
     tasks_sort: merged.tasks_sort,
     tasks_sort_order: merged.tasks_sort_order,
+    hide_archived: merged.hide_archived,
+    archive_after_days: merged.archive_after_days,
     updated_at: now,
   };
   const newRow: unknown[] = headers.map((h) =>

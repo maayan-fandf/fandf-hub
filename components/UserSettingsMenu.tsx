@@ -7,6 +7,8 @@ type Prefs = {
   gtasks_sync: boolean;
   view_as_email: string;
   notifications_snooze_until: string;
+  hide_archived: boolean;
+  archive_after_days: string;
 };
 
 type Person = { email: string; name: string; role: string };
@@ -16,6 +18,8 @@ const DEFAULT_PREFS: Prefs = {
   gtasks_sync: true,
   view_as_email: "",
   notifications_snooze_until: "",
+  hide_archived: true,
+  archive_after_days: "14",
 };
 
 /** Snooze options offered in the gear menu. Stored as an absolute ISO
@@ -238,6 +242,51 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
                     סנכרון Google Tasks
                     <small>הוספה ועדכון של משימות ברשימת ה-Tasks האישית</small>
                   </span>
+                </label>
+              </div>
+
+              <div className="settings-menu-section">
+                <label className="settings-menu-toggle">
+                  <input
+                    type="checkbox"
+                    checked={prefs.hide_archived}
+                    disabled={busy === "hide_archived"}
+                    onChange={(e) =>
+                      save({ hide_archived: e.target.checked })
+                    }
+                  />
+                  <span className="settings-menu-toggle-label">
+                    הסתר משימות שבוצעו / בוטלו
+                    <small>
+                      ב‑/tasks הארכיון נכנס תחת תפריט נפתח. ניתן להציגו
+                      בלחיצה על 📦 ארכיון או על ידי סינון לפי סטטוס.
+                    </small>
+                  </span>
+                </label>
+                <label className="settings-menu-input-row">
+                  <span className="settings-menu-input-label">
+                    ימים עד ארכיון
+                    <small>
+                      משימות שבוצעו / בוטלו לפני יותר מהמספר הזה נחשבות
+                      ארכיון
+                    </small>
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    step={1}
+                    className="settings-menu-input settings-menu-input-narrow"
+                    value={prefs.archive_after_days}
+                    disabled={busy === "archive_after_days"}
+                    onChange={(e) =>
+                      // Track the typed value as-is so the input stays
+                      // controlled; only persist a valid clamped value.
+                      void save({
+                        archive_after_days: e.target.value,
+                      })
+                    }
+                  />
                 </label>
               </div>
 

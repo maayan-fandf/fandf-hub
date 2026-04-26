@@ -6848,6 +6848,170 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
   padding: 0.05em 0.5em;
   white-space: nowrap;
 }
+
+/* ─── Archive toggle + collapsed bucket / kanban / calendar ─────
+   Wires the user's hide_archived pref through three views with a
+   shared visual language: 📦 icon + count badge, dimmed-by-default
+   styling for terminal-state work. */
+.tasks-archive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  font: inherit;
+  font-size: 0.9em;
+  padding: 0.35em 0.7em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.tasks-archive-toggle:hover { border-color: var(--accent); }
+.tasks-archive-toggle.is-hiding {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  color: var(--muted);
+}
+.tasks-archive-toggle.is-showing {
+  background: rgba(79, 70, 229, 0.08);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.tasks-archive-toggle.is-quiet { opacity: 0.7; }
+.tasks-archive-toggle.is-overridden {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: #f59e0b;
+  color: var(--text);
+}
+.tasks-archive-toggle-count {
+  font-size: 0.85em;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.45em;
+  min-width: 1.5em;
+  text-align: center;
+}
+.tasks-archive-toggle-flag {
+  font-size: 0.78em;
+  font-weight: 600;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.05em 0.5em;
+}
+
+/* Table view — done/cancelled bucket renders as a collapsed
+   <details> when hideArchived is on. Summary mirrors the regular
+   bucket-head styling so the visual rhythm doesn't break. */
+.tasks-bucket.is-archived-fold > summary { list-style: none; }
+.tasks-bucket.is-archived-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.tasks-bucket-head-summary {
+  cursor: pointer;
+  user-select: none;
+}
+.tasks-bucket-head-summary:hover { background: rgba(79, 70, 229, 0.05); }
+.tasks-bucket-archived-hint {
+  margin-inline-start: auto;
+  font-size: 0.8em;
+  font-weight: 400;
+  color: var(--muted);
+}
+.tasks-bucket.is-archived-fold[open] .tasks-bucket-archived-hint::after {
+  content: " (פתוח — לחץ לסגירה)";
+  opacity: 0.7;
+}
+
+/* Kanban — done/cancelled columns hidden behind a slim "ארכיון"
+   pill at the end of the board when hideArchived is on. Click
+   expands them inline; pill flips to "כווץ" while expanded. */
+.kanban-archive-pill {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font: inherit;
+  font-size: 0.9em;
+  padding: 0.5em 0.9em;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.03));
+  color: var(--muted);
+  cursor: pointer;
+  margin-top: 0.4em;
+}
+.kanban-archive-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.kanban-archive-pill.is-expanded {
+  background: rgba(79, 70, 229, 0.08);
+  border-style: solid;
+  color: var(--accent);
+}
+.kanban-archive-pill-count {
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4em;
+  min-width: 1.4em;
+  text-align: center;
+}
+
+/* Calendar — when hideArchived is on AND the user hasn't un-muted
+   this specific day, fade done/cancelled events more aggressively.
+   Existing `.tasks-calendar-event-done / -cancelled` rules already
+   apply line-through + .65/.55 opacity baseline; this rule layers
+   on top to bring them to .25 (still visible, but clearly demoted). */
+.tasks-calendar-cell.is-dim-archived .tasks-calendar-event-done,
+.tasks-calendar-cell.is-dim-archived .tasks-calendar-event-cancelled {
+  opacity: 0.25;
+  filter: grayscale(0.4);
+}
+.tasks-calendar-archive-hint {
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.78em;
+  color: var(--muted);
+  padding: 0.1em 0.35em;
+  text-align: start;
+}
+.tasks-calendar-archive-hint:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Gear-menu archive section: "ימים עד ארכיון" number input row. */
+.settings-menu-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  padding: 0.5em 0;
+}
+.settings-menu-input-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-menu-input-label small {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-weight: 400;
+}
+.settings-menu-input-narrow {
+  width: 5em;
+  flex: 0 0 auto;
+  text-align: center;
+}
 .tasks-calendar-cell-head {
   display: flex;
   align-items: center;

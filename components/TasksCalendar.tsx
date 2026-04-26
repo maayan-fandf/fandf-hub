@@ -26,6 +26,11 @@ type Props = {
    *  `month`, so prev/next month navigation keeps the user's filters
    *  intact. */
   searchParams?: Record<string, string | undefined>;
+  /** When true, done + cancelled events render with stronger fade
+   *  (opacity .25 vs the baseline .55/.65) so the user's eye lands
+   *  on active work first. Per-cell `(N עברו)` chip lets the user
+   *  un-dim that cell on demand. */
+  hideArchived?: boolean;
 };
 
 /** Hebrew weekday labels — Sunday-first to match Israeli calendars. */
@@ -85,8 +90,22 @@ export default function TasksCalendar({
   tasks: initialTasks,
   initialMonth,
   searchParams,
+  hideArchived = false,
 }: Props) {
   const [activeDay, setActiveDay] = useState<string>("");
+  // Per-cell un-dim: when hideArchived is on, terminal-state events
+  // render extra-faded — clicking the cell's "(N עברו)" chip adds
+  // that day to this set so the user can read them without flipping
+  // the global pref. Cleared on navigation (component unmount).
+  const [unmutedDays, setUnmutedDays] = useState<Set<string>>(new Set());
+  function toggleUnmute(iso: string) {
+    setUnmutedDays((cur) => {
+      const next = new Set(cur);
+      if (next.has(iso)) next.delete(iso);
+      else next.add(iso);
+      return next;
+    });
+  }
   // Lift tasks to local state so drag-to-reschedule can update the
   // grid optimistically before the server roundtrip lands. The parent
   // page passes in the server-rendered list as the seed.
@@ -273,6 +292,11 @@ export default function TasksCalendar({
                 const overflow = dayTasks.length - visible.length;
                 const isToday = day.iso === today;
                 const isOpen = activeDay === day.iso;
+                const archivedInDay = dayTasks.filter(
+                  (t) => t.status === "done" || t.status === "cancelled",
+                ).length;
+                const dimArchived =
+                  hideArchived && !unmutedDays.has(day.iso);
                 return (
                   <DroppableDayCell
                     key={day.iso}
@@ -280,6 +304,7 @@ export default function TasksCalendar({
                     inMonth={day.inMonth}
                     isToday={isToday}
                     isOpen={isOpen}
+                    dimArchived={dimArchived}
                   >
                     <div className="tasks-calendar-cell-head">
                       <span className="tasks-calendar-day-num">{day.dayNum}</span>
@@ -310,6 +335,24 @@ export default function TasksCalendar({
                             aria-expanded={isOpen}
                           >
                             {isOpen ? "סגור" : `+${overflow} נוספות`}
+                          </button>
+                        </li>
+                      )}
+                      {hideArchived && archivedInDay > 0 && (
+                        <li>
+                          <button
+                            type="button"
+                            className="tasks-calendar-archive-hint"
+                            onClick={() => toggleUnmute(day.iso)}
+                            title={
+                              unmutedDays.has(day.iso)
+                                ? "החזר עמעום"
+                                : `${archivedInDay} בארכיון — לחץ להבלטה`
+                            }
+                          >
+                            {unmutedDays.has(day.iso)
+                              ? "🔅 עמעם"
+                              : `📦 ${archivedInDay} עברו`}
                           </button>
                         </li>
                       )}
@@ -347,18 +390,26 @@ export default function TasksCalendar({
 
 /** A day cell — the droppable target for drag-to-reschedule. The
  *  droppable id encodes the date (`day:YYYY-MM-DD`); the drop handler
- *  pulls the date out and patches the task's requested_date. */
+ *  pulls the date out and patches the task's requested_date.
+ *
+ *  `dimArchived` toggles a CSS hook (`is-dim-archived`) that lets
+ *  the calendar's stylesheet fade done/cancelled chips inside this
+ *  cell more aggressively when the user has hide_archived turned
+ *  on. Click the cell's `(N עברו)` chip in TasksCalendar to flip
+ *  the dim state for one cell at a time. */
 function DroppableDayCell({
   iso,
   inMonth,
   isToday,
   isOpen,
+  dimArchived = false,
   children,
 }: {
   iso: string;
   inMonth: boolean;
   isToday: boolean;
   isOpen: boolean;
+  dimArchived?: boolean;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${iso}` });
@@ -368,7 +419,9 @@ function DroppableDayCell({
       role="gridcell"
       className={`tasks-calendar-cell${inMonth ? "" : " is-other-month"}${
         isToday ? " is-today" : ""
-      }${isOpen ? " is-open" : ""}${isOver ? " is-drop-target" : ""}`}
+      }${isOpen ? " is-open" : ""}${isOver ? " is-drop-target" : ""}${
+        dimArchived ? " is-dim-archived" : ""
+      }`}
     >
       {children}
     </div>

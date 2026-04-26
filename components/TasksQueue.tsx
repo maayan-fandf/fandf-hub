@@ -63,23 +63,27 @@ import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 // though its rank was correct. Sub-grouping is now permanently off;
 // the per-row company / assignee / approver columns surface the same
 // facts without overriding rank order.
-const ARCHIVE_AFTER_DAYS = 14;
+const DEFAULT_ARCHIVE_AFTER_DAYS = 14;
 const STATUS_BUCKETS: {
   key: WorkTaskStatus;
   label: string;
   tone: string;
-  archiveAfterDays?: number;
+  /** Whether this bucket is a "terminal" state — done/cancelled that
+   *  trigger the per-bucket >N-day fold AND whose entire bucket
+   *  collapses when the user has hide_archived turned on at the
+   *  page level. */
+  isTerminal?: boolean;
 }[] = [
   { key: "awaiting_handling", label: "ממתין לטיפול", tone: "awaiting_handling" },
   { key: "in_progress", label: "בעבודה", tone: "in_progress" },
   { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
   { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
-  { key: "done", label: "בוצע", tone: "done", archiveAfterDays: ARCHIVE_AFTER_DAYS },
+  { key: "done", label: "בוצע", tone: "done", isTerminal: true },
   // Cancelled used to live in the collapsed "other" fold, but now that
   // it's a revivable state (awaiting_handling / in_progress targets in
   // the menu) users need to see it — otherwise cancelling a task makes
   // it look like it disappeared.
-  { key: "cancelled", label: "בוטל", tone: "cancelled", archiveAfterDays: ARCHIVE_AFTER_DAYS },
+  { key: "cancelled", label: "בוטל", tone: "cancelled", isTerminal: true },
 ];
 
 /** Split a list of terminal-state tasks into "recent" + "older". Uses
@@ -160,6 +164,20 @@ type Props = {
    * surfaces that don't support URL-driven sort (e.g. project pages).
    */
   searchParams?: Record<string, string | undefined>;
+  /**
+   * When true, the done + cancelled buckets render in a collapsed
+   * <details> by default — a single "📦 בוצע (N)" / "📦 בוטל (N)"
+   * line that the user can click to expand. Driven by the user's
+   * hide_archived gear-menu pref via the page-level archive toggle.
+   * The 14-day per-bucket "+N ישנות" sub-fold still works inside
+   * the expanded section. */
+  hideArchived?: boolean;
+  /**
+   * Days a done/cancelled task can sit before it's considered
+   * archived. Drives the per-bucket "+N ישנות (לפני יותר מ-X יום)"
+   * fold inside the bucket. Defaults to 14 — overridden via the
+   * archive_after_days gear-menu pref. */
+  archiveAfterDays?: number;
 };
 
 /** Default order per sort axis: dates default to descending (newest
@@ -235,6 +253,8 @@ export default function TasksQueue({
   sort = "rank",
   sortOrder,
   searchParams,
+  hideArchived = false,
+  archiveAfterDays,
 }: Props) {
   // Local task state lets us optimistically reorder rows on drop and
   // revert on server error — same pattern the kanban uses. Initial
@@ -409,25 +429,13 @@ export default function TasksQueue({
         // Terminal-state buckets (done / cancelled) split into recent
         // + older — older rows live behind a fold so the queue doesn't
         // accumulate visual debt over time.
-        const { recent, older } = b.archiveAfterDays
-          ? partitionByAge(list, b.archiveAfterDays)
+        const effectiveArchiveDays =
+          archiveAfterDays ?? DEFAULT_ARCHIVE_AFTER_DAYS;
+        const { recent, older } = b.isTerminal
+          ? partitionByAge(list, effectiveArchiveDays)
           : { recent: list, older: [] };
-        return (
-          <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
-            <h2 className="tasks-bucket-head">
-              {b.label}
-              <span className="tasks-bucket-count">{list.length}</span>
-              {sort !== "rank" && searchParams && (
-                <Link
-                  href={buildResetSortHref(searchParams)}
-                  scroll={false}
-                  className="tasks-bucket-sort-reset"
-                  title="חזור למיון ברירת המחדל (סדר ידני)"
-                >
-                  ↺ סדר ידני
-                </Link>
-              )}
-            </h2>
+        const bucketBody = (
+          <>
             {recent.length > 0 && (
               <div className="tasks-table-wrap">
                 <SortableTableSection
@@ -449,7 +457,7 @@ export default function TasksQueue({
             {older.length > 0 && (
               <details className="tasks-archive-fold">
                 <summary>
-                  {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${b.archiveAfterDays} יום) — לחץ להצגה`}
+                  {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${effectiveArchiveDays} יום) — לחץ להצגה`}
                 </summary>
                 <div className="tasks-table-wrap">
                   <SortableTableSection
@@ -469,6 +477,46 @@ export default function TasksQueue({
                 </div>
               </details>
             )}
+          </>
+        );
+        // When the user has hide_archived on, terminal buckets render
+        // as a single collapsed `<details>` line so the active queue
+        // doesn't bleed into completed/cancelled work. Click → expand.
+        if (b.isTerminal && hideArchived) {
+          return (
+            <details
+              key={b.key}
+              className={`tasks-bucket tasks-bucket-${b.tone} is-archived-fold`}
+            >
+              <summary className="tasks-bucket-head tasks-bucket-head-summary">
+                <span aria-hidden>📦</span>
+                {b.label}
+                <span className="tasks-bucket-count">{list.length}</span>
+                <span className="tasks-bucket-archived-hint">
+                  לחץ להצגת הארכיון
+                </span>
+              </summary>
+              {bucketBody}
+            </details>
+          );
+        }
+        return (
+          <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
+            <h2 className="tasks-bucket-head">
+              {b.label}
+              <span className="tasks-bucket-count">{list.length}</span>
+              {sort !== "rank" && searchParams && (
+                <Link
+                  href={buildResetSortHref(searchParams)}
+                  scroll={false}
+                  className="tasks-bucket-sort-reset"
+                  title="חזור למיון ברירת המחדל (סדר ידני)"
+                >
+                  ↺ סדר ידני
+                </Link>
+              )}
+            </h2>
+            {bucketBody}
           </section>
         );
       })}

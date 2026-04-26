@@ -18,6 +18,7 @@ import TasksQueue, {
 import TasksKanban from "@/components/TasksKanban";
 import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
+import TasksArchiveToggle from "@/components/TasksArchiveToggle";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 
 export const dynamic = "force-dynamic";
@@ -181,6 +182,35 @@ export default async function TasksPage({
     ? parseOrder(sp.order)
     : persistedOrder;
 
+  // Archive declutter — gear-menu pref hides done/cancelled by
+  // default. A status-explicit URL (?status=done|cancelled) is an
+  // override; the user opted into seeing those, don't hide them
+  // out from under them. Mass-hide also yields automatically when
+  // we know the user is filtering for terminal states via other
+  // flow controls in the future.
+  const userPrefHideArchived = prefs?.hide_archived !== false;
+  const statusOverride =
+    sp.status === "done" || sp.status === "cancelled";
+  const hideArchived = userPrefHideArchived && !statusOverride;
+  const archiveAfterDays = (() => {
+    const n = parseInt(prefs?.archive_after_days || "14", 10);
+    return Number.isFinite(n) ? Math.max(1, Math.min(365, n)) : 14;
+  })();
+  // Archive count for the header pill — done/cancelled tasks older
+  // than the cutoff. Computed against the same `tasks` list the
+  // views render, so the badge always matches what the toggle would
+  // unhide. Falls back to total terminal-state count if a task
+  // somehow has no updated_at.
+  const archiveCutoffMs =
+    Date.now() - archiveAfterDays * 24 * 60 * 60 * 1000;
+  const archivedCount = tasks.reduce((n, t) => {
+    if (t.status !== "done" && t.status !== "cancelled") return n;
+    const stamp = t.updated_at || t.created_at;
+    const ms = stamp ? new Date(stamp).getTime() : NaN;
+    if (!Number.isFinite(ms) || ms < archiveCutoffMs) return n + 1;
+    return n;
+  }, 0);
+
   return (
     <main className="container">
       <header className="page-header tasks-page-header">
@@ -193,6 +223,11 @@ export default async function TasksPage({
               משימות
             </h1>
             <TasksViewToggle current={view} searchParams={sp} />
+            <TasksArchiveToggle
+              hidden={userPrefHideArchived}
+              count={archivedCount}
+              overridden={statusOverride}
+            />
           </div>
           <div className="subtitle">
             ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
@@ -286,7 +321,11 @@ export default async function TasksPage({
       )}
 
       {!error && view === "kanban" && (
-        <TasksKanban tasks={tasks} people={people} />
+        <TasksKanban
+          tasks={tasks}
+          people={people}
+          hideArchived={hideArchived}
+        />
       )}
 
       {!error && view === "table" && (
@@ -298,6 +337,8 @@ export default async function TasksPage({
           sort={effectiveSort}
           sortOrder={effectiveSortOrder}
           searchParams={sp as Record<string, string | undefined>}
+          hideArchived={hideArchived}
+          archiveAfterDays={archiveAfterDays}
         />
       )}
 
@@ -306,6 +347,7 @@ export default async function TasksPage({
           tasks={tasks}
           initialMonth={sp.month}
           searchParams={sp as Record<string, string | undefined>}
+          hideArchived={hideArchived}
         />
       )}
     </main>

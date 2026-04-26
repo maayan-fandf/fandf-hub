@@ -48,6 +48,14 @@ type Props = {
   tasks: WorkTask[];
   people?: TasksPerson[];
   emptyMessage?: string;
+  /**
+   * When true, the done + cancelled columns are hidden behind an
+   * "📦 ארכיון" pill at the end of the board. Click expands them
+   * inline; clicking the pill again collapses. Driven by the user's
+   * hide_archived gear-menu pref via the page-level archive toggle.
+   * Status-explicit URLs (?status=done) override at the page level
+   * by passing hideArchived=false. */
+  hideArchived?: boolean;
 };
 
 /**
@@ -65,7 +73,14 @@ export default function TasksKanban({
   tasks: initialTasks,
   people = [],
   emptyMessage = "אין משימות תואמות לסינון.",
+  hideArchived = false,
 }: Props) {
+  // Local archive expansion — when the page-level pref hides
+  // archive but the user wants to peek without flipping the global
+  // setting, this expands the done/cancelled columns inline for
+  // the current visit. Resets when the user navigates away.
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
+  const showArchive = !hideArchived || archiveExpanded;
   // Local state lets us optimistically update on drop and revert on
   // server error without re-fetching. The parent page passes the
   // server-rendered list as the seed.
@@ -238,14 +253,52 @@ export default function TasksKanban({
         </div>
       )}
       <div className="kanban-board">
-        {COLUMNS.map((col) => (
-          <KanbanColumn
-            key={col.key}
-            column={col}
-            tasks={byStatus[col.key] || []}
-            peopleByEmail={peopleByEmail}
-          />
-        ))}
+        {COLUMNS.map((col) => {
+          const isTerminal = col.key === "done" || col.key === "cancelled";
+          if (isTerminal && !showArchive) return null;
+          return (
+            <KanbanColumn
+              key={col.key}
+              column={col}
+              tasks={byStatus[col.key] || []}
+              peopleByEmail={peopleByEmail}
+            />
+          );
+        })}
+        {/* Archive expand/collapse affordance. When the user has
+            hide_archived on, the done + cancelled columns are
+            replaced by a thin pill the user can click to peek;
+            once expanded, the pill flips to "כווץ" so the user
+            can collapse without flipping the global pref. */}
+        {hideArchived && (() => {
+          const archivedTotal =
+            (byStatus["done"]?.length || 0) +
+            (byStatus["cancelled"]?.length || 0);
+          if (!archiveExpanded && archivedTotal === 0) return null;
+          return (
+            <button
+              type="button"
+              className={`kanban-archive-pill${
+                archiveExpanded ? " is-expanded" : ""
+              }`}
+              onClick={() => setArchiveExpanded((v) => !v)}
+              aria-expanded={archiveExpanded}
+              title={
+                archiveExpanded
+                  ? "כווץ את עמודות הארכיון"
+                  : `${archivedTotal} משימות בארכיון מוסתרות — לחץ להצגה`
+              }
+            >
+              <span aria-hidden>📦</span>
+              {archiveExpanded ? "כווץ ארכיון" : "ארכיון"}
+              {!archiveExpanded && archivedTotal > 0 && (
+                <span className="kanban-archive-pill-count">
+                  {archivedTotal}
+                </span>
+              )}
+            </button>
+          );
+        })()}
       </div>
       <DragOverlay>
         {draggingTask ? (
