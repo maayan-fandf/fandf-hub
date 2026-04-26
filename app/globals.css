@@ -6776,6 +6776,78 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
   cursor: pointer;
   color: inherit;
 }
+
+/* ─── @-mention picker ───────────────────────────────────────────
+   Floating dropdown anchored under the reply textarea — opens on
+   `@` keystroke, filters as the user types after the @, supports
+   keyboard navigation (arrows + Enter/Tab to pick, Esc to close).
+   Positioning is below the textarea (not at the caret) for
+   simplicity; that's good-enough UX without the textarea-mirror
+   trickery a caret-anchored popup needs. */
+.task-reply-composer-textarea-wrap {
+  position: relative;
+}
+.mention-picker {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 0.25em;
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.mention-picker-status {
+  padding: 0.5em 0.7em;
+  color: var(--muted);
+  font-size: 0.9em;
+  text-align: center;
+}
+.mention-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.45em 0.7em;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+  color: var(--text);
+}
+.mention-picker-row.is-active,
+.mention-picker-row:hover {
+  background: rgba(79, 70, 229, 0.08);
+}
+.mention-picker-name {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.mention-picker-email {
+  font-size: 0.85em;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mention-picker-role {
+  font-size: 0.75em;
+  color: var(--muted);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.05));
+  border-radius: 999px;
+  padding: 0.05em 0.5em;
+  white-space: nowrap;
+}
 .tasks-calendar-cell-head {
   display: flex;
   align-items: center;

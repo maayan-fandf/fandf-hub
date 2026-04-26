@@ -24,6 +24,7 @@ export default async function TaskComments({ taskId }: Props) {
   }
 
   const { comments, me } = data;
+  const project = data.project || "";
   const myEmail = (me?.email || "").toLowerCase();
   const isAdmin = !!me?.isAdmin;
 
@@ -96,7 +97,7 @@ export default async function TaskComments({ taskId }: Props) {
         </ul>
       )}
 
-      <TaskReplyComposer taskId={taskId} />
+      <TaskReplyComposer taskId={taskId} project={project} />
     </section>
   );
 }

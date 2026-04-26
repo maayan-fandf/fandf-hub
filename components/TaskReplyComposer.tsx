@@ -1,11 +1,18 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 type Props = {
   taskId: string;
+  /** The task's project name. Used to fetch the project's roster
+   *  for the @-mention autocomplete. When omitted (e.g. legacy
+   *  caller), the picker is disabled and the user can still type
+   *  raw `@<email>` — server-side parsing already handles that. */
+  project?: string;
 };
+
+type Person = { email: string; name: string; role: string };
 
 const MAX = 4000;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -13,6 +20,15 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 type UploadResponse =
   | { ok: true; fileId: string; name: string; mimeType: string; viewUrl: string; embedUrl: string }
   | { ok: false; error: string };
+
+type MentionState = {
+  /** Index of the `@` character in the textarea value. */
+  startIdx: number;
+  /** Lowercased filter string typed after the `@`. */
+  fragment: string;
+  /** Selected index inside the filtered list. */
+  selectedIdx: number;
+};
 
 /**
  * Permanent composer at the bottom of a task's comment thread. POSTs to
@@ -24,14 +40,66 @@ type UploadResponse =
  * `/api/worktasks/upload`, then inserts an `![name](driveUrl)` token into
  * the textarea at the cursor. The comment renderer detects these tokens
  * and shows the image inline.
+ *
+ * Type `@` and the picker drops in below the textarea with the project
+ * roster — arrow keys navigate, Enter/Tab inserts `@<email>`, Escape
+ * dismisses. Server-side `@<email>` parsing already exists, so users
+ * who prefer to type the full email manually still work.
  */
-export default function TaskReplyComposer({ taskId }: Props) {
+export default function TaskReplyComposer({ taskId, project }: Props) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // @-mention picker state. `people` is loaded lazily on first @
+  // keystroke and cached for the lifetime of the composer.
+  const [people, setPeople] = useState<Person[] | null>(null);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [mention, setMention] = useState<MentionState | null>(null);
+
+  // Lazy-load the project roster the first time the user types @.
+  // Falls through silently on failure; the picker just stays empty
+  // and the user can still type a raw email.
+  useEffect(() => {
+    if (!mention || !project || people !== null || peopleLoading) return;
+    setPeopleLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/projects/assignees?project=${encodeURIComponent(project)}`,
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          assignees?: Person[];
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setPeople(Array.isArray(data.assignees) ? data.assignees : []);
+      } catch {
+        setPeople([]);
+      } finally {
+        setPeopleLoading(false);
+      }
+    })();
+  }, [mention, project, people, peopleLoading]);
+
+  // Filtered list for the picker — case-insensitive substring match
+  // on email + name. Capped at 8 visible so the dropdown never
+  // dominates the page.
+  const filteredPeople = (() => {
+    if (!mention || !people) return [];
+    const f = mention.fragment.toLowerCase();
+    const list = !f
+      ? people
+      : people.filter(
+          (p) =>
+            p.email.toLowerCase().includes(f) ||
+            p.name.toLowerCase().includes(f),
+        );
+    return list.slice(0, 8);
+  })();
 
   function insertAtCursor(text: string) {
     const el = textareaRef.current;
@@ -46,6 +114,87 @@ export default function TaskReplyComposer({ taskId }: Props) {
     requestAnimationFrame(() => {
       el.focus();
       const pos = start + text.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  /** Look backwards from the cursor for an `@<chars>` fragment that
+   *  isn't part of an existing email. Returns the start index of the
+   *  `@` and the typed fragment, or null when there's no active
+   *  mention to autocomplete. */
+  function detectMention(
+    text: string,
+    cursorPos: number,
+  ): { startIdx: number; fragment: string } | null {
+    let i = cursorPos - 1;
+    while (i >= 0) {
+      const ch = text[i];
+      if (ch === "@") {
+        // The @ must be at the start of input or follow whitespace —
+        // otherwise it's part of an email like "maayan@fandf.co.il".
+        if (i > 0 && !/\s/.test(text[i - 1])) return null;
+        return { startIdx: i, fragment: text.slice(i + 1, cursorPos) };
+      }
+      if (/\s/.test(ch)) return null;
+      i--;
+    }
+    return null;
+  }
+
+  function onTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const next = e.target.value;
+    setValue(next);
+    if (!project) {
+      // Picker disabled — composer still works for raw `@<email>` typed by hand.
+      return;
+    }
+    const cursor = e.target.selectionStart ?? next.length;
+    const m = detectMention(next, cursor);
+    if (m) {
+      setMention((cur) =>
+        cur && cur.startIdx === m.startIdx
+          ? { ...cur, fragment: m.fragment }
+          : { ...m, selectedIdx: 0 },
+      );
+    } else {
+      setMention(null);
+    }
+  }
+
+  function onSelectionChange() {
+    if (!project) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const cursor = el.selectionStart ?? 0;
+    const m = detectMention(el.value, cursor);
+    if (m) {
+      setMention((cur) =>
+        cur && cur.startIdx === m.startIdx
+          ? { ...cur, fragment: m.fragment }
+          : { ...m, selectedIdx: 0 },
+      );
+    } else {
+      setMention(null);
+    }
+  }
+
+  function pickMention(person: Person) {
+    if (!mention) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const cursor = el.selectionStart ?? value.length;
+    // Replace the typed @<fragment> with `@<email> ` (trailing space
+    // so the next character starts a fresh word, which keeps the
+    // detector quiet).
+    const before = value.slice(0, mention.startIdx);
+    const after = value.slice(cursor);
+    const insert = `@${person.email} `;
+    const next = before + insert + after;
+    setValue(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = before.length + insert.length;
       el.setSelectionRange(pos, pos);
     });
   }
@@ -155,6 +304,42 @@ export default function TaskReplyComposer({ taskId }: Props) {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Picker keyboard nav takes precedence when the dropdown is open.
+    if (mention && filteredPeople.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMention((cur) =>
+          cur
+            ? {
+                ...cur,
+                selectedIdx: Math.min(
+                  cur.selectedIdx + 1,
+                  filteredPeople.length - 1,
+                ),
+              }
+            : cur,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMention((cur) =>
+          cur ? { ...cur, selectedIdx: Math.max(cur.selectedIdx - 1, 0) } : cur,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const pick = filteredPeople[mention.selectedIdx] || filteredPeople[0];
+        if (pick) pickMention(pick);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submit();
@@ -166,20 +351,62 @@ export default function TaskReplyComposer({ taskId }: Props) {
 
   return (
     <div className="task-reply-composer">
-      <textarea
-        ref={textareaRef}
-        className="reply-textarea"
-        rows={3}
-        value={value}
-        placeholder="כתוב תגובה… (⌘/Ctrl+Enter לשליחה · הדבק צילום מסך או גרור קובץ)"
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        disabled={isPending}
-        maxLength={MAX + 1}
-      />
+      <div className="task-reply-composer-textarea-wrap">
+        <textarea
+          ref={textareaRef}
+          className="reply-textarea"
+          rows={3}
+          value={value}
+          placeholder="כתוב תגובה… (@ לתיוג · ⌘/Ctrl+Enter לשליחה · הדבק צילום מסך או גרור קובץ)"
+          onChange={onTextareaChange}
+          onKeyDown={onKeyDown}
+          onKeyUp={onSelectionChange}
+          onClick={onSelectionChange}
+          onPaste={onPaste}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onBlur={() => {
+            // Defer so a click on a picker row fires its onMouseDown
+            // before the dropdown is dismissed.
+            window.setTimeout(() => setMention(null), 150);
+          }}
+          disabled={isPending}
+          maxLength={MAX + 1}
+        />
+        {mention && project && (
+          <div className="mention-picker" role="listbox" aria-label="בחר אדם לתיוג">
+            {peopleLoading && people === null && (
+              <div className="mention-picker-status">טוען…</div>
+            )}
+            {!peopleLoading && filteredPeople.length === 0 && (
+              <div className="mention-picker-status">אין תוצאות</div>
+            )}
+            {filteredPeople.map((p, i) => (
+              <button
+                key={p.email}
+                type="button"
+                role="option"
+                aria-selected={i === mention.selectedIdx}
+                className={`mention-picker-row${
+                  i === mention.selectedIdx ? " is-active" : ""
+                }`}
+                // onMouseDown fires before the textarea's onBlur, so
+                // the click lands while the picker is still open.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pickMention(p);
+                }}
+              >
+                <span className="mention-picker-name">{p.name}</span>
+                <span className="mention-picker-email" dir="ltr">
+                  {p.email}
+                </span>
+                {p.role && <span className="mention-picker-role">{p.role}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="reply-drawer-foot">
         <span className={`reply-count ${over ? "is-over" : ""}`}>
           {count}/{MAX}
