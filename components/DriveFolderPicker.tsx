@@ -56,6 +56,11 @@ export default function DriveFolderPicker({
 
   const resolveKey = `${company}::${project}::${campaign}`;
   const lastKey = useRef<string>("");
+  // Tracks the folder ID our auto-select effect last applied, so the
+  // campaign-change effect knows when to wipe a stale selection. Used
+  // by both effects below — declared up here to avoid a temporal-
+  // dead-zone reference from the campaign-change effect.
+  const autoSelectedFor = useRef<string>("");
 
   const resolveCampaign = useCallback(async () => {
     if (!project) {
@@ -90,13 +95,25 @@ export default function DriveFolderPicker({
   useEffect(() => {
     if (disabled) return;
     if (lastKey.current === resolveKey) return;
+    const isFirstRun = lastKey.current === "";
     lastKey.current = resolveKey;
     setChildren({});
     setExpanded(new Set());
+    // Reset the folder selection on campaign change. Without this, a
+    // user who picks campaign A → auto-selects A's folder → then
+    // switches to a new campaign B would submit with B's name but A's
+    // folderId. The server reuses that pinned folder and never creates
+    // B's folder at all. Skip on the very first run so we don't clobber
+    // an explicit `value` passed in by the parent (e.g. edit mode).
+    if (!isFirstRun && value.mode === "existing" && value.folderId) {
+      onChange({ mode: "existing", folderId: "", folderName: "" });
+    }
+    autoSelectedFor.current = "";
     const handle = setTimeout(() => {
       void resolveCampaign();
     }, 350);
     return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolveKey, disabled, resolveCampaign]);
 
   const loadChildren = useCallback(async (parentId: string) => {
@@ -129,7 +146,8 @@ export default function DriveFolderPicker({
   // hasn't picked anything yet. Default UX: "use the campaign folder"
   // is the implicit choice so the form's submit just sends drive_folder_id
   // = campaign folder ID. Only fires once per resolved folder ID.
-  const autoSelectedFor = useRef<string>("");
+  // (autoSelectedFor ref is declared up top; both this effect and the
+  // campaign-change effect read/write it.)
   useEffect(() => {
     if (!campaignFolder) return;
     if ("error" in campaignFolder || "pending" in campaignFolder) return;
