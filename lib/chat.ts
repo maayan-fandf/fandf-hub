@@ -235,6 +235,66 @@ export async function updateMessageText(
   });
 }
 
+/**
+ * DELETE a Chat message. Same author-only constraint as edit — the
+ * impersonated user must be the message's author or the API will
+ * 403. Caller surfaces any error in the UI.
+ */
+export async function deleteMessage(
+  subjectEmail: string,
+  messageName: string,
+): Promise<void> {
+  const chat = chatClient(subjectEmail);
+  await chat.spaces.messages.delete({ name: messageName });
+}
+
+/**
+ * Add an emoji reaction to a Chat message. Idempotent on the Chat
+ * side — if the user has already reacted with this emoji, Chat just
+ * returns the existing reaction without creating a duplicate.
+ */
+export async function addReaction(
+  subjectEmail: string,
+  messageName: string,
+  unicode: string,
+): Promise<void> {
+  const chat = chatClient(subjectEmail);
+  await chat.spaces.messages.reactions.create({
+    parent: messageName,
+    requestBody: { emoji: { unicode } },
+  });
+}
+
+/**
+ * Remove the impersonated user's reaction with `unicode` from the
+ * given message. The Chat API requires the reaction's full resource
+ * name (`spaces/.../messages/.../reactions/<id>`) — we look it up
+ * via a filtered list call first. Returns silently if the user
+ * doesn't have a reaction with that emoji on the message
+ * (idempotent — no-op when there's nothing to remove).
+ */
+export async function removeReaction(
+  subjectEmail: string,
+  messageName: string,
+  unicode: string,
+): Promise<void> {
+  const chat = chatClient(subjectEmail);
+  // Resolve the impersonated user's resource so we can filter the
+  // reactions list to "mine with this emoji". DWD impersonates the
+  // session user, so this is the same identity that owns any
+  // reaction this user added.
+  const userResource = await lookupUserGaiaResource(subjectEmail, subjectEmail);
+  if (!userResource) return;
+  const list = await chat.spaces.messages.reactions.list({
+    parent: messageName,
+    filter: `emoji.unicode = "${unicode}" AND user.name = "${userResource}"`,
+    pageSize: 1,
+  });
+  const reactionName = list.data.reactions?.[0]?.name;
+  if (!reactionName) return;
+  await chat.spaces.messages.reactions.delete({ name: reactionName });
+}
+
 async function lookupUserName(
   subjectEmail: string,
   userResource: string,
@@ -406,17 +466,78 @@ export async function listRecentMessages(
  * the body short (~150 chars excerpt + a hub deeplink) so the card
  * stays scannable in the Chat feed.
  */
+/**
+ * Programmatic USER_MENTION annotations make Chat treat `@<name>`
+ * tokens as real mentions (notification, blue-link rendering, etc.)
+ * even when the message comes from the API rather than a native
+ * Chat composer. Each annotation pins a user resource to a
+ * `[startIndex, startIndex+length]` slice of the text body.
+ *
+ * Built server-side in /api/chat/post — caller passes the literal
+ * `{email, name}` pairs picked from the composer's @-mention picker.
+ */
+export type ChatMentionInput = {
+  email: string;
+  name: string;
+};
+
 export async function postMessage(
   subjectEmail: string,
   spaceId: string,
   text: string,
+  options: {
+    threadName?: string;
+    mentions?: ChatMentionInput[];
+  } = {},
 ): Promise<string> {
   if (!spaceId || !text) return "";
   try {
     const chat = chatClient(subjectEmail);
+    // When threadName is set, post as a reply to that thread. The
+    // FALLBACK option means if the thread is gone or otherwise
+    // un-replyable, Chat creates a new thread instead — graceful
+    // degradation, no exception thrown for the caller to handle.
+    const requestBody: {
+      text: string;
+      thread?: { name: string };
+      annotations?: object[];
+    } = { text };
+    if (options.threadName) {
+      requestBody.thread = { name: options.threadName };
+    }
+    if (options.mentions && options.mentions.length > 0) {
+      const annotations: object[] = [];
+      for (const { email, name } of options.mentions) {
+        const userResource = await lookupUserGaiaResource(subjectEmail, email);
+        if (!userResource) continue;
+        const token = "@" + name;
+        // Find every occurrence of the token in text; one annotation
+        // per occurrence so multi-mentions in one message all notify.
+        // UTF-16 code-unit indices match what Chat's API expects.
+        let idx = text.indexOf(token);
+        while (idx !== -1) {
+          annotations.push({
+            type: "USER_MENTION",
+            startIndex: idx,
+            length: token.length,
+            userMention: {
+              user: { name: userResource, type: "HUMAN" },
+              type: "MENTION",
+            },
+          });
+          idx = text.indexOf(token, idx + token.length);
+        }
+      }
+      if (annotations.length > 0) {
+        requestBody.annotations = annotations;
+      }
+    }
     const res = await chat.spaces.messages.create({
       parent: `spaces/${spaceId}`,
-      requestBody: { text },
+      requestBody,
+      messageReplyOption: options.threadName
+        ? "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+        : undefined,
     });
     return res.data.name ?? "";
   } catch (e) {

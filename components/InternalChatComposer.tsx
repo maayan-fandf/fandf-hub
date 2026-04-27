@@ -53,6 +53,14 @@ export default function InternalChatComposer({
   const [picker, setPicker] = useState<PickerState>(CLOSED);
   const [assignees, setAssignees] = useState<Assignee[] | null>(null);
   const [loadingAssignees, setLoadingAssignees] = useState(false);
+  // Track every @-mention the user has picked from the dropdown.
+  // Map keyed by email so re-picking the same person doesn't double
+  // up. Names are kept alongside so the server can scan the final
+  // text for `@<name>` and convert each occurrence into a real
+  // USER_MENTION annotation when posting.
+  const [pickedMentions, setPickedMentions] = useState<
+    Map<string, string>
+  >(new Map());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Lazy-fetch project members on first picker-open. Same endpoint
@@ -135,6 +143,11 @@ export default function InternalChatComposer({
     const insert = "@" + r.name + " ";
     const newValue = before + insert + after;
     setValue(newValue);
+    setPickedMentions((prev) => {
+      const next = new Map(prev);
+      next.set(r.email, r.name);
+      return next;
+    });
     closePicker();
     requestAnimationFrame(() => {
       const newPos = (before + insert).length;
@@ -207,16 +220,25 @@ export default function InternalChatComposer({
       return;
     }
     setError(null);
+    // Re-verify each tracked mention is still in the body — user
+    // may have backspaced the @<name> token after picking. Server
+    // also tolerates dead mentions (silently skips), but trimming
+    // here is cheap.
+    const mentions = Array.from(pickedMentions.entries())
+      .filter(([, name]) => text.includes("@" + name))
+      .map(([email, name]) => ({ email, name }));
+
     // Optimistic clear — same rationale as ReplyDrawer. If the post
     // fails we restore the typed text + show the error inline.
     setValue("");
+    setPickedMentions(new Map());
     closePicker();
     startTransition(async () => {
       try {
         const res = await fetch("/api/chat/post", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ project, text }),
+          body: JSON.stringify({ project, text, mentions }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
@@ -228,12 +250,27 @@ export default function InternalChatComposer({
         router.refresh();
       } catch (e) {
         setValue(text);
+        // Restore the mention map so the user doesn't have to re-pick.
+        setPickedMentions((prev) => {
+          if (prev.size > 0) return prev;
+          const restored = new Map<string, string>();
+          for (const m of mentions) restored.set(m.email, m.name);
+          return restored;
+        });
         setError(e instanceof Error ? e.message : String(e));
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
     });
   }
 
+  // Count of live (still-in-body) mentions for the footer hint.
+  const liveMentions = useMemo(() => {
+    let n = 0;
+    pickedMentions.forEach((name) => {
+      if (value.includes("@" + name)) n++;
+    });
+    return n;
+  }, [value, pickedMentions]);
   const count = value.trim().length;
   const over = count > MAX;
   const pickerOpen = picker.queryStart >= 0 && results.length > 0;
@@ -254,6 +291,11 @@ export default function InternalChatComposer({
         maxLength={MAX + 1}
       />
       <div className="chat-composer-foot">
+        {liveMentions > 0 && (
+          <span className="create-task-mentions-hint">
+            תויגו: {liveMentions}
+          </span>
+        )}
         <span className={`reply-count ${over ? "is-over" : ""}`}>
           {count}/{MAX}
         </span>

@@ -1958,6 +1958,15 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   color: var(--accent);
   text-decoration: none;
 }
+.chat-message-action-danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgb(239, 68, 68);
+  color: rgb(239, 68, 68);
+}
+.chat-message-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* Server-rendered Chat message list — compact rows, avatar + body.
    Bounded height + scroll: even one chatty project can run dozens of
@@ -2144,6 +2153,43 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
 html[data-theme="dark"] .chat-thread-reply {
   background: rgba(255, 255, 255, 0.03);
 }
+/* Reply-to-thread affordance under each thread. Spans both grid
+   columns + sits under the (indented) replies sub-list. */
+.chat-thread-reply-action {
+  grid-column: 1 / -1;
+  margin-inline-start: 2.6rem; /* aligns with replies indent + border */
+  margin-top: 0.25rem;
+}
+.thread-reply-trigger {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 0.3em 0.7em;
+  font: inherit;
+  font-size: 0.8em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, border-style 0.15s ease;
+}
+.thread-reply-trigger:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.thread-reply-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.thread-reply-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
 
 /* Reaction chips — display-only for now, link out to Chat to add /
    remove a reaction. Phase 3 wires these to a click handler that
@@ -2154,7 +2200,15 @@ html[data-theme="dark"] .chat-thread-reply {
   gap: 0.3rem;
   margin-top: 0.4rem;
 }
+/* Each existing reaction renders as a chip + a tiny × that appears
+   on hover. Wrap so the × can position absolutely against the chip
+   without breaking the row's flex layout. */
+.chat-reaction-chip {
+  position: relative;
+  display: inline-flex;
+}
 .chat-reaction {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 0.25em;
@@ -2163,14 +2217,121 @@ html[data-theme="dark"] .chat-thread-reply {
   border: 1px solid var(--border);
   background: var(--surface-soft, rgba(0, 0, 0, 0.04));
   color: var(--text);
+  font: inherit;
   font-size: 0.85em;
   text-decoration: none;
+  cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.chat-reaction:hover {
+.chat-reaction:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent-soft);
   text-decoration: none;
+}
+.chat-reaction:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* × on the chip — fade in on chip hover, click removes the user's
+   own reaction with this emoji. Positioned absolutely so it can
+   overlap the chip without resizing it. */
+.chat-reaction-remove {
+  position: absolute;
+  top: -6px;
+  inset-inline-end: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-reaction-chip:hover .chat-reaction-remove,
+.chat-reaction-chip:focus-within .chat-reaction-remove {
+  opacity: 1;
+}
+.chat-reaction-remove:hover {
+  background: rgb(239, 68, 68);
+  color: #fff;
+  border-color: rgb(239, 68, 68);
+}
+@media (hover: none) {
+  /* Touch — always show the × so reactions can be removed. */
+  .chat-reaction-remove {
+    opacity: 0.7;
+  }
+}
+/* "+ react" button — opens the inline emoji picker. */
+.chat-reaction-add {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1em;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, border-style 0.15s ease;
+}
+.chat-reaction-add:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.chat-reaction-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Inline emoji picker — small grid of common emojis. */
+.chat-reaction-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  padding: 0.25em 0.4em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.1));
+}
+.chat-reaction-picker-item {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 1.05em;
+  cursor: pointer;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.chat-reaction-picker-item:hover:not(:disabled) {
+  background: var(--accent-soft);
+  transform: scale(1.15);
+}
+.chat-reaction-picker-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-reaction-error {
+  font-size: 0.78em;
+  color: rgb(239, 68, 68);
 }
 .chat-reaction-emoji {
   font-size: 1.05em;

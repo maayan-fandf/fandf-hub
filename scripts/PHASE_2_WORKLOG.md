@@ -31,6 +31,58 @@ Two features in one PR:
 ## Status: COMPLETE — pushed in commit (see HEAD)
 Production `next build` passed clean. No compile errors.
 
+## Full-parity round (this commit)
+
+User goal: "minimize opening tabs, hub is source of truth". Closing
+the remaining gaps after the previous round:
+
+- **Delete own message** — 🗑️ icon next to ✏️ on own messages.
+  Confirm dialog with body excerpt → /api/chat/delete →
+  chat.spaces.messages.delete. Same author-only enforcement Chat
+  itself imposes.
+
+- **Reply to a specific thread** — each thread now has a
+  `↩ השב לשרשור` button under the replies sub-list. Click expands
+  to a small textarea + send/cancel. Submits to /api/chat/post with
+  `threadName` set, which makes Chat post the message AS A REPLY
+  (`messageReplyOption: REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`).
+
+- **Programmatic @-mention annotations** — picker-injected `@<name>`
+  tokens now post with proper USER_MENTION annotations so Chat
+  actually notifies the recipient. Composer tracks `Map<email, name>`
+  for picked mentions, sends them in the request body, server-side
+  resolves each email → gaia ID via Admin SDK, scans the text for
+  every `@<name>` occurrence and builds an annotation per match.
+
+- **Reaction add / remove from the hub** — chips became interactive:
+  click a chip → adds your reaction with that emoji (idempotent;
+  Chat returns the existing reaction if you'd already added it).
+  Hover a chip → tiny × appears → click removes your reaction
+  (looks up your reaction by `user.name + emoji.unicode` filter,
+  deletes by name). Plus a `+` button at the end of the row opens a
+  small inline picker with 8 common emojis to add a fresh reaction.
+
+New files:
+- `app/api/chat/delete/route.ts`
+- `app/api/chat/react/route.ts`
+- `components/DeleteChatMessageButton.tsx`
+- `components/ThreadReplyComposer.tsx`
+- `components/ChatReactionsRow.tsx`
+
+Modified files:
+- `lib/chat.ts` — new helpers: deleteMessage, addReaction,
+  removeReaction. postMessage now accepts {threadName, mentions}
+  options. Programmatic annotations built server-side from
+  {email, name} pairs.
+- `app/api/chat/post/route.ts` — passes through threadName + mentions.
+- `components/InternalChatComposer.tsx` — tracks pickedMentions,
+  sends them on submit, restores on error.
+- `components/InternalDiscussionTab.tsx` — wires DeleteChatMessageButton
+  + ThreadReplyComposer + ChatReactionsRow into renderMessage.
+- `app/globals.css` — chat-reaction-chip / chat-reaction-remove /
+  chat-reaction-add / chat-reaction-picker styling, plus
+  thread-reply-trigger / thread-reply-composer styling.
+
 ## Hub-as-source-of-truth round
 
 User pivoted on the framing: "minimize opening tabs, hub is source of

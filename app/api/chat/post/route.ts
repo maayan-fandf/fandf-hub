@@ -32,9 +32,14 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { project?: string; text?: string };
+  let body: {
+    project?: string;
+    text?: string;
+    threadName?: string;
+    mentions?: { email: string; name: string }[];
+  };
   try {
-    body = (await req.json()) as { project?: string; text?: string };
+    body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json(
       { ok: false, error: "Expected JSON body" },
@@ -44,6 +49,19 @@ export async function POST(req: Request) {
 
   const project = String(body.project || "").trim();
   const text = String(body.text || "").trim();
+  const threadName = String(body.threadName || "").trim();
+  const mentions = Array.isArray(body.mentions)
+    ? body.mentions
+        .filter(
+          (m) =>
+            m &&
+            typeof m.email === "string" &&
+            typeof m.name === "string" &&
+            m.email.includes("@") &&
+            m.name.length > 0,
+        )
+        .slice(0, 30) // sanity cap — Chat's annotation limit is way higher
+    : [];
   if (!project || !text) {
     return NextResponse.json(
       { ok: false, error: "project and text are required" },
@@ -101,7 +119,17 @@ export async function POST(req: Request) {
   // Post as the session user. If they're not a member of the space,
   // the Chat API will return 403 / 404 — surface the underlying error
   // verbatim so the user sees something actionable.
-  const messageName = await postMessage(session.user.email, spaceId, text);
+  // threadName (when provided) makes this a reply within an existing
+  // thread; otherwise it starts a new top-level thread.
+  // mentions (when non-empty) trigger programmatic USER_MENTION
+  // annotations on the posted message — that's what makes Chat fire
+  // a real notification to the @-mentioned user.
+  const messageName = await postMessage(
+    session.user.email,
+    spaceId,
+    text,
+    { threadName: threadName || undefined, mentions },
+  );
   if (!messageName) {
     return NextResponse.json(
       {

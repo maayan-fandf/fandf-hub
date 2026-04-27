@@ -3,6 +3,9 @@ import Avatar from "@/components/Avatar";
 import InternalChatComposer from "@/components/InternalChatComposer";
 import ConvertChatMessageToTaskButton from "@/components/ConvertChatMessageToTaskButton";
 import EditChatMessageDrawer from "@/components/EditChatMessageDrawer";
+import DeleteChatMessageButton from "@/components/DeleteChatMessageButton";
+import ThreadReplyComposer from "@/components/ThreadReplyComposer";
+import ChatReactionsRow from "@/components/ChatReactionsRow";
 import {
   listRecentMessages,
   lookupUserGaiaResource,
@@ -191,6 +194,18 @@ export default async function InternalDiscussionTab({
                   ))}
                 </ul>
               )}
+              {/* Reply-to-this-thread affordance — wraps in a div
+                  that spans the grid so the trigger / textarea
+                  can be full-width under both columns. The thread
+                  resource name comes off the parent (or the
+                  parent's own message name when it's the only
+                  message and threadName field is unset). */}
+              <div className="chat-thread-reply-action">
+                <ThreadReplyComposer
+                  project={projectName}
+                  threadName={t.parent.threadName || t.parent.name}
+                />
+              </div>
             </li>
           ))}
         </ul>
@@ -259,6 +274,12 @@ function renderMessage(
               authorName={m.senderName || ""}
               chatSpaceUrl={spaceUrl}
             />
+            {isMine && (
+              <DeleteChatMessageButton
+                messageName={m.name}
+                bodyExcerpt={m.text}
+              />
+            )}
           </span>
         </div>
         <div className="chat-message-text">{renderChatText(m.text)}</div>
@@ -302,25 +323,13 @@ function renderMessage(
             })}
           </div>
         )}
-        {m.reactions.length > 0 && (
-          <div className="chat-reactions">
-            {m.reactions.map((r, i) => (
-              <a
-                key={i}
-                href={spaceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="chat-reaction"
-                title="פתח בצ׳אט כדי להגיב"
-              >
-                <span className="chat-reaction-emoji" aria-hidden>
-                  {r.emoji}
-                </span>
-                <span className="chat-reaction-count">{r.count}</span>
-              </a>
-            ))}
-          </div>
-        )}
+        {/* Always render the reactions row — even on messages with
+            no reactions yet — so the "+" button is always available
+            for adding a first reaction. */}
+        <ChatReactionsRow
+          messageName={m.name}
+          reactions={m.reactions}
+        />
       </div>
     </>
   );
