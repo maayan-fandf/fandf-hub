@@ -6,6 +6,7 @@ import {
   listRecentMessages,
   parseSpaceId,
   chatSpaceUrlFromSpaceId,
+  type ChatMessage,
 } from "@/lib/chat";
 
 /**
@@ -72,7 +73,7 @@ export default async function InternalDiscussionTab({
     );
   }
 
-  const all = await listRecentMessages(subjectEmail, spaceId, 30);
+  const all = await listRecentMessages(subjectEmail, spaceId, 50);
   const spaceUrl = chatSpaceUrlFromSpaceId(spaceId);
 
   // "תיוגים שלי" filter — match the message's mention displayNames
@@ -86,13 +87,52 @@ export default async function InternalDiscussionTab({
       ? myDisplayNames.map((n) => n.toLowerCase())
       : [myKey]
   ).filter(Boolean);
-  const messages = showOnlyMine
-    ? all.filter((m) =>
-        m.mentionEmails.some((mn) =>
-          candidates.some((c) => mn.includes(c)),
-        ),
-      )
-    : all;
+  const matchesMention = (m: ChatMessage) =>
+    m.mentionEmails.some((mn) => candidates.some((c) => mn.includes(c)));
+
+  // Group messages by thread. Each thread is a {parent, replies}
+  // tuple — first message by createTime is the parent, rest are
+  // replies. Top-level messages with no replies render as a "thread"
+  // with empty replies — same render path, no special-case branch.
+  const threadMap = new Map<string, ChatMessage[]>();
+  for (const m of all) {
+    const tname = m.threadName || m.name;
+    const list = threadMap.get(tname);
+    if (list) list.push(m);
+    else threadMap.set(tname, [m]);
+  }
+  type Thread = {
+    parent: ChatMessage;
+    replies: ChatMessage[];
+    hasMention: boolean;
+  };
+  const threads: Thread[] = [];
+  threadMap.forEach((list) => {
+    // Sort thread members oldest-first so the parent is at index 0
+    // and replies fall after in the order they were posted.
+    const sorted = list
+      .slice()
+      .sort((a, b) => a.createTime.localeCompare(b.createTime));
+    const hasMention = sorted.some(matchesMention);
+    threads.push({ parent: sorted[0], replies: sorted.slice(1), hasMention });
+  });
+
+  // Filter at thread granularity for "תיוגים שלי" — we want to keep
+  // the thread parent for context even when only the reply mentions
+  // the user. Otherwise `false=>true` on hasMention drops the whole
+  // thread.
+  const visible = showOnlyMine ? threads.filter((t) => t.hasMention) : threads;
+
+  // Newest-thread-first in the array — column-reverse on the list
+  // visually anchors the newest at the bottom (next to the composer).
+  visible.sort((a, b) => b.parent.createTime.localeCompare(a.parent.createTime));
+
+  // Total message count across all visible threads — drives the
+  // empty state label more honestly than counting threads.
+  const totalRendered = visible.reduce(
+    (n, t) => n + 1 + t.replies.length,
+    0,
+  );
 
   return (
     <div className="discussion-internal">
@@ -110,89 +150,26 @@ export default async function InternalDiscussionTab({
           הודעות אחרונות מתוך חלל הצ׳אט הפנימי. אפשר לכתוב כאן או דרך הצ׳אט.
         </span>
       </div>
-      {messages.length === 0 ? (
+      {totalRendered === 0 ? (
         <div className="discussion-empty">
           {showOnlyMine
-            ? "אין הודעות אחרונות שתויגת בהן."
+            ? "אין שרשורים אחרונים שתויגת בהם."
             : "אין הודעות עדיין בחלל הזה."}
         </div>
       ) : (
         <ul className="chat-message-list">
-          {messages.map((m) => (
-            <li key={m.name} className="chat-message">
-              <Avatar
-                name={m.senderName || m.senderResource || m.name}
-                title={m.senderName || m.senderResource}
-                size={26}
-              />
-              <div className="chat-message-body">
-                <div className="chat-message-head">
-                  <span className="chat-message-author">
-                    {m.senderName || "לא ידוע"}
-                  </span>
-                  <span
-                    className="chat-message-time"
-                    title={m.createTime}
-                  >
-                    {formatRelative(m.createTime)}
-                  </span>
-                  <span className="chat-message-actions">
-                    <ConvertChatMessageToTaskButton
-                      project={projectName}
-                      messageText={m.text}
-                      authorName={m.senderName || ""}
-                      chatSpaceUrl={spaceUrl}
-                    />
-                  </span>
-                </div>
-                <div className="chat-message-text">
-                  {renderChatText(m.text)}
-                </div>
-                {m.attachments.length > 0 && (
-                  <div className="chat-message-attachments">
-                    {m.attachments.map((a, i) => {
-                      const imgUrl =
-                        a.thumbnailUri ||
-                        (a.driveFileId
-                          ? `https://lh3.googleusercontent.com/d/${a.driveFileId}=w800`
-                          : "");
-                      // Wrap each image / file link in an <a> back to
-                      // the Chat space — clicking opens the original
-                      // message in Chat where the user can download
-                      // full-res or reply in thread.
-                      return a.isImage && imgUrl ? (
-                        <a
-                          key={i}
-                          href={spaceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="chat-message-image-link"
-                          title={a.contentName || "תמונה מצורפת"}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={imgUrl}
-                            alt={a.contentName || "image"}
-                            loading="lazy"
-                            className="chat-message-image"
-                          />
-                        </a>
-                      ) : (
-                        <a
-                          key={i}
-                          href={spaceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="chat-message-attachment-link"
-                          title={a.contentType}
-                        >
-                          📎 {a.contentName || a.contentType || "קובץ"}
-                        </a>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+          {visible.map((t) => (
+            <li key={t.parent.name} className="chat-thread">
+              {renderMessage(t.parent, projectName, spaceUrl, false)}
+              {t.replies.length > 0 && (
+                <ul className="chat-thread-replies">
+                  {t.replies.map((r) => (
+                    <li key={r.name} className="chat-thread-reply">
+                      {renderMessage(r, projectName, spaceUrl, true)}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
@@ -210,6 +187,113 @@ export default async function InternalDiscussionTab({
         </Link>
       </div>
     </div>
+  );
+}
+
+/**
+ * Render one Chat message — the parent of a thread or one of its
+ * replies. Same shape either way; the `isReply` flag tweaks visual
+ * affordances (smaller avatar, no "convert to task" by default since
+ * replies aren't usually the unit of work to capture).
+ *
+ * Reactions render as inline chips below the body — display only
+ * for now; clicking through to Chat is the path to add/remove a
+ * reaction. Phase 3 hooks the chips up to the Chat REST reactions
+ * endpoint for in-hub interaction.
+ */
+function renderMessage(
+  m: ChatMessage,
+  projectName: string,
+  spaceUrl: string,
+  isReply: boolean,
+): React.ReactNode {
+  const avatarSize = isReply ? 22 : 26;
+  return (
+    <>
+      <Avatar
+        name={m.senderName || m.senderResource || m.name}
+        title={m.senderName || m.senderResource}
+        size={avatarSize}
+      />
+      <div className="chat-message-body">
+        <div className="chat-message-head">
+          <span className="chat-message-author">
+            {m.senderName || "לא ידוע"}
+          </span>
+          <span className="chat-message-time" title={m.createTime}>
+            {formatRelative(m.createTime)}
+          </span>
+          <span className="chat-message-actions">
+            <ConvertChatMessageToTaskButton
+              project={projectName}
+              messageText={m.text}
+              authorName={m.senderName || ""}
+              chatSpaceUrl={spaceUrl}
+            />
+          </span>
+        </div>
+        <div className="chat-message-text">{renderChatText(m.text)}</div>
+        {m.attachments.length > 0 && (
+          <div className="chat-message-attachments">
+            {m.attachments.map((a, i) => {
+              const imgUrl =
+                a.thumbnailUri ||
+                (a.driveFileId
+                  ? `https://lh3.googleusercontent.com/d/${a.driveFileId}=w800`
+                  : "");
+              return a.isImage && imgUrl ? (
+                <a
+                  key={i}
+                  href={spaceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="chat-message-image-link"
+                  title={a.contentName || "תמונה מצורפת"}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imgUrl}
+                    alt={a.contentName || "image"}
+                    loading="lazy"
+                    className="chat-message-image"
+                  />
+                </a>
+              ) : (
+                <a
+                  key={i}
+                  href={spaceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="chat-message-attachment-link"
+                  title={a.contentType}
+                >
+                  📎 {a.contentName || a.contentType || "קובץ"}
+                </a>
+              );
+            })}
+          </div>
+        )}
+        {m.reactions.length > 0 && (
+          <div className="chat-reactions">
+            {m.reactions.map((r, i) => (
+              <a
+                key={i}
+                href={spaceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="chat-reaction"
+                title="פתח בצ׳אט כדי להגיב"
+              >
+                <span className="chat-reaction-emoji" aria-hidden>
+                  {r.emoji}
+                </span>
+                <span className="chat-reaction-count">{r.count}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

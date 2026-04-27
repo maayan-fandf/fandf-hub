@@ -2088,6 +2088,99 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   text-decoration: none;
 }
 
+/* Thread = parent message + nested replies. The OUTER list still
+   uses column-reverse (newest thread at the bottom); each thread's
+   internal layout is normal flex column so the parent reads above
+   its replies inside the thread. */
+.chat-thread {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  flex-direction: column;
+}
+.chat-thread > .chat-message-body {
+  flex: 1 1 auto;
+}
+/* The Avatar + message body live side by side WITHIN a thread row.
+   We use a CSS grid for the parent to lay out [avatar | body], with
+   the replies nested below spanning the full width but indented. */
+.chat-thread {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.6rem;
+  row-gap: 0.4rem;
+  align-items: start;
+}
+.chat-thread > .chat-message-body {
+  /* parent body sits in column 2 */
+  min-width: 0;
+}
+.chat-thread-replies {
+  list-style: none;
+  padding: 0;
+  margin: 0.3rem 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  /* Span both grid columns, then indent inside via padding so the
+     visual nesting is unambiguous. */
+  grid-column: 1 / -1;
+  padding-inline-start: 1.6rem;
+  border-inline-start: 2px solid var(--border);
+  margin-inline-start: 0.65rem;
+}
+.chat-thread-reply {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.5rem;
+  align-items: start;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  background: var(--surface-soft, rgba(0, 0, 0, 0.02));
+}
+html[data-theme="dark"] .chat-thread-reply {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Reaction chips — display-only for now, link out to Chat to add /
+   remove a reaction. Phase 3 wires these to a click handler that
+   posts via the Chat REST reactions endpoint. */
+.chat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.chat-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.15em 0.5em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  color: var(--text);
+  font-size: 0.85em;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.chat-reaction:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.chat-reaction-emoji {
+  font-size: 1.05em;
+  line-height: 1;
+}
+.chat-reaction-count {
+  font-weight: 600;
+  color: var(--muted);
+}
+
 /* Discussion section header carries both a segmented view-toggle and
    the timeline link side-by-side. On narrow viewports they wrap onto
    their own row. */

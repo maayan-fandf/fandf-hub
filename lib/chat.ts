@@ -24,6 +24,12 @@ export type ChatMessage = {
   /** API resource name: `spaces/<spaceId>/messages/<messageId>`.
    *  Used for stable React keys + future patch / delete. */
   name: string;
+  /** Thread resource name (`spaces/<sid>/threads/<tid>`). All messages
+   *  on the same thread share this — used by the hub to group a
+   *  thread parent with its inline replies. Each top-level message
+   *  starts its own thread; subsequent messages on that thread are
+   *  rendered indented underneath. */
+  threadName: string;
   text: string;
   /** ISO-8601 timestamp the message was sent. */
   createTime: string;
@@ -49,6 +55,19 @@ export type ChatMessage = {
    *  just to see a screenshot. Non-image attachments render as a
    *  generic 📎 link. */
   attachments: ChatAttachment[];
+  /** Aggregated emoji reactions on this message. Phase-1: display
+   *  only (chip with emoji + count). Adding/removing reactions
+   *  in-hub is a phase-3 follow-up — for now click-through to Chat
+   *  to react. */
+  reactions: ChatReaction[];
+};
+
+export type ChatReaction = {
+  /** Unicode codepoint for standard emoji. Custom Workspace emojis
+   *  fall back to a generic ❓ since their image URLs need a separate
+   *  lookup we don't currently do. */
+  emoji: string;
+  count: number;
 };
 
 export type ChatAttachment = {
@@ -228,14 +247,24 @@ async function listRecentMessagesUncached(
           isImage: contentType.startsWith("image/"),
         };
       });
+      const reactions: ChatReaction[] = (
+        m.emojiReactionSummaries ?? []
+      ).map((s) => ({
+        emoji: s.emoji?.unicode ?? "❓",
+        // googleapis types reactionCount as number | null in some
+        // versions and string in others — Number() handles both.
+        count: Number(s.reactionCount) || 0,
+      }));
       return {
         name: m.name ?? "",
+        threadName: m.thread?.name ?? "",
         text: m.text ?? "",
         createTime: m.createTime ?? "",
         senderName: m.sender?.displayName ?? "",
         senderResource: m.sender?.name ?? "",
         mentionEmails,
         attachments,
+        reactions,
       };
     });
   } catch (e) {
