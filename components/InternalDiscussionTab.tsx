@@ -56,8 +56,10 @@ export default async function InternalDiscussionTab({
         <p>
           לא הוגדר חלל Chat לפרויקט זה.{" "}
           <span className="discussion-empty-hint">
-            הוסף webhook ל-Keys col L → Chat Webhook כדי להפעיל את הסנכרון
-            הדו-כיווני עם הצוות הפנימי.
+            פתח את חלל הצ׳אט של הפרויקט, העתק את קישור החלל (▾ ליד שם
+            החלל → &quot;העתק קישור&quot;) והדבק לעמודה <b>Chat Webhook</b>{" "}
+            (col L) בגיליון Keys לשורת הפרויקט. אפשר גם להדביק URL של
+            webhook אם הוגדר. הסנכרון יתחיל לפעול תוך 5 דקות (קאש).
           </span>
         </p>
       </div>
