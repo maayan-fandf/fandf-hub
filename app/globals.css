@@ -1963,13 +1963,19 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
    Bounded height + scroll: even one chatty project can run dozens of
    messages, and unbounded growth pushes the composer way off-screen
    and dwarfs the rest of the project page. 60vh is a reasonable cap;
-   user scrolls within when there are more messages than fit. */
+   user scrolls within when there are more messages than fit.
+   `flex-direction: column-reverse`: API returns newest-first, but
+   chat UX puts newest at the bottom (closest to the composer). With
+   column-reverse, the array's first item visually lands at the
+   bottom, and the browser anchors scroll to the bottom by default —
+   so the latest message is always in view on first paint without a
+   client-side scroll-to-bottom hack. */
 .chat-message-list {
   list-style: none;
   padding: 0 0.5rem 0 0; /* breathing room for the scrollbar in RTL */
   margin: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 0.55rem;
   max-height: 60vh;
   overflow-y: auto;
