@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 type Counts = {
   total: number;
   awaiting_handling: number;
+  in_progress: number;
   awaiting_clarification: number;
   awaiting_approval: number;
 };
@@ -40,6 +41,7 @@ export default function NavTasksBadge() {
           setCounts({
             total: data.total,
             awaiting_handling: data.breakdown.awaiting_handling ?? 0,
+            in_progress: data.breakdown.in_progress ?? 0,
             awaiting_clarification: data.breakdown.awaiting_clarification ?? 0,
             awaiting_approval: data.breakdown.awaiting_approval ?? 0,
           });
@@ -54,10 +56,16 @@ export default function NavTasksBadge() {
   }, [pathname]);
 
   // Tooltip breaks down by status so the user sees what's behind the
-  // number at a glance.
+  // number at a glance. Buckets sum to `total` by construction (API
+  // returns a per-status count across every involved-with open task,
+  // no role filter) — so the tooltip always has content while the
+  // badge is visible.
   const parts: string[] = [];
   if (counts && counts.awaiting_handling > 0) {
     parts.push(`${counts.awaiting_handling} לטיפול`);
+  }
+  if (counts && counts.in_progress > 0) {
+    parts.push(`${counts.in_progress} בעבודה`);
   }
   if (counts && counts.awaiting_clarification > 0) {
     parts.push(`${counts.awaiting_clarification} לבירור`);

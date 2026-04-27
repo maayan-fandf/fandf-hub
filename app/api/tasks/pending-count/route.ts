@@ -47,28 +47,22 @@ export async function GET() {
     const open = (result.tasks || []).filter(
       (t) => t.status !== "done" && t.status !== "cancelled",
     );
-    const handlingCount = open.filter(
-      (t) =>
-        t.status === "awaiting_handling" &&
-        t.assignees.some((e) => e.toLowerCase() === targetEmail.toLowerCase()),
-    ).length;
-    const clarifCount = open.filter(
-      (t) =>
-        t.status === "awaiting_clarification" &&
-        t.assignees.some((e) => e.toLowerCase() === targetEmail.toLowerCase()),
-    ).length;
-    const approvalCount = open.filter(
-      (t) =>
-        t.status === "awaiting_approval" &&
-        t.approver_email.toLowerCase() === targetEmail.toLowerCase(),
-    ).length;
+    // Bucket all open involved-with tasks by status — no role filter,
+    // since the badge total is involvement-broad. Earlier the breakdown
+    // was action-narrow (assignee-only / approver-only) which produced
+    // an empty tooltip when the user's open tasks were all e.g.
+    // in_progress or things they authored. Buckets now sum to `total`
+    // by construction so the tooltip always explains the badge.
+    const byStatus = (s: string) =>
+      open.filter((t) => t.status === s).length;
     return NextResponse.json({
       ok: true,
       total: open.length,
       breakdown: {
-        awaiting_handling: handlingCount,
-        awaiting_clarification: clarifCount,
-        awaiting_approval: approvalCount,
+        awaiting_handling: byStatus("awaiting_handling"),
+        in_progress: byStatus("in_progress"),
+        awaiting_clarification: byStatus("awaiting_clarification"),
+        awaiting_approval: byStatus("awaiting_approval"),
       },
       target_email: targetEmail,
     });
