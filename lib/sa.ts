@@ -170,6 +170,34 @@ export function gmailClient(subjectEmail: string) {
   return google.gmail({ version: "v1", auth });
 }
 
+/**
+ * Google Chat client. Impersonates the calling F&F user so list/post
+ * actions appear authored by them in the project Chat space. Used by
+ * the project page's "🔒 דיון פנימי" tab to surface recent messages
+ * server-side, and by the cross-stream signal that drops a notice into
+ * the internal Chat space whenever a client posts in the hub.
+ *
+ * REQUIRES (one-time GCP / Workspace setup):
+ *   1. Enable "Google Chat API" on the GCP project (fandf-dashboard).
+ *   2. In Workspace Admin → Security → API controls → Domain-wide
+ *      delegation, edit the SA's client ID and add scopes:
+ *        - https://www.googleapis.com/auth/chat.messages.readonly
+ *        - https://www.googleapis.com/auth/chat.messages
+ *      (Both are needed: readonly for list, write for post.)
+ *   3. Confirm the SA can impersonate any @fandf.co.il user — same as
+ *      Sheets / Drive setup, no separate domain bind.
+ *
+ * No per-space membership setup is needed: the impersonated user is
+ * the actual space member, so reads / writes inherit their access.
+ */
+export function chatClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/chat.messages",
+    "https://www.googleapis.com/auth/chat.messages.readonly",
+  ]);
+  return google.chat({ version: "v1", auth });
+}
+
 /** True when the hub is configured to use the direct SA-backed reads. */
 export function useSATasksReads(): boolean {
   return String(process.env.USE_SA_TASKS_READS || "").trim() === "1";

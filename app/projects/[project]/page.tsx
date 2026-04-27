@@ -17,6 +17,8 @@ import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
 import CommentBody from "@/components/CommentBody";
+import InternalDiscussionTab from "@/components/InternalDiscussionTab";
+import { getDisplayNamesForEmail } from "@/lib/projectsDirect";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import ProjectFilterBar from "@/components/ProjectFilterBar";
@@ -43,6 +45,12 @@ type Search = {
    *  otherwise "all". User-driven toggle clicks always set the param
    *  explicitly so refresh / back-button preserve the choice. */
   view?: string;
+  /** Outer discussion channel — "internal" (Google Chat-backed,
+   *  internal team only) or "client" (hub Comments, internal +
+   *  client). Default is role-aware: internal users land on
+   *  "internal", clients (and unknown roles) on "client". User-
+   *  driven tab clicks set the param explicitly. */
+  channel?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -354,6 +362,10 @@ export default async function ProjectOverviewPage({
           projectName={projectName}
           showResolved={showResolved}
           requestedView={sp.view}
+          requestedChannel={sp.channel}
+          isInternalUser={isInternalUser}
+          userEmail={userEmail}
+          chatSpaceUrl={chatSpaceUrl}
         />
       </div>
 
@@ -436,23 +448,196 @@ async function ProjectAlertsSection({ projectName }: { projectName: string }) {
 }
 
 /**
- * Unified discussion feed — replaces the previous two side-by-side
- * sections (תיוגים שלך / הערות אחרונות) with a single column carrying
- * a 2-state toggle: "הכל" (full project activity) vs "🏷️ תיוגים שלי"
- * (only threads where I'm tagged).
+ * Two-channel discussion section. Outer tabs split the conversation
+ * surface by audience:
+ *   🔒 פנימי   — Google Chat space (internal team only). Read-only
+ *               mirror of recent messages + a button to open Chat.
+ *   🤝 לקוח   — hub Comments (internal + client). Full composer,
+ *               attachments, mentions, resolve / edit / delete.
  *
- * Default view auto-flips:
- *   - `?view=` absent + user has open mentions → "mine" (act-on-this
- *     intuition; mirrors the inbox).
- *   - `?view=` absent + no open mentions → "all" (broader feed).
- *   - User clicks a toggle → explicit `?view=all` or `?view=mine`,
- *     persisted via the URL so refresh / back-button preserve it.
+ * Each tab carries its own inner toggle (הכל / 🏷️ תיוגים שלי) so the
+ * "things needing my attention" affordance survives across both
+ * surfaces.
  *
- * "All" view marks threads the user is mentioned in with a left-border
- * accent + a "🏷️ אותך" chip — so users can spot mentions without
- * flipping the toggle.
+ * Default channel is role-aware:
+ *   - Internal user (`@fandf.co.il`) lands on "internal" — they live
+ *     in Chat and that's where their day-to-day pings come from.
+ *   - Clients (and unknown roles) land on "client" — they can't see
+ *     the internal channel at all.
+ * User-driven tab clicks set `?channel=internal|client` explicitly.
  */
 function DiscussionSection({
+  comments,
+  mentions,
+  totalComments,
+  openMentions,
+  projectName,
+  showResolved,
+  requestedView,
+  requestedChannel,
+  isInternalUser,
+  userEmail,
+  chatSpaceUrl,
+}: {
+  comments: CommentItem[];
+  mentions: MentionItem[];
+  totalComments: number;
+  openMentions: number;
+  projectName: string;
+  showResolved: boolean;
+  requestedView: string | undefined;
+  requestedChannel: string | undefined;
+  isInternalUser: boolean;
+  userEmail: string;
+  chatSpaceUrl: string;
+}) {
+  const channel: "internal" | "client" =
+    requestedChannel === "internal"
+      ? "internal"
+      : requestedChannel === "client"
+        ? "client"
+        : isInternalUser
+          ? "internal"
+          : "client";
+
+  // Build hrefs for the outer tab — preserve other params (view,
+  // resolved) so flipping channels doesn't reset the inner state.
+  const channelHref = (next: "internal" | "client") => {
+    const qs = new URLSearchParams();
+    if (showResolved) qs.set("resolved", "1");
+    if (requestedView) qs.set("view", requestedView);
+    qs.set("channel", next);
+    return `/projects/${encodeURIComponent(projectName)}?${qs.toString()}`;
+  };
+
+  return (
+    <section className="project-section project-section-wide">
+      <div className="discussion-channel-tabs" role="tablist">
+        {/* Internal tab is hidden for non-fandf users — they have no
+            access to the Chat space anyway, so showing the tab would
+            just be a teaser they can't act on. */}
+        {isInternalUser && (
+          <Link
+            role="tab"
+            aria-selected={channel === "internal"}
+            href={channelHref("internal")}
+            className={`discussion-channel-tab ${channel === "internal" ? "is-active" : ""}`}
+          >
+            🔒 פנימי
+            <span className="discussion-channel-tab-hint">Chat</span>
+          </Link>
+        )}
+        <Link
+          role="tab"
+          aria-selected={channel === "client"}
+          href={channelHref("client")}
+          className={`discussion-channel-tab ${channel === "client" ? "is-active" : ""}`}
+        >
+          🤝 לקוח
+          <span className="discussion-channel-tab-hint">Hub</span>
+        </Link>
+      </div>
+      {channel === "internal" ? (
+        <InternalChannel
+          subjectEmail={userEmail}
+          chatSpaceUrl={chatSpaceUrl}
+          requestedView={requestedView}
+          showResolved={showResolved}
+          projectName={projectName}
+        />
+      ) : (
+        <ClientChannel
+          comments={comments}
+          mentions={mentions}
+          totalComments={totalComments}
+          openMentions={openMentions}
+          projectName={projectName}
+          showResolved={showResolved}
+          requestedView={requestedView}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Server component for the internal-channel tab. Pulls recent Chat
+ * messages via Suspense so the chat-API fetch (~300–800ms) doesn't
+ * block the rest of the page. Inner toggle (הכל / 🏷️ תיוגים שלי)
+ * works the same as on the client tab.
+ */
+async function InternalChannel({
+  subjectEmail,
+  chatSpaceUrl,
+  requestedView,
+  showResolved,
+  projectName,
+}: {
+  subjectEmail: string;
+  chatSpaceUrl: string;
+  requestedView: string | undefined;
+  showResolved: boolean;
+  projectName: string;
+}) {
+  const view: "all" | "mine" = requestedView === "mine" ? "mine" : "all";
+  const buildHref = (nextView: "all" | "mine") => {
+    const qs = new URLSearchParams();
+    if (showResolved) qs.set("resolved", "1");
+    qs.set("channel", "internal");
+    qs.set("view", nextView);
+    return `/projects/${encodeURIComponent(projectName)}?${qs.toString()}`;
+  };
+  // Pull display-name aliases for the תיוגים filter — Chat mention
+  // annotations use displayName, not email. Best-effort.
+  const myDisplayNames = subjectEmail
+    ? await getDisplayNamesForEmail(subjectEmail).catch(() => [])
+    : [];
+  return (
+    <>
+      <div className="section-head section-head-inner">
+        <p className="section-subtitle">
+          {view === "mine"
+            ? "הודעות אחרונות בחלל הצ׳אט הפנימי שתויגת בהן"
+            : "הודעות אחרונות בחלל הצ׳אט הפנימי של הפרויקט"}
+        </p>
+        <div className="tasks-view-toggle" role="tablist">
+          <Link
+            role="tab"
+            aria-selected={view === "all"}
+            href={buildHref("all")}
+            className={`tasks-view-toggle-btn ${view === "all" ? "is-active" : ""}`}
+          >
+            הכל
+          </Link>
+          <Link
+            role="tab"
+            aria-selected={view === "mine"}
+            href={buildHref("mine")}
+            className={`tasks-view-toggle-btn ${view === "mine" ? "is-active" : ""}`}
+          >
+            🏷️ תיוגים שלי
+          </Link>
+        </div>
+      </div>
+      <Suspense fallback={<div className="discussion-empty">טוען צ׳אט…</div>}>
+        <InternalDiscussionTab
+          subjectEmail={subjectEmail}
+          spaceUrlOrWebhook={chatSpaceUrl}
+          showOnlyMine={view === "mine"}
+          myEmail={subjectEmail}
+          myDisplayNames={myDisplayNames}
+        />
+      </Suspense>
+    </>
+  );
+}
+
+/**
+ * Hub-native client-channel tab — the previous unified
+ * DiscussionSection body, narrowed to "client tab" semantics. Inner
+ * toggle (הכל / 🏷️ תיוגים שלי) operates on hub Comments rows.
+ */
+function ClientChannel({
   comments,
   mentions,
   totalComments,
@@ -485,24 +670,21 @@ function DiscussionSection({
   );
 
   // Toggle hrefs preserve every other search param so e.g. ?resolved=1
-  // doesn't reset when flipping views. Toggle is server-rendered as
-  // <Link>s — no JS required for state, refresh-safe by construction.
+  // doesn't reset when flipping views, and the outer ?channel=client
+  // sticks so the toggle doesn't drop the user back onto the internal
+  // tab. Toggle is server-rendered as <Link>s — no JS required for
+  // state, refresh-safe by construction.
   const buildHref = (nextView: "all" | "mine") => {
     const qs = new URLSearchParams();
     if (showResolved) qs.set("resolved", "1");
+    qs.set("channel", "client");
     qs.set("view", nextView);
     return `/projects/${encodeURIComponent(projectName)}?${qs.toString()}`;
   };
 
   return (
-    <section className="project-section project-section-wide">
-      <div className="section-head">
-        <h2>
-          💬 דיון בפרויקט
-          <span className="section-count">
-            {view === "mine" ? openMentions : totalComments}
-          </span>
-        </h2>
+    <>
+      <div className="section-head section-head-inner">
         <div className="discussion-head-tools">
           <div className="tasks-view-toggle" role="tablist">
             <Link
@@ -512,6 +694,9 @@ function DiscussionSection({
               className={`tasks-view-toggle-btn ${view === "all" ? "is-active" : ""}`}
             >
               הכל
+              <span className="discussion-toggle-count">
+                {totalComments}
+              </span>
             </Link>
             <Link
               role="tab"
@@ -557,7 +742,7 @@ function DiscussionSection({
           מציג {comments.length} מתוך {totalComments}
         </div>
       )}
-    </section>
+    </>
   );
 }
 

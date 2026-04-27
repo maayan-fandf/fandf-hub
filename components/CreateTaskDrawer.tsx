@@ -452,7 +452,7 @@ export default function CreateTaskDrawer({ project }: Props) {
               className="create-task-attach-btn"
               onClick={() => fileInputRef.current?.click()}
               disabled={isPending}
-              title="צרף קובץ — נשמר בתיקיית 'הערות' של הפרויקט ב-Drive"
+              title="צרף קובץ — נשמר בתיקיית 'שיתוף עם הלקוח' של הפרויקט ב-Drive"
             >
               📎 צרף קובץ
             </button>

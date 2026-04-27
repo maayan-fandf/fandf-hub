@@ -1818,6 +1818,139 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   }
 }
 
+/* Outer channel tabs at the top of the discussion section — splits
+   the conversation by audience (internal Chat-backed vs hub client-
+   facing). Visually distinct from the inner view-toggle (segmented
+   pill): tabs read like browser tabs, anchored to a bottom border
+   that the active tab "pierces". */
+.discussion-channel-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.85rem;
+}
+.discussion-channel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.55em 1.1em;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* sit on top of the parent border */
+  font-size: 0.95em;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.discussion-channel-tab:hover:not(.is-active) {
+  color: var(--text);
+}
+.discussion-channel-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.discussion-channel-tab-hint {
+  font-size: 0.7em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  color: var(--muted);
+}
+html[data-theme="dark"] .discussion-channel-tab-hint {
+  background: rgba(255, 255, 255, 0.06);
+}
+/* Inner section-head reused for the per-channel toolbar — drops the
+   bottom margin so the tab strip + toolbar feel like one unit. */
+.section-head.section-head-inner {
+  margin-bottom: 0.4rem;
+}
+
+/* Internal-tab specific styling — header row with the "פתח בצ׳אט"
+   button + a tagline reminding users where they should be typing. */
+.discussion-internal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.discussion-internal-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.discussion-internal-foot {
+  margin-top: 0.6rem;
+  text-align: end;
+}
+.discussion-empty {
+  padding: 1.1rem 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.discussion-empty-hint {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.78em;
+}
+
+/* Server-rendered Chat message list — compact rows, avatar + body. */
+.chat-message-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.chat-message {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.chat-message-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chat-message-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+.chat-message-author {
+  font-weight: 600;
+  font-size: 0.92em;
+}
+.chat-message-time {
+  font-size: 0.78em;
+  color: var(--muted);
+}
+.chat-message-text {
+  font-size: 0.92em;
+  line-height: 1.4;
+  color: var(--text);
+  word-wrap: break-word;
+}
+.chat-message-line {
+  margin: 0 0 0.25em;
+}
+.chat-message-line:last-child {
+  margin-bottom: 0;
+}
+.chat-message-text a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
 /* Discussion section header carries both a segmented view-toggle and
    the timeline link side-by-side. On narrow viewports they wrap onto
    their own row. */

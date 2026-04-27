@@ -3,14 +3,21 @@
  * folder.
  *
  * Folder hierarchy:
- *     <Shared Drive>/<company>/<project>/הערות/<file>
+ *     <Shared Drive>/<company>/<project>/שיתוף עם הלקוח/<file>
  *
- * The `הערות` subfolder is lazy-created the first time someone
- * attaches a file from a הערה (top-level project comment) on that
- * project. Sibling to the per-task / per-campaign folders the tasks
- * pipeline creates, but global-per-project — there's no per-comment
- * subfolder, since comments are short-lived chat-style notes and
- * splitting attachments by comment ID would just clutter Drive.
+ * The `שיתוף עם הלקוח` subfolder name is deliberately role-explicit:
+ * when an admin browses Drive, the name immediately answers "is this
+ * client-visible?" — yes, it's the bucket for client-tab attachments.
+ * Internal-only chatter happens in Google Chat (per project space),
+ * which manages its own Drive area, so internal attachments live
+ * there, not here. Two folders per project, each obviously-named.
+ *
+ * The subfolder is lazy-created the first time someone attaches a
+ * file from a הערה / reply on the client tab. Sibling to the per-task
+ * / per-campaign folders the tasks pipeline creates, but global-per-
+ * project — there's no per-comment subfolder, since comments are
+ * short-lived chat-style notes and splitting attachments by comment
+ * ID would just clutter Drive.
  *
  * Drive impersonation uses DRIVE_FOLDER_OWNER (same as the tasks
  * upload path), so the folder + uploaded file are owned by the team
@@ -31,7 +38,7 @@ export type CommentUploadResult = {
   embedUrl: string;
 };
 
-const COMMENTS_SUBFOLDER_NAME = "הערות";
+const COMMENTS_SUBFOLDER_NAME = "שיתוף עם הלקוח";
 
 // In-process cache: project name → comments-attachments folder id.
 // Drive lookups are slow; the folder name never moves once created.
@@ -57,7 +64,7 @@ async function ensureCommentsSubfolder(
   const cached = COMMENTS_FOLDER_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.id;
 
-  // Look up an existing הערות subfolder first.
+  // Look up an existing client-attachments subfolder first.
   const listed = await drive.files.list({
     q: `'${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${escapeDriveQuery(COMMENTS_SUBFOLDER_NAME)}' and trashed=false`,
     fields: "files(id, name)",

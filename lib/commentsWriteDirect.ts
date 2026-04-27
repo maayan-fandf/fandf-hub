@@ -249,6 +249,39 @@ async function sendMimeMail(
   }
 }
 
+/**
+ * Cross-stream signal — when a comment / reply / resolve happens on
+ * the hub's client tab, drop a notice into the project's internal
+ * Google Chat space. Internal team lives in Chat all day; without
+ * this they'd miss client-side activity until they happened to load
+ * the hub. The notice carries the author + body excerpt + a deeplink
+ * back to the hub thread.
+ *
+ * Replaces the previous incoming-webhook-based postChatWebhook with
+ * the OAuth Chat REST API (via lib/chat.ts). One implementation
+ * change, two payoffs:
+ *   1. Posts as a real Workspace user (impersonated through DWD), so
+ *      the message can later be edited / deleted via the same auth
+ *      path. Webhook-authored messages are immutable from our side.
+ *   2. Same auth path the internal-tab read uses, so we don't carry
+ *      two parallel Chat integrations.
+ *
+ * Posting identity is deliberately fixed to DRIVE_FOLDER_OWNER (the
+ * team's bot identity, default `maayan@fandf.co.il`) rather than the
+ * actual comment author:
+ *   - Client authors aren't @fandf.co.il, so DWD can't impersonate
+ *     them anyway — `effectiveSubject` would silently coerce to the
+ *     same fallback.
+ *   - Internal authors on the client tab still go through this path
+ *     (their post is canonical client-facing copy); using a fixed
+ *     identity makes "this is a hub forwarding card" obvious in
+ *     Chat instead of looking like a duplicate post from them.
+ *
+ * Failure modes (Chat API not enabled, scope missing, no Chat
+ * webhook configured, user not a space member) all silently drop
+ * the notice. The hub comment write is the source of truth; the
+ * Chat signal is best-effort enrichment.
+ */
 async function postChatWebhook(
   subjectEmail: string,
   project: string,
@@ -269,17 +302,32 @@ async function postChatWebhook(
       }
     }
     if (!webhookUrl) return;
-    const emoji = kind === "create" ? "💬" : kind === "resolve" ? "✅" : "↩️";
+    const { parseSpaceId, postMessage } = await import("@/lib/chat");
+    const { driveFolderOwner } = await import("@/lib/sa");
+    const spaceId = parseSpaceId(webhookUrl);
+    if (!spaceId) return;
+
     const verb =
-      kind === "create" ? " יצר/ה תגובה" : kind === "resolve" ? " סגר/ה" : " הגיב/ה";
-    const text = `${emoji} ${card.authorName}${verb}${card.body ? `: ${card.body}` : ""}${card.deepLink ? `\n${card.deepLink}` : ""}`;
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
+      kind === "create"
+        ? "פרסמ/ה הודעה ללקוח"
+        : kind === "resolve"
+          ? "סגר/ה שרשור"
+          : "הגיב/ה לשרשור";
+    const emoji = kind === "create" ? "💬" : kind === "resolve" ? "✅" : "↩️";
+    // Chat's text field renders *bold* and auto-links bare URLs.
+    // Wrap the body excerpt in »« quotes (Hebrew convention) so a
+    // multi-line excerpt still reads as quoted speech.
+    const lines: string[] = [];
+    lines.push(`${emoji} *${card.authorName}* ${verb} בפרויקט *${project}*`);
+    if (card.body) {
+      const excerpt = card.body.replace(/\s+/g, " ").slice(0, 200);
+      lines.push(`«${excerpt}»`);
+    }
+    if (card.deepLink) lines.push(`פתח בהאב → ${card.deepLink}`);
+    const text = lines.join("\n");
+    await postMessage(driveFolderOwner(), spaceId, text);
   } catch (e) {
-    console.log("[commentsWriteDirect] Chat webhook post failed:", e);
+    console.log("[commentsWriteDirect] cross-stream signal failed:", e);
   }
 }
 
