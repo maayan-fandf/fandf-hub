@@ -6498,6 +6498,63 @@ html[data-theme="dark"] .tasks-dept-chip {
 .combobox-option-create.is-highlight {
   background: var(--accent-soft, #e7f0ff);
 }
+.combobox-option-create.is-busy {
+  opacity: .6;
+  cursor: progress;
+}
+/* Per-option ✏️ rename trigger — only renders when the combobox has
+   a project context (it can't fire the API otherwise). Hidden until
+   row hover so the option text doesn't compete with it visually. */
+.combobox-option-rename {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: .15em .35em;
+  font-size: .85em;
+  border-radius: 4px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity .12s ease, background .12s ease;
+}
+.combobox-option:hover > .combobox-option-rename,
+.combobox-option:focus-within > .combobox-option-rename {
+  opacity: 1;
+}
+.combobox-option-rename:hover {
+  background: var(--surface-soft, #f4f4f4);
+  color: var(--text);
+}
+@media (hover: none) {
+  /* Touch: always visible since there's no hover state. */
+  .combobox-option-rename { opacity: 1; }
+}
+.combobox-option.is-renaming {
+  background: var(--surface-soft, #fafafa);
+  cursor: default;
+}
+.combobox-rename-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: .92em;
+  padding: .25em .5em;
+  border: 1px solid var(--accent, #2a66d9);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text);
+}
+.combobox-rename-input:focus {
+  outline: 2px solid var(--accent, #2a66d9);
+  outline-offset: 1px;
+}
+.combobox-error {
+  padding: .35em .8em;
+  font-size: .78em;
+  color: rgb(180, 30, 30);
+  background: rgba(220, 53, 69, .07);
+  border-bottom: 1px solid var(--border);
+}
 .combobox-option-meta { color: var(--muted); font-weight: normal; }
 .combobox-option-secondary { opacity: .75; }
 .combobox-divider {

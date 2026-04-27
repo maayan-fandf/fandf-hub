@@ -65,6 +65,7 @@ export default function TaskEditPanel({
   );
   const [campaign, setCampaign] = useState(task.campaign || "");
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
+  const [campaignReloadNonce, setCampaignReloadNonce] = useState(0);
   // Folder picker is shown in its own section below; in edit-mode we
   // only patch `drive_folder_id` if the user actually picks a different
   // folder. Default selection reflects whatever the task points at.
@@ -86,7 +87,7 @@ export default function TaskEditPanel({
     return () => {
       cancelled = true;
     };
-  }, [task.project]);
+  }, [task.project, campaignReloadNonce]);
 
   function toggleDept(d: string) {
     setDepartments((cur) =>
@@ -202,6 +203,8 @@ export default function TaskEditPanel({
             value={campaign}
             onChange={setCampaign}
             options={campaignOptions}
+            project={task.project}
+            onOptionsChanged={() => setCampaignReloadNonce((n) => n + 1)}
             placeholder="בחר קמפיין קיים או הקלד חדש"
             hint={
               campaignOptions.length > 0 ? "ממוין מהחדש לישן" : undefined

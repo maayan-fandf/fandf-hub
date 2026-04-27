@@ -139,8 +139,11 @@ export default function TaskCreateForm({
     setFolderSelection(v);
   }
   // Existing campaigns for the selected project — populates the
-  // datalist autocomplete. Refetched whenever the project changes.
+  // datalist autocomplete. Refetched whenever the project changes,
+  // and explicitly after CampaignCombobox creates / renames one
+  // (it owns the API calls; we own the cached list).
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
+  const [campaignReloadNonce, setCampaignReloadNonce] = useState(0);
   useEffect(() => {
     if (!project) {
       setCampaignOptions([]);
@@ -160,7 +163,7 @@ export default function TaskCreateForm({
     return () => {
       cancelled = true;
     };
-  }, [project]);
+  }, [project, campaignReloadNonce]);
 
   const companyProjects = company ? byCompany.get(company) || [] : projects;
 
@@ -326,6 +329,8 @@ export default function TaskCreateForm({
             value={campaign}
             onChange={setCampaign}
             options={campaignOptions}
+            project={project}
+            onOptionsChanged={() => setCampaignReloadNonce((n) => n + 1)}
             placeholder={
               project
                 ? "בחר קמפיין קיים או הקלד חדש"

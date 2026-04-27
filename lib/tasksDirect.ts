@@ -476,11 +476,17 @@ export async function tasksGetDirect(
 }
 
 /**
- * Distinct campaigns for a given project, derived from task rows.
- * Campaigns auto-emerge from tasks — no separate storage table. A
- * campaign is "remembered" as long as at least one task on the project
- * references it. Ordered by most-recently-used (freshest task first)
- * so the picker surfaces what the user likely wants.
+ * Distinct campaigns for a given project. Drive folders under
+ * `<company>/<project>/` are the canonical source: every Drive
+ * subfolder there counts as a campaign, even one with zero tasks yet.
+ * Task-row campaign values are then merged in as a safety net so an
+ * orphan campaign (one referenced on a task but missing a Drive folder
+ * — the legacy task-derived shape) still appears in the menu.
+ *
+ * Ordering: Drive folders first, ordered by `modifiedTime desc`, then
+ * any task-only orphans by their freshest task. Drive dictates the
+ * canonical name for a folder ID, so a folder rename in Drive surfaces
+ * automatically on the next read.
  */
 export async function tasksCampaignsDirect(
   subjectEmail: string,
@@ -495,29 +501,61 @@ export async function tasksCampaignsDirect(
     throw new Error("Access denied to project: " + project);
   }
 
+  // Collect task-row campaigns first — both for the orphan-merge below
+  // AND so we still return something when Drive is misconfigured (no
+  // TASKS_SHARED_DRIVE_ID, network blip, scopes off). The picker is too
+  // important a UX surface to fail closed on.
   const rowKindIdx = headerIdx.get("row_kind");
   const projIdx = headerIdx.get("project");
   const campaignIdx = headerIdx.get("campaign");
   const tsIdx = headerIdx.get("timestamp");
-  if (rowKindIdx == null || projIdx == null || campaignIdx == null) {
-    return { project, campaigns: [] };
+  const taskCampaigns = new Map<string, string>(); // name → freshest ts
+  if (rowKindIdx != null && projIdx != null && campaignIdx != null) {
+    for (const row of rows) {
+      if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
+      if (String(row[projIdx] ?? "").trim() !== project) continue;
+      const name = String(row[campaignIdx] ?? "").trim();
+      if (!name) continue;
+      const ts = tsIdx != null ? toIsoDate(row[tsIdx]) : "";
+      const prev = taskCampaigns.get(name);
+      if (!prev || ts > prev) taskCampaigns.set(name, ts);
+    }
   }
 
-  // Collect (campaign, most-recent-timestamp) pairs, then sort.
-  const latestByName = new Map<string, string>();
-  for (const row of rows) {
-    if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
-    if (String(row[projIdx] ?? "").trim() !== project) continue;
-    const name = String(row[campaignIdx] ?? "").trim();
-    if (!name) continue;
-    const ts = tsIdx != null ? toIsoDate(row[tsIdx]) : "";
-    const prev = latestByName.get(name);
-    if (!prev || ts > prev) latestByName.set(name, ts);
+  // Drive list scoped to this project. Empty when the project folder
+  // doesn't exist yet (brand-new project). Cheap to call repeatedly —
+  // listCampaignFolders is unstable_cache-d at 60s.
+  const company = scope.projectCompany.get(project) || "";
+  let driveFolders: { id: string; name: string; modifiedTime: string }[] = [];
+  try {
+    const { listCampaignFolders } = await import("@/lib/driveCampaigns");
+    driveFolders = await listCampaignFolders(company, project);
+  } catch {
+    // Fall through to task-derived list — picker stays usable when
+    // Drive is unreachable.
   }
-  const campaigns = Array.from(latestByName.entries())
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const f of driveFolders) {
+    const n = f.name.trim();
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  // Append task-only orphans (campaigns referenced on tasks but with no
+  // matching Drive folder). The rename / create paths backfill folders
+  // for these; until then, keep them visible so the user can still pick
+  // them when assigning a task.
+  const orphans = Array.from(taskCampaigns.entries())
+    .filter(([name]) => !seen.has(name))
     .sort((a, b) => b[1].localeCompare(a[1]))
     .map(([name]) => name);
-  return { project, campaigns };
+  for (const n of orphans) {
+    seen.add(n);
+    out.push(n);
+  }
+  return { project, campaigns: out };
 }
 
 /**
