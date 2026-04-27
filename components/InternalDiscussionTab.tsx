@@ -199,7 +199,7 @@ export default async function InternalDiscussionTab({
       )}
       <div className="discussion-internal-foot">
         <Link href={spaceUrl} className="section-link">
-          פתח בגוגל צ׳אט ↗
+          פתח ב- Google Chat ↗
         </Link>
       </div>
     </div>
