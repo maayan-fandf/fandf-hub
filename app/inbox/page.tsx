@@ -72,12 +72,16 @@ export default async function InboxPage({
         <div>
           <h1>
             <span className="emoji" aria-hidden>🏷️</span>
-            תיוגים
+            תיוגי לקוח
           </h1>
           <div className="subtitle">
+            תיוגים מערוץ הלקוח (Hub Comments) חוצה־פרויקטים. לתיוגים
+            פנימיים — דרך הצ׳אט (חיפוש <code dir="ltr">@{
+              data?.me?.email?.split("@")[0] ?? "your-name"
+            }</code> ב-Google&nbsp;Chat).
             {data && (
               <>
-                🔥 {openCount} פתוחים · {scoped.length} סה&quot;כ
+                {" · "}🔥 {openCount} פתוחים · {scoped.length} סה&quot;כ
                 {scopedPerson && hiddenByScope > 0 && (
                   <> · 👤 סינון: <b>{scopedPerson}</b></>
                 )}

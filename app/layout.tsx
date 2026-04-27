@@ -128,7 +128,7 @@ export default async function RootLayout({
               href="/inbox"
               className="topnav-link topnav-link-with-badge"
             >
-              🏷️ תיוגים
+              🏷️ תיוגי לקוח
               {email && <NavMentionBadge />}
             </ActiveLink>
             {email && (
