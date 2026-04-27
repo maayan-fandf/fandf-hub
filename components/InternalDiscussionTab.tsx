@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import InternalChatComposer from "@/components/InternalChatComposer";
-import ThreadReplyComposer from "@/components/ThreadReplyComposer";
 import ChatReactionsRow from "@/components/ChatReactionsRow";
 import ChatMessageHoverToolbar from "@/components/ChatMessageHoverToolbar";
 import {
@@ -192,18 +191,11 @@ export default async function InternalDiscussionTab({
                   ))}
                 </ul>
               )}
-              {/* Reply-to-this-thread affordance — wraps in a div
-                  that spans the grid so the trigger / textarea
-                  can be full-width under both columns. The thread
-                  resource name comes off the parent (or the
-                  parent's own message name when it's the only
-                  message and threadName field is unset). */}
-              <div className="chat-thread-reply-action">
-                <ThreadReplyComposer
-                  project={projectName}
-                  threadName={t.parent.threadName || t.parent.name}
-                />
-              </div>
+              {/* Per-thread reply trigger removed — each message's
+                  quick-actions row now includes its own ↩ icon, so
+                  the entry point lives where the visual context is.
+                  Replying from any message in the thread still
+                  posts to the same thread.name. */}
             </li>
           ))}
         </ul>
@@ -310,12 +302,14 @@ function renderMessage(
             })}
           </div>
         )}
-        {/* Always render the reactions row — even on messages with
-            no reactions yet — so the "+" button is always available
-            for adding a first reaction. */}
+        {/* Per-message quick-actions row — chips + "+" picker + "↩"
+            reply-icon. Always rendered, even on messages with no
+            reactions, so the entry points are always available. */}
         <ChatReactionsRow
           messageName={m.name}
           reactions={m.reactions}
+          project={projectName}
+          threadName={m.threadName || m.name}
         />
       </div>
     </>
