@@ -2484,6 +2484,33 @@ html[data-theme="dark"] .chat-thread-reply {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* When ConvertChatMessageToTaskButton / EditChatMessageDrawer /
+   DeleteChatMessageButton render inside the inline reactions row,
+   match the +/↩ buttons' shape so the row reads as a single set
+   of icon controls (same size, same dashed-pill resting state).
+   Without this, the legacy 22×22 squared pills look mismatched
+   next to the 26×26 dashed circles. */
+.chat-reactions .chat-message-action {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1em;
+}
+.chat-reactions .chat-message-action:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.chat-reactions .chat-message-action-danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgb(239, 68, 68);
+  border-style: solid;
+  color: rgb(239, 68, 68);
+}
 /* Inline emoji picker — small grid of common emojis. */
 .chat-reaction-picker {
   display: inline-flex;

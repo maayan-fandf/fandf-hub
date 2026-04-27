@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from "react";
  */
 export default function CopyLocalPathButton({
   path,
-  label = "📋",
+  label = "📁",
   title = "העתק נתיב לתיקייה",
 }: {
   path: string;

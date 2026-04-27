@@ -3,27 +3,36 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ChatReaction } from "@/lib/chat";
+import ConvertChatMessageToTaskButton from "@/components/ConvertChatMessageToTaskButton";
+import EditChatMessageDrawer from "@/components/EditChatMessageDrawer";
+import DeleteChatMessageButton from "@/components/DeleteChatMessageButton";
 
 const COMMON_EMOJIS = ["👍", "❤️", "😄", "🎉", "👀", "🙏", "✅", "🔥"];
 const MAX_REPLY = 4000;
 
 /**
- * Per-message quick-actions row beneath each Chat message. Holds:
+ * Per-message quick-actions row beneath each Chat message. Mirrors
+ * the client-tab's CardActions pattern — every action lives inline
+ * under the message, no separate hover toolbar:
  *   - existing reaction chips (each with × on hover to remove)
- *   - 😊  add-reaction picker (8 common emojis)
- *   - ↩   reply-to-this-thread trigger (icon-only; expands an inline
- *         textarea below the row when clicked)
- *
- * Replaces the old design where reactions lived here and the
- * "השב לשרשור" trigger lived in a separate block at the end of each
- * thread. Now both quick actions sit in one icon-only row under
- * every message — same affordance for parent and reply messages.
+ *   - +    add-reaction picker (8 common emojis)
+ *   - ↩    reply-to-this-thread trigger (expands an inline textarea
+ *          below the row when clicked)
+ *   - 📋   convert this message into a hub task (deeplinks to
+ *          /tasks/new with body + author + space-URL prefilled)
+ *   - ✏️    edit own message (own messages only — Chat enforces it
+ *          server-side too)
+ *   - 🗑️    delete own message (own messages only — same)
  */
 export default function ChatReactionsRow({
   messageName,
   reactions,
   project,
   threadName,
+  text,
+  isMine,
+  spaceUrl,
+  authorName,
 }: {
   messageName: string;
   reactions: ChatReaction[];
@@ -35,6 +44,16 @@ export default function ChatReactionsRow({
    *  own name when the thread.name field is unset (single-message
    *  threads). */
   threadName: string;
+  /** Plain message body — needed by both convert (prefill) and edit
+   *  (initial value), and shown excerpted in delete confirmation. */
+  text: string;
+  /** True when the viewing user authored the message. Gates ✏️/🗑️. */
+  isMine: boolean;
+  /** Shareable URL of the project's Chat space — added to the task
+   *  body by ConvertChatMessageToTaskButton as a back-pointer. */
+  spaceUrl: string;
+  /** Author display name — shown in the converted task's body. */
+  authorName: string;
 }) {
   const router = useRouter();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -178,6 +197,27 @@ export default function ChatReactionsRow({
         >
           ↩
         </button>
+        {/* 📋 convert this Chat message into a hub task. Server-rendered
+            link (no client state) — deeplinks to /tasks/new with the
+            body, title, and Chat-space back-pointer prefilled. */}
+        <ConvertChatMessageToTaskButton
+          project={project}
+          messageText={text}
+          authorName={authorName}
+          chatSpaceUrl={spaceUrl}
+        />
+        {/* ✏️ / 🗑️ — own messages only. Chat REST enforces author-only
+            for both edit and delete; we mirror the gate client-side
+            so users don't see actions they can't perform. */}
+        {isMine && (
+          <EditChatMessageDrawer messageName={messageName} initialText={text} />
+        )}
+        {isMine && (
+          <DeleteChatMessageButton
+            messageName={messageName}
+            bodyExcerpt={text}
+          />
+        )}
         {pickerOpen && (
           <div className="chat-reaction-picker" role="menu">
             {COMMON_EMOJIS.map((e) => (

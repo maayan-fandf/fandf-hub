@@ -2,7 +2,6 @@ import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import InternalChatComposer from "@/components/InternalChatComposer";
 import ChatReactionsRow from "@/components/ChatReactionsRow";
-import ChatMessageHoverToolbar from "@/components/ChatMessageHoverToolbar";
 import {
   listRecentMessages,
   lookupUserGaiaResource,
@@ -207,11 +206,6 @@ export default async function InternalDiscussionTab({
       {!showOnlyMine && (
         <InternalChatComposer project={projectName} />
       )}
-      <div className="discussion-internal-foot">
-        <Link href={spaceUrl} className="section-link">
-          פתח חלל מלא בצ׳אט ↗
-        </Link>
-      </div>
     </div>
   );
 }
@@ -251,15 +245,6 @@ function renderMessage(
           <span className="chat-message-time" title={m.createTime}>
             {formatRelative(m.createTime)}
           </span>
-          <ChatMessageHoverToolbar
-            messageName={m.name}
-            threadName={m.threadName || m.name}
-            text={m.text}
-            isMine={isMine}
-            project={projectName}
-            spaceUrl={spaceUrl}
-            authorName={m.senderName || ""}
-          />
         </div>
         <div className="chat-message-text">{renderChatText(m.text)}</div>
         {m.attachments.length > 0 && (
@@ -302,14 +287,21 @@ function renderMessage(
             })}
           </div>
         )}
-        {/* Per-message quick-actions row — chips + "+" picker + "↩"
-            reply-icon. Always rendered, even on messages with no
-            reactions, so the entry points are always available. */}
+        {/* Per-message quick-actions row — reaction chips + + (react)
+            + ↩ (reply) + 📋 (convert to task) + ✏️ (edit, own) + 🗑️
+            (delete, own). All five actions live inline, mirroring the
+            client-tab CardActions pattern. Always rendered, even on
+            messages with no reactions, so the entry points are
+            always available. */}
         <ChatReactionsRow
           messageName={m.name}
           reactions={m.reactions}
           project={projectName}
           threadName={m.threadName || m.name}
+          text={m.text}
+          isMine={isMine}
+          spaceUrl={spaceUrl}
+          authorName={m.senderName || ""}
         />
       </div>
     </>
