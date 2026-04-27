@@ -7,6 +7,10 @@ import ConvertToTaskButton from "@/components/ConvertToTaskButton";
 type Props = {
   /** Reply / resolve / delete target — usually the thread root. */
   commentId: string;
+  /** Project the comment lives on. Forwarded to ReplyDrawer to enable
+   *  file attachments on replies (uploads land in <project>/הערות/).
+   *  Optional for callers that don't have project context. */
+  project?: string;
   /** Current resolved state — drives the ✓ button's active styling. */
   resolved: boolean;
   /** Body of the comment, needed by EditDrawer to pre-fill the textarea. */
@@ -41,6 +45,7 @@ type Props = {
  */
 export default function CardActions({
   commentId,
+  project,
   resolved,
   body,
   deleteItemLabel,
@@ -52,7 +57,9 @@ export default function CardActions({
 }: Props) {
   return (
     <div className="card-actions">
-      {canReply && <ReplyDrawer parentCommentId={commentId} iconOnly />}
+      {canReply && (
+        <ReplyDrawer parentCommentId={commentId} project={project} iconOnly />
+      )}
       <ResolveButton
         commentId={commentId}
         resolved={resolved}

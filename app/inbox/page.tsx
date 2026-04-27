@@ -173,6 +173,7 @@ function MentionCard({ m }: { m: MentionItem }) {
       <div className="mention-actions">
         <CardActions
           commentId={resolveTarget}
+          project={m.project}
           editCommentId={m.comment_id}
           resolved={m.resolved}
           body={m.body}

@@ -266,6 +266,7 @@ function TaskCard({
       <div className="task-actions">
         <CardActions
           commentId={task.comment_id}
+          project={task.project}
           resolved={task.resolved}
           body={task.body}
           deleteItemLabel="את המשימה"

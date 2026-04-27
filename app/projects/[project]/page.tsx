@@ -642,6 +642,7 @@ function CommentsPreview({
           <div className="compact-comment-actions">
             <CardActions
               commentId={c.comment_id}
+              project={c.project}
               resolved={c.resolved}
               body={c.body}
               deleteItemLabel="את התגובה"
@@ -739,6 +740,7 @@ function MentionsPreview({
             <div className="compact-comment-actions">
               <CardActions
                 commentId={actionTarget}
+                project={m.project}
                 editCommentId={m.comment_id}
                 resolved={m.resolved}
                 body={m.body}

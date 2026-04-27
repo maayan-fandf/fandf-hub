@@ -296,6 +296,7 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           {!c.parent_id ? (
             <CardActions
               commentId={c.comment_id}
+              project={c.project}
               resolved={c.resolved}
               body={c.body}
               deleteItemLabel="את התגובה"
@@ -303,6 +304,7 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
           ) : (
             <CardActions
               commentId={c.comment_id}
+              project={c.project}
               resolved={c.resolved}
               body={c.body}
               deleteItemLabel="את התגובה"
@@ -369,6 +371,7 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
         <div className="timeline-actions">
           <CardActions
             commentId={t.comment_id}
+            project={t.project}
             resolved={t.resolved}
             body={t.body}
             deleteItemLabel="את המשימה"
