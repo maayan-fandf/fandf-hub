@@ -31,7 +31,64 @@ Two features in one PR:
 ## Status: COMPLETE — pushed in commit (see HEAD)
 Production `next build` passed clean. No compile errors.
 
-## Full-parity round (this commit)
+## Image sharing + hover toolbar + collapsed quick-actions row
+
+After the full-parity round, three more iterations:
+
+1. **Image / file sharing in the composer** (`c086930`):
+   - New `uploadChatAttachment(spaceId, fileName, mime, bytes)` in
+     `lib/chat.ts` — wraps `chat.media.upload`
+   - `postMessage` accepts `attachments?: ChatAttachmentRef[]`
+   - New `/api/chat/upload` route — multipart {project, file}
+   - InternalChatComposer wires onPaste/onDrop/onDragOver + 📎 picker
+   - Each upload pops a chip immediately (image preview via
+     `URL.createObjectURL`, ⏳ while in-flight, ⚠️ on error). × removes
+   - Empty text now allowed when at least one attachment is queued
+
+2. **Chat-style hover toolbar** (`dad5561`):
+   - New `<ChatMessageHoverToolbar>` floating at top-right of each
+     message; fades in on hover, always-on for touch
+   - Consolidates the 5 actions into one discoverable affordance:
+     😊 react · ↩ reply · 📋 convert · ✏️ edit (own) · 🗑️ delete (own)
+   - 😊 opens a popover with 8 common emojis (idempotent add via
+     /api/chat/react)
+   - ↩ expands an inline textarea below the message; posts as a
+     reply within the thread via /api/chat/post with threadName
+
+3. **Collapsed quick-actions row** (`d4991dd`):
+   - User feedback: existing per-message `+` (reactions) and the
+     standalone `↩ השב לשרשור` per-thread were two separate places
+   - Merged: ChatReactionsRow now contains both `+` and `↩` icons
+     inline with the existing reaction chips. Both icon-only, same
+     visual weight
+   - Standalone per-thread reply trigger removed (the `chat-thread-
+     reply-action` block is gone). `ThreadReplyComposer` component
+     stays in the codebase but is no longer mounted from
+     InternalDiscussionTab
+   - Hover toolbar (from item #2) is unchanged — it was an additive
+     entry point alongside the row, not a replacement
+
+## Final state
+
+The internal Chat tab now offers in-hub:
+- Read (text + images + attachments + reactions + thread structure)
+- Post top-level message with @-mentions, attachments, programmatic
+  USER_MENTION annotations so Chat actually pings recipients
+- Reply to thread (from per-message ↩ icon OR from hover toolbar)
+- Edit own messages (drawer)
+- Delete own messages (confirm)
+- Add reaction (from chip click OR per-message + picker OR hover
+  toolbar 😊 picker)
+- Remove reaction (× on chip hover)
+- Convert any message to a hub task (📋 → /tasks/new with prefill)
+
+Authentication: DWD-impersonated session user (Chat enforces
+identity-based permissions at the API level). Caching: 60s on
+listRecentMessages; 1h on lookupUserName / lookupUserGaiaResource;
+cache invalidation via revalidateTag("chat-messages") on every
+write path.
+
+## Full-parity round (commit f757f88)
 
 User goal: "minimize opening tabs, hub is source of truth". Closing
 the remaining gaps after the previous round:
