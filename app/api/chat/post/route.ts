@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     text?: string;
     threadName?: string;
     mentions?: { email: string; name: string }[];
+    attachments?: { resourceName: string }[];
   };
   try {
     body = (await req.json()) as typeof body;
@@ -62,9 +63,27 @@ export async function POST(req: Request) {
         )
         .slice(0, 30) // sanity cap — Chat's annotation limit is way higher
     : [];
-  if (!project || !text) {
+  const attachments = Array.isArray(body.attachments)
+    ? body.attachments
+        .filter(
+          (a) =>
+            a &&
+            typeof a.resourceName === "string" &&
+            a.resourceName.length > 0,
+        )
+        .slice(0, 10)
+    : [];
+  if (!project) {
     return NextResponse.json(
-      { ok: false, error: "project and text are required" },
+      { ok: false, error: "project is required" },
+      { status: 400 },
+    );
+  }
+  // Allow empty text when there's at least one attachment — useful
+  // when the user just wants to drop an image with no caption.
+  if (!text && attachments.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: "text or attachments required" },
       { status: 400 },
     );
   }
@@ -128,7 +147,11 @@ export async function POST(req: Request) {
     session.user.email,
     spaceId,
     text,
-    { threadName: threadName || undefined, mentions },
+    {
+      threadName: threadName || undefined,
+      mentions,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    },
   );
   if (!messageName) {
     return NextResponse.json(

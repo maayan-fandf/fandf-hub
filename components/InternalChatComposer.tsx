@@ -7,6 +7,33 @@ import Avatar from "./Avatar";
 import RoleChip from "./RoleChip";
 
 const MAX = 4000;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+type Attachment = {
+  /** localPreviewUrl: object URL for inline thumbnail rendering before
+   *  the upload completes. Revoked when the chip is removed. */
+  localPreviewUrl: string;
+  /** resourceName: returned by /api/chat/upload once the upload lands.
+   *  Empty string while still uploading. Sent on submit. */
+  resourceName: string;
+  name: string;
+  mimeType: string;
+  isImage: boolean;
+  /** transient — used to show a spinner / "מעלה..." chip until the
+   *  upload finishes. */
+  uploading: boolean;
+  error?: string;
+};
+
+type UploadResponse =
+  | {
+      ok: true;
+      resourceName: string;
+      name: string;
+      mimeType: string;
+      isImage: boolean;
+    }
+  | { ok: false; error: string };
 
 type PickerState = {
   /** Position of the `@` in the textarea value. -1 = picker closed. */
@@ -61,7 +88,14 @@ export default function InternalChatComposer({
   const [pickedMentions, setPickedMentions] = useState<
     Map<string, string>
   >(new Map());
+  /** Attachments queued for the next post — paste/drop/file-picker
+   *  uploads each file immediately to /api/chat/upload, then keeps
+   *  the resourceName on the chip. Submit sends every chip whose
+   *  upload finished. Removed chips revoke their objectURL to free
+   *  memory. */
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Lazy-fetch project members on first picker-open. Same endpoint
   // CreateTaskDrawer uses — single source of truth for "who is on
@@ -162,6 +196,131 @@ export default function InternalChatComposer({
     updatePickerFromCursor(v, e.target);
   }
 
+  async function uploadFile(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `הקובץ גדול מדי (${Math.round(file.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    const isImage = file.type.startsWith("image/");
+    const localPreviewUrl = isImage ? URL.createObjectURL(file) : "";
+    // Insert the chip immediately so the user sees feedback while
+    // the upload is in flight. The `uploading` flag flips to false
+    // once /api/chat/upload returns.
+    const tempId = crypto.randomUUID();
+    setAttachments((prev) => [
+      ...prev,
+      {
+        localPreviewUrl,
+        resourceName: "",
+        name: file.name || "file",
+        mimeType: file.type || "application/octet-stream",
+        isImage,
+        uploading: true,
+      },
+    ]);
+    void tempId; // not used today; placeholder if we ever want explicit tempId for chip identity
+
+    const form = new FormData();
+    form.set("project", project);
+    form.set("file", file, file.name || "pasted-image.png");
+    try {
+      const res = await fetch("/api/chat/upload", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as UploadResponse;
+      if (!res.ok || !("ok" in data) || !data.ok) {
+        const msg = ("error" in data && data.error) || `Upload failed (${res.status})`;
+        throw new Error(msg);
+      }
+      // Match by file name + uploading=true since we don't have an
+      // explicit tempId — there could be multiple uploads in flight
+      // for the same filename, but matching first-uploading is fine.
+      setAttachments((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex(
+          (a) => a.uploading && a.name === (file.name || "file"),
+        );
+        if (idx >= 0) {
+          next[idx] = {
+            ...next[idx],
+            resourceName: data.resourceName,
+            uploading: false,
+          };
+        }
+        return next;
+      });
+    } catch (e) {
+      setAttachments((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex(
+          (a) => a.uploading && a.name === (file.name || "file"),
+        );
+        if (idx >= 0) {
+          next[idx] = {
+            ...next[idx],
+            uploading: false,
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }
+        return next;
+      });
+    }
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => {
+      const next = [...prev];
+      const removed = next.splice(index, 1)[0];
+      if (removed?.localPreviewUrl) {
+        try {
+          URL.revokeObjectURL(removed.localPreviewUrl);
+        } catch {
+          // best-effort; nothing to do if revoke fails
+        }
+      }
+      return next;
+    });
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    imgs.forEach((f) => {
+      void uploadFile(f);
+    });
+  }
+
+  function onDrop(e: React.DragEvent<HTMLTextAreaElement>) {
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    e.preventDefault();
+    Array.from(files).forEach((f) => {
+      void uploadFile(f);
+    });
+  }
+
+  function onDragOver(e: React.DragEvent<HTMLTextAreaElement>) {
+    if (e.dataTransfer?.types?.includes("Files")) {
+      e.preventDefault();
+    }
+  }
+
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((f) => {
+      void uploadFile(f);
+    });
+    // Reset so picking the same file again still fires onChange.
+    e.target.value = "";
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Picker-aware keys take priority when the dropdown is open.
     if (picker.queryStart >= 0 && results.length > 0) {
@@ -211,8 +370,16 @@ export default function InternalChatComposer({
 
   function submit() {
     const text = value.trim();
-    if (!text) {
-      setError("הודעה לא יכולה להיות ריקה.");
+    const readyAttachments = attachments.filter(
+      (a) => a.resourceName && !a.error,
+    );
+    const stillUploading = attachments.some((a) => a.uploading);
+    if (stillUploading) {
+      setError("ממתינים להעלאת קבצים…");
+      return;
+    }
+    if (!text && readyAttachments.length === 0) {
+      setError("הודעה לא יכולה להיות ריקה (טקסט או קובץ).");
       return;
     }
     if (text.length > MAX) {
@@ -228,17 +395,39 @@ export default function InternalChatComposer({
       .filter(([, name]) => text.includes("@" + name))
       .map(([email, name]) => ({ email, name }));
 
+    // Snapshot what we're sending so we can restore on error.
+    const sendingAttachments = readyAttachments.map((a) => ({
+      resourceName: a.resourceName,
+    }));
+    const restoreAttachments = readyAttachments;
+
     // Optimistic clear — same rationale as ReplyDrawer. If the post
-    // fails we restore the typed text + show the error inline.
+    // fails we restore the typed text + chips + show the error.
     setValue("");
     setPickedMentions(new Map());
+    setAttachments([]);
+    // Free local previews for the chips we're about to clear.
+    readyAttachments.forEach((a) => {
+      if (a.localPreviewUrl) {
+        try {
+          URL.revokeObjectURL(a.localPreviewUrl);
+        } catch {
+          // best-effort
+        }
+      }
+    });
     closePicker();
     startTransition(async () => {
       try {
         const res = await fetch("/api/chat/post", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ project, text, mentions }),
+          body: JSON.stringify({
+            project,
+            text,
+            mentions,
+            attachments: sendingAttachments,
+          }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
@@ -257,6 +446,11 @@ export default function InternalChatComposer({
           for (const m of mentions) restored.set(m.email, m.name);
           return restored;
         });
+        // Restore attachments — the resourceNames are still valid
+        // (uploaded, just unsent), so the next submit can use them.
+        setAttachments((prev) =>
+          prev.length > 0 ? prev : restoreAttachments,
+        );
         setError(e instanceof Error ? e.message : String(e));
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
@@ -282,15 +476,74 @@ export default function InternalChatComposer({
         className="reply-textarea"
         rows={3}
         value={value}
-        placeholder="כתוב הודעה לחלל הצ׳אט הפנימי… (@ לתיוג, ⌘/Ctrl+Enter לשליחה)"
+        placeholder="כתוב הודעה לחלל הצ׳אט הפנימי… (@ לתיוג, הדבק/גרור תמונה, ⌘/Ctrl+Enter לשליחה)"
         onChange={onChange}
         onKeyUp={(e) => updatePickerFromCursor(value, e.currentTarget)}
         onClick={(e) => updatePickerFromCursor(value, e.currentTarget)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         disabled={isPending}
         maxLength={MAX + 1}
       />
+      {attachments.length > 0 && (
+        <div className="chat-composer-attachments">
+          {attachments.map((a, i) => (
+            <span
+              key={i}
+              className={`chat-composer-attachment ${a.error ? "has-error" : ""} ${a.uploading ? "is-uploading" : ""}`}
+              title={a.error || a.name}
+            >
+              {a.isImage && a.localPreviewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={a.localPreviewUrl}
+                  alt={a.name}
+                  className="chat-composer-attachment-preview"
+                />
+              ) : (
+                <span className="chat-composer-attachment-icon" aria-hidden>
+                  📎
+                </span>
+              )}
+              <span className="chat-composer-attachment-name">{a.name}</span>
+              {a.uploading && (
+                <span className="chat-composer-attachment-status">⏳</span>
+              )}
+              {a.error && (
+                <span className="chat-composer-attachment-status">⚠️</span>
+              )}
+              <button
+                type="button"
+                className="chat-composer-attachment-remove"
+                onClick={() => removeAttachment(i)}
+                title="הסר קובץ"
+                aria-label="הסר קובץ"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="chat-composer-foot">
+        <button
+          type="button"
+          className="create-task-attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isPending}
+          title="צרף קובץ — נשמר בחלל הצ׳אט של הפרויקט"
+        >
+          📎 צרף קובץ
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={onPickFiles}
+        />
         {liveMentions > 0 && (
           <span className="create-task-mentions-hint">
             תויגו: {liveMentions}
@@ -305,7 +558,12 @@ export default function InternalChatComposer({
           type="button"
           className="reply-btn reply-btn-primary"
           onClick={submit}
-          disabled={isPending || count === 0 || over}
+          disabled={
+            isPending ||
+            (count === 0 && attachments.filter((a) => a.resourceName).length === 0) ||
+            over ||
+            attachments.some((a) => a.uploading)
+          }
           title="ההודעה תופיע בחלל הצ׳אט הפנימי בשמך"
         >
           {isPending ? "שולח…" : "שלח לצ׳אט"}

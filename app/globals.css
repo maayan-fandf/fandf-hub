@@ -1913,6 +1913,77 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   gap: 0.6rem;
   font-size: 0.78rem;
   color: var(--muted);
+  flex-wrap: wrap;
+}
+
+/* Row of attached-file chips between the textarea and the foot.
+   Each chip shows a thumbnail (for images) or 📎 + filename, with
+   a × to remove. Uploading shows ⏳; error shows ⚠️ + tooltip. */
+.chat-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.chat-composer-attachment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.2em 0.55em 0.2em 0.4em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  font-size: 0.85em;
+  max-width: 240px;
+}
+.chat-composer-attachment.is-uploading {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.chat-composer-attachment.has-error {
+  border-color: rgb(239, 68, 68);
+  background: rgba(239, 68, 68, 0.08);
+}
+.chat-composer-attachment-preview {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}
+.chat-composer-attachment-icon {
+  font-size: 1.1em;
+}
+.chat-composer-attachment-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  color: var(--text);
+}
+.chat-composer-attachment-status {
+  font-size: 0.95em;
+}
+.chat-composer-attachment-remove {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.chat-composer-attachment-remove:hover {
+  background: rgb(239, 68, 68);
+  color: #fff;
 }
 
 /* End-of-row action area on each Chat message row — currently just

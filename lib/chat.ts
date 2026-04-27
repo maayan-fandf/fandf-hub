@@ -481,6 +481,47 @@ export type ChatMentionInput = {
   name: string;
 };
 
+/** Reference to an already-uploaded Chat attachment. `resourceName`
+ *  is what Chat returns from media.upload and accepts on
+ *  messages.create as `attachment[].attachmentDataRef.resourceName`. */
+export type ChatAttachmentRef = {
+  resourceName: string;
+};
+
+/**
+ * Upload an attachment (image / file bytes) to a Chat space's
+ * media area, returning the `resourceName` to plug into a subsequent
+ * messages.create call. The two-step flow (upload then attach in
+ * post) mirrors the native Chat composer's behavior and lets the
+ * hub composer show local previews of attached files before the
+ * user clicks send.
+ *
+ * The bytes get stored under Chat's space-managed area, separate
+ * from our hub-managed `<project>/שיתוף עם הלקוח/` folder. Chat's
+ * security model: only space members can see the attachment.
+ */
+export async function uploadChatAttachment(
+  subjectEmail: string,
+  spaceId: string,
+  fileName: string,
+  mimeType: string,
+  bytes: Buffer,
+): Promise<ChatAttachmentRef> {
+  const { Readable } = await import("node:stream");
+  const chat = chatClient(subjectEmail);
+  const res = await chat.media.upload({
+    parent: `spaces/${spaceId}`,
+    requestBody: { filename: fileName },
+    media: {
+      mimeType,
+      body: Readable.from(bytes),
+    },
+  });
+  const ref = res.data.attachmentDataRef?.resourceName ?? "";
+  if (!ref) throw new Error("Chat upload returned no attachmentDataRef");
+  return { resourceName: ref };
+}
+
 export async function postMessage(
   subjectEmail: string,
   spaceId: string,
@@ -488,9 +529,14 @@ export async function postMessage(
   options: {
     threadName?: string;
     mentions?: ChatMentionInput[];
+    attachments?: ChatAttachmentRef[];
   } = {},
 ): Promise<string> {
-  if (!spaceId || !text) return "";
+  // Allow empty text when there are attachments — sometimes a user
+  // just wants to drop an image with no caption. Chat supports that.
+  const hasAttachments =
+    !!options.attachments && options.attachments.length > 0;
+  if (!spaceId || (!text && !hasAttachments)) return "";
   try {
     const chat = chatClient(subjectEmail);
     // When threadName is set, post as a reply to that thread. The
@@ -501,9 +547,15 @@ export async function postMessage(
       text: string;
       thread?: { name: string };
       annotations?: object[];
+      attachment?: object[];
     } = { text };
     if (options.threadName) {
       requestBody.thread = { name: options.threadName };
+    }
+    if (hasAttachments) {
+      requestBody.attachment = options.attachments!.map((a) => ({
+        attachmentDataRef: { resourceName: a.resourceName },
+      }));
     }
     if (options.mentions && options.mentions.length > 0) {
       const annotations: object[] = [];
