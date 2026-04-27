@@ -171,6 +171,28 @@ export function gmailClient(subjectEmail: string) {
 }
 
 /**
+ * Admin SDK Directory client (read-only on users). Used to resolve a
+ * Chat `users/<id>` resource name into a real displayName when the
+ * Chat API itself doesn't include it on a message's sender record —
+ * which it routinely doesn't, especially for SA-impersonated posts.
+ *
+ * REQUIRES one extra DWD scope on top of the Chat ones above:
+ *   - https://www.googleapis.com/auth/admin.directory.user.readonly
+ * Add it in Workspace Admin → Security → API controls → Domain-wide
+ * delegation, same client ID. The impersonated user must be a member
+ * of the F&F directory (any @fandf.co.il user works); they don't need
+ * admin role since the scope is read-only.
+ *
+ * Lookups are cached in-process for 1h via the Map in lib/chat.ts.
+ */
+export function directoryClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/admin.directory.user.readonly",
+  ]);
+  return google.admin({ version: "directory_v1", auth });
+}
+
+/**
  * Google Chat client. Impersonates the calling F&F user so list/post
  * actions appear authored by them in the project Chat space. Used by
  * the project page's "🔒 דיון פנימי" tab to surface recent messages

@@ -115,8 +115,8 @@ export default async function InternalDiscussionTab({
           {messages.map((m) => (
             <li key={m.name} className="chat-message">
               <Avatar
-                name={m.senderName || m.name}
-                title={m.senderName}
+                name={m.senderName || m.senderResource || m.name}
+                title={m.senderName || m.senderResource}
                 size={26}
               />
               <div className="chat-message-body">

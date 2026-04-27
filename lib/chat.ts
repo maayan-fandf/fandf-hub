@@ -18,7 +18,7 @@
  */
 
 import { unstable_cache } from "next/cache";
-import { chatClient } from "@/lib/sa";
+import { chatClient, directoryClient } from "@/lib/sa";
 
 export type ChatMessage = {
   /** API resource name: `spaces/<spaceId>/messages/<messageId>`.
@@ -27,12 +27,18 @@ export type ChatMessage = {
   text: string;
   /** ISO-8601 timestamp the message was sent. */
   createTime: string;
-  /** Sender display name. Empty for messages posted by Chat Apps /
-   *  webhooks (no human author). The Chat API doesn't surface email
-   *  on the Schema$User type — it uses opaque `users/<id>` resource
-   *  names — so we don't carry an email field. Avatar / role lookups
-   *  in the future need to go through a directory query. */
+  /** Sender display name — populated by Chat API when present, then
+   *  enriched via Admin SDK Directory lookup (lookupUserName) when
+   *  the API leaves it empty (which it routinely does for SA-
+   *  impersonated cross-stream-signal posts and sometimes for
+   *  human-posted messages too). Empty string when both fail. */
   senderName: string;
+  /** Sender resource name from the Chat API — `users/<gaiaId>` for
+   *  human users, `users/app` or similar for app-authored messages.
+   *  Retained on the type so the avatar in InternalDiscussionTab
+   *  can hash off a stable identifier even when senderName is
+   *  empty, and so we can re-run the directory lookup later. */
+  senderResource: string;
   /** Annotation summary — list of mentioned user emails (lowercased)
    *  found in `annotations[].userMention`. Empty when no mentions.
    *  Used by the תיוגים filter on the internal tab. */
@@ -106,12 +112,64 @@ export function chatSpaceUrlFromSpaceId(spaceId: string): string {
  * state instead of an error — this is a "nice to have" surface, not
  * a critical path.
  */
+/**
+ * In-process cache: Chat user resource (`users/<id>`) → directory
+ * displayName. Successful lookups cached for 1h; failures negative-
+ * cached for 1m so a transient outage doesn't block subsequent reads
+ * for an hour.
+ *
+ * Lifetime: per Node process (Firebase App Hosting runtimes restart
+ * periodically; the cache rebuilds on first hit each new instance).
+ * No cross-process invalidation needed — names rarely change and a
+ * staleness window of 1h is fine for chat-author display.
+ */
+const CHAT_USER_NAME_CACHE = new Map<
+  string,
+  { name: string; expiresAt: number }
+>();
+const CHAT_USER_NAME_TTL_MS = 60 * 60 * 1000;
+const CHAT_USER_NAME_NEGATIVE_TTL_MS = 60 * 1000;
+
+async function lookupUserName(
+  subjectEmail: string,
+  userResource: string,
+): Promise<string> {
+  if (!userResource.startsWith("users/")) return "";
+  const id = userResource.slice("users/".length);
+  // Skip non-numeric IDs ("users/app", "users/AI agents", etc.) —
+  // the Directory API only knows real human users.
+  if (!/^\d+$/.test(id)) return "";
+  const cached = CHAT_USER_NAME_CACHE.get(id);
+  if (cached && cached.expiresAt > Date.now()) return cached.name;
+  try {
+    const directory = directoryClient(subjectEmail);
+    const res = await directory.users.get({ userKey: id });
+    const name =
+      res.data.name?.fullName ??
+      res.data.primaryEmail?.split("@")[0] ??
+      "";
+    CHAT_USER_NAME_CACHE.set(id, {
+      name,
+      expiresAt: Date.now() + CHAT_USER_NAME_TTL_MS,
+    });
+    return name;
+  } catch (e) {
+    console.log("[chat] lookupUserName failed for", userResource, ":", e instanceof Error ? e.message : e);
+    CHAT_USER_NAME_CACHE.set(id, {
+      name: "",
+      expiresAt: Date.now() + CHAT_USER_NAME_NEGATIVE_TTL_MS,
+    });
+    return "";
+  }
+}
+
 async function listRecentMessagesUncached(
   subjectEmail: string,
   spaceId: string,
   limit: number,
 ): Promise<ChatMessage[]> {
   if (!spaceId) return [];
+  let messages: ChatMessage[] = [];
   try {
     const chat = chatClient(subjectEmail);
     const res = await chat.spaces.messages.list({
@@ -121,8 +179,8 @@ async function listRecentMessagesUncached(
       // the canonical knob.
       orderBy: "createTime desc",
     });
-    const messages = res.data.messages ?? [];
-    return messages.map((m) => {
+    const raw = res.data.messages ?? [];
+    messages = raw.map((m) => {
       const annotations = (m.annotations ?? []) as Array<{
         type?: string;
         userMention?: { user?: { name?: string; displayName?: string; type?: string } };
@@ -143,6 +201,7 @@ async function listRecentMessagesUncached(
         text: m.text ?? "",
         createTime: m.createTime ?? "",
         senderName: m.sender?.displayName ?? "",
+        senderResource: m.sender?.name ?? "",
         mentionEmails,
       };
     });
@@ -153,6 +212,35 @@ async function listRecentMessagesUncached(
     console.log("[chat] listRecentMessages failed:", e);
     return [];
   }
+
+  // Enrich missing displayNames via Admin SDK Directory. We dedupe
+  // unique resource names first so 5 messages from the same author
+  // become 1 lookup, and run the lookups in parallel — each cached
+  // hit is O(1), each miss is one Directory call. If the scope isn't
+  // granted yet the lookups all fail silently and we keep "" — same
+  // UX as before, no regression.
+  const needLookup = Array.from(
+    new Set(
+      messages
+        .filter((m) => !m.senderName && m.senderResource)
+        .map((m) => m.senderResource),
+    ),
+  );
+  if (needLookup.length > 0) {
+    const resolved: Record<string, string> = {};
+    await Promise.all(
+      needLookup.map(async (resource) => {
+        resolved[resource] = await lookupUserName(subjectEmail, resource);
+      }),
+    );
+    messages = messages.map((m) =>
+      m.senderName || !resolved[m.senderResource]
+        ? m
+        : { ...m, senderName: resolved[m.senderResource] },
+    );
+  }
+
+  return messages;
 }
 
 /**
