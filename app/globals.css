@@ -1959,14 +1959,33 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   text-decoration: none;
 }
 
-/* Server-rendered Chat message list — compact rows, avatar + body. */
+/* Server-rendered Chat message list — compact rows, avatar + body.
+   Bounded height + scroll: even one chatty project can run dozens of
+   messages, and unbounded growth pushes the composer way off-screen
+   and dwarfs the rest of the project page. 60vh is a reasonable cap;
+   user scrolls within when there are more messages than fit. */
 .chat-message-list {
   list-style: none;
-  padding: 0;
+  padding: 0 0.5rem 0 0; /* breathing room for the scrollbar in RTL */
   margin: 0;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  /* Theme-aware scrollbar — same pattern as the kanban columns. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chat-message-list::-webkit-scrollbar {
+  width: 8px;
+}
+.chat-message-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.chat-message-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 .chat-message {
   display: flex;
@@ -2012,6 +2031,55 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;
+}
+
+/* Attachments rendered below the text — Chat-uploaded images get an
+   inline thumbnail, non-image attachments get a 📎 link. Both are
+   anchors back to the Chat space so the user can grab full-res or
+   reply in-thread by clicking through. */
+.chat-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.chat-message-image-link {
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.chat-message-image-link:hover {
+  border-color: var(--accent);
+}
+.chat-message-image {
+  display: block;
+  max-width: min(340px, 100%);
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.chat-message-attachment-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.3em 0.65em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  color: var(--muted);
+  font-size: 0.85em;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.chat-message-attachment-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
 }
 
 /* Discussion section header carries both a segmented view-toggle and

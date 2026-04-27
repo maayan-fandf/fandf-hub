@@ -31,6 +31,29 @@ Two features in one PR:
 ## Status: COMPLETE — pushed in commit (see HEAD)
 Production `next build` passed clean. No compile errors.
 
+## Polish round (same evening)
+
+After phase 2 shipped, three follow-ups bundled into one PR:
+
+1. **Strip "פתח בהאב →" lines from Chat messages displayed in the hub**
+   — that's our cross-stream-signal back-pointer; useful for Chat-only
+   viewers, redundant noise inside the hub.
+2. **Inline image rendering for Chat-uploaded attachments** — users
+   can now see screenshots / images posted in the Chat space without
+   leaving the hub. Non-image attachments render as 📎 chips.
+3. **Bounded message feed height** — `.chat-message-list` now caps at
+   60vh with `overflow-y: auto` so a chatty project doesn't push the
+   composer + the rest of the page off-screen.
+
+Files touched:
+- `lib/chat.ts` — added `ChatAttachment` type, captured `m.attachment[]`
+  data in the mapping
+- `components/InternalDiscussionTab.tsx` — render attachments below
+  text (image thumbnails or 📎 link), strip "פתח בהאב" line in the
+  text renderer
+- `app/globals.css` — `.chat-message-image{,-link}`, `.chat-message-
+  attachment-link`, scrollbar styling on `.chat-message-list`
+
 ## Recovery instructions if something blows up mid-PR
 
 If the conversation drops before commit + push:

@@ -148,6 +148,50 @@ export default async function InternalDiscussionTab({
                 <div className="chat-message-text">
                   {renderChatText(m.text)}
                 </div>
+                {m.attachments.length > 0 && (
+                  <div className="chat-message-attachments">
+                    {m.attachments.map((a, i) => {
+                      const imgUrl =
+                        a.thumbnailUri ||
+                        (a.driveFileId
+                          ? `https://lh3.googleusercontent.com/d/${a.driveFileId}=w800`
+                          : "");
+                      // Wrap each image / file link in an <a> back to
+                      // the Chat space — clicking opens the original
+                      // message in Chat where the user can download
+                      // full-res or reply in thread.
+                      return a.isImage && imgUrl ? (
+                        <a
+                          key={i}
+                          href={spaceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="chat-message-image-link"
+                          title={a.contentName || "תמונה מצורפת"}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={imgUrl}
+                            alt={a.contentName || "image"}
+                            loading="lazy"
+                            className="chat-message-image"
+                          />
+                        </a>
+                      ) : (
+                        <a
+                          key={i}
+                          href={spaceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="chat-message-attachment-link"
+                          title={a.contentType}
+                        >
+                          📎 {a.contentName || a.contentType || "קובץ"}
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </li>
           ))}
@@ -172,12 +216,20 @@ export default async function InternalDiscussionTab({
 /**
  * Tiny text renderer for Chat's basic markup. Chat's text field uses
  * a subset of Markdown — `*bold*`, `_italic_`, `` `code` `` — and
- * auto-links bare URLs. We render bold + auto-links here; italic /
- * code stay as plain text for now (low-leverage, can add later).
+ * auto-links bare URLs. We render auto-links here; bold/italic/code
+ * stay as plain text for now (low-leverage, can add later).
+ *
+ * Filters out our own "פתח בהאב → <hub url>" footer line — that's
+ * the cross-stream-signal back-pointer we add when posting client-tab
+ * activity into the internal Chat space. The link is useful FOR Chat
+ * users (clicks back to the hub thread), but redundant noise when
+ * the same message renders inside the hub itself.
  */
 function renderChatText(text: string): React.ReactNode {
   if (!text) return null;
-  const lines = text.split("\n");
+  const lines = text
+    .split("\n")
+    .filter((line) => !/^\s*פתח בהאב\s*→/.test(line));
   return lines.map((line, i) => (
     <p key={i} className="chat-message-line">
       {tokenizeLine(line)}

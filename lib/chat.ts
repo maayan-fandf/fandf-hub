@@ -43,6 +43,28 @@ export type ChatMessage = {
    *  found in `annotations[].userMention`. Empty when no mentions.
    *  Used by the תיוגים filter on the internal tab. */
   mentionEmails: string[];
+  /** Files attached to the Chat message (uploaded via the Chat
+   *  composer's paperclip). Currently used to surface images inline
+   *  in the hub's internal tab so users don't have to flip to Chat
+   *  just to see a screenshot. Non-image attachments render as a
+   *  generic 📎 link. */
+  attachments: ChatAttachment[];
+};
+
+export type ChatAttachment = {
+  /** Filename as Chat reports it ("Screenshot 2026-04-27.png"). */
+  contentName: string;
+  /** MIME type — used to decide image vs link rendering. */
+  contentType: string;
+  /** Preview-quality URL Chat exposes for display purposes. Loads
+   *  in a browser signed into the same Workspace account; falls back
+   *  to the lh3 thumbnail when blank. */
+  thumbnailUri: string;
+  /** Drive file ID when the attachment is Drive-backed. We use it
+   *  to construct an lh3 thumbnail URL when thumbnailUri is empty. */
+  driveFileId: string;
+  /** Convenience flag — true when contentType starts with "image/". */
+  isImage: boolean;
 };
 
 /**
@@ -196,6 +218,16 @@ async function listRecentMessagesUncached(
         const dn = a.userMention?.user?.displayName;
         if (dn) mentionEmails.push(dn.toLowerCase());
       }
+      const attachments: ChatAttachment[] = (m.attachment ?? []).map((a) => {
+        const contentType = a.contentType ?? "";
+        return {
+          contentName: a.contentName ?? "",
+          contentType,
+          thumbnailUri: a.thumbnailUri ?? "",
+          driveFileId: a.driveDataRef?.driveFileId ?? "",
+          isImage: contentType.startsWith("image/"),
+        };
+      });
       return {
         name: m.name ?? "",
         text: m.text ?? "",
@@ -203,6 +235,7 @@ async function listRecentMessagesUncached(
         senderName: m.sender?.displayName ?? "",
         senderResource: m.sender?.name ?? "",
         mentionEmails,
+        attachments,
       };
     });
   } catch (e) {
