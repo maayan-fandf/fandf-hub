@@ -7,6 +7,7 @@ import {
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
 import CardActions from "@/components/CardActions";
+import CommentBody from "@/components/CommentBody";
 import ScrollToThread from "@/components/ScrollToThread";
 import Avatar from "@/components/Avatar";
 
@@ -273,7 +274,11 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
             {formatRelative(c.timestamp)}
           </span>
         </div>
-        <div className="timeline-body">{truncate(c.body, 600)}</div>
+        <CommentBody
+          body={c.body}
+          truncateChars={600}
+          className="timeline-body"
+        />
         {entry.spawnedTasks.length > 0 && (
           <div className="timeline-tasks">
             <span className="timeline-tasks-label">משימות שנוצרו:</span>
@@ -364,7 +369,11 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
             {formatRelative(t.created_at)}
           </span>
         </div>
-        <div className="timeline-body">{truncate(t.title || t.body, 600)}</div>
+        <CommentBody
+          body={t.title || t.body}
+          truncateChars={600}
+          className="timeline-body"
+        />
         <div className="timeline-subnote">
           מאת {t.author_name || t.author_email}
         </div>

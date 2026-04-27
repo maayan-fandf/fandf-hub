@@ -4,6 +4,7 @@ import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import InboxFilterBar from "@/components/InboxFilterBar";
 import CardActions from "@/components/CardActions";
+import CommentBody from "@/components/CommentBody";
 import ThreadReplies from "@/components/ThreadReplies";
 import Avatar from "@/components/Avatar";
 
@@ -167,9 +168,11 @@ function MentionCard({ m }: { m: MentionItem }) {
           count={m.reply_count ?? 0}
         />
       </div>
-      <div className="mention-body">
-        {truncate(m.body, 400)}
-      </div>
+      <CommentBody
+        body={m.body}
+        truncateChars={400}
+        className="mention-body"
+      />
       <div className="mention-actions">
         <CardActions
           commentId={resolveTarget}

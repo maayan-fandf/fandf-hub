@@ -16,6 +16,7 @@ import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
+import CommentBody from "@/components/CommentBody";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import ProjectFilterBar from "@/components/ProjectFilterBar";
@@ -638,7 +639,11 @@ function CommentsPreview({
               </span>
             )}
           </div>
-          <div className="compact-comment-body">{truncate(c.body, 220)}</div>
+          <CommentBody
+            body={c.body}
+            truncateChars={220}
+            className="compact-comment-body"
+          />
           <div className="compact-comment-actions">
             <CardActions
               commentId={c.comment_id}
@@ -736,7 +741,11 @@ function MentionsPreview({
                 count={m.reply_count ?? 0}
               />
             </div>
-            <div className="compact-comment-body">{truncate(m.body, 200)}</div>
+            <CommentBody
+              body={m.body}
+              truncateChars={200}
+              className="compact-comment-body"
+            />
             <div className="compact-comment-actions">
               <CardActions
                 commentId={actionTarget}

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import Avatar from "./Avatar";
+import CommentBody from "./CommentBody";
 import type { CommentItem } from "@/lib/appsScript";
 
 type Props = {
@@ -113,7 +114,10 @@ export default function ThreadReplies({
                         </span>
                       )}
                     </div>
-                    <div className="thread-reply-text">{r.body}</div>
+                    <CommentBody
+                      body={r.body}
+                      className="thread-reply-text"
+                    />
                   </div>
                 </li>
               ))}

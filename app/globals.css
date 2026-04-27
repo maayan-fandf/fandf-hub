@@ -5350,12 +5350,14 @@ html[data-theme="dark"] .tasks-dept-chip {
   font-size: .82em;
   margin-inline-start: .6em;
 }
-.task-comment-image-link {
+.task-comment-image-link,
+.comment-body-image-link {
   display: inline-block;
   margin: .3em 0;
   max-width: 100%;
 }
-.task-comment-image {
+.task-comment-image,
+.comment-body-image {
   display: block;
   max-width: min(420px, 100%);
   max-height: 320px;
@@ -5365,6 +5367,24 @@ html[data-theme="dark"] .tasks-dept-chip {
   border: 1px solid var(--border);
   background: var(--surface-soft, #f5f5f5);
   object-fit: contain;
+}
+/* Inside the compact preview cards (project page / inbox / timeline)
+   the image is bounded by the card width — keep the height tighter so
+   text + image fits without dominating the card. */
+.compact-comment-body .comment-body-image,
+.mention-body .comment-body-image,
+.thread-reply-text .comment-body-image {
+  max-height: 220px;
+}
+.compact-comment-body p,
+.mention-body p,
+.thread-reply-text p {
+  margin: 0 0 .35em;
+}
+.compact-comment-body p:last-child,
+.mention-body p:last-child,
+.thread-reply-text p:last-child {
+  margin-bottom: 0;
 }
 .thread-reply-text a {
   color: var(--accent, #2a66d9);
