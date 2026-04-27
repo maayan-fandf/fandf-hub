@@ -145,15 +145,6 @@ export default async function InternalDiscussionTab({
   return (
     <div className="discussion-internal">
       <div className="discussion-internal-head">
-        <a
-          href={spaceUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-primary btn-sm"
-          title="פתח את חלל הצ׳אט בכרטיסייה חדשה"
-        >
-          💬 פתח בצ׳אט ↗
-        </a>
         <span className="discussion-internal-hint">
           הודעות אחרונות מתוך חלל הצ׳אט הפנימי. אפשר לכתוב כאן או דרך הצ׳אט.
         </span>
