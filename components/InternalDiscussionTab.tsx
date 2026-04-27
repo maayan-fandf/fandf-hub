@@ -2,8 +2,10 @@ import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import InternalChatComposer from "@/components/InternalChatComposer";
 import ConvertChatMessageToTaskButton from "@/components/ConvertChatMessageToTaskButton";
+import EditChatMessageDrawer from "@/components/EditChatMessageDrawer";
 import {
   listRecentMessages,
+  lookupUserGaiaResource,
   parseSpaceId,
   chatSpaceUrlFromSpaceId,
   type ChatMessage,
@@ -75,6 +77,13 @@ export default async function InternalDiscussionTab({
 
   const all = await listRecentMessages(subjectEmail, spaceId, 50);
   const spaceUrl = chatSpaceUrlFromSpaceId(spaceId);
+  // Resolve the current user's Chat user resource so renderMessage
+  // can decide whether to show edit (only on messages they authored).
+  // Cached 1h in-process — usually 0ms after first hit per process.
+  const currentUserResource = await lookupUserGaiaResource(
+    subjectEmail,
+    myEmail,
+  );
 
   // "תיוגים שלי" filter — match the message's mention displayNames
   // against the user's known display names (or fall back to email
@@ -160,12 +169,24 @@ export default async function InternalDiscussionTab({
         <ul className="chat-message-list">
           {visible.map((t) => (
             <li key={t.parent.name} className="chat-thread">
-              {renderMessage(t.parent, projectName, spaceUrl, false)}
+              {renderMessage(
+                t.parent,
+                projectName,
+                spaceUrl,
+                false,
+                currentUserResource,
+              )}
               {t.replies.length > 0 && (
                 <ul className="chat-thread-replies">
                   {t.replies.map((r) => (
                     <li key={r.name} className="chat-thread-reply">
-                      {renderMessage(r, projectName, spaceUrl, true)}
+                      {renderMessage(
+                        r,
+                        projectName,
+                        spaceUrl,
+                        true,
+                        currentUserResource,
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -206,8 +227,10 @@ function renderMessage(
   projectName: string,
   spaceUrl: string,
   isReply: boolean,
+  currentUserResource: string,
 ): React.ReactNode {
   const avatarSize = isReply ? 22 : 26;
+  const isMine = !!currentUserResource && m.senderResource === currentUserResource;
   return (
     <>
       <Avatar
@@ -224,6 +247,12 @@ function renderMessage(
             {formatRelative(m.createTime)}
           </span>
           <span className="chat-message-actions">
+            {isMine && (
+              <EditChatMessageDrawer
+                messageName={m.name}
+                initialText={m.text}
+              />
+            )}
             <ConvertChatMessageToTaskButton
               project={projectName}
               messageText={m.text}

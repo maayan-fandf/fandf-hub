@@ -31,6 +31,41 @@ Two features in one PR:
 ## Status: COMPLETE — pushed in commit (see HEAD)
 Production `next build` passed clean. No compile errors.
 
+## Hub-as-source-of-truth round
+
+User pivoted on the framing: "minimize opening tabs, hub is source of
+truth". Bundled work to close the parity gap with native Chat:
+
+- Thread grouping (parent + indented replies)
+- Reaction display (chips)
+- Newest-at-bottom ordering (column-reverse)
+- Edit-own-Chat-messages (✏️ icon → inline drawer → /api/chat/edit
+  → chat.spaces.messages.patch)
+- @-mention picker in the composer (typing `@` opens a dropdown of
+  project members; selection inserts `@<name>` text. Programmatic
+  mention annotations are a follow-up — current text-only
+  implementation may not reliably notify recipients in Chat.)
+- Bounded message list height (60vh + scrollbar)
+- Image attachments rendered inline
+- Strip "פתח בהאב" footer on hub-display side
+
+New files for the hub-as-source-of-truth round:
+- `app/api/chat/edit/route.ts` — PATCH endpoint
+- `components/EditChatMessageDrawer.tsx` — pencil-icon → inline
+  textarea, optimistic-close pattern
+
+Modified files:
+- `lib/chat.ts` — added ChatReaction, threadName, attachments,
+  reactions fields; lookupUserGaiaResource() helper for
+  current-user-is-author check; updateMessageText() for edits
+- `components/InternalDiscussionTab.tsx` — thread grouping,
+  renderMessage helper, currentUserResource lookup, edit button
+  conditional on author match
+- `components/InternalChatComposer.tsx` — full @-mention picker,
+  same UX as CreateTaskDrawer's
+- `app/globals.css` — chat-thread, chat-thread-replies, chat-reaction,
+  chat-edit-drawer styles; column-reverse on chat-message-list
+
 ## Polish round (same evening)
 
 After phase 2 shipped, three follow-ups bundled into one PR:

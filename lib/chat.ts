@@ -171,6 +171,70 @@ const CHAT_USER_NAME_CACHE = new Map<
 const CHAT_USER_NAME_TTL_MS = 60 * 60 * 1000;
 const CHAT_USER_NAME_NEGATIVE_TTL_MS = 60 * 1000;
 
+/**
+ * Inverse of lookupUserName: given an email, return the user's Chat
+ * resource name (`users/<gaiaId>`). Used to check whether the
+ * current viewing user authored a given message — drives whether
+ * we render an edit/delete affordance on a message row.
+ *
+ * Cached identically to lookupUserName: 1h on hits, 1m negative on
+ * failures. Email is lowercased for cache-key stability.
+ */
+const CHAT_USER_GAIA_CACHE = new Map<
+  string,
+  { resource: string; expiresAt: number }
+>();
+
+export async function lookupUserGaiaResource(
+  subjectEmail: string,
+  email: string,
+): Promise<string> {
+  const key = email.toLowerCase().trim();
+  if (!key) return "";
+  const cached = CHAT_USER_GAIA_CACHE.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.resource;
+  try {
+    const directory = directoryClient(subjectEmail);
+    const res = await directory.users.get({ userKey: email });
+    const id = res.data.id ?? "";
+    const resource = id ? `users/${id}` : "";
+    CHAT_USER_GAIA_CACHE.set(key, {
+      resource,
+      expiresAt: Date.now() + CHAT_USER_NAME_TTL_MS,
+    });
+    return resource;
+  } catch (e) {
+    console.log("[chat] lookupUserGaiaResource failed for", email, ":", e instanceof Error ? e.message : e);
+    CHAT_USER_GAIA_CACHE.set(key, {
+      resource: "",
+      expiresAt: Date.now() + CHAT_USER_NAME_NEGATIVE_TTL_MS,
+    });
+    return "";
+  }
+}
+
+/**
+ * PATCH a message's text via the Chat REST API. Only the user who
+ * authored the message can edit it — we enforce this by impersonating
+ * the session user; if they're not the author the API returns 403
+ * and we surface that to the caller.
+ *
+ * Used by the edit drawer in InternalDiscussionTab. Returns true on
+ * success, throws on failure (caller surfaces the error in the UI).
+ */
+export async function updateMessageText(
+  subjectEmail: string,
+  messageName: string,
+  newText: string,
+): Promise<void> {
+  const chat = chatClient(subjectEmail);
+  await chat.spaces.messages.patch({
+    name: messageName,
+    updateMask: "text",
+    requestBody: { text: newText },
+  });
+}
+
 async function lookupUserName(
   subjectEmail: string,
   userResource: string,

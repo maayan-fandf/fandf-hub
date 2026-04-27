@@ -1,27 +1,45 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { Assignee } from "@/lib/appsScript";
+import Avatar from "./Avatar";
+import RoleChip from "./RoleChip";
 
 const MAX = 4000;
 
+type PickerState = {
+  /** Position of the `@` in the textarea value. -1 = picker closed. */
+  queryStart: number;
+  /** Text typed after `@` so far. */
+  query: string;
+  /** Keyboard-highlighted result index. */
+  index: number;
+  /** Viewport coords (position:fixed dropdown). */
+  top: number;
+  left: number;
+};
+
+const CLOSED: PickerState = { queryStart: -1, query: "", index: 0, top: 0, left: 0 };
+
 /**
  * Inline composer at the bottom of the internal Chat tab. Posts a
- * message into the project's Chat space via /api/chat/post, then
- * router.refresh()es so the new message shows up in the feed above.
+ * message into the project's Chat space via /api/chat/post.
  *
- * UX patterns mirror ReplyDrawer / TaskReplyComposer:
- *   - ⌘/Ctrl+Enter sends
- *   - Esc clears
- *   - Optimistic clear on send (errors restore the typed text)
- *   - Server-driven cache invalidation: the API revalidates the
- *     chat-messages tag, so a single router.refresh() picks up the
- *     new message instead of waiting up to 60s for TTL expiry.
+ * @-mention picker: typing `@` opens a dropdown of project members.
+ * Selecting one inserts `@<name> ` into the body. Plain text — Chat
+ * doesn't always auto-link these as real mentions when sent via API
+ * (it does for messages typed natively in Chat). For phase 1 we
+ * accept that limitation; the recipient still SEES their name in
+ * the message and can read it. Programmatic mention annotations
+ * (which would notify the user properly) are a follow-up — they
+ * need an email→gaia-id resolution per recipient on submit.
  *
- * Phase-1-style basic textarea — no @-mention picker (Chat handles
- * its own native @-mentions for users who type the message in Chat;
- * cross-pollinating the hub composer with Chat-native @-syntax is a
- * bigger lift and the hub user can include @-emails as plain text).
+ * UX shape mirrors CreateTaskDrawer's picker:
+ *   - Arrow up/down navigates results
+ *   - Enter / Tab inserts the highlighted result
+ *   - Esc closes the picker (a second Esc clears the textarea)
+ *   - ⌘/Ctrl+Enter submits
  */
 export default function InternalChatComposer({
   project,
@@ -32,7 +50,151 @@ export default function InternalChatComposer({
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [picker, setPicker] = useState<PickerState>(CLOSED);
+  const [assignees, setAssignees] = useState<Assignee[] | null>(null);
+  const [loadingAssignees, setLoadingAssignees] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Lazy-fetch project members on first picker-open. Same endpoint
+  // CreateTaskDrawer uses — single source of truth for "who is on
+  // this project's roster". Cached per-component-instance only;
+  // re-mount = re-fetch, which is fine since we're behind the
+  // suspense'd internal-tab boundary.
+  useEffect(() => {
+    if (assignees !== null || loadingAssignees) return;
+    if (picker.queryStart < 0) return; // wait until the user actually opens the picker
+    setLoadingAssignees(true);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/projects/assignees?project=${encodeURIComponent(project)}`,
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { assignees: Assignee[] };
+          setAssignees(data.assignees);
+        }
+      } catch {
+        // silent — picker just shows empty / falls back to typed text
+      } finally {
+        setLoadingAssignees(false);
+      }
+    })();
+  }, [picker.queryStart, project, assignees, loadingAssignees]);
+
+  const results = useMemo(() => {
+    if (picker.queryStart < 0 || !assignees) return [] as Assignee[];
+    const q = picker.query.toLowerCase();
+    return assignees
+      .filter(
+        (a) =>
+          !q ||
+          a.name.toLowerCase().includes(q) ||
+          a.email.toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+  }, [picker.queryStart, picker.query, assignees]);
+
+  function openPickerAt(textarea: HTMLTextAreaElement, queryStart: number, query: string) {
+    const rect = textarea.getBoundingClientRect();
+    setPicker({
+      queryStart,
+      query,
+      index: 0,
+      top: rect.top - 8,
+      left: rect.left,
+    });
+  }
+
+  function closePicker() {
+    setPicker(CLOSED);
+  }
+
+  function updatePickerFromCursor(value: string, textarea: HTMLTextAreaElement) {
+    const pos = textarea.selectionStart;
+    let i = pos - 1;
+    let hasAt = false;
+    while (i >= 0) {
+      const ch = value[i];
+      if (ch === "@") {
+        hasAt = true;
+        break;
+      }
+      if (/\s/.test(ch)) break;
+      i--;
+    }
+    if (hasAt) openPickerAt(textarea, i, value.slice(i + 1, pos));
+    else closePicker();
+  }
+
+  function applySelection(r: Assignee) {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const cursor = ta.selectionEnd;
+    const before = value.slice(0, picker.queryStart);
+    const after = value.slice(cursor);
+    const insert = "@" + r.name + " ";
+    const newValue = before + insert + after;
+    setValue(newValue);
+    closePicker();
+    requestAnimationFrame(() => {
+      const newPos = (before + insert).length;
+      ta.setSelectionRange(newPos, newPos);
+      ta.focus();
+    });
+  }
+
+  function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const v = e.target.value;
+    setValue(v);
+    updatePickerFromCursor(v, e.target);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Picker-aware keys take priority when the dropdown is open.
+    if (picker.queryStart >= 0 && results.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setPicker((p) => ({ ...p, index: Math.min(p.index + 1, results.length - 1) }));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setPicker((p) => ({ ...p, index: Math.max(p.index - 1, 0) }));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        applySelection(results[picker.index]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePicker();
+        return;
+      }
+    }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      submit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setValue("");
+      setError(null);
+    }
+  }
+
+  // Close the picker if the user clicks outside it / the textarea.
+  useEffect(() => {
+    if (picker.queryStart < 0) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".mention-dropdown")) return;
+      if (target === textareaRef.current) return;
+      closePicker();
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [picker.queryStart]);
 
   function submit() {
     const text = value.trim();
@@ -48,6 +210,7 @@ export default function InternalChatComposer({
     // Optimistic clear — same rationale as ReplyDrawer. If the post
     // fails we restore the typed text + show the error inline.
     setValue("");
+    closePicker();
     startTransition(async () => {
       try {
         const res = await fetch("/api/chat/post", {
@@ -71,19 +234,9 @@ export default function InternalChatComposer({
     });
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      submit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setValue("");
-      setError(null);
-    }
-  }
-
   const count = value.trim().length;
   const over = count > MAX;
+  const pickerOpen = picker.queryStart >= 0 && results.length > 0;
 
   return (
     <div className="chat-composer">
@@ -92,8 +245,10 @@ export default function InternalChatComposer({
         className="reply-textarea"
         rows={3}
         value={value}
-        placeholder="כתוב הודעה לחלל הצ׳אט הפנימי… (⌘/Ctrl+Enter לשליחה, Esc לניקוי)"
-        onChange={(e) => setValue(e.target.value)}
+        placeholder="כתוב הודעה לחלל הצ׳אט הפנימי… (@ לתיוג, ⌘/Ctrl+Enter לשליחה)"
+        onChange={onChange}
+        onKeyUp={(e) => updatePickerFromCursor(value, e.currentTarget)}
+        onClick={(e) => updatePickerFromCursor(value, e.currentTarget)}
         onKeyDown={onKeyDown}
         disabled={isPending}
         maxLength={MAX + 1}
@@ -114,6 +269,33 @@ export default function InternalChatComposer({
           {isPending ? "שולח…" : "שלח לצ׳אט"}
         </button>
       </div>
+      {pickerOpen && (
+        <div
+          className="mention-dropdown open"
+          style={{ top: picker.top, left: picker.left }}
+          role="listbox"
+        >
+          {results.map((r, i) => (
+            <div
+              key={r.email}
+              className={`mention-item ${i === picker.index ? "is-active" : ""}`}
+              role="option"
+              aria-selected={i === picker.index}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applySelection(r);
+              }}
+              onMouseEnter={() =>
+                setPicker((p) => ({ ...p, index: i }))
+              }
+            >
+              <Avatar name={r.email} title={r.name} size={22} />
+              <span className="mention-item-name">{r.name}</span>
+              <RoleChip role={r.role} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

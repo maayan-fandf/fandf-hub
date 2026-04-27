@@ -2181,6 +2181,23 @@ html[data-theme="dark"] .chat-thread-reply {
   color: var(--muted);
 }
 
+/* Inline edit drawer that swaps in for a Chat-message body when the
+   user clicks the ✏️. Same rounded-textarea + footer pattern as
+   ReplyDrawer / TaskReplyComposer so the action feels familiar. */
+.chat-edit-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.chat-edit-drawer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 /* Discussion section header carries both a segmented view-toggle and
    the timeline link side-by-side. On narrow viewports they wrap onto
    their own row. */
