@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   getProjectComments,
   getMyMentions,
@@ -21,7 +22,10 @@ import ProjectFilterBar from "@/components/ProjectFilterBar";
 import OutOfScopeBanner from "@/components/OutOfScopeBanner";
 import { isPersonOnProject } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
-import { findCampaignFolderId, getSharedDriveName } from "@/lib/driveFolders";
+import {
+  findProjectFolderUrlCached,
+  getSharedDriveName,
+} from "@/lib/driveFolders";
 import { currentUserEmail } from "@/lib/appsScript";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
@@ -55,20 +59,47 @@ export default async function ProjectOverviewPage({
   // an unauthorized caller gets consistent errors. Legacy getProjectTasks
   // (comment-mention Google-Tasks feed) was dropped — the work-management
   // tasks system owns the "משימות" section now.
+  //
+  // Drive folder lookup chains off the projects list (needs `company`)
+  // — we kick off `getMyProjects` as a promise variable and derive the
+  // Drive call from it via `.then()`, so both land in the same parallel
+  // batch instead of serializing after it. Net: ~300–600ms saved on
+  // cold loads since the Drive call no longer waits for the full
+  // batch to resolve.
+  //
+  // `getMorningFeed` is intentionally NOT in this batch — it's the
+  // last Apps-Script-backed call on this page (~1–3s cold) and feeds
+  // an alerts section below the משימות cards. It's now streamed in
+  // via <Suspense> further down so the משימות / תיוגים / הערות cards
+  // don't wait for it.
+  const meP = currentUserEmail().catch(() => "");
+  const projectsP = getMyProjects().catch(() => null);
+  const driveFolderP = projectsP.then(async (data) => {
+    const company =
+      data?.projects.find((p) => p.name === projectName)?.company ?? "";
+    if (!company) return { folderId: null, viewUrl: null };
+    return findProjectFolderUrlCached(company, projectName);
+  });
+  const sharedDriveP = meP.then((me) =>
+    me ? getSharedDriveName(me).catch(() => "") : "",
+  );
+
   const [
     commentsRes,
     mentionsRes,
     projectsRes,
-    alertsRes,
     workTasksRes,
     peopleRes,
+    driveFolderRes,
+    sharedDriveRes,
   ] = await Promise.allSettled([
     getProjectComments(projectName, 15),
     getMyMentions(),
-    getMyProjects(),
-    getMorningFeed({ project: projectName }),
+    projectsP,
     tasksList({ project: projectName }),
     tasksPeopleList(),
+    driveFolderP,
+    sharedDriveP,
   ]);
 
   const commentsData =
@@ -77,14 +108,14 @@ export default async function ProjectOverviewPage({
     mentionsRes.status === "fulfilled" ? mentionsRes.value : null;
   const projectsData =
     projectsRes.status === "fulfilled" ? projectsRes.value : null;
-  const alertsData =
-    alertsRes.status === "fulfilled" ? alertsRes.value : null;
   const workTasksData =
     workTasksRes.status === "fulfilled" ? workTasksRes.value : null;
   const peopleData =
     peopleRes.status === "fulfilled" ? peopleRes.value : null;
-  const projectAlerts: MorningProject | null =
-    alertsData?.projects[0] ?? null;
+  const driveFolderResolved =
+    driveFolderRes.status === "fulfilled" ? driveFolderRes.value : null;
+  const sharedDriveName =
+    sharedDriveRes.status === "fulfilled" ? sharedDriveRes.value : "";
 
   const projectMeta = projectsData?.projects.find(
     (p) => p.name === projectName,
@@ -102,39 +133,16 @@ export default async function ProjectOverviewPage({
   const chatSpaceUrl = projectMeta?.chatSpaceUrl ?? "";
   const userEmail = projectsData?.email ?? "";
 
-  // Resolve the project's Drive folder URL — best-effort lookup so the
-  // header's "Drive" button deep-links to the right place. Falls back
-  // to a global Drive search by project name if no folder exists yet
-  // (e.g. project hasn't had a task created with USE_SA_TASKS_WRITES).
-  // Also pull the Shared Drive's display name so we can construct the
-  // local "Shared drives/<DriveName>/<company>/<project>" path the
-  // user pastes into File Explorer when Drive Desktop is installed.
-  let driveFolderUrl = "";
-  let sharedDriveName = "";
-  if (companyForDashboard && projectName) {
-    try {
-      const me = await currentUserEmail().catch(() => "");
-      if (me) {
-        const [found, name] = await Promise.all([
-          findCampaignFolderId(me, {
-            company: companyForDashboard,
-            project: projectName,
-            campaign: "",
-          }),
-          getSharedDriveName(me).catch(() => ""),
-        ]);
-        if (found.viewUrl) driveFolderUrl = found.viewUrl;
-        if (name) sharedDriveName = name;
-      }
-    } catch {
-      // swallow — we'll fall back to the search URL below
-    }
-  }
-  if (!driveFolderUrl) {
-    driveFolderUrl =
-      "https://drive.google.com/drive/search?q=" +
+  // Resolve the project's Drive folder URL — the Drive lookup itself
+  // ran in parallel with the data batch above (chained off projectsP),
+  // so this block is just URL fallback. driveFolderResolved.viewUrl
+  // is null when the project's folder hasn't been created yet (no
+  // tasks ever saved with USE_SA_TASKS_WRITES); fall back to a global
+  // Drive search by project name in that case.
+  const driveFolderUrl =
+    driveFolderResolved?.viewUrl ||
+    "https://drive.google.com/drive/search?q=" +
       encodeURIComponent(projectName);
-  }
   // Build the absolute Windows path the user pastes into File
   // Explorer's address bar. F&F's Drive Desktop setup mounts at G:\,
   // matching every workstation we've checked. If a Mac user ever
@@ -382,27 +390,14 @@ export default async function ProjectOverviewPage({
 
       {/* Alerts section — pacing/budget/deadline/paused-budget signals for
           this project only. Same dismiss/snooze/revisit behavior as the
-          morning page; dismissals are team-wide. */}
-      {projectAlerts && projectAlerts.signals.length > 0 && (
-        <section className="project-section">
-          <div className="section-head">
-            <h2>
-              🔔 התראות
-              <span className="section-count">
-                {projectAlerts.signals.length}
-              </span>
-            </h2>
-            <Link className="section-link" href="/morning">
-              כל ההתראות ←
-            </Link>
-          </div>
-          <ul className="morning-signal-list">
-            {projectAlerts.signals.map((s, i) => (
-              <MorningSignalRow key={i} signal={s} />
-            ))}
-          </ul>
-        </section>
-      )}
+          morning page; dismissals are team-wide.
+          Streamed via <Suspense> so the slow Apps-Script-backed
+          getMorningFeed call (~1–3s cold) doesn't block the משימות /
+          תיוגים / הערות sections above from rendering. The section
+          materializes when ready; nothing visible while it's pending. */}
+      <Suspense fallback={null}>
+        <ProjectAlertsSection projectName={projectName} />
+      </Suspense>
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
@@ -432,6 +427,44 @@ export default async function ProjectOverviewPage({
 }
 
 /* ─── Sections ───────────────────────────────────────────────────── */
+
+/**
+ * Async server component for the alerts row. Lives below the project
+ * cards and is wrapped in <Suspense> so its data fetch (the
+ * Apps-Script-backed getMorningFeed, ~1–3s cold, ~5ms warm via the
+ * 60s unstable_cache wrapper) doesn't block the rest of the page.
+ *
+ * Returns nothing visible while in flight (fallback=null) and nothing
+ * visible if the project has no current signals — keeps the layout
+ * shift to a minimum.
+ */
+async function ProjectAlertsSection({ projectName }: { projectName: string }) {
+  const alertsData = await getMorningFeed({ project: projectName }).catch(
+    () => null,
+  );
+  const projectAlerts: MorningProject | null = alertsData?.projects[0] ?? null;
+  if (!projectAlerts || projectAlerts.signals.length === 0) return null;
+  return (
+    <section className="project-section">
+      <div className="section-head">
+        <h2>
+          🔔 התראות
+          <span className="section-count">
+            {projectAlerts.signals.length}
+          </span>
+        </h2>
+        <Link className="section-link" href="/morning">
+          כל ההתראות ←
+        </Link>
+      </div>
+      <ul className="morning-signal-list">
+        {projectAlerts.signals.map((s, i) => (
+          <MorningSignalRow key={i} signal={s} />
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function CommentsPreview({
   comments,

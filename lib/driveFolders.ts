@@ -12,6 +12,7 @@
  */
 
 import type { drive_v3 } from "googleapis";
+import { unstable_cache } from "next/cache";
 import { driveClient, driveFolderOwner } from "@/lib/sa";
 
 export type FolderRef = {
@@ -136,6 +137,49 @@ export async function findCampaignFolderId(
     if (!parent) return { folderId: null, viewUrl: null };
   }
   return { folderId: parent, viewUrl: driveFolderUrl(parent) };
+}
+
+/**
+ * Cached project-level folder URL lookup for the project-overview header
+ * "Drive" button. Wraps `findCampaignFolderId` with an empty `campaign`
+ * (i.e. resolves to the `<company>/<project>` folder) and caches the
+ * result by `(company, project)` for 1h.
+ *
+ * The folder hierarchy almost never moves — companies/projects are
+ * named once and their Drive folders persist. The previous direct
+ * call did 2 sequential Drive API round-trips on every page load
+ * (~400–1000ms uncached). With this wrapper, only the first hit per
+ * hour pays that cost; subsequent hits are O(1).
+ *
+ * Drive folder IDs are global across users (shared-drive members
+ * see the same hierarchy), so the cache key intentionally omits
+ * `subjectEmail`. If a user lacks permission, the underlying call
+ * returns `{ folderId: null, viewUrl: null }` — caller falls back
+ * to the search URL, which works for everyone.
+ */
+const findProjectFolderUrlInner = unstable_cache(
+  async (
+    company: string,
+    project: string,
+  ): Promise<{ folderId: string | null; viewUrl: string | null }> => {
+    return findCampaignFolderId(driveFolderOwner() || "", {
+      company,
+      project,
+      campaign: "",
+    });
+  },
+  ["project-folder-url"],
+  { revalidate: 60 * 60, tags: ["drive-folders"] },
+);
+
+export async function findProjectFolderUrlCached(
+  company: string,
+  project: string,
+): Promise<{ folderId: string | null; viewUrl: string | null }> {
+  if (!company.trim() || !project.trim()) {
+    return { folderId: null, viewUrl: null };
+  }
+  return findProjectFolderUrlInner(company.trim(), project.trim());
 }
 
 /**

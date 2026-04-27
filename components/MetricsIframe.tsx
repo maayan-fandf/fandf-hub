@@ -54,6 +54,13 @@ export default function MetricsIframe({ src, projectName, expectedEmail }: Props
           title={`דוח שיווקי — ${projectName}`}
           className="metrics-iframe"
           onLoad={() => setLoaded(true)}
+          // Defer the iframe fetch until the user is close to scrolling
+          // it into view. The metrics section sits below the משימות /
+          // תיוגים / הערות cards, so the dashboard's Apps Script load
+          // (5–15s) no longer competes for network/CPU during the page
+          // render. Most users only scroll down occasionally — this
+          // turns the metrics into an opt-in cost.
+          loading="lazy"
           // sandbox lets Apps Script JS run, talk to its own server, and
           // POST forms — same permissions as loading in a normal tab.
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
