@@ -1,11 +1,9 @@
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import InternalChatComposer from "@/components/InternalChatComposer";
-import ConvertChatMessageToTaskButton from "@/components/ConvertChatMessageToTaskButton";
-import EditChatMessageDrawer from "@/components/EditChatMessageDrawer";
-import DeleteChatMessageButton from "@/components/DeleteChatMessageButton";
 import ThreadReplyComposer from "@/components/ThreadReplyComposer";
 import ChatReactionsRow from "@/components/ChatReactionsRow";
+import ChatMessageHoverToolbar from "@/components/ChatMessageHoverToolbar";
 import {
   listRecentMessages,
   lookupUserGaiaResource,
@@ -261,26 +259,15 @@ function renderMessage(
           <span className="chat-message-time" title={m.createTime}>
             {formatRelative(m.createTime)}
           </span>
-          <span className="chat-message-actions">
-            {isMine && (
-              <EditChatMessageDrawer
-                messageName={m.name}
-                initialText={m.text}
-              />
-            )}
-            <ConvertChatMessageToTaskButton
-              project={projectName}
-              messageText={m.text}
-              authorName={m.senderName || ""}
-              chatSpaceUrl={spaceUrl}
-            />
-            {isMine && (
-              <DeleteChatMessageButton
-                messageName={m.name}
-                bodyExcerpt={m.text}
-              />
-            )}
-          </span>
+          <ChatMessageHoverToolbar
+            messageName={m.name}
+            threadName={m.threadName || m.name}
+            text={m.text}
+            isMine={isMine}
+            project={projectName}
+            spaceUrl={spaceUrl}
+            authorName={m.senderName || ""}
+          />
         </div>
         <div className="chat-message-text">{renderChatText(m.text)}</div>
         {m.attachments.length > 0 && (
