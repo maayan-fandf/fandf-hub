@@ -33,7 +33,16 @@ import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 export const dynamic = "force-dynamic";
 
 type Params = { project: string };
-type Search = { resolved?: string; person?: string };
+type Search = {
+  resolved?: string;
+  person?: string;
+  /** Discussion section view — "all" shows the project-wide feed,
+   *  "mine" filters to threads where I'm tagged. Absent = auto-pick:
+   *  flips to "mine" when the user has open mentions on this project,
+   *  otherwise "all". User-driven toggle clicks always set the param
+   *  explicitly so refresh / back-button preserve the choice. */
+  view?: string;
+};
 
 export default async function ProjectOverviewPage({
   params,
@@ -336,56 +345,15 @@ export default async function ProjectOverviewPage({
           />
         </section>
 
-        <section className="project-section">
-          <div className="section-head">
-            <h2>
-              🏷️ התיוגים שלך בפרויקט
-              <span className="section-count">{openMentions}</span>
-            </h2>
-            <Link className="section-link" href="/inbox">
-              כל התיוגים ←
-            </Link>
-          </div>
-          <p className="section-subtitle">
-            {showResolved
-              ? "כל התיוגים בפרויקט (פתוחים וסגורים)"
-              : "שרשורים שבהם תויגת ועוד לא סגרת"}
-          </p>
-          <MentionsPreview
-            mentions={myMentionsOnProject}
-            showResolved={showResolved}
-          />
-        </section>
-
-        <section className="project-section">
-          <div className="section-head">
-            <h2>
-              💬 הערות אחרונות
-              <span className="section-count">{totalComments}</span>
-            </h2>
-            <Link
-              className="section-link"
-              href={`/projects/${encodeURIComponent(projectName)}/timeline`}
-            >
-              פתח ציר זמן ←
-            </Link>
-          </div>
-          <p className="section-subtitle">
-            {showResolved
-              ? "כל ההערות האחרונות בפרויקט (פתוחות וסגורות)"
-              : "פעילות חדשה בפרויקט — הערות פתוחות"}
-          </p>
-          <CommentsPreview
-            comments={comments}
-            projectName={projectName}
-            showResolved={showResolved}
-          />
-          {totalComments > comments.length && (
-            <div className="section-foot">
-              מציג {comments.length} מתוך {totalComments}
-            </div>
-          )}
-        </section>
+        <DiscussionSection
+          comments={comments}
+          mentions={myMentionsOnProject}
+          totalComments={totalComments}
+          openMentions={openMentions}
+          projectName={projectName}
+          showResolved={showResolved}
+          requestedView={sp.view}
+        />
       </div>
 
       {/* Alerts section — pacing/budget/deadline/paused-budget signals for
@@ -466,14 +434,145 @@ async function ProjectAlertsSection({ projectName }: { projectName: string }) {
   );
 }
 
+/**
+ * Unified discussion feed — replaces the previous two side-by-side
+ * sections (תיוגים שלך / הערות אחרונות) with a single column carrying
+ * a 2-state toggle: "הכל" (full project activity) vs "🏷️ תיוגים שלי"
+ * (only threads where I'm tagged).
+ *
+ * Default view auto-flips:
+ *   - `?view=` absent + user has open mentions → "mine" (act-on-this
+ *     intuition; mirrors the inbox).
+ *   - `?view=` absent + no open mentions → "all" (broader feed).
+ *   - User clicks a toggle → explicit `?view=all` or `?view=mine`,
+ *     persisted via the URL so refresh / back-button preserve it.
+ *
+ * "All" view marks threads the user is mentioned in with a left-border
+ * accent + a "🏷️ אותך" chip — so users can spot mentions without
+ * flipping the toggle.
+ */
+function DiscussionSection({
+  comments,
+  mentions,
+  totalComments,
+  openMentions,
+  projectName,
+  showResolved,
+  requestedView,
+}: {
+  comments: CommentItem[];
+  mentions: MentionItem[];
+  totalComments: number;
+  openMentions: number;
+  projectName: string;
+  showResolved: boolean;
+  requestedView: string | undefined;
+}) {
+  const view: "all" | "mine" =
+    requestedView === "all"
+      ? "all"
+      : requestedView === "mine"
+        ? "mine"
+        : openMentions > 0
+          ? "mine"
+          : "all";
+
+  // Thread roots the user is mentioned in. Used by the "all" view to
+  // mark items with the accent border + chip without flipping views.
+  const mentionedThreadIds = new Set(
+    mentions.map((m) => m.thread_root_id || m.parent_id || m.comment_id),
+  );
+
+  // Toggle hrefs preserve every other search param so e.g. ?resolved=1
+  // doesn't reset when flipping views. Toggle is server-rendered as
+  // <Link>s — no JS required for state, refresh-safe by construction.
+  const buildHref = (nextView: "all" | "mine") => {
+    const qs = new URLSearchParams();
+    if (showResolved) qs.set("resolved", "1");
+    qs.set("view", nextView);
+    return `/projects/${encodeURIComponent(projectName)}?${qs.toString()}`;
+  };
+
+  return (
+    <section className="project-section project-section-wide">
+      <div className="section-head">
+        <h2>
+          💬 דיון בפרויקט
+          <span className="section-count">
+            {view === "mine" ? openMentions : totalComments}
+          </span>
+        </h2>
+        <div className="discussion-head-tools">
+          <div className="tasks-view-toggle" role="tablist">
+            <Link
+              role="tab"
+              aria-selected={view === "all"}
+              href={buildHref("all")}
+              className={`tasks-view-toggle-btn ${view === "all" ? "is-active" : ""}`}
+            >
+              הכל
+            </Link>
+            <Link
+              role="tab"
+              aria-selected={view === "mine"}
+              href={buildHref("mine")}
+              className={`tasks-view-toggle-btn ${view === "mine" ? "is-active" : ""}`}
+            >
+              🏷️ תיוגים שלי
+              {openMentions > 0 && (
+                <span className="discussion-toggle-count">{openMentions}</span>
+              )}
+            </Link>
+          </div>
+          <Link
+            className="section-link"
+            href={`/projects/${encodeURIComponent(projectName)}/timeline`}
+          >
+            ציר זמן ←
+          </Link>
+        </div>
+      </div>
+      <p className="section-subtitle">
+        {view === "mine"
+          ? showResolved
+            ? "כל התיוגים בפרויקט (פתוחים וסגורים)"
+            : "שרשורים שבהם תויגת ועוד לא סגרת"
+          : showResolved
+            ? "כל ההערות בפרויקט (פתוחות וסגורות)"
+            : "פעילות בפרויקט — הערות פתוחות"}
+      </p>
+      {view === "mine" ? (
+        <MentionsPreview mentions={mentions} showResolved={showResolved} />
+      ) : (
+        <CommentsPreview
+          comments={comments}
+          projectName={projectName}
+          showResolved={showResolved}
+          mentionedThreadIds={mentionedThreadIds}
+        />
+      )}
+      {view === "all" && totalComments > comments.length && (
+        <div className="section-foot">
+          מציג {comments.length} מתוך {totalComments}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CommentsPreview({
   comments,
   projectName,
   showResolved,
+  mentionedThreadIds,
 }: {
   comments: CommentItem[];
   projectName: string;
   showResolved: boolean;
+  /** Comment ids of thread roots the user is @-mentioned in (top-level
+   *  or any reply). Marked with an accent border + 🏷️ chip in the
+   *  card head when present. Empty/undefined = no decoration. */
+  mentionedThreadIds?: Set<string>;
 }) {
   // Only top-level threads render in the preview; replies are reached via
   // the inline ThreadReplies control on each thread. When showResolved is
@@ -502,14 +601,26 @@ function CommentsPreview({
   }
   return (
     <ul className="compact-list">
-      {top.map((c) => (
+      {top.map((c) => {
+        const isMentioned = mentionedThreadIds?.has(c.comment_id) ?? false;
+        return (
         <li
           key={c.comment_id}
-          className={`compact-comment ${c.resolved ? "is-resolved" : ""}`}
+          className={`compact-comment ${c.resolved ? "is-resolved" : ""} ${
+            isMentioned ? "is-mentioned" : ""
+          }`}
         >
           <div className="compact-comment-head">
             <Avatar name={c.author_email} title={c.author_name || c.author_email} size={22} />
             <span className="author">{c.author_name || c.author_email}</span>
+            {isMentioned && (
+              <span
+                className="chip chip-mention"
+                title="תויגת בשרשור הזה"
+              >
+                🏷️ אותך
+              </span>
+            )}
             <span className="time" title={c.timestamp}>
               {formatRelative(c.timestamp)}
             </span>
@@ -537,7 +648,8 @@ function CommentsPreview({
             />
           </div>
         </li>
-      ))}
+        );
+      })}
       {resolvedCount > 0 && !showResolved && (
         <li className="compact-comment compact-comment-footer">
           <Link

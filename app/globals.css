@@ -1777,9 +1777,78 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 }
 
 @media (min-width: 1100px) {
+  /* Two columns now — the previous third (תיוגים שלך) was merged into
+     the discussion column, which carries an inline toggle to switch
+     between "all" and "🏷️ תיוגים שלי". The discussion column gets
+     the wider track since it's the busiest. */
   .project-sections {
-    grid-template-columns: 1.2fr 1fr 1fr;
+    grid-template-columns: 1fr 1.2fr;
   }
+}
+
+/* Discussion section header carries both a segmented view-toggle and
+   the timeline link side-by-side. On narrow viewports they wrap onto
+   their own row. */
+.discussion-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+/* Count badge inside the "🏷️ תיוגים שלי" toggle button — shows the
+   open-mentions count. Subtle on inactive state, accent-flipped when
+   the toggle is active so it reads as primary info, not chrome. */
+.discussion-toggle-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  height: 1.4em;
+  padding: 0 0.35em;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+}
+.tasks-view-toggle-btn.is-active .discussion-toggle-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+/* Mentioned-thread marker — accent-soft background gradient + a 🏷️
+   chip on cards in the "all" view where the user is @-tagged. The
+   left-border is already accent on every card by default, so we
+   distinguish via background tint instead of trying to compete with
+   the existing border. Bumps the start-border by 1px for a tiny
+   extra weight cue.
+   Gradient runs LTR (`to left` in RTL = away from the start edge)
+   so the tint reads as "anchored on the side where the border is",
+   then fades into the surface. */
+.compact-comment.is-mentioned {
+  border-inline-start-width: 4px;
+  background: linear-gradient(
+    to left,
+    var(--accent-soft) 0%,
+    var(--bg) 70%
+  );
+}
+html[data-theme="dark"] .compact-comment.is-mentioned {
+  background: linear-gradient(
+    to left,
+    rgba(99, 102, 241, 0.18) 0%,
+    var(--bg) 70%
+  );
+}
+.chip.chip-mention {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+html[data-theme="dark"] .chip.chip-mention {
+  background: rgba(99, 102, 241, 0.22);
+  color: #c7d2fe;
 }
 
 .project-section {
