@@ -7,6 +7,11 @@ export default auth((req) => {
   // Public paths — don't force login for these.
   const isPublic =
     path.startsWith("/api/auth") ||
+    // Server-to-server endpoint called by the Apps Script poller. The
+    // route enforces token-based auth itself (APPS_SCRIPT_API_TOKEN
+    // shared secret), so it must skip the NextAuth redirect — Apps
+    // Script triggers run unattended without a session.
+    path === "/api/worktasks/auto-transition" ||
     path === "/signin" ||
     path === "/unauthorized" ||
     path === "/favicon.ico";
