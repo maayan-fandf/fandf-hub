@@ -40,23 +40,43 @@ export type ChatMessage = {
 };
 
 /**
- * Pulls a Chat space ID out of either form of project Chat URL we
- * carry in the system:
+ * Pulls a Chat space ID out of any of the URL forms a user might
+ * paste into Keys col L:
  *   - Webhook URL: `https://chat.googleapis.com/v1/spaces/<ID>/messages?...`
- *     (from Keys col L)
- *   - Deeplink URL: `https://mail.google.com/chat/u/N/#chat/space/<ID>`
- *     (what `chatSpaceUrlFromWebhook` returns + what we expose to the
- *     UI as `projectMeta.chatSpaceUrl`)
- * Returns "" for any URL that doesn't match.
+ *     (from Apps & integrations → Manage webhooks)
+ *   - Standalone Chat URL: `https://chat.google.com/room/<ID>?cls=N`
+ *     (what "Copy link" gives you on the standalone chat.google.com
+ *     web app — historical "room" terminology, same ID space as
+ *     "spaces")
+ *   - Mail-embedded deeplink: `https://mail.google.com/chat/u/N/#chat/space/<ID>`
+ *     (what "Copy link" gives you when Chat is embedded in Gmail —
+ *     same as `chatSpaceUrlFromWebhook` returns)
+ *   - Bare resource name: `spaces/<ID>` or `<ID>` (admin who wants
+ *     to skip URL parsing entirely)
+ * Returns "" for anything else.
  */
 export function parseSpaceId(url: string): string {
   if (!url) return "";
+  // Webhook URL.
   const w = url.match(
     /^https:\/\/chat\.googleapis\.com\/v1\/spaces\/([^/]+)\/messages/,
   );
   if (w) return w[1];
-  const d = url.match(/\/chat\/space\/([A-Za-z0-9_-]+)/);
-  return d?.[1] ?? "";
+  // Standalone chat.google.com URL — historical "/room/" prefix is
+  // still what Google emits today, even though the API uses "spaces".
+  const r = url.match(
+    /^https:\/\/chat\.google\.com\/(?:room|space)\/([A-Za-z0-9_-]+)/,
+  );
+  if (r) return r[1];
+  // Mail-embedded deeplink — both `/chat/space/<id>` (path) and
+  // `#chat/space/<id>` (fragment) shapes. The `[/#]?` prefix lets
+  // us match either separator without requiring a slash before
+  // `chat` (which the fragment form lacks).
+  const d = url.match(/[/#]chat\/(?:space|room)\/([A-Za-z0-9_-]+)/);
+  if (d) return d[1];
+  // Bare resource name pasted directly.
+  const bare = url.trim().match(/^(?:spaces\/)?([A-Za-z0-9_-]{8,})$/);
+  return bare?.[1] ?? "";
 }
 
 /** Back-compat alias — older callers parse webhook URLs specifically. */
