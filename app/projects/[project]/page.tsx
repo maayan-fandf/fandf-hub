@@ -194,6 +194,18 @@ export default async function ProjectOverviewPage({
   //     only snapshot; IFRAME_MODE=true on the Apps Script side skips all
   //     google.script.run calls. See app/api/dashboard/[project]/route.ts.
   const isInternalUser = userEmail.toLowerCase().endsWith("@fandf.co.il");
+  // Resolve the active channel here so we can gate page-level chrome
+  // (the resolved-filter pill below) against it. DiscussionSection
+  // re-derives this internally — keep the rules in sync if they
+  // change.
+  const activeChannel: "internal" | "client" =
+    sp.channel === "internal"
+      ? "internal"
+      : sp.channel === "client"
+        ? "client"
+        : isInternalUser
+          ? "internal"
+          : "client";
   const legacyEmbedUrl = dashboardBaseUrl
     ? buildDashboardUrl(dashboardBaseUrl, {
         company: companyForDashboard,
@@ -314,10 +326,15 @@ export default async function ProjectOverviewPage({
 
       {isOutOfScope && <OutOfScopeBanner person={scopedPerson} />}
 
-      {/* Hidden when the project has nothing resolved yet AND the user isn't
-          already in show-resolved mode — avoids showing an inert toggle on
-          a fresh project. */}
-      {(resolvedCount > 0 || showResolved) && (
+      {/* Resolved-state filter — hub Comments rows only have a resolved
+          flag, Chat messages don't. So the toggle is meaningful on the
+          client tab and inert (and confusing) on the internal tab.
+          We mirror DiscussionSection's role-aware default below — when
+          ?channel= is absent, internal users land on the internal tab
+          and see no filter; clients land on client and see it.
+          Hidden also when the project has nothing resolved yet AND the
+          user isn't already in show-resolved mode. */}
+      {activeChannel === "client" && (resolvedCount > 0 || showResolved) && (
         <ProjectFilterBar
           showResolved={showResolved}
           resolvedCount={resolvedCount}

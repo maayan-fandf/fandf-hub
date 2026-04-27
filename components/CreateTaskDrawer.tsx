@@ -397,9 +397,9 @@ export default function CreateTaskDrawer({ project }: Props) {
         type="button"
         className="btn-ghost btn-sm"
         onClick={openDrawer}
-        title="הוסף הערה עם תיוגים — נשלחת כ-Google Task לכל מתויג"
+        title="פרסם הודעה בערוץ הלקוח — נצפית גם ע״י הצוות הפנימי וגם ע״י הלקוח. לתקשורת פנימית בלבד — דרך הצ׳אט."
       >
-        + הערה
+        + הודעה ללקוח
       </button>
     );
   }
@@ -417,7 +417,7 @@ export default function CreateTaskDrawer({ project }: Props) {
     >
       <div className="create-task-modal" role="dialog" aria-modal="true">
         <div className="create-task-head">
-          <h2>הערה חדשה · {project}</h2>
+          <h2>הודעה חדשה ללקוח · {project}</h2>
           <button
             type="button"
             className="create-task-close"
