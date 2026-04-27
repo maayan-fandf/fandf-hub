@@ -111,7 +111,7 @@ function rowToTask(
     google_tasks: parseJsonCell(
       cell("google_tasks"),
       false,
-    ) as Record<string, { u: string; l: string; t: string; d: string }>,
+    ) as WorkTask["google_tasks"],
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),

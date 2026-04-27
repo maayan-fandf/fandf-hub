@@ -31,11 +31,25 @@ import {
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import type {
+  GTaskKind,
   TasksCreateInput,
   TasksUpdatePatch,
   WorkTask,
   WorkTaskStatus,
 } from "@/lib/appsScript";
+
+/** Per-recipient Google Task ref stored in the `google_tasks` JSON
+ *  cell. `kind` drives the poller's status transition when complete:
+ *  todo → awaiting_approval (or done if no approver), approve → done,
+ *  clarify → in_progress + re-spawn todo GTs. Optional for back-compat
+ *  with rows written before 2026-04-27 (treated as `todo`). */
+type GTaskRef = {
+  u: string;
+  l: string;
+  t: string;
+  d: string;
+  kind?: GTaskKind;
+};
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -332,7 +346,7 @@ async function createTaskFolder(
  * assignee who deleted their entry just gets skipped.
  */
 async function syncGoogleTasksStatus(
-  googleTasks: Record<string, { u: string; l: string; t: string; d: string }>,
+  googleTasks: Record<string, GTaskRef>,
   desired: "completed" | "needsAction",
 ): Promise<void> {
   const entries = Object.values(googleTasks || {});
@@ -428,27 +442,95 @@ async function filterByGtasksPref(emails: string[]): Promise<string[]> {
   return out;
 }
 
-async function createGoogleTasks(
-  task: { id: string; title: string; project: string; description: string; drive_folder_url: string; requested_date: string; assignees: string[] },
-): Promise<Record<string, { u: string; l: string; t: string; d: string }>> {
-  const out: Record<string, { u: string; l: string; t: string; d: string }> = {};
+/** Kind-specific title prefix shown at the top of the user's Google
+ *  Tasks list. Picked to be visually distinct at a glance — assignees
+ *  know they own the work, approvers know they own a decision, owners
+ *  know someone needs them to clarify. */
+const KIND_PREFIX: Record<GTaskKind, string> = {
+  todo: "📋 לבצע",
+  approve: "✅ לאישור",
+  clarify: "❓ לבירור",
+};
+
+function gtaskTitle(
+  kind: GTaskKind,
+  task: { title: string; project: string },
+  reissued = false,
+): string {
+  const reissue = reissued ? "🔄 " : "";
+  return `${reissue}${KIND_PREFIX[kind]} · ${task.title} · ${task.project}`;
+}
+
+function gtaskNotes(
+  task: {
+    id: string;
+    description: string;
+    drive_folder_url: string;
+  },
+  notePrefix?: string,
+): string {
+  // Deep link FIRST so it's clickable from any Tasks UI without
+  // expanding the notes block. Hub URL is configured per env (set in
+  // apphosting.yaml as AUTH_URL=https://hub.fandf.co.il).
   const hubUrl = (process.env.AUTH_URL || "").replace(/\/+$/, "");
-  // Each assignee owns whether the hub puts entries in their personal
-  // Google Tasks list — gate per-recipient.
-  const allowed = await filterByGtasksPref(task.assignees);
-  if (allowed.length === 0) return out;
-  const notes =
-    task.description +
-    (task.drive_folder_url ? `\n\nקבצים: ${task.drive_folder_url}` : "") +
-    (hubUrl ? `\n\n${hubUrl}/tasks/${encodeURIComponent(task.id)}` : "");
+  const lines: string[] = [];
+  if (hubUrl) lines.push(`🔗 ${hubUrl}/tasks/${encodeURIComponent(task.id)}`);
+  if (notePrefix && notePrefix.trim()) lines.push("", notePrefix.trim());
+  if (task.description) lines.push("", task.description);
+  if (task.drive_folder_url) lines.push("", `קבצים: ${task.drive_folder_url}`);
+  return lines.join("\n");
+}
+
+function gtaskDueRfc(requestedDate: string): string | undefined {
   // `requested_date` may be either "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM".
   // Google Tasks `due` only persists the date portion (the API doc is
   // explicit about that), so we strip any time and send it as midnight
   // UTC. The time-of-day stays only on the hub side for display.
-  const datePart = (task.requested_date || "").match(/^\d{4}-\d{2}-\d{2}/)?.[0];
-  const dueRfc = datePart
-    ? new Date(datePart + "T00:00:00Z").toISOString()
-    : undefined;
+  const datePart = (requestedDate || "").match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  return datePart ? new Date(datePart + "T00:00:00Z").toISOString() : undefined;
+}
+
+/**
+ * Spawn one Google Task per recipient, tagged with `kind` so the poller
+ * (Apps Script `pollTaskCompletions`) knows which transition to apply
+ * when a recipient marks their entry done:
+ *   - todo done → awaiting_approval (or done if no approver)
+ *   - approve done → done
+ *   - clarify done → in_progress + re-spawn todo GTs
+ *
+ * Recipients pass through the per-user `gtasks_sync` preference gate
+ * — anyone who turned off the sync in their gear menu is skipped.
+ *
+ * `notePrefix` is an optional message inserted between the deep link
+ * and the task description. Used by the clarify path so the author
+ * sees the approver's reason inline without having to click through.
+ *
+ * `reissued` adds a 🔄 prefix to the title — used when re-spawning
+ * todo GTs after a clarification round, so assignees can tell at a
+ * glance the task was returned (not new work).
+ */
+async function createGoogleTasks(
+  task: {
+    id: string;
+    title: string;
+    project: string;
+    description: string;
+    drive_folder_url: string;
+    requested_date: string;
+  },
+  recipients: string[],
+  opts: {
+    kind: GTaskKind;
+    notePrefix?: string;
+    reissued?: boolean;
+  },
+): Promise<Record<string, GTaskRef>> {
+  const out: Record<string, GTaskRef> = {};
+  const allowed = await filterByGtasksPref(recipients);
+  if (allowed.length === 0) return out;
+  const title = gtaskTitle(opts.kind, task, opts.reissued);
+  const notes = gtaskNotes(task, opts.notePrefix);
+  const dueRfc = gtaskDueRfc(task.requested_date);
   await Promise.all(
     allowed.map(async (email) => {
       try {
@@ -460,17 +542,22 @@ async function createGoogleTasks(
         if (!listId) return;
         const created = await tasksApi.tasks.insert({
           tasklist: listId,
-          requestBody: {
-            title: "📋 " + task.title + " · " + task.project,
-            notes,
-            due: dueRfc,
-          },
+          requestBody: { title, notes, due: dueRfc },
         });
         if (created.data.id) {
-          out[email] = { u: email, l: listId, t: created.data.id, d: task.requested_date };
+          out[email] = {
+            u: email,
+            l: listId,
+            t: created.data.id,
+            d: task.requested_date,
+            kind: opts.kind,
+          };
         }
       } catch (e) {
-        console.log(`[tasksWriteDirect] Google Tasks insert failed for ${email}:`, e);
+        console.log(
+          `[tasksWriteDirect] Google Tasks insert (${opts.kind}) failed for ${email}:`,
+          e,
+        );
       }
     }),
   );
@@ -900,15 +987,18 @@ export async function tasksCreateDirect(
   // when the Google Tasks due-date already covers the same need with
   // less clutter. Calendar code stays in `createCalendarEvents` for
   // possible revival but is no longer called on create.
-  const gt = await createGoogleTasks({
-    id: task.id,
-    title: task.title,
-    project: task.project,
-    description: task.description,
-    drive_folder_url: task.drive_folder_url,
-    requested_date: task.requested_date,
+  const gt = await createGoogleTasks(
+    {
+      id: task.id,
+      title: task.title,
+      project: task.project,
+      description: task.description,
+      drive_folder_url: task.drive_folder_url,
+      requested_date: task.requested_date,
+    },
     assignees,
-  });
+    { kind: "todo" },
+  );
   task.calendar_event_ids = {};
   task.google_tasks = gt;
 
@@ -1169,7 +1259,7 @@ export async function tasksUpdateDirect(
           if (!v) return {};
           const parsed = typeof v === "string" ? JSON.parse(v) : v;
           return parsed && typeof parsed === "object"
-            ? (parsed as Record<string, { u: string; l: string; t: string; d: string }>)
+            ? (parsed as Record<string, GTaskRef>)
             : {};
         } catch {
           return {};
@@ -1178,7 +1268,7 @@ export async function tasksUpdateDirect(
 
       // Mark removed assignees' Google Tasks completed (best-effort)
       // and drop them from the map.
-      const cleanedGT: Record<string, { u: string; l: string; t: string; d: string }> = {};
+      const cleanedGT: Record<string, GTaskRef> = {};
       for (const [email, ref] of Object.entries(currentGT)) {
         if (newAssignees.includes(email)) {
           cleanedGT[email] = ref;
@@ -1212,15 +1302,18 @@ export async function tasksUpdateDirect(
         const mergedProject = String(cell("project") ?? "");
         const driveUrl = String(cell("drive_folder_url") ?? "");
         try {
-          const fresh = await createGoogleTasks({
-            id: taskId,
-            title: mergedTitle,
-            project: mergedProject,
-            description: mergedDescription,
-            drive_folder_url: driveUrl,
-            requested_date: mergedRequestedDate,
-            assignees: assigneeAdded,
-          });
+          const fresh = await createGoogleTasks(
+            {
+              id: taskId,
+              title: mergedTitle,
+              project: mergedProject,
+              description: mergedDescription,
+              drive_folder_url: driveUrl,
+              requested_date: mergedRequestedDate,
+            },
+            assigneeAdded,
+            { kind: "todo" },
+          );
           for (const [email, ref] of Object.entries(fresh)) {
             cleanedGT[email] = ref;
           }
@@ -1440,25 +1533,181 @@ export async function tasksUpdateDirect(
     );
   }
 
-  // Keep each assignee's personal Google Tasks list in sync with the
-  // hub status. done / cancelled → mark completed (so the entry stops
-  // nagging in their Tasks panel); revival to in_progress / awaiting_*
-  // → re-open. Best-effort; failures don't block the response.
+  // Keep each recipient's personal Google Tasks list in sync with the
+  // hub status. The state machine drives THREE distinct GT lifecycles
+  // per task — todo (assignees), approve (approver), clarify (owner) —
+  // and a status transition usually retires one set + spawns the next.
   if (changes.status) {
     const fresh = rowToTask(freshRow, idx);
-    if (changes.status === "done" || changes.status === "cancelled") {
+    const previousStatus = String(cell("status") ?? "");
+    const newStatus = changes.status as WorkTaskStatus;
+
+    if (newStatus === "done" || newStatus === "cancelled") {
+      // Terminal — close every open GT regardless of kind.
       await syncGoogleTasksStatus(fresh.google_tasks, "completed");
+    } else if (newStatus === "awaiting_approval") {
+      // Hand off to approver. Close assignees' todo entries and spawn
+      // a `kind=approve` GT for the approver. No-approver fallback:
+      // the poller treats a `kind=todo` completion as `done` directly,
+      // so we just leave the todo entries open here and let the assignee's
+      // tick-to-done flow apply (a hub-side transition straight into
+      // awaiting_approval without an approver_email shouldn't normally
+      // happen — it'd flip back through done on the next poll).
+      await syncGoogleTasksStatus(fresh.google_tasks, "completed");
+      if (fresh.approver_email) {
+        const approveGT = await createGoogleTasks(
+          fresh,
+          [fresh.approver_email],
+          { kind: "approve" },
+        );
+        if (Object.keys(approveGT).length > 0) {
+          const merged = { ...fresh.google_tasks, ...approveGT };
+          await persistGoogleTasksCell(
+            sheets,
+            commentsSsId,
+            idx,
+            rowIndex,
+            merged,
+          );
+        }
+      }
+    } else if (newStatus === "awaiting_clarification") {
+      // Bounce to assignment owner. Close every open GT and spawn one
+      // `kind=clarify` GT for the author (or PM as fallback). The
+      // status-transition note from the approver becomes the body
+      // prefix so the owner sees the question inline in their Tasks.
+      await syncGoogleTasksStatus(fresh.google_tasks, "completed");
+      const owner = fresh.author_email || fresh.project_manager_email;
+      if (owner) {
+        const clarifyGT = await createGoogleTasks(
+          fresh,
+          [owner],
+          {
+            kind: "clarify",
+            notePrefix: patch.note
+              ? `הערת מאשר: ${patch.note}`
+              : "",
+          },
+        );
+        if (Object.keys(clarifyGT).length > 0) {
+          const merged = { ...fresh.google_tasks, ...clarifyGT };
+          await persistGoogleTasksCell(
+            sheets,
+            commentsSsId,
+            idx,
+            rowIndex,
+            merged,
+          );
+        }
+      }
     } else if (
-      changes.status === "in_progress" ||
-      changes.status === "awaiting_handling" ||
-      changes.status === "awaiting_clarification" ||
-      changes.status === "awaiting_approval"
+      (newStatus === "in_progress" || newStatus === "awaiting_handling") &&
+      (previousStatus === "awaiting_approval" ||
+        previousStatus === "awaiting_clarification")
     ) {
+      // Returned-to-work bounce. Either the approver rejected back to
+      // in_progress, or the owner finished clarifying. Close the
+      // approve/clarify entries that fired this and re-spawn a fresh
+      // round of `kind=todo` GTs for assignees with the 🔄 marker so
+      // they can tell at a glance the task came back, not new work.
+      await syncGoogleTasksStatus(fresh.google_tasks, "completed");
+      if (fresh.assignees.length > 0) {
+        const reissued = await createGoogleTasks(
+          fresh,
+          fresh.assignees,
+          { kind: "todo", reissued: true },
+        );
+        if (Object.keys(reissued).length > 0) {
+          const merged = { ...fresh.google_tasks, ...reissued };
+          await persistGoogleTasksCell(
+            sheets,
+            commentsSsId,
+            idx,
+            rowIndex,
+            merged,
+          );
+        }
+      }
+    } else if (
+      newStatus === "in_progress" ||
+      newStatus === "awaiting_handling"
+    ) {
+      // Generic revive (e.g. from done / cancelled / draft into a
+      // working state) — reopen whatever's there. This is the legacy
+      // path and it predates the kind split; leaving it alone matches
+      // existing user expectation.
       await syncGoogleTasksStatus(fresh.google_tasks, "needsAction");
     }
   }
 
+  // Hub-side title rename → patch every open GT's title so assignees /
+  // approvers see the renamed task in their personal lists. Preserves
+  // the kind prefix and drops the reissued marker (it's stale post-
+  // rename). Best-effort: a deleted GT is silently skipped.
+  if (changes.title) {
+    const fresh = rowToTask(freshRow, idx);
+    await patchGoogleTaskTitles(fresh);
+  }
+
   return { ok: true, task: rowToTask(freshRow, idx), changed: true };
+}
+
+/** Persist the merged `google_tasks` JSON back to the sheet cell.
+ *  Used after a status transition spawns new GTs and we need to
+ *  union them into the existing map. Single targeted update —
+ *  cheaper than a full row rewrite. */
+async function persistGoogleTasksCell(
+  sheets: ReturnType<typeof sheetsClient>,
+  commentsSsId: string,
+  headerIdx: Map<string, number>,
+  rowIndex: number,
+  googleTasks: Record<string, GTaskRef>,
+): Promise<void> {
+  const colIdx = headerIdx.get("google_tasks");
+  if (colIdx == null) return;
+  const sheetRow = rowIndex + 1;
+  const colA1 = columnLetter(colIdx + 1);
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: commentsSsId,
+      range: `Comments!${colA1}${sheetRow}`,
+      valueInputOption: "RAW",
+      requestBody: { values: [[JSON.stringify(googleTasks)]] },
+    });
+  } catch (e) {
+    console.log(
+      "[tasksWriteDirect] persistGoogleTasksCell failed:",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+}
+
+/** Patch every open Google Task's title to reflect the task's current
+ *  hub-side title. Re-derives the title from kind+title+project so the
+ *  prefix stays consistent with whatever spawned the GT. */
+async function patchGoogleTaskTitles(task: WorkTask): Promise<void> {
+  const entries = Object.values(task.google_tasks || {});
+  if (entries.length === 0) return;
+  await Promise.all(
+    entries.map(async (gt) => {
+      try {
+        const kind = gt.kind || "todo";
+        const tasksApi = tasksApiClient(gt.u);
+        await tasksApi.tasks.patch({
+          tasklist: gt.l,
+          task: gt.t,
+          requestBody: {
+            title: gtaskTitle(kind, task, /* reissued */ false),
+          },
+        });
+      } catch (e) {
+        console.log(
+          `[tasksWriteDirect] GT title patch failed for ${gt.u}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }),
+  );
 }
 
 /* ── Row → WorkTask mapper (local copy of lib/tasksDirect helper) ─── */
@@ -1528,7 +1777,7 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     chat_space_id: String(cell("chat_space_id") ?? ""),
     chat_task_name: String(cell("chat_task_name") ?? ""),
     calendar_event_ids: parseJsonField("calendar_event_ids", false) as Record<string, string>,
-    google_tasks: parseJsonField("google_tasks", false) as Record<string, { u: string; l: string; t: string; d: string }>,
+    google_tasks: parseJsonField("google_tasks", false) as Record<string, GTaskRef>,
     status_history: parseJsonField("status_history", true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),

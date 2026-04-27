@@ -764,6 +764,10 @@ export type WorkTaskStatusHistoryEntry = {
   note?: string;
 };
 
+/** Kind of personal Google Task spawned for a hub task — drives the
+ *  poller's status-transition logic when the GT is marked complete. */
+export type GTaskKind = "todo" | "approve" | "clarify";
+
 export type WorkTask = {
   id: string;
   brief: string;
@@ -790,7 +794,18 @@ export type WorkTask = {
   chat_space_id: string;
   chat_task_name: string;
   calendar_event_ids: Record<string, string>;
-  google_tasks: Record<string, { u: string; l: string; t: string; d: string }>;
+  /** One Google Task per recipient. The map key is the recipient's
+   *  email — for kind=todo it's an assignee, for kind=approve it's the
+   *  approver, for kind=clarify it's the assignment owner (author or
+   *  PM fallback). The poller uses `kind` to pick the right status
+   *  transition when a Google Task is marked complete:
+   *    - todo done → awaiting_approval (or done if no approver)
+   *    - approve done → done
+   *    - clarify done → in_progress (re-spawn todo GTs) */
+  google_tasks: Record<
+    string,
+    { u: string; l: string; t: string; d: string; kind?: GTaskKind }
+  >;
   status_history: WorkTaskStatusHistoryEntry[];
   edited_at: string;
   /** Number of comment rows parented to this task (row_kind='' AND

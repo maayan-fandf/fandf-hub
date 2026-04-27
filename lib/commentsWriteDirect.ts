@@ -335,54 +335,6 @@ async function postChatWebhook(
 
 type GTaskRef = { u: string; l: string; t: string; d: string };
 
-async function createGoogleTasksForMention(
-  payload: {
-    commentId: string;
-    project: string;
-    body: string;
-    due: string;
-    deepLink: string;
-  },
-  assignees: string[],
-): Promise<Record<string, GTaskRef>> {
-  const out: Record<string, GTaskRef> = {};
-  const allowed = await filterByGtasksPref(assignees);
-  if (allowed.length === 0) return out;
-  const notes =
-    payload.body + (payload.deepLink ? `\n\n${payload.deepLink}` : "");
-  const datePart = payload.due.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
-  const dueRfc = datePart
-    ? new Date(datePart + "T00:00:00Z").toISOString()
-    : undefined;
-  await Promise.all(
-    allowed.map(async (email) => {
-      try {
-        const tasksApi = tasksApiClient(email);
-        const lists = await tasksApi.tasklists.list({ maxResults: 1 });
-        const listId = lists.data.items?.[0]?.id;
-        if (!listId) return;
-        const created = await tasksApi.tasks.insert({
-          tasklist: listId,
-          requestBody: {
-            title: "💬 " + payload.project + " — תגובה",
-            notes,
-            due: dueRfc,
-          },
-        });
-        if (created.data.id) {
-          out[email] = { u: email, l: listId, t: created.data.id, d: payload.due };
-        }
-      } catch (e) {
-        console.log(
-          `[commentsWriteDirect] Google Tasks insert failed for ${email}:`,
-          e,
-        );
-      }
-    }),
-  );
-  return out;
-}
-
 async function syncGoogleTasksStatus(
   googleTasks: Record<string, GTaskRef>,
   desired: "completed" | "needsAction",
@@ -925,20 +877,13 @@ export async function createMentionDirect(
   const now = nowIso();
   const me = subjectEmail.toLowerCase().trim();
 
-  // Spawn Google Tasks per assignee BEFORE writing the row so the
-  // google_tasks JSON includes the resulting refs. Failures here don't
-  // block the row append — partial maps are still useful for tracking.
-  const gt = await createGoogleTasksForMention(
-    {
-      commentId: id,
-      project,
-      body: args.body.trim(),
-      due,
-      deepLink: hubCommentUrl(project, id),
-    },
-    assignees,
-  );
-
+  // Mention rows no longer spawn personal Google Tasks. Google Tasks are
+  // reserved for the work-management `tasksCreate` flow + the approval
+  // / clarification paths it owns. Mentions still drive the in-hub
+  // notification badge, the Chat cross-stream signal, and the daily
+  // digest email — all without polluting people's Google Tasks lists.
+  // (See `tasksWriteDirect.createGoogleTasks` for the surviving spawn
+  // path; this cut is intentional, design decision 2026-04-27.)
   const cells: Record<string, unknown> = {
     id,
     timestamp: now,
@@ -950,7 +895,7 @@ export async function createMentionDirect(
     body: args.body.trim(),
     resolved: false,
     mentions: assignees.join(","),
-    google_tasks: JSON.stringify(gt),
+    google_tasks: "{}",
     edited_at: "",
     row_kind: "",
     status_history: "[]",
