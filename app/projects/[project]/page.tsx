@@ -277,12 +277,12 @@ export default async function ProjectOverviewPage({
           >
             + משימה חדשה
           </Link>
-          {/* Comment / mention drawer — formerly mislabelled "+ משימה
-              חדשה". It actually creates a top-level comment with
-              @-mentions, which spawns Google Tasks for the mentioned
-              users. Renaming to "+ הערה" is honest about its actual
-              role: a quick note, not a tracked task. */}
-          <CreateTaskDrawer project={projectName} />
+          {/* "+ הודעה ללקוח" used to live here next to "+ משימה חדשה",
+              but with the channel split it only ever writes to the
+              client-tab discussion. Moved into the לקוח tab so users
+              see the action in the right context. The page header
+              now carries only project-wide actions (tasks, Drive,
+              local-path, Chat). */}
           <a
             className="btn-ghost btn-sm btn-with-drive-icon"
             href={driveFolderUrl}
@@ -703,6 +703,11 @@ function ClientChannel({
     <>
       <div className="section-head section-head-inner">
         <div className="discussion-head-tools">
+          {/* "+ הודעה ללקוח" lives here, not in the page header — the
+              action only writes to client-tab data, so it belongs in
+              the client tab's chrome. Internal users post to Chat
+              directly via the "פתח בצ׳אט" button on the internal tab. */}
+          <CreateTaskDrawer project={projectName} />
           <div className="tasks-view-toggle" role="tablist">
             <Link
               role="tab"
