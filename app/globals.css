@@ -1896,6 +1896,69 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   font-size: 0.78em;
 }
 
+/* Composer at the bottom of the internal Chat tab. Visually echoes
+   the reply-drawer styling so the surface feels familiar to anyone
+   who's used the client-tab reply box. */
+.chat-composer {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.chat-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* End-of-row action area on each Chat message row — currently just
+   the convert-to-task button. Hidden by default, fades in on row
+   hover so the message text reads cleanly when the user is just
+   scanning. Always visible on touch devices via the @media query. */
+.chat-message-actions {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.chat-message:hover .chat-message-actions,
+.chat-message:focus-within .chat-message-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  /* Touch devices: always show, since there's no hover state. */
+  .chat-message-actions {
+    opacity: 1;
+  }
+}
+.chat-message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  text-decoration: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.chat-message-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+}
+
 /* Server-rendered Chat message list — compact rows, avatar + body. */
 .chat-message-list {
   list-style: none;

@@ -643,6 +643,7 @@ async function InternalChannel({
           showOnlyMine={view === "mine"}
           myEmail={subjectEmail}
           myDisplayNames={myDisplayNames}
+          projectName={projectName}
         />
       </Suspense>
     </>

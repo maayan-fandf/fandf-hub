@@ -1,5 +1,7 @@
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
+import InternalChatComposer from "@/components/InternalChatComposer";
+import ConvertChatMessageToTaskButton from "@/components/ConvertChatMessageToTaskButton";
 import {
   listRecentMessages,
   parseSpaceId,
@@ -31,6 +33,7 @@ export default async function InternalDiscussionTab({
   showOnlyMine,
   myEmail,
   myDisplayNames,
+  projectName,
 }: {
   subjectEmail: string;
   /** Either the raw Chat webhook URL (from Keys col L) or the derived
@@ -48,6 +51,9 @@ export default async function InternalDiscussionTab({
    *  compare against the user's known names. Empty array falls back
    *  to email-prefix matching. */
   myDisplayNames: string[];
+  /** Project name, threaded down to the composer + convert-button so
+   *  they know where to post / scope the new task. */
+  projectName: string;
 }) {
   const spaceId = parseSpaceId(spaceUrlOrWebhook);
   if (!spaceId) {
@@ -101,7 +107,7 @@ export default async function InternalDiscussionTab({
           💬 פתח בצ׳אט ↗
         </a>
         <span className="discussion-internal-hint">
-          הודעות אחרונות מתוך חלל הצ׳אט הפנימי. כתיבה — דרך הצ׳אט.
+          הודעות אחרונות מתוך חלל הצ׳אט הפנימי. אפשר לכתוב כאן או דרך הצ׳אט.
         </span>
       </div>
       {messages.length === 0 ? (
@@ -130,6 +136,14 @@ export default async function InternalDiscussionTab({
                   >
                     {formatRelative(m.createTime)}
                   </span>
+                  <span className="chat-message-actions">
+                    <ConvertChatMessageToTaskButton
+                      project={projectName}
+                      messageText={m.text}
+                      authorName={m.senderName || ""}
+                      chatSpaceUrl={spaceUrl}
+                    />
+                  </span>
                 </div>
                 <div className="chat-message-text">
                   {renderChatText(m.text)}
@@ -138,6 +152,13 @@ export default async function InternalDiscussionTab({
             </li>
           ))}
         </ul>
+      )}
+      {/* Inline composer — phase 2. Hidden when filtering to "my
+          mentions" since posting from a filtered view is confusing
+          (the new message wouldn't appear unless it mentions the
+          user). Compose-from-Chat still works as the fallback. */}
+      {!showOnlyMine && (
+        <InternalChatComposer project={projectName} />
       )}
       <div className="discussion-internal-foot">
         <Link href={spaceUrl} className="section-link">
