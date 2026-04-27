@@ -34,16 +34,40 @@ function envOrThrow(name: string): string {
   return v;
 }
 
-/** Parse a Google Chat webhook URL into the shareable space link format
- *  the hub renders. Mirrors the `_chatSpaceUrlFromWebhook_` helper on
- *  the Apps Script side. Returns "" when the URL doesn't match. */
+/** Parse any of the Chat URL forms a user might paste into Keys col L
+ *  into the shareable mail.google deep-link the hub renders. Recognized
+ *  inputs:
+ *    - Webhook URL          → chat.googleapis.com/v1/spaces/<ID>/messages
+ *    - Standalone Chat URL  → chat.google.com/room/<ID>?cls=N
+ *    - Mail-embedded link   → mail.google.com/chat/u/N/#chat/space/<ID>
+ *    - Bare resource name   → spaces/<ID> or just <ID>
+ *  Returns "" when nothing matches. Lifted out of the original
+ *  webhook-only matcher when the channel-split rolled out and users
+ *  started pasting the Copy-link deeplink (col L was renamed in spirit
+ *  to "Chat URL" but the schema still labels it Chat Webhook). */
 export function chatSpaceUrlFromWebhook(webhookUrl: string): string {
   if (!webhookUrl) return "";
-  const match = webhookUrl.match(
-    /chat\.googleapis\.com\/v1\/spaces\/([A-Za-z0-9_-]+)\//,
+  let id = "";
+  let m = webhookUrl.match(
+    /^https:\/\/chat\.googleapis\.com\/v1\/spaces\/([A-Za-z0-9_-]+)\/messages/,
   );
-  if (!match) return "";
-  return `https://mail.google.com/chat/u/0/#chat/space/${match[1]}`;
+  if (m) id = m[1];
+  if (!id) {
+    m = webhookUrl.match(
+      /^https:\/\/chat\.google\.com\/(?:room|space)\/([A-Za-z0-9_-]+)/,
+    );
+    if (m) id = m[1];
+  }
+  if (!id) {
+    m = webhookUrl.match(/[/#]chat\/(?:space|room)\/([A-Za-z0-9_-]+)/);
+    if (m) id = m[1];
+  }
+  if (!id) {
+    m = webhookUrl.trim().match(/^(?:spaces\/)?([A-Za-z0-9_-]{8,})$/);
+    if (m) id = m[1];
+  }
+  if (!id) return "";
+  return `https://mail.google.com/chat/u/0/#chat/space/${id}`;
 }
 
 /**
