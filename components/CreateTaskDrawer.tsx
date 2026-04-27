@@ -11,6 +11,18 @@ type Props = {
 };
 
 const MAX = 4000;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+type UploadResponse =
+  | {
+      ok: true;
+      fileId: string;
+      name: string;
+      mimeType: string;
+      viewUrl: string;
+      embedUrl: string;
+    }
+  | { ok: false; error: string };
 
 type PickerState = {
   // Position in the textarea value where the `@` lives. -1 = picker closed.
@@ -52,7 +64,10 @@ export default function CreateTaskDrawer({ project }: Props) {
   const [loading, setLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [picker, setPicker] = useState<PickerState>(CLOSED_PICKER);
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Lazy-fetch assignees the first time the drawer opens.
   useEffect(() => {
@@ -91,6 +106,111 @@ export default function CreateTaskDrawer({ project }: Props) {
     setMentionedEmails(new Set());
     setPicker(CLOSED_PICKER);
     setSubmitError(null);
+    setUploadError(null);
+    setUploading(0);
+  }
+
+  /** Insert text at the textarea cursor (or append if no focus). Used by
+   *  the upload helpers to drop the markdown link/image into the body
+   *  exactly where the user's cursor was. */
+  function insertAtCursor(text: string) {
+    setBody((prev) => {
+      const ta = textareaRef.current;
+      if (!ta) return prev + text;
+      const start = ta.selectionStart ?? prev.length;
+      const end = ta.selectionEnd ?? prev.length;
+      const next = prev.slice(0, start) + text + prev.slice(end);
+      // Reposition cursor after the inserted text on next paint.
+      requestAnimationFrame(() => {
+        const pos = start + text.length;
+        ta.setSelectionRange(pos, pos);
+        ta.focus();
+      });
+      return next;
+    });
+  }
+
+  async function uploadFile(file: File): Promise<void> {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadError(
+        `הקובץ גדול מדי (${Math.round(file.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    const form = new FormData();
+    form.set("project", project);
+    form.set("file", file, file.name || "pasted-image.png");
+    setUploading((n) => n + 1);
+    setUploadError(null);
+    try {
+      const res = await fetch("/api/comments/upload", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as UploadResponse;
+      if (!res.ok || !("ok" in data) || !data.ok) {
+        const msg =
+          ("error" in data && data.error) || `העלאה נכשלה (${res.status})`;
+        throw new Error(msg);
+      }
+      const safeName = (data.name || file.name || "file").replace(
+        /[\[\]()]/g,
+        "",
+      );
+      const mimeType = (file.type || data.mimeType || "").toLowerCase();
+      const fromMime = mimeType.startsWith("image/");
+      const fromExt = /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(
+        safeName,
+      );
+      const isImage = fromMime || fromExt;
+      // Same markdown-link convention TaskReplyComposer uses, so
+      // downstream renderers (timeline, inbox, project preview) all
+      // already know how to display these.
+      const token = isImage
+        ? `\n![${safeName}](${data.viewUrl})\n`
+        : `\n[📎 ${safeName}](${data.viewUrl})\n`;
+      insertAtCursor(token);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading((n) => Math.max(0, n - 1));
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    imgs.forEach((f) => {
+      void uploadFile(f);
+    });
+  }
+
+  function onDrop(e: React.DragEvent<HTMLTextAreaElement>) {
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    e.preventDefault();
+    Array.from(files).forEach((f) => {
+      void uploadFile(f);
+    });
+  }
+
+  function onDragOver(e: React.DragEvent<HTMLTextAreaElement>) {
+    if (e.dataTransfer?.types?.includes("Files")) {
+      e.preventDefault();
+    }
+  }
+
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((f) => {
+      void uploadFile(f);
+    });
+    // Reset so picking the same file again still fires onChange.
+    e.target.value = "";
   }
 
   // Filter assignees against the current `@...` query. Matches name or
@@ -242,6 +362,10 @@ export default function CreateTaskDrawer({ project }: Props) {
       setSubmitError(`ארוך מדי (${trimmed.length}/${MAX}).`);
       return;
     }
+    if (uploading > 0) {
+      setSubmitError("ממתינים להעלאת קבצים…");
+      return;
+    }
     setSubmitError(null);
     startTransition(async () => {
       try {
@@ -315,11 +439,35 @@ export default function CreateTaskDrawer({ project }: Props) {
             onKeyDown={onKeyDown}
             onKeyUp={(e) => updatePickerFromCursor(body, e.currentTarget)}
             onClick={(e) => updatePickerFromCursor(body, e.currentTarget)}
-            placeholder="מה צריך לעשות? הקלד @ לתיוג אדם (⌘/Ctrl+Enter ליצירה)"
+            onPaste={onPaste}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            placeholder="מה צריך לעשות? הקלד @ לתיוג אדם, הדבק/גרור קובץ לצירוף (⌘/Ctrl+Enter ליצירה)"
             disabled={isPending}
             maxLength={MAX + 1}
           />
           <div className="create-task-body-foot">
+            <button
+              type="button"
+              className="create-task-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isPending}
+              title="צרף קובץ — נשמר בתיקיית 'הערות' של הפרויקט ב-Drive"
+            >
+              📎 צרף קובץ
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={onPickFiles}
+            />
+            {uploading > 0 && (
+              <span className="create-task-upload-status">
+                מעלה… ({uploading})
+              </span>
+            )}
             {finalMentions.length > 0 && (
               <span className="create-task-mentions-hint">
                 תויגו: {finalMentions.length}
@@ -329,6 +477,9 @@ export default function CreateTaskDrawer({ project }: Props) {
               {count}/{MAX}
             </span>
           </div>
+          {uploadError && (
+            <div className="reply-error">{uploadError}</div>
+          )}
           {loading && (
             <div className="create-task-loading">טוען אנשים לתיוג…</div>
           )}

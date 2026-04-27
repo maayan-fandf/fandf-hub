@@ -620,12 +620,44 @@ html[data-theme="dark"] .mention-item:hover {
 .create-task-body-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.65rem;
   margin-top: 0.3rem;
   font-size: 0.78rem;
   color: var(--muted);
 }
+/* Char-count chip is the natural "right edge" of the row; flex layout
+   pushes it to the end. Mention hint and upload status sit between
+   the attach button and the count. */
+.create-task-body-foot .reply-count {
+  margin-inline-start: auto;
+}
 .create-task-mentions-hint {
+  color: var(--accent);
+  font-weight: 600;
+}
+.create-task-attach-btn {
+  appearance: none;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.25em 0.6em;
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.create-task-attach-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.create-task-attach-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.create-task-upload-status {
   color: var(--accent);
   font-weight: 600;
 }
