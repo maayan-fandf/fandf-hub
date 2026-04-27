@@ -302,17 +302,6 @@ export default async function ProjectOverviewPage({
               title="העתק נתיב מקומי — Drive Desktop"
             />
           )}
-          {chatSpaceUrl && (
-            <a
-              className="btn-ghost btn-sm"
-              href={chatSpaceUrl}
-              target="_blank"
-              rel="noreferrer"
-              title="פתח את שיחת הפרויקט ב-Google Chat"
-            >
-              💬 צ׳אט
-            </a>
-          )}
         </div>
       </header>
 

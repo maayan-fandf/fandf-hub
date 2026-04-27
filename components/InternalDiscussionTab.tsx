@@ -197,6 +197,11 @@ export default async function InternalDiscussionTab({
       {!showOnlyMine && (
         <InternalChatComposer project={projectName} />
       )}
+      <div className="discussion-internal-foot">
+        <Link href={spaceUrl} className="section-link">
+          פתח בגוגל צ׳אט ↗
+        </Link>
+      </div>
     </div>
   );
 }
