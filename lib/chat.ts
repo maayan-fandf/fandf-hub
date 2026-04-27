@@ -27,10 +27,12 @@ export type ChatMessage = {
   text: string;
   /** ISO-8601 timestamp the message was sent. */
   createTime: string;
-  /** Sender display name + email. Email is empty for messages
-   *  posted by Chat Apps / webhooks (no human author). */
+  /** Sender display name. Empty for messages posted by Chat Apps /
+   *  webhooks (no human author). The Chat API doesn't surface email
+   *  on the Schema$User type — it uses opaque `users/<id>` resource
+   *  names — so we don't carry an email field. Avatar / role lookups
+   *  in the future need to go through a directory query. */
   senderName: string;
-  senderEmail: string;
   /** Annotation summary — list of mentioned user emails (lowercased)
    *  found in `annotations[].userMention`. Empty when no mentions.
    *  Used by the תיוגים filter on the internal tab. */
@@ -121,7 +123,6 @@ async function listRecentMessagesUncached(
         text: m.text ?? "",
         createTime: m.createTime ?? "",
         senderName: m.sender?.displayName ?? "",
-        senderEmail: m.sender?.email ?? "",
         mentionEmails,
       };
     });

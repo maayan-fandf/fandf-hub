@@ -113,14 +113,14 @@ export default async function InternalDiscussionTab({
           {messages.map((m) => (
             <li key={m.name} className="chat-message">
               <Avatar
-                name={m.senderEmail || m.senderName}
-                title={m.senderName || m.senderEmail}
+                name={m.senderName || m.name}
+                title={m.senderName}
                 size={26}
               />
               <div className="chat-message-body">
                 <div className="chat-message-head">
                   <span className="chat-message-author">
-                    {m.senderName || m.senderEmail || "לא ידוע"}
+                    {m.senderName || "לא ידוע"}
                   </span>
                   <span
                     className="chat-message-time"
