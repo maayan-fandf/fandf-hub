@@ -580,31 +580,33 @@ function DiscussionSection({
 
   return (
     <section className="project-section project-section-wide">
-      <div className="discussion-channel-tabs" role="tablist">
-        {/* Internal tab is hidden for non-fandf users — they have no
-            access to the Chat space anyway, so showing the tab would
-            just be a teaser they can't act on. */}
-        {isInternalUser && (
+      {/* Tab strip is for STAFF only. Clients only have one channel
+          (the shared one), so a tab strip with a single entry is
+          visual noise — they go straight into the message list. */}
+      {isInternalUser && (
+        <div className="discussion-channel-tabs" role="tablist">
           <Link
             role="tab"
             aria-selected={channel === "internal"}
             href={channelHref("internal")}
+            title="פנימי — רק אצלנו ב-F&F"
             className={`discussion-channel-tab ${channel === "internal" ? "is-active" : ""}`}
           >
             🔒 פנימי
             <span className="discussion-channel-tab-hint">Chat</span>
           </Link>
-        )}
-        <Link
-          role="tab"
-          aria-selected={channel === "client"}
-          href={channelHref("client")}
-          className={`discussion-channel-tab ${channel === "client" ? "is-active" : ""}`}
-        >
-          🤝 צ׳אט
-          <span className="discussion-channel-tab-hint">Hub</span>
-        </Link>
-      </div>
+          <Link
+            role="tab"
+            aria-selected={channel === "client"}
+            href={channelHref("client")}
+            title="משותף — נצפה גם ע״י הלקוח"
+            className={`discussion-channel-tab ${channel === "client" ? "is-active" : ""}`}
+          >
+            🤝 משותף
+            <span className="discussion-channel-tab-hint">Hub</span>
+          </Link>
+        </div>
+      )}
       {channel === "internal" ? (
         <InternalChannel
           subjectEmail={userEmail}
