@@ -12,6 +12,13 @@ export default auth((req) => {
     // shared secret), so it must skip the NextAuth redirect — Apps
     // Script triggers run unattended without a session.
     path === "/api/worktasks/auto-transition" ||
+    // External-link redirect endpoint used by the dashboard's ads /
+    // sheet buttons to escape Apps Script's sandboxed iframe popup
+    // restrictions. The route hardcodes a hostname whitelist so it
+    // can't be abused as an open redirect; making it public lets the
+    // popup follow a clean top-level navigation chain to the
+    // destination.
+    path === "/api/external-redirect" ||
     path === "/signin" ||
     path === "/unauthorized" ||
     path === "/favicon.ico";
