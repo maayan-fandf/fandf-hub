@@ -94,3 +94,43 @@ export const readKeysCached = cache(
 export function invalidateKeysCache(): void {
   revalidateTag(KEYS_CACHE_TAG);
 }
+
+/**
+ * Resolve a sender email to the company name from the Keys sheet's
+ * `Email Client` column (col E — comma-separated raw emails). Used by
+ * the Gmail-origin task inbox: when the user converts an emailed task
+ * to a hub task, we pre-select the matching company so they don't have
+ * to re-pick it manually.
+ *
+ * Why company and not project: a single client email is usually
+ * associated with multiple projects under one company (e.g. one PR
+ * contact across 3 of the company's brands). Picking a project would
+ * be wrong half the time; picking the company is unambiguous.
+ *
+ * Returns the first matching company. Case-insensitive email compare.
+ * Empty string when no match (caller falls back to "user picks
+ * manually").
+ */
+export async function findCompanyByClientEmail(
+  senderEmail: string,
+  subjectEmail: string,
+): Promise<string> {
+  const target = String(senderEmail || "").toLowerCase().trim();
+  if (!target) return "";
+  const { headers, rows } = await readKeysCached(subjectEmail);
+  const iCompany = headers.indexOf("חברה");
+  const iEmailClient = headers.findIndex((h) =>
+    /email\s*client/i.test(h),
+  );
+  if (iCompany < 0 || iEmailClient < 0) return "";
+  for (const row of rows) {
+    const cell = String(row[iEmailClient] ?? "").toLowerCase();
+    if (!cell) continue;
+    // Comma-separated emails; some rows have whitespace or stray quotes.
+    const emails = cell.split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
+    if (emails.includes(target)) {
+      return String(row[iCompany] ?? "").trim();
+    }
+  }
+  return "";
+}

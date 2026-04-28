@@ -34,6 +34,7 @@ type ProjectOption = {
 export default function TaskCreateForm({
   projects,
   defaultProject,
+  defaultCompany: defaultCompanyProp = "",
   defaultDescription = "",
   defaultAssignees = "",
   defaultTitle = "",
@@ -43,6 +44,11 @@ export default function TaskCreateForm({
 }: {
   projects: ProjectOption[];
   defaultProject: string;
+  /** Pre-fill the company picker WITHOUT pre-selecting a project. Used
+   *  by the Gmail-origin task convert flow: the email's sender resolves
+   *  to a known client company, but clients are spread across multiple
+   *  projects so we let the user pick which project applies. */
+  defaultCompany?: string;
   /** Pre-fill the description textarea — used by the "convert comment
    *  to task" flow on /tasks/new?from_comment=X. */
   defaultDescription?: string;
@@ -88,7 +94,9 @@ export default function TaskCreateForm({
   }, [people]);
 
   const defaultProjectOpt = projects.find((p) => p.name === defaultProject);
-  const defaultCompany = defaultProjectOpt?.company || "";
+  // Company defaults: project pick wins (auto-derived); else the explicit
+  // ?company param; else empty.
+  const defaultCompany = defaultProjectOpt?.company || defaultCompanyProp || "";
   const defaultPm = defaultProjectOpt
     ? nameToEmail.get(defaultProjectOpt.projectManagerFull.trim().toLowerCase()) || ""
     : "";

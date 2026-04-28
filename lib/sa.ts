@@ -171,6 +171,26 @@ export function gmailClient(subjectEmail: string) {
 }
 
 /**
+ * Gmail read client (full readonly). Used by the Gmail-origin task
+ * inbox to resolve the sender of an email referenced by a Google Task's
+ * `links[]` entry, so the convert-to-task flow can pre-select the
+ * matching client's company. Scope is broad (full readonly) so Workspace
+ * Admin only needs to greenlight one Gmail scope.
+ *
+ * REQUIRES adding the scope to DWD client 102907403320696302169 in
+ * Workspace Admin → Security → API controls → Domain-wide delegation:
+ *   - https://www.googleapis.com/auth/gmail.readonly
+ * Until that's done, calls return 403 and the Gmail-tasks list still
+ * works — only the company auto-prefill silently no-ops.
+ */
+export function gmailReadClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/gmail.readonly",
+  ]);
+  return google.gmail({ version: "v1", auth });
+}
+
+/**
  * Admin SDK Directory client (read-only on users). Used to resolve a
  * Chat `users/<id>` resource name into a real displayName when the
  * Chat API itself doesn't include it on a message's sender record —

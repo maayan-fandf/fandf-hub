@@ -12,6 +12,10 @@ export const dynamic = "force-dynamic";
 
 type Search = {
   project?: string;
+  /** Company prefill — used by the Gmail-origin task inbox where we
+   *  know the client's company from the email's sender but not which
+   *  of their projects the task belongs to. Only respected when no
+   *  ?project is also provided. */
   company?: string;
   /** When set, /tasks/new pre-fills the form from the source comment's
    *  body / mentions / project. Used by the "המר למשימה" button on
@@ -69,12 +73,12 @@ export default async function NewTaskPage({
     projectManagerFull: p.roster?.projectManagerFull || "",
   }));
 
-  // Pre-fill seed — three independent sources, in priority:
+  // Pre-fill seed — four independent sources, in priority:
   //   1. commentSeed (from_comment URL param) — full conversion, hub
   //      Comments row resolves project + body + mentions
-  //   2. Explicit URL params (?body, ?title) — direct prefill, used
-  //      by the Chat-message → task convert flow which doesn't have a
-  //      hub Comments row to point at
+  //   2. Explicit URL params (?body, ?title, ?company) — direct prefill,
+  //      used by the Chat-message → task convert flow + the Gmail-origin
+  //      task inbox (which prefills company without picking a project)
   //   3. ?project alone — pre-selects project only
   const seedProject = commentSeed?.project || sp.project || "";
   const seedDescription = commentSeed?.body || sp.body || "";
@@ -84,6 +88,11 @@ export default async function NewTaskPage({
   const seedTitle = commentSeed
     ? commentSeed.body.split("\n")[0].slice(0, 60).trim()
     : sp.title?.slice(0, 60).trim() || "";
+  // Company prefill — only kicks in when no project is already selected
+  // (project always derives company in the form). Used by the Gmail-
+  // origin task convert flow: we know the client's company but not
+  // which of their projects this task belongs to.
+  const seedCompany = !seedProject ? (sp.company || "").trim() : "";
 
   return (
     <main className="container">
@@ -123,6 +132,7 @@ export default async function NewTaskPage({
       <TaskCreateForm
         projects={projects}
         defaultProject={seedProject}
+        defaultCompany={seedCompany}
         defaultDescription={seedDescription}
         defaultAssignees={seedAssignees}
         defaultTitle={seedTitle}

@@ -7,6 +7,7 @@ import ExternalNavListener from "@/components/ExternalNavListener";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavBellBadge from "@/components/NavBellBadge";
+import NavGmailTasks from "@/components/NavGmailTasks";
 import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
 import NavTasksBadge from "@/components/NavTasksBadge";
@@ -152,6 +153,7 @@ export default async function RootLayout({
                 <NavBellBadge />
               </ActiveLink>
             )}
+            {email && !isClientUser && <NavGmailTasks />}
             {email && <NavAdminLink />}
             {dashboardUrl && !isClientUser && (
               <a
