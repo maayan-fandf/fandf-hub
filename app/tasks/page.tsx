@@ -20,7 +20,6 @@ import TasksKanban from "@/components/TasksKanban";
 import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
 import TasksArchiveToggle from "@/components/TasksArchiveToggle";
-import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 
 export const dynamic = "force-dynamic";
 
@@ -298,13 +297,6 @@ export default async function TasksPage({
           </div>
         </div>
         <div className="header-actions">
-          {driveName && (
-            <CopyLocalPathButton
-              path={`G:\\Shared drives\\${driveName}`}
-              label="📂 פתח ב-Explorer"
-              title="העתק נתיב לשורש ה-Shared Drive ופתח ב-File Explorer"
-            />
-          )}
           <Link href="/tasks/new" className="btn-primary btn-sm">
             + משימה חדשה
           </Link>
