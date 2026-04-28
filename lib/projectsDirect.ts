@@ -248,6 +248,8 @@ export async function getMyProjectsDirect(
     const projectManagerFull = iAcct >= 0 ? String(row[iAcct] ?? "").trim() : "";
     const internalOnly = iInternal >= 0 ? splitRosterCell(row[iInternal]) : [];
     const clientFacing = iCf >= 0 ? splitRosterCell(row[iCf]) : [];
+    const clientEmails =
+      iClients >= 0 ? splitRosterCell(row[iClients]) : [];
 
     // Membership test for non-admins. Matches findProjectsForEmail +
     // findAccessScopeForEmail in Apps Script:
@@ -275,6 +277,7 @@ export async function getMyProjectsDirect(
     const roster: ProjectRoster = {
       mediaManager,
       projectManagerFull,
+      clientEmails,
       internalOnly,
       clientFacing,
     };

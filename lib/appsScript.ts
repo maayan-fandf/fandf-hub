@@ -140,6 +140,9 @@ async function postApi<T>(
 export type ProjectRoster = {
   mediaManager: string;         // col C — campaign manager full name
   projectManagerFull: string;   // col D — account manager full name
+  /** Col E — comma-separated raw client emails. Drives shared-folder
+   *  permission grants + the client-only access path. */
+  clientEmails: string[];
   internalOnly: string[];       // col J — creative team (internal only)
   clientFacing: string[];       // col K — creative team (client-facing)
 };
@@ -220,6 +223,7 @@ export type ProjectTasks = {
 const EMPTY_ROSTER: ProjectRoster = {
   mediaManager: "",
   projectManagerFull: "",
+  clientEmails: [],
   internalOnly: [],
   clientFacing: [],
 };
@@ -247,6 +251,7 @@ const fetchMyProjectsCached = unstable_cache(
             roster: {
               mediaManager: p.roster?.mediaManager ?? "",
               projectManagerFull: p.roster?.projectManagerFull ?? "",
+              clientEmails: p.roster?.clientEmails ?? [],
               internalOnly: p.roster?.internalOnly ?? [],
               clientFacing: p.roster?.clientFacing ?? [],
             },

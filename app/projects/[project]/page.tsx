@@ -161,6 +161,34 @@ export default async function ProjectOverviewPage({
     driveFolderResolved?.viewUrl ||
     "https://drive.google.com/drive/search?q=" +
       encodeURIComponent(projectName);
+
+  // Per-project "תיקיה משותפת" — the Drive folder that's explicitly
+  // shared with every email in Keys col E. Resolved (and created /
+  // permission-synced if needed) on every page load — the helper is
+  // cached at 5 min so the steady-state cost is one Drive read. For
+  // clients, the project header's Drive button points here instead
+  // of the project root (which lives in an internal-only Shared
+  // Drive they can't open). Staff still get the project root.
+  let clientSharedFolderUrl: string | null = null;
+  const projectClientEmails = projectMeta?.roster?.clientEmails ?? [];
+  if (projectMeta && companyForDashboard) {
+    try {
+      const { ensureProjectSharedFolder } = await import(
+        "@/lib/driveSharedFolder"
+      );
+      const ref = await ensureProjectSharedFolder(
+        companyForDashboard,
+        projectName,
+        projectClientEmails,
+      );
+      clientSharedFolderUrl = ref.viewUrl;
+    } catch (e) {
+      console.log(
+        "[projects/page] ensureProjectSharedFolder failed:",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
   // Build the absolute Windows path the user pastes into File
   // Explorer's address bar. F&F's Drive Desktop setup mounts at G:\,
   // matching every workstation we've checked. If a Mac user ever
@@ -296,15 +324,28 @@ export default async function ProjectOverviewPage({
               see the action in the right context. The page header
               now carries only project-wide actions (tasks, Drive,
               local-path, Chat). */}
+          {/* Drive button — clients land in the per-project shared
+              folder (the only path they have explicit Drive perms to);
+              staff/admin land in the project root in the Shared Drive
+              so they can navigate the full hierarchy. The shared
+              folder is auto-created + permission-synced when this
+              page renders for any user (cached 5 min), so it's always
+              there by the time a client clicks. */}
           <a
             className="btn-ghost btn-sm btn-with-drive-icon"
-            href={driveFolderUrl}
+            href={
+              isClientUser && clientSharedFolderUrl
+                ? clientSharedFolderUrl
+                : driveFolderUrl
+            }
             target="_blank"
             rel="noreferrer"
             title={
-              driveFolderUrl.includes("drive.google.com/drive/search")
-                ? "פתח חיפוש Drive עבור הפרויקט"
-                : "פתח את תיקיית הפרויקט ב-Drive"
+              isClientUser && clientSharedFolderUrl
+                ? `פתח את התיקיה המשותפת — ${projectName} תיקיה משותפת`
+                : driveFolderUrl.includes("drive.google.com/drive/search")
+                  ? "פתח חיפוש Drive עבור הפרויקט"
+                  : "פתח את תיקיית הפרויקט ב-Drive"
             }
           >
             <GoogleDriveIcon size="1.05em" /> Drive
@@ -560,7 +601,7 @@ function DiscussionSection({
           href={channelHref("client")}
           className={`discussion-channel-tab ${channel === "client" ? "is-active" : ""}`}
         >
-          🤝 לקוח
+          🤝 צ׳אט
           <span className="discussion-channel-tab-hint">Hub</span>
         </Link>
       </div>

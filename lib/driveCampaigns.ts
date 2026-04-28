@@ -21,6 +21,7 @@ import {
   ensureCampaignFolderId,
   findCampaignFolderId,
 } from "@/lib/driveFolders";
+import { isSharedFolderName } from "@/lib/driveSharedFolder";
 
 function tasksSharedDriveId(): string {
   const v = process.env.TASKS_SHARED_DRIVE_ID;
@@ -81,12 +82,14 @@ async function listInner(
     driveId: sharedDriveId,
   });
   const items = res.data.files ?? [];
-  return items.map((f) => ({
-    id: f.id || "",
-    name: f.name || "",
-    modifiedTime: f.modifiedTime || "",
-    viewUrl: driveFolderUrl(f.id || ""),
-  }));
+  return items
+    .filter((f) => !isSharedFolderName(f.name || ""))
+    .map((f) => ({
+      id: f.id || "",
+      name: f.name || "",
+      modifiedTime: f.modifiedTime || "",
+      viewUrl: driveFolderUrl(f.id || ""),
+    }));
 }
 
 /**
