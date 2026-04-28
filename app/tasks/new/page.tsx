@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   getMyProjects,
   tasksPeopleList,
@@ -46,6 +47,17 @@ export default async function NewTaskPage({
         })()
       : Promise.resolve(null),
   ]);
+  // Clients can't create tasks — bounce them to the home grid before
+  // we render the form. Mirrors the gating on /tasks + the project
+  // page's "+ משימה חדשה" button.
+  if (projectsRes) {
+    const isClientUser =
+      !!projectsRes.isClient &&
+      !projectsRes.isAdmin &&
+      !projectsRes.isStaff &&
+      !projectsRes.isInternal;
+    if (isClientUser) redirect("/");
+  }
 
   // Build a lean project list with the roster field we actually auto-fill
   // (account manager = Keys col D "EMAIL Manager", stored as a Hebrew full

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   tasksList,
   tasksPeopleList,
@@ -68,6 +69,23 @@ export default async function TasksPage({
   const sp = await searchParams;
 
   const me = await currentUserEmail().catch(() => "");
+  // Clients have no business on /tasks — bounce them to the home grid.
+  // Mirrors the layout's nav-link gating + the project page's section
+  // gating so there's no surface a client can land on accidentally.
+  if (me) {
+    try {
+      const access = await getMyProjects();
+      const isClientUser =
+        !!access.isClient &&
+        !access.isAdmin &&
+        !access.isStaff &&
+        !access.isInternal;
+      if (isClientUser) redirect("/");
+    } catch {
+      /* fail-open: if access lookup fails, fall through to the page;
+         tasksList itself enforces project-level access too. */
+    }
+  }
   // "View as" support — when the user has set view_as_email in their
   // prefs (gear menu in the topnav), every default filter on this
   // page is computed against that identity instead of the session

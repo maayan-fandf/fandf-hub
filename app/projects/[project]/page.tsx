@@ -194,6 +194,15 @@ export default async function ProjectOverviewPage({
   //     only snapshot; IFRAME_MODE=true on the Apps Script side skips all
   //     google.script.run calls. See app/api/dashboard/[project]/route.ts.
   const isInternalUser = userEmail.toLowerCase().endsWith("@fandf.co.il");
+  // Client view-mode: gate every task-management surface (header
+  // "+ משימה חדשה" button, the 📋 section, the convert-to-task icon
+  // on each comment). Clients use the hub purely as a discussion +
+  // metrics surface; tasks live on the F&F internal side.
+  const isClientUser =
+    !!projectsData?.isClient &&
+    !projectsData?.isAdmin &&
+    !projectsData?.isStaff &&
+    !isInternalUser;
   // Resolve the active channel here so we can gate page-level chrome
   // (the resolved-filter pill below) against it. DiscussionSection
   // re-derives this internally — keep the rules in sync if they
@@ -269,14 +278,18 @@ export default async function ProjectOverviewPage({
         <div className="header-actions">
           {/* Primary action: open the proper task creator scoped to
               this project. Lands on /tasks/new with the project pre-
-              selected via search param. */}
-          <Link
-            href={`/tasks/new?project=${encodeURIComponent(projectName)}`}
-            className="btn-primary btn-sm"
-            title="פתח את יוצר המשימות עם הפרויקט מוגדר מראש"
-          >
-            + משימה חדשה
-          </Link>
+              selected via search param. Hidden for client users —
+              they can't create tasks; their only write surface is
+              the client-tab message composer. */}
+          {!isClientUser && (
+            <Link
+              href={`/tasks/new?project=${encodeURIComponent(projectName)}`}
+              className="btn-primary btn-sm"
+              title="פתח את יוצר המשימות עם הפרויקט מוגדר מראש"
+            >
+              + משימה חדשה
+            </Link>
+          )}
           {/* "+ הודעה ללקוח" used to live here next to "+ משימה חדשה",
               but with the channel split it only ever writes to the
               client-tab discussion. Moved into the לקוח tab so users
@@ -332,33 +345,36 @@ export default async function ProjectOverviewPage({
 
       {/* Section order intentionally matches the stats row above (tasks /
           mentions / comments) so each column lines up with its count tile
-          when the grid renders in RTL. */}
+          when the grid renders in RTL. The 📋 משימות section is hidden
+          entirely for clients — they don't see task management. */}
       <div className="project-sections">
-        <section className="project-section">
-          <div className="section-head">
-            <h2>
-              📋 משימות
-              <span className="section-count">{openWorkTasks}</span>
-            </h2>
-            <Link
-              className="section-link"
-              href={`/tasks?project=${encodeURIComponent(projectName)}&mine=0`}
-            >
-              פתח את כל המשימות ←
-            </Link>
-          </div>
-          <p className="section-subtitle">
-            משימות עבודה פתוחות, מקובצות לפי סטטוס. לחץ על שם המשימה לפרטים.
-          </p>
-          <TasksQueue
-            tasks={workTasks}
-            groupByCompany={false}
-            hideOther
-            compact
-            people={peopleData?.people ?? []}
-            emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
-          />
-        </section>
+        {!isClientUser && (
+          <section className="project-section">
+            <div className="section-head">
+              <h2>
+                📋 משימות
+                <span className="section-count">{openWorkTasks}</span>
+              </h2>
+              <Link
+                className="section-link"
+                href={`/tasks?project=${encodeURIComponent(projectName)}&mine=0`}
+              >
+                פתח את כל המשימות ←
+              </Link>
+            </div>
+            <p className="section-subtitle">
+              משימות עבודה פתוחות, מקובצות לפי סטטוס. לחץ על שם המשימה לפרטים.
+            </p>
+            <TasksQueue
+              tasks={workTasks}
+              groupByCompany={false}
+              hideOther
+              compact
+              people={peopleData?.people ?? []}
+              emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
+            />
+          </section>
+        )}
 
         <DiscussionSection
           comments={comments}
@@ -370,6 +386,7 @@ export default async function ProjectOverviewPage({
           requestedView={sp.view}
           requestedChannel={sp.channel}
           isInternalUser={isInternalUser}
+          isClientUser={isClientUser}
           userEmail={userEmail}
           chatSpaceUrl={chatSpaceUrl}
         />
@@ -482,6 +499,7 @@ function DiscussionSection({
   requestedView,
   requestedChannel,
   isInternalUser,
+  isClientUser,
   userEmail,
   chatSpaceUrl,
 }: {
@@ -494,6 +512,9 @@ function DiscussionSection({
   requestedView: string | undefined;
   requestedChannel: string | undefined;
   isInternalUser: boolean;
+  /** True when the viewer is a client (col-E only). Drops the
+   *  convert-to-task icon on every comment / mention card. */
+  isClientUser: boolean;
   userEmail: string;
   chatSpaceUrl: string;
 }) {
@@ -560,6 +581,7 @@ function DiscussionSection({
           projectName={projectName}
           showResolved={showResolved}
           requestedView={requestedView}
+          isClientUser={isClientUser}
         />
       )}
     </section>
@@ -652,6 +674,7 @@ function ClientChannel({
   projectName,
   showResolved,
   requestedView,
+  isClientUser,
 }: {
   comments: CommentItem[];
   mentions: MentionItem[];
@@ -660,6 +683,7 @@ function ClientChannel({
   projectName: string;
   showResolved: boolean;
   requestedView: string | undefined;
+  isClientUser: boolean;
 }) {
   const view: "all" | "mine" =
     requestedView === "all"
@@ -740,13 +764,18 @@ function ClientChannel({
             : "פעילות בפרויקט — הערות פתוחות"}
       </p>
       {view === "mine" ? (
-        <MentionsPreview mentions={mentions} showResolved={showResolved} />
+        <MentionsPreview
+          mentions={mentions}
+          showResolved={showResolved}
+          isClientUser={isClientUser}
+        />
       ) : (
         <CommentsPreview
           comments={comments}
           projectName={projectName}
           showResolved={showResolved}
           mentionedThreadIds={mentionedThreadIds}
+          isClientUser={isClientUser}
         />
       )}
       {view === "all" && totalComments > comments.length && (
@@ -763,6 +792,7 @@ function CommentsPreview({
   projectName,
   showResolved,
   mentionedThreadIds,
+  isClientUser,
 }: {
   comments: CommentItem[];
   projectName: string;
@@ -771,6 +801,9 @@ function CommentsPreview({
    *  or any reply). Marked with an accent border + 🏷️ chip in the
    *  card head when present. Empty/undefined = no decoration. */
   mentionedThreadIds?: Set<string>;
+  /** When true, hide the "convert to task" affordance on each card —
+   *  clients can't create tasks. */
+  isClientUser?: boolean;
 }) {
   // Only top-level threads render in the preview; replies are reached via
   // the inline ThreadReplies control on each thread. When showResolved is
@@ -848,6 +881,7 @@ function CommentsPreview({
               resolved={c.resolved}
               body={c.body}
               deleteItemLabel="את התגובה"
+              canConvertToTask={!isClientUser}
             />
           </div>
         </li>
@@ -870,9 +904,11 @@ function CommentsPreview({
 function MentionsPreview({
   mentions,
   showResolved,
+  isClientUser,
 }: {
   mentions: MentionItem[];
   showResolved: boolean;
+  isClientUser?: boolean;
 }) {
   // Filter behavior mirrors the page-level filter bar: default hides
   // resolved; toggle on to include them inline (fades via .is-resolved).
@@ -951,6 +987,7 @@ function MentionsPreview({
                 resolved={m.resolved}
                 body={m.body}
                 deleteItemLabel="את התיוג"
+                canConvertToTask={!isClientUser}
               />
             </div>
           </li>

@@ -1,7 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { tasksGet, tasksList, tasksPeopleList } from "@/lib/appsScript";
+import {
+  getMyProjects,
+  tasksGet,
+  tasksList,
+  tasksPeopleList,
+} from "@/lib/appsScript";
 import type { WorkTask } from "@/lib/appsScript";
 import { getProjectChatSpaceUrl } from "@/lib/projectsDirect";
 import TaskStatusCell from "@/components/TaskStatusCell";
@@ -33,14 +38,25 @@ export default async function TaskDetailPage({
   // When we're entering edit mode we need the people list for the
   // autocomplete datalist + chip picker. Parallel fetch — the people
   // call is cheap enough (~60 entries across the whole portfolio).
-  const [res, peopleRes] = await Promise.all([
+  // The access lookup runs alongside so we can bounce clients out
+  // before rendering any task UI.
+  const [res, peopleRes, accessRes] = await Promise.all([
     tasksGet(decodedId).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.toLowerCase().includes("not found")) return null;
       throw e;
     }),
     editing ? tasksPeopleList().catch(() => ({ ok: false, people: [] })) : null,
+    getMyProjects().catch(() => null),
   ]);
+  if (accessRes) {
+    const isClientUser =
+      !!accessRes.isClient &&
+      !accessRes.isAdmin &&
+      !accessRes.isStaff &&
+      !accessRes.isInternal;
+    if (isClientUser) redirect("/");
+  }
   if (!res) notFound();
 
   const t = res.task;

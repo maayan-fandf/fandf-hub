@@ -55,6 +55,10 @@ export default async function RootLayout({
   // truth for "who am I acting as". Next dedupes the `myProjects` call with
   // the one /page.tsx makes, so this is free when landing on the home page.
   let navProjects: Project[] = [];
+  // True only for col-E-only users (clients). Drives whether the
+  // `📋 משימות` top-nav link renders — clients don't see the task
+  // surface at all.
+  let isClientUser = false;
   if (email) {
     let viewAs = "";
     try {
@@ -70,6 +74,8 @@ export default async function RootLayout({
       // the nav dropdown is a personal view rather than dumping all 37
       // internal projects on every staff member.
       navProjects = scopeProjectsToPerson(data.projects, data.person, data.isClient);
+      isClientUser =
+        !!data.isClient && !data.isAdmin && !data.isStaff && !data.isInternal;
     } catch {
       navProjects = [];
     }
@@ -114,8 +120,8 @@ export default async function RootLayout({
                 📂 פרויקטים
               </Link>
             )}
-            {email && <NavMorningLink />}
-            {email && (
+            {email && !isClientUser && <NavMorningLink />}
+            {email && !isClientUser && (
               <ActiveLink
                 href="/tasks"
                 className="topnav-link topnav-link-with-badge"
