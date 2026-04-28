@@ -134,10 +134,15 @@ export default async function RootLayout({
               href="/inbox"
               className="topnav-link topnav-link-with-badge"
             >
-              🏷️ תיוגי לקוח
+              {/* Clients see this as "תיוגים שלי" — they don't think
+                  in terms of "tagging the client", they think in
+                  terms of "messages where I was tagged". Staff/admin
+                  keep the "תיוגי לקוח" label since for them it's the
+                  client-channel mentions inbox. */}
+              🏷️ {isClientUser ? "תיוגים שלי" : "תיוגי לקוח"}
               {email && <NavMentionBadge />}
             </ActiveLink>
-            {email && (
+            {email && !isClientUser && (
               <ActiveLink
                 href="/notifications"
                 className="topnav-link topnav-link-with-badge"
@@ -147,7 +152,7 @@ export default async function RootLayout({
               </ActiveLink>
             )}
             {email && <NavAdminLink />}
-            {dashboardUrl && (
+            {dashboardUrl && !isClientUser && (
               <a
                 href={dashboardUrl}
                 target="_blank"

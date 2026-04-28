@@ -1937,11 +1937,40 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
 }
 .discussion-client-foot {
   margin-top: 0.7rem;
-  /* Pin the "+ הודעה ללקוח" composer trigger flush with the right
-     edge of the section — same alignment as the internal tab's
-     "פתח ב- Google Chat ↗" foot link. */
+}
+/* Inline composer at the bottom of the client tab — visual twin of
+   the internal tab's InternalChatComposer. Single textarea + foot row
+   with byte counter + send button. The reply-textarea / reply-btn
+   primitives are shared with ChatReactionsRow's inline reply, so the
+   look stays in lockstep across both tabs. */
+.client-chat-composer {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.client-chat-composer-input {
+  resize: vertical;
+  min-height: 2.6rem;
+}
+.client-chat-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.client-chat-composer-foot .reply-error {
+  flex: 1 1 auto;
+}
+.client-chat-composer-foot .reply-count {
+  margin-inline-start: auto;
+}
+.client-chat-composer-foot .reply-btn {
+  white-space: nowrap;
 }
 .discussion-empty {
   padding: 1.1rem 0.5rem;

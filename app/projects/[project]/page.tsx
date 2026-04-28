@@ -11,7 +11,7 @@ import {
   type MentionItem,
   type MorningProject,
 } from "@/lib/appsScript";
-import CreateTaskDrawer from "@/components/CreateTaskDrawer";
+import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
@@ -785,7 +785,10 @@ function ClientChannel({
           a fully inline textarea ships in the next iteration. */}
       {view === "all" && (
         <div className="discussion-client-foot">
-          <CreateTaskDrawer project={projectName} />
+          <ClientChatComposer
+            project={projectName}
+            isClientUser={isClientUser}
+          />
         </div>
       )}
     </>

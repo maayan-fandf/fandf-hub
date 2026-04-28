@@ -8,6 +8,11 @@ import RoleChip from "./RoleChip";
 
 type Props = {
   project: string;
+  /** Renames the trigger button + modal title to "הודעה לצוות"
+   *  when the viewer is a client — the existing "ללקוח" copy reads
+   *  awkwardly when the client themselves is composing. Defaults to
+   *  false (staff/admin/internal — keep the legacy label). */
+  isClientUser?: boolean;
 };
 
 const MAX = 4000;
@@ -52,7 +57,11 @@ const CLOSED_PICKER: PickerState = { queryStart: -1, query: "", index: 0, top: 0
  * mention is dropped). Submitting goes through /api/tasks/create — same
  * sheet-append + Google Tasks dispatch path as a dashboard comment.
  */
-export default function CreateTaskDrawer({ project }: Props) {
+export default function CreateTaskDrawer({
+  project,
+  isClientUser = false,
+}: Props) {
+  const audienceLabel = isClientUser ? "לצוות" : "ללקוח";
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
@@ -397,9 +406,13 @@ export default function CreateTaskDrawer({ project }: Props) {
         type="button"
         className="btn-ghost btn-sm"
         onClick={openDrawer}
-        title="פרסם הודעה בערוץ הלקוח — נצפית גם ע״י הצוות הפנימי וגם ע״י הלקוח. לתקשורת פנימית בלבד — דרך הצ׳אט."
+        title={
+          isClientUser
+            ? "פרסם הודעה לצוות בפרוייקט"
+            : "פרסם הודעה בערוץ הלקוח — נצפית גם ע״י הצוות הפנימי וגם ע״י הלקוח. לתקשורת פנימית בלבד — דרך הצ׳אט."
+        }
       >
-        + הודעה ללקוח
+        + הודעה {audienceLabel}
       </button>
     );
   }
@@ -417,7 +430,7 @@ export default function CreateTaskDrawer({ project }: Props) {
     >
       <div className="create-task-modal" role="dialog" aria-modal="true">
         <div className="create-task-head">
-          <h2>הודעה חדשה ללקוח · {project}</h2>
+          <h2>הודעה חדשה {audienceLabel} · {project}</h2>
           <button
             type="button"
             className="create-task-close"
