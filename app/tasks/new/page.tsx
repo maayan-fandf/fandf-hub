@@ -28,6 +28,11 @@ type Search = {
    *  message body + a back-pointer link to land in the new task. */
   body?: string;
   title?: string;
+  /** When set, the form renders a second submit button "צור משימה
+   *  ונקה את ה-Gmail task" which marks this Google Task complete on
+   *  the user's default tasklist after the hub task is created. Only
+   *  set by the Gmail-origin convert flow. */
+  gmail_task_id?: string;
 };
 
 export default async function NewTaskPage({
@@ -137,6 +142,7 @@ export default async function NewTaskPage({
         defaultAssignees={seedAssignees}
         defaultTitle={seedTitle}
         fromComment={commentSeed?.id || ""}
+        cleanupGmailTaskId={(sp.gmail_task_id || "").trim()}
         people={peopleRes?.people ?? []}
         currentUserEmail={me}
       />

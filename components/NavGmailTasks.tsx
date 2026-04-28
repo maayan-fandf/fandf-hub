@@ -143,6 +143,11 @@ export default function NavGmailTasks() {
     const body = sections.join("\n\n");
     if (body) params.set("body", body);
     if (t.suggestedCompany) params.set("company", t.suggestedCompany);
+    // Pass the GT id through so the new-task form can offer a "create
+    // and clean up the GT" submit button. Without this param the form
+    // shows just the regular submit; the user keeps managing the GT
+    // themselves via the ✓ button here or the native Tasks app.
+    if (t.id) params.set("gmail_task_id", t.id);
     // Convert opens the new-task form with prefill, but leaves the GT
     // ALONE in the user's Google Tasks list. The list here is a live
     // mirror — items only drop when the user explicitly marks them

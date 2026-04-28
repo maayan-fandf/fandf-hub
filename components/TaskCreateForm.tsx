@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
@@ -39,6 +39,7 @@ export default function TaskCreateForm({
   defaultAssignees = "",
   defaultTitle = "",
   fromComment = "",
+  cleanupGmailTaskId = "",
   people,
   currentUserEmail,
 }: {
@@ -63,12 +64,23 @@ export default function TaskCreateForm({
    *  server migrates the source comment + its replies under the new
    *  task. Empty string skips the migration (plain create). */
   fromComment?: string;
+  /** Google Task id (on user's default tasklist) to mark complete after
+   *  successful task creation, IF the user clicks the "צור ונקה" submit
+   *  button instead of the regular one. Set only by the Gmail-origin
+   *  convert flow. Empty string hides the second submit button. */
+  cleanupGmailTaskId?: string;
   people: TasksPerson[];
   currentUserEmail: string;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tracks which submit button the user pressed last. The form only has
+  // one onSubmit handler, so the buttons set this ref *before* the
+  // submit fires (onClick precedes form submission in the DOM event
+  // ordering). After a successful create we read this to decide whether
+  // to also clean up the originating Google Task.
+  const submitModeRef = useRef<"plain" | "cleanup">("plain");
 
   // Company → list-of-projects index, for the cascading dropdowns.
   const byCompany = useMemo(() => {
@@ -281,6 +293,20 @@ export default function TaskCreateForm({
         throw new Error(
           "error" in data ? data.error : "Failed to create task",
         );
+      }
+      // Best-effort GT cleanup if the user clicked "צור ונקה". We don't
+      // gate navigation on this — if the dismiss 403s (scope missing)
+      // the hub task still got created, which is the part the user
+      // actually cares about.
+      if (
+        submitModeRef.current === "cleanup" &&
+        cleanupGmailTaskId
+      ) {
+        void fetch("/api/gmail-tasks/dismiss", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ taskId: cleanupGmailTaskId }),
+        }).catch(() => {});
       }
       router.push(`/tasks/${encodeURIComponent(data.task.id)}`);
     } catch (e) {
@@ -552,9 +578,29 @@ export default function TaskCreateForm({
       )}
 
       <div className="task-form-actions">
-        <button type="submit" className="btn-primary" disabled={saving}>
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={saving}
+          onClick={() => {
+            submitModeRef.current = "plain";
+          }}
+        >
           {saving ? "יוצר…" : "צור משימה"}
         </button>
+        {cleanupGmailTaskId && (
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={saving}
+            onClick={() => {
+              submitModeRef.current = "cleanup";
+            }}
+            title="יצירת משימה ב-Hub + סימון משימת ה-Google Tasks המקורית כהושלמה"
+          >
+            {saving ? "יוצר…" : "צור משימה ונקה את ה-Gmail task"}
+          </button>
+        )}
       </div>
     </form>
   );
