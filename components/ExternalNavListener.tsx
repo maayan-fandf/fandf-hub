@@ -52,19 +52,21 @@ export default function ExternalNavListener() {
       }
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
       if (!ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) return;
-      // Try new-tab first (preserves the hub). The user-activation
+      // Open in a new tab (preserves the hub). The user-activation
       // from the originating click typically still propagates here
-      // because the postMessage event is dispatched synchronously,
-      // but if a popup blocker rejects window.open, fall back to
-      // navigating the hub itself — the user can hit back to return.
-      const popup = window.open(
-        parsed.toString(),
-        "_blank",
-        "noopener,noreferrer",
-      );
-      if (!popup) {
-        window.location.href = parsed.toString();
-      }
+      // because the postMessage event is dispatched synchronously.
+      //
+      // We DO NOT fall back to window.location.href when window.open
+      // returns null — when the `noopener` feature is set, window
+      // .open *always* returns null even on success (the spec
+      // requires breaking the opener relationship, which means no
+      // reference can be returned to the caller). Treating the null
+      // return as "popup blocked" sent the hub navigating away
+      // every single click in addition to the new tab. If a real
+      // popup blocker rejects this, the user has middle-click and
+      // right-click → "Open in new tab" as alternatives — both
+      // bypass any onclick handler and use the link's href directly.
+      window.open(parsed.toString(), "_blank", "noopener,noreferrer");
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
