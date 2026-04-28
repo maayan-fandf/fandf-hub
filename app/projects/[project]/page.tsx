@@ -717,11 +717,6 @@ function ClientChannel({
     <>
       <div className="section-head section-head-inner">
         <div className="discussion-head-tools">
-          {/* "+ הודעה ללקוח" lives here, not in the page header — the
-              action only writes to client-tab data, so it belongs in
-              the client tab's chrome. Internal users post to Chat
-              directly via the "פתח בצ׳אט" button on the internal tab. */}
-          <CreateTaskDrawer project={projectName} />
           <div className="tasks-view-toggle" role="tablist">
             <Link
               role="tab"
@@ -783,6 +778,16 @@ function ClientChannel({
           מציג {comments.length} מתוך {totalComments}
         </div>
       )}
+      {/* Composer at the bottom — mirrors the internal Chat tab's
+          inline composer position so both surfaces feel the same.
+          For now the trigger is still the existing CreateTaskDrawer
+          modal (one-shot post with title + body + assignees + due);
+          a fully inline textarea ships in the next iteration. */}
+      {view === "all" && (
+        <div className="discussion-client-foot">
+          <CreateTaskDrawer project={projectName} />
+        </div>
+      )}
     </>
   );
 }
@@ -831,69 +836,75 @@ function CommentsPreview({
     );
   }
   return (
-    <ul className="compact-list">
+    <ul className="chat-message-list discussion-client-list">
       {top.map((c) => {
         const isMentioned = mentionedThreadIds?.has(c.comment_id) ?? false;
         return (
-        <li
-          key={c.comment_id}
-          className={`compact-comment ${c.resolved ? "is-resolved" : ""} ${
-            isMentioned ? "is-mentioned" : ""
-          }`}
-        >
-          <div className="compact-comment-head">
-            <Avatar name={c.author_email} title={c.author_name || c.author_email} size={22} />
-            <span className="author">{c.author_name || c.author_email}</span>
-            {isMentioned && (
-              <span
-                className="chip chip-mention"
-                title="תויגת בשרשור הזה"
-              >
-                🏷️ אותך
-              </span>
-            )}
-            <span className="time" title={c.timestamp}>
-              {formatRelative(c.timestamp)}
-            </span>
-            <ThreadReplies
-              parentCommentId={c.comment_id}
-              project={c.project}
-              count={c.reply_count}
+          <li
+            key={c.comment_id}
+            className={`chat-thread discussion-client-thread ${
+              c.resolved ? "is-resolved" : ""
+            } ${isMentioned ? "is-mentioned" : ""}`}
+          >
+            <Avatar
+              name={c.author_email}
+              title={c.author_name || c.author_email}
+              size={26}
             />
-            {c.edited_at && (
-              <span
-                className="chip chip-muted"
-                title={`נערך ${formatRelative(c.edited_at)}`}
-              >
-                📝 נערך
-              </span>
-            )}
-          </div>
-          <CommentBody
-            body={c.body}
-            truncateChars={220}
-            className="compact-comment-body"
-          />
-          <div className="compact-comment-actions">
-            <CardActions
-              commentId={c.comment_id}
-              project={c.project}
-              resolved={c.resolved}
-              body={c.body}
-              deleteItemLabel="את התגובה"
-              canConvertToTask={!isClientUser}
-            />
-          </div>
-        </li>
+            <div className="chat-message-body">
+              <div className="chat-message-head">
+                <span className="chat-message-author">
+                  {c.author_name || c.author_email}
+                </span>
+                {isMentioned && (
+                  <span className="chip chip-mention" title="תויגת בשרשור הזה">
+                    🏷️ אותך
+                  </span>
+                )}
+                <span className="chat-message-time" title={c.timestamp}>
+                  {formatRelative(c.timestamp)}
+                </span>
+                <ThreadReplies
+                  parentCommentId={c.comment_id}
+                  project={c.project}
+                  count={c.reply_count}
+                />
+                {c.edited_at && (
+                  <span
+                    className="chip chip-muted"
+                    title={`נערך ${formatRelative(c.edited_at)}`}
+                  >
+                    📝 נערך
+                  </span>
+                )}
+              </div>
+              <CommentBody
+                body={c.body}
+                truncateChars={220}
+                className="chat-message-text"
+              />
+              <div className="discussion-client-actions">
+                <CardActions
+                  commentId={c.comment_id}
+                  project={c.project}
+                  resolved={c.resolved}
+                  body={c.body}
+                  deleteItemLabel="את התגובה"
+                  canConvertToTask={!isClientUser}
+                />
+              </div>
+            </div>
+          </li>
         );
       })}
       {resolvedCount > 0 && !showResolved && (
-        <li className="compact-comment compact-comment-footer">
+        <li className="chat-thread discussion-client-thread-footer">
           <Link
             href={`/projects/${encodeURIComponent(projectName)}/timeline?resolved=1`}
             className="section-link"
           >
-            + הצג {resolvedCount} {resolvedCount === 1 ? "הערה פתורה" : "הערות פתורות"} בציר הזמן ←
+            + הצג {resolvedCount}{" "}
+            {resolvedCount === 1 ? "הערה פתורה" : "הערות פתורות"} בציר הזמן ←
           </Link>
         </li>
       )}
@@ -936,67 +947,71 @@ function MentionsPreview({
     );
   }
   return (
-    <ul className="compact-list">
+    <ul className="chat-message-list discussion-client-list">
       {top.map((m) => {
         // Resolve/delete target the thread root — only top-level comments
         // are resolvable/deletable. Falls back to comment_id for older API
         // responses that don't include thread_root_id.
-        const actionTarget =
-          m.thread_root_id || m.parent_id || m.comment_id;
+        const actionTarget = m.thread_root_id || m.parent_id || m.comment_id;
         return (
           <li
             key={m.comment_id}
-            className={`compact-comment ${m.resolved ? "is-resolved" : ""}`}
+            className={`chat-thread discussion-client-thread ${
+              m.resolved ? "is-resolved" : ""
+            } is-mentioned`}
           >
-            <div className="compact-comment-head">
-              <Avatar
-                name={m.author_email}
-                title={m.author_name || m.author_email}
-                size={22}
-              />
-              <span className="author">
-                {m.author_name || m.author_email}
-              </span>
-              {m.edited_at && (
-                <span
-                  className="chip chip-muted"
-                  title={`נערך ${formatRelative(m.edited_at)}`}
-                >
-                  📝 נערך
-                </span>
-              )}
-              <span className="time" title={m.timestamp}>
-                {formatRelative(m.timestamp)}
-              </span>
-              <ThreadReplies
-                parentCommentId={actionTarget}
-                project={m.project}
-                count={m.reply_count ?? 0}
-              />
-            </div>
-            <CommentBody
-              body={m.body}
-              truncateChars={200}
-              className="compact-comment-body"
+            <Avatar
+              name={m.author_email}
+              title={m.author_name || m.author_email}
+              size={26}
             />
-            <div className="compact-comment-actions">
-              <CardActions
-                commentId={actionTarget}
-                project={m.project}
-                editCommentId={m.comment_id}
-                resolved={m.resolved}
+            <div className="chat-message-body">
+              <div className="chat-message-head">
+                <span className="chat-message-author">
+                  {m.author_name || m.author_email}
+                </span>
+                {m.edited_at && (
+                  <span
+                    className="chip chip-muted"
+                    title={`נערך ${formatRelative(m.edited_at)}`}
+                  >
+                    📝 נערך
+                  </span>
+                )}
+                <span className="chat-message-time" title={m.timestamp}>
+                  {formatRelative(m.timestamp)}
+                </span>
+                <ThreadReplies
+                  parentCommentId={actionTarget}
+                  project={m.project}
+                  count={m.reply_count ?? 0}
+                />
+              </div>
+              <CommentBody
                 body={m.body}
-                deleteItemLabel="את התיוג"
-                canConvertToTask={!isClientUser}
+                truncateChars={200}
+                className="chat-message-text"
               />
+              <div className="discussion-client-actions">
+                <CardActions
+                  commentId={actionTarget}
+                  project={m.project}
+                  editCommentId={m.comment_id}
+                  resolved={m.resolved}
+                  body={m.body}
+                  deleteItemLabel="את התיוג"
+                  canConvertToTask={!isClientUser}
+                />
+              </div>
             </div>
           </li>
         );
       })}
       {resolvedCount > 0 && !showResolved && (
-        <li className="compact-comment compact-comment-footer">
+        <li className="chat-thread discussion-client-thread-footer">
           <Link href="/inbox?resolved=1" className="section-link">
-            + הצג {resolvedCount} {resolvedCount === 1 ? "תיוג פתור" : "תיוגים פתורים"} בתיבת התיוגים ←
+            + הצג {resolvedCount}{" "}
+            {resolvedCount === 1 ? "תיוג פתור" : "תיוגים פתורים"} בתיבת התיוגים ←
           </Link>
         </li>
       )}

@@ -1884,6 +1884,65 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   margin-top: 0.6rem;
   text-align: end;
 }
+/* Client-tab message list — uses the chat-message-list / chat-thread
+   primitives for visual parity with the internal Chat tab. Per-thread
+   variants for resolved (faded) + mentioned (accent border) carry over
+   from the legacy compact-comment look. */
+.discussion-client-list {
+  /* The internal tab's list grows from a Chat-paged feed; the comments
+     feed is always pre-trimmed by the page. Drop the max-height clip
+     so the bubble list flows with the section instead of inviting an
+     internal scrollbar that fights the page scroll. */
+  max-height: none;
+  overflow-y: visible;
+}
+.discussion-client-thread.is-resolved {
+  opacity: 0.55;
+}
+.discussion-client-thread.is-resolved .chat-message-author {
+  text-decoration: line-through;
+}
+.discussion-client-thread.is-mentioned {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+.discussion-client-actions {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  /* Hidden by default; reveals on row hover (always-on for touch).
+     Mirrors the internal-tab .chat-message-actions affordance so a
+     resting message is just text + author + time, no icon chrome. */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.discussion-client-thread:hover .discussion-client-actions,
+.discussion-client-thread:focus-within .discussion-client-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .discussion-client-actions { opacity: 1; }
+}
+.discussion-client-thread-footer {
+  /* The "show N resolved" footer renders as a single column inside the
+     grid template — center the link instead of forcing it into the
+     avatar | body layout. */
+  display: block;
+  background: transparent;
+  border: 1px dashed var(--border);
+  text-align: center;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.85em;
+}
+.discussion-client-foot {
+  margin-top: 0.7rem;
+  /* Pin the "+ הודעה ללקוח" composer trigger flush with the right
+     edge of the section — same alignment as the internal tab's
+     "פתח ב- Google Chat ↗" foot link. */
+  display: flex;
+  justify-content: flex-end;
+}
 .discussion-empty {
   padding: 1.1rem 0.5rem;
   text-align: center;
