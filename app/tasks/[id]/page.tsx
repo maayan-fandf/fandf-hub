@@ -8,7 +8,7 @@ import {
   tasksPeopleList,
 } from "@/lib/appsScript";
 import type { WorkTask } from "@/lib/appsScript";
-import { getProjectChatSpaceUrl } from "@/lib/projectsDirect";
+import { getSharedDriveName } from "@/lib/driveFolders";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
@@ -17,6 +17,7 @@ import TaskAttachments from "@/components/TaskAttachments";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
 import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
+import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
@@ -69,19 +70,25 @@ export default async function TaskDetailPage({
   // from; readCommentsTab is now per-request cached so this is
   // effectively free.
   //
-  // Also: project Chat space URL — derived from the Keys "Chat Webhook"
-  // cell. Reads Keys (cached) so it doesn't add a Sheets call when
-  // anything else on the page already touched Keys.
+  // Also: shared-drive display name — used to build the Drive Desktop
+  // local path for the "copy path" button (mirrors the pattern used by
+  // /tasks and /projects/[name]).
   const session = await auth();
   const subjectEmail = session?.user?.email ?? "";
-  const [roundChain, chatSpaceUrl] = await Promise.all([
+  const [roundChain, driveName] = await Promise.all([
     t.round_number > 1 || t.parent_id
       ? fetchRoundChain(t).catch(() => [])
       : Promise.resolve([]),
     subjectEmail
-      ? getProjectChatSpaceUrl(subjectEmail, t.project).catch(() => "")
+      ? getSharedDriveName(subjectEmail).catch(() => "")
       : Promise.resolve(""),
   ]);
+  const localPath =
+    driveName && t.project
+      ? `G:\\Shared drives\\${driveName}\\${t.company || ""}\\${t.project}${
+          t.campaign ? `\\${t.campaign}` : ""
+        }`
+      : "";
 
   return (
     <main className="container">
@@ -135,17 +142,6 @@ export default async function TaskDetailPage({
           </div>
         </div>
         <div className="header-actions">
-          {chatSpaceUrl && (
-            <a
-              href={chatSpaceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-ghost btn-sm"
-              title={`פתח את חלל ה-Chat של ${t.project}`}
-            >
-              💬 פתח ב-Chat
-            </a>
-          )}
           {t.drive_folder_url && (
             <a
               href={t.drive_folder_url}
@@ -155,6 +151,12 @@ export default async function TaskDetailPage({
             >
               <GoogleDriveIcon size="1.05em" /> תיקיית קבצים
             </a>
+          )}
+          {localPath && (
+            <CopyLocalPathButton
+              path={localPath}
+              title="העתק נתיב מקומי — Drive Desktop"
+            />
           )}
           {!editing && (
             <Link

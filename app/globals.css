@@ -6789,12 +6789,63 @@ html[data-theme="dark"] .tasks-dept-chip {
 }
 
 /* ── Task attachments (uploads from the discussion composer) ───── */
+.task-attachments-dropzone {
+  position: relative;
+}
+.task-attachments-dropzone.is-dragging-over .task-attachments {
+  border-color: var(--accent, #2a66d9);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--accent, #2a66d9) 6%, var(--surface));
+}
+.task-attachments-dropzone-overlay {
+  position: absolute;
+  inset: 1.2em 0 1em 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.1em;
+  color: var(--accent, #2a66d9);
+  background: color-mix(in srgb, var(--accent, #2a66d9) 14%, transparent);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 1;
+}
+.task-attachments-dropzone-status {
+  display: flex;
+  align-items: center;
+  gap: .8em;
+  margin: 1.2em 0 -.6em;
+  padding: .5em .8em;
+  font-size: .92em;
+  color: var(--muted);
+  background: var(--surface-soft, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.task-attachments-dropzone-error {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  color: var(--danger, #b91c1c);
+}
+.task-attachments-dropzone-error-dismiss {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font-size: .9em;
+  padding: 0 .3em;
+  line-height: 1;
+}
+.task-attachments-dropzone-error-dismiss:hover { opacity: .7; }
 .task-attachments {
   margin: 1.2em 0 1em;
   padding: .9em 1em;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
+  transition: border-color .15s ease, background-color .15s ease;
 }
 .task-attachments-head {
   display: flex;

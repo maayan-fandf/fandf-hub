@@ -1,5 +1,6 @@
 import { listTaskAttachments } from "@/lib/taskUpload";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
+import TaskAttachmentsDropzone from "@/components/TaskAttachmentsDropzone";
 
 type Props = {
   taskId: string;
@@ -50,6 +51,7 @@ export default async function TaskAttachments({
   const folderLink = result.folderUrl || driveFolderUrl || "";
 
   return (
+    <TaskAttachmentsDropzone taskId={taskId} enabled={!!driveFolderId}>
     <div className="task-attachments">
       <header className="task-attachments-head">
         <h3>📁 קבצים מהדיון</h3>
@@ -73,7 +75,7 @@ export default async function TaskAttachments({
 
       {!error && result.files.length === 0 && (
         <p className="task-attachments-empty-hint muted">
-          אין עדיין קבצים מהדיון. כשתדביק/י צילום או תגרור/י קובץ לאזור הדיון, הוא יישמר כאן.
+          אין עדיין קבצים מהדיון. גרור/י לכאן קובץ, או הדבק/י צילום באזור הדיון, והוא יישמר כאן.
         </p>
       )}
 
@@ -119,5 +121,6 @@ export default async function TaskAttachments({
         </ul>
       )}
     </div>
+    </TaskAttachmentsDropzone>
   );
 }
