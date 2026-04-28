@@ -1984,16 +1984,21 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   font-size: 0.78em;
 }
 
-/* Composer at the bottom of the internal Chat tab. Visually echoes
-   the reply-drawer styling so the surface feels familiar to anyone
-   who's used the client-tab reply box. */
+/* Composer at the bottom of the internal Chat tab. Same bordered-
+   box framing as .client-chat-composer on the client tab — the two
+   surfaces should read as one product. The previous dashed-top-
+   divider variant let the composer bleed into the messages above
+   visually; the box version reads as a clearly separate "input"
+   region. */
 .chat-composer {
   margin-top: 0.85rem;
-  padding-top: 0.85rem;
-  border-top: 1px dashed var(--border);
+  padding: 0.55rem 0.65rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
 }
 .chat-composer-foot {
   display: flex;
@@ -2544,7 +2549,11 @@ html[data-theme="dark"] .chat-thread-reply {
     opacity: 0.7;
   }
 }
-/* "+ react" button — opens the inline emoji picker. */
+/* "+ react" button — opens the inline emoji picker.
+   Hover styling matches .card-action on the client tab: borderless
+   resting state, accent-soft background fill on hover. The previous
+   dashed-circle look read as visually heavier than the client
+   tab's restful icon row. */
 .chat-reaction-add {
   appearance: none;
   display: inline-flex;
@@ -2554,19 +2563,17 @@ html[data-theme="dark"] .chat-thread-reply {
   height: 26px;
   padding: 0;
   border-radius: 999px;
-  border: 1px dashed var(--border);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   font-size: 1em;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, border-style 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .chat-reaction-add:hover:not(:disabled) {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: var(--accent);
-  border-style: solid;
 }
 .chat-reaction-add:disabled {
   opacity: 0.5;
@@ -2575,14 +2582,12 @@ html[data-theme="dark"] .chat-thread-reply {
 /* When ConvertChatMessageToTaskButton / EditChatMessageDrawer /
    DeleteChatMessageButton render inside the inline reactions row,
    match the +/↩ buttons' shape so the row reads as a single set
-   of icon controls (same size, same dashed-pill resting state).
-   Without this, the legacy 22×22 squared pills look mismatched
-   next to the 26×26 dashed circles. */
+   of icon controls (same size, same borderless resting state). */
 .chat-reactions .chat-message-action {
   width: 26px;
   height: 26px;
   border-radius: 999px;
-  border: 1px dashed var(--border);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   font-size: 1em;
@@ -2590,14 +2595,42 @@ html[data-theme="dark"] .chat-thread-reply {
 .chat-reactions .chat-message-action:hover {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: var(--accent);
-  border-style: solid;
 }
 .chat-reactions .chat-message-action-danger:hover {
   background: rgba(239, 68, 68, 0.12);
-  border-color: rgb(239, 68, 68);
-  border-style: solid;
   color: rgb(239, 68, 68);
+}
+/* Auto-hide the action buttons until the row is hovered/focused.
+   Reaction chips (existing reactions with counts) stay visible
+   because they're informational, not actions. Mirrors the
+   .discussion-client-actions visibility model on the client tab so
+   resting messages on both surfaces read as just text + author +
+   time, no icon chrome. Touch devices keep them visible since
+   there's no hover state. */
+.chat-thread .chat-reaction-add,
+.chat-thread .chat-reactions .chat-message-action,
+.chat-thread-reply .chat-reaction-add,
+.chat-thread-reply .chat-reactions .chat-message-action {
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.chat-thread:hover .chat-reaction-add,
+.chat-thread:hover .chat-reactions .chat-message-action,
+.chat-thread:focus-within .chat-reaction-add,
+.chat-thread:focus-within .chat-reactions .chat-message-action,
+.chat-thread-reply:hover .chat-reaction-add,
+.chat-thread-reply:hover .chat-reactions .chat-message-action,
+.chat-thread-reply:focus-within .chat-reaction-add,
+.chat-thread-reply:focus-within .chat-reactions .chat-message-action {
+  opacity: 1;
+}
+@media (hover: none) {
+  .chat-thread .chat-reaction-add,
+  .chat-thread .chat-reactions .chat-message-action,
+  .chat-thread-reply .chat-reaction-add,
+  .chat-thread-reply .chat-reactions .chat-message-action {
+    opacity: 1;
+  }
 }
 /* Inline emoji picker — small grid of common emojis. */
 .chat-reaction-picker {
