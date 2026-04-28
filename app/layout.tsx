@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
+import ExternalNavListener from "@/components/ExternalNavListener";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavBellBadge from "@/components/NavBellBadge";
@@ -193,6 +194,11 @@ export default async function RootLayout({
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
         <KeyboardHelp />
+        {/* Listens for postMessage from nested iframes asking the hub
+            to navigate to a whitelisted external URL. The dashboard's
+            ads / pacing links use this to escape Apps Script's
+            sandboxed iframe — see components/ExternalNavListener.tsx. */}
+        <ExternalNavListener />
       </body>
     </html>
   );
