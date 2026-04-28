@@ -294,19 +294,25 @@ export default function TaskCreateForm({
           "error" in data ? data.error : "Failed to create task",
         );
       }
-      // Best-effort GT cleanup if the user clicked "צור ונקה". We don't
-      // gate navigation on this — if the dismiss 403s (scope missing)
-      // the hub task still got created, which is the part the user
-      // actually cares about.
+      // GT cleanup if the user clicked "צור ונקה". Awaited (not fire-
+      // and-forget) because router.push races the request — a navigation
+      // that fires before the fetch handshake completes will sometimes
+      // cancel it mid-flight, which would silently skip the dismiss.
+      // Errors here don't block navigation — the hub task creation is
+      // already committed.
       if (
         submitModeRef.current === "cleanup" &&
         cleanupGmailTaskId
       ) {
-        void fetch("/api/gmail-tasks/dismiss", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ taskId: cleanupGmailTaskId }),
-        }).catch(() => {});
+        try {
+          await fetch("/api/gmail-tasks/dismiss", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ taskId: cleanupGmailTaskId }),
+          });
+        } catch {
+          /* navigate anyway */
+        }
       }
       router.push(`/tasks/${encodeURIComponent(data.task.id)}`);
     } catch (e) {
