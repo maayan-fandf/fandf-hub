@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
   getMyProjects,
+  getProjectAdLinks,
   tasksGet,
   tasksList,
   tasksPeopleList,
@@ -75,13 +76,21 @@ export default async function TaskDetailPage({
   // /tasks and /projects/[name]).
   const session = await auth();
   const subjectEmail = session?.user?.email ?? "";
-  const [roundChain, driveName] = await Promise.all([
+  // Internal-or-admin gate for the ad-platform buttons. Clients shouldn't
+  // see ad-platform deep-links; for staff who aren't internal-domain we
+  // still skip the buttons (they don't have @fandf.co.il Google sessions
+  // that the authuser= hint helps anyway).
+  const showAdLinks = !!accessRes && (accessRes.isAdmin || accessRes.isInternal);
+  const [roundChain, driveName, adLinks] = await Promise.all([
     t.round_number > 1 || t.parent_id
       ? fetchRoundChain(t).catch(() => [])
       : Promise.resolve([]),
     subjectEmail
       ? getSharedDriveName(subjectEmail).catch(() => "")
       : Promise.resolve(""),
+    showAdLinks && t.project
+      ? getProjectAdLinks(t.project).catch(() => null)
+      : Promise.resolve(null),
   ]);
   const localPath =
     driveName && t.project
@@ -142,6 +151,42 @@ export default async function TaskDetailPage({
           </div>
         </div>
         <div className="header-actions">
+          {adLinks?.gAdsUrl && (
+            <a
+              href={adLinks.gAdsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-ghost btn-sm"
+              title={
+                adLinks.gAdsAcctName
+                  ? `Google Ads — ${adLinks.gAdsAcctName}` +
+                    (adLinks.adCampaignPatterns.length
+                      ? `\nתבניות קמפיין: ${adLinks.adCampaignPatterns.join(", ")}`
+                      : "")
+                  : "פתח ב-Google Ads"
+              }
+            >
+              🔍 Google Ads
+            </a>
+          )}
+          {adLinks?.fbAdsUrl && (
+            <a
+              href={adLinks.fbAdsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-ghost btn-sm"
+              title={
+                adLinks.fbAcctName
+                  ? `Facebook Ads — ${adLinks.fbAcctName}` +
+                    (adLinks.adCampaignPatterns.length
+                      ? `\nתבניות קמפיין: ${adLinks.adCampaignPatterns.join(", ")}`
+                      : "")
+                  : "פתח ב-Facebook Ads"
+              }
+            >
+              📘 Facebook Ads
+            </a>
+          )}
           {t.drive_folder_url && (
             <a
               href={t.drive_folder_url}

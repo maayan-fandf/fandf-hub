@@ -1046,6 +1046,28 @@ export async function getTaskCampaigns(
   return tasksCampaignsDirect(user, project);
 }
 
+/** Resolved "Open in Google Ads / Facebook Ads" deep-links for a single
+ *  project. Caller must be internal (or admin) AND have access to the
+ *  project — Apps Script enforces both gates server-side. Empty URLs mean
+ *  the project has no FB/Google account name in Keys, or the name didn't
+ *  resolve in the Accounts-lookup sheet. The pattern list is surfaced in
+ *  the button tooltip so a user can paste it into the platform's native
+ *  search if the URL filter doesn't fully scope the campaigns. */
+export type ProjectAdLinks = {
+  project: string;
+  fbAdsUrl: string;
+  gAdsUrl: string;
+  fbAcctName: string;
+  gAdsAcctName: string;
+  adCampaignPatterns: string[];
+};
+
+export async function getProjectAdLinks(
+  project: string,
+): Promise<ProjectAdLinks> {
+  return callApi<ProjectAdLinks>("projectAdLinks", { project });
+}
+
 export function tasksUpdate(
   id: string,
   patch: TasksUpdatePatch,
