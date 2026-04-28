@@ -823,17 +823,17 @@ function ClientChannel({
       )}
       {/* Composer at the bottom — mirrors the internal Chat tab's
           inline composer position so both surfaces feel the same.
-          For now the trigger is still the existing CreateTaskDrawer
-          modal (one-shot post with title + body + assignees + due);
-          a fully inline textarea ships in the next iteration. */}
-      {view === "all" && (
-        <div className="discussion-client-foot">
-          <ClientChatComposer
-            project={projectName}
-            isClientUser={isClientUser}
-          />
-        </div>
-      )}
+          Rendered in both view modes ("הכל" and "תיוגים שלי"): users
+          should be able to post regardless of which filter they have
+          on. (Previous gate to view==="all" hid the composer whenever
+          the page auto-flipped to "תיוגים שלי" because the user had
+          open mentions — broke the chat-feeling on busy projects.) */}
+      <div className="discussion-client-foot">
+        <ClientChatComposer
+          project={projectName}
+          isClientUser={isClientUser}
+        />
+      </div>
     </>
   );
 }
