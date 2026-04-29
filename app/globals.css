@@ -7896,6 +7896,18 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   max-width: 22em;
   opacity: 1;
 }
+/* While ANY card is being dragged, expand every empty column so the
+   user has a real-sized drop target — without this, the empty
+   column's hover-expand never fires (cursor is on the dragged card,
+   not the column), and a 7em-wide slim pill is borderline impossible
+   to drop into. The dragged card always carries .is-dragging while
+   in flight; :has() is well-supported across modern browsers. */
+.kanban-board:has(.kanban-card.is-dragging) .kanban-column[data-empty="1"] {
+  flex: 0 0 14em;
+  min-width: 14em;
+  max-width: 22em;
+  opacity: 1;
+}
 @media (max-width: 640px) {
   /* On mobile the board is already stacked vertically; force empty
      columns back to full width so taps land cleanly. */
