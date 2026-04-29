@@ -320,6 +320,17 @@ export default async function TasksPage({
           requested_date_from: sp.requested_date_from || "",
           requested_date_to: sp.requested_date_to || "",
         }}
+        // Presentational params that aren't filter inputs but need to
+        // ride through a form submission so submitting the filter
+        // doesn't bounce the user out of kanban / sort / "show all"
+        // back to the defaults.
+        passthrough={{
+          view: sp.view || "",
+          sort: sp.sort || "",
+          order: sp.order || "",
+          mine: sp.mine || "",
+          month: sp.month || "",
+        }}
         companies={companyOptions}
         projects={projectOptions}
         departments={departmentOptions}
@@ -460,6 +471,7 @@ function buildHref(
 
 function TasksFilterBar({
   current,
+  passthrough,
   companies,
   projects,
   departments,
@@ -481,6 +493,18 @@ function TasksFilterBar({
     campaign: string;
     requested_date_from: string;
     requested_date_to: string;
+  };
+  /** Presentational URL params (view / sort / order / mine / month)
+   *  that the form submission must preserve. The previous form was
+   *  submitting to /tasks with only the visible filter fields, which
+   *  silently dropped ?view=kanban / ?sort / etc. — every filter
+   *  edit bounced the user back to the default table view. */
+  passthrough: {
+    view: string;
+    sort: string;
+    order: string;
+    mine: string;
+    month: string;
   };
   companies: string[];
   projects: string[];
@@ -530,6 +554,27 @@ function TasksFilterBar({
         )}
       </summary>
       <form method="GET" action="/tasks" className="tasks-filter-bar">
+      {/* Hidden passthrough inputs — preserve view / sort / order /
+          mine / month across filter submissions. Without these, every
+          filter edit drops the user back to /tasks (table view, role
+          default), which was misread as "kanban is broken". Empty
+          values are still emitted as empty inputs so the URL stays
+          predictable; the server treats "" the same as absent. */}
+      {passthrough.view && (
+        <input type="hidden" name="view" value={passthrough.view} />
+      )}
+      {passthrough.sort && (
+        <input type="hidden" name="sort" value={passthrough.sort} />
+      )}
+      {passthrough.order && (
+        <input type="hidden" name="order" value={passthrough.order} />
+      )}
+      {passthrough.mine && (
+        <input type="hidden" name="mine" value={passthrough.mine} />
+      )}
+      {passthrough.month && (
+        <input type="hidden" name="month" value={passthrough.month} />
+      )}
       {/* Field order: project/categorization first, then people in a
           visually-grouped <fieldset>. The four people-related axes
           (כותב / עובד מבצע / מאשר / מעורב במשימה) live together so
