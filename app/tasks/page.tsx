@@ -20,6 +20,7 @@ import TasksKanban from "@/components/TasksKanban";
 import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
 import TasksArchiveToggle from "@/components/TasksArchiveToggle";
+import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
 
 export const dynamic = "force-dynamic";
 
@@ -161,14 +162,25 @@ export default async function TasksPage({
   const companyOptions = Array.from(
     new Set(allProjects.map((p) => p.company).filter(Boolean)),
   ).sort();
-  const projectOptions = Array.from(
-    new Set(
-      (sp.company
-        ? allProjects.filter((p) => p.company === sp.company)
-        : allProjects
-      ).map((p) => p.name),
-    ),
+  // Full deduped sorted project list — used by the filter UI as the
+  // "no-company-selected" pool. Live-narrowing on the client uses the
+  // companyToProjects map below so users don't wait for a server hop.
+  const allProjectNames = Array.from(
+    new Set(allProjects.map((p) => p.name)),
   ).sort();
+  const companyToProjects = (() => {
+    const m: Record<string, string[]> = {};
+    for (const p of allProjects) {
+      const c = p.company || "";
+      if (!c) continue;
+      if (!m[c]) m[c] = [];
+      m[c].push(p.name);
+    }
+    for (const k of Object.keys(m)) {
+      m[k] = Array.from(new Set(m[k])).sort();
+    }
+    return m;
+  })();
   const people = peopleRes?.people ?? [];
   // Departments derived from the live `Role` column on names-to-emails
   // (same source TaskCreateForm uses). Falls back to the legacy hardcoded
@@ -332,7 +344,8 @@ export default async function TasksPage({
           month: sp.month || "",
         }}
         companies={companyOptions}
-        projects={projectOptions}
+        allProjectNames={allProjectNames}
+        companyToProjects={companyToProjects}
         departments={departmentOptions}
         people={people}
         campaignOptions={Array.from(
@@ -473,7 +486,8 @@ function TasksFilterBar({
   current,
   passthrough,
   companies,
-  projects,
+  allProjectNames,
+  companyToProjects,
   departments,
   people,
   campaignOptions,
@@ -507,7 +521,14 @@ function TasksFilterBar({
     month: string;
   };
   companies: string[];
-  projects: string[];
+  /** All project names (deduped, sorted) — used as the project-list
+   *  fallback when no company is selected. Client component narrows
+   *  this to the selected company via companyToProjects below. */
+  allProjectNames: string[];
+  /** company name → its project names (sorted, deduped). Drives the
+   *  live narrowing in TasksFilterCompanyProject without requiring a
+   *  form submit between picking a company and picking a project. */
+  companyToProjects: Record<string, string[]>;
   departments: string[];
   people: TasksPerson[];
   campaignOptions: string[];
@@ -589,52 +610,40 @@ function TasksFilterBar({
           CSS uses it to tint the field with --accent-soft so users can
           scan at a glance which filters are narrowing the result set
           (otherwise it's easy to miss e.g. a stuck חברה filter). */}
+      <TasksFilterCompanyProject
+        defaultCompany={current.company}
+        defaultProject={current.project}
+        companies={companies}
+        allProjects={allProjectNames}
+        companyToProjects={companyToProjects}
+      />
       <label>
-        חברה
+        קמפיין
         <select
-          name="company"
-          defaultValue={current.company}
-          data-active={current.company ? "1" : undefined}
+          name="campaign"
+          defaultValue={current.campaign}
+          data-active={current.campaign ? "1" : undefined}
+          disabled={campaignOptions.length === 0 && !current.campaign}
+          aria-disabled={campaignOptions.length === 0 && !current.campaign}
         >
-          <option value="">הכל</option>
-          {companies.map((c) => (
+          <option value="">
+            {campaignOptions.length === 0 && !current.campaign
+              ? "אין קמפיינים זמינים"
+              : "הכל"}
+          </option>
+          {/* If the user has filtered to a campaign that no longer
+              shows up in the loaded set (e.g. all tasks for it are
+              archived), surface it anyway so they can deselect. */}
+          {current.campaign && !campaignOptions.includes(current.campaign) && (
+            <option value={current.campaign}>{current.campaign}</option>
+          )}
+          {campaignOptions.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
         </select>
       </label>
-      <label>
-        פרויקט
-        <select
-          name="project"
-          defaultValue={current.project}
-          data-active={current.project ? "1" : undefined}
-        >
-          <option value="">הכל</option>
-          {projects.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        קמפיין
-        <input
-          type="text"
-          name="campaign"
-          list="tasks-campaigns-filter"
-          placeholder="הכל"
-          defaultValue={current.campaign}
-          data-active={current.campaign ? "1" : undefined}
-        />
-      </label>
-      <datalist id="tasks-campaigns-filter">
-        {campaignOptions.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
       <label>
         מחלקה
         <select
