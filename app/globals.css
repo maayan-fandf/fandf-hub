@@ -5253,6 +5253,31 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
   border: 1px solid var(--border);
   border-top: none;
   border-radius: 0 0 10px 10px;
+  /* Themed thin scrollbar — matches the kanban board's chrome so the
+     two views feel like the same product. The table has ~12 columns
+     and is wider than even a 1440px container on desktop, so a
+     horizontal scrollbar IS load-bearing here (showing every column
+     compressed into 100% width breaks readability). The previous
+     default OS scrollbar was bulky and clashed with the dark theme. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.tasks-table-wrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tasks-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tasks-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.tasks-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--muted, var(--border));
+  background-clip: padding-box;
 }
 .tasks-table {
   width: 100%;
