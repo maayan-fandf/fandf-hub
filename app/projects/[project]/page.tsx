@@ -243,6 +243,18 @@ export default async function ProjectOverviewPage({
         : isInternalUser
           ? "internal"
           : "client";
+  // Mark chat_mention notifications for this project as read when the
+  // user opens the internal Chat tab. Fire-and-forget — the bell badge
+  // polls every 60s, so the user sees the count drop within a minute
+  // after landing on the page. Non-blocking by design: a Sheets write
+  // failure shouldn't gate page render.
+  if (activeChannel === "internal" && userEmail) {
+    void import("@/lib/notifications").then((m) =>
+      m
+        .markReadByProjectAndKind(userEmail, projectName, "chat_mention")
+        .catch(() => {}),
+    );
+  }
   const legacyEmbedUrl = dashboardBaseUrl
     ? buildDashboardUrl(dashboardBaseUrl, {
         company: companyForDashboard,

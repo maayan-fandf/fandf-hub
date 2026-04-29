@@ -31,7 +31,8 @@ export type NotificationKind =
   | "task_done"
   | "task_cancelled"
   | "comment_reply"
-  | "mention";
+  | "mention"
+  | "chat_mention";
 
 const TAB = "Notifications";
 const HEADERS = [
@@ -365,6 +366,65 @@ export async function markRead(
   return { ok: true, updated: updates.length };
 }
 
+/** Mark every unread row of a given kind for `forEmail` scoped to one
+ *  project as read. Used by the auto-mark-read-on-visit flow: when the
+ *  user opens the project's internal Chat tab, we sweep their
+ *  chat_mention rows for that project and the bell badge drops without
+ *  requiring a click on each row in /notifications.
+ *
+ *  Best-effort, returns count updated. Empty inputs are silent no-ops.
+ *  Don't await this in render-blocking code paths — fire and forget. */
+export async function markReadByProjectAndKind(
+  forEmail: string,
+  project: string,
+  kind: NotificationKind,
+): Promise<{ ok: true; updated: number }> {
+  const lc = forEmail.toLowerCase().trim();
+  const proj = project.trim();
+  if (!lc || !proj) return { ok: true, updated: 0 };
+  await ensureTab(forEmail);
+  const sheets = sheetsClient(forEmail);
+  const ssId = envOrThrow("SHEET_ID_COMMENTS");
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: ssId,
+    range: TAB,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (values.length < 2) return { ok: true, updated: 0 };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "").trim().toLowerCase(),
+  );
+  const iFor = headers.indexOf("for_email");
+  const iKind = headers.indexOf("kind");
+  const iProj = headers.indexOf("project");
+  const iRead = headers.indexOf("read_at");
+  if (iFor < 0 || iKind < 0 || iProj < 0 || iRead < 0) {
+    return { ok: true, updated: 0 };
+  }
+  const now = new Date().toISOString();
+  const updates: { range: string; values: [[string]] }[] = [];
+  for (let i = 1; i < values.length; i++) {
+    const fe = String(values[i][iFor] ?? "").toLowerCase().trim();
+    if (fe !== lc) continue;
+    if (String(values[i][iKind] ?? "") !== kind) continue;
+    if (String(values[i][iProj] ?? "").trim() !== proj) continue;
+    if (String(values[i][iRead] ?? "")) continue;
+    const sheetRow = i + 1;
+    const col = columnLetter(iRead + 1);
+    updates.push({
+      range: `${TAB}!${col}${sheetRow}:${col}${sheetRow}`,
+      values: [[now]],
+    });
+  }
+  if (updates.length === 0) return { ok: true, updated: 0 };
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: ssId,
+    requestBody: { valueInputOption: "RAW", data: updates },
+  });
+  return { ok: true, updated: updates.length };
+}
+
 /* ─── Per-kind defaults ──────────────────────────────────────────── */
 
 /** All kinds default to email-on; the user's global email_notifications
@@ -398,6 +458,8 @@ function defaultEmailSubject(opts: {
       return `💬 תגובה חדשה לשרשור — ${tail}`;
     case "mention":
       return `🏷️ תויגת בתגובה — ${tail}`;
+    case "chat_mention":
+      return `💬 תויגת ב-Chat — ${tail}`;
   }
 }
 
@@ -423,6 +485,8 @@ function defaultEmailIntro(opts: {
       return `${esc(actor)} הגיב/ה לשרשור שלך.`;
     case "mention":
       return `${esc(actor)} תייג/ה אותך בתגובה.`;
+    case "chat_mention":
+      return `${esc(actor)} תייג/ה אותך בהודעת Chat.`;
   }
 }
 
@@ -435,6 +499,8 @@ function defaultCtaLabel(kind: NotificationKind): string {
     case "comment_reply":
     case "mention":
       return "פתח את הדיון";
+    case "chat_mention":
+      return "פתח את ה-Chat";
     default:
       return "פתח את המשימה";
   }

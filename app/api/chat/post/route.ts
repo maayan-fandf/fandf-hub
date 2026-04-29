@@ -168,5 +168,31 @@ export async function POST(req: Request) {
   // the new message without waiting for the 60s TTL.
   revalidateTag("chat-messages");
 
+  // Hub-side notification fan-out. Each programmatically @-mentioned
+  // user gets a chat_mention row → bell badge + email (per their
+  // pref). Self-mentions are filtered inside notifyOnce. Best-effort:
+  // failures are logged inside the lib and don't block the response.
+  if (mentions.length > 0) {
+    const base = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+    const link = base
+      ? `${base}/projects/${encodeURIComponent(project)}?channel=internal`
+      : "";
+    const { notifyOnce } = await import("@/lib/notifications");
+    const bodyPreview = text.slice(0, 280);
+    await Promise.all(
+      mentions.map((m) =>
+        notifyOnce({
+          kind: "chat_mention",
+          forEmail: m.email,
+          actorEmail: session.user!.email!,
+          project,
+          title: project,
+          body: bodyPreview,
+          link,
+        }),
+      ),
+    );
+  }
+
   return NextResponse.json({ ok: true, messageName });
 }
