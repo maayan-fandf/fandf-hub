@@ -328,8 +328,14 @@ function renderChatText(text: string): React.ReactNode {
   const lines = text
     .split("\n")
     .filter((line) => !/^\s*פתח בהאב\s*→/.test(line));
+  // dir="auto" on EACH paragraph (not the parent) so multi-line
+  // mixed-language messages render each line per its own first-
+  // strong character. With dir="auto" only on the parent, a message
+  // that starts with Hebrew ends up rendering its later English
+  // lines inside an RTL container — periods at line starts, words
+  // glued to the wrong margin, etc.
   return lines.map((line, i) => (
-    <p key={i} className="chat-message-line">
+    <p key={i} className="chat-message-line" dir="auto">
       {tokenizeLine(line)}
     </p>
   ));

@@ -819,9 +819,9 @@ async function TasksChannel({
                   </span>
                 )}
               </div>
-              <div className="tasks-channel-text" dir="auto">
+              <div className="tasks-channel-text">
                 {(item.body || "").split("\n").map((line, i) => (
-                  <p key={i}>{line}</p>
+                  <p key={i} dir="auto">{line}</p>
                 ))}
               </div>
               <div className="tasks-channel-actions">

@@ -213,9 +213,9 @@ function CommentBubble({
       {quotedSnippet && (
         <blockquote className="drive-comment-quote">{quotedSnippet}</blockquote>
       )}
-      <div className="drive-comment-body" dir="auto">
+      <div className="drive-comment-body">
         {content.split("\n").map((line, i) => (
-          <p key={i}>{line}</p>
+          <p key={i} dir="auto">{line}</p>
         ))}
       </div>
     </div>

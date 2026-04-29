@@ -52,11 +52,15 @@ function maybeTruncate(body: string, max?: number): string {
 
 function renderBody(body: string): React.ReactNode {
   const lines = body.split("\n");
+  // dir="auto" on each <p> so lines pick LTR/RTL independently from
+  // their own first strong character. Container-level dir="auto"
+  // computes one direction across all descendants, which mishandles
+  // messages that mix Hebrew + English across lines.
   return lines.map((line, i) => {
     const parts = tokenizeLine(line);
     if (parts.length === 1 && parts[0].kind === "text") {
       // Preserve blank lines as empty paragraphs so spacing reads right.
-      return <p key={i}>{parts[0].text}</p>;
+      return <p key={i} dir="auto">{parts[0].text}</p>;
     }
     if (parts.length === 1 && parts[0].kind === "image") {
       // Single-image lines render as block elements so the image gets
@@ -64,7 +68,7 @@ function renderBody(body: string): React.ReactNode {
       return renderPart(parts[0], `${i}-0`);
     }
     return (
-      <p key={i}>
+      <p key={i} dir="auto">
         {parts.map((p, j) => (
           <span key={`${i}-${j}`}>{renderPart(p, `${i}-${j}`)}</span>
         ))}
