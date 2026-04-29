@@ -263,20 +263,44 @@ if (CLEANUP) {
   console.log(`\n--cleanup: closing ${targets.length} orphan GT(s)...`);
   let closed = 0;
   let failed = 0;
-  // Sequential — avoid burst-quota issues against a single user's tasklist.
-  for (const entry of targets) {
-    try {
-      await tasksApi.tasks.patch({
-        tasklist: defaultList.id,
-        task: entry.gt.id,
-        requestBody: { status: "completed" },
-      });
-      closed++;
-      process.stdout.write(`.`);
-    } catch (e) {
-      failed++;
-      console.log(`\n  failed ${entry.gt.id}: ${e?.message || e}`);
+  // The Tasks API returns 403 "caller does not have permission" when
+  // bursting writes (not a 429). Observed: ~4 patches/min as a single
+  // SA-impersonating user before the wall hits, then ~60s before the
+  // window resets. So we retry on 403 with exponential backoff up to
+  // 60s, and pace at 1 req/sec from the start.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < targets.length; i++) {
+    const entry = targets[i];
+    let attempt = 0;
+    let waitMs = 2000;
+    let done = false;
+    while (!done && attempt < 5) {
+      try {
+        await tasksApi.tasks.patch({
+          tasklist: defaultList.id,
+          task: entry.gt.id,
+          requestBody: { status: "completed" },
+        });
+        closed++;
+        process.stdout.write(`.`);
+        done = true;
+      } catch (e) {
+        const code = e?.response?.status;
+        const isQuotaWall = code === 403 || code === 429;
+        if (isQuotaWall && attempt < 4) {
+          process.stdout.write(`!`);
+          await sleep(waitMs);
+          waitMs *= 2;
+          attempt++;
+        } else {
+          failed++;
+          console.log(`\n  failed ${entry.gt.id}: ${code} ${e?.message || e}`);
+          done = true;
+        }
+      }
     }
+    // Steady-state pacing between successful calls.
+    if (i < targets.length - 1) await sleep(1000);
   }
   console.log(`\n--cleanup done: closed=${closed} failed=${failed}`);
 }
