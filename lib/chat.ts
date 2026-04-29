@@ -17,6 +17,7 @@
  * second column.
  */
 
+import { Readable } from "node:stream";
 import { unstable_cache } from "next/cache";
 import { chatClient, directoryClient } from "@/lib/sa";
 
@@ -507,7 +508,11 @@ export async function uploadChatAttachment(
   mimeType: string,
   bytes: Buffer,
 ): Promise<ChatAttachmentRef> {
-  const { Readable } = await import("node:stream");
+  // Static `import { Readable } from "node:stream"` at the top of this
+  // file — the previous `await import("node:stream")` here resolved
+  // to a shape where destructuring Readable yielded undefined in the
+  // Firebase App Hosting production bundle, surfacing as "Cannot read
+  // properties of undefined (reading 'from')" on every upload.
   const chat = chatClient(subjectEmail);
   const res = await chat.media.upload({
     parent: `spaces/${spaceId}`,
