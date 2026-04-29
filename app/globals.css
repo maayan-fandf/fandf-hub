@@ -5648,6 +5648,14 @@ html[data-theme="dark"] .tasks-brief-chip {
   border-bottom-color: var(--accent, #2a66d9);
 }
 .tasks-company-dropdown {
+  /* `display: none` (not visibility: hidden) so the dropdown is OUT
+     OF LAYOUT entirely when not shown. Otherwise the absolute-
+     positioned element extended below the table on bottom rows,
+     bumping the .tasks-table-wrap's scrollHeight past its
+     clientHeight and triggering a spurious vertical scrollbar on
+     every bucket section. We lose the fade-in transition this way,
+     but for a popover the snap-in is fine.  */
+  display: none;
   position: absolute;
   top: calc(100% + 4px);
   /* RTL: anchor to the inline-start (right edge in RTL) so the menu
@@ -5661,17 +5669,10 @@ html[data-theme="dark"] .tasks-brief-chip {
   box-shadow: var(--shadow-md, 0 4px 18px rgba(0, 0, 0, 0.18));
   padding: 4px;
   z-index: 30;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-3px);
-  transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
 }
 .tasks-company-hover-menu:hover .tasks-company-dropdown,
 .tasks-company-hover-menu:focus-within .tasks-company-dropdown {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-  transition-delay: 0s;
+  display: block;
 }
 .tasks-company-dropdown-head {
   padding: 6px 10px;
