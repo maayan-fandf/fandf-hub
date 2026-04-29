@@ -119,6 +119,19 @@ export async function POST(req: Request) {
       isImage: mimeType.startsWith("image/"),
     });
   } catch (e) {
+    // Surface the full stack on the server console — the chip-side
+    // error toast only gets the message, but the message has been
+    // unhelpful for googleapis-internal failures (e.g. "Cannot read
+    // properties of undefined (reading 'from')" coming out of the
+    // media-upload multipart/related construction). Logging here
+    // gives Firebase Cloud Logging the full trace next time.
+    console.error("[chat/upload] failed", {
+      project,
+      fileName,
+      mimeType,
+      bytes: fileEntry.size,
+      error: e instanceof Error ? { message: e.message, stack: e.stack } : String(e),
+    });
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
