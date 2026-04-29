@@ -7877,8 +7877,18 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
    border-top color (which stays put so the lifecycle palette still
    reads at a glance during drag). Stronger than the previous near-
    invisible 6%-alpha tint so users get clear feedback that "yes,
-   release here and it'll land in this column." */
-.kanban-column.is-drop-target {
+   release here and it'll land in this column."
+   Two trigger paths so EVERY column glows consistently:
+     - .is-drop-target: dnd-kit's per-column isOver flag. Fires when
+       the column itself is the drop candidate (always for empty
+       columns; for full columns, dnd-kit may pick a card-inside
+       instead, in which case the column class doesn't fire).
+     - :has(.kanban-card.is-dragging) + :hover on the column: covers
+       the case where dnd-kit's drop candidate is a card inside the
+       column. We still glow the COLUMN so the user sees the macro
+       target, not just a per-card highlight. */
+.kanban-column.is-drop-target,
+.kanban-board:has(.kanban-card.is-dragging) .kanban-column:hover {
   background: color-mix(in srgb, #2563eb 12%, var(--surface-soft, #f9fafb));
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.45),

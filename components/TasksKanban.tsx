@@ -9,9 +9,12 @@ import {
   MouseSensor,
   TouchSensor,
   closestCorners,
+  pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
   useDroppable,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -235,7 +238,22 @@ export default function TasksKanban({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      // Three-tier collision detection. closestCorners alone (the
+      // previous default) caused two pain points users hit:
+      //   1. On EMPTY columns, dropping anywhere off the vertical
+      //      center failed silently — the closest CORNER of the slim
+      //      column was further from the cursor than a card-corner
+      //      in the adjacent column, so the drop landed in the
+      //      neighbor.
+      //   2. Mid-drag flicker on the empty column's expansion — at
+      //      borderline positions closestCorners flipped between
+      //      candidates per move, toggling isOver/.is-drop-target
+      //      and the resulting layout shift.
+      // pointerWithin (cursor inside a droppable's rect) is much
+      // closer to user intent: drop where you're pointing. We add
+      // rectIntersection + closestCorners as fallbacks for drags
+      // that release in a gap between columns.
+      collisionDetection={kanbanCollisionDetection}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
@@ -493,3 +511,40 @@ function KanbanCard({
     </article>
   );
 }
+
+/* ── Custom collision detection ────────────────────────────────────
+ *
+ * Three-tier strategy: pointerWithin → rectIntersection → closestCorners.
+ *
+ * Why not just closestCorners (the dnd-kit default)?
+ *   - Empty (slim 7em) columns have small bounding boxes. When the
+ *     cursor is in the bottom of a slim column, the column's nearest
+ *     CORNER (top or bottom of its slim rect) is actually further
+ *     from the cursor than a card-corner in an adjacent FULL column.
+ *     closestCorners then picks the neighbor — drop lands in the
+ *     wrong column. User reproduced this as "only the center of
+ *     empty columns accepts drops".
+ *   - At borderline positions closestCorners can flip its choice
+ *     per pointermove, which toggled isOver and made the empty
+ *     column flicker between expanded / collapsed mid-drag.
+ *
+ * pointerWithin: cursor inside a droppable's rect → that wins.
+ *   Direct match for "drop where I'm pointing" intent. No corner
+ *   distance ambiguity, no flicker. Returns ALL droppables the
+ *   cursor is inside (the column rect + any sortable-card rect
+ *   inside it); the existing onDragEnd already prefers the column
+ *   when overId starts with 'col:' and the card otherwise, so the
+ *   resolution is correct either way.
+ *
+ * Fallbacks (rectIntersection, closestCorners): kick in only when
+ * the user drops in a GAP between columns — pointer not inside any
+ * droppable. Keeps previous behavior for those edge cases instead
+ * of silently dropping the move.
+ */
+const kanbanCollisionDetection: CollisionDetection = (args) => {
+  const within = pointerWithin(args);
+  if (within.length > 0) return within;
+  const intersecting = rectIntersection(args);
+  if (intersecting.length > 0) return intersecting;
+  return closestCorners(args);
+};
