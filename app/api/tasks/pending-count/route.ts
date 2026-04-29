@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { auth } from "@/auth";
 import { tasksList } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
+import { syncUserCompletions } from "@/lib/userFastSync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,27 @@ export async function GET() {
     // would actually show as the user's open queue.
     const prefs = await getUserPrefs(sessionEmail).catch(() => null);
     const targetEmail = prefs?.view_as_email || sessionEmail;
+
+    // Fast in-band GT → hub sync. The badge fetch fires on every nav
+    // event, so this picks up "user marked GT done in Tasks app, then
+    // navigated in the hub" within the same render cycle. Deferred via
+    // after() so the badge response isn't blocked on the GT API list.
+    // The 1-min Cloud Scheduler poll still catches the offline case.
+    after(async () => {
+      try {
+        const result = await syncUserCompletions(sessionEmail);
+        if (result.dispatched + result.skipped + result.errored > 0) {
+          console.log(
+            `[fastSync] ${sessionEmail}: scanned=${result.scanned} dispatched=${result.dispatched} skipped=${result.skipped} errored=${result.errored} duration=${result.durationMs}ms`,
+          );
+        }
+      } catch (e) {
+        console.log(
+          `[fastSync] ${sessionEmail} failed:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    });
 
     // Single tasksList call: every task this user is involved with
     // (matches the new /tasks "מעורב במשימה" filter — author OR
