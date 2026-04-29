@@ -424,7 +424,18 @@ function KanbanCard({
     task.campaign ||
     task.round_number > 1 ||
     showPriorityChip;
-  const assignees = task.assignees || [];
+  // Every person involved with the task — author, approver, project
+  // manager, and each assignee — collapsed into one ordered list with
+  // their roles merged when the same email shows up under multiple
+  // hats (e.g. maayan as both author + assignee → one avatar with
+  // tooltip "מבצע · גם כותב"). Order: author → approver → PM →
+  // assignees, which in RTL puts author at the visually rightmost
+  // position. Highlighted role-per-status drives the ring color.
+  const peopleInvolved = buildPeopleInvolved(task, peopleByEmail);
+  const highlightRole = STATUS_HIGHLIGHT_ROLE[task.status];
+  const PEOPLE_CAP = 4;
+  const peopleVisible = peopleInvolved.slice(0, PEOPLE_CAP);
+  const peopleOverflow = peopleInvolved.length - PEOPLE_CAP;
 
   return (
     <article
@@ -489,27 +500,115 @@ function KanbanCard({
             📅 {task.requested_date}
           </span>
         )}
-        {assignees.length > 0 && (
-          <span className="kanban-card-assignees" aria-label="עובדים">
-            {assignees.slice(0, 3).map((email) => {
-              const p = peopleByEmail.get(email.toLowerCase());
+        {peopleVisible.length > 0 && (
+          <span className="kanban-card-people" aria-label="מעורבים">
+            {peopleVisible.map((p) => {
+              const isHighlighted =
+                highlightRole !== null && p.roles.includes(highlightRole);
               return (
-                <Avatar
-                  key={email}
-                  name={email}
-                  title={p?.name || email}
-                  size={22}
-                />
+                <span
+                  key={p.email}
+                  className={`kanban-card-person${isHighlighted ? " is-highlighted" : ""}`}
+                  title={buildPersonTooltip(p)}
+                >
+                  <Avatar name={p.email} title={buildPersonTooltip(p)} size={22} />
+                </span>
               );
             })}
-            {assignees.length > 3 && (
-              <span className="kanban-card-assignees-more">+{assignees.length - 3}</span>
+            {peopleOverflow > 0 && (
+              <span className="kanban-card-assignees-more">+{peopleOverflow}</span>
             )}
           </span>
         )}
       </div>
     </article>
   );
+}
+
+/* ── People-involved per card ──────────────────────────────────────
+ *
+ * Each task has up to 4 distinct role slots: author, approver,
+ * project_manager, assignee[]. The card surfaces ALL of them as a
+ * single ordered avatar row, deduped by email so a person who fills
+ * multiple roles (e.g. author + assignee) shows up once with a
+ * combined tooltip ("מבצע · גם כותב").
+ *
+ * Status drives which role gets a highlighted ring on its avatar:
+ *   awaiting_handling | in_progress  → assignees
+ *   awaiting_clarification           → author (the task issuer)
+ *   awaiting_approval                → approver
+ *   done | cancelled | draft         → no highlight
+ */
+type PersonInvolved = { email: string; name: string; roles: string[] };
+
+const ROLE_LABELS: Record<string, string> = {
+  author: "כותב",
+  approver: "מאשר",
+  project_manager: "מנהל פרויקט",
+  assignee: "מבצע",
+};
+
+const STATUS_HIGHLIGHT_ROLE: Record<WorkTaskStatus, string | null> = {
+  draft: null,
+  awaiting_handling: "assignee",
+  in_progress: "assignee",
+  awaiting_clarification: "author",
+  awaiting_approval: "approver",
+  done: null,
+  cancelled: null,
+};
+
+function buildPeopleInvolved(
+  task: WorkTask,
+  peopleByEmail: Map<string, TasksPerson>,
+): PersonInvolved[] {
+  // Order in this list determines visual order on the card (RTL flow
+  // puts the first one rightmost).
+  const ordered: { email: string; role: string }[] = [];
+  if (task.author_email)
+    ordered.push({ email: task.author_email.toLowerCase().trim(), role: "author" });
+  if (task.approver_email)
+    ordered.push({
+      email: task.approver_email.toLowerCase().trim(),
+      role: "approver",
+    });
+  if (task.project_manager_email)
+    ordered.push({
+      email: task.project_manager_email.toLowerCase().trim(),
+      role: "project_manager",
+    });
+  for (const a of task.assignees || []) {
+    const email = String(a || "").toLowerCase().trim();
+    if (email) ordered.push({ email, role: "assignee" });
+  }
+  // Dedupe + merge roles, preserving first-seen order.
+  const seen = new Map<string, PersonInvolved>();
+  for (const { email, role } of ordered) {
+    if (!email) continue;
+    const existing = seen.get(email);
+    if (existing) {
+      if (!existing.roles.includes(role)) existing.roles.push(role);
+    } else {
+      const p = peopleByEmail.get(email);
+      seen.set(email, {
+        email,
+        name: p?.name || email.split("@")[0] || email,
+        roles: [role],
+      });
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/** Tooltip line: "<name> — <primary role> · גם <other> · גם <other>"
+ *  Reads naturally in Hebrew when the same person fills multiple
+ *  roles. Single-role case collapses to just "<name> — <role>". */
+function buildPersonTooltip(p: PersonInvolved): string {
+  const labels = p.roles.map((r) => ROLE_LABELS[r] || r);
+  const [primary, ...rest] = labels;
+  let body = primary || "";
+  if (rest.length) body += " · גם " + rest.join(" · גם ");
+  return `${p.name} — ${body}`;
 }
 
 /* ── Custom collision detection ────────────────────────────────────

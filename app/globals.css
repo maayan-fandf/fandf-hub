@@ -8749,6 +8749,39 @@ html[data-theme="dark"] .tasks-new-chip {
   color: var(--muted);
 }
 
+/* ── People-involved row (kanban card) ──────────────────────────────
+   Same overlapping-avatar shape as .kanban-card-assignees but each
+   avatar lives in a wrapper span so the highlighted person can carry
+   a colored ring. .is-highlighted fires per status (status →
+   highlighted-role map in TasksKanban.tsx). */
+.kanban-card-people {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.kanban-card-person {
+  position: relative;
+  display: inline-flex;
+  border-radius: 999px;
+  /* Drop-shadow ring matches the kanban-card-assignees overlap style:
+     each non-first avatar steps over its predecessor with a 2px
+     same-bg ring so the rounded edge reads cleanly even when the
+     avatars overlap. */
+  box-shadow: 0 0 0 2px var(--surface);
+  transition: box-shadow .12s ease;
+}
+.kanban-card-person:not(:first-child) {
+  margin-inline-start: -6px;
+}
+/* Highlighted: a single accent-colored ring replaces the surface-bg
+   ring. Drawn outside the avatar so it doesn't clip onto the face. */
+.kanban-card-person.is-highlighted {
+  box-shadow: 0 0 0 2px var(--accent, #2a66d9),
+              0 0 0 4px color-mix(in srgb, var(--accent, #2a66d9) 25%, transparent);
+  z-index: 1;
+}
+
 .kanban-error {
   background: #fef2f2;
   color: #991b1b;
