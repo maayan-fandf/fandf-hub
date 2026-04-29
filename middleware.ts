@@ -12,6 +12,10 @@ export default auth((req) => {
     // shared secret), so it must skip the NextAuth redirect — Apps
     // Script triggers run unattended without a session.
     path === "/api/worktasks/auto-transition" ||
+    // Cloud Scheduler cron entry point (replaces the Apps Script
+    // pollTaskCompletions trigger). Same shared-secret auth model as
+    // the auto-transition endpoint above.
+    path === "/api/cron/poll-tasks" ||
     // External-link redirect endpoint used by the dashboard's ads /
     // sheet buttons to escape Apps Script's sandboxed iframe popup
     // restrictions. The route hardcodes a hostname whitelist so it

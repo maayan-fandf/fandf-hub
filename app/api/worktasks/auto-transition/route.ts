@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { tasksGetDirect } from "@/lib/tasksDirect";
-import { tasksUpdateDirect } from "@/lib/tasksWriteDirect";
-import type { GTaskKind, WorkTaskStatus } from "@/lib/appsScript";
+import { applyAutoTransition } from "@/lib/autoTransition";
+import type { GTaskKind } from "@/lib/appsScript";
 
 export const dynamic = "force-dynamic";
 
@@ -62,74 +61,9 @@ export async function POST(req: Request) {
     );
   }
 
-  // Pick the impersonated subject. Prefer the user who actually
-  // ticked the box (their action is the trigger); fall back to the
-  // canonical admin so the call still goes through if `completedBy`
-  // got dropped on the way.
-  const adminFallback = "maayan@fandf.co.il";
-  const subject = completedBy || adminFallback;
-
-  try {
-    // Read the current task to learn its status + approver. This is
-    // also a defensive check — if the row is already in a terminal
-    // state, skip the transition (don't bounce a `done` task back
-    // through the loop).
-    const cur = await tasksGetDirect(subject, taskId);
-    const task = cur.task;
-    const previous: WorkTaskStatus = task.status;
-
-    // Decide the target status from `kind`.
-    let target: WorkTaskStatus | null = null;
-    if (kind === "todo") {
-      // No-op if the task isn't currently in a state where assignee
-      // completion makes sense — protects against duplicate poller
-      // hits and against a manual hub transition that already moved
-      // the task forward.
-      if (
-        previous === "in_progress" ||
-        previous === "awaiting_handling" ||
-        previous === "draft"
-      ) {
-        target = task.approver_email ? "awaiting_approval" : "done";
-      }
-    } else if (kind === "approve") {
-      // Approver ticked their box → done. Skip if the task left
-      // awaiting_approval already.
-      if (previous === "awaiting_approval") target = "done";
-    } else if (kind === "clarify") {
-      // Owner addressed the clarification → bounce back into
-      // in_progress so the assignees can re-engage. Skip if no longer
-      // in clarification.
-      if (previous === "awaiting_clarification") target = "in_progress";
-    }
-
-    if (!target) {
-      return NextResponse.json({
-        ok: true,
-        skipped: true,
-        reason: `No transition for kind=${kind} from status=${previous}`,
-        previous,
-      });
-    }
-
-    // tasksUpdateDirect handles the GT cascade, spawns the next-kind
-    // GT, writes status_history, posts Chat, and notifies the right
-    // audience — the entire side effect set lives there. We just
-    // tell it where to move.
-    const result = await tasksUpdateDirect(adminFallback, taskId, {
-      status: target,
-      note: completedBy ? `via ${completedBy} · Google Tasks` : "via Google Tasks",
-    });
-    return NextResponse.json({
-      ok: true,
-      taskId,
-      kind,
-      previous,
-      target,
-      changed: result.changed,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  const result = await applyAutoTransition({ taskId, kind, completedBy });
+  if ("error" in result) {
+    return NextResponse.json(result, { status: 500 });
   }
+  return NextResponse.json(result);
 }
