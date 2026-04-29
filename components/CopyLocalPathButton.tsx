@@ -47,20 +47,22 @@ export default function CopyLocalPathButton({
   const [copied, setCopied] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [isMac, setIsMac] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Detect macOS once on mount. navigator.platform is deprecated but
-  // still reliable for Mac/Win distinction; userAgent fallback covers
-  // newer browsers that have nulled it out.
-  useEffect(() => {
-    if (typeof navigator === "undefined") return;
+  // Detect macOS at first client render via the useState initializer
+  // (lazy form). On SSR, navigator is undefined → starts as false; on
+  // the client's first render the initializer runs once and gives
+  // the right value, so the button title / popover content are
+  // correct immediately after hydration without an extra re-render.
+  // Modern Apple Silicon Macs still report "MacIntel" via
+  // navigator.platform; the userAgent fallback covers browsers that
+  // have nulled out platform.
+  const [isMac] = useState<boolean>(() => {
+    if (typeof navigator === "undefined") return false;
     const platform = (navigator.platform || "").toLowerCase();
     const ua = (navigator.userAgent || "").toLowerCase();
-    const mac = platform.includes("mac") || ua.includes("mac os");
-    setIsMac(mac);
-  }, []);
+    return platform.includes("mac") || ua.includes("mac os");
+  });
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Resolved path + label set used by both the copy action and the
   // popover. When the user is on a Mac and the caller passed a
