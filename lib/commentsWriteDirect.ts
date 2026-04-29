@@ -533,16 +533,55 @@ export async function postReplyDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
+  // Find the thread root + collect every email @-mentioned anywhere
+  // earlier in the thread. Mirrors the Chat-side listThreadMentioned-
+  // Emails fan-out: when a reply lands, anyone tagged earlier in the
+  // same thread gets a mention notification (since the replier may
+  // not re-tag them but they're conversationally invested).
+  //
+  // Walk up the parent chain to find the root, then collect any row
+  // whose id===root or parent_id===root. The `mentions` cell is comma-
+  // separated emails per row; union and lower-case them.
+  const threadEarlierMentions = (function collectThreadMentions(): Set<string> {
+    const out = new Set<string>();
+    let rootId = parentCommentId;
+    let cursor: typeof parentRow | undefined = parentRow;
+    let safety = 20;
+    while (cursor && safety-- > 0) {
+      const cParent = String(cursor[idx.get("parent_id") ?? -1] ?? "").trim();
+      const cId = String(cursor[idx.get("id") ?? -1] ?? "").trim();
+      if (!cParent) {
+        if (cId) rootId = cId;
+        break;
+      }
+      const nextIdx = findRowByCommentId(rows, idx, cParent);
+      if (nextIdx < 0) break;
+      cursor = rows[nextIdx];
+    }
+    for (const r of rows) {
+      const rid = String(r[idx.get("id") ?? -1] ?? "").trim();
+      const rparent = String(r[idx.get("parent_id") ?? -1] ?? "").trim();
+      if (rid !== rootId && rparent !== rootId) continue;
+      const cell = String(r[idx.get("mentions") ?? -1] ?? "");
+      for (const m of cell.split(",")) {
+        const e = m.trim().toLowerCase();
+        if (e && e !== me) out.add(e);
+      }
+    }
+    return out;
+  })();
+
   // Notifications run after the response is flushed — they're best-effort
   // and the user shouldn't wait on Gmail / Chat round-trips.
   deferAfterResponse(async () => {
     const { notifyOnce } = await import("@/lib/notifications");
     // Reply notification → parent author (skipped if same person OR a
     // mention already covers them — mention takes precedence).
+    const explicitMentionSet = new Set(parsedMentions);
     if (
       parentAuthor &&
       parentAuthor !== me &&
-      !parsedMentions.includes(parentAuthor)
+      !explicitMentionSet.has(parentAuthor)
     ) {
       await notifyOnce({
         kind: "comment_reply",
@@ -558,6 +597,25 @@ export async function postReplyDirect(
     }
     // Mention notifications → each parsed @<email>.
     for (const recipient of parsedMentions) {
+      await notifyOnce({
+        kind: "mention",
+        forEmail: recipient,
+        actorEmail: me,
+        taskId: parentIsTask ? parentCommentId : "",
+        commentId: id,
+        project: parentProject,
+        title: parentBodyShort,
+        body: trimmedBody.slice(0, 280),
+        link: replyLink,
+      });
+    }
+    // Thread-participant fan-out → anyone @-mentioned earlier in the
+    // thread who isn't already covered by the explicit mention list,
+    // the parent author, or the actor themselves.
+    for (const recipient of threadEarlierMentions) {
+      if (recipient === me) continue;
+      if (explicitMentionSet.has(recipient)) continue;
+      if (recipient === parentAuthor) continue;
       await notifyOnce({
         kind: "mention",
         forEmail: recipient,
