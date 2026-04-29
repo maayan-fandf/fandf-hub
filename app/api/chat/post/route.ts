@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { auth } from "@/auth";
-import { postMessage, parseSpaceId } from "@/lib/chat";
+import { postMessage, parseSpaceId, listThreadMentionedEmails } from "@/lib/chat";
 import { readKeysCached } from "@/lib/keys";
 
 export const runtime = "nodejs";
@@ -168,11 +168,36 @@ export async function POST(req: Request) {
   // the new message without waiting for the 60s TTL.
   revalidateTag("chat-messages");
 
-  // Hub-side notification fan-out. Each programmatically @-mentioned
-  // user gets a chat_mention row → bell badge + email (per their
-  // pref). Self-mentions are filtered inside notifyOnce. Best-effort:
-  // failures are logged inside the lib and don't block the response.
-  if (mentions.length > 0) {
+  // Hub-side notification fan-out. Two pools (deduped by email):
+  //
+  //   (1) Explicit @-mentions on THIS message — the picker-injected
+  //       USER_MENTION annotations. Always notified.
+  //   (2) When this is a reply (threadName set), every email that was
+  //       @-mentioned anywhere earlier in the same thread. The replier
+  //       may not re-tag them but they're conversationally invested,
+  //       and Chat doesn't auto-CC mentioned-earlier users. Resolved
+  //       via Directory API gaia → email lookup.
+  //
+  // Self-mentions filtered inside notifyOnce. Best-effort: failures
+  // are logged inside the lib and don't block the response.
+  const recipients = new Set<string>();
+  for (const m of mentions) {
+    const e = (m.email || "").toLowerCase().trim();
+    if (e) recipients.add(e);
+  }
+  if (threadName) {
+    try {
+      const threadEmails = await listThreadMentionedEmails(
+        session.user.email,
+        spaceId,
+        threadName,
+      );
+      for (const e of threadEmails) recipients.add(e);
+    } catch (e) {
+      console.log("[chat/post] thread-participant lookup failed:", e);
+    }
+  }
+  if (recipients.size > 0) {
     const base = (process.env.AUTH_URL || "").replace(/\/+$/, "");
     const link = base
       ? `${base}/projects/${encodeURIComponent(project)}?channel=internal`
@@ -180,10 +205,10 @@ export async function POST(req: Request) {
     const { notifyOnce } = await import("@/lib/notifications");
     const bodyPreview = text.slice(0, 280);
     await Promise.all(
-      mentions.map((m) =>
+      Array.from(recipients).map((email) =>
         notifyOnce({
           kind: "chat_mention",
-          forEmail: m.email,
+          forEmail: email,
           actorEmail: session.user!.email!,
           project,
           title: project,

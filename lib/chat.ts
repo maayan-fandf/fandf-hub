@@ -214,6 +214,105 @@ export async function lookupUserGaiaResource(
   }
 }
 
+/** Reverse of lookupUserGaiaResource: given a Chat user resource name
+ *  (`users/<gaiaId>`), return the user's primary email. Used by the
+ *  thread-reply notification fan-out — Chat USER_MENTION annotations
+ *  carry the user as a gaia ID, but our notifyOnce() needs an email.
+ *  Cached identically to lookupUserGaiaResource. */
+const CHAT_GAIA_TO_EMAIL_CACHE = new Map<
+  string,
+  { email: string; expiresAt: number }
+>();
+export async function lookupEmailByGaiaResource(
+  subjectEmail: string,
+  resourceName: string,
+): Promise<string> {
+  const key = (resourceName || "").trim();
+  if (!key.startsWith("users/")) return "";
+  const cached = CHAT_GAIA_TO_EMAIL_CACHE.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.email;
+  try {
+    const directory = directoryClient(subjectEmail);
+    const id = key.slice("users/".length);
+    const res = await directory.users.get({ userKey: id });
+    const email = (
+      res.data.primaryEmail ||
+      res.data.emails?.[0]?.address ||
+      ""
+    ).toLowerCase().trim();
+    CHAT_GAIA_TO_EMAIL_CACHE.set(key, {
+      email,
+      expiresAt: Date.now() + CHAT_USER_NAME_TTL_MS,
+    });
+    return email;
+  } catch (e) {
+    console.log(
+      "[chat] lookupEmailByGaiaResource failed for",
+      resourceName,
+      ":",
+      e instanceof Error ? e.message : e,
+    );
+    CHAT_GAIA_TO_EMAIL_CACHE.set(key, {
+      email: "",
+      expiresAt: Date.now() + CHAT_USER_NAME_NEGATIVE_TTL_MS,
+    });
+    return "";
+  }
+}
+
+/** List the unique set of emails @-mentioned across all messages in a
+ *  Chat thread. Used by the reply-notification fan-out: when someone
+ *  replies in a thread, anyone who was tagged anywhere in the thread
+ *  earlier gets a chat_mention notification — the replier may not
+ *  re-tag them but they're conversationally invested.
+ *
+ *  Returns a Set<lower-cased-email>. Best-effort: any failure returns
+ *  an empty set so the post itself isn't gated on the fan-out logic. */
+export async function listThreadMentionedEmails(
+  subjectEmail: string,
+  spaceId: string,
+  threadName: string,
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!spaceId || !threadName) return out;
+  let gaiaResources: Set<string>;
+  try {
+    const chat = chatClient(subjectEmail);
+    const res = await chat.spaces.messages.list({
+      parent: `spaces/${spaceId}`,
+      // Chat list filter — `thread.name = "<resource>"` is the
+      // documented thread filter. pageSize cap so a runaway long
+      // thread doesn't blow Directory quota in one shot.
+      filter: `thread.name = "${threadName}"`,
+      pageSize: 100,
+    });
+    gaiaResources = new Set();
+    for (const m of res.data.messages ?? []) {
+      const annots = (m.annotations ?? []) as Array<{
+        type?: string;
+        userMention?: { user?: { name?: string } };
+      }>;
+      for (const a of annots) {
+        const ref = a.userMention?.user?.name;
+        if (ref && ref.startsWith("users/")) gaiaResources.add(ref);
+      }
+    }
+  } catch (e) {
+    console.log("[chat] listThreadMentionedEmails (list) failed:", e);
+    return out;
+  }
+  // Resolve each gaia resource → email in parallel. Misses (lookup
+  // failed for some user) silently skip; we'd rather not notify than
+  // notify the wrong account.
+  await Promise.all(
+    Array.from(gaiaResources).map(async (ref) => {
+      const email = await lookupEmailByGaiaResource(subjectEmail, ref);
+      if (email) out.add(email);
+    }),
+  );
+  return out;
+}
+
 /**
  * PATCH a message's text via the Chat REST API. Only the user who
  * authored the message can edit it — we enforce this by impersonating
