@@ -50,6 +50,18 @@ env:
       - BUILD
       - RUNTIME
 
+  # Bumps the build-time Node heap so `next build` doesn't OOM. Belt-
+  # and-suspenders alongside the pure-helper-extracted-from-driveFolders
+  # fix that stopped webpack from chasing googleapis into the client
+  # bundle. Default ~4GB ceiling is borderline for our route count even
+  # without that mistake; 8GB gives headroom for future growth.
+  # Runtime memory is unaffected — runConfig.memoryMiB above is the
+  # request-handling ceiling.
+  - variable: NODE_OPTIONS
+    value: "--max-old-space-size=8192"
+    availability:
+      - BUILD
+
   # Explicit canonical URL for NextAuth — Firebase App Hosting's proxy headers
   # don't give NextAuth enough to derive this on its own, so it defaults to
   # the internal 0.0.0.0:8080 container address. Updated to the custom domain

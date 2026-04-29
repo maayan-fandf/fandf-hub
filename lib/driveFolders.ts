@@ -285,43 +285,13 @@ export async function createChildFolder(
   return createFolder(drive, parentId, name);
 }
 
-/**
- * Build the absolute Drive-Desktop local path the user would paste into
- * Explorer (Windows) or Finder (macOS) to open this folder. The two OS
- * mount points differ but the in-Drive suffix is identical:
- *
- *   Windows: `G:\Shared drives\<driveName>\<company>\<project>[\<campaign>]`
- *   macOS:   `~/Library/CloudStorage/GoogleDrive-<userEmail>/Shared drives/<driveName>/<company>/<project>[/<campaign>]`
- *
- * Stops at the campaign level on purpose — the per-task subfolder isn't
- * recoverable from a Drive web URL, so we land Explorer/Finder one step
- * up and let the user drill in. Both strings empty when driveName or
- * project is missing; mac is empty when userEmail is missing.
- */
-export function buildLocalDrivePaths(opts: {
-  driveName: string;
-  company?: string;
-  project: string;
-  campaign?: string;
-  userEmail?: string;
-}): { windows: string; mac: string } {
-  const { driveName, company = "", project, campaign = "", userEmail = "" } =
-    opts;
-  if (!driveName || !project) return { windows: "", mac: "" };
-  const tailParts = [driveName, company, project];
-  if (campaign) tailParts.push(campaign);
-  const winTail = tailParts.join("\\");
-  const macTail = tailParts.join("/");
-  const windows = `G:\\Shared drives\\${winTail}`;
-  // `~` expands to the user's home in Finder's "Go to Folder"
-  // (Cmd+Shift+G) — works regardless of the local Mac username, so
-  // we don't need to know whether the user is on `admin`, `emma`,
-  // or whatever else.
-  const mac = userEmail
-    ? `~/Library/CloudStorage/GoogleDrive-${userEmail}/Shared drives/${macTail}`
-    : "";
-  return { windows, mac };
-}
+// `buildLocalDrivePaths` was here, but it's a pure string helper used
+// by both server pages and a "use client" component (TasksQueue's
+// per-row Drive Desktop button). Importing it from this file caused
+// webpack to chase the entire driveFolders module graph (which pulls
+// in `googleapis` via lib/sa) into the client bundle, OOM'ing
+// `next build`. Moved to lib/localDrivePath.ts which has zero server
+// imports.
 
 /**
  * Returns the configured Shared Drive's display name. Cached for 1

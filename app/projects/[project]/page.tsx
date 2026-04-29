@@ -28,8 +28,8 @@ import { getScopedPerson } from "@/lib/scope-server";
 import {
   findProjectFolderUrlCached,
   getSharedDriveName,
-  buildLocalDrivePaths,
 } from "@/lib/driveFolders";
+import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import { currentUserEmail } from "@/lib/appsScript";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";

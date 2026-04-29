@@ -35,7 +35,7 @@ export type TasksSortOrder = "asc" | "desc";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
-import { buildLocalDrivePaths } from "@/lib/driveFolders";
+import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TasksBulkBar from "@/components/TasksBulkBar";
 import {
   TaskPriorityCell,

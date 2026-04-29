@@ -9,7 +9,8 @@ import {
   tasksPeopleList,
 } from "@/lib/appsScript";
 import type { WorkTask } from "@/lib/appsScript";
-import { getSharedDriveName, buildLocalDrivePaths } from "@/lib/driveFolders";
+import { getSharedDriveName } from "@/lib/driveFolders";
+import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
