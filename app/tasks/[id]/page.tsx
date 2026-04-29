@@ -9,7 +9,7 @@ import {
   tasksPeopleList,
 } from "@/lib/appsScript";
 import type { WorkTask } from "@/lib/appsScript";
-import { getSharedDriveName } from "@/lib/driveFolders";
+import { getSharedDriveName, buildLocalDrivePaths } from "@/lib/driveFolders";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
@@ -92,12 +92,13 @@ export default async function TaskDetailPage({
       ? getProjectAdLinks(t.project).catch(() => null)
       : Promise.resolve(null),
   ]);
-  const localPath =
-    driveName && t.project
-      ? `G:\\Shared drives\\${driveName}\\${t.company || ""}\\${t.project}${
-          t.campaign ? `\\${t.campaign}` : ""
-        }`
-      : "";
+  const localPaths = buildLocalDrivePaths({
+    driveName,
+    company: t.company,
+    project: t.project,
+    campaign: t.campaign,
+    userEmail: subjectEmail,
+  });
 
   return (
     <main className="container">
@@ -197,9 +198,10 @@ export default async function TaskDetailPage({
               <GoogleDriveIcon size="1.05em" /> תיקיית קבצים
             </a>
           )}
-          {localPath && (
+          {localPaths.windows && (
             <CopyLocalPathButton
-              path={localPath}
+              path={localPaths.windows}
+              pathMac={localPaths.mac}
               title="העתק נתיב מקומי — Drive Desktop"
             />
           )}

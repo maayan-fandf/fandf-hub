@@ -28,6 +28,7 @@ import { getScopedPerson } from "@/lib/scope-server";
 import {
   findProjectFolderUrlCached,
   getSharedDriveName,
+  buildLocalDrivePaths,
 } from "@/lib/driveFolders";
 import { currentUserEmail } from "@/lib/appsScript";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
@@ -189,15 +190,15 @@ export default async function ProjectOverviewPage({
       );
     }
   }
-  // Build the absolute Windows path the user pastes into File
-  // Explorer's address bar. F&F's Drive Desktop setup mounts at G:\,
-  // matching every workstation we've checked. If a Mac user ever
-  // hits this, they paste it into Finder's "Go to" dialog and adapt
-  // the prefix manually — niche enough to ignore for now.
-  const localPath =
-    sharedDriveName && companyForDashboard && projectName
-      ? `G:\\Shared drives\\${sharedDriveName}\\${companyForDashboard}\\${projectName}`
-      : "";
+  // Build the Drive-Desktop local path for both Windows and macOS.
+  // CopyLocalPathButton picks the right one client-side via UA
+  // detection.
+  const localPaths = buildLocalDrivePaths({
+    driveName: sharedDriveName,
+    company: companyForDashboard,
+    project: projectName,
+    userEmail,
+  });
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
   // `authuser` hints Google to load the iframe under *this* account if the
   // browser is signed into multiple Google accounts. If it's signed into the
@@ -364,9 +365,10 @@ export default async function ProjectOverviewPage({
           >
             <GoogleDriveIcon size="1.05em" /> Drive
           </a>
-          {localPath && (
+          {localPaths.windows && (
             <CopyLocalPathButton
-              path={localPath}
+              path={localPaths.windows}
+              pathMac={localPaths.mac}
               title="העתק נתיב מקומי — Drive Desktop"
             />
           )}
@@ -426,6 +428,8 @@ export default async function ProjectOverviewPage({
               hideOther
               compact
               people={peopleData?.people ?? []}
+              driveName={sharedDriveName}
+              userEmail={userEmail}
               emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
             />
           </section>

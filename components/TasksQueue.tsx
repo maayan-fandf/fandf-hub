@@ -35,6 +35,7 @@ export type TasksSortOrder = "asc" | "desc";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
+import { buildLocalDrivePaths } from "@/lib/driveFolders";
 import TasksBulkBar from "@/components/TasksBulkBar";
 import {
   TaskPriorityCell,
@@ -147,9 +148,17 @@ type Props = {
    * Shared-drive name for the Drive Desktop local-path button on each
    * row. When empty (e.g. SA doesn't resolve it), the row's "open in
    * Explorer" button is hidden. Path format:
-   *   G:\Shared drives\<driveName>\<company>\<project>[\<campaign>]
+   *   Windows: G:\Shared drives\<driveName>\<company>\<project>[\<campaign>]
+   *   macOS:   ~/Library/CloudStorage/GoogleDrive-<email>/Shared drives/...
    */
   driveName?: string;
+  /**
+   * Signed-in user's email — needed for the macOS variant of the
+   * Drive Desktop local path. Empty string → Mac users fall back to
+   * the Windows path on their button (broken on their machine, but
+   * no crash; matches pre-cross-OS behavior).
+   */
+  userEmail?: string;
   /**
    * Sort axis applied within each status bucket. "rank" (default)
    * uses drag-driven manual order; any other value disables drag
@@ -250,6 +259,7 @@ export default function TasksQueue({
   compact = false,
   people = [],
   driveName = "",
+  userEmail = "",
   sort = "rank",
   sortOrder,
   searchParams,
@@ -444,6 +454,7 @@ export default function TasksQueue({
                   groupByCompany={groupByCompany}
                   people={people}
                   driveName={driveName}
+                  userEmail={userEmail}
                   sort={sort}
                   sortOrder={effectiveOrder}
                   sortFn={sortFn}
@@ -466,6 +477,7 @@ export default function TasksQueue({
                     groupByCompany={groupByCompany}
                     people={people}
                     driveName={driveName}
+                    userEmail={userEmail}
                     sort={sort}
                     sortOrder={effectiveOrder}
                     sortFn={sortFn}
@@ -594,6 +606,7 @@ function SortableTableSection({
   groupByCompany,
   people,
   driveName,
+  userEmail,
   sort,
   sortOrder,
   sortFn,
@@ -607,6 +620,7 @@ function SortableTableSection({
   groupByCompany: boolean;
   people: TasksPerson[];
   driveName: string;
+  userEmail: string;
   sort: TasksSortKey;
   sortOrder: TasksSortOrder;
   sortFn: ((a: WorkTask, b: WorkTask) => number) | null;
@@ -702,6 +716,7 @@ function SortableTableSection({
       compact={compact}
       people={people}
       driveName={driveName}
+      userEmail={userEmail}
       dragEnabled={dragEnabled}
       selectedIds={selectedIds}
       onToggleSelected={onToggleSelected}
@@ -802,6 +817,7 @@ function BucketBody({
   compact,
   people,
   driveName,
+  userEmail,
   dragEnabled = true,
   selectedIds,
   onToggleSelected,
@@ -810,6 +826,7 @@ function BucketBody({
   compact: boolean;
   people: TasksPerson[];
   driveName: string;
+  userEmail: string;
   dragEnabled?: boolean;
   selectedIds: Set<string>;
   onToggleSelected: (id: string) => void;
@@ -825,6 +842,7 @@ function BucketBody({
           compact={compact}
           people={people}
           driveName={driveName}
+          userEmail={userEmail}
           dragEnabled={dragEnabled}
           selected={selectedIds.has(t.id)}
           onToggleSelected={onToggleSelected}
@@ -841,6 +859,7 @@ function TaskRow({
   compact = false,
   people = [],
   driveName = "",
+  userEmail = "",
   dragEnabled = true,
   selected = false,
   onToggleSelected,
@@ -849,6 +868,7 @@ function TaskRow({
   compact?: boolean;
   people?: TasksPerson[];
   driveName?: string;
+  userEmail?: string;
   dragEnabled?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
@@ -871,14 +891,15 @@ function TaskRow({
   // Drive Desktop local path. We deliberately don't include the
   // task-specific subfolder (drive_folder_url is a web URL, not a path);
   // the user can drill into it once Explorer opens at the campaign
-  // level. The path is omitted entirely when the SA couldn't resolve
-  // the shared-drive name (driveName === "").
-  const localPath =
-    driveName && task.project
-      ? `G:\\Shared drives\\${driveName}\\${task.company || ""}\\${task.project}${
-          task.campaign ? `\\${task.campaign}` : ""
-        }`
-      : "";
+  // level. Both windows + mac variants computed here; the button
+  // picks per-OS at runtime.
+  const localPaths = buildLocalDrivePaths({
+    driveName,
+    company: task.company,
+    project: task.project,
+    campaign: task.campaign,
+    userEmail,
+  });
   return (
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
@@ -1017,9 +1038,10 @@ function TaskRow({
               <GoogleDriveIcon size="1em" />
             </a>
           )}
-          {localPath && (
+          {localPaths.windows && (
             <CopyLocalPathButton
-              path={localPath}
+              path={localPaths.windows}
+              pathMac={localPaths.mac}
               title="העתק נתיב מקומי — Drive Desktop"
             />
           )}
