@@ -87,6 +87,57 @@ const ADMIN_EMAILS = new Set([
   "felix@fandf.co.il",
 ]);
 
+/* ── Delayed status-change notifications ──────────────────────────────
+ *
+ * When a task's status flips, we used to fire the email + bell ping
+ * synchronously inside tasksUpdate. That made an accidental drop in
+ * the kanban (drag → wrong column → drag back) immediately spam the
+ * approver / author / assignees with "this is done!" / "this is
+ * waiting for your approval!" emails before the user could fix it.
+ *
+ * Now: schedule the notifications for STATUS_NOTIFY_DELAY_MS in the
+ * future, keyed by task id. If the same task gets another status
+ * change inside that window, the previous schedule is cancelled and
+ * a fresh one is set up. The "Drop in wrong column → drop back into
+ * the right one" sequence ends with no email at all (or with the
+ * RIGHT email if the second status change happens to also notify).
+ *
+ * Caveat: this is in-process. If the Node instance restarts inside
+ * the grace window, the pending notification is dropped. Acceptable
+ * tradeoff — Firebase App Hosting instances stay warm for traffic and
+ * a missed notification is strictly better than a wrong one. The
+ * Sheets row + the Google Tasks state-machine spawn (todo / approve /
+ * clarify GTs) still happen synchronously so the source-of-truth data
+ * is correct immediately; only the human-facing notify is buffered.
+ */
+const STATUS_NOTIFY_DELAY_MS = 30_000;
+const pendingStatusNotifications = new Map<string, NodeJS.Timeout>();
+
+function clearStatusNotify(taskId: string): void {
+  const t = pendingStatusNotifications.get(taskId);
+  if (t) {
+    clearTimeout(t);
+    pendingStatusNotifications.delete(taskId);
+  }
+}
+
+function scheduleStatusNotify(
+  taskId: string,
+  fire: () => Promise<void>,
+): void {
+  clearStatusNotify(taskId);
+  const timer = setTimeout(() => {
+    pendingStatusNotifications.delete(taskId);
+    fire().catch((e) => {
+      console.log(
+        "[tasksWriteDirect] delayed status notify failed:",
+        e instanceof Error ? e.message : e,
+      );
+    });
+  }, STATUS_NOTIFY_DELAY_MS);
+  pendingStatusNotifications.set(taskId, timer);
+}
+
 /* ── Utilities ─────────────────────────────────────────────────────── */
 
 function nowIso(): string {
@@ -1475,21 +1526,35 @@ export async function tasksUpdateDirect(
   // pipeline so each kind writes a Notifications row + sends email
   // (gated by the recipient's email_notifications pref). Audience for
   // returned/done/cancelled is author + current assignees.
+  //
+  // DELAYED FAN-OUT: each notify is scheduled STATUS_NOTIFY_DELAY_MS
+  // in the future and cancelled if another status change lands inside
+  // that window. Lets users undo accidental kanban drops without
+  // spamming the approver / author. The Sheets row + Google Tasks
+  // state-machine spawn (above) still happen synchronously — only
+  // the email/bell ping is buffered.
   if (changes.status) {
     const fresh = rowToTask(freshRow, idx);
     const previousStatus = String(cell("status") ?? "");
+    // Always cancel any pending notify for this task — even if the
+    // current transition itself doesn't trigger one (e.g. drop back
+    // into the original column), we want to drop the old pending
+    // ping that was queued by the FIRST drop.
+    clearStatusNotify(fresh.id);
     if (changes.status === "awaiting_approval") {
-      await notifyTaskAwaitingApproval(
-        {
-          id: fresh.id,
-          project: fresh.project,
-          title: fresh.title,
-          description: fresh.description,
-          requested_date: fresh.requested_date,
-          priority: fresh.priority,
-        },
-        fresh.approver_email,
-        subjectEmail,
+      scheduleStatusNotify(fresh.id, () =>
+        notifyTaskAwaitingApproval(
+          {
+            id: fresh.id,
+            project: fresh.project,
+            title: fresh.title,
+            description: fresh.description,
+            requested_date: fresh.requested_date,
+            priority: fresh.priority,
+          },
+          fresh.approver_email,
+          subjectEmail,
+        ),
       );
     } else if (
       previousStatus === "awaiting_approval" &&
@@ -1498,11 +1563,17 @@ export async function tasksUpdateDirect(
         changes.status === "awaiting_clarification")
     ) {
       // Approver bounced the work back — author + assignees should know.
-      await notifyTaskAudience("task_returned", fresh, subjectEmail);
+      scheduleStatusNotify(fresh.id, () =>
+        notifyTaskAudience("task_returned", fresh, subjectEmail),
+      );
     } else if (changes.status === "done") {
-      await notifyTaskAudience("task_done", fresh, subjectEmail);
+      scheduleStatusNotify(fresh.id, () =>
+        notifyTaskAudience("task_done", fresh, subjectEmail),
+      );
     } else if (changes.status === "cancelled") {
-      await notifyTaskAudience("task_cancelled", fresh, subjectEmail);
+      scheduleStatusNotify(fresh.id, () =>
+        notifyTaskAudience("task_cancelled", fresh, subjectEmail),
+      );
     }
   }
 
