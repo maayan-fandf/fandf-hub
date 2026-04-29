@@ -7896,18 +7896,14 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   max-width: 22em;
   opacity: 1;
 }
-/* While ANY card is being dragged, expand every empty column so the
-   user has a real-sized drop target — without this, the empty
-   column's hover-expand never fires (cursor is on the dragged card,
-   not the column), and a 7em-wide slim pill is borderline impossible
-   to drop into. The dragged card always carries .is-dragging while
-   in flight; :has() is well-supported across modern browsers. */
-.kanban-board:has(.kanban-card.is-dragging) .kanban-column[data-empty="1"] {
-  flex: 0 0 14em;
-  min-width: 14em;
-  max-width: 22em;
-  opacity: 1;
-}
+/* Note: there used to be a `:has(.kanban-card.is-dragging)` rule here
+   that expanded EVERY empty column the instant any drag started. It
+   caused a layout-shift bug: when two empty columns sat side-by-side
+   and both expanded simultaneously, the destination column shifted
+   ~224px laterally mid-drag, and the user's cursor ended up over a
+   different column than they aimed at. Removed in favor of relying
+   solely on the .is-drop-target class dnd-kit applies on actual
+   pointer-over (no other empty columns expand, no shift). */
 @media (max-width: 640px) {
   /* On mobile the board is already stacked vertically; force empty
      columns back to full width so taps land cleanly. */
