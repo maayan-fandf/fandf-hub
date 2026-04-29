@@ -48,18 +48,32 @@ export default function CopyLocalPathButton({
   const [showHint, setShowHint] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // Detect macOS at first client render via the useState initializer
-  // (lazy form). On SSR, navigator is undefined → starts as false; on
-  // the client's first render the initializer runs once and gives
-  // the right value, so the button title / popover content are
-  // correct immediately after hydration without an extra re-render.
-  // Modern Apple Silicon Macs still report "MacIntel" via
-  // navigator.platform; the userAgent fallback covers browsers that
-  // have nulled out platform.
+  // (lazy form). SSR has no navigator → starts as false; on the
+  // client's first render the initializer runs once and we render
+  // with the correct OS immediately, no re-render flash after
+  // hydration.
+  //
+  // Three signals (any matches → Mac):
+  //   - navigator.userAgentData.platform (modern Chromium)
+  //   - navigator.platform (legacy; Apple Silicon still says "MacIntel")
+  //   - navigator.userAgent ("Macintosh" or "Mac OS X" tokens)
+  // Belt-and-suspenders because each can be spoofed / nulled in
+  // various browser configs.
   const [isMac] = useState<boolean>(() => {
     if (typeof navigator === "undefined") return false;
+    type UserAgentData = { platform?: string };
+    const uaData =
+      (navigator as Navigator & { userAgentData?: UserAgentData }).userAgentData
+        ?.platform || "";
     const platform = (navigator.platform || "").toLowerCase();
     const ua = (navigator.userAgent || "").toLowerCase();
-    return platform.includes("mac") || ua.includes("mac os");
+    const uaDataLc = uaData.toLowerCase();
+    return (
+      uaDataLc.includes("mac") ||
+      platform.includes("mac") ||
+      ua.includes("macintosh") ||
+      ua.includes("mac os")
+    );
   });
   const wrapRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
