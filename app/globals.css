@@ -223,7 +223,11 @@ a:hover {
 }
 
 .container {
-  max-width: 1200px;
+  /* 1200px felt cramped on the dense table / kanban surfaces — most
+     workstations + recent laptops have ≥1440px viewports. We keep an
+     upper bound so very wide monitors don't stretch the table to
+     unscannable widths. */
+  max-width: 1440px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
 }
@@ -1263,7 +1267,10 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 }
 
 .topnav-inner {
-  max-width: 1200px;
+  /* Match .container's max-width so the nav rail and the main column
+     line up at the same edges. Wider than the previous 1200px for the
+     same reason — denser data surfaces benefit from the extra room. */
+  max-width: 1440px;
   margin: 0 auto;
   padding: 0.75rem 1.5rem;
   display: flex;
