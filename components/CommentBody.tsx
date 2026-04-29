@@ -32,7 +32,15 @@ export default function CommentBody({
   className?: string;
 }) {
   const text = maybeTruncate(body || "", truncateChars);
-  return <div className={className}>{renderBody(text)}</div>;
+  // dir="auto" lets the browser pick LTR vs RTL per comment based on
+  // the first strong character. Without it every body inherits the
+  // page's RTL direction, which mangles English snippets / code
+  // pasted into a comment by an English-first user.
+  return (
+    <div className={className} dir="auto">
+      {renderBody(text)}
+    </div>
+  );
 }
 
 function maybeTruncate(body: string, max?: number): string {

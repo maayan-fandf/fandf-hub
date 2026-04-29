@@ -242,7 +242,14 @@ function renderMessage(
             {formatRelative(m.createTime)}
           </span>
         </div>
-        <div className="chat-message-text">{renderChatText(m.text)}</div>
+        {/* dir="auto" lets the browser pick direction per message
+            based on the first strong character (Hebrew → RTL, Latin
+            → LTR). Without it every message renders RTL because the
+            page is dir="rtl", which mangles English snippets like
+            code blocks or URLs that the user pasted in. */}
+        <div className="chat-message-text" dir="auto">
+          {renderChatText(m.text)}
+        </div>
         {m.attachments.length > 0 && (
           <div className="chat-message-attachments">
             {m.attachments.map((a, i) => {

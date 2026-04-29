@@ -89,7 +89,7 @@ export default async function TaskComments({ taskId }: Props) {
                       </span>
                     )}
                   </div>
-                  <div className="thread-reply-text">{renderBody(c.body)}</div>
+                  <div className="thread-reply-text" dir="auto">{renderBody(c.body)}</div>
                 </div>
               </li>
             );
