@@ -30,6 +30,7 @@ import {
   type WorkTask,
   type WorkTaskStatus,
   type TasksPerson,
+  type GTaskRef,
 } from "@/lib/appsScript";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
@@ -54,6 +55,27 @@ function parseJsonCell(
   } catch {
     return array ? [] : {};
   }
+}
+
+/** Normalize the `google_tasks` cell to a flat array regardless of how
+ *  it was written. Hub-next now writes arrays; legacy rows may carry
+ *  the old `{ email: ref }` map shape — `Object.values()` flattens
+ *  those to the same array. */
+function parseGoogleTasksCell(value: unknown): GTaskRef[] {
+  if (value == null || value === "") return [];
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(parsed)) return parsed as GTaskRef[];
+  if (parsed && typeof parsed === "object") {
+    return Object.values(parsed as Record<string, GTaskRef>);
+  }
+  return [];
 }
 
 function toIsoDate(v: unknown): string {
@@ -108,10 +130,7 @@ function rowToTask(
       cell("calendar_event_ids"),
       false,
     ) as Record<string, string>,
-    google_tasks: parseJsonCell(
-      cell("google_tasks"),
-      false,
-    ) as WorkTask["google_tasks"],
+    google_tasks: parseGoogleTasksCell(cell("google_tasks")),
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),

@@ -18,9 +18,10 @@
  * - Replies have parent_id = root.id and are flat (no reply-of-reply).
  * - mentions = comma-separated list of recipient emails on a top-level
  *   row that spawned Google Tasks.
- * - google_tasks JSON: { email: { u, l, t, d } } — used to sync the
- *   per-assignee Google Tasks list when the comment resolves / edits /
- *   gets deleted.
+ * - google_tasks JSON: flat array `[{ u, l, t, d, kind? }, ...]` —
+ *   used to sync the per-assignee Google Tasks list when the comment
+ *   resolves / edits / gets deleted. Legacy rows may store the cell as
+ *   `{ email: ref }` (object); readers normalize both shapes to array.
  * - resolved is a boolean cell that drives row dimming + the badge
  *   counts. Setting resolved on a top-level comment cascades to the
  *   spawned Google Tasks (mark completed).
@@ -333,13 +334,29 @@ async function postChatWebhook(
 
 /* ── Google Tasks side effects ─────────────────────────────────────── */
 
-type GTaskRef = { u: string; l: string; t: string; d: string };
+import type { GTaskRef } from "@/lib/appsScript";
+
+/** Read the cell as a flat array regardless of legacy shape. Old
+ *  task-row writes used `{ email: ref }` (object); legacy comment-row
+ *  writes used `[ref, ...]` (array). Both flatten to the same array. */
+function readGTaskCell(raw: unknown): GTaskRef[] {
+  if (raw == null || raw === "") return [];
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (Array.isArray(parsed)) return parsed as GTaskRef[];
+  if (parsed && typeof parsed === "object") {
+    return Object.values(parsed as Record<string, GTaskRef>);
+  }
+  return [];
+}
 
 async function syncGoogleTasksStatus(
-  googleTasks: Record<string, GTaskRef>,
+  googleTasks: GTaskRef[],
   desired: "completed" | "needsAction",
 ): Promise<number> {
-  const entries = Object.values(googleTasks || {});
+  const entries = googleTasks || [];
   if (entries.length === 0) return 0;
   let synced = 0;
   await Promise.all(
@@ -364,12 +381,12 @@ async function syncGoogleTasksStatus(
 }
 
 async function patchGoogleTaskNotes(
-  googleTasks: Record<string, GTaskRef>,
+  googleTasks: GTaskRef[],
   newBody: string,
   project: string,
   deepLink: string,
 ): Promise<number> {
-  const entries = Object.values(googleTasks || {});
+  const entries = googleTasks || [];
   if (entries.length === 0) return 0;
   const notes = newBody + (deepLink ? `\n\n${deepLink}` : "");
   let patched = 0;
@@ -398,9 +415,9 @@ async function patchGoogleTaskNotes(
 }
 
 async function deleteGoogleTasks(
-  googleTasks: Record<string, GTaskRef>,
+  googleTasks: GTaskRef[],
 ): Promise<number> {
-  const entries = Object.values(googleTasks || {});
+  const entries = googleTasks || [];
   if (entries.length === 0) return 0;
   let deleted = 0;
   await Promise.all(
@@ -518,7 +535,7 @@ export async function postReplyDirect(
     body: trimmedBody,
     resolved: false,
     mentions: parsedMentions.join(","),
-    google_tasks: "{}",
+    google_tasks: "[]",
     edited_at: "",
     row_kind: "",
     status_history: "[]",
@@ -683,17 +700,11 @@ export async function resolveCommentDirect(
   // already saw their resolved toggle land via the Sheet write above.
   const parentId = String(row[idx.get("parent_id") ?? -1] ?? "").trim();
   if (!parentId) {
-    const gtRaw = row[idx.get("google_tasks") ?? -1];
-    let gt: Record<string, GTaskRef> = {};
-    try {
-      gt = typeof gtRaw === "string" ? JSON.parse(gtRaw) : (gtRaw as Record<string, GTaskRef>) || {};
-    } catch {
-      gt = {};
-    }
+    const gt = readGTaskCell(row[idx.get("google_tasks") ?? -1]);
     const bodyShort = String(row[idx.get("body") ?? -1] ?? "").slice(0, 80);
     const me = subjectEmail.toLowerCase().trim();
     deferAfterResponse(async () => {
-      if (Object.keys(gt).length > 0) {
+      if (gt.length > 0) {
         await syncGoogleTasksStatus(gt, resolved ? "completed" : "needsAction");
       }
       if (resolved) {
@@ -749,16 +760,7 @@ export async function deleteCommentDirect(
   // delete-tasks API calls happen after the response is flushed since no
   // client consumes deleted_tasks and the user perceives "deleted" the
   // moment the row vanishes from their view.
-  let gtToDelete: Record<string, GTaskRef> = {};
-  const gtRaw = row[idx.get("google_tasks") ?? -1];
-  try {
-    gtToDelete =
-      typeof gtRaw === "string"
-        ? JSON.parse(gtRaw)
-        : ((gtRaw as Record<string, GTaskRef>) || {});
-  } catch {
-    gtToDelete = {};
-  }
+  const gtToDelete: GTaskRef[] = readGTaskCell(row[idx.get("google_tasks") ?? -1]);
 
   // Delete the rows in descending order so indices don't shift.
   // Sheet row numbers: header is row 1; rows[i] is row (i + 2).
@@ -877,24 +879,18 @@ export async function editCommentDirect(
   // background.
   let queuedTaskSync = 0;
   if (!parentId) {
-    const gtRaw = row[idx.get("google_tasks") ?? -1];
-    try {
-      const gt: Record<string, GTaskRef> =
-        typeof gtRaw === "string" ? JSON.parse(gtRaw) : ((gtRaw as Record<string, GTaskRef>) || {});
-      if (Object.keys(gt).length > 0) {
-        queuedTaskSync = Object.keys(gt).length;
-        const trimmedNewBody = newBody.trim();
-        deferAfterResponse(async () => {
-          await patchGoogleTaskNotes(
-            gt,
-            trimmedNewBody,
-            project,
-            hubCommentUrl(project, commentId),
-          );
-        });
-      }
-    } catch {
-      // ignore — bad JSON in google_tasks cell just means no sync to queue
+    const gt = readGTaskCell(row[idx.get("google_tasks") ?? -1]);
+    if (gt.length > 0) {
+      queuedTaskSync = gt.length;
+      const trimmedNewBody = newBody.trim();
+      deferAfterResponse(async () => {
+        await patchGoogleTaskNotes(
+          gt,
+          trimmedNewBody,
+          project,
+          hubCommentUrl(project, commentId),
+        );
+      });
     }
   }
 
@@ -953,7 +949,7 @@ export async function createMentionDirect(
     body: args.body.trim(),
     resolved: false,
     mentions: assignees.join(","),
-    google_tasks: "{}",
+    google_tasks: "[]",
     edited_at: "",
     row_kind: "",
     status_history: "[]",

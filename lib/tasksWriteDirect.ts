@@ -36,20 +36,29 @@ import type {
   TasksUpdatePatch,
   WorkTask,
   WorkTaskStatus,
+  GTaskRef,
 } from "@/lib/appsScript";
 
-/** Per-recipient Google Task ref stored in the `google_tasks` JSON
- *  cell. `kind` drives the poller's status transition when complete:
- *  todo → awaiting_approval (or done if no approver), approve → done,
- *  clarify → in_progress + re-spawn todo GTs. Optional for back-compat
- *  with rows written before 2026-04-27 (treated as `todo`). */
-type GTaskRef = {
-  u: string;
-  l: string;
-  t: string;
-  d: string;
-  kind?: GTaskKind;
-};
+/** Normalize the cell to the canonical array shape. Legacy rows wrote
+ *  it as `Record<string, GTaskRef>` (keyed by recipient email). New
+ *  writes always emit an array; this helper accepts both during the
+ *  transition window so already-stored rows keep working. */
+function normalizeGTaskCell(value: unknown): GTaskRef[] {
+  if (value == null || value === "") return [];
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(parsed)) return parsed as GTaskRef[];
+  if (parsed && typeof parsed === "object") {
+    return Object.values(parsed as Record<string, GTaskRef>);
+  }
+  return [];
+}
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -390,17 +399,16 @@ async function createTaskFolder(
 }
 
 /**
- * Mark each assignee's Google Task as completed (or revive) based on
- * the new task status. The hub task carries `google_tasks` =
- * `{ email: { l: tasklist, t: taskId } }` set at create-time. For
- * each entry we patch the personal Tasks API entry — best-effort, an
- * assignee who deleted their entry just gets skipped.
+ * Mark every Google Task in `googleTasks` as completed (or revive)
+ * based on the new task status. The cell is a flat array of refs —
+ * we patch each one. Best-effort: an assignee who deleted their entry
+ * just gets skipped.
  */
 async function syncGoogleTasksStatus(
-  googleTasks: Record<string, GTaskRef>,
+  googleTasks: GTaskRef[],
   desired: "completed" | "needsAction",
 ): Promise<void> {
-  const entries = Object.values(googleTasks || {});
+  const entries = googleTasks || [];
   if (entries.length === 0) return;
   // Per-assignee gtasks_sync gate: if a user disabled Google Tasks
   // sync in their gear menu, leave their entry alone.
@@ -575,8 +583,8 @@ async function createGoogleTasks(
     notePrefix?: string;
     reissued?: boolean;
   },
-): Promise<Record<string, GTaskRef>> {
-  const out: Record<string, GTaskRef> = {};
+): Promise<GTaskRef[]> {
+  const out: GTaskRef[] = [];
   const allowed = await filterByGtasksPref(recipients);
   if (allowed.length === 0) return out;
   const title = gtaskTitle(opts.kind, task, opts.reissued);
@@ -596,13 +604,13 @@ async function createGoogleTasks(
           requestBody: { title, notes, due: dueRfc },
         });
         if (created.data.id) {
-          out[email] = {
+          out.push({
             u: email,
             l: listId,
             t: created.data.id,
             d: task.requested_date,
             kind: opts.kind,
-          };
+          });
         }
       } catch (e) {
         console.log(
@@ -993,7 +1001,7 @@ export async function tasksCreateDirect(
     chat_space_id: "",
     chat_task_name: "",
     calendar_event_ids: {},
-    google_tasks: {},
+    google_tasks: [],
     status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
     edited_at: "",
     campaign: String(payload.campaign || "").trim(),
@@ -1172,7 +1180,66 @@ export async function tasksCreateDirect(
 
 /* ── Main update orchestrator ──────────────────────────────────────── */
 
+/* Per-task serialization queue.
+ *
+ * Concurrent transitions on the same hub task race when each one does:
+ *   1. read row's google_tasks cell
+ *   2. close every ref in cell
+ *   3. spawn the next-stage GT
+ *   4. write merged cell
+ * If T1 and T2 land within the same Sheets read+write window, T2 reads
+ * the pre-T1 cell, T1's spawned GT ref never reaches T2's write, and
+ * the GT is open with no row-side ref to track it. Yesterday's stress-
+ * test produced 29 such orphans on a single task.
+ *
+ * The mutex chains awaitable promises per taskId so the read-modify-
+ * write cycle is atomic from this Node process's view. Cross-container
+ * races can still occur on Firebase App Hosting (multiple instances),
+ * but burst kanban drops from one user almost always hit the same
+ * warm container. Combined with the additive array merge below, this
+ * makes the GT cell tamper-proof in the common case.
+ *
+ * The lock is best-effort — we always clear our slot in `finally` so a
+ * thrown exception inside one transition can't permanently block the
+ * task. */
+const taskUpdateLocks = new Map<string, Promise<unknown>>();
+
+async function withTaskLock<T>(
+  taskId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prior = taskUpdateLocks.get(taskId) ?? Promise.resolve();
+  let release!: () => void;
+  const ourSlot: Promise<void> = new Promise((res) => {
+    release = res;
+  });
+  // Chain: the next caller's prior is our slot, so they wait for us.
+  const chained: Promise<void> = prior.then(() => ourSlot, () => ourSlot);
+  taskUpdateLocks.set(taskId, chained);
+  try {
+    await prior.catch(() => {}); // prior errors are not ours to inherit
+    return await fn();
+  } finally {
+    release();
+    // If no later caller chained behind us, drop the entry so the map
+    // doesn't grow unbounded across the lifetime of the process.
+    if (taskUpdateLocks.get(taskId) === chained) {
+      taskUpdateLocks.delete(taskId);
+    }
+  }
+}
+
 export async function tasksUpdateDirect(
+  subjectEmail: string,
+  taskId: string,
+  patch: TasksUpdatePatch,
+): Promise<{ ok: true; task: WorkTask; changed: boolean }> {
+  return withTaskLock(taskId, () =>
+    tasksUpdateDirectInner(subjectEmail, taskId, patch),
+  );
+}
+
+async function tasksUpdateDirectInner(
   subjectEmail: string,
   taskId: string,
   patch: TasksUpdatePatch,
@@ -1304,40 +1371,35 @@ export async function tasksUpdateDirect(
       assigneeRemoved = currentAssignees.filter((e) => !newAssignees.includes(e));
       assigneeAdded = newAssignees.filter((e) => !currentAssignees.includes(e));
 
-      const currentGT = (() => {
-        try {
-          const v = cell("google_tasks");
-          if (!v) return {};
-          const parsed = typeof v === "string" ? JSON.parse(v) : v;
-          return parsed && typeof parsed === "object"
-            ? (parsed as Record<string, GTaskRef>)
-            : {};
-        } catch {
-          return {};
-        }
-      })();
+      const currentGT: GTaskRef[] = normalizeGTaskCell(cell("google_tasks"));
 
-      // Mark removed assignees' Google Tasks completed (best-effort)
-      // and drop them from the map.
-      const cleanedGT: Record<string, GTaskRef> = {};
-      for (const [email, ref] of Object.entries(currentGT)) {
-        if (newAssignees.includes(email)) {
-          cleanedGT[email] = ref;
-          continue;
+      // Walk the array and split into "keep" (assignee still on the
+      // task) vs "close" (assignee removed). Closing patches their
+      // GT to completed; the ref is then dropped from the cell.
+      // Refs whose `u` is not in either set (e.g. the approver / clarify
+      // owner from prior status rounds) are kept untouched — they're
+      // not assignee-bound and the status cascade owns their lifecycle.
+      const removedSet = new Set(assigneeRemoved);
+      const cleanedGT: GTaskRef[] = [];
+      for (const ref of currentGT) {
+        const email = String(ref.u || "").toLowerCase();
+        if (removedSet.has(email) && (ref.kind ?? "todo") === "todo") {
+          try {
+            const tasksApi = tasksApiClient(ref.u || email);
+            await tasksApi.tasks.patch({
+              tasklist: ref.l,
+              task: ref.t,
+              requestBody: { status: "completed" },
+            });
+          } catch (e) {
+            console.log(
+              `[tasksWriteDirect] could not complete removed assignee's Google Task (${email}):`,
+              e instanceof Error ? e.message : String(e),
+            );
+          }
+          continue; // drop the ref — assignee no longer on task
         }
-        try {
-          const tasksApi = tasksApiClient(ref.u || email);
-          await tasksApi.tasks.patch({
-            tasklist: ref.l,
-            task: ref.t,
-            requestBody: { status: "completed" },
-          });
-        } catch (e) {
-          console.log(
-            `[tasksWriteDirect] could not complete removed assignee's Google Task (${email}):`,
-            e instanceof Error ? e.message : String(e),
-          );
-        }
+        cleanedGT.push(ref);
       }
 
       // Create Google Tasks for newly-added assignees. Pull title /
@@ -1365,9 +1427,7 @@ export async function tasksUpdateDirect(
             assigneeAdded,
             { kind: "todo" },
           );
-          for (const [email, ref] of Object.entries(fresh)) {
-            cleanedGT[email] = ref;
-          }
+          cleanedGT.push(...fresh);
         } catch (e) {
           console.log(
             "[tasksWriteDirect] createGoogleTasks for added assignees failed:",
@@ -1631,8 +1691,8 @@ export async function tasksUpdateDirect(
           [fresh.approver_email],
           { kind: "approve" },
         );
-        if (Object.keys(approveGT).length > 0) {
-          const merged = { ...fresh.google_tasks, ...approveGT };
+        if (approveGT.length > 0) {
+          const merged: GTaskRef[] = [...fresh.google_tasks, ...approveGT];
           await persistGoogleTasksCell(
             sheets,
             commentsSsId,
@@ -1660,8 +1720,8 @@ export async function tasksUpdateDirect(
               : "",
           },
         );
-        if (Object.keys(clarifyGT).length > 0) {
-          const merged = { ...fresh.google_tasks, ...clarifyGT };
+        if (clarifyGT.length > 0) {
+          const merged: GTaskRef[] = [...fresh.google_tasks, ...clarifyGT];
           await persistGoogleTasksCell(
             sheets,
             commentsSsId,
@@ -1688,8 +1748,8 @@ export async function tasksUpdateDirect(
           fresh.assignees,
           { kind: "todo", reissued: true },
         );
-        if (Object.keys(reissued).length > 0) {
-          const merged = { ...fresh.google_tasks, ...reissued };
+        if (reissued.length > 0) {
+          const merged: GTaskRef[] = [...fresh.google_tasks, ...reissued];
           await persistGoogleTasksCell(
             sheets,
             commentsSsId,
@@ -1732,7 +1792,7 @@ async function persistGoogleTasksCell(
   commentsSsId: string,
   headerIdx: Map<string, number>,
   rowIndex: number,
-  googleTasks: Record<string, GTaskRef>,
+  googleTasks: GTaskRef[],
 ): Promise<void> {
   const colIdx = headerIdx.get("google_tasks");
   if (colIdx == null) return;
@@ -1757,7 +1817,7 @@ async function persistGoogleTasksCell(
  *  hub-side title. Re-derives the title from kind+title+project so the
  *  prefix stays consistent with whatever spawned the GT. */
 async function patchGoogleTaskTitles(task: WorkTask): Promise<void> {
-  const entries = Object.values(task.google_tasks || {});
+  const entries = task.google_tasks || [];
   if (entries.length === 0) return;
   await Promise.all(
     entries.map(async (gt) => {
@@ -1848,7 +1908,7 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     chat_space_id: String(cell("chat_space_id") ?? ""),
     chat_task_name: String(cell("chat_task_name") ?? ""),
     calendar_event_ids: parseJsonField("calendar_event_ids", false) as Record<string, string>,
-    google_tasks: parseJsonField("google_tasks", false) as Record<string, GTaskRef>,
+    google_tasks: normalizeGTaskCell(cell("google_tasks")),
     status_history: parseJsonField("status_history", true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),

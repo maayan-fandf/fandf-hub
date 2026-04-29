@@ -773,6 +773,22 @@ export type WorkTaskStatusHistoryEntry = {
  *  poller's status-transition logic when the GT is marked complete. */
 export type GTaskKind = "todo" | "approve" | "clarify";
 
+/** One personal Google Task spawned for a hub task or legacy comment
+ *  mention. Stored on the row's `google_tasks` cell as an entry in a
+ *  flat JSON array. */
+export type GTaskRef = {
+  /** Recipient email (the GT lives on this user's tasklist). */
+  u: string;
+  /** Tasklist id (Google Tasks API). */
+  l: string;
+  /** Task id (Google Tasks API). */
+  t: string;
+  /** Due date YYYY-MM-DD or "" — kept in sync from GT side by the poller. */
+  d: string;
+  /** Stage marker on hub-task GTs; absent on legacy comment-mention rows. */
+  kind?: GTaskKind;
+};
+
 export type WorkTask = {
   id: string;
   brief: string;
@@ -799,18 +815,19 @@ export type WorkTask = {
   chat_space_id: string;
   chat_task_name: string;
   calendar_event_ids: Record<string, string>;
-  /** One Google Task per recipient. The map key is the recipient's
-   *  email — for kind=todo it's an assignee, for kind=approve it's the
-   *  approver, for kind=clarify it's the assignment owner (author or
-   *  PM fallback). The poller uses `kind` to pick the right status
-   *  transition when a Google Task is marked complete:
+  /** Personal Google Tasks spawned for this row, in spawn order. The
+   *  poller uses each entry's `kind` to pick the right status transition
+   *  when its GT is marked complete:
    *    - todo done → awaiting_approval (or done if no approver)
    *    - approve done → done
-   *    - clarify done → in_progress (re-spawn todo GTs) */
-  google_tasks: Record<
-    string,
-    { u: string; l: string; t: string; d: string; kind?: GTaskKind }
-  >;
+   *    - clarify done → in_progress (re-spawn todo GTs)
+   *  Multiple entries can share the same `u` (recipient) — when a
+   *  status flips back-and-forth, each round leaves its ref in the
+   *  array even after the GT is closed, so the poller can find the
+   *  ref to patch on subsequent transitions. Legacy rows on the sheet
+   *  may store the cell as `Record<string, GTaskRef>` (object keyed
+   *  by email); the readers normalize both shapes to this array. */
+  google_tasks: GTaskRef[];
   status_history: WorkTaskStatusHistoryEntry[];
   edited_at: string;
   /** Number of comment rows parented to this task (row_kind='' AND
