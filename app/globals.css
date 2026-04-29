@@ -5601,8 +5601,98 @@ html[data-theme="dark"] .tasks-brief-chip {
 .tasks-company-cell {
   font-weight: 600;
   color: var(--text);
+  /* Allow the absolute-positioned hover dropdown inside this cell to
+     escape the default `td` overflow context. */
+  overflow: visible;
 }
 .task-empty-cell { color: var(--muted); }
+
+/* Per-row company hover dropdown — same shape as the topnav projects
+   menu, scoped to a single company. CSS-only hover (no React state). */
+.tasks-company-hover-menu {
+  position: relative;
+  display: inline-block;
+}
+.tasks-company-name {
+  cursor: default;
+  border-bottom: 1px dashed transparent;
+  transition: border-color .12s ease;
+}
+.tasks-company-hover-menu:hover .tasks-company-name,
+.tasks-company-hover-menu:focus-within .tasks-company-name {
+  border-bottom-color: var(--accent, #2a66d9);
+}
+.tasks-company-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  /* RTL: anchor to the inline-start (right edge in RTL) so the menu
+     grows leftward across the page rather than off-screen. */
+  inset-inline-start: 0;
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--card-bg, var(--topnav-bg, var(--surface)));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md, 0 4px 18px rgba(0, 0, 0, 0.18));
+  padding: 4px;
+  z-index: 30;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
+}
+.tasks-company-hover-menu:hover .tasks-company-dropdown,
+.tasks-company-hover-menu:focus-within .tasks-company-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+.tasks-company-dropdown-head {
+  padding: 6px 10px;
+  font-size: .78em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.tasks-company-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.tasks-company-dropdown-list li a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 400;
+  font-size: .9em;
+}
+.tasks-company-dropdown-list li a:hover {
+  background: var(--surface-soft, rgba(0,0,0,.05));
+  color: var(--accent, #2a66d9);
+}
+.tasks-company-dropdown-current {
+  background: color-mix(in srgb, var(--accent, #2a66d9) 12%, transparent);
+  color: var(--accent, #2a66d9) !important;
+  font-weight: 600 !important;
+}
+
+/* Project name in row → link to the project page */
+.tasks-project-link {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: color .12s ease, border-color .12s ease;
+}
+.tasks-project-link:hover {
+  color: var(--accent, #2a66d9);
+  border-bottom-color: var(--accent, #2a66d9);
+}
 
 /* Sub-status pill: the "אושר" / "ממתין לטיפול" / etc. free-form label
    that Data Plus shows within בעבודה rows. */

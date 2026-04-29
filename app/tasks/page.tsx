@@ -376,6 +376,7 @@ export default async function TasksPage({
           people={people}
           driveName={driveName}
           userEmail={me}
+          companyToProjects={companyToProjects}
           sort={effectiveSort}
           sortOrder={effectiveSortOrder}
           searchParams={sp as Record<string, string | undefined>}

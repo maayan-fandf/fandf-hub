@@ -160,6 +160,14 @@ type Props = {
    */
   userEmail?: string;
   /**
+   * Company → project names map. Powers the hover-reveal dropdown on
+   * each row's company cell — hovering "Gindy" lists every project
+   * under Gindy with a link to each. Same map TasksFilterCompanyProject
+   * already builds; pass through if you want the dropdown, omit to
+   * keep the company cell as plain text.
+   */
+  companyToProjects?: Record<string, string[]>;
+  /**
    * Sort axis applied within each status bucket. "rank" (default)
    * uses drag-driven manual order; any other value disables drag
    * because the rank-based reorder would be invisible to the user
@@ -260,6 +268,7 @@ export default function TasksQueue({
   people = [],
   driveName = "",
   userEmail = "",
+  companyToProjects = {},
   sort = "rank",
   sortOrder,
   searchParams,
@@ -455,6 +464,7 @@ export default function TasksQueue({
                   people={people}
                   driveName={driveName}
                   userEmail={userEmail}
+                  companyToProjects={companyToProjects}
                   sort={sort}
                   sortOrder={effectiveOrder}
                   sortFn={sortFn}
@@ -478,6 +488,7 @@ export default function TasksQueue({
                     people={people}
                     driveName={driveName}
                     userEmail={userEmail}
+                    companyToProjects={companyToProjects}
                     sort={sort}
                     sortOrder={effectiveOrder}
                     sortFn={sortFn}
@@ -607,6 +618,7 @@ function SortableTableSection({
   people,
   driveName,
   userEmail,
+  companyToProjects,
   sort,
   sortOrder,
   sortFn,
@@ -621,6 +633,7 @@ function SortableTableSection({
   people: TasksPerson[];
   driveName: string;
   userEmail: string;
+  companyToProjects: Record<string, string[]>;
   sort: TasksSortKey;
   sortOrder: TasksSortOrder;
   sortFn: ((a: WorkTask, b: WorkTask) => number) | null;
@@ -717,6 +730,7 @@ function SortableTableSection({
       people={people}
       driveName={driveName}
       userEmail={userEmail}
+      companyToProjects={companyToProjects}
       dragEnabled={dragEnabled}
       selectedIds={selectedIds}
       onToggleSelected={onToggleSelected}
@@ -818,6 +832,7 @@ function BucketBody({
   people,
   driveName,
   userEmail,
+  companyToProjects,
   dragEnabled = true,
   selectedIds,
   onToggleSelected,
@@ -827,6 +842,7 @@ function BucketBody({
   people: TasksPerson[];
   driveName: string;
   userEmail: string;
+  companyToProjects: Record<string, string[]>;
   dragEnabled?: boolean;
   selectedIds: Set<string>;
   onToggleSelected: (id: string) => void;
@@ -843,6 +859,9 @@ function BucketBody({
           people={people}
           driveName={driveName}
           userEmail={userEmail}
+          companyProjects={
+            t.company ? companyToProjects[t.company] || [] : []
+          }
           dragEnabled={dragEnabled}
           selected={selectedIds.has(t.id)}
           onToggleSelected={onToggleSelected}
@@ -860,6 +879,7 @@ function TaskRow({
   people = [],
   driveName = "",
   userEmail = "",
+  companyProjects = [],
   dragEnabled = true,
   selected = false,
   onToggleSelected,
@@ -869,6 +889,10 @@ function TaskRow({
   people?: TasksPerson[];
   driveName?: string;
   userEmail?: string;
+  /** Sibling projects under this row's company. When non-empty, the
+   *  company cell renders a hover-revealed dropdown listing each
+   *  with a deep-link to its project page. */
+  companyProjects?: string[];
   dragEnabled?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
@@ -932,7 +956,41 @@ function TaskRow({
       {!compact && (
         <td className="tasks-company-cell">
           {task.company ? (
-            task.company
+            companyProjects.length > 1 ? (
+              // Hover-reveal dropdown listing every project under this
+              // company. Pure CSS hover (no client state) — same
+              // pattern as the topnav ProjectsNavMenu, scoped to a
+              // single company. Falls through to plain text when the
+              // company has only one project (the row's own project)
+              // since a dropdown of one item is just noise.
+              <div className="tasks-company-hover-menu">
+                <span className="tasks-company-name">{task.company}</span>
+                <div className="tasks-company-dropdown" role="menu">
+                  <div className="tasks-company-dropdown-head">
+                    {task.company} · {companyProjects.length} פרויקטים
+                  </div>
+                  <ul className="tasks-company-dropdown-list">
+                    {companyProjects.map((p) => (
+                      <li key={p}>
+                        <Link
+                          href={`/projects/${encodeURIComponent(p)}`}
+                          role="menuitem"
+                          className={
+                            p === task.project
+                              ? "tasks-company-dropdown-current"
+                              : undefined
+                          }
+                        >
+                          {p}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              task.company
+            )
           ) : (
             <span className="task-empty-cell">—</span>
           )}
@@ -940,7 +998,14 @@ function TaskRow({
       )}
       {/* Project cell omitted in compact mode (page is already scoped). */}
       {!compact && (
-        <td className="tasks-project-cell-nested">{task.project}</td>
+        <td className="tasks-project-cell-nested">
+          <Link
+            href={`/projects/${encodeURIComponent(task.project)}`}
+            className="tasks-project-link"
+          >
+            {task.project}
+          </Link>
+        </td>
       )}
       <td className="title-cell">
         {/* Title + chip cluster split into two rows: the title link
