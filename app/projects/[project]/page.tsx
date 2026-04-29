@@ -235,14 +235,16 @@ export default async function ProjectOverviewPage({
   // (the resolved-filter pill below) against it. DiscussionSection
   // re-derives this internally — keep the rules in sync if they
   // change.
-  const activeChannel: "internal" | "client" =
+  const activeChannel: "internal" | "client" | "tasks" =
     sp.channel === "internal"
       ? "internal"
       : sp.channel === "client"
         ? "client"
-        : isInternalUser
-          ? "internal"
-          : "client";
+        : sp.channel === "tasks"
+          ? "tasks"
+          : isInternalUser
+            ? "internal"
+            : "client";
   // Mark chat_mention notifications for this project as read when the
   // user opens the internal Chat tab. Fire-and-forget — the bell badge
   // polls every 60s, so the user sees the count drop within a minute
@@ -571,18 +573,20 @@ function DiscussionSection({
   userEmail: string;
   chatSpaceUrl: string;
 }) {
-  const channel: "internal" | "client" =
+  const channel: "internal" | "client" | "tasks" =
     requestedChannel === "internal"
       ? "internal"
       : requestedChannel === "client"
         ? "client"
-        : isInternalUser
-          ? "internal"
-          : "client";
+        : requestedChannel === "tasks"
+          ? "tasks"
+          : isInternalUser
+            ? "internal"
+            : "client";
 
   // Build hrefs for the outer tab — preserve other params (view,
   // resolved) so flipping channels doesn't reset the inner state.
-  const channelHref = (next: "internal" | "client") => {
+  const channelHref = (next: "internal" | "client" | "tasks") => {
     const qs = new URLSearchParams();
     if (showResolved) qs.set("resolved", "1");
     if (requestedView) qs.set("view", requestedView);
@@ -617,6 +621,16 @@ function DiscussionSection({
             🤝 משותף
             <span className="discussion-channel-tab-hint">Hub</span>
           </Link>
+          <Link
+            role="tab"
+            aria-selected={channel === "tasks"}
+            href={channelHref("tasks")}
+            title="דיוני משימות — צבירת כל ההערות על המשימות הפתוחות בפרויקט"
+            className={`discussion-channel-tab ${channel === "tasks" ? "is-active" : ""}`}
+          >
+            📋 משימות
+            <span className="discussion-channel-tab-hint">פתוחות</span>
+          </Link>
         </div>
       )}
       {channel === "internal" ? (
@@ -625,6 +639,11 @@ function DiscussionSection({
           chatSpaceUrl={chatSpaceUrl}
           requestedView={requestedView}
           showResolved={showResolved}
+          projectName={projectName}
+        />
+      ) : channel === "tasks" ? (
+        <TasksChannel
+          subjectEmail={userEmail}
           projectName={projectName}
         />
       ) : (
@@ -714,6 +733,127 @@ async function InternalChannel({
       </Suspense>
     </>
   );
+}
+
+/**
+ * Aggregated task-discussion feed for the project. Pulls every
+ * comment posted on a still-open task in this project into one
+ * chronological feed. Read-only; converting / replying still happens
+ * on each task's own discussion section (each row links there).
+ */
+async function TasksChannel({
+  subjectEmail,
+  projectName,
+}: {
+  subjectEmail: string;
+  projectName: string;
+}) {
+  const { projectOpenTasksDiscussionDirect } = await import(
+    "@/lib/commentsDirect"
+  );
+  const data = await projectOpenTasksDiscussionDirect(
+    subjectEmail,
+    projectName,
+  ).catch((e: unknown) => {
+    console.log(
+      "[projects] tasks-channel fetch failed:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  });
+
+  if (!data) {
+    return (
+      <p className="discussion-empty muted">
+        לא ניתן לטעון את דיוני המשימות.
+      </p>
+    );
+  }
+  if (data.feed.length === 0) {
+    return (
+      <>
+        <div className="section-head section-head-inner">
+          <p className="section-subtitle">
+            {data.open_task_count === 0
+              ? "אין משימות פתוחות בפרויקט הזה."
+              : `אין דיון פעיל ב-${data.open_task_count} המשימות הפתוחות.`}
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="section-head section-head-inner">
+        <p className="section-subtitle">
+          {data.feed.length} הודעות אחרונות מתוך {data.open_task_count} משימות
+          פתוחות בפרויקט
+        </p>
+      </div>
+      <ul className="tasks-channel-feed">
+        {data.feed.map((item) => (
+          <li key={item.comment_id} className="tasks-channel-item">
+            <Link
+              href={`/tasks/${encodeURIComponent(item.task_id)}`}
+              className="tasks-channel-task-chip"
+              title={`פתח את המשימה — ${item.task_title || item.task_id}`}
+            >
+              📋 {item.task_title || item.task_id}
+            </Link>
+            <div className="tasks-channel-body">
+              <div className="tasks-channel-meta">
+                <span className="tasks-channel-author">
+                  {item.author_name || item.author_email.split("@")[0]}
+                </span>
+                <span className="tasks-channel-time" title={item.timestamp}>
+                  {formatRelativeIso(item.timestamp)}
+                </span>
+                {item.resolved && (
+                  <span className="tasks-channel-resolved-pill" title="נפתר">
+                    ✓
+                  </span>
+                )}
+              </div>
+              <div className="tasks-channel-text">
+                {(item.body || "").split("\n").map((line, i) => (
+                  <p key={i}>{line}</p>
+                ))}
+              </div>
+              <div className="tasks-channel-actions">
+                <Link
+                  href={item.deep_link.replace(
+                    /^https?:\/\/[^/]+/,
+                    "",
+                  )}
+                  className="tasks-channel-link"
+                >
+                  פתח את התגובה ←
+                </Link>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** Hebrew-friendly relative-time helper for the tasks-channel feed.
+ *  Falls back to a date string for items older than a week. */
+function formatRelativeIso(iso: string): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso;
+  const diff = Date.now() - t;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "לפני רגע";
+  if (m < 60) return `לפני ${m} דקות`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `לפני ${h} שעות`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `לפני ${d} ימים`;
+  return iso.slice(0, 10);
 }
 
 /**

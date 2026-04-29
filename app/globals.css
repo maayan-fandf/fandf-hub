@@ -1818,6 +1818,94 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   }
 }
 
+/* ── Tasks-channel aggregated feed ──────────────────────────────────
+   Reuses the chat-message visual primitives (column-aligned, soft
+   surface, hover-emphasized) but renders each item with a leading
+   task-context chip so the reader knows which task the comment lives
+   under. Each chip links to the task page. */
+.tasks-channel-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+.tasks-channel-item {
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+  padding: .7em .9em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, var(--surface));
+  transition: border-color .15s ease;
+}
+.tasks-channel-item:hover {
+  border-color: var(--accent, #2a66d9);
+}
+.tasks-channel-task-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  font-size: .82em;
+  font-weight: 600;
+  color: var(--accent, #2a66d9);
+  background: color-mix(in srgb, var(--accent, #2a66d9) 10%, transparent);
+  padding: .15em .6em;
+  border-radius: 99px;
+  text-decoration: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tasks-channel-task-chip:hover {
+  background: color-mix(in srgb, var(--accent, #2a66d9) 18%, transparent);
+}
+.tasks-channel-body {
+  display: flex;
+  flex-direction: column;
+  gap: .25em;
+}
+.tasks-channel-meta {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  font-size: .78em;
+  color: var(--muted);
+}
+.tasks-channel-author {
+  font-weight: 600;
+  color: var(--text);
+}
+.tasks-channel-resolved-pill {
+  background: var(--success, #2a8c4a);
+  color: #fff;
+  border-radius: 99px;
+  font-size: .72em;
+  padding: 0 .5em;
+  font-weight: 700;
+}
+.tasks-channel-text p {
+  margin: 0 0 .2em;
+  font-size: .92em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tasks-channel-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.tasks-channel-link {
+  font-size: .82em;
+  color: var(--accent, #2a66d9);
+  text-decoration: none;
+}
+.tasks-channel-link:hover { text-decoration: underline; }
+
 /* Outer channel tabs at the top of the discussion section — splits
    the conversation by audience (internal Chat-backed vs hub client-
    facing). Visually distinct from the inner view-toggle (segmented

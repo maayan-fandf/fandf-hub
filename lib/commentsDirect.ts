@@ -92,6 +92,13 @@ function hubCommentUrl(project: string, commentId: string): string {
   return `${base}/projects/${encodeURIComponent(project)}/timeline#c=${encodeURIComponent(commentId)}`;
 }
 
+/** Hub deep-link to a task page anchored on its discussion section. */
+function hubTaskDiscussionUrl(taskId: string, commentId: string): string {
+  const base = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  if (!base) return "";
+  return `${base}/tasks/${encodeURIComponent(taskId)}#c=${encodeURIComponent(commentId)}`;
+}
+
 /* ── getCommentByIdDirect ──────────────────────────────────────────── */
 
 /** Lean payload for the "convert comment to task" pre-fill flow on
@@ -482,6 +489,114 @@ export async function taskCommentsDirect(
     comments,
     me: { email: subjectEmail, isAdmin: scope.isAdmin },
   };
+}
+
+/* ── projectOpenTasksDiscussionDirect ────────────────────────────────── */
+
+/** One row in the aggregated task-discussions feed: a single comment
+ *  on a still-open task, with the task's own metadata stamped on so
+ *  the renderer can show "מתוך משימה: <title>" + a deep-link without
+ *  re-fetching anything. */
+export type AggregatedTaskComment = {
+  comment_id: string;
+  task_id: string;
+  task_title: string;
+  task_status: string;
+  author_email: string;
+  author_name: string;
+  body: string;
+  mentions: string[];
+  timestamp: string; // ISO
+  resolved: boolean;
+  edited_at?: string;
+  /** Hub-internal link straight to the comment row anchor on the
+   *  task's discussion section. */
+  deep_link: string;
+};
+
+/**
+ * Aggregate every comment posted on an open task in a project into one
+ * chronological feed (newest first). "Open" means not done and not
+ * cancelled — those terminal statuses drop off the project-level radar.
+ *
+ * Used by the "📋 משימות" tab in DiscussionSection, which surfaces task
+ * conversations at the project level so PMs can see what's being
+ * discussed across tasks without drilling into each one.
+ *
+ * Read shape: one full Comments-sheet pass (already cached for ~5min
+ * upstream of readCommentsOnce when it lands). Pass 1 finds open task
+ * rows for this project (row_kind='task', status not done/cancelled);
+ * pass 2 collects comment rows whose parent_id is in that set. Result
+ * sorted descending by timestamp.
+ */
+export async function projectOpenTasksDiscussionDirect(
+  subjectEmail: string,
+  project: string,
+): Promise<{
+  project: string;
+  feed: AggregatedTaskComment[];
+  open_task_count: number;
+}> {
+  const [{ rows, headerIdx }, scope] = await Promise.all([
+    readCommentsOnce(subjectEmail),
+    getAccessScope(subjectEmail),
+  ]);
+
+  if (!scope.isAdmin && !scope.accessibleProjects.has(project)) {
+    throw new Error("Access denied to project: " + project);
+  }
+
+  const rowKindIdx = headerIdx.get("row_kind");
+
+  // Pass 1 — open tasks in this project.
+  const openTaskMeta = new Map<
+    string,
+    { id: string; title: string; status: string }
+  >();
+  for (const row of rows) {
+    const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
+    if (rk !== "task") continue;
+    const cell = cellGetter(row, headerIdx);
+    if (String(cell("project") ?? "").trim() !== project) continue;
+    const status = String(cell("status") ?? "").trim();
+    if (status === "done" || status === "cancelled") continue;
+    const id = String(cell("id") ?? "");
+    if (!id) continue;
+    const title = String(cell("title") ?? cell("body") ?? "").trim();
+    openTaskMeta.set(id, { id, title, status });
+  }
+
+  // Pass 2 — comment rows whose parent is one of those tasks.
+  const feed: AggregatedTaskComment[] = [];
+  for (const row of rows) {
+    const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
+    if (rk === "task") continue;
+    const cell = cellGetter(row, headerIdx);
+    const parentId = String(cell("parent_id") ?? "");
+    const meta = openTaskMeta.get(parentId);
+    if (!meta) continue;
+    const id = String(cell("id") ?? "");
+    feed.push({
+      comment_id: id,
+      task_id: meta.id,
+      task_title: meta.title,
+      task_status: meta.status,
+      author_email: String(cell("author_email") ?? ""),
+      author_name: String(cell("author_name") ?? ""),
+      body: String(cell("body") ?? ""),
+      mentions: String(cell("mentions") ?? "")
+        .split(/[,;]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+      timestamp: toIsoDate(cell("timestamp")),
+      resolved: Boolean(cell("resolved")),
+      edited_at: toIsoDate(cell("edited_at")) || undefined,
+      deep_link: hubTaskDiscussionUrl(meta.id, id),
+    });
+  }
+  feed.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  return { project, feed, open_task_count: openTaskMeta.size };
 }
 
 /* ── projectMentionTasksDirect (legacy comment-mention Google Tasks) ─ */
