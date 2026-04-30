@@ -4234,6 +4234,33 @@ a.section-link:hover {
    render identically to written rows — the distinction is implementation
    detail, not user-meaningful. The first edit silently creates the row. */
 
+/* Themed thin scrollbar utility — reusable. Apply to ANY scrolling
+   container so it matches the kanban / tasks-table / chat-list chrome.
+   The existing instances (`.tasks-table-wrap`, `.chat-message-list`,
+   kanban columns) inline the same rules; new elements should use this
+   class instead of duplicating. */
+.themed-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.themed-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.themed-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--muted, var(--border));
+  background-clip: padding-box;
+}
+
 /* ─── View-as banner ──────────────────────────────────────────────
    Shown below the topnav whenever the gear-menu's "view as" cookie
    (or the sheet's view_as_email default) is active. Sticks to top so

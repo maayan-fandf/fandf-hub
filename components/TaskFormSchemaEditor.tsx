@@ -125,7 +125,7 @@ export default function TaskFormSchemaEditor({
         )}
       </div>
 
-      <div className="task-form-schema-table-wrap">
+      <div className="task-form-schema-table-wrap themed-scrollbar">
         <table className="task-form-schema-table">
           <thead>
             <tr>

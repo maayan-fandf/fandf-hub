@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Prefs = {
@@ -119,6 +120,7 @@ export default function UserSettingsMenu({
    *  on first paint without a /api/me round-trip. */
   isAdmin: boolean;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -188,22 +190,28 @@ export default function UserSettingsMenu({
     }
   }
 
-  // Apply a view-as cookie change. Hard-reload after so the layout's
-  // server-rendered data (project list, view-as banner, /tasks
-  // filters) re-derives from the new cookie. router.refresh() alone
-  // doesn't always re-run the layout's data fetches.
-  const commitViewAs = useCallback((value: string) => {
-    const trimmed = value.trim();
-    const current = readViewAsCookie();
-    if (trimmed === current) return;
-    if (trimmed !== "" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-      // Ignore partial typing — only commit a full email or explicit
-      // clear. Mirrors the old debounced save.
-      return;
-    }
-    writeViewAsCookie(trimmed);
-    window.location.reload();
-  }, []);
+  // Apply a view-as cookie change. router.refresh() re-runs server
+  // components (which read the cookie via getEffectiveViewAs) without
+  // unloading the page. Crucially, it does NOT trigger beforeunload
+  // — so the ViewAsBanner's beforeunload-clear handler doesn't wipe
+  // the cookie we just set. (window.location.reload() *does* fire
+  // beforeunload, which used to nuke the cookie before the new page
+  // could read it — see the bug fix dated 2026-04-30.)
+  const commitViewAs = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      const current = readViewAsCookie();
+      if (trimmed === current) return;
+      if (trimmed !== "" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+        // Ignore partial typing — only commit a full email or explicit
+        // clear. Mirrors the old debounced save.
+        return;
+      }
+      writeViewAsCookie(trimmed);
+      router.refresh();
+    },
+    [router],
+  );
 
   // Schedule a debounced commit so typing the email pauses ~600ms
   // before reloading.
@@ -274,7 +282,7 @@ export default function UserSettingsMenu({
         {isViewingAs && <span className="settings-menu-dot" aria-hidden />}
       </button>
       {open && (
-        <div className="settings-menu" role="menu">
+        <div className="settings-menu themed-scrollbar" role="menu">
           {!prefs ? (
             <div className="settings-menu-loading">טוען…</div>
           ) : (

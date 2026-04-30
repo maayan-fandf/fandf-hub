@@ -94,7 +94,7 @@ export default function UserPrefsAdminEditor({
 
       <section className="user-prefs-admin-others">
         <h2>משתמשים אחרים <small>({otherRows.length})</small></h2>
-        <div className="user-prefs-admin-table-wrap">
+        <div className="user-prefs-admin-table-wrap themed-scrollbar">
           <table className="user-prefs-admin-table">
             <thead>
               <tr>
