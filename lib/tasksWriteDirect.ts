@@ -568,7 +568,7 @@ function gtaskDueRfc(requestedDate: string): string | undefined {
  * todo GTs after a clarification round, so assignees can tell at a
  * glance the task was returned (not new work).
  */
-async function createGoogleTasks(
+export async function createGoogleTasks(
   task: {
     id: string;
     title: string;
@@ -1787,7 +1787,7 @@ async function tasksUpdateDirectInner(
  *  Used after a status transition spawns new GTs and we need to
  *  union them into the existing map. Single targeted update —
  *  cheaper than a full row rewrite. */
-async function persistGoogleTasksCell(
+export async function persistGoogleTasksCell(
   sheets: ReturnType<typeof sheetsClient>,
   commentsSsId: string,
   headerIdx: Map<string, number>,

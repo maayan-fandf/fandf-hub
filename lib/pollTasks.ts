@@ -25,6 +25,10 @@
 
 import { sheetsClient, tasksApiClient } from "@/lib/sa";
 import { applyAutoTransition } from "@/lib/autoTransition";
+import {
+  createGoogleTasks,
+  persistGoogleTasksCell,
+} from "@/lib/tasksWriteDirect";
 import type { GTaskKind, GTaskRef } from "@/lib/appsScript";
 
 function envOrThrow(name: string): string {
@@ -114,8 +118,54 @@ export type PollResult = {
   transitionsDispatched: number;
   transitionsSkipped: number;
   transitionsErrored: number;
+  /** Reconciliation: how many task rows were missing one-or-more GT for
+   *  their current stage and got a fresh spawn. Should be ≥0 in steady
+   *  state — non-zero means drift was detected and healed. */
+  rowsHealed: number;
+  /** Reconciliation: how many GTs were spawned across all healed rows. */
+  gtsSpawned: number;
   durationMs: number;
 };
+
+/** Active statuses where the reconciliation should ensure a GT exists
+ *  for each expected recipient. Other statuses (terminal / draft) are
+ *  skipped — the existing transition cascade already closed the GTs. */
+type ActiveStatus =
+  | "awaiting_handling"
+  | "in_progress"
+  | "awaiting_approval"
+  | "awaiting_clarification";
+
+/** Compute the (recipient email, GT kind) pairs that SHOULD exist for
+ *  a task at the given status. Empty assignees fall back to author so
+ *  a self-only task still surfaces in the author's GT list. Empty
+ *  approver / owner produces no expectation (we can't spawn for a
+ *  blank email). */
+function expectedRecipientsForRow(input: {
+  status: string;
+  assignees: string[];
+  authorEmail: string;
+  approverEmail: string;
+  pmEmail: string;
+}): { email: string; kind: GTaskKind }[] {
+  const { status, assignees, authorEmail, approverEmail, pmEmail } = input;
+  switch (status as ActiveStatus | string) {
+    case "awaiting_handling":
+    case "in_progress": {
+      const list = assignees.filter(Boolean);
+      const recipients = list.length > 0 ? list : authorEmail ? [authorEmail] : [];
+      return recipients.map((email) => ({ email, kind: "todo" as const }));
+    }
+    case "awaiting_approval":
+      return approverEmail ? [{ email: approverEmail, kind: "approve" }] : [];
+    case "awaiting_clarification": {
+      const owner = authorEmail || pmEmail;
+      return owner ? [{ email: owner, kind: "clarify" }] : [];
+    }
+    default:
+      return [];
+  }
+}
 
 export async function pollAllTaskCompletions(): Promise<PollResult> {
   if (inFlight) {
@@ -155,9 +205,25 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   const I_RESOLVED = idx("resolved");
   const I_GT = idx("google_tasks");
   const I_STATUS = idx("status");
+  // Fields needed for reconciliation (compute expected recipients).
+  const I_TITLE = idx("title");
+  const I_PROJECT = idx("project");
+  const I_BODY = idx("body");
+  const I_DRIVE_URL = idx("drive_folder_url");
+  const I_REQUESTED = idx("requested_date");
+  const I_AUTHOR = idx("author_email");
+  const I_APPROVER = idx("approver_email");
+  const I_PM = idx("project_manager_email");
+  const I_MENTIONS = idx("mentions");
   if (I_ID < 0 || I_GT < 0) {
     throw new Error("Comments sheet missing required headers (id, google_tasks)");
   }
+  // Build a header→colIdx map for the persistGoogleTasksCell helper
+  // it expects an explicit Map.
+  const headerIdx = new Map<string, number>();
+  headers.forEach((h, i) => {
+    if (h) headerIdx.set(h, i);
+  });
 
   // Step 1: collect every (row, ref) pair we need to fetch.
   type RowJob = {
@@ -266,7 +332,189 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     }
   }
 
-  return summary(start, rows.length - 1, rowsWithGTs, refsFetched, duesUpdated, dispatched, skipped, errored);
+  // Step 3: reconciliation pass. Walk every active task row (NOT just
+  // those with refs) and ensure each expected recipient has both a
+  // ref in cell + a visible GT in their tasklist. Heals drift like:
+  //   - Empty cell on tasks created without explicit assignees
+  //   - GTs in cell but the underlying GT was deleted / hidden by Tasks
+  //     API (tasks.get says it exists, tasks.list doesn't return it)
+  //   - Spawn that silently failed during the original transition
+  //
+  // Per-user GT id cache prevents re-listing the same tasklist for
+  // each row with that recipient.
+  const visibleGTsCache = new Map<string, Set<string>>();
+  async function getVisibleGTs(email: string): Promise<Set<string>> {
+    const lc = email.toLowerCase().trim();
+    if (!lc) return new Set();
+    const hit = visibleGTsCache.get(lc);
+    if (hit) return hit;
+    const ids = new Set<string>();
+    try {
+      const tasksApi = tasksApiClient(lc);
+      const lists = await tasksApi.tasklists.list({ maxResults: 1 });
+      const listId = lists.data.items?.[0]?.id;
+      if (listId) {
+        let pageToken: string | undefined;
+        do {
+          const r = await tasksApi.tasks.list({
+            tasklist: listId,
+            showCompleted: false,
+            showHidden: false,
+            maxResults: 100,
+            pageToken,
+          });
+          for (const t of r.data.items ?? []) {
+            if (t.id) ids.add(t.id);
+          }
+          pageToken = r.data.nextPageToken ?? undefined;
+        } while (pageToken);
+      }
+    } catch (e) {
+      // Listing failed for this user — skip reconciliation for them
+      // this cycle; next cycle will try again. Log so transient
+      // failures are diagnosable.
+      console.log(
+        `[pollTasks] reconcile: list GTs failed for ${lc}:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+    visibleGTsCache.set(lc, ids);
+    return ids;
+  }
+
+  let rowsHealed = 0;
+  let gtsSpawned = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (I_KIND < 0 || String(row[I_KIND] ?? "").trim() !== "task") continue;
+    const status = String(row[I_STATUS] ?? "").trim();
+    // Only the four "active" statuses spawn GTs. Terminal + draft
+    // skipped — leftover refs there are historical, not actionable.
+    if (
+      status !== "awaiting_handling" &&
+      status !== "in_progress" &&
+      status !== "awaiting_approval" &&
+      status !== "awaiting_clarification"
+    ) {
+      continue;
+    }
+    const taskId = String(row[I_ID] ?? "").trim();
+    if (!taskId) continue;
+    const assignees = String(row[I_MENTIONS] ?? "")
+      .split(/[,;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const authorEmail = String(row[I_AUTHOR] ?? "").toLowerCase().trim();
+    const approverEmail = String(row[I_APPROVER] ?? "").toLowerCase().trim();
+    const pmEmail = String(row[I_PM] ?? "").toLowerCase().trim();
+    const expected = expectedRecipientsForRow({
+      status,
+      assignees,
+      authorEmail,
+      approverEmail,
+      pmEmail,
+    });
+    if (expected.length === 0) continue;
+
+    const cellRefs = parseCell(I_GT < 0 ? "" : row[I_GT]);
+    const missing: { email: string; kind: GTaskKind }[] = [];
+    for (const exp of expected) {
+      const matchingRef = cellRefs.find(
+        (r) =>
+          (r.u || "").toLowerCase() === exp.email &&
+          (r.kind ?? "todo") === exp.kind,
+      );
+      if (!matchingRef) {
+        missing.push(exp);
+        continue;
+      }
+      // Cell ref exists — verify the underlying GT is actually visible
+      // to the recipient. tasks.list with showCompleted=false should
+      // return every active item. If it doesn't, the GT is in a
+      // limbo state we can't fix; treat as missing and re-spawn.
+      const visible = await getVisibleGTs(exp.email);
+      if (!visible.has(matchingRef.t)) {
+        missing.push(exp);
+      }
+    }
+    if (missing.length === 0) continue;
+
+    // Spawn replacements. Build the task shape createGoogleTasks needs.
+    const taskInput = {
+      id: taskId,
+      title: I_TITLE >= 0 ? String(row[I_TITLE] ?? "") : "",
+      project: I_PROJECT >= 0 ? String(row[I_PROJECT] ?? "") : "",
+      description: I_BODY >= 0 ? String(row[I_BODY] ?? "") : "",
+      drive_folder_url: I_DRIVE_URL >= 0 ? String(row[I_DRIVE_URL] ?? "") : "",
+      requested_date:
+        I_REQUESTED >= 0 ? String(row[I_REQUESTED] ?? "") : "",
+    };
+    let mergedRefs: GTaskRef[] = [...cellRefs];
+    let spawnedThisRow = 0;
+    // Group by kind so each createGoogleTasks call is a single API
+    // round-trip per kind.
+    const byKind = new Map<GTaskKind, string[]>();
+    for (const m of missing) {
+      const list = byKind.get(m.kind) ?? [];
+      list.push(m.email);
+      byKind.set(m.kind, list);
+    }
+    for (const [kind, recipients] of byKind) {
+      try {
+        const fresh = await createGoogleTasks(taskInput, recipients, { kind });
+        if (fresh.length > 0) {
+          mergedRefs = [...mergedRefs, ...fresh];
+          spawnedThisRow += fresh.length;
+          // Update the visibility cache so subsequent rows in the
+          // same cycle don't re-list the same user.
+          for (const ref of fresh) {
+            const set = visibleGTsCache.get(ref.u.toLowerCase()) ?? new Set();
+            set.add(ref.t);
+            visibleGTsCache.set(ref.u.toLowerCase(), set);
+          }
+        }
+      } catch (e) {
+        console.log(
+          `[pollTasks] reconcile: spawn failed for ${taskId} kind=${kind}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
+    if (spawnedThisRow > 0) {
+      try {
+        await persistGoogleTasksCell(
+          sheets,
+          commentsSsId,
+          headerIdx,
+          i, // 0-based index into values; persistGoogleTasksCell adds 1
+          mergedRefs,
+        );
+        rowsHealed++;
+        gtsSpawned += spawnedThisRow;
+        console.log(
+          `[pollTasks] reconcile: healed ${taskId} — spawned ${spawnedThisRow} GT(s)`,
+        );
+      } catch (e) {
+        console.log(
+          `[pollTasks] reconcile: persist cell failed for ${taskId}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
+  }
+
+  return summary(
+    start,
+    rows.length - 1,
+    rowsWithGTs,
+    refsFetched,
+    duesUpdated,
+    dispatched,
+    skipped,
+    errored,
+    rowsHealed,
+    gtsSpawned,
+  );
 }
 
 function summary(
@@ -278,6 +526,8 @@ function summary(
   transitionsDispatched: number,
   transitionsSkipped: number,
   transitionsErrored: number,
+  rowsHealed = 0,
+  gtsSpawned = 0,
 ): PollResult {
   return {
     rowsScanned,
@@ -287,6 +537,8 @@ function summary(
     transitionsDispatched,
     transitionsSkipped,
     transitionsErrored,
+    rowsHealed,
+    gtsSpawned,
     durationMs: Date.now() - start,
   };
 }
