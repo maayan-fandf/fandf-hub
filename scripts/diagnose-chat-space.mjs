@@ -74,10 +74,14 @@ const headers = (rows[0] ?? []).map((h) =>
 );
 console.log("Headers:", headers);
 const iProj = headers.indexOf("פרוייקט");
-const iWebhook = headers.indexOf("Chat Webhook");
+// Accept the new "Chat Space" name + the legacy "Chat Webhook"
+// during the rename transition.
+const iWebhook = headers.indexOf("Chat Space") >= 0
+  ? headers.indexOf("Chat Space")
+  : headers.indexOf("Chat Webhook");
 console.log(`iProj=${iProj} iWebhook=${iWebhook}`);
 if (iProj < 0 || iWebhook < 0) {
-  console.log("[FAIL] Keys missing פרוייקט or Chat Webhook column");
+  console.log("[FAIL] Keys missing פרוייקט or Chat Space/Chat Webhook column");
   process.exit(1);
 }
 

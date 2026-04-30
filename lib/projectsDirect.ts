@@ -27,6 +27,7 @@
 import type { MyProjects, Project, ProjectRoster } from "@/lib/appsScript";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysRows, HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
+import { findChatSpaceColumnIndex } from "@/lib/keys";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -93,7 +94,7 @@ export async function getProjectChatSpaceUrl(
   try {
     const { headers, rows } = await readKeysRows(subjectEmail);
     const iProj = headers.indexOf("פרוייקט");
-    const iWebhook = headers.indexOf("Chat Webhook");
+    const iWebhook = findChatSpaceColumnIndex(headers);
     if (iProj < 0 || iWebhook < 0) return "";
     for (const row of rows) {
       const name = String(row[iProj] ?? "").toLowerCase().trim();
@@ -220,7 +221,7 @@ export async function getMyProjectsDirect(
   const iClients = headers.indexOf("Email Client");
   const iInternal = headers.indexOf("Access — internal only");
   const iCf = headers.indexOf("Client-facing");
-  const iWebhook = headers.indexOf("Chat Webhook");
+  const iWebhook = findChatSpaceColumnIndex(headers);
 
   if (iProj < 0) {
     // Keys tab is unreadable — fail closed like the Apps Script handler.

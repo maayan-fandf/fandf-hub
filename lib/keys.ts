@@ -96,6 +96,26 @@ export function invalidateKeysCache(): void {
 }
 
 /**
+ * Find the index of the Chat-space column in a Keys headers array.
+ *
+ * The header was historically named `Chat Webhook` (back when it
+ * literally stored a webhook URL). It accepts any of four shapes
+ * today — webhook URL, room URL, mail-embedded link, or bare space
+ * id — and `chatSpaceUrlFromWebhook` normalizes them. Renamed to
+ * `Chat Space` 2026-04-30 for honesty; this helper accepts both
+ * names so the rename can happen as a sheet edit without coordinated
+ * code deploys. Drop the legacy fallback after the sheet has been
+ * renamed for a soak period.
+ *
+ * Returns -1 when neither header is present.
+ */
+export function findChatSpaceColumnIndex(headers: string[]): number {
+  const i = headers.indexOf("Chat Space");
+  if (i >= 0) return i;
+  return headers.indexOf("Chat Webhook");
+}
+
+/**
  * Resolve a sender email to the company name from the Keys sheet's
  * `Email Client` column (col E — comma-separated raw emails). Used by
  * the Gmail-origin task inbox: when the user converts an emailed task

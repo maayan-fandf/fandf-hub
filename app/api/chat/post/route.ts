@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { auth } from "@/auth";
 import { postMessage, parseSpaceId, listThreadMentionedEmails } from "@/lib/chat";
-import { readKeysCached } from "@/lib/keys";
+import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,10 +100,10 @@ export async function POST(req: Request) {
   try {
     const { headers, rows } = await readKeysCached(session.user.email);
     const iProj = headers.indexOf("פרוייקט");
-    const iWebhook = headers.indexOf("Chat Webhook");
+    const iWebhook = findChatSpaceColumnIndex(headers);
     if (iProj < 0 || iWebhook < 0) {
       return NextResponse.json(
-        { ok: false, error: "Keys missing פרוייקט / Chat Webhook columns" },
+        { ok: false, error: "Keys missing פרוייקט / Chat Space columns" },
         { status: 500 },
       );
     }

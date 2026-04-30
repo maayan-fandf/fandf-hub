@@ -29,7 +29,7 @@ import {
   gmailClient,
   driveFolderOwner,
 } from "@/lib/sa";
-import { readKeysCached } from "@/lib/keys";
+import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 import type {
   GTaskKind,
   TasksCreateInput,
@@ -929,7 +929,7 @@ async function postChatWebhook(
   try {
     const { headers, rows } = await readKeysCached(subjectEmail);
     const iProj = headers.indexOf("פרוייקט");
-    const iWebhook = headers.indexOf("Chat Webhook");
+    const iWebhook = findChatSpaceColumnIndex(headers);
     if (iProj < 0 || iWebhook < 0) return;
     const target = project.toLowerCase().trim();
     let webhookUrl = "";

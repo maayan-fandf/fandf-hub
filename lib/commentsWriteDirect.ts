@@ -42,7 +42,7 @@ import {
   tasksApiClient,
   gmailClient,
 } from "@/lib/sa";
-import { readKeysCached } from "@/lib/keys";
+import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
 /**
  * Run `fn` after the response has been flushed to the user. Wraps Next 15's
@@ -292,7 +292,7 @@ async function postChatWebhook(
   try {
     const { headers, rows } = await readKeysCached(subjectEmail);
     const iProj = headers.indexOf("פרוייקט");
-    const iWebhook = headers.indexOf("Chat Webhook");
+    const iWebhook = findChatSpaceColumnIndex(headers);
     if (iProj < 0 || iWebhook < 0) return;
     const target = project.toLowerCase().trim();
     let webhookUrl = "";
