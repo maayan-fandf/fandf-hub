@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import EditChatMessageDrawer from "@/components/EditChatMessageDrawer";
 import DeleteChatMessageButton from "@/components/DeleteChatMessageButton";
@@ -8,6 +8,22 @@ import ConvertChatMessageToTaskButton from "@/components/ConvertChatMessageToTas
 
 const COMMON_EMOJIS = ["👍", "❤️", "😄", "🎉", "👀", "🙏", "✅", "🔥"];
 const MAX_REPLY = 4000;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+type ReplyAttachment = {
+  /** Local id assigned client-side so we can match a chip to its
+   *  upload completion / error event without relying on (filename,
+   *  status) pairs that aren't unique. */
+  tempId: string;
+  name: string;
+  mimeType: string;
+  isImage: boolean;
+  uploading: boolean;
+  /** Set once /api/chat/upload returns. Used in the POST payload. */
+  resourceName: string;
+  /** Set when the upload failed; renders an inline ⚠️ + error tip. */
+  error?: string;
+};
 
 /**
  * Chat-style hover toolbar that floats at the top-right of each
@@ -56,7 +72,11 @@ export default function ChatMessageHoverToolbar({
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyValue, setReplyValue] = useState("");
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<ReplyAttachment[]>([]);
   const [isPending, startTransition] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadingCount = attachments.filter((a) => a.uploading).length;
 
   function react(emoji: string) {
     if (isPending) return;
@@ -84,9 +104,84 @@ export default function ChatMessageHoverToolbar({
     });
   }
 
+  async function uploadFile(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setReplyError(
+        `הקובץ גדול מדי (${Math.round(file.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    const tempId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `att_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const isImage = (file.type || "").startsWith("image/");
+    setAttachments((prev) => [
+      ...prev,
+      {
+        tempId,
+        name: file.name || "file",
+        mimeType: file.type || "application/octet-stream",
+        isImage,
+        uploading: true,
+        resourceName: "",
+      },
+    ]);
+    const form = new FormData();
+    form.set("project", project);
+    form.set("file", file, file.name || "pasted-image.png");
+    try {
+      const res = await fetch("/api/chat/upload", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        resourceName?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.resourceName) {
+        throw new Error(data.error || `Upload failed (${res.status})`);
+      }
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.tempId === tempId
+            ? { ...a, uploading: false, resourceName: data.resourceName! }
+            : a,
+        ),
+      );
+    } catch (e) {
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.tempId === tempId
+            ? {
+                ...a,
+                uploading: false,
+                error: e instanceof Error ? e.message : String(e),
+              }
+            : a,
+        ),
+      );
+    }
+  }
+
+  function pickFiles(files: FileList | null) {
+    if (!files) return;
+    Array.from(files).forEach((f) => void uploadFile(f));
+    // Reset input so picking the same file twice still triggers onChange.
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeAttachment(tempId: string) {
+    setAttachments((prev) => prev.filter((a) => a.tempId !== tempId));
+  }
+
   function submitReply() {
     const t = replyValue.trim();
-    if (!t) {
+    const okAttachments = attachments.filter(
+      (a) => !a.uploading && !a.error && a.resourceName,
+    );
+    if (!t && okAttachments.length === 0) {
       setReplyError("תגובה לא יכולה להיות ריקה.");
       return;
     }
@@ -94,9 +189,17 @@ export default function ChatMessageHoverToolbar({
       setReplyError(`ארוך מדי (${t.length}/${MAX_REPLY}).`);
       return;
     }
+    if (uploadingCount > 0) {
+      setReplyError("ממתינים להעלאה לסיום…");
+      return;
+    }
     setReplyError(null);
     const sending = t;
+    const sendingAtt = okAttachments.map((a) => ({
+      resourceName: a.resourceName,
+    }));
     setReplyValue("");
+    setAttachments([]);
     setReplyOpen(false);
     startTransition(async () => {
       try {
@@ -107,6 +210,7 @@ export default function ChatMessageHoverToolbar({
             project,
             text: sending,
             threadName,
+            attachments: sendingAtt.length > 0 ? sendingAtt : undefined,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {
@@ -118,7 +222,9 @@ export default function ChatMessageHoverToolbar({
         }
         router.refresh();
       } catch (e) {
+        // Restore the user's draft + any attachments so they can retry.
         setReplyValue(sending);
+        setAttachments((prev) => [...okAttachments, ...prev]);
         setReplyError(e instanceof Error ? e.message : String(e));
         setReplyOpen(true);
       }
@@ -208,7 +314,72 @@ export default function ChatMessageHoverToolbar({
             maxLength={MAX_REPLY + 1}
             autoFocus
           />
+          {attachments.length > 0 && (
+            <div className="chat-composer-attachments">
+              {attachments.map((a) => (
+                <span key={a.tempId} className="chat-composer-attachment">
+                  <span
+                    className="chat-composer-attachment-icon"
+                    aria-hidden
+                  >
+                    {a.isImage ? "🖼" : "📎"}
+                  </span>
+                  <span className="chat-composer-attachment-name">
+                    {a.name}
+                  </span>
+                  {a.uploading && (
+                    <span className="chat-composer-attachment-status">
+                      ⏳
+                    </span>
+                  )}
+                  {a.error && (
+                    <span
+                      className="chat-composer-attachment-status"
+                      title={a.error}
+                    >
+                      ⚠️
+                    </span>
+                  )}
+                  {a.error && (
+                    <span
+                      className="chat-composer-attachment-error"
+                      title={a.error}
+                    >
+                      {a.error.length > 60
+                        ? a.error.slice(0, 57) + "…"
+                        : a.error}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="chat-composer-attachment-remove"
+                    onClick={() => removeAttachment(a.tempId)}
+                    title="הסר קובץ"
+                    aria-label="הסר קובץ"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="chat-message-toolbar-reply-foot">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => pickFiles(e.target.files)}
+            />
+            <button
+              type="button"
+              className="reply-btn reply-btn-ghost"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isPending}
+              title="צרף קובץ — נשמר במרחב הצ׳אט של הפרויקט"
+            >
+              📎
+            </button>
             {replyError && (
               <span className="reply-error">{replyError}</span>
             )}
@@ -227,7 +398,11 @@ export default function ChatMessageHoverToolbar({
               onClick={submitReply}
               disabled={
                 isPending ||
-                replyValue.trim().length === 0 ||
+                uploadingCount > 0 ||
+                (replyValue.trim().length === 0 &&
+                  attachments.filter(
+                    (a) => !a.uploading && !a.error && a.resourceName,
+                  ).length === 0) ||
                 replyValue.trim().length > MAX_REPLY
               }
             >
