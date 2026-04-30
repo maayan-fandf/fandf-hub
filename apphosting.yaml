@@ -148,6 +148,18 @@ env:
       - BUILD
       - RUNTIME
 
+  # Temporary kill-switch for the fast in-band GT → hub sync that fires
+  # from /api/tasks/pending-count (top-nav badge). Set to "1" to free
+  # Tasks API quota for offline orphan-GT cleanup work; flip back to ""
+  # (or delete the entry) to resume normal sync. The 1-min Cloud
+  # Scheduler poll still picks up offline completions, so toggling this
+  # only delays detection until the cron next fires.
+  - variable: FAST_SYNC_DISABLED
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # The email the hub impersonates for Drive folder creation (SA with
   # DWD creates folders in this user's Drive). Default matches the
   # Apps Script behavior (Script was deployed as maayan). Change if
