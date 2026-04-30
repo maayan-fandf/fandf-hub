@@ -185,7 +185,21 @@ export default function TaskCreateForm({
     };
   }, [project, campaignReloadNonce]);
 
-  const companyProjects = company ? byCompany.get(company) || [] : projects;
+  // Filter projects by selected company, deduped by name. Defensive
+  // dedupe protects against the rare case where the source data has
+  // duplicate (name, company) pairs (e.g. accidental double-seed of a
+  // company-level "כללי" project).
+  const companyProjects = (() => {
+    const source = company
+      ? projects.filter((p) => p.company === company)
+      : projects;
+    const seen = new Set<string>();
+    return source.filter((p) => {
+      if (seen.has(p.name)) return false;
+      seen.add(p.name);
+      return true;
+    });
+  })();
 
   // Departments derived from the live `Role` column on names-to-emails.
   // Falls back to the legacy hardcoded list when no roles are populated
