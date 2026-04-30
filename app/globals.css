@@ -7782,6 +7782,13 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   padding: .5em;
   min-width: 320px;
   max-width: 380px;
+  /* Cap height so the menu can't run past the viewport's bottom edge
+     (e.g. a short laptop screen with the browser's bookmark bar +
+     tab strip eating ~150px). The 16px subtracted leaves a small gap
+     to the viewport edge so the rounded corners are visible. */
+  max-height: calc(100vh - var(--topnav-height, 60px) - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 @media (max-width: 600px) {
   /* On narrow viewports the menu can't fit alongside the page —
