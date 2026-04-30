@@ -2173,6 +2173,15 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
 .chat-composer-attachment-status {
   font-size: 0.95em;
 }
+.chat-composer-attachment-error {
+  color: var(--accent-warn-dark, #b45309);
+  font-size: 0.78em;
+  font-weight: 500;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .chat-composer-attachment-remove {
   appearance: none;
   width: 18px;

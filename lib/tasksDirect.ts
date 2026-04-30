@@ -381,6 +381,16 @@ export async function tasksListDirect(
   for (const row of rows) {
     if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
     const t = rowToTask(row, headerIdx);
+    // Skip rows with empty / whitespace id — they surface broken links
+    // like /tasks/%20 in TasksQueue and break every comment-reply
+    // attempt with "Parent comment not found". Log so the bad row
+    // can be tracked down + cleaned up in the sheet.
+    if (!t.id.trim()) {
+      console.log(
+        `[tasksDirect] skipping task row with empty id (project="${t.project}", title="${t.title}")`,
+      );
+      continue;
+    }
     t.comments_count = commentsCount.get(t.id) ?? 0;
 
     // Non-admin access gate.

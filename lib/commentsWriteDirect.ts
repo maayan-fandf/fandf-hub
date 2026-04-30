@@ -484,12 +484,17 @@ export async function postReplyDirect(
   parentCommentId: string,
   body: string,
 ): Promise<PostReplyResult> {
-  if (!parentCommentId) throw new Error("parentCommentId required");
+  if (!parentCommentId || !parentCommentId.trim()) {
+    throw new Error("parentCommentId required");
+  }
   if (!body || !body.trim()) throw new Error("body required");
 
+  const trimmedParentId = parentCommentId.trim();
   const { rows, headers, idx } = await readCommentsSheet(subjectEmail);
-  const parentRowIdx = findRowByCommentId(rows, idx, parentCommentId);
-  if (parentRowIdx < 0) throw new Error("Parent comment not found: " + parentCommentId);
+  const parentRowIdx = findRowByCommentId(rows, idx, trimmedParentId);
+  if (parentRowIdx < 0) {
+    throw new Error("Parent comment not found: " + trimmedParentId);
+  }
   const parentRow = rows[parentRowIdx];
   const parentProject = String(
     parentRow[idx.get("project") ?? -1] ?? "",

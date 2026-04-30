@@ -512,7 +512,17 @@ export default function InternalChatComposer({
                 <span className="chat-composer-attachment-status">⏳</span>
               )}
               {a.error && (
-                <span className="chat-composer-attachment-status">⚠️</span>
+                <span
+                  className="chat-composer-attachment-status"
+                  title={a.error}
+                >
+                  ⚠️
+                </span>
+              )}
+              {a.error && (
+                <span className="chat-composer-attachment-error" title={a.error}>
+                  {a.error.length > 80 ? a.error.slice(0, 77) + "…" : a.error}
+                </span>
               )}
               <button
                 type="button"

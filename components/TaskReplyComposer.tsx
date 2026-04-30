@@ -282,6 +282,15 @@ export default function TaskReplyComposer({ taskId, project }: Props) {
       setError("ממתינים להעלאה לסיום…");
       return;
     }
+    // Guard against arriving at /tasks/%20 (whitespace task id from a
+    // corrupt sheet row). Without this the request would 500 with
+    // "Parent comment not found: " — confusing surface for the user.
+    if (!taskId || !taskId.trim()) {
+      setError(
+        "המשימה הזו אינה תקפה (חסר מזהה). חזור לרשימת המשימות ונסה שוב.",
+      );
+      return;
+    }
     setError(null);
     startTransition(async () => {
       try {
