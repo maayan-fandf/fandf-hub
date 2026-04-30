@@ -419,21 +419,34 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     const cellRefs = parseCell(I_GT < 0 ? "" : row[I_GT]);
     const missing: { email: string; kind: GTaskKind }[] = [];
     for (const exp of expected) {
-      const matchingRef = cellRefs.find(
+      // Collect EVERY matching ref, not just the first. The original
+      // implementation used `find` which checked only the first match;
+      // when a cell had accumulated multiple refs for the same
+      // (email, kind) — which it can after a single drift event — and
+      // that first ref happened to be invisible in tasks.list, we'd
+      // spawn another. Next cycle, same first ref → another spawn.
+      // Endless loop. (Bug 2026-04-30; cron paused mid-day; fix
+      // committed before resume.)
+      const matchingRefs = cellRefs.filter(
         (r) =>
           (r.u || "").toLowerCase() === exp.email &&
           (r.kind ?? "todo") === exp.kind,
       );
-      if (!matchingRef) {
+      if (matchingRefs.length === 0) {
         missing.push(exp);
         continue;
       }
-      // Cell ref exists — verify the underlying GT is actually visible
-      // to the recipient. tasks.list with showCompleted=false should
-      // return every active item. If it doesn't, the GT is in a
-      // limbo state we can't fix; treat as missing and re-spawn.
+      // Defensive cap: if the cell already has ≥3 refs for the same
+      // (email, kind), assume one of them is healthy enough and don't
+      // pile on. Prevents runaway loops if the visibility check is
+      // ever flaky again. Real-world cells should never exceed 1-2 per
+      // (email, kind) — anything past that is leftover history.
+      if (matchingRefs.length >= 3) continue;
+      // Cell has refs — verify ANY matching ref's GT is visible in the
+      // recipient's tasklist. If even one is healthy, the recipient
+      // already has a usable GT for this stage; don't spawn another.
       const visible = await getVisibleGTs(exp.email);
-      if (!visible.has(matchingRef.t)) {
+      if (!matchingRefs.some((r) => visible.has(r.t))) {
         missing.push(exp);
       }
     }
