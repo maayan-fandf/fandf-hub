@@ -354,6 +354,64 @@ export async function setUserPrefs(
   return { ...merged };
 }
 
+/** Read every row of User Preferences as a `{email, prefs}` map.
+ *  Used by the admin page to show prefs for all users at once.
+ *  Caller must enforce its own admin gate. Cache is bypassed on
+ *  purpose — admin views want a fresh snapshot. */
+export async function listAllUserPrefs(
+  subjectEmail: string,
+): Promise<Array<{ email: string; prefs: UserPrefs; updatedAt: string }>> {
+  const { headers, rows } = await readAllPrefs(subjectEmail);
+  const iEmail = headers.indexOf("email");
+  if (iEmail < 0) return [];
+  const iNotif = headers.indexOf("email_notifications");
+  const iSync = headers.indexOf("gtasks_sync");
+  const iViewAs = headers.indexOf("view_as_email");
+  const iSnooze = headers.indexOf("notifications_snooze_until");
+  const iSort = headers.indexOf("tasks_sort");
+  const iOrder = headers.indexOf("tasks_sort_order");
+  const iHideArch = headers.indexOf("hide_archived");
+  const iArchDays = headers.indexOf("archive_after_days");
+  const iUpdated = headers.indexOf("updated_at");
+  const out: Array<{ email: string; prefs: UserPrefs; updatedAt: string }> = [];
+  for (const row of rows) {
+    const e = String(row[iEmail] ?? "").toLowerCase().trim();
+    if (!e) continue;
+    const prefs: UserPrefs = {
+      email_notifications: iNotif >= 0
+        ? asBool(row[iNotif], DEFAULT_PREFS.email_notifications)
+        : DEFAULT_PREFS.email_notifications,
+      gtasks_sync: iSync >= 0
+        ? asBool(row[iSync], DEFAULT_PREFS.gtasks_sync)
+        : DEFAULT_PREFS.gtasks_sync,
+      view_as_email: iViewAs >= 0
+        ? String(row[iViewAs] ?? "").toLowerCase().trim()
+        : "",
+      notifications_snooze_until:
+        iSnooze >= 0 ? String(row[iSnooze] ?? "").trim() : "",
+      tasks_sort: iSort >= 0 ? String(row[iSort] ?? "").trim() : "",
+      tasks_sort_order: iOrder >= 0 ? String(row[iOrder] ?? "").trim() : "",
+      hide_archived: iHideArch >= 0
+        ? asBool(row[iHideArch], DEFAULT_PREFS.hide_archived)
+        : DEFAULT_PREFS.hide_archived,
+      archive_after_days: iArchDays >= 0
+        ? String(row[iArchDays] ?? "").trim() ||
+          DEFAULT_PREFS.archive_after_days
+        : DEFAULT_PREFS.archive_after_days,
+    };
+    const updatedAt = iUpdated >= 0 ? String(row[iUpdated] ?? "").trim() : "";
+    out.push({ email: e, prefs, updatedAt });
+  }
+  return out;
+}
+
+/** Defaults exposed for callers that need to render a "default for
+ *  this user" row (admin page) without having to call setUserPrefs
+ *  first. */
+export function getDefaultUserPrefs(): UserPrefs {
+  return { ...DEFAULT_PREFS };
+}
+
 function columnLetter(n: number): string {
   let s = "";
   while (n > 0) {

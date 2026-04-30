@@ -4145,6 +4145,114 @@ a.section-link:hover {
   line-height: 1.45;
 }
 
+/* ─── User Preferences admin table ───────────────────────────────── */
+.user-prefs-admin {
+  display: grid;
+  gap: 1.5rem;
+}
+.user-prefs-admin-self {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+.user-prefs-admin-self h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+.user-prefs-admin-self-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+.user-prefs-self-form {
+  display: grid;
+  gap: 0.5rem;
+}
+.user-prefs-self-toggle {
+  display: flex;
+  gap: 0.6em;
+  align-items: flex-start;
+  cursor: pointer;
+  padding: 0.4em 0;
+}
+.user-prefs-self-toggle input[type="checkbox"] {
+  margin-top: 0.25em;
+}
+.user-prefs-self-toggle small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82em;
+  margin-top: 0.15em;
+  font-weight: 400;
+}
+.user-prefs-self-viewas {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.9em;
+  color: var(--muted);
+  padding-top: 0.25em;
+}
+.user-prefs-self-viewas code {
+  background: var(--surface-alt, var(--surface));
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+  border: 1px solid var(--border);
+}
+.user-prefs-admin-others h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.5rem;
+}
+.user-prefs-admin-others h2 small {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+.user-prefs-admin-table-wrap {
+  overflow-x: auto;
+}
+.user-prefs-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.user-prefs-admin-table th {
+  text-align: right;
+  padding: 0.5em 0.7em;
+  background: var(--surface-alt, var(--surface));
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.user-prefs-admin-table td {
+  padding: 0.5em 0.7em;
+  border-bottom: 1px solid var(--border);
+}
+.user-prefs-admin-table tr.is-default td {
+  color: var(--muted);
+  font-style: italic;
+}
+.user-prefs-admin-role {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.user-prefs-admin-email {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+.user-prefs-admin-viewas,
+.user-prefs-admin-updated {
+  font-size: 0.82em;
+  color: var(--muted);
+}
+.user-prefs-admin-empty {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
 .admin-editor {
   display: flex;
   flex-direction: column;
