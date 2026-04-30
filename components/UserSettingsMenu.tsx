@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Prefs = {
@@ -70,7 +71,29 @@ function isSnoozeActive(persistedIso: string, optionVal: string): boolean {
  * Loads prefs + people list lazily on first open. Saves on each toggle
  * with optimistic UI; reverts the toggle if the server rejects.
  */
-export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
+/** Admin section entries shown inline at the bottom of the gear menu
+ *  for admins. Each links to its dedicated page; the page is the
+ *  bidirectional editor (sheet ↔ UI) for that area. New admin tools
+ *  are added here, not as separate top-nav entries. */
+const ADMIN_LINKS: { href: string; label: string; emoji: string }[] = [
+  { href: "/admin/names-to-emails", label: "שמות ואימיילים", emoji: "📇" },
+  { href: "/admin/chat-spaces", label: "Chat Spaces", emoji: "💬" },
+  { href: "/admin/user-prefs", label: "העדפות משתמשים", emoji: "👥" },
+  { href: "/admin/task-form-schema", label: "סכמת טופס משימה", emoji: "📐" },
+  { href: "/admin/keys", label: "Keys", emoji: "🔑" },
+];
+
+export default function UserSettingsMenu({
+  myEmail,
+  isAdmin,
+}: {
+  myEmail: string;
+  /** When true, the menu renders an "Admin" section linking to the
+   *  /admin/* pages. Replaces the old standalone NavAdminLink in the
+   *  top nav. Server-computed in layout.tsx so the section can render
+   *  on first paint without a /api/me round-trip. */
+  isAdmin: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -398,6 +421,30 @@ export default function UserSettingsMenu({ myEmail }: { myEmail: string }) {
                   </button>
                 )}
               </div>
+
+              {isAdmin && (
+                <div className="settings-menu-section settings-menu-admin">
+                  <div className="settings-menu-label">
+                    ⚙️ ניהול
+                    <small>אזור אדמין — עריכת תצורה של המערכת</small>
+                  </div>
+                  <ul className="settings-menu-admin-list">
+                    {ADMIN_LINKS.map((a) => (
+                      <li key={a.href}>
+                        <Link
+                          href={a.href}
+                          className="settings-menu-admin-link"
+                          role="menuitem"
+                          onClick={() => setOpen(false)}
+                        >
+                          <span aria-hidden>{a.emoji}</span>
+                          {a.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {error && <div className="settings-menu-error">{error}</div>}
             </>

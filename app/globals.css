@@ -7633,6 +7633,33 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
 .settings-menu-section:last-child {
   border-bottom: none;
 }
+/* Admin section — inlined ניהול inside the gear menu. Slightly tinted
+   surface separates it from the per-user toggle sections above
+   without needing a heavy header bar. */
+.settings-menu-admin {
+  background: var(--surface-alt, var(--surface));
+}
+.settings-menu-admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .15em;
+}
+.settings-menu-admin-link {
+  display: flex;
+  align-items: center;
+  gap: .55em;
+  padding: .45em .55em;
+  border-radius: .4em;
+  font-size: .9em;
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color .12s;
+}
+.settings-menu-admin-link:hover {
+  background: var(--surface-hover, var(--surface-alt));
+}
 .settings-menu-toggle {
   display: flex;
   align-items: flex-start;

@@ -8,7 +8,6 @@ import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavBellBadge from "@/components/NavBellBadge";
 import NavGmailTasks from "@/components/NavGmailTasks";
-import NavAdminLink from "@/components/NavAdminLink";
 import NavMorningLink from "@/components/NavMorningLink";
 import NavTasksBadge from "@/components/NavTasksBadge";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
@@ -61,6 +60,8 @@ export default async function RootLayout({
   // `📋 משימות` top-nav link renders — clients don't see the task
   // surface at all.
   let isClientUser = false;
+  // Drives the admin section inside the gear menu (inline ניהול).
+  let isAdminUser = false;
   if (email) {
     let viewAs = "";
     try {
@@ -78,6 +79,7 @@ export default async function RootLayout({
       navProjects = scopeProjectsToPerson(data.projects, data.person, data.isClient);
       isClientUser =
         !!data.isClient && !data.isAdmin && !data.isStaff && !data.isInternal;
+      isAdminUser = !!data.isAdmin;
     } catch {
       navProjects = [];
     }
@@ -154,7 +156,6 @@ export default async function RootLayout({
               </ActiveLink>
             )}
             {email && !isClientUser && <NavGmailTasks />}
-            {email && <NavAdminLink />}
             {dashboardUrl && !isClientUser && (
               <a
                 href={dashboardUrl}
@@ -167,7 +168,7 @@ export default async function RootLayout({
             )}
             {email && (
               <div className="topnav-user">
-                <UserSettingsMenu myEmail={email} />
+                <UserSettingsMenu myEmail={email} isAdmin={isAdminUser} />
                 <ThemeToggle />
                 <span
                   className="topnav-hint"
