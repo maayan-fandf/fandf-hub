@@ -11,6 +11,7 @@ import {
 } from "@/lib/appsScript";
 import { getUserRole, type UserRole } from "@/lib/userRole";
 import { getUserPrefs } from "@/lib/userPrefs";
+import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getSharedDriveName } from "@/lib/driveFolders";
 import TasksQueue, {
   type TasksSortKey,
@@ -93,7 +94,7 @@ export default async function TasksPage({
   // task manager covering for a peer. Data access is unaffected;
   // this only flips the default filter values.
   const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
-  const viewAs = prefs?.view_as_email || "";
+  const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const effectiveMe = viewAs || me;
   const isViewingAs = !!viewAs && viewAs !== me;
 

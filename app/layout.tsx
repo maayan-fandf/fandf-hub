@@ -9,6 +9,8 @@ import NavMentionBadge from "@/components/NavMentionBadge";
 import NavBellBadge from "@/components/NavBellBadge";
 import NavGmailTasks from "@/components/NavGmailTasks";
 import NavMorningLink from "@/components/NavMorningLink";
+import ViewAsBanner from "@/components/ViewAsBanner";
+import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import NavTasksBadge from "@/components/NavTasksBadge";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
 import UserSettingsMenu from "@/components/UserSettingsMenu";
@@ -16,7 +18,6 @@ import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
 import { getMyProjects, type Project } from "@/lib/appsScript";
-import { getUserPrefs } from "@/lib/userPrefs";
 import { scopeProjectsToPerson } from "@/lib/scope";
 
 // Runs before React hydrates so data-theme is set before the first paint —
@@ -62,14 +63,9 @@ export default async function RootLayout({
   let isClientUser = false;
   // Drives the admin section inside the gear menu (inline ניהול).
   let isAdminUser = false;
+  let viewAs = "";
   if (email) {
-    let viewAs = "";
-    try {
-      const prefs = await getUserPrefs(email);
-      viewAs = prefs.view_as_email || "";
-    } catch {
-      /* prefs read failed — fall back to acting as self */
-    }
+    viewAs = await getEffectiveViewAs(email).catch(() => "");
     try {
       const data = await getMyProjects(viewAs || undefined);
       // Mirror the home grid: narrow @fandf.co.il staff's blanket access
@@ -193,6 +189,9 @@ export default async function RootLayout({
             )}
           </div>
         </nav>
+        {email && (
+          <ViewAsBanner serverViewAs={viewAs} myEmail={email} />
+        )}
         {children}
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}

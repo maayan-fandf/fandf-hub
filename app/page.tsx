@@ -12,6 +12,7 @@ import {
   type MorningFeed,
 } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
+import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { companyColorSlot } from "@/lib/colors";
 import { scopeProjectsToPerson } from "@/lib/scope";
 
@@ -37,7 +38,7 @@ export default async function HomePage() {
   // not a security gate.
   const me = await currentUserEmail().catch(() => "");
   const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
-  const viewAs = prefs?.view_as_email || "";
+  const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const isViewingAs = !!viewAs && viewAs !== me;
   const effectiveMe = viewAs || me;
 

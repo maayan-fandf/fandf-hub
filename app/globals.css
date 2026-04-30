@@ -4230,9 +4230,47 @@ a.section-link:hover {
   padding: 0.5em 0.7em;
   border-bottom: 1px solid var(--border);
 }
-.user-prefs-admin-table tr.is-default td {
-  color: var(--muted);
-  font-style: italic;
+/* Default-state rows (no row in the User Preferences sheet yet)
+   render identically to written rows — the distinction is implementation
+   detail, not user-meaningful. The first edit silently creates the row. */
+
+/* ─── View-as banner ──────────────────────────────────────────────
+   Shown below the topnav whenever the gear-menu's "view as" cookie
+   (or the sheet's view_as_email default) is active. Sticks to top so
+   it stays visible when the user scrolls. Yellow-amber palette so
+   it's unmissable without screaming "error". */
+.view-as-banner {
+  position: sticky;
+  top: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.4em 1rem;
+  background: var(--accent-warn-soft, #fef3c7);
+  color: var(--accent-warn-dark, #92400e);
+  border-bottom: 1px solid var(--accent-warn, #f59e0b);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+.view-as-banner-icon {
+  font-size: 1em;
+}
+.view-as-banner-text {
+  flex: 1;
+}
+.view-as-banner-exit {
+  background: rgba(146, 64, 14, 0.12);
+  border: 1px solid rgba(146, 64, 14, 0.3);
+  color: inherit;
+  padding: 0.2em 0.7em;
+  border-radius: 0.3em;
+  font-size: 0.85em;
+  cursor: pointer;
+  font-weight: 600;
+}
+.view-as-banner-exit:hover {
+  background: rgba(146, 64, 14, 0.2);
 }
 .user-prefs-admin-role {
   color: var(--muted);

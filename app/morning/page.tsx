@@ -6,7 +6,7 @@ import {
   type MorningFeed,
   type MorningProject,
 } from "@/lib/appsScript";
-import { getUserPrefs } from "@/lib/userPrefs";
+import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import MorningSignalRow from "@/components/MorningSignalRow";
@@ -33,8 +33,7 @@ export default async function MorningPage({
   // /tasks and / when impersonating. Without this the feed always
   // came back as the session user even when view_as was set.
   const me = await currentUserEmail().catch(() => "");
-  const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
-  const viewAs = prefs?.view_as_email || "";
+  const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
 
   const [feedRes, projectsRes] = await Promise.allSettled([

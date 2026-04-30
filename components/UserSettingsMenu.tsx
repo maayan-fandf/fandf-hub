@@ -71,6 +71,31 @@ function isSnoozeActive(persistedIso: string, optionVal: string): boolean {
  * Loads prefs + people list lazily on first open. Saves on each toggle
  * with optimistic UI; reverts the toggle if the server rejects.
  */
+/** Read the `hub_view_as` cookie. Empty string when not set or when
+ *  document is not available (SSR shouldn't happen for this client
+ *  component, but the guard is cheap). */
+function readViewAsCookie(): string {
+  if (typeof document === "undefined") return "";
+  const m = document.cookie.match(/(?:^|;\s*)hub_view_as=([^;]+)/);
+  if (!m) return "";
+  try {
+    return decodeURIComponent(m[1]).toLowerCase().trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Set or clear the `hub_view_as` cookie. Empty value clears it. */
+function writeViewAsCookie(value: string): void {
+  if (typeof document === "undefined") return;
+  const v = (value || "").toLowerCase().trim();
+  if (!v) {
+    document.cookie = `hub_view_as=; path=/; max-age=0; SameSite=Lax`;
+    return;
+  }
+  document.cookie = `hub_view_as=${encodeURIComponent(v)}; path=/; SameSite=Lax`;
+}
+
 /** Admin section entries shown inline at the bottom of the gear menu
  *  for admins. Each links to its dedicated page; the page is the
  *  bidirectional editor (sheet ↔ UI) for that area. New admin tools
@@ -149,7 +174,11 @@ export default function UserSettingsMenu({
         throw new Error(("error" in prefsData && prefsData.error) || "prefs fetch failed");
       }
       setPrefs(prefsData.prefs);
-      setViewAsDraft(prefsData.prefs.view_as_email || "");
+      // View-as is now a session cookie (cleared on refresh / tab close).
+      // Read it directly here instead of trusting the sheet's
+      // view_as_email — the sheet pref is admin-only "default" plumbing
+      // surfaced via /admin/user-prefs. Cookie always wins.
+      setViewAsDraft(readViewAsCookie());
       if (peopleRes.ok && "ok" in peopleData && peopleData.ok) {
         setPeople(peopleData.people);
       }
@@ -159,27 +188,33 @@ export default function UserSettingsMenu({
     }
   }
 
-  // Schedule a debounced save for view_as_email so the user's typing
-  // gets persisted within ~600ms of stopping, even if they navigate
-  // away before pressing Tab/clicking out. Combined with `keepalive`
-  // on the fetch, this catches the common "type, click nav link, see
-  // wrong data" race.
+  // Apply a view-as cookie change. Hard-reload after so the layout's
+  // server-rendered data (project list, view-as banner, /tasks
+  // filters) re-derives from the new cookie. router.refresh() alone
+  // doesn't always re-run the layout's data fetches.
+  const commitViewAs = useCallback((value: string) => {
+    const trimmed = value.trim();
+    const current = readViewAsCookie();
+    if (trimmed === current) return;
+    if (trimmed !== "" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      // Ignore partial typing — only commit a full email or explicit
+      // clear. Mirrors the old debounced save.
+      return;
+    }
+    writeViewAsCookie(trimmed);
+    window.location.reload();
+  }, []);
+
+  // Schedule a debounced commit so typing the email pauses ~600ms
+  // before reloading.
   const scheduleViewAsSave = useCallback(
     (value: string) => {
       if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
       viewAsTimerRef.current = setTimeout(() => {
-        const trimmed = value.trim();
-        if (trimmed === (prefs?.view_as_email || "")) return;
-        // Only auto-save when the value parses as an email (or is
-        // explicitly empty for "act as self"). Avoids writing partial
-        // strings like "nada" while the user is mid-typing.
-        if (trimmed === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-          void save({ view_as_email: trimmed });
-        }
+        commitViewAs(value);
       }, 600);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [prefs?.view_as_email],
+    [commitViewAs],
   );
 
   async function save(partial: Partial<Prefs>) {
@@ -218,7 +253,12 @@ export default function UserSettingsMenu({
     }
   }
 
-  const isViewingAs = !!(prefs?.view_as_email && prefs.view_as_email !== myEmail);
+  // "Active view-as" is keyed off the cookie now (transient). The
+  // viewAsDraft state mirrors the cookie via loadAll, so checking it
+  // here keeps the trigger dot in sync without a fresh document.cookie
+  // read on every render.
+  const isViewingAs =
+    !!viewAsDraft && viewAsDraft.toLowerCase() !== myEmail.toLowerCase();
 
   return (
     <div ref={wrapRef} className="settings-menu-wrap">
@@ -228,7 +268,7 @@ export default function UserSettingsMenu({
         onClick={() => setOpen((o) => !o)}
         aria-label="הגדרות משתמש"
         aria-expanded={open}
-        title={isViewingAs ? `מציג כ-${prefs?.view_as_email}` : "הגדרות"}
+        title={isViewingAs ? `מציג כ-${viewAsDraft}` : "הגדרות"}
       >
         ⚙️
         {isViewingAs && <span className="settings-menu-dot" aria-hidden />}
@@ -370,7 +410,10 @@ export default function UserSettingsMenu({
               <div className="settings-menu-section">
                 <div className="settings-menu-label">
                   הצג כ
-                  <small>סינון ברירת המחדל יחושב לפי המשתמש שתבחר</small>
+                  <small>
+                    סינון ברירת המחדל יחושב לפי המשתמש שתבחר. התיוג
+                    מתאפס אוטומטית בריענון הדף או פתיחת חלון חדש.
+                  </small>
                 </div>
                 <input
                   type="text"
@@ -389,15 +432,11 @@ export default function UserSettingsMenu({
                     // — onBlur fires when the user clicks away or moves
                     // focus, so they expect their value to be saved now.
                     if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
-                    const v = e.currentTarget.value.trim();
-                    if (v !== prefs.view_as_email) {
-                      void save({ view_as_email: v });
-                    }
+                    commitViewAs(e.currentTarget.value);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                   }}
-                  disabled={busy === "view_as_email"}
                 />
                 <datalist id="settings-menu-people">
                   {people.map((p) => (
@@ -413,9 +452,8 @@ export default function UserSettingsMenu({
                     onClick={() => {
                       if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
                       setViewAsDraft("");
-                      void save({ view_as_email: "" });
+                      commitViewAs("");
                     }}
-                    disabled={busy === "view_as_email"}
                   >
                     חזור להציג את עצמי ({myEmail})
                   </button>

@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { auth } from "@/auth";
 import { tasksList } from "@/lib/appsScript";
-import { getUserPrefs } from "@/lib/userPrefs";
+import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { syncUserCompletions } from "@/lib/userFastSync";
 
 export const runtime = "nodejs";
@@ -35,9 +35,10 @@ export async function GET() {
   }
   try {
     // Respect the gear-menu view_as so the badge mirrors what /tasks
-    // would actually show as the user's open queue.
-    const prefs = await getUserPrefs(sessionEmail).catch(() => null);
-    const targetEmail = prefs?.view_as_email || sessionEmail;
+    // would actually show as the user's open queue. Cookie wins over
+    // sheet fallback (see lib/viewAsCookie.ts).
+    const viewAs = await getEffectiveViewAs(sessionEmail).catch(() => "");
+    const targetEmail = viewAs || sessionEmail;
 
     // Fast in-band GT → hub sync. The badge fetch fires on every nav
     // event, so this picks up "user marked GT done in Tasks app, then
