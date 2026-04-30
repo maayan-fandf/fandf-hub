@@ -7,6 +7,7 @@ import {
 } from "@/lib/appsScript";
 import TaskCreateForm from "@/components/TaskCreateForm";
 import { getCommentByIdDirect } from "@/lib/commentsDirect";
+import { getTaskFormSchema } from "@/lib/taskFormSchema";
 
 export const dynamic = "force-dynamic";
 
@@ -44,18 +45,26 @@ export default async function NewTaskPage({
   // Four independent fetches, all server-side so the form renders with
   // everything pre-populated (no loading spinners). The comment fetch
   // is skipped when `from_comment` isn't set — the common path.
-  const [projectsRes, peopleRes, me, commentSeed] = await Promise.all([
-    getMyProjects().catch(() => null),
-    tasksPeopleList().catch(() => ({ ok: false, people: [] })),
-    currentUserEmail().catch(() => ""),
-    sp.from_comment
-      ? (async () => {
-          const email = await currentUserEmail().catch(() => "");
-          if (!email) return null;
-          return getCommentByIdDirect(email, sp.from_comment!).catch(() => null);
-        })()
-      : Promise.resolve(null),
-  ]);
+  const [projectsRes, peopleRes, me, commentSeed, formSchema] =
+    await Promise.all([
+      getMyProjects().catch(() => null),
+      tasksPeopleList().catch(() => ({ ok: false, people: [] })),
+      currentUserEmail().catch(() => ""),
+      sp.from_comment
+        ? (async () => {
+            const email = await currentUserEmail().catch(() => "");
+            if (!email) return null;
+            return getCommentByIdDirect(email, sp.from_comment!).catch(() => null);
+          })()
+        : Promise.resolve(null),
+      currentUserEmail()
+        .then((email) =>
+          email
+            ? getTaskFormSchema(email).catch(() => null)
+            : Promise.resolve(null),
+        )
+        .catch(() => null),
+    ]);
   // Clients can't create tasks — bounce them to the home grid before
   // we render the form. Mirrors the gating on /tasks + the project
   // page's "+ משימה חדשה" button.
@@ -145,6 +154,15 @@ export default async function NewTaskPage({
         cleanupGmailTaskId={(sp.gmail_task_id || "").trim()}
         people={peopleRes?.people ?? []}
         currentUserEmail={me}
+        formSchema={
+          formSchema && !formSchema.isEmpty
+            ? {
+                departments: formSchema.departments,
+                allKinds: formSchema.allKinds,
+                kindsByDepartment: formSchema.kindsByDepartment,
+              }
+            : null
+        }
       />
     </main>
   );

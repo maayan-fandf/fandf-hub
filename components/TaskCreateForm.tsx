@@ -42,6 +42,7 @@ export default function TaskCreateForm({
   cleanupGmailTaskId = "",
   people,
   currentUserEmail,
+  formSchema = null,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
@@ -71,6 +72,17 @@ export default function TaskCreateForm({
   cleanupGmailTaskId?: string;
   people: TasksPerson[];
   currentUserEmail: string;
+  /** Optional schema from the TaskFormSchema sheet. When non-null, the
+   *  form's department + kind dropdowns are sourced from it (kinds
+   *  filtered to those configured under the selected department).
+   *  When null, the form falls back to the legacy behavior — every
+   *  KIND from the hardcoded list, every department derived from
+   *  names-to-emails roles. Server-loaded in app/tasks/new/page.tsx. */
+  formSchema?: {
+    departments: string[];
+    allKinds: string[];
+    kindsByDepartment: Record<string, string[]>;
+  } | null;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -201,12 +213,14 @@ export default function TaskCreateForm({
     });
   })();
 
-  // Departments derived from the live `Role` column on names-to-emails.
-  // Falls back to the legacy hardcoded list when no roles are populated
-  // (so the form never renders chip-less). This is what makes the
-  // department choice and the worker chips below actually agree on the
-  // set of categories — request #4 from the queue.
+  // Departments — schema sheet wins when provided; falls back to the
+  // live `Role` column on names-to-emails; falls back to the hardcoded
+  // list. The schema is the authoritative source once admin has shaped
+  // it via /admin/task-form-schema.
   const departmentOptions = useMemo(() => {
+    if (formSchema && formSchema.departments.length > 0) {
+      return formSchema.departments;
+    }
     const set = new Set<string>();
     for (const p of people) {
       const r = (p.role || "").trim();
@@ -214,7 +228,43 @@ export default function TaskCreateForm({
     }
     if (set.size === 0) return DEPARTMENTS_FALLBACK;
     return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
-  }, [people]);
+  }, [people, formSchema]);
+
+  // Kind dropdown — schema-driven, filtered by selected department(s).
+  // Behavior:
+  //   - No schema → use legacy hardcoded KINDS list (full set).
+  //   - Schema present + no department selected → union of every kind
+  //     in the schema (so user sees all options).
+  //   - Schema present + department(s) selected → union of kinds for
+  //     each selected department.
+  // Each option carries both a display label (= sheet value) and a
+  // value string (= same as label). The form submits the label as
+  // the kind, free-text — backend accepts any string.
+  const kindOptions = useMemo(() => {
+    if (!formSchema || formSchema.allKinds.length === 0) {
+      return KINDS.map((k) => ({ val: k.val, label: k.label }));
+    }
+    if (departments.length === 0) {
+      return formSchema.allKinds.map((k) => ({ val: k, label: k }));
+    }
+    const kinds: string[] = [];
+    const seen = new Set<string>();
+    for (const d of departments) {
+      const list = formSchema.kindsByDepartment[d] ?? [];
+      for (const k of list) {
+        if (!seen.has(k)) {
+          seen.add(k);
+          kinds.push(k);
+        }
+      }
+    }
+    // Edge case: selected department has no kinds in schema. Surface
+    // SOMETHING so the dropdown isn't empty — fall back to all kinds.
+    if (kinds.length === 0) {
+      return formSchema.allKinds.map((k) => ({ val: k, label: k }));
+    }
+    return kinds.map((k) => ({ val: k, label: k }));
+  }, [formSchema, departments]);
 
   // Worker chips (and the assignee combobox secondary list) narrow to
   // people whose role matches one of the selected departments. Empty
@@ -469,8 +519,12 @@ export default function TaskCreateForm({
       <div className="task-form-row">
         <label>
           סוג
-          <select name="kind" defaultValue="ad_creative">
-            {KINDS.map((k) => (
+          <select
+            name="kind"
+            defaultValue={kindOptions[0]?.val ?? "ad_creative"}
+            key={kindOptions.map((k) => k.val).join("|")}
+          >
+            {kindOptions.map((k) => (
               <option key={k.val} value={k.val}>
                 {k.label}
               </option>
