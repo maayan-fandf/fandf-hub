@@ -607,22 +607,39 @@ export async function uploadChatAttachment(
   mimeType: string,
   bytes: Buffer,
 ): Promise<ChatAttachmentRef> {
-  // Static `import { Readable } from "node:stream"` at the top of this
-  // file — the previous `await import("node:stream")` here resolved
-  // to a shape where destructuring Readable yielded undefined in the
-  // Firebase App Hosting production bundle, surfacing as "Cannot read
-  // properties of undefined (reading 'from')" on every upload.
   const chat = chatClient(subjectEmail);
+  // Pass the Buffer directly. `Readable.from(bytes)` worked for a
+  // stretch but stopped returning `attachmentDataRef` in some
+  // googleapis library versions — the request succeeds but `res.data`
+  // comes back without the field, and our caller throws "Chat upload
+  // returned no attachmentDataRef". Buffer is well-supported by the
+  // multipart-related code path in googleapis (which used to be the
+  // documented form anyway), and matches the Drive media.upload
+  // pattern we use elsewhere in the project.
   const res = await chat.media.upload({
     parent: `spaces/${spaceId}`,
     requestBody: { filename: fileName },
     media: {
       mimeType,
-      body: Readable.from(bytes),
+      body: bytes,
     },
   });
   const ref = res.data.attachmentDataRef?.resourceName ?? "";
-  if (!ref) throw new Error("Chat upload returned no attachmentDataRef");
+  if (!ref) {
+    // Surface enough of the response on the server log so we can
+    // trace this if it ever recurs. The user gets a generic message
+    // since `res.data` may contain stuff we don't want surfaced.
+    console.error("[uploadChatAttachment] no attachmentDataRef in response", {
+      spaceId,
+      fileName,
+      mimeType,
+      bytes: bytes.length,
+      responseStatus: res.status,
+      responseDataKeys: res.data ? Object.keys(res.data) : null,
+      responseDataSample: JSON.stringify(res.data).slice(0, 400),
+    });
+    throw new Error("Chat upload returned no attachmentDataRef");
+  }
   return { resourceName: ref };
 }
 

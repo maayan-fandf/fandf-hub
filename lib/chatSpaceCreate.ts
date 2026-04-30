@@ -73,12 +73,21 @@ export async function createChatSpaceForProject(
     const code = (e as { code?: number; response?: { status?: number } }).code
       ?? (e as { response?: { status?: number } }).response?.status;
     const msg = e instanceof Error ? e.message : String(e);
-    if (code === 403) {
+    // `unauthorized_client` comes from google-auth-library during the
+    // JWT.authorize() step — fired BEFORE any API call when the
+    // requested scope isn't in the DWD allowlist. 403 is the same
+    // condition surfacing from a successful token but rejected API
+    // call. Treat both as "missing DWD scope".
+    const isMissingScope =
+      code === 403 ||
+      /unauthorized_client/i.test(msg) ||
+      /client not authorized/i.test(msg);
+    if (isMissingScope) {
       return {
         ok: false,
         error: msg,
         howToFix:
-          "DWD scope `https://www.googleapis.com/auth/chat.spaces.create` not granted. Workspace Admin → Security → API controls → Domain-wide delegation → client 102907403320696302169 → add the scope.",
+          "DWD scope `https://www.googleapis.com/auth/chat.spaces.create` not granted. Workspace Admin → Security → API controls → Domain-wide delegation → client 102907403320696302169 → add the scope. (Propagation can take a few minutes after saving.)",
       };
     }
     return { ok: false, error: msg };
