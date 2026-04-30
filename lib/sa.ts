@@ -240,6 +240,32 @@ export function chatClient(subjectEmail: string) {
   return google.chat({ version: "v1", auth });
 }
 
+/**
+ * Chat client scoped for creating spaces — `chat.spaces.create` (the
+ * narrow write-restricted scope, separate from `chat.spaces` and from
+ * the messages scopes above). Used by the admin "Create Chat Space"
+ * flow at /admin/chat-spaces.
+ *
+ * REQUIRES adding the scope to DWD client 102907403320696302169 in
+ * Workspace Admin → Security → API controls → Domain-wide delegation:
+ *   - https://www.googleapis.com/auth/chat.spaces.create
+ * Until that's done, calls return 403. The Chat API itself must also
+ * be enabled on the GCP project (one-time, already done for the
+ * messages scopes).
+ *
+ * Why a separate client (vs adding the scope to chatClient): the
+ * narrower the scope per call site, the smaller the blast radius if
+ * the SA key ever leaks. chatClient handles read/write of messages
+ * across every project; only the admin create-space flow needs to
+ * actually mint new spaces.
+ */
+export function chatSpaceCreateClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/chat.spaces.create",
+  ]);
+  return google.chat({ version: "v1", auth });
+}
+
 /** True when the hub is configured to use the direct SA-backed reads. */
 export function useSATasksReads(): boolean {
   return String(process.env.USE_SA_TASKS_READS || "").trim() === "1";

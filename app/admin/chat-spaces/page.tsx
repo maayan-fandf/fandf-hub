@@ -47,15 +47,13 @@ export default async function ChatSpacesAdminPage() {
       </header>
 
       <div className="chat-spaces-notice">
-        <h3>לפני ההפעלה</h3>
+        <h3>הגדרה חד־פעמית</h3>
         <ol>
           <li>
-            <b>Apps Script editor</b> → Services → Add service → בחר{" "}
-            <code>Google Chat API</code> → Add.
-          </li>
-          <li>
-            <b>GCP Console</b> (באותו project) → APIs &amp; Services →
-            Library → חפש &quot;Google Chat API&quot; → Enable.
+            <b>Workspace Admin</b> → Security → API controls → Domain-wide
+            delegation → client <code>102907403320696302169</code> →
+            הוסף scope:{" "}
+            <code>https://www.googleapis.com/auth/chat.spaces.create</code>
           </li>
           <li>
             <b>Workspace Admin</b> → Apps → Google Chat → App settings →
@@ -64,9 +62,10 @@ export default async function ChatSpacesAdminPage() {
           </li>
         </ol>
         <p className="muted">
-          עד שהשלבים הללו הושלמו הכפתור &quot;צור Space&quot; יחזיר שגיאה
-          מסוג <code>Chat API not enabled</code> — נבלעת בצד הלקוח ומוצגת
-          בהודעת השגיאה מול הפרויקט.
+          לחיצה על &quot;צור Space&quot; יוצרת ה־Space בגוגל צ&apos;אט,
+          ובמקביל כותבת את ה־URL שלה לעמודת <code>Chat Space</code> ב־Keys
+          של אותו פרויקט. אם הצעד הראשון לא הושלם תקבל שגיאה{" "}
+          <code>chat.spaces.create scope not granted</code> מול הפרויקט.
         </p>
       </div>
 
