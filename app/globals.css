@@ -4253,6 +4253,75 @@ a.section-link:hover {
   opacity: 0.6;
 }
 
+/* ─── TaskFormSchema admin editor ─────────────────────────────────── */
+.task-form-schema-editor {
+  display: grid;
+  gap: 1rem;
+}
+.task-form-schema-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.task-form-schema-saved {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.task-form-schema-table-wrap {
+  overflow-x: auto;
+}
+.task-form-schema-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.task-form-schema-table th,
+.task-form-schema-table td {
+  text-align: right;
+  padding: 0.4em 0.5em;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.task-form-schema-table th {
+  background: var(--surface-alt, var(--surface));
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.task-form-schema-table input[type="text"] {
+  width: 100%;
+  padding: 0.35em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 0.35em;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.task-form-schema-table input[type="text"]:focus {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: -1px;
+}
+.task-form-schema-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 2em 1em;
+  font-size: 0.9rem;
+}
+.task-form-schema-empty code {
+  background: var(--surface-alt, var(--surface));
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+  border: 1px solid var(--border);
+}
+.task-form-schema-quick-add {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .admin-editor {
   display: flex;
   flex-direction: column;
