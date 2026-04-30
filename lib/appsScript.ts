@@ -154,6 +154,13 @@ export type Project = {
   roster: ProjectRoster;
 };
 
+/** Project name reserved for "general / non-project work for this company".
+ *  Sinks to the bottom of every per-company list (home grid + nav) and
+ *  gets a muted visual treatment via `data-general="1"` so it doesn't
+ *  compete with real campaign cards. Convention: one such project per
+ *  company that needs it; not auto-created. */
+export const GENERAL_PROJECT_NAME = "כללי";
+
 export type MyProjects = {
   projects: Project[];
   isAdmin: boolean;

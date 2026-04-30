@@ -543,6 +543,26 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
   display: none;
 }
 
+/* "General / כללי" project rows — one per company that has stray work
+   not tied to a specific campaign. We sink them to the bottom of the
+   per-company list (sort done in app/page.tsx + ProjectsNavMenu.tsx)
+   and dim them visually so they don't compete with real campaign cards
+   above. The thin top-border separates the section without adding a
+   heavy header row. */
+.project-list > li[data-general="1"] {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border-soft, var(--border));
+}
+.project-list > li[data-general="1"] .project-pill-name {
+  opacity: 0.7;
+  font-style: italic;
+}
+.projects-nav-projects > li[data-general="1"] a {
+  opacity: 0.7;
+  font-style: italic;
+}
+
 /* Info banner shown when the "mine" filter stripped to zero and we fell back. */
 .info-banner {
   padding: 0.7rem 1rem;

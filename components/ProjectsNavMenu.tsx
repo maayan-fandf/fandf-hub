@@ -1,6 +1,6 @@
 import Link from "next/link";
 import ActiveLink from "./ActiveLink";
-import type { Project } from "@/lib/appsScript";
+import { GENERAL_PROJECT_NAME, type Project } from "@/lib/appsScript";
 
 // 2-level projects dropdown in the top nav. The trigger is a real Link — click
 // navigates to the home page. HOVER reveals a dropdown of companies; hovering
@@ -47,7 +47,10 @@ export default function ProjectsNavMenu({ projects }: { projects: Project[] }) {
             </div>
             <ul className="projects-nav-projects" role="menu">
               {list.map((p) => (
-                <li key={p.name}>
+                <li
+                  key={p.name}
+                  data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
+                >
                   <Link
                     href={`/projects/${encodeURIComponent(p.name)}`}
                     role="menuitem"
@@ -79,6 +82,13 @@ function groupByCompany(
     .sort(([a], [b]) => collator.compare(a, b))
     .map(([company, list]) => ({
       company,
-      projects: list.slice().sort((a, b) => collator.compare(a.name, b.name)),
+      projects: list.slice().sort((a, b) => {
+        // Sink the per-company "general" project to the bottom of the
+        // submenu — same convention as the home grid.
+        const aGen = a.name === GENERAL_PROJECT_NAME ? 1 : 0;
+        const bGen = b.name === GENERAL_PROJECT_NAME ? 1 : 0;
+        if (aGen !== bGen) return aGen - bGen;
+        return collator.compare(a.name, b.name);
+      }),
     }));
 }

@@ -6,6 +6,7 @@ import {
   getMyCounts,
   getMorningFeed,
   currentUserEmail,
+  GENERAL_PROJECT_NAME,
   type Project,
   type MyCountsPerProject,
   type MorningFeed,
@@ -276,7 +277,11 @@ export default async function HomePage() {
                       endIsoByProject.get(p.name),
                     );
                     return (
-                      <li key={p.name} data-ended={ended ? "1" : "0"}>
+                      <li
+                        key={p.name}
+                        data-ended={ended ? "1" : "0"}
+                        data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
+                      >
                         <Link href={`/projects/${encodeURIComponent(p.name)}`}>
                           <div className="project-pill-top">
                             <span className="project-pill-name">{p.name}</span>
@@ -449,6 +454,18 @@ function ProjectPillProgress({
  * "ללא חברה" (no company) bucket last. Projects inside each group are
  * sorted alphabetically by name.
  */
+function sortProjectsHeFirstGeneralLast(
+  list: Project[],
+  collator: Intl.Collator,
+): Project[] {
+  return list.slice().sort((a, b) => {
+    const aGen = a.name === GENERAL_PROJECT_NAME ? 1 : 0;
+    const bGen = b.name === GENERAL_PROJECT_NAME ? 1 : 0;
+    if (aGen !== bGen) return aGen - bGen; // general always last
+    return collator.compare(a.name, b.name);
+  });
+}
+
 function groupByCompany(
   projects: Project[],
 ): { company: string; projects: Project[] }[] {
@@ -466,14 +483,14 @@ function groupByCompany(
     .sort(([a], [b]) => collator.compare(a, b))
     .map(([company, list]) => ({
       company,
-      projects: list.slice().sort((a, b) => collator.compare(a.name, b.name)),
+      projects: sortProjectsHeFirstGeneralLast(list, collator),
     }));
 
   const ungrouped = map.get("");
   if (ungrouped && ungrouped.length > 0) {
     named.push({
       company: "",
-      projects: ungrouped.slice().sort((a, b) => collator.compare(a.name, b.name)),
+      projects: sortProjectsHeFirstGeneralLast(ungrouped, collator),
     });
   }
 
