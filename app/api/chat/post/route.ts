@@ -129,7 +129,7 @@ export async function POST(req: Request) {
       {
         ok: false,
         error:
-          "Project is not configured with a Chat space. Set Keys col L (Chat Webhook) for this project.",
+          "Project is not configured with a Chat space. Set Keys col L (Chat Space) for this project.",
       },
       { status: 400 },
     );
