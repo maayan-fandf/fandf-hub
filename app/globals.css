@@ -1857,7 +1857,12 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
+  /* column-reverse so the newest item sits at the bottom — same
+     visual orientation as the פנימי and משותף tabs (which use
+     .chat-message-list, also column-reverse). The feed is sorted
+     newest-first in JS, so reversing the visual axis matches the
+     conventional chat-feed layout across all three discussion tabs. */
+  flex-direction: column-reverse;
   gap: .8em;
 }
 .tasks-channel-item {
