@@ -693,20 +693,21 @@ function TasksFilterBar({
       <label className="filter-date-range">
         תאריך מבוקש
         <div className="date-range-inputs">
+          <span className="date-range-sep">מ</span>
           <input
             type="date"
             name="requested_date_from"
             defaultValue={current.requested_date_from}
             data-active={current.requested_date_from ? "1" : undefined}
-            aria-label="מ"
+            aria-label="מתאריך"
           />
-          <span className="date-range-sep">—</span>
+          <span className="date-range-sep">עד</span>
           <input
             type="date"
             name="requested_date_to"
             defaultValue={current.requested_date_to}
             data-active={current.requested_date_to ? "1" : undefined}
-            aria-label="עד"
+            aria-label="עד תאריך"
           />
         </div>
       </label>
