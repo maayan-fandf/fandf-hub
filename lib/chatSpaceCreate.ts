@@ -15,6 +15,7 @@ import { revalidateTag } from "next/cache";
 import { sheetsClient, chatSpaceCreateClient } from "@/lib/sa";
 import { findChatSpaceColumnIndex, invalidateKeysCache } from "@/lib/keys";
 import { chatSpaceUrlFromWebhook } from "@/lib/projectsDirect";
+import { parseSpaceId } from "@/lib/chat";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -56,18 +57,21 @@ export async function createChatSpaceForProject(
   const project = String(projectName ?? "").trim();
   if (!project) return { ok: false, error: "project required" };
 
-  // Step 0: pre-read Keys to grab the company so we can use the
-  // "<company> | <project>" displayName convention. Project names
-  // alone aren't unique across companies (4× כללי, 2× אחוזת אפרידר,
-  // etc. all live as separate Chat spaces today). Embedding the
-  // company in the displayName makes auto-discovery (sync-chat-spaces
-  // script) deterministic and matches the manual convention admins
-  // started using on newer spaces. Falls back to project-only when the
-  // row has no company set, so the create still works.
+  // Step 0: pre-read Keys for two purposes:
+  //   (a) Grab company so the displayName follows the canonical
+  //       "<company> | <project>" convention (project names alone
+  //       collide across companies — 4× כללי, 2× אחוזת אפרידר, etc.).
+  //   (b) IDEMPOTENT GUARD — if Keys already references a real Chat
+  //       space for this project, return it instead of creating a
+  //       duplicate. Without this guard, repeated button clicks (or
+  //       page-state staleness leaving the create-button visible
+  //       even after a successful create) bleed orphan spaces into
+  //       the workspace. Today's chat-space inventory shows the
+  //       result: many empty duplicates needing manual cleanup.
   let company = "";
-  let preReadSheets: ReturnType<typeof sheetsClient> | null = null;
+  let existingSpaceId = "";
   try {
-    preReadSheets = sheetsClient(adminEmail);
+    const preReadSheets = sheetsClient(adminEmail);
     const ssId = envOrThrow("SHEET_ID_MAIN");
     const r = await preReadSheets.spreadsheets.values.get({
       spreadsheetId: ssId,
@@ -81,10 +85,13 @@ export async function createChatSpaceForProject(
       );
       const iProj = headers.indexOf("פרוייקט");
       const iCo = headers.indexOf("חברה");
-      if (iProj >= 0 && iCo >= 0) {
+      const iChat = findChatSpaceColumnIndex(headers);
+      if (iProj >= 0) {
         for (let r = 1; r < values.length; r++) {
           if (String(values[r][iProj] ?? "").trim() === project) {
-            company = String(values[r][iCo] ?? "").trim();
+            company = iCo >= 0 ? String(values[r][iCo] ?? "").trim() : "";
+            existingSpaceId =
+              iChat >= 0 ? parseSpaceId(String(values[r][iChat] ?? "").trim()) : "";
             break;
           }
         }
@@ -92,9 +99,26 @@ export async function createChatSpaceForProject(
     }
   } catch {
     // Non-fatal — if pre-read fails we just create without the company
-    // prefix. The downstream Keys-write step will surface a clearer
-    // error if Keys is genuinely unreachable.
+    // prefix and skip the idempotency check. The downstream Keys-write
+    // step will surface a clearer error if Keys is genuinely
+    // unreachable.
   }
+
+  // (b) Idempotency: if a space is already linked, return early. The
+  // caller (CreateChatSpaceButton on the project page) will treat
+  // this as success — router.refresh() picks up the existing URL on
+  // the next render, exactly the same as a fresh create would.
+  if (existingSpaceId) {
+    const keysCellUrl = `https://mail.google.com/chat/u/0/#chat/space/${existingSpaceId}`;
+    return {
+      ok: true,
+      project,
+      spaceName: `spaces/${existingSpaceId}`,
+      spaceUri: keysCellUrl,
+      keysCellUrl,
+    };
+  }
+
   const displayName = company ? `${company} | ${project}` : project;
 
   // Step 1: create the Space via Chat API.
