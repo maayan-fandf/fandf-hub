@@ -18,7 +18,6 @@
  */
 
 import { Readable } from "node:stream";
-import { unstable_cache } from "next/cache";
 import { chatClient, directoryClient } from "@/lib/sa";
 
 export type ChatMessage = {
@@ -530,25 +529,25 @@ async function listRecentMessagesUncached(
 }
 
 /**
- * Cached wrapper — keyed on (subjectEmail, spaceId, limit). 60s TTL
- * matches our other Apps-Script-replacing fetches (morning feed,
- * keys). Tag is `chat-messages` so any future write paths can call
- * `revalidateTag("chat-messages")` to force a fresh read on the next
- * page hit (e.g. after we ship hub-side composing in phase 2).
+ * No outer unstable_cache here — same multi-instance staleness trap
+ * that bit getMyProjectsDirect (see appsScript.ts comment near
+ * `direct-SA path is uncached at this layer`). Firebase App Hosting
+ * runs multiple instances and each has its own data cache; if one
+ * instance caches `[]` (a transient Chat API blip catches at the
+ * try/catch above), it serves empty for 60s even after the underlying
+ * call would succeed. The Chat API itself is ~300-800ms per call but
+ * project page renders aren't a hot loop, and quota (60 reads/100s
+ * per user) is comfortably above any observed traffic shape.
+ *
+ * Per-request dedup happens naturally — the project page calls
+ * listRecentMessages exactly once per render.
  */
-const listRecentMessagesCached = unstable_cache(
-  async (subjectEmail: string, spaceId: string, limit: number) =>
-    listRecentMessagesUncached(subjectEmail, spaceId, limit),
-  ["chat-recent-messages"],
-  { revalidate: 60, tags: ["chat-messages"] },
-);
-
 export async function listRecentMessages(
   subjectEmail: string,
   spaceId: string,
   limit = 20,
 ): Promise<ChatMessage[]> {
-  return listRecentMessagesCached(subjectEmail, spaceId, Math.min(limit, 50));
+  return listRecentMessagesUncached(subjectEmail, spaceId, Math.min(limit, 50));
 }
 
 /**
