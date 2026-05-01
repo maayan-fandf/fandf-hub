@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ActiveLink from "./ActiveLink";
 import { GENERAL_PROJECT_NAME, type Project } from "@/lib/appsScript";
+import { projectHref } from "@/lib/projectHref";
 
 // 2-level projects dropdown in the top nav. The trigger is a real Link — click
 // navigates to the home page. HOVER reveals a dropdown of companies; hovering
@@ -52,7 +53,7 @@ export default function ProjectsNavMenu({ projects }: { projects: Project[] }) {
                   data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
                 >
                   <Link
-                    href={`/projects/${encodeURIComponent(p.name)}`}
+                    href={projectHref(p.name, p.company)}
                     role="menuitem"
                   >
                     {p.name}

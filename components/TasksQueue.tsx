@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { projectHref } from "@/lib/projectHref";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -975,7 +976,7 @@ function TaskRow({
                     {companyProjects.map((p) => (
                       <li key={p}>
                         <Link
-                          href={`/projects/${encodeURIComponent(p)}`}
+                          href={projectHref(p, task.company)}
                           role="menuitem"
                           className={
                             p === task.project
@@ -1002,7 +1003,7 @@ function TaskRow({
       {!compact && (
         <td className="tasks-project-cell-nested">
           <Link
-            href={`/projects/${encodeURIComponent(task.project)}`}
+            href={projectHref(task.project, task.company)}
             className="tasks-project-link"
           >
             {task.project}

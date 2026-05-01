@@ -15,6 +15,7 @@ import { getUserPrefs } from "@/lib/userPrefs";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { companyColorSlot } from "@/lib/colors";
 import { scopeProjectsToPerson } from "@/lib/scope";
+import { projectHref } from "@/lib/projectHref";
 
 type AlertCounts = { severe: number; warn: number; info: number };
 
@@ -283,7 +284,7 @@ export default async function HomePage() {
                         data-ended={ended ? "1" : "0"}
                         data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
                       >
-                        <Link href={`/projects/${encodeURIComponent(p.name)}`}>
+                        <Link href={projectHref(p.name, p.company)}>
                           <div className="project-pill-top">
                             <span className="project-pill-name">{p.name}</span>
                             <AlertPills counts={ac} />

@@ -52,6 +52,13 @@ type Search = {
    *  "internal", clients (and unknown roles) on "client". User-
    *  driven tab clicks set the param explicitly. */
   channel?: string;
+  /** Company scope. Only meaningful when the project name isn't
+   *  globally unique (today: only "כללי"). When supplied, the
+   *  page resolves projectMeta + chatSpaceUrl + Drive folder etc.
+   *  scoped to this company. Without it, falls back to the legacy
+   *  "first project with this name in the user's roster" behavior
+   *  for backwards compatibility with old links. */
+  company?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -68,6 +75,12 @@ export default async function ProjectOverviewPage({
   // pattern is uniform across the hub.
   const sp = await searchParams;
   const showResolved = sp.resolved === "1";
+  // `?company=X` disambiguates when the project name isn't unique
+  // (today only `כללי` collides). When present, all project lookups
+  // below scope by both name AND company. When absent, legacy first-
+  // match-by-name kicks in — works fine for unique names, falls
+  // through to "the first one in the user's roster" for collisions.
+  const companyScope = (sp.company || "").trim();
   // Person scope (cookie + `?person=X` ephemeral override). Used only to
   // decide whether to show the out-of-scope banner below — we deliberately
   // still render the full project page, since deep-links from email/chat
@@ -94,8 +107,16 @@ export default async function ProjectOverviewPage({
   const meP = currentUserEmail().catch(() => "");
   const projectsP = getMyProjects().catch(() => null);
   const driveFolderP = projectsP.then(async (data) => {
+    // Same disambiguation rule as the projectMeta lookup further down:
+    // prefer (name, company) match when companyScope is supplied; fall
+    // back to first-match-by-name otherwise for legacy links that
+    // don't carry company.
     const company =
-      data?.projects.find((p) => p.name === projectName)?.company ?? "";
+      data?.projects.find((p) =>
+        companyScope
+          ? p.name === projectName && p.company === companyScope
+          : p.name === projectName,
+      )?.company ?? "";
     if (!company) return { folderId: null, viewUrl: null };
     return findProjectFolderUrlCached(company, projectName);
   });
@@ -115,7 +136,14 @@ export default async function ProjectOverviewPage({
     getProjectComments(projectName, 15),
     getMyMentions(),
     projectsP,
-    tasksList({ project: projectName }),
+    // Pass company when supplied — tasksListDirect honors `filters.company`
+    // (lib/tasksDirect.ts:399), so kullit tasks under company X don't
+    // bleed into the kullit page resolved as company Y.
+    tasksList(
+      companyScope
+        ? { project: projectName, company: companyScope }
+        : { project: projectName },
+    ),
     tasksPeopleList(),
     driveFolderP,
     sharedDriveP,
@@ -136,8 +164,15 @@ export default async function ProjectOverviewPage({
   const sharedDriveName =
     sharedDriveRes.status === "fulfilled" ? sharedDriveRes.value : "";
 
-  const projectMeta = projectsData?.projects.find(
-    (p) => p.name === projectName,
+  // Disambiguate by (name, company) when companyScope is set so the
+  // page's chatSpaceUrl + Drive folder + dashboard URL all resolve to
+  // the right company. Without companyScope, fall back to first-by-name
+  // for backwards compatibility — works fine when the name is unique
+  // (i.e. every project except `כללי`).
+  const projectMeta = projectsData?.projects.find((p) =>
+    companyScope
+      ? p.name === projectName && p.company === companyScope
+      : p.name === projectName,
   );
   // Out-of-scope check: if a person-scope is active and the requested
   // project's roster doesn't include them, render a banner. We only
