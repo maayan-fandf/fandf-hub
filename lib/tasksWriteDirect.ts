@@ -29,7 +29,7 @@ import {
   gmailClient,
   driveFolderOwner,
 } from "@/lib/sa";
-import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
+import { readKeysCached } from "@/lib/keys";
 import type {
   GTaskKind,
   TasksCreateInput,
@@ -971,42 +971,6 @@ async function notifyTaskAudience(
   }
 }
 
-/* ── Chat webhook (per-project card, unchanged behavior) ──────────── */
-
-async function postChatWebhook(
-  subjectEmail: string,
-  project: string,
-  kind: "create" | "resolve" | "reply",
-  card: { authorName: string; body?: string; deepLink?: string; assignees?: string[] },
-): Promise<void> {
-  // Webhook URL lives in Keys col L. Read it here; don't fail the write
-  // path if the read or POST errors.
-  try {
-    const { headers, rows } = await readKeysCached(subjectEmail);
-    const iProj = headers.indexOf("פרוייקט");
-    const iWebhook = findChatSpaceColumnIndex(headers);
-    if (iProj < 0 || iWebhook < 0) return;
-    const target = project.toLowerCase().trim();
-    let webhookUrl = "";
-    for (const row of rows) {
-      if (String(row[iProj] ?? "").toLowerCase().trim() === target) {
-        webhookUrl = String(row[iWebhook] ?? "").trim();
-        break;
-      }
-    }
-    if (!webhookUrl) return;
-    const emoji = kind === "create" ? "📋" : kind === "resolve" ? "✅" : "💬";
-    const text = `${emoji} ${card.authorName}${kind === "create" ? " יצר/ה משימה" : kind === "resolve" ? " סיים/ה משימה" : " הגיב/ה"}${card.body ? `: ${card.body}` : ""}${card.deepLink ? `\n${card.deepLink}` : ""}`;
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-  } catch (e) {
-    console.log("[tasksWriteDirect] Chat webhook post failed:", e);
-  }
-}
-
 /* ── Main create orchestrator ──────────────────────────────────────── */
 
 export async function tasksCreateDirect(
@@ -1206,29 +1170,18 @@ export async function tasksCreateDirect(
   // pipeline — same dispatch writes a Notifications row + sends
   // email when the recipient hasn't muted it. Approver gets a
   // separate notification later when status flips to awaiting_approval.
-  await Promise.all([
-    notifyTaskAssigned(
-      {
-        id: task.id,
-        project: task.project,
-        title: task.title,
-        description: task.description,
-        requested_date: task.requested_date,
-        priority: task.priority,
-        assignees: task.assignees,
-      },
-      task.author_email,
-    ),
-    postChatWebhook(subjectEmail, project, "create", {
-      authorName: task.author_email.split("@")[0],
-      body:
-        task.title +
-        (task.description ? " — " + task.description.slice(0, 120) : ""),
-      deepLink: process.env.AUTH_URL
-        ? `${process.env.AUTH_URL.replace(/\/+$/, "")}/tasks/${encodeURIComponent(task.id)}`
-        : "",
-    }),
-  ]);
+  await notifyTaskAssigned(
+    {
+      id: task.id,
+      project: task.project,
+      title: task.title,
+      description: task.description,
+      requested_date: task.requested_date,
+      priority: task.priority,
+      assignees: task.assignees,
+    },
+    task.author_email,
+  );
 
   return { ok: true, task };
 }
@@ -1610,27 +1563,6 @@ async function tasksUpdateDirectInner(
     dateTimeRenderOption: "FORMATTED_STRING",
   });
   const freshRow = (reread.data.values?.[0] ?? []) as unknown[];
-
-  // Chat post on key status transitions — same rules as Apps Script.
-  if (changes.status) {
-    const chatKind =
-      changes.status === "done"
-        ? "resolve"
-        : changes.status === "in_progress"
-          ? "create"
-          : changes.status === "awaiting_approval"
-            ? "reply"
-            : null;
-    if (chatKind) {
-      await postChatWebhook(subjectEmail, project, chatKind, {
-        authorName: subjectEmail.split("@")[0],
-        body: String(cell("title") ?? "") + " · " + String(changes.status),
-        deepLink: process.env.AUTH_URL
-          ? `${process.env.AUTH_URL.replace(/\/+$/, "")}/tasks/${encodeURIComponent(taskId)}`
-          : "",
-      });
-    }
-  }
 
   // Status-change notifications. Routed through the unified notifyOnce
   // pipeline so each kind writes a Notifications row + sends email

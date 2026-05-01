@@ -75,6 +75,27 @@ export default async function InternalDiscussionTab({
   }
 
   const all = await listRecentMessages(subjectEmail, spaceId, 50);
+
+  // Drop auto-emitted task cross-posts. Two historical write paths
+  // mirrored task activity into the project Chat space:
+  //   - Task-comment replies: '↩️ *<author>* הגיב/ה לשרשור בפרויקט *X*\n«excerpt»\nפתח בהאב → /tasks/<id>'
+  //     (lib/commentsWriteDirect.ts; gated 2026-05-01 in commit 48dfa5d)
+  //   - Task create + status transitions: '📋|✅|💬 <author> יצר/ה|סיים/ה|הגיב/ה: <title>\n<base>/tasks/<id>'
+  //     (lib/tasksWriteDirect.ts; removed entirely 2026-05-01)
+  // Both surface as noise in the project chat tab — the canonical
+  // surface for task activity is /tasks/<id>, the bell, and emails.
+  // Existing chat-space history still has these cards (~50-msg
+  // window), so we hide them at render. Match: starts with one of
+  // the auto-emit emojis AND contains a /tasks/<id> deep link.
+  // Defensive against any future write-side regression too.
+  const AUTO_EMIT_PREFIXES = ["↩️", "✅", "📋", "💬"];
+  const isTaskCrossPost = (m: ChatMessage): boolean => {
+    const text = m.text || "";
+    if (!AUTO_EMIT_PREFIXES.some((p) => text.startsWith(p))) return false;
+    return /\/tasks\/[\w-]+/.test(text);
+  };
+  const filteredAll = all.filter((m) => !isTaskCrossPost(m));
+
   const spaceUrl = chatSpaceUrlFromSpaceId(spaceId);
   // Resolve the current user's Chat user resource so renderMessage
   // can decide whether to show edit (only on messages they authored).
@@ -103,7 +124,7 @@ export default async function InternalDiscussionTab({
   // replies. Top-level messages with no replies render as a "thread"
   // with empty replies — same render path, no special-case branch.
   const threadMap = new Map<string, ChatMessage[]>();
-  for (const m of all) {
+  for (const m of filteredAll) {
     const tname = m.threadName || m.name;
     const list = threadMap.get(tname);
     if (list) list.push(m);
