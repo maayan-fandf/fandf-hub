@@ -258,8 +258,10 @@ function truncate(s: string, max: number): string {
 
 /** Parse an RFC 5322 `From:` header value (`"John Doe" <j@x.com>`) into
  *  just the email address. Returns "" when no `<...>` pair is present
- *  AND the value isn't a bare email. */
-function parseEmailAddress(rawFrom: string): string {
+ *  AND the value isn't a bare email. Exported so the customer-email
+ *  reader (lib/customerEmails) can reuse the same parsing without
+ *  duplicating it. */
+export function parseEmailAddress(rawFrom: string): string {
   const m = rawFrom.match(/<([^>]+)>/);
   if (m) return m[1].toLowerCase().trim();
   // Bare-email form: `j@x.com` (no display name).

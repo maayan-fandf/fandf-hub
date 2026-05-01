@@ -333,6 +333,15 @@ export default function UserSettingsMenu({
                     </small>
                   </span>
                 </label>
+                {prefs.gmail_customer_poll && (
+                  <Link
+                    href="/customer-emails"
+                    className="settings-menu-link"
+                    onClick={() => setOpen(false)}
+                  >
+                    📬 פתח מיילים מלקוחות →
+                  </Link>
+                )}
               </div>
 
               <div className="settings-menu-section">

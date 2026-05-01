@@ -8290,6 +8290,93 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
 .kanban-column-emoji {
   margin-inline-end: .35em;
 }
+
+/* ── Customer emails page ───────────────────────────────────────────── */
+.customer-emails-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1.5em 1em 3em;
+}
+.customer-emails-head h1 { margin: 0 0 .25em; }
+.customer-emails-sub {
+  margin: 0 0 1.5em;
+  color: var(--muted);
+  font-size: .9rem;
+}
+.customer-emails-empty,
+.customer-emails-error {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 1.25em;
+  background: var(--surface-soft);
+  color: var(--muted);
+  text-align: center;
+}
+.customer-emails-error {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, .08);
+}
+.customer-emails-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .75em;
+}
+.customer-email-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .85em 1em;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+}
+.customer-email-meta {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  font-size: .85rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.customer-email-sender { color: var(--text); font-weight: 600; }
+.customer-email-company {
+  background: rgba(79, 70, 229, .12);
+  color: #4f46e5;
+  padding: .1em .55em;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+}
+.customer-email-time { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+.customer-email-subject { font-size: 1rem; font-weight: 600; }
+.customer-email-snippet {
+  color: var(--muted);
+  font-size: .9rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.customer-email-actions {
+  display: flex;
+  gap: .5em;
+  margin-top: .5em;
+  flex-wrap: wrap;
+}
+.customer-email-action {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .35em .75em;
+  font-size: .85rem;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--surface-soft);
+}
+.customer-email-action:hover { background: rgba(79, 70, 229, .08); }
 .kanban-column-count {
   background: rgba(0,0,0,.06);
   border-radius: 999px;
