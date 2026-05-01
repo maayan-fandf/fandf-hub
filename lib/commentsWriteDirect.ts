@@ -650,11 +650,20 @@ export async function postReplyDirect(
         link: replyLink,
       });
     }
-    await postChatWebhook(subjectEmail, parentProject, "reply", {
-      authorName: me.split("@")[0],
-      body: trimmedBody.slice(0, 120),
-      deepLink: replyLink,
-    });
+    // Cross-post to the project's Chat Space ONLY for project-level
+    // discussion replies. Task-thread replies (parentIsTask=true)
+    // already live under the task on /tasks/<id> — also mirroring
+    // them to the project chat clutters the team channel with
+    // task-level noise that's actionable elsewhere. Resolve / create
+    // posts continue to cross-post regardless because those are
+    // higher-signal events worth team awareness.
+    if (!parentIsTask) {
+      await postChatWebhook(subjectEmail, parentProject, "reply", {
+        authorName: me.split("@")[0],
+        body: trimmedBody.slice(0, 120),
+        deepLink: replyLink,
+      });
+    }
   });
 
   return {
