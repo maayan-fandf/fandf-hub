@@ -35,6 +35,14 @@ const HUB_TASK_URL_PATTERN =
 
 const KIND_PREFIX_TO_KIND: Record<string, GTaskKind> = {
   "📋 לבצע": "todo",
+  // Active-work variant of `kind=todo` — set by the status cascade
+  // when the hub task is in_progress. Same kind for transition logic;
+  // only the visual differs.
+  "🛠️ בעבודה": "todo",
+  "👀 לאישור": "approve",
+  // Legacy ✅ prefix kept so GTs spawned before the 👀 swap still
+  // resolve correctly. Cheap to retain; safe to drop after no
+  // ✅-prefixed GT remains open in any user's tasklist.
   "✅ לאישור": "approve",
   "❓ לבירור": "clarify",
 };
@@ -83,8 +91,11 @@ function extractHubTaskId(notes: string | null | undefined): string {
  *  for legacy refs without a stored kind. */
 function inferKind(title: string | null | undefined): GTaskKind {
   const t = String(title ?? "").trim();
-  // Reissued todos start with "🔄 " — strip before matching.
-  const stripped = t.replace(/^🔄\s+/, "");
+  // Reissued todos start with "🔙 " (current) or legacy "🔄 " — strip
+  // either before matching the prefix table. Keeping the legacy match
+  // around indefinitely is cheap (one regex alternation) and avoids a
+  // miss for any GTs that were spawned before the rename.
+  const stripped = t.replace(/^(?:🔙|🔄)\s+/, "");
   for (const [prefix, kind] of Object.entries(KIND_PREFIX_TO_KIND)) {
     if (stripped.startsWith(prefix)) return kind;
   }

@@ -546,17 +546,28 @@ async function filterByGtasksPref(emails: string[]): Promise<string[]> {
  *  know someone needs them to clarify. */
 const KIND_PREFIX: Record<GTaskKind, string> = {
   todo: "📋 לבצע",
-  approve: "✅ לאישור",
+  approve: "👀 לאישור",
   clarify: "❓ לבירור",
 };
 
+/** Override prefix for `kind=todo` when the hub task is actively in
+ *  progress (status=in_progress). Pencil/tools cue tells the assignee
+ *  "this is the one you're working on right now" vs. `📋 לבצע` which
+ *  reads as "queued / not started yet". Switched on/off by the status
+ *  cascade in tasksUpdateDirect via patchGoogleTaskTitles. */
+const TODO_IN_PROGRESS_PREFIX = "🛠️ בעבודה";
+
 function gtaskTitle(
   kind: GTaskKind,
-  task: { title: string; project: string },
+  task: { title: string; project: string; status?: string },
   reissued = false,
 ): string {
-  const reissue = reissued ? "🔄 " : "";
-  return `${reissue}${KIND_PREFIX[kind]} · ${task.title} · ${task.project}`;
+  const reissue = reissued ? "🔙 " : "";
+  const prefix =
+    kind === "todo" && task.status === "in_progress"
+      ? TODO_IN_PROGRESS_PREFIX
+      : KIND_PREFIX[kind];
+  return `${reissue}${prefix} · ${task.title} · ${task.project}`;
 }
 
 function gtaskNotes(
@@ -615,6 +626,11 @@ export async function createGoogleTasks(
     description: string;
     drive_folder_url: string;
     requested_date: string;
+    /** Optional hub status — when "in_progress" and kind="todo",
+     *  the title swaps from `📋 לבצע` to `🛠️ בעבודה` so the assignee
+     *  visually knows this is active work, not queued. WorkTask
+     *  satisfies this structurally (its `status` is non-optional). */
+    status?: string;
   },
   recipients: string[],
   opts: {
@@ -1773,8 +1789,11 @@ async function tasksUpdateDirectInner(
       // Returned-to-work bounce. Either the approver rejected back to
       // in_progress, or the owner finished clarifying. Close the
       // approve/clarify entries that fired this and re-spawn a fresh
-      // round of `kind=todo` GTs for assignees with the 🔄 marker so
+      // round of `kind=todo` GTs for assignees with the 🔙 marker so
       // they can tell at a glance the task came back, not new work.
+      // The freshly-spawned titles inherit the status-aware prefix
+      // automatically (`🛠️ בעבודה` when newStatus=in_progress, `📋 לבצע`
+      // when newStatus=awaiting_handling) — see gtaskTitle.
       await syncGoogleTasksStatus(fresh.google_tasks, "completed");
       if (fresh.assignees.length > 0) {
         const reissued = await createGoogleTasks(
@@ -1797,11 +1816,16 @@ async function tasksUpdateDirectInner(
       newStatus === "in_progress" ||
       newStatus === "awaiting_handling"
     ) {
-      // Generic revive (e.g. from done / cancelled / draft into a
-      // working state) — reopen whatever's there. This is the legacy
-      // path and it predates the kind split; leaving it alone matches
-      // existing user expectation.
+      // Generic revive (awaiting_handling ↔ in_progress, or revival
+      // from done / cancelled / draft into a working state) — reopen
+      // whatever's there. Then refresh titles so the kind=todo
+      // entries' prefix reflects the new status: `📋 לבצע` for
+      // awaiting_handling, `🛠️ בעבודה` for in_progress. The patch is
+      // a no-op for entries whose title is already correct, and
+      // best-effort skipped for deleted entries via the same
+      // patchGoogleTaskWithRetry helper.
       await syncGoogleTasksStatus(fresh.google_tasks, "needsAction");
+      await patchGoogleTaskTitles(fresh);
     }
   }
 

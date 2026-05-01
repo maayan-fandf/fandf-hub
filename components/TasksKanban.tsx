@@ -25,7 +25,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
-import { STATUS_LABELS } from "@/components/TaskStatusCell";
+import { STATUS_LABELS, STATUS_EMOJIS } from "@/components/TaskStatusCell";
 import Avatar from "@/components/Avatar";
 import { fireConfetti, firePulse } from "@/lib/confetti";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
@@ -356,7 +356,12 @@ function KanbanColumn({
       data-empty={tasks.length === 0 ? "1" : "0"}
     >
       <header className="kanban-column-head">
-        <span className="kanban-column-label">{column.label}</span>
+        <span className="kanban-column-label">
+          <span className="kanban-column-emoji" aria-hidden>
+            {STATUS_EMOJIS[column.key]}
+          </span>
+          {column.label}
+        </span>
         <span className="kanban-column-count">{tasks.length}</span>
       </header>
       <div className="kanban-column-body">

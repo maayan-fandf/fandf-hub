@@ -8287,6 +8287,9 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.kanban-column-emoji {
+  margin-inline-end: .35em;
+}
 .kanban-column-count {
   background: rgba(0,0,0,.06);
   border-radius: 999px;

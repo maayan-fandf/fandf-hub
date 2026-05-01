@@ -497,6 +497,10 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     if (missing.length === 0) continue;
 
     // Spawn replacements. Build the task shape createGoogleTasks needs.
+    // `status` is threaded so kind=todo spawns inside an in_progress
+    // row pick up the `🛠️ בעבודה` prefix instead of the default
+    // `📋 לבצע` (matches what the cascade would have produced if the
+    // original spawn hadn't been lost).
     const taskInput = {
       id: taskId,
       title: I_TITLE >= 0 ? String(row[I_TITLE] ?? "") : "",
@@ -505,6 +509,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
       drive_folder_url: I_DRIVE_URL >= 0 ? String(row[I_DRIVE_URL] ?? "") : "",
       requested_date:
         I_REQUESTED >= 0 ? String(row[I_REQUESTED] ?? "") : "",
+      status,
     };
     let mergedRefs: GTaskRef[] = [...cellRefs];
     let spawnedThisRow = 0;

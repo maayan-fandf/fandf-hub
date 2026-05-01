@@ -21,6 +21,22 @@ export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
   cancelled: "בוטל",
 };
 
+/** Emoji decoration used by kanban + list bucket headers. Matches the
+ *  Google Tasks title-prefix system: 📋 = handling/queued, 🛠️ = active
+ *  work, ❓ = needs clarification, ✅ = needs approval. 🎉 / ❌ are
+ *  terminal cues. Kept separate from STATUS_LABELS so the emojis only
+ *  appear at the section-header level — not inside transition menus
+ *  or per-row pills, which would be visual noise. */
+export const STATUS_EMOJIS: Record<WorkTaskStatus, string> = {
+  draft: "📝",
+  awaiting_handling: "📋",
+  in_progress: "🛠️",
+  awaiting_clarification: "❓",
+  awaiting_approval: "👀",
+  done: "🎉",
+  cancelled: "❌",
+};
+
 const ALL_STATUSES: WorkTaskStatus[] = [
   "awaiting_handling",
   "in_progress",

@@ -32,7 +32,7 @@ export type TasksSortKey =
   | "created_at"
   | "updated_at";
 export type TasksSortOrder = "asc" | "desc";
-import TaskStatusCell from "@/components/TaskStatusCell";
+import TaskStatusCell, { STATUS_EMOJIS } from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
@@ -513,6 +513,7 @@ export default function TasksQueue({
             >
               <summary className="tasks-bucket-head tasks-bucket-head-summary">
                 <span aria-hidden>📦</span>
+                <span aria-hidden>{STATUS_EMOJIS[b.key]}</span>
                 {b.label}
                 <span className="tasks-bucket-count">{list.length}</span>
                 <span className="tasks-bucket-archived-hint">
@@ -526,6 +527,7 @@ export default function TasksQueue({
         return (
           <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
             <h2 className="tasks-bucket-head">
+              <span aria-hidden>{STATUS_EMOJIS[b.key]}</span>
               {b.label}
               <span className="tasks-bucket-count">{list.length}</span>
               {sort !== "rank" && searchParams && (
