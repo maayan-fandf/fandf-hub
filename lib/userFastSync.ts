@@ -11,6 +11,15 @@
  * + `showCompleted=true` so we only fetch entries the user actually
  * touched recently. Typical payload is empty or 1-2 items.
  *
+ * Window sizing: bootstrap is 5 minutes. After the first call for a
+ * user we track the high-water `updated` timestamp we've seen and
+ * use it as the floor for subsequent cutoffs (with a 30s overlap to
+ * tolerate clock skew). This prevents the original "every nav-poll
+ * re-checks the last 60 minutes of GTs" pattern that pushed the
+ * applyAutoTransition fan-out into 30-60s territory under steady
+ * activity. The cron poller covers anything older than the bootstrap
+ * window inside its 1-minute cadence.
+ *
  * Side effect: applyAutoTransition for every completed hub-spawned GT
  * (notes carrying the hub deep-link) since the cutoff. Idempotent —
  * re-firing within the same window is a no-op because the hub task's
@@ -30,7 +39,27 @@ const KIND_PREFIX_TO_KIND: Record<string, GTaskKind> = {
   "❓ לבירור": "clarify",
 };
 
-const FAST_SYNC_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
+/** Bootstrap window for users we haven't seen this process lifetime.
+ *  Was 60 min (covered "user marked GT done an hour ago, opens hub
+ *  now") but every badge poll re-evaluated the entire hour, costing
+ *  one full Comments-sheet read per candidate. The cron polls every
+ *  minute so anything beyond a few minutes is the cron's job; 5
+ *  minutes leaves enough headroom for "user does GT then keeps
+ *  scrolling" without the redundant fan-out. */
+const FAST_SYNC_BOOTSTRAP_WINDOW_MS = 5 * 60 * 1000;
+
+/** Overlap to absorb clock skew between this server, the Tasks API,
+ *  and the user's device when their device updated the GT. Never
+ *  shrink below ~10s; 30s is comfortable. */
+const FAST_SYNC_OVERLAP_MS = 30 * 1000;
+
+/** Per-user high-water mark of the most recent `updated` timestamp we
+ *  successfully processed. In-process Map; lost on container restart,
+ *  which is fine — the next call falls back to the bootstrap window
+ *  and re-evaluates 5 minutes worth of GTs (idempotent). The Map
+ *  grows by one entry per active user, which is bounded by the
+ *  organization size. */
+const lastProcessedByEmail = new Map<string, number>();
 
 export type FastSyncResult = {
   scanned: number;
@@ -66,7 +95,20 @@ export async function syncUserCompletions(
   subjectEmail: string,
 ): Promise<FastSyncResult> {
   const start = Date.now();
-  const cutoff = new Date(start - FAST_SYNC_WINDOW_MS).toISOString();
+
+  // Cutoff = max(start - bootstrap, lastProcessed - overlap). On the
+  // first call for a user the Map miss falls through to bootstrap; on
+  // subsequent calls we only re-fetch GTs updated since the high-water
+  // mark (with a small overlap to tolerate skew). Idempotent under
+  // race: applyAutoTransition itself skips when the hub task already
+  // moved past the GT's stage, so even an over-wide cutoff is safe.
+  const subjectKey = subjectEmail.toLowerCase().trim();
+  const lastProcessed = lastProcessedByEmail.get(subjectKey);
+  const cutoffMs = Math.max(
+    start - FAST_SYNC_BOOTSTRAP_WINDOW_MS,
+    lastProcessed != null ? lastProcessed - FAST_SYNC_OVERLAP_MS : 0,
+  );
+  const cutoff = new Date(cutoffMs).toISOString();
   const tasksApi = tasksApiClient(subjectEmail);
 
   // Find the user's default tasklist. Same convention as
@@ -89,6 +131,17 @@ export async function syncUserCompletions(
     maxResults: 100,
   });
   const items = res.data.items ?? [];
+
+  // Track the highest `updated` timestamp we observed in THIS pull so
+  // the next call can use it as a floor — even items we skip (status
+  // != completed, no hub link) count, because they shouldn't be
+  // re-pulled either.
+  let highWaterMs = lastProcessed ?? 0;
+  for (const t of items) {
+    if (!t.updated) continue;
+    const ms = Date.parse(t.updated);
+    if (Number.isFinite(ms) && ms > highWaterMs) highWaterMs = ms;
+  }
 
   const candidates = items
     .filter((t) => t.status === "completed")
@@ -126,6 +179,13 @@ export async function syncUserCompletions(
         e instanceof Error ? e.message : String(e),
       );
     }
+  }
+
+  // Commit the high-water mark only after a successful run (errors in
+  // applyAutoTransition shouldn't block advancement — those entries
+  // are already past the GT-list cutoff and the cron will retry).
+  if (highWaterMs > 0) {
+    lastProcessedByEmail.set(subjectKey, highWaterMs);
   }
 
   return summary(start, candidates.length, dispatched, skipped, errored);
