@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatDateTimeIso } from "@/lib/dateFormat";
 
 type Prefs = {
   email_notifications: boolean;
@@ -430,14 +431,7 @@ export default function UserSettingsMenu({
                     <div className="settings-menu-hint">
                       🔕 מושתק עד{" "}
                       <span dir="ltr">
-                        {new Date(
-                          prefs.notifications_snooze_until,
-                        ).toLocaleString("he-IL", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {formatDateTimeIso(prefs.notifications_snooze_until)}
                       </span>
                     </div>
                   )}

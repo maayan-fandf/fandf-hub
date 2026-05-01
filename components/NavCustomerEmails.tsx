@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ChatShareButton from "./ChatShareButton";
+import { formatDateTimeIso } from "@/lib/dateFormat";
 
 /**
  * Top-nav surface for unread customer emails. Mirrors NavGmailTasks's
@@ -268,15 +269,5 @@ export default function NavCustomerEmails() {
 }
 
 function formatDate(iso: string): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDateTimeIso(iso);
 }

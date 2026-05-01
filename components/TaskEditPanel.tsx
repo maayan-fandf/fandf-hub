@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
+import DatePicker from "./DatePicker";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -324,10 +325,9 @@ export default function TaskEditPanel({
         <label className="task-form-date-time">
           תאריך מבוקש
           <div className="date-time-inputs">
-            <input
-              type="date"
+            <DatePicker
               value={requestedDate}
-              onChange={(e) => setRequestedDate(e.target.value)}
+              onChange={setRequestedDate}
             />
             <input
               type="time"

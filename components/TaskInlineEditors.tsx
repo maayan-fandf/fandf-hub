@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import InlineEditCell from "@/components/InlineEditCell";
+import DatePicker from "@/components/DatePicker";
 
 // router.refresh() was silently no-op'ing on /tasks in production even
 // with `export const dynamic = "force-dynamic"` on the page, leaving
@@ -141,13 +142,11 @@ export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
         <div className="inline-edit-body">
           <div className="inline-edit-label">תאריך מבוקש</div>
           <div className="inline-edit-date-time">
-            <input
-              type="date"
-              className="inline-edit-input"
+            <DatePicker
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={setDate}
               disabled={busy}
-              autoFocus
+              className="inline-edit-input"
             />
             <input
               type="time"

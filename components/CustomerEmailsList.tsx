@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { CustomerEmailItem } from "@/lib/customerEmails";
 import ChatShareButton from "./ChatShareButton";
+import { formatDateTimeIso } from "@/lib/dateFormat";
 
 /**
  * Render the customer-email list with per-row actions:
@@ -137,15 +138,5 @@ function buildNewTaskHref(it: CustomerEmailItem): string {
 }
 
 function formatDate(iso: string): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDateTimeIso(iso);
 }

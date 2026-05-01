@@ -6,6 +6,7 @@ import type { TaskItem } from "@/lib/appsScript";
 import { companyColorSlot } from "@/lib/colors";
 import Avatar from "./Avatar";
 import CardActions from "./CardActions";
+import DatePicker from "./DatePicker";
 import ThreadReplies from "./ThreadReplies";
 
 type Props = {
@@ -199,11 +200,9 @@ function TaskCard({
       <div className="task-meta">
         {editing ? (
           <span className="due-editor">
-            <input
-              type="date"
+            <DatePicker
               value={dueDraft}
-              onChange={(e) => setDueDraft(e.target.value)}
-              autoFocus
+              onChange={setDueDraft}
             />
             <button
               type="button"

@@ -3,6 +3,7 @@ import TaskReplyComposer from "./TaskReplyComposer";
 import EditDrawer from "./EditDrawer";
 import DeleteButton from "./DeleteButton";
 import { getTaskComments } from "@/lib/appsScript";
+import { formatDateIso } from "@/lib/dateFormat";
 
 type Props = {
   taskId: string;
@@ -263,5 +264,5 @@ function formatRelative(iso: string): string {
   if (hrs < 24) return `לפני ${hrs} ש׳`;
   const days = Math.round(hrs / 24);
   if (days < 30) return `לפני ${days} י׳`;
-  return new Date(iso).toLocaleDateString("he-IL");
+  return formatDateIso(iso);
 }

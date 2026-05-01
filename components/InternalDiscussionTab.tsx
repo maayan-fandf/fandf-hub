@@ -10,6 +10,7 @@ import {
   chatSpaceUrlFromSpaceId,
   type ChatMessage,
 } from "@/lib/chat";
+import { formatDateIso } from "@/lib/dateFormat";
 
 /**
  * Server-rendered "🔒 דיון פנימי" tab — surfaces the project's
@@ -414,5 +415,5 @@ function formatRelative(iso: string): string {
   if (hrs < 24) return `לפני ${hrs} ש׳`;
   const days = Math.round(hrs / 24);
   if (days < 30) return `לפני ${days} י׳`;
-  return new Date(iso).toLocaleDateString("he-IL");
+  return formatDateIso(iso);
 }

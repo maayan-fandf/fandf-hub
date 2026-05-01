@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
+import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
 import DriveFolderPicker, {
   type FolderPickerValue,
@@ -544,7 +545,7 @@ export default function TaskCreateForm({
         <label className="task-form-date-time">
           תאריך מבוקש
           <div className="date-time-inputs">
-            <input type="date" name="requested_date" />
+            <DatePicker name="requested_date" />
             <input
               type="time"
               name="requested_time"

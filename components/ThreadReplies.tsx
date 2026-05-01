@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import Avatar from "./Avatar";
 import CommentBody from "./CommentBody";
 import type { CommentItem } from "@/lib/appsScript";
+import { formatDateIso } from "@/lib/dateFormat";
 
 type Props = {
   /** The parent (thread-root) comment's id. Replies to THIS id are loaded. */
@@ -141,5 +142,5 @@ function formatRelative(iso: string): string {
   if (hrs < 24) return `לפני ${hrs} ש׳`;
   const days = Math.round(hrs / 24);
   if (days < 30) return `לפני ${days} י׳`;
-  return new Date(iso).toLocaleDateString("he-IL");
+  return formatDateIso(iso);
 }

@@ -1092,7 +1092,7 @@ function TaskRow({
             className="tasks-row-icon"
             title="פתח משימה"
           >
-            ▶
+            📖
           </Link>
           {task.drive_folder_url && (
             <a

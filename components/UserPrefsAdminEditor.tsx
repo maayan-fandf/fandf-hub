@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { UserPrefs } from "@/lib/userPrefs";
 import type { UserPrefRow } from "@/app/admin/user-prefs/page";
+import { formatDateIso } from "@/lib/dateFormat";
 
 /**
  * Admin table for User Preferences. Two sections:
@@ -141,13 +142,7 @@ export default function UserPrefsAdminEditor({
                     )}
                   </td>
                   <td className="user-prefs-admin-updated" dir="ltr">
-                    {r.updatedAt
-                      ? new Date(r.updatedAt).toLocaleDateString("he-IL", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "2-digit",
-                        })
-                      : "—"}
+                    {r.updatedAt ? formatDateIso(r.updatedAt) : "—"}
                   </td>
                 </tr>
               ))}

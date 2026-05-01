@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Assignee } from "@/lib/appsScript";
 import Avatar from "./Avatar";
 import RoleChip from "./RoleChip";
+import DatePicker from "./DatePicker";
 
 type Props = {
   project: string;
@@ -508,12 +509,11 @@ export default function CreateTaskDrawer({
 
         <label className="create-task-label">
           תאריך יעד <span className="create-task-hint">(אופציונלי)</span>
-          <input
-            type="date"
-            className="create-task-due"
+          <DatePicker
             value={due}
-            onChange={(e) => setDue(e.target.value)}
+            onChange={setDue}
             disabled={isPending}
+            className="create-task-due"
           />
         </label>
 
