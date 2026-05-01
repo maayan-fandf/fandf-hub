@@ -124,6 +124,11 @@ export type PollResult = {
   rowsHealed: number;
   /** Reconciliation: how many GTs were spawned across all healed rows. */
   gtsSpawned: number;
+  /** Reconciliation: how many stale GTs were closed (refs in cell whose
+   *  (email, kind) doesn't match the current status's expectation —
+   *  e.g. assignees' todos still open after row moved to
+   *  awaiting_approval, where the cascade close failed silently). */
+  staleClosed: number;
   durationMs: number;
 };
 
@@ -384,6 +389,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
 
   let rowsHealed = 0;
   let gtsSpawned = 0;
+  let staleClosed = 0;
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (I_KIND < 0 || String(row[I_KIND] ?? "").trim() !== "task") continue;
@@ -417,6 +423,44 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     if (expected.length === 0) continue;
 
     const cellRefs = parseCell(I_GT < 0 ? "" : row[I_GT]);
+
+    // Stale-ref close: any cell ref whose (email, kind) is NOT in
+    // expected for the current status is a leftover from a prior stage
+    // whose status-cascade close failed silently (e.g. quota 429 during
+    // cascade — exactly the bug emma's audit surfaced). If its GT is
+    // still visible in the recipient's tasklist, close it. The cell
+    // ref itself is left in place: harmless once the GT is closed,
+    // and rewriting the cell on every cycle would race with concurrent
+    // hub writes through the per-task mutex.
+    const expectedKeys = new Set(
+      expected.map((e) => `${e.email.toLowerCase()}|${e.kind}`),
+    );
+    for (const ref of cellRefs) {
+      const key = `${(ref.u || "").toLowerCase()}|${ref.kind ?? "todo"}`;
+      if (expectedKeys.has(key)) continue;
+      if (!ref.t || !ref.l || !ref.u) continue;
+      const visible = await getVisibleGTs(ref.u);
+      if (!visible.has(ref.t)) continue;
+      try {
+        const tasksApi = tasksApiClient(ref.u);
+        await tasksApi.tasks.patch({
+          tasklist: ref.l,
+          task: ref.t,
+          requestBody: { status: "completed" },
+        });
+        visible.delete(ref.t);
+        staleClosed++;
+        console.log(
+          `[pollTasks] reconcile: closed stale GT for ${taskId} (${ref.u} kind=${ref.kind ?? "todo"})`,
+        );
+      } catch (e) {
+        console.log(
+          `[pollTasks] reconcile: stale-close failed for ${taskId} (${ref.u}):`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
+
     const missing: { email: string; kind: GTaskKind }[] = [];
     for (const exp of expected) {
       // Collect EVERY matching ref, not just the first. The original
@@ -527,6 +571,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     errored,
     rowsHealed,
     gtsSpawned,
+    staleClosed,
   );
 }
 
@@ -541,6 +586,7 @@ function summary(
   transitionsErrored: number,
   rowsHealed = 0,
   gtsSpawned = 0,
+  staleClosed = 0,
 ): PollResult {
   return {
     rowsScanned,
@@ -552,6 +598,7 @@ function summary(
     transitionsErrored,
     rowsHealed,
     gtsSpawned,
+    staleClosed,
     durationMs: Date.now() - start,
   };
 }

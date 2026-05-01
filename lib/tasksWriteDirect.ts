@@ -398,11 +398,55 @@ async function createTaskFolder(
   }
 }
 
+/** HTTP codes worth retrying — quota / transient infrastructure. Anything
+ *  else (404 deleted-by-user, 401 auth, 400 bad request) is permanent. */
+const TRANSIENT_TASKS_CODES = new Set([429, 500, 502, 503, 504]);
+
+/** Patch a single Google Task with bounded retry on transient codes
+ *  (429 / 5xx). Three attempts with 1s/2s/4s backoff — caps total wait
+ *  at ~7s, well under any cron cadence. Throws on permanent errors so
+ *  the caller can decide whether to swallow or surface. Used by the
+ *  status-cascade close, the assignee-removed close, and the title
+ *  rename — all paths whose silent failure leaves orphan GTs that
+ *  diverge from the hub state.
+ */
+async function patchGoogleTaskWithRetry(
+  gt: GTaskRef,
+  body: { status?: "completed" | "needsAction"; title?: string },
+): Promise<void> {
+  const tasksApi = tasksApiClient(gt.u);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await tasksApi.tasks.patch({
+        tasklist: gt.l,
+        task: gt.t,
+        requestBody: body,
+      });
+      return;
+    } catch (e) {
+      lastError = e;
+      const code =
+        (e as { code?: number; response?: { status?: number } }).code ??
+        (e as { response?: { status?: number } }).response?.status;
+      if (typeof code !== "number" || !TRANSIENT_TASKS_CODES.has(code)) {
+        throw e;
+      }
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Mark every Google Task in `googleTasks` as completed (or revive)
  * based on the new task status. The cell is a flat array of refs —
  * we patch each one. Best-effort: an assignee who deleted their entry
- * just gets skipped.
+ * just gets skipped. Each patch retries on 429 / 5xx (see helper) so
+ * a transient quota blip doesn't leave hub→done with the assignee's
+ * GT still open in their tasklist.
  */
 async function syncGoogleTasksStatus(
   googleTasks: GTaskRef[],
@@ -427,15 +471,10 @@ async function syncGoogleTasksStatus(
     allowedEntries.map(async (gt) => {
       if (!gt) return;
       try {
-        const tasksApi = tasksApiClient(gt.u);
-        await tasksApi.tasks.patch({
-          tasklist: gt.l,
-          task: gt.t,
-          requestBody: { status: desired },
-        });
+        await patchGoogleTaskWithRetry(gt, { status: desired });
       } catch (e) {
         console.log(
-          `[tasksWriteDirect] Google Tasks patch (${desired}) failed for ${gt.u}:`,
+          `[tasksWriteDirect] Google Tasks patch (${desired}) failed for ${gt.u} after retries:`,
           e instanceof Error ? e.message : String(e),
         );
       }
@@ -1385,15 +1424,10 @@ async function tasksUpdateDirectInner(
         const email = String(ref.u || "").toLowerCase();
         if (removedSet.has(email) && (ref.kind ?? "todo") === "todo") {
           try {
-            const tasksApi = tasksApiClient(ref.u || email);
-            await tasksApi.tasks.patch({
-              tasklist: ref.l,
-              task: ref.t,
-              requestBody: { status: "completed" },
-            });
+            await patchGoogleTaskWithRetry(ref, { status: "completed" });
           } catch (e) {
             console.log(
-              `[tasksWriteDirect] could not complete removed assignee's Google Task (${email}):`,
+              `[tasksWriteDirect] could not complete removed assignee's Google Task (${email}) after retries:`,
               e instanceof Error ? e.message : String(e),
             );
           }
@@ -1823,17 +1857,12 @@ async function patchGoogleTaskTitles(task: WorkTask): Promise<void> {
     entries.map(async (gt) => {
       try {
         const kind = gt.kind || "todo";
-        const tasksApi = tasksApiClient(gt.u);
-        await tasksApi.tasks.patch({
-          tasklist: gt.l,
-          task: gt.t,
-          requestBody: {
-            title: gtaskTitle(kind, task, /* reissued */ false),
-          },
+        await patchGoogleTaskWithRetry(gt, {
+          title: gtaskTitle(kind, task, /* reissued */ false),
         });
       } catch (e) {
         console.log(
-          `[tasksWriteDirect] GT title patch failed for ${gt.u}:`,
+          `[tasksWriteDirect] GT title patch failed for ${gt.u} after retries:`,
           e instanceof Error ? e.message : String(e),
         );
       }
