@@ -56,6 +56,47 @@ export async function createChatSpaceForProject(
   const project = String(projectName ?? "").trim();
   if (!project) return { ok: false, error: "project required" };
 
+  // Step 0: pre-read Keys to grab the company so we can use the
+  // "<company> | <project>" displayName convention. Project names
+  // alone aren't unique across companies (4× כללי, 2× אחוזת אפרידר,
+  // etc. all live as separate Chat spaces today). Embedding the
+  // company in the displayName makes auto-discovery (sync-chat-spaces
+  // script) deterministic and matches the manual convention admins
+  // started using on newer spaces. Falls back to project-only when the
+  // row has no company set, so the create still works.
+  let company = "";
+  let preReadSheets: ReturnType<typeof sheetsClient> | null = null;
+  try {
+    preReadSheets = sheetsClient(adminEmail);
+    const ssId = envOrThrow("SHEET_ID_MAIN");
+    const r = await preReadSheets.spreadsheets.values.get({
+      spreadsheetId: ssId,
+      range: "Keys",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const values = (r.data.values ?? []) as unknown[][];
+    if (values.length) {
+      const headers = (values[0] as unknown[]).map((h) =>
+        String(h ?? "").replace(/[​-‏‪-‮⁠­﻿]/g, "").replace(/\s+/g, " ").trim(),
+      );
+      const iProj = headers.indexOf("פרוייקט");
+      const iCo = headers.indexOf("חברה");
+      if (iProj >= 0 && iCo >= 0) {
+        for (let r = 1; r < values.length; r++) {
+          if (String(values[r][iProj] ?? "").trim() === project) {
+            company = String(values[r][iCo] ?? "").trim();
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — if pre-read fails we just create without the company
+    // prefix. The downstream Keys-write step will surface a clearer
+    // error if Keys is genuinely unreachable.
+  }
+  const displayName = company ? `${company} | ${project}` : project;
+
   // Step 1: create the Space via Chat API.
   let spaceName = "";
   let spaceUri = "";
@@ -64,7 +105,7 @@ export async function createChatSpaceForProject(
     const res = await chat.spaces.create({
       requestBody: {
         spaceType: "SPACE",
-        displayName: project,
+        displayName,
         externalUserAllowed: true,
       },
     });
