@@ -1,5 +1,3 @@
-import { GENERAL_PROJECT_NAME } from "@/lib/appsScript";
-
 /**
  * Build the canonical /projects/<name> URL with optional `?company=X`
  * disambiguation. The company query param is appended ONLY when the
@@ -17,7 +15,16 @@ import { GENERAL_PROJECT_NAME } from "@/lib/appsScript";
  * lookup by it. Without `?company`, the page falls through to the
  * legacy first-match-by-name path — backwards-compatible with old
  * bookmarks + emailed deep-links.
+ *
+ * The catchall name is hard-coded here (instead of imported from
+ * lib/appsScript.GENERAL_PROJECT_NAME) so this module stays free of
+ * server-only dependencies. lib/appsScript pulls in the keys cache
+ * which uses revalidateTag — fine in server components but breaks
+ * when this helper is imported by a client component (TasksQueue
+ * hit this on the 2026-05-01 build).
  */
+const GENERAL_PROJECT_NAME = "כללי";
+
 export function projectHref(projectName: string, company: string): string {
   const path = `/projects/${encodeURIComponent(projectName)}`;
   if (!company) return path;
