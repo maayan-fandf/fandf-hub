@@ -8377,6 +8377,131 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   background: var(--surface-soft);
 }
 .customer-email-action:hover { background: rgba(79, 70, 229, .08); }
+.customer-email-action:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.customer-email-action-primary {
+  background: rgba(79, 70, 229, .12);
+  border-color: rgba(79, 70, 229, .3);
+  color: #4f46e5;
+  font-weight: 600;
+}
+.customer-email-row.is-read {
+  opacity: .55;
+  background: var(--surface-soft);
+}
+.customer-email-row.is-read .customer-email-subject { font-weight: 500; }
+.customer-email-readbadge {
+  background: rgba(0, 0, 0, .08);
+  color: var(--muted);
+  padding: .1em .55em;
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 500;
+}
+.customer-emails-toast {
+  position: sticky;
+  top: 1em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .65em 1em;
+  margin-bottom: 1em;
+  font-size: .9rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+  z-index: 10;
+}
+
+/* ── Nav popover for customer emails ────────────────────────────────── */
+.nav-customer-emails-wrap { position: relative; }
+.nav-customer-emails-popover {
+  position: absolute;
+  top: calc(100% + .35em);
+  inset-inline-end: 0;
+  width: min(440px, 90vw);
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
+  z-index: 100;
+  padding: 0;
+}
+.nav-customer-emails-popover-head {
+  padding: .8em 1em .4em;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.nav-customer-emails-popover-head h3 { margin: 0 0 .25em; font-size: 1rem; }
+.nav-customer-emails-popover-head p { margin: 0; font-size: .8rem; }
+.nav-customer-emails-toast {
+  margin: .5em 1em;
+  padding: .5em .75em;
+  background: rgba(79, 70, 229, .08);
+  border-radius: 6px;
+  font-size: .85rem;
+  text-align: center;
+}
+.nav-customer-emails-loading,
+.nav-customer-emails-error,
+.nav-customer-emails-empty {
+  padding: 1.5em 1em;
+  text-align: center;
+  font-size: .9rem;
+}
+.nav-customer-emails-error { color: #ef4444; }
+.nav-customer-emails-list {
+  list-style: none;
+  margin: 0;
+  padding: .25em 0;
+}
+.nav-customer-emails-item {
+  padding: .65em 1em;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+}
+.nav-customer-emails-item:last-child { border-bottom: none; }
+.nav-customer-emails-item.is-read { opacity: .55; }
+.nav-customer-emails-item-meta {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  font-size: .8rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.nav-customer-emails-item-meta strong { color: var(--text); }
+.nav-customer-emails-item-company-chip {
+  background: rgba(79, 70, 229, .12);
+  color: #4f46e5;
+  padding: .1em .5em;
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 600;
+}
+.nav-customer-emails-item-time { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+.nav-customer-emails-item-subject { font-weight: 600; font-size: .9rem; }
+.nav-customer-emails-item-snippet {
+  color: var(--muted);
+  font-size: .8rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nav-customer-emails-item-actions {
+  display: flex;
+  gap: .35em;
+  margin-top: .25em;
+  flex-wrap: wrap;
+}
 .kanban-column-count {
   background: rgba(0,0,0,.06);
   border-radius: 999px;

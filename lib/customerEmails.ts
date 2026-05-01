@@ -3,20 +3,15 @@
  * push-to-hub counterpart of the existing pull-based gmailTasks
  * (which surfaces only emails the user manually right-clicked → Add
  * to Tasks). This reader queries Gmail per-render with a `from:(...)
- * is:unread newer_than:Nd` filter built from Keys col E ('Email
- * Client'), so the source of truth stays in Gmail itself — no sheet
- * cache, no cron, no dedup state to drift.
+ * newer_than:Nd` filter built from Keys col E ('Email Client'), so
+ * the source of truth stays in Gmail itself — no sheet cache, no
+ * cron, no dedup state to drift.
  *
- * Why no persistent storage:
- *   - "Dismissed" semantics are implicit: user reads / archives /
- *     replies in Gmail, the next render's `is:unread` filter drops
- *     the row.
- *   - "Converted to task" semantics are implicit too: once the
- *     resulting hub task exists, the user can mark-read in Gmail or
- *     leave the message and it'll re-appear (intended, in case they
- *     also want to post to chat space). Explicit dismiss without
- *     touching Gmail would need `gmail.modify` to apply a label —
- *     deferred until users ask for it.
+ * Read vs unread: both are returned. The result includes `isUnread`
+ * per item (derived from the message's labelIds). The UI greys out
+ * read items so users can scan them as context without losing the
+ * "needs attention" cue on unread ones. Sort is unread-first, then
+ * by receivedAt desc within each group.
  *
  * Scope: requires `gmail.readonly` DWD scope on the SA — already
  * granted (same scope the gmailTasks system uses for sender
@@ -56,6 +51,10 @@ export type CustomerEmailItem = {
    *  match (shouldn't happen since the query already filters to
    *  registered senders, but possible if a row's email moved). */
   company: string;
+  /** True when the message still has Gmail's UNREAD label. The UI
+   *  uses this both for the "needs attention" visual treatment and
+   *  for the badge count (only unread messages count). */
+  isUnread: boolean;
 };
 
 /**
@@ -112,8 +111,11 @@ export async function listCustomerEmails(
   // is generous (~1KB observed in practice). For ~30 customers at
   // ~25 chars each we're at ~750 chars — well within budget. If we
   // ever exceed it, batch the customers and merge results.
+  // Note: `is:unread` was deliberately removed in favor of returning
+  // both unread + read messages, with `isUnread` per item driving the
+  // UI's greyed-out treatment for read context-only rows.
   const fromClause = `from:(${customers.join(" OR ")})`;
-  const q = `${fromClause} is:unread newer_than:${days}d`;
+  const q = `${fromClause} newer_than:${days}d`;
 
   const gmail = gmailReadClient(subjectEmail);
   let messageIds: string[];
@@ -159,6 +161,7 @@ export async function listCustomerEmails(
           ? new Date(parseInt(data.internalDate, 10)).toISOString()
           : "";
         const threadId = data.threadId || "";
+        const labelIds = (data.labelIds ?? []) as string[];
         const item: CustomerEmailItem = {
           id,
           threadId,
@@ -169,6 +172,7 @@ export async function listCustomerEmails(
           gmailLink: `https://mail.google.com/mail/u/0/#inbox/${threadId || id}`,
           receivedAt: internalDate,
           company: "",
+          isUnread: labelIds.includes("UNREAD"),
         };
         return item;
       } catch (e) {
@@ -197,8 +201,13 @@ export async function listCustomerEmails(
     }),
   );
 
-  // Newest first.
-  items.sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+  // Unread first, then by recency desc within each group. Gives the
+  // user a "needs attention" cluster at the top followed by recent
+  // already-handled context underneath.
+  items.sort((a, b) => {
+    if (a.isUnread !== b.isUnread) return a.isUnread ? -1 : 1;
+    return b.receivedAt.localeCompare(a.receivedAt);
+  });
   return items;
 }
 

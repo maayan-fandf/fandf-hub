@@ -8,6 +8,7 @@ import KeyboardHelp from "@/components/KeyboardHelp";
 import NavMentionBadge from "@/components/NavMentionBadge";
 import NavBellBadge from "@/components/NavBellBadge";
 import NavGmailTasks from "@/components/NavGmailTasks";
+import NavCustomerEmails from "@/components/NavCustomerEmails";
 import NavMorningLink from "@/components/NavMorningLink";
 import ViewAsBanner from "@/components/ViewAsBanner";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
@@ -152,6 +153,7 @@ export default async function RootLayout({
               </ActiveLink>
             )}
             {email && !isClientUser && <NavGmailTasks />}
+            {email && !isClientUser && <NavCustomerEmails />}
             {dashboardUrl && !isClientUser && (
               <a
                 href={dashboardUrl}

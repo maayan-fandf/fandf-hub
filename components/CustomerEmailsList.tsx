@@ -1,22 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { CustomerEmailItem } from "@/lib/customerEmails";
 
 /**
- * Render the unread customer-email list with per-row actions:
- *   - Open in Gmail (deep-link to the user's primary inbox)
- *   - Convert to hub task (deep-link to /tasks/new with prefill)
+ * Render the customer-email list with per-row actions:
+ *   - ➕ צור משימה — deep-link to /tasks/new with prefill
+ *   - 💬 צ׳אט פנימי — POSTs email summary to the project's Chat Space
+ *     (looked up via sender's company → first project under it)
+ *   - 📧 הגב במייל — opens the Gmail thread (= "chat with client",
+ *     since email is the actual conversation channel with clients)
  *
- * Dismiss is implicit: the user reads / archives the message in Gmail
- * and the next render's `is:unread` filter drops it. No hub-side state
- * to manage, so no dismiss button.
+ * Read items render greyed out (opacity dimmed). Sort is unread-first
+ * already on the server side.
  *
- * Post-to-chat-space is deferred to v0.5 — needs project / chat-space
- * resolution from the (sender → company → project) chain, which is one
- * step removed from what's on the row right now. Once a user converts
- * to a hub task, the existing chat-space integration on /tasks/[id]
- * already covers the "discuss with the client" flow.
+ * Dismiss is implicit: read or archive in Gmail and the next render
+ * either shows the row greyed (still in 3-day window) or drops it
+ * once the message ages out.
  */
 export default function CustomerEmailsList({
   items,
@@ -25,6 +26,46 @@ export default function CustomerEmailsList({
   items: CustomerEmailItem[];
   error?: string;
 }) {
+  const [busyShareId, setBusyShareId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  async function shareToChat(it: CustomerEmailItem) {
+    if (!it.company) {
+      setToast("חסרה חברה — לא ניתן לשתף לצ׳אט פרויקט");
+      setTimeout(() => setToast(null), 4000);
+      return;
+    }
+    setBusyShareId(it.id);
+    setToast(null);
+    try {
+      const res = await fetch("/api/customer-emails/share-to-chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          company: it.company,
+          subject: it.subject,
+          sender: it.senderEmail,
+          senderName: it.senderName,
+          snippet: it.snippet,
+          gmailLink: it.gmailLink,
+        }),
+      });
+      const data = (await res.json()) as
+        | { ok: true; projectName: string }
+        | { ok: false; error: string };
+      if (!("ok" in data) || !data.ok) {
+        throw new Error(("error" in data && data.error) || "share failed");
+      }
+      setToast(`✓ נשלח לצ׳אט פרויקט ${data.projectName}`);
+      setTimeout(() => setToast(null), 4000);
+    } catch (e) {
+      setToast(`שגיאה: ${e instanceof Error ? e.message : String(e)}`);
+      setTimeout(() => setToast(null), 6000);
+    } finally {
+      setBusyShareId(null);
+    }
+  }
+
   if (error) {
     return (
       <div className="customer-emails-error" role="alert">
@@ -35,54 +76,73 @@ export default function CustomerEmailsList({
   if (items.length === 0) {
     return (
       <div className="customer-emails-empty">
-        <p>אין מיילים חדשים מלקוחות רשומים ב-3 הימים האחרונים.</p>
+        <p>אין מיילים מלקוחות רשומים ב-3 הימים האחרונים.</p>
       </div>
     );
   }
 
   return (
-    <ul className="customer-emails-list">
-      {items.map((it) => (
-        <li
-          key={it.id}
-          className="customer-email-row"
-          data-company={it.company || undefined}
-        >
-          <div className="customer-email-meta">
-            <strong className="customer-email-sender">
-              {it.senderName || it.senderEmail}
-            </strong>
-            {it.company && (
-              <span className="customer-email-company">{it.company}</span>
+    <>
+      {toast && <div className="customer-emails-toast">{toast}</div>}
+      <ul className="customer-emails-list">
+        {items.map((it) => (
+          <li
+            key={it.id}
+            className={`customer-email-row${it.isUnread ? "" : " is-read"}`}
+            data-company={it.company || undefined}
+          >
+            <div className="customer-email-meta">
+              <strong className="customer-email-sender">
+                {it.senderName || it.senderEmail}
+              </strong>
+              {it.company && (
+                <span className="customer-email-company">{it.company}</span>
+              )}
+              {!it.isUnread && (
+                <span className="customer-email-readbadge">נקרא</span>
+              )}
+              <time className="customer-email-time" dir="ltr">
+                {formatDate(it.receivedAt)}
+              </time>
+            </div>
+            <div className="customer-email-subject">{it.subject}</div>
+            {it.snippet && (
+              <div className="customer-email-snippet">{it.snippet}</div>
             )}
-            <time className="customer-email-time" dir="ltr">
-              {formatDate(it.receivedAt)}
-            </time>
-          </div>
-          <div className="customer-email-subject">{it.subject}</div>
-          {it.snippet && (
-            <div className="customer-email-snippet">{it.snippet}</div>
-          )}
-          <div className="customer-email-actions">
-            <a
-              className="customer-email-action"
-              href={it.gmailLink}
-              target="_blank"
-              rel="noreferrer"
-            >
-              📧 פתח ב-Gmail
-            </a>
-            <Link
-              className="customer-email-action"
-              href={buildNewTaskHref(it)}
-              prefetch={false}
-            >
-              ➕ צור משימה
-            </Link>
-          </div>
-        </li>
-      ))}
-    </ul>
+            <div className="customer-email-actions">
+              <Link
+                className="customer-email-action customer-email-action-primary"
+                href={buildNewTaskHref(it)}
+                prefetch={false}
+              >
+                ➕ צור משימה
+              </Link>
+              <button
+                type="button"
+                className="customer-email-action"
+                onClick={() => shareToChat(it)}
+                disabled={busyShareId === it.id || !it.company}
+                title={
+                  it.company
+                    ? `שתף לצ׳אט פרויקט תחת ${it.company}`
+                    : "אין חברה רשומה — לא ניתן לשתף"
+                }
+              >
+                {busyShareId === it.id ? "..." : "💬 צ׳אט פנימי"}
+              </button>
+              <a
+                className="customer-email-action"
+                href={it.gmailLink}
+                target="_blank"
+                rel="noreferrer"
+              >
+                📧 הגב במייל
+              </a>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -94,9 +154,6 @@ function buildNewTaskHref(it: CustomerEmailItem): string {
   const params = new URLSearchParams();
   if (it.company) params.set("company", it.company);
   if (it.subject) params.set("title", it.subject);
-  // Body gets the sender + snippet so the user has context without
-  // flipping back to Gmail. Truncated because URL params are
-  // URL-encoded and Hebrew expands ~3x.
   const body = [
     it.senderName
       ? `מאת: ${it.senderName} <${it.senderEmail}>`
