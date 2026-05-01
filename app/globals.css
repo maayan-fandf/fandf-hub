@@ -546,21 +546,21 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
 /* "General / כללי" project rows — one per company that has stray work
    not tied to a specific campaign. We sink them to the bottom of the
    per-company list (sort done in app/page.tsx + ProjectsNavMenu.tsx)
-   and dim them visually so they don't compete with real campaign cards
-   above. The thin top-border separates the section without adding a
-   heavy header row. */
+   and prefix them with 📌 so they read as the catchall bucket without
+   looking broken. The thin top-border separates the section visually.
+   Earlier versions also dimmed the card with opacity 0.7 + italic, but
+   on cards with no badges/progress that treatment made the pill look
+   like a placeholder rather than just secondary — dropped. */
 .project-list > li[data-general="1"] {
   margin-top: 0.4rem;
   padding-top: 0.4rem;
   border-top: 1px dashed var(--border-soft, var(--border));
 }
-.project-list > li[data-general="1"] .project-pill-name {
-  opacity: 0.7;
-  font-style: italic;
-}
-.projects-nav-projects > li[data-general="1"] a {
-  opacity: 0.7;
-  font-style: italic;
+.project-list > li[data-general="1"] .project-pill-name::before,
+.projects-nav-projects > li[data-general="1"] a::before {
+  content: "📌 ";
+  margin-inline-end: 0.2em;
+  opacity: 0.8;
 }
 
 /* Info banner shown when the "mine" filter stripped to zero and we fell back. */
