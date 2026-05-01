@@ -10,24 +10,17 @@ export const dynamic = "force-dynamic";
 const MAX_TEXT = 4000;
 
 /**
- * Share a customer-email summary to the relevant project's Chat Space
- * so the team can discuss internally without leaving the hub.
+ * Share a customer-email summary to a specific project's Chat Space
+ * (Google Chat — the internal-discussion channel for that project).
  *
- * Resolution path:
- *   sender's company (from the row, already resolved client-side)
- *     → first project row in Keys with that company
- *     → that project's Chat Space (col L)
- *   → impersonate the session user, post the formatted message.
+ * Caller picks the project explicitly. If `project` isn't supplied,
+ * falls back to "כללי" (the per-company catchall bucket) and then to
+ * the first project under the company that has a chat space — same
+ * priority order the picker uses for its default selection.
  *
- * Why first project: a single client-company can have multiple
- * projects. Without an explicit picker, "first by sheet order" is the
- * pragmatic default — usually it's the active one. If users find
- * themselves needing to pick, we'll add a project selector to the
- * popover row in v0.5.
- *
- * Same auth + impersonation model as /api/chat/post — we delegate to
- * postMessage with the session user's email as subject, which means
- * the message lands authored by them (not a service account).
+ * Same auth + impersonation model as /api/chat/post: postMessage runs
+ * with the session user's email as the impersonation subject so the
+ * message lands authored by them (not a service-account identity).
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -41,6 +34,7 @@ export async function POST(req: Request) {
 
   let body: {
     company?: string;
+    project?: string;
     subject?: string;
     sender?: string;
     senderName?: string;
@@ -57,14 +51,18 @@ export async function POST(req: Request) {
   }
 
   const company = String(body.company || "").trim();
-  if (!company) {
+  const explicitProject = String(body.project || "").trim();
+  if (!company && !explicitProject) {
     return NextResponse.json(
-      { ok: false, error: "company is required" },
+      { ok: false, error: "company or project required" },
       { status: 400 },
     );
   }
 
-  // Resolve company → first project + its Chat Space.
+  // Resolve target project + its Chat Space.
+  // Priority: (1) explicit project name from caller, (2) "כללי" under
+  // the company, (3) first project under the company that has a chat
+  // space configured.
   let projectName = "";
   let chatCellRaw = "";
   try {
@@ -72,22 +70,42 @@ export async function POST(req: Request) {
     const iCompany = headers.indexOf("חברה");
     const iProject = headers.indexOf("פרוייקט");
     const iChat = findChatSpaceColumnIndex(headers);
-    if (iCompany < 0 || iProject < 0 || iChat < 0) {
+    if (iProject < 0 || iChat < 0) {
       return NextResponse.json(
-        { ok: false, error: "Keys missing חברה / פרוייקט / Chat Space columns" },
+        { ok: false, error: "Keys missing פרוייקט / Chat Space columns" },
         { status: 500 },
       );
     }
-    const target = company.toLowerCase();
+    const targetCompany = company.toLowerCase();
+    const targetProject = explicitProject.toLowerCase();
+    let generalRow: { proj: string; chat: string } | null = null;
+    let firstRow: { proj: string; chat: string } | null = null;
+    let explicitMatch: { proj: string; chat: string } | null = null;
     for (const row of rows) {
-      if (String(row[iCompany] ?? "").trim().toLowerCase() !== target) continue;
       const proj = String(row[iProject] ?? "").trim();
       const chat = String(row[iChat] ?? "").trim();
-      if (proj && chat) {
-        projectName = proj;
-        chatCellRaw = chat;
+      if (!proj || !chat) continue;
+      // Scope by company first when supplied. Project names like
+      // "כללי" are NOT globally unique — each company has its own,
+      // so an explicit-project match has to also be under the target
+      // company or we'll post to the wrong company's space.
+      if (targetCompany && iCompany >= 0) {
+        if (
+          String(row[iCompany] ?? "").trim().toLowerCase() !== targetCompany
+        )
+          continue;
+      }
+      if (targetProject && proj.toLowerCase() === targetProject) {
+        explicitMatch = { proj, chat };
         break;
       }
+      if (proj === "כללי" && !generalRow) generalRow = { proj, chat };
+      if (!firstRow) firstRow = { proj, chat };
+    }
+    const chosen = explicitMatch ?? generalRow ?? firstRow;
+    if (chosen) {
+      projectName = chosen.proj;
+      chatCellRaw = chosen.chat;
     }
   } catch (e) {
     return NextResponse.json(
@@ -102,10 +120,13 @@ export async function POST(req: Request) {
   }
 
   if (!projectName) {
+    const where = explicitProject
+      ? `project '${explicitProject}'`
+      : `company '${company}'`;
     return NextResponse.json(
       {
         ok: false,
-        error: `No project under company '${company}' has a Chat Space configured.`,
+        error: `No matching project with a Chat Space found for ${where}.`,
       },
       { status: 400 },
     );

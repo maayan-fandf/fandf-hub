@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ChatShareButton from "./ChatShareButton";
 
 /**
  * Top-nav surface for unread customer emails. Mirrors NavGmailTasks's
@@ -38,8 +39,13 @@ export default function NavCustomerEmails() {
   const [items, setItems] = useState<CustomerEmail[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busyShareId, setBusyShareId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    const ttl = msg.startsWith("שגיאה") ? 6000 : 4000;
+    setTimeout(() => setToast(null), ttl);
+  }
   const wrapRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -143,43 +149,6 @@ export default function NavCustomerEmails() {
     setOpen(false);
   }
 
-  async function shareToChat(it: CustomerEmail) {
-    if (!it.company) {
-      setToast("חסרה חברה — לא ניתן לשתף לצ׳אט פרויקט");
-      return;
-    }
-    setBusyShareId(it.id);
-    setToast(null);
-    try {
-      const res = await fetch("/api/customer-emails/share-to-chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          company: it.company,
-          subject: it.subject,
-          sender: it.senderEmail,
-          senderName: it.senderName,
-          snippet: it.snippet,
-          gmailLink: it.gmailLink,
-        }),
-      });
-      const data = (await res.json()) as
-        | { ok: true; projectName: string }
-        | { ok: false; error: string };
-      if (!("ok" in data) || !data.ok) {
-        throw new Error(("error" in data && data.error) || "share failed");
-      }
-      setToast(`✓ נשלח לצ׳אט פרויקט ${data.projectName}`);
-      // Auto-clear toast after 4s
-      setTimeout(() => setToast(null), 4000);
-    } catch (e) {
-      setToast(`שגיאה: ${e instanceof Error ? e.message : String(e)}`);
-      setTimeout(() => setToast(null), 6000);
-    } finally {
-      setBusyShareId(null);
-    }
-  }
-
   if (count === null || count <= 0) return null;
 
   return (
@@ -267,19 +236,18 @@ export default function NavCustomerEmails() {
                     >
                       ➕ צור משימה
                     </button>
-                    <button
-                      type="button"
-                      className="btn-ghost btn-sm"
-                      onClick={() => shareToChat(it)}
-                      disabled={busyShareId === it.id || !it.company}
-                      title={
-                        it.company
-                          ? `שתף לצ׳אט פרויקט תחת ${it.company}`
-                          : "אין חברה רשומה — לא ניתן לשתף"
-                      }
-                    >
-                      {busyShareId === it.id ? "..." : "💬 צ׳אט פנימי"}
-                    </button>
+                    <ChatShareButton
+                      email={it}
+                      target="internal"
+                      label="💬 צ׳אט פנימי"
+                      onResult={showToast}
+                    />
+                    <ChatShareButton
+                      email={it}
+                      target="client"
+                      label="💬 צ׳אט עם לקוח"
+                      onResult={showToast}
+                    />
                     <a
                       href={it.gmailLink}
                       target="_blank"

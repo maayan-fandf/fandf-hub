@@ -3,14 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { CustomerEmailItem } from "@/lib/customerEmails";
+import ChatShareButton from "./ChatShareButton";
 
 /**
  * Render the customer-email list with per-row actions:
  *   - ➕ צור משימה — deep-link to /tasks/new with prefill
- *   - 💬 צ׳אט פנימי — POSTs email summary to the project's Chat Space
- *     (looked up via sender's company → first project under it)
- *   - 📧 הגב במייל — opens the Gmail thread (= "chat with client",
- *     since email is the actual conversation channel with clients)
+ *   - 💬 צ׳אט פנימי ▾ — picks a project under the email's company,
+ *     posts email summary to that project's Google Chat Space
+ *   - 💬 צ׳אט עם לקוח ▾ — picks a project, posts to that project's
+ *     Comments sheet (visible to client on the project's client tab)
+ *   - 📧 הגב במייל — opens the Gmail thread (the actual email
+ *     conversation surface)
  *
  * Read items render greyed out (opacity dimmed). Sort is unread-first
  * already on the server side.
@@ -26,44 +29,12 @@ export default function CustomerEmailsList({
   items: CustomerEmailItem[];
   error?: string;
 }) {
-  const [busyShareId, setBusyShareId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  async function shareToChat(it: CustomerEmailItem) {
-    if (!it.company) {
-      setToast("חסרה חברה — לא ניתן לשתף לצ׳אט פרויקט");
-      setTimeout(() => setToast(null), 4000);
-      return;
-    }
-    setBusyShareId(it.id);
-    setToast(null);
-    try {
-      const res = await fetch("/api/customer-emails/share-to-chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          company: it.company,
-          subject: it.subject,
-          sender: it.senderEmail,
-          senderName: it.senderName,
-          snippet: it.snippet,
-          gmailLink: it.gmailLink,
-        }),
-      });
-      const data = (await res.json()) as
-        | { ok: true; projectName: string }
-        | { ok: false; error: string };
-      if (!("ok" in data) || !data.ok) {
-        throw new Error(("error" in data && data.error) || "share failed");
-      }
-      setToast(`✓ נשלח לצ׳אט פרויקט ${data.projectName}`);
-      setTimeout(() => setToast(null), 4000);
-    } catch (e) {
-      setToast(`שגיאה: ${e instanceof Error ? e.message : String(e)}`);
-      setTimeout(() => setToast(null), 6000);
-    } finally {
-      setBusyShareId(null);
-    }
+  function showToast(msg: string) {
+    setToast(msg);
+    const ttl = msg.startsWith("שגיאה") ? 6000 : 4000;
+    setTimeout(() => setToast(null), ttl);
   }
 
   if (error) {
@@ -117,19 +88,18 @@ export default function CustomerEmailsList({
               >
                 ➕ צור משימה
               </Link>
-              <button
-                type="button"
-                className="customer-email-action"
-                onClick={() => shareToChat(it)}
-                disabled={busyShareId === it.id || !it.company}
-                title={
-                  it.company
-                    ? `שתף לצ׳אט פרויקט תחת ${it.company}`
-                    : "אין חברה רשומה — לא ניתן לשתף"
-                }
-              >
-                {busyShareId === it.id ? "..." : "💬 צ׳אט פנימי"}
-              </button>
+              <ChatShareButton
+                email={it}
+                target="internal"
+                label="💬 צ׳אט פנימי"
+                onResult={showToast}
+              />
+              <ChatShareButton
+                email={it}
+                target="client"
+                label="💬 צ׳אט עם לקוח"
+                onResult={showToast}
+              />
               <a
                 className="customer-email-action"
                 href={it.gmailLink}

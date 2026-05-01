@@ -8520,6 +8520,67 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   margin-top: .25em;
   flex-wrap: wrap;
 }
+
+/* ── Chat-share button + project picker ─────────────────────────────── */
+/* Used per customer-email row to share the email summary into a project's
+   internal Chat Space (target=internal) or its client comment thread
+   (target=client). Click the button → popover lists projects under the
+   email's resolved company; click a project to send. */
+.chat-share-button-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.chat-share-popover {
+  position: absolute;
+  top: calc(100% + .25em);
+  inset-inline-end: 0;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 50vh;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+  z-index: 1000;
+  padding: .25em 0;
+}
+.chat-share-popover-loading,
+.chat-share-popover-error,
+.chat-share-popover-empty {
+  padding: .75em 1em;
+  font-size: .85rem;
+  text-align: center;
+  color: var(--muted);
+}
+.chat-share-popover-error { color: #ef4444; }
+.chat-share-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chat-share-popover-option {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: .5em .8em;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.chat-share-popover-option:hover:not(:disabled) {
+  background: rgba(79, 70, 229, .08);
+}
+.chat-share-popover-option:disabled {
+  opacity: .5;
+  cursor: wait;
+}
+.chat-share-popover-busy {
+  color: var(--muted);
+  font-style: italic;
+}
 .kanban-column-count {
   background: rgba(0,0,0,.06);
   border-radius: 999px;
