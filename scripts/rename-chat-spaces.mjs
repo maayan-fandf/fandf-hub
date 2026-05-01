@@ -136,7 +136,17 @@ for (const sp of allSpaces) {
     const bare = currentName.replace(/^[^|]+\|\s*/, "").trim();
     const candidates = projectsByName.get(bare) ?? [];
     if (candidates.length === 1) {
-      owner = candidates[0];
+      const cand = candidates[0];
+      // Refuse to rename when the Keys row already references a
+      // DIFFERENT space id. This space is a duplicate of the canonical
+      // one — renaming it would create two spaces with identical
+      // canonical names. The right action for these is deletion, not
+      // rename. (delete-chat-spaces.mjs handles that.)
+      if (cand.currentSpaceId && cand.currentSpaceId !== id) {
+        skipped.push({ space: sp, reason: `duplicate of canonical ${cand.currentSpaceId} for "${cand.company} | ${cand.name}" (delete this one instead of renaming)` });
+        continue;
+      }
+      owner = cand;
       by = "fallback-by-name";
     } else if (candidates.length > 1) {
       skipped.push({ space: sp, reason: `ambiguous: "${bare}" matches ${candidates.length} Keys rows (${candidates.map((c) => c.company || "—").join(", ")})` });
