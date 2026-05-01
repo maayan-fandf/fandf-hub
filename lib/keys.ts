@@ -98,21 +98,16 @@ export function invalidateKeysCache(): void {
 /**
  * Find the index of the Chat-space column in a Keys headers array.
  *
- * The header was historically named `Chat Webhook` (back when it
- * literally stored a webhook URL). It accepts any of four shapes
- * today — webhook URL, room URL, mail-embedded link, or bare space
- * id — and `chatSpaceUrlFromWebhook` normalizes them. Renamed to
- * `Chat Space` 2026-04-30 for honesty; this helper accepts both
- * names so the rename can happen as a sheet edit without coordinated
- * code deploys. Drop the legacy fallback after the sheet has been
- * renamed for a soak period.
+ * The cell stores any of four shapes — webhook URL, room URL,
+ * mail-embedded link, or bare space id — and `chatSpaceUrlFromWebhook`
+ * normalizes them. The column was renamed `Chat Webhook` → `Chat Space`
+ * on 2026-04-30; the transitional fallback that accepted the old name
+ * was retired on 2026-05-01 after a soak period without regressions.
  *
- * Returns -1 when neither header is present.
+ * Returns -1 when the header is missing.
  */
 export function findChatSpaceColumnIndex(headers: string[]): number {
-  const i = headers.indexOf("Chat Space");
-  if (i >= 0) return i;
-  return headers.indexOf("Chat Webhook");
+  return headers.indexOf("Chat Space");
 }
 
 /**
