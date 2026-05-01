@@ -11,6 +11,7 @@
  * up — this function is the "do both steps with one click" shortcut.
  */
 
+import { revalidateTag } from "next/cache";
 import { sheetsClient, chatSpaceCreateClient } from "@/lib/sa";
 import { findChatSpaceColumnIndex, invalidateKeysCache } from "@/lib/keys";
 import { chatSpaceUrlFromWebhook } from "@/lib/projectsDirect";
@@ -159,6 +160,12 @@ export async function createChatSpaceForProject(
       requestBody: { values: [[keysCellUrl]] },
     });
     invalidateKeysCache();
+    // Also bust the my-projects layer (separate unstable_cache wrapper
+    // around getMyProjectsDirect with its own 60s TTL). Without this,
+    // /projects/<name> would keep rendering the empty state for up to
+    // 60s after the button click — projectMeta.chatSpaceUrl is built
+    // inside that cached layer, not re-derived per request.
+    revalidateTag("my-projects");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return {
