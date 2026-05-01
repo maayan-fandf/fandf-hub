@@ -278,17 +278,18 @@ const fetchMyProjectsCached = unstable_cache(
   { revalidate: 60, tags: ["my-projects"] },
 );
 
-// Parallel cache for the direct-SA path. Keyed separately so flipping
-// USE_SA_PROJECTS_READS doesn't serve stale Apps-Script data. Same
-// 60s TTL; the Keys tab is effectively append-only so this rarely bites.
-const fetchMyProjectsDirectCached = unstable_cache(
-  async (email: string): Promise<MyProjects> => {
-    const { getMyProjectsDirect } = await import("@/lib/projectsDirect");
-    return getMyProjectsDirect(email);
-  },
-  ["myProjectsDirect"],
-  { revalidate: 60, tags: ["my-projects"] },
-);
+// Direct-SA path is uncached at this layer — getMyProjectsDirect's
+// hot read path is `readKeysCached` (5min TTL, Firebase-backed data
+// cache) plus in-memory projection work, so per-request cost is
+// minimal. The previous 60s unstable_cache wrapper here was bitten
+// by Firebase App Hosting's multi-instance topology: revalidateTag
+// propagation isn't atomic across instances, so a manual Keys edit
+// (or even a button-click + revalidateTag) could leave one instance
+// happily serving the stale Project[] for up to 60s after another
+// instance had picked up the change. Dropping the wrapper means each
+// page render re-projects from the (still-cached) Keys read; freshness
+// matches Keys TTL across all instances. Apps Script path (below)
+// keeps its cache because the read itself is slow (~1s).
 
 export async function getMyProjects(overrideEmail?: string): Promise<MyProjects> {
   // `overrideEmail` powers the gear-menu "view as" feature on the
@@ -296,7 +297,10 @@ export async function getMyProjects(overrideEmail?: string): Promise<MyProjects>
   // session user is impersonating, instead of their own.
   const email = overrideEmail || (await currentUserEmail());
   const { useSAProjectsReads } = await import("@/lib/sa");
-  if (useSAProjectsReads()) return fetchMyProjectsDirectCached(email);
+  if (useSAProjectsReads()) {
+    const { getMyProjectsDirect } = await import("@/lib/projectsDirect");
+    return getMyProjectsDirect(email);
+  }
   return fetchMyProjectsCached(email);
 }
 
