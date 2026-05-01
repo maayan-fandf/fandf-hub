@@ -22,6 +22,7 @@ import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
 import TasksArchiveToggle from "@/components/TasksArchiveToggle";
 import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
+import DateRangePicker from "@/components/DateRangePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -690,27 +691,13 @@ function TasksFilterBar({
           ))}
         </select>
       </label>
-      <label className="filter-date-range">
-        תאריך מבוקש
-        <div className="date-range-inputs">
-          <span className="date-range-sep">מ</span>
-          <input
-            type="date"
-            name="requested_date_from"
-            defaultValue={current.requested_date_from}
-            data-active={current.requested_date_from ? "1" : undefined}
-            aria-label="מתאריך"
-          />
-          <span className="date-range-sep">עד</span>
-          <input
-            type="date"
-            name="requested_date_to"
-            defaultValue={current.requested_date_to}
-            data-active={current.requested_date_to ? "1" : undefined}
-            aria-label="עד תאריך"
-          />
-        </div>
-      </label>
+      <DateRangePicker
+        fromName="requested_date_from"
+        toName="requested_date_to"
+        initialFrom={current.requested_date_from}
+        initialTo={current.requested_date_to}
+        label="תאריך מבוקש"
+      />
 
       <fieldset className="tasks-filter-people-group">
         <legend className="tasks-filter-people-legend">אנשים</legend>

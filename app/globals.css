@@ -5447,6 +5447,151 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   flex: 0 0 auto;
 }
 
+/* Single-popover range picker (DateRangePicker.tsx). Replaces the
+   two-input layout above on the /tasks filter bar. The .filter-date-
+   range parent is the same; only the inner control changes. */
+.filter-date-range {
+  position: relative; /* anchor for the popover */
+}
+.date-range-trigger {
+  display: flex;
+  align-items: center;
+  gap: .35em;
+  padding: .35em .55em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: start;
+  width: 100%;
+  min-width: 0;
+}
+.date-range-trigger[data-active="1"] {
+  border-color: var(--accent, #4f46e5);
+  background: color-mix(in oklab, var(--accent, #4f46e5) 6%, var(--bg));
+}
+.date-range-trigger:hover {
+  border-color: var(--fg-muted, #999);
+}
+.date-range-trigger-icon { flex: 0 0 auto; }
+.date-range-trigger-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-range-trigger-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2em;
+  height: 1.2em;
+  border-radius: 50%;
+  font-size: .8em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.date-range-trigger-clear:hover { background: var(--border); color: var(--fg); }
+
+.date-range-popover {
+  position: absolute;
+  top: 100%;
+  inset-inline-end: 0;
+  margin-top: .25em;
+  z-index: 50;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: .6em;
+  width: 19em;
+  max-width: 90vw;
+  user-select: none;
+}
+.date-range-month-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .35em;
+}
+.date-range-nav {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: .15em .4em;
+  font-size: 1.1em;
+  cursor: pointer;
+  color: var(--fg);
+}
+.date-range-nav:hover { border-color: var(--border); }
+.date-range-month-label { font-weight: 600; }
+.date-range-weekdays,
+.date-range-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.date-range-weekday {
+  text-align: center;
+  font-size: .72em;
+  color: var(--muted);
+  padding: .15em 0;
+}
+.date-range-day {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: .85em;
+  color: var(--fg);
+}
+.date-range-day:hover {
+  background: color-mix(in oklab, var(--accent, #4f46e5) 12%, transparent);
+}
+.date-range-day[data-other-month="1"] { color: var(--muted); opacity: .55; }
+.date-range-day[data-today="1"] { border-color: color-mix(in oklab, var(--accent, #4f46e5) 60%, transparent); }
+.date-range-day[data-in-range="1"] {
+  background: color-mix(in oklab, var(--accent, #4f46e5) 14%, transparent);
+  border-radius: 0;
+}
+.date-range-day[data-start="1"],
+.date-range-day[data-end="1"] {
+  background: var(--accent, #4f46e5);
+  color: #fff;
+  border-radius: 50%;
+}
+/* When start === end (single-day range), keep round; otherwise the
+   start sits on the right side of the in-range strip in RTL, end
+   on the left. The accent dot overlay handles the visual continuity. */
+.date-range-footer {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  margin-top: .5em;
+  padding-top: .5em;
+  border-top: 1px solid var(--border);
+  font-size: .85em;
+}
+.date-range-summary { flex: 1 1 auto; color: var(--muted); }
+.date-range-clear,
+.date-range-done {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .25em .6em;
+  font: inherit;
+  cursor: pointer;
+  color: var(--fg);
+}
+.date-range-done {
+  background: var(--accent, #4f46e5);
+  color: #fff;
+  border-color: transparent;
+}
+.date-range-done:hover { filter: brightness(1.07); }
+
 /* People sub-group inside the filter bar — a fieldset that spans
    the full grid width and contains the four person-related axes
    (כותב / עובד מבצע / מאשר / מעורב במשימה). Visual frame makes
