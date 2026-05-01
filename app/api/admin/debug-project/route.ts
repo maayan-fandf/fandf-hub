@@ -36,6 +36,12 @@ export async function GET(req: Request) {
   if (bust) {
     revalidateTag("keys");
     revalidateTag("my-projects");
+    // Drive folder listings — campaign dropdown should pick up freshly
+    // created Drive sub-folders without waiting on the 60s
+    // listCampaignFolders TTL.
+    revalidateTag("campaign-folders");
+    revalidateTag("drive-folders");
+    revalidateTag("project-shared-folder");
   }
 
   const data = await getMyProjects().catch((e) => ({ error: String(e) }));

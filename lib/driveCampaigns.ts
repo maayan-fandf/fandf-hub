@@ -93,26 +93,22 @@ async function listInner(
 }
 
 /**
- * Cached campaign-list lookup. Cache key is `(company, project)` — campaign
- * folders are global to the Shared Drive, no per-user variant needed.
- *
- * Short TTL (60s) because the list is meant to feel live: a user creating
- * a new campaign in one tab should see it in another tab on the next
- * render. Anything fresher would need explicit revalidation calls,
- * which we add to `createCampaignFolder` / `renameCampaignFolder` below.
+ * Uncached campaign-list lookup. Earlier versions cached at 60s via
+ * unstable_cache, but Firebase App Hosting's multi-instance topology
+ * meant freshly-created Drive folders could stay invisible to one
+ * instance while a sibling already saw them — same flakiness pattern
+ * that bit getMyProjectsDirect (commit 37f6181) and
+ * listRecentMessages (commit bc7fa0b). Only consumer is
+ * tasksCampaignsDirect → /api/tasks/campaigns, which fires once per
+ * task-form open (cold path). One Drive API call per request is well
+ * within quota.
  */
-const _listCached = unstable_cache(
-  (company: string, project: string) => listInner(company, project),
-  ["campaign-folders"],
-  { revalidate: 60, tags: ["campaign-folders"] },
-);
-
 export async function listCampaignFolders(
   company: string,
   project: string,
 ): Promise<CampaignFolder[]> {
   if (!project.trim()) return [];
-  return _listCached(company.trim(), project.trim());
+  return listInner(company.trim(), project.trim());
 }
 
 function bustCampaignFoldersCache() {
