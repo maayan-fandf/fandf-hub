@@ -54,6 +54,18 @@ export default function DriveFolderPicker({
   const [submittingNew, setSubmittingNew] = useState(false);
   const lastNewName = useRef<string>(value.mode === "new" ? value.name : "");
 
+  // Coerce "new" → "existing" on mount. The mode switch UI was removed
+  // 2026-05-02; if a parent still initialises with `{ mode: "new" }`
+  // (TaskEditPanel does for tasks without a drive_folder_id), flip it
+  // immediately so the existing-tree renders. The auto-select effect
+  // below then picks the campaign folder as the default.
+  useEffect(() => {
+    if (value.mode === "new") {
+      onChange({ mode: "existing", folderId: "", folderName: "" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const resolveKey = `${company}::${project}::${campaign}`;
   const lastKey = useRef<string>("");
   // Tracks the folder ID our auto-select effect last applied, so the
@@ -257,32 +269,11 @@ export default function DriveFolderPicker({
         </div>
       )}
 
-      <div
-        className="drive-folder-mode-switch"
-        role="radiogroup"
-        aria-label="בחר תיקייה"
-      >
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === "new"}
-          className={`drive-folder-mode-btn${mode === "new" ? " is-active" : ""}`}
-          onClick={() => switchMode("new")}
-        >
-          <span className="drive-folder-mode-icon">➕</span>
-          תיקייה חדשה
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === "existing"}
-          className={`drive-folder-mode-btn${mode === "existing" ? " is-active" : ""}`}
-          onClick={() => switchMode("existing")}
-        >
-          <span className="drive-folder-mode-icon">📁</span>
-          השתמש בקיימת
-        </button>
-      </div>
+      {/* Mode switch removed 2026-05-02 per user feedback — the
+          "תיקייה חדשה" half just created another sub-folder under the
+          campaign, which is redundant with the inline ➕ buttons in
+          the tree below. The picker now always renders in "existing"
+          mode; folder creation goes through the per-level "+" entry. */}
 
       {resolving && <div className="drive-folder-hint">טוען תיקיית קמפיין…</div>}
 
@@ -299,33 +290,16 @@ export default function DriveFolderPicker({
         </div>
       )}
 
-      {mode === "new" && (
-        <div className="drive-folder-new-block">
-          <label className="drive-folder-new-label">
-            <span className="drive-folder-new-label-text">שם תת־התיקייה החדשה</span>
-            <input
-              type="text"
-              className="drive-folder-new-name"
-              value={value.mode === "new" ? value.name : ""}
-              onChange={(e) =>
-                onChange({ mode: "new", name: e.target.value })
-              }
-              placeholder={defaultNewName || "שם תת־תיקייה"}
-            />
-          </label>
-          <div className="drive-folder-context">
-            תיווצר תת־תיקייה {contextLabel}
-            {isPending && " (תיקיית הקמפיין תיווצר אוטומטית בעת שמירה)"}
-          </div>
-        </div>
-      )}
-
-      {mode === "existing" && (
-        <div className="drive-folder-existing-block">
+      {/* Always render the existing-tree block. The "new" mode block
+          (a single text input for a sub-folder name) was redundant
+          with the inline ➕ buttons in the tree, so the parent's
+          `value` is coerced to "existing" on mount via the effect
+          above. Old "new" code paths (switchMode, lastNewName) are
+          preserved for type compatibility but unreachable in UI. */}
+      <div className="drive-folder-existing-block">
           {isPending && (
             <div className="drive-folder-hint">
               ✅ תיקיית הקמפיין תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
-              ניתן גם לעבור ל&quot;תיקייה חדשה&quot; כדי ליצור תת־תיקייה ייעודית למשימה.
             </div>
           )}
           {rootId && (
@@ -402,7 +376,6 @@ export default function DriveFolderPicker({
             </>
           )}
         </div>
-      )}
     </div>
   );
 
@@ -482,7 +455,7 @@ export default function DriveFolderPicker({
         )}
 
         {items.length === 0 && creating !== parentId && (
-          <li className="drive-folder-li drive-folder-empty" data-depth={depth}>
+          <li className="drive-folder-li drive-folder-empty" data-depth={depth + 1}>
             <span className="drive-folder-hint">
               אין תת־תיקיות תחת &quot;{parentName}&quot;
             </span>
@@ -552,7 +525,7 @@ export default function DriveFolderPicker({
         })}
 
         {items.length > 0 && creating !== parentId && (
-          <li className="drive-folder-li drive-folder-add" data-depth={depth}>
+          <li className="drive-folder-li drive-folder-add" data-depth={depth + 1}>
             <button
               type="button"
               className="drive-folder-btn-ghost"
