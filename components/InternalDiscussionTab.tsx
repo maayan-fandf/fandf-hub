@@ -2,6 +2,7 @@ import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import InternalChatComposer from "@/components/InternalChatComposer";
 import ChatReactionsRow from "@/components/ChatReactionsRow";
+import CreateChatSpaceButton from "@/components/CreateChatSpaceButton";
 import {
   listRecentMessages,
   lookupUserGaiaResource,
@@ -36,6 +37,7 @@ export default async function InternalDiscussionTab({
   myEmail,
   myDisplayNames,
   projectName,
+  isAdmin,
 }: {
   subjectEmail: string;
   /** Either the raw Chat webhook URL (from Keys col L) or the derived
@@ -56,6 +58,11 @@ export default async function InternalDiscussionTab({
   /** Project name, threaded down to the composer + convert-button so
    *  they know where to post / scope the new task. */
   projectName: string;
+  /** When true and the project has no Chat Space configured, the
+   *  empty state offers a one-click "create chat space" button.
+   *  /api/worktasks/project-space-create is admin-gated server-side
+   *  too — this just hides the affordance from non-admins. */
+  isAdmin: boolean;
 }) {
   const spaceId = parseSpaceId(spaceUrlOrWebhook);
   if (!spaceId) {
@@ -70,6 +77,9 @@ export default async function InternalDiscussionTab({
             webhook אם הוגדר. הסנכרון יתחיל לפעול תוך 5 דקות (קאש).
           </span>
         </p>
+        {isAdmin && (
+          <CreateChatSpaceButton projectName={projectName} />
+        )}
       </div>
     );
   }

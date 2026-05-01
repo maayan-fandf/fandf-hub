@@ -2105,6 +2105,24 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   margin-top: 0.3rem;
   font-size: 0.78em;
 }
+/* Admin one-click "create Chat space" affordance on the empty state.
+   Renders below the manual instructional text so admins can skip the
+   copy-paste flow. Inherits .btn-primary.btn-sm visuals; the wrap
+   centers the button under the hint and the error variant surfaces
+   API failures (403 for non-admin, 5xx, etc.) inline. */
+.create-chat-space-button-wrap {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.create-chat-space-error {
+  font-size: 0.8em;
+  color: var(--err, #b00020);
+  max-width: 32em;
+  text-align: center;
+}
 
 /* Composer at the bottom of the internal Chat tab. Same bordered-
    box framing as .client-chat-composer on the client tab — the two

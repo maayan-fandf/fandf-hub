@@ -481,6 +481,7 @@ export default async function ProjectOverviewPage({
           requestedChannel={sp.channel}
           isInternalUser={isInternalUser}
           isClientUser={isClientUser}
+          isAdmin={!!projectsData?.isAdmin}
           userEmail={userEmail}
           chatSpaceUrl={chatSpaceUrl}
         />
@@ -594,6 +595,7 @@ function DiscussionSection({
   requestedChannel,
   isInternalUser,
   isClientUser,
+  isAdmin,
   userEmail,
   chatSpaceUrl,
 }: {
@@ -609,6 +611,9 @@ function DiscussionSection({
   /** True when the viewer is a client (col-E only). Drops the
    *  convert-to-task icon on every comment / mention card. */
   isClientUser: boolean;
+  /** True when the viewer is a hub admin. Gates the
+   *  CreateChatSpaceButton on the internal-tab empty state. */
+  isAdmin: boolean;
   userEmail: string;
   chatSpaceUrl: string;
 }) {
@@ -679,6 +684,7 @@ function DiscussionSection({
           requestedView={requestedView}
           showResolved={showResolved}
           projectName={projectName}
+          isAdmin={isAdmin}
         />
       ) : channel === "tasks" ? (
         <TasksChannel
@@ -713,12 +719,16 @@ async function InternalChannel({
   requestedView,
   showResolved,
   projectName,
+  isAdmin,
 }: {
   subjectEmail: string;
   chatSpaceUrl: string;
   requestedView: string | undefined;
   showResolved: boolean;
   projectName: string;
+  /** Threaded down to InternalDiscussionTab so the empty-state can
+   *  render a one-click "create chat space" button for admins. */
+  isAdmin: boolean;
 }) {
   const view: "all" | "mine" = requestedView === "mine" ? "mine" : "all";
   const buildHref = (nextView: "all" | "mine") => {
@@ -768,6 +778,7 @@ async function InternalChannel({
           myEmail={subjectEmail}
           myDisplayNames={myDisplayNames}
           projectName={projectName}
+          isAdmin={isAdmin}
         />
       </Suspense>
     </>
