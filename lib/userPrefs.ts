@@ -1,5 +1,5 @@
 /**
- * Per-user preferences — three knobs:
+ * Per-user preferences — knobs the user owns:
  *
  *   - email_notifications: on/off. When off, hub-side outbound emails
  *     (assignee heads-up, approver request, mention digest) skip this
@@ -11,6 +11,12 @@
  *     this user's identity for the role-default filter computation.
  *     Empty = act as self. No data-access escalation: the actual
  *     read paths still gate on the session user's Keys membership.
+ *   - gmail_customer_poll: on/off. When ON, the customer-email cron
+ *     impersonates this user via DWD and surfaces inbox messages
+ *     from senders registered in Keys col E (Email Client) so they
+ *     can be triaged without leaving the hub. Defaults to OFF — this
+ *     is a meaningful trust ask (the system reads inbox content
+ *     filtered by the sender list) and must be opt-in.
  *
  * Storage: a `User Preferences` tab on the Comments spreadsheet
  * (SHEET_ID_COMMENTS). Auto-created on first write. Lookup is by
@@ -52,6 +58,13 @@ export type UserPrefs = {
    *  archive count badge. Stored as a string of digits so the
    *  sheet read stays simple; parseInt with default 14. */
   archive_after_days: string;
+  /** When true, the customer-email cron impersonates this user and
+   *  surfaces Gmail messages from senders listed in Keys col E
+   *  (Email Client) into the hub's customer-email tray. Default OFF
+   *  — opt-in only because the cron reads inbox content for matching
+   *  senders, which is a different trust model than the existing
+   *  user-tagged "Add to Tasks" flow. */
+  gmail_customer_poll: boolean;
 };
 
 const DEFAULT_PREFS: UserPrefs = {
@@ -63,6 +76,7 @@ const DEFAULT_PREFS: UserPrefs = {
   tasks_sort_order: "",
   hide_archived: true,
   archive_after_days: "14",
+  gmail_customer_poll: false,
 };
 
 const TAB = "User Preferences";
@@ -76,6 +90,7 @@ const HEADERS = [
   "tasks_sort_order",
   "hide_archived",
   "archive_after_days",
+  "gmail_customer_poll",
   "updated_at",
 ];
 
@@ -180,6 +195,7 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
     const iOrder = headers.indexOf("tasks_sort_order");
     const iHideArch = headers.indexOf("hide_archived");
     const iArchDays = headers.indexOf("archive_after_days");
+    const iGmailPoll = headers.indexOf("gmail_customer_poll");
     if (iEmail < 0) return prefs;
     for (const row of rows) {
       const e = String(row[iEmail] ?? "").toLowerCase().trim();
@@ -208,6 +224,10 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
             ? String(row[iArchDays] ?? "").trim() ||
               DEFAULT_PREFS.archive_after_days
             : DEFAULT_PREFS.archive_after_days,
+        gmail_customer_poll:
+          iGmailPoll >= 0
+            ? asBool(row[iGmailPoll], DEFAULT_PREFS.gmail_customer_poll)
+            : DEFAULT_PREFS.gmail_customer_poll,
       };
       break;
     }
@@ -267,6 +287,7 @@ export async function setUserPrefs(
     const iOrderExisting = headers.indexOf("tasks_sort_order");
     const iHideArchExisting = headers.indexOf("hide_archived");
     const iArchDaysExisting = headers.indexOf("archive_after_days");
+    const iGmailPollExisting = headers.indexOf("gmail_customer_poll");
     return {
       email_notifications: asBool(
         r[headers.indexOf("email_notifications")],
@@ -296,6 +317,10 @@ export async function setUserPrefs(
           ? String(r[iArchDaysExisting] ?? "").trim() ||
             DEFAULT_PREFS.archive_after_days
           : DEFAULT_PREFS.archive_after_days,
+      gmail_customer_poll:
+        iGmailPollExisting >= 0
+          ? asBool(r[iGmailPollExisting], DEFAULT_PREFS.gmail_customer_poll)
+          : DEFAULT_PREFS.gmail_customer_poll,
     };
   })();
   const merged: UserPrefs = { ...existing, ...partial };
@@ -326,6 +351,7 @@ export async function setUserPrefs(
     tasks_sort_order: merged.tasks_sort_order,
     hide_archived: merged.hide_archived,
     archive_after_days: merged.archive_after_days,
+    gmail_customer_poll: merged.gmail_customer_poll,
     updated_at: now,
   };
   const newRow: unknown[] = headers.map((h) =>
@@ -372,6 +398,7 @@ export async function listAllUserPrefs(
   const iOrder = headers.indexOf("tasks_sort_order");
   const iHideArch = headers.indexOf("hide_archived");
   const iArchDays = headers.indexOf("archive_after_days");
+  const iGmailPoll = headers.indexOf("gmail_customer_poll");
   const iUpdated = headers.indexOf("updated_at");
   const out: Array<{ email: string; prefs: UserPrefs; updatedAt: string }> = [];
   for (const row of rows) {
@@ -398,6 +425,10 @@ export async function listAllUserPrefs(
         ? String(row[iArchDays] ?? "").trim() ||
           DEFAULT_PREFS.archive_after_days
         : DEFAULT_PREFS.archive_after_days,
+      gmail_customer_poll:
+        iGmailPoll >= 0
+          ? asBool(row[iGmailPoll], DEFAULT_PREFS.gmail_customer_poll)
+          : DEFAULT_PREFS.gmail_customer_poll,
     };
     const updatedAt = iUpdated >= 0 ? String(row[iUpdated] ?? "").trim() : "";
     out.push({ email: e, prefs, updatedAt });

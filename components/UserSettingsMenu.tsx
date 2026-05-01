@@ -11,6 +11,7 @@ type Prefs = {
   notifications_snooze_until: string;
   hide_archived: boolean;
   archive_after_days: string;
+  gmail_customer_poll: boolean;
 };
 
 type Person = { email: string; name: string; role: string };
@@ -22,6 +23,7 @@ const DEFAULT_PREFS: Prefs = {
   notifications_snooze_until: "",
   hide_archived: true,
   archive_after_days: "14",
+  gmail_customer_poll: false,
 };
 
 /** Snooze options offered in the gear menu. Stored as an absolute ISO
@@ -312,6 +314,23 @@ export default function UserSettingsMenu({
                   <span className="settings-menu-toggle-label">
                     סנכרון Google Tasks
                     <small>הוספה ועדכון של משימות ברשימת ה-Tasks האישית</small>
+                  </span>
+                </label>
+                <label className="settings-menu-toggle">
+                  <input
+                    type="checkbox"
+                    checked={prefs.gmail_customer_poll}
+                    disabled={busy === "gmail_customer_poll"}
+                    onChange={(e) =>
+                      save({ gmail_customer_poll: e.target.checked })
+                    }
+                  />
+                  <span className="settings-menu-toggle-label">
+                    מיילים מלקוחות
+                    <small>
+                      הצגת מיילים מלקוחות רשומים (Keys col E) מ-3 הימים
+                      האחרונים, להמרה למשימה או להעברה לחלל הצ׳אט
+                    </small>
                   </span>
                 </label>
               </div>

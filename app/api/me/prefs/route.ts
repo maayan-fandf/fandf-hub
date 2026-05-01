@@ -49,6 +49,9 @@ export async function POST(req: Request) {
   if ("view_as_email" in body) {
     partial.view_as_email = String(body.view_as_email || "").toLowerCase().trim();
   }
+  if ("gmail_customer_poll" in body) {
+    partial.gmail_customer_poll = !!body.gmail_customer_poll;
+  }
   try {
     const prefs = await setUserPrefs(email, partial);
     return NextResponse.json({ ok: true, prefs });
