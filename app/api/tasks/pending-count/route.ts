@@ -78,6 +78,38 @@ export async function GET() {
     // by construction so the tooltip always explains the badge.
     const byStatus = (s: string) =>
       open.filter((t) => t.status === s).length;
+
+    // Role-aware "actionable" subset: per status, which of those tasks
+    // is the current user the action-owner for? Used by the badge
+    // tooltip to split "דורש פעולה ממך" from "במעקב" — without this
+    // a user authoring 7 tasks waiting for someone ELSE to approve
+    // sees `7 לאישור` and reasonably misreads it as "7 to approve".
+    //   - handling/in_progress: assignee should be doing the work
+    //   - awaiting_clarification: clarify owner (author or PM) should
+    //     be answering
+    //   - awaiting_approval: approver should be reviewing
+    // Mentioned-in-discussion / unrelated PM stays in the watching tier.
+    const me = (targetEmail || "").toLowerCase();
+    const isAssignee = (t: { assignees?: string[] }) =>
+      (t.assignees || []).some((a) => (a || "").toLowerCase() === me);
+    const isApprover = (t: { approver_email?: string }) =>
+      (t.approver_email || "").toLowerCase() === me;
+    const isClarifyOwner = (t: {
+      author_email?: string;
+      project_manager_email?: string;
+    }) =>
+      (t.author_email || "").toLowerCase() === me ||
+      (t.project_manager_email || "").toLowerCase() === me;
+    const actionableByStatus = (s: string): number => {
+      const filter =
+        s === "awaiting_approval"
+          ? isApprover
+          : s === "awaiting_clarification"
+            ? isClarifyOwner
+            : isAssignee; // handling + in_progress
+      return open.filter((t) => t.status === s && filter(t)).length;
+    };
+
     return NextResponse.json({
       ok: true,
       total: open.length,
@@ -86,6 +118,12 @@ export async function GET() {
         in_progress: byStatus("in_progress"),
         awaiting_clarification: byStatus("awaiting_clarification"),
         awaiting_approval: byStatus("awaiting_approval"),
+      },
+      actionable_breakdown: {
+        awaiting_handling: actionableByStatus("awaiting_handling"),
+        in_progress: actionableByStatus("in_progress"),
+        awaiting_clarification: actionableByStatus("awaiting_clarification"),
+        awaiting_approval: actionableByStatus("awaiting_approval"),
       },
       target_email: targetEmail,
     });
