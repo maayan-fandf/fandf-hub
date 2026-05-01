@@ -61,8 +61,14 @@ export default function CampaignCombobox({
   const trimmed = value.trim();
   const filtered = useMemo(() => {
     if (!trimmed) return options;
-    const needle = trimmed.toLowerCase();
-    return options.filter((o) => o.toLowerCase().includes(needle));
+    // When the input value matches an existing option exactly, the user
+    // is "settled" on a campaign — opening the dropdown should show all
+    // options so they can switch to a different one without first
+    // clearing the field. Only filter when the input is a partial query
+    // that doesn't match any single option.
+    const lc = trimmed.toLowerCase();
+    if (options.some((o) => o.toLowerCase() === lc)) return options;
+    return options.filter((o) => o.toLowerCase().includes(lc));
   }, [options, trimmed]);
 
   // Show a "create new" affordance when the typed value doesn't exactly
