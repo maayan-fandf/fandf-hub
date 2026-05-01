@@ -91,9 +91,9 @@ export default async function MorningPage({
         <div>
           <h1>
             <span className="emoji" aria-hidden>
-              ☀️
+              📢
             </span>
-            בוקר
+            קמפיינים
           </h1>
           {data && (
             <div className="subtitle">

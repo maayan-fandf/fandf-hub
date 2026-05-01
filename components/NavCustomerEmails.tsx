@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 /**
@@ -191,7 +192,7 @@ export default function NavCustomerEmails() {
         aria-haspopup="true"
         title={`${count} מיילים מלקוחות מחכים`}
       >
-        📬 לקוחות
+        📩 לקוחות
         <span className="nav-badge" aria-label={`${count} מיילים`}>
           {count > 99 ? "99+" : count}
         </span>
@@ -203,7 +204,16 @@ export default function NavCustomerEmails() {
           aria-label="מיילים מלקוחות"
         >
           <div className="nav-customer-emails-popover-head">
-            <h3>📬 מיילים מלקוחות</h3>
+            <div className="nav-customer-emails-popover-head-row">
+              <h3>📩 מיילים מלקוחות</h3>
+              <Link
+                href="/customer-emails"
+                className="nav-customer-emails-popover-fullpage"
+                onClick={() => setOpen(false)}
+              >
+                פתח דף מלא ↗
+              </Link>
+            </div>
             <p className="muted">
               מיילים מלקוחות רשומים (Keys col E) מ-3 הימים האחרונים.
               לסגירת פריט — קרא או העבר לארכיון ב-Gmail.

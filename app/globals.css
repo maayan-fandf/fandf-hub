@@ -1340,7 +1340,9 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 }
 
 .topnav-external {
-  font-size: 0.88rem;
+  /* Inherits all .topnav-link styling — kept as a hook in case future
+     external links need a separate visual treatment, but currently a
+     no-op so external nav items match internal ones in size + weight. */
 }
 
 /* Projects nav dropdown — 2-level hover menu.
@@ -4720,12 +4722,15 @@ a.section-link:hover {
   position: relative;
   display: inline-flex;
 }
-.nav-gmail-tasks-trigger {
+/* The nav popover triggers are <button> elements styled as topnav links.
+   The button reset (background + border) is all we override — typography
+   (font-size + font-weight + color) flows from .topnav-link so all nav
+   items render in one consistent family. */
+.nav-gmail-tasks-trigger,
+.nav-customer-emails-trigger {
   cursor: pointer;
   background: transparent;
   border: 0;
-  font: inherit;
-  color: inherit;
 }
 .nav-gmail-tasks-trigger[aria-expanded="true"] {
   background: var(--surface-hi, var(--surface-soft, rgba(0,0,0,.05)));
@@ -8437,8 +8442,21 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   top: 0;
   z-index: 1;
 }
-.nav-customer-emails-popover-head h3 { margin: 0 0 .25em; font-size: 1rem; }
-.nav-customer-emails-popover-head p { margin: 0; font-size: .8rem; }
+.nav-customer-emails-popover-head h3 { margin: 0; font-size: 1rem; }
+.nav-customer-emails-popover-head p { margin: .25em 0 0; font-size: .8rem; }
+.nav-customer-emails-popover-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5em;
+}
+.nav-customer-emails-popover-fullpage {
+  font-size: .8rem;
+  color: var(--accent, #4f46e5);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav-customer-emails-popover-fullpage:hover { text-decoration: underline; }
 .nav-customer-emails-toast {
   margin: .5em 1em;
   padding: .5em .75em;

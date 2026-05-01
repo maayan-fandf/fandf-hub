@@ -166,9 +166,9 @@ export default function NavGmailTasks() {
         onClick={toggle}
         aria-expanded={open}
         aria-haspopup="true"
-        title={`${count} משימות מ-Gmail מחכות להמרה`}
+        title={`${count} משימות שהוספת ב-Gmail מחכות להמרה`}
       >
-        📥 מ-Gmail
+        📥 Google Tasks
         <span className="nav-badge" aria-label={`${count} משימות`}>
           {count > 99 ? "99+" : count}
         </span>

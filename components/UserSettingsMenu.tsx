@@ -339,7 +339,7 @@ export default function UserSettingsMenu({
                     className="settings-menu-link"
                     onClick={() => setOpen(false)}
                   >
-                    📬 פתח מיילים מלקוחות →
+                    📩 פתח מיילים מלקוחות →
                   </Link>
                 )}
               </div>

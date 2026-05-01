@@ -39,7 +39,7 @@ export default async function CustomerEmailsPage() {
     return (
       <main className="page customer-emails-page">
         <header className="customer-emails-head">
-          <h1>📬 מיילים מלקוחות</h1>
+          <h1>📩 מיילים מלקוחות</h1>
         </header>
         <div className="customer-emails-empty">
           <p>הפיצ׳ר כבוי כברירת מחדל.</p>

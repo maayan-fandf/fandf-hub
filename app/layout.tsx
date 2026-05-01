@@ -5,11 +5,11 @@ import { auth, signOut } from "@/auth";
 import CommandPalette from "@/components/CommandPalette";
 import ExternalNavListener from "@/components/ExternalNavListener";
 import KeyboardHelp from "@/components/KeyboardHelp";
-import NavMentionBadge from "@/components/NavMentionBadge";
 import NavBellBadge from "@/components/NavBellBadge";
 import NavGmailTasks from "@/components/NavGmailTasks";
 import NavCustomerEmails from "@/components/NavCustomerEmails";
-import NavMorningLink from "@/components/NavMorningLink";
+import NavCampaignsLink from "@/components/NavCampaignsLink";
+import NavInboxLink from "@/components/NavInboxLink";
 import ViewAsBanner from "@/components/ViewAsBanner";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import NavTasksBadge from "@/components/NavTasksBadge";
@@ -121,7 +121,7 @@ export default async function RootLayout({
                 📂 פרויקטים
               </Link>
             )}
-            {email && !isClientUser && <NavMorningLink />}
+            {email && !isClientUser && <NavCampaignsLink />}
             {email && !isClientUser && (
               <ActiveLink
                 href="/tasks"
@@ -131,18 +131,7 @@ export default async function RootLayout({
                 <NavTasksBadge />
               </ActiveLink>
             )}
-            <ActiveLink
-              href="/inbox"
-              className="topnav-link topnav-link-with-badge"
-            >
-              {/* Clients see this as "תיוגים שלי" — they don't think
-                  in terms of "tagging the client", they think in
-                  terms of "messages where I was tagged". Staff/admin
-                  keep the "תיוגי לקוח" label since for them it's the
-                  client-channel mentions inbox. */}
-              🏷️ {isClientUser ? "תיוגים שלי" : "תיוגי לקוח"}
-              {email && <NavMentionBadge />}
-            </ActiveLink>
+            {email && <NavInboxLink isClientUser={isClientUser} />}
             {email && !isClientUser && (
               <ActiveLink
                 href="/notifications"
