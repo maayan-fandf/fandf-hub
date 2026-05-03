@@ -63,20 +63,29 @@ export type ChainTemplate = {
  * issues.
  */
 export const CHAIN_TEMPLATES: ChainTemplate[] = [
+  // Notes on label conventions:
+  //   - Arrow direction: use ← (LEFTWARDS) — Hebrew reads right-to-left,
+  //     so the arrow visually flows in the direction the eye scans.
+  //     Using → would point AGAINST the reading flow.
+  //   - Department names match the names-to-emails Role column
+  //     verbatim (lowercase English: art / copywriter / media /
+  //     designer / client manager). Display labels for those values
+  //     in the UI come from the מחלקות chips' rendering — when adding
+  //     templates here, ensure the dept value matches a real role.
   {
     id: "fb-visual-update",
-    label: "📷 עדכון ויזואל פייסבוק (קופי → אומנות → סטודיו → מדיה)",
+    label: "📷 עדכון ויזואל פייסבוק (קופי ← ארט ← סטודיו ← מדיה)",
     defaultUmbrellaTitle: "עדכון ויזואל",
     steps: [
       { title: "כתיבת קופי",         department: "copywriter", assigneeHint: "קופירייטר" },
-      { title: "עיצוב + בחירת תמונה", department: "art",        assigneeHint: "אומן/אמנית" },
+      { title: "עיצוב + בחירת תמונה", department: "art",        assigneeHint: "ארט" },
       { title: "ביצוע בסטודיו",       department: "art",        assigneeHint: "סטודיו" },
       { title: "העלאה למדיה",         department: "media",      assigneeHint: "מדיה" },
     ],
   },
   {
     id: "landing-page",
-    label: "🌐 דף נחיתה (קופי → עיצוב → העלאה)",
+    label: "🌐 דף נחיתה (קופי ← עיצוב ← העלאה)",
     defaultUmbrellaTitle: "דף נחיתה חדש",
     steps: [
       { title: "כתיבת תוכן + CTAs", department: "copywriter", assigneeHint: "קופירייטר" },
@@ -86,11 +95,11 @@ export const CHAIN_TEMPLATES: ChainTemplate[] = [
   },
   {
     id: "campaign-launch",
-    label: "🚀 השקת קמפיין (קופי → ויזואל → הקמה → אישור → לייב)",
+    label: "🚀 השקת קמפיין (קופי ← ויזואל ← הקמה ← אישור ← לייב)",
     defaultUmbrellaTitle: "השקת קמפיין",
     steps: [
       { title: "כתיבת קופי לקמפיין", department: "copywriter",     assigneeHint: "קופירייטר" },
-      { title: "ויזואלים + בנרים",   department: "art",            assigneeHint: "אומן/אמנית" },
+      { title: "ויזואלים + בנרים",   department: "art",            assigneeHint: "ארט" },
       { title: "הקמת קמפיין במערכת", department: "media",          assigneeHint: "מדיה" },
       { title: "אישור לקוח",         department: "client manager", assigneeHint: "מנהל/ת קמפיין" },
       { title: "העלאה ללייב",         department: "media",          assigneeHint: "מדיה" },
@@ -98,12 +107,12 @@ export const CHAIN_TEMPLATES: ChainTemplate[] = [
   },
   {
     id: "monthly-report",
-    label: "📊 דוח חודשי (איסוף → ניתוח → עיצוב → שליחה)",
+    label: "📊 דוח חודשי (איסוף ← ניתוח ← עיצוב ← שליחה)",
     defaultUmbrellaTitle: "דוח חודשי",
     steps: [
       { title: "איסוף נתונים",  department: "media",          assigneeHint: "מדיה" },
       { title: "ניתוח + תובנות", department: "client manager", assigneeHint: "מנהל/ת קמפיין" },
-      { title: "עיצוב הדוח",     department: "art",            assigneeHint: "אומן/אמנית" },
+      { title: "עיצוב הדוח",     department: "art",            assigneeHint: "ארט" },
       { title: "שליחה ללקוח",    department: "client manager", assigneeHint: "מנהל/ת קמפיין" },
     ],
   },

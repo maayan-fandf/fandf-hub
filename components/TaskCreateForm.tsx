@@ -152,6 +152,14 @@ export default function TaskCreateForm({
   // path (per the locked design — most quick client requests are NOT
   // chains).
   const [chainMode, setChainMode] = useState(false);
+  // Phase 10 follow-up — explicit umbrella toggle. Default ON because
+  // the umbrella's rollup (the parent task in /tasks/[id] showing
+  // aggregate progress) is what most users want for chains. Turning
+  // it OFF creates a flat-linked chain: N peer tasks linked sideways
+  // via blocks/blocked_by, no rollup row in the project view. Users
+  // who don't want the umbrella's noise in their lists can opt out
+  // here per-creation.
+  const [withUmbrella, setWithUmbrella] = useState(true);
   type ChainStep = {
     title: string;
     assignees: string;
@@ -394,6 +402,10 @@ export default function TaskCreateForm({
         brief: String(fd.get("brief") || ""),
         campaign: campaign.trim(),
         departments,
+        // Phase 10 follow-up — withUmbrella toggle. Server defaults to
+        // creating an umbrella container; pass false to skip and get
+        // a flat-linked chain (children only, no rollup row).
+        withUmbrella,
         umbrella: {
           title: title.trim(),
           description: String(fd.get("description") || ""),
@@ -414,14 +426,21 @@ export default function TaskCreateForm({
           body: JSON.stringify(chainPayload),
         });
         const data = (await res.json()) as
-          | { ok: true; umbrella: { id: string }; children: { id: string }[] }
+          | {
+              ok: true;
+              umbrella: { id: string } | null;
+              children: { id: string }[];
+            }
           | { ok: false; error: string };
         if (!res.ok || !data.ok) {
           throw new Error("error" in data ? data.error : "Failed to create chain");
         }
-        // Land on the umbrella detail page — user gets the rollup view
-        // with all children listed.
-        router.push(`/tasks/${encodeURIComponent(data.umbrella.id)}`);
+        // Land on the umbrella detail page when there is one;
+        // otherwise (flat-linked mode), land on the first child so
+        // the user sees the start of the chain.
+        const dest = data.umbrella?.id ?? data.children[0]?.id ?? "";
+        if (dest) router.push(`/tasks/${encodeURIComponent(dest)}`);
+        else router.push("/tasks");
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setSaving(false);
@@ -589,22 +608,36 @@ export default function TaskCreateForm({
         </label>
       </details>
 
-      {/* Phase 5b dependencies — chain-mode toggle. Default off
-          preserves the current single-task UX as the dominant path
-          (per the locked design — "keep current scheme for shorter
-          tasks"). Flipping on swaps the title/folder/assignees/etc.
-          fields for a multi-step picker; submit goes to the chain
-          endpoint. The toggle is intentionally subtle (small chip,
-          not a banner) so quick-create flows aren't disrupted. */}
-      <div className="task-form-chain-toggle-row">
+      {/* Phase 5b dependencies — chain-mode toggle bar. Sits as a
+          dedicated banner-style row above the title field so it's
+          discoverable but not intrusive. When on, expands to show
+          the umbrella sub-toggle + step picker takes over the body. */}
+      <div className={`task-form-chain-bar${chainMode ? " is-on" : ""}`}>
         <label className="task-form-chain-toggle">
           <input
             type="checkbox"
             checked={chainMode}
             onChange={(e) => setChainMode(e.target.checked)}
           />
-          <span>📦 צור כשרשרת (כמה שלבים עם העברה אוטומטית בין מבצעים)</span>
+          <span className="task-form-chain-toggle-label">
+            📦 צור כשרשרת
+          </span>
+          <span className="task-form-chain-toggle-hint">
+            כמה שלבים עם העברה אוטומטית בין מבצעים
+          </span>
         </label>
+        {chainMode && (
+          <label className="task-form-chain-umbrella-toggle">
+            <input
+              type="checkbox"
+              checked={withUmbrella}
+              onChange={(e) => setWithUmbrella(e.target.checked)}
+            />
+            <span>
+              🔝 צור עטיפה (משימת־על שמרכזת את כל השלבים)
+            </span>
+          </label>
+        )}
       </div>
 
       <label>
@@ -650,26 +683,33 @@ export default function TaskCreateForm({
         />
       )}
 
-      <label>
-        מחלקות{" "}
-        <span className="task-form-label-hint">
-          (ניתן לבחור יותר מאחת — בחירה תסנן את רשימת העובדים בהמשך)
-        </span>
-        <div className="task-form-dept-row">
-          {departmentOptions.map((d) => (
-            <button
-              key={d}
-              type="button"
-              className={`task-form-dept-chip${
-                departments.includes(d) ? " is-active" : ""
-              }`}
-              onClick={() => toggleDept(d)}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-      </label>
+      {/* Chain-level departments are obsolete in chain mode — each
+          step has its own department binding (driven by the template),
+          and the per-step picker filters its assignee dropdown
+          accordingly. Showing this row in chain mode confuses the
+          relationship between "chain-level dept" and "step dept". */}
+      {!chainMode && (
+        <label>
+          מחלקות{" "}
+          <span className="task-form-label-hint">
+            (ניתן לבחור יותר מאחת — בחירה תסנן את רשימת העובדים בהמשך)
+          </span>
+          <div className="task-form-dept-row">
+            {departmentOptions.map((d) => (
+              <button
+                key={d}
+                type="button"
+                className={`task-form-dept-chip${
+                  departments.includes(d) ? " is-active" : ""
+                }`}
+                onClick={() => toggleDept(d)}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </label>
+      )}
 
       {/* Kind / priority / date are per-task concerns — in chain mode
           they'd apply to the umbrella, which has no own work. Hide

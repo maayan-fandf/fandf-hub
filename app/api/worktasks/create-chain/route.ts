@@ -58,9 +58,11 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  if (!body.umbrella?.title) {
+  // umbrella.title is only required in the default umbrella mode;
+  // flat-linked mode (withUmbrella=false) skips the umbrella entirely.
+  if (body.withUmbrella !== false && !body.umbrella?.title) {
     return NextResponse.json(
-      { ok: false, error: "umbrella.title is required" },
+      { ok: false, error: "umbrella.title is required when withUmbrella" },
       { status: 400 },
     );
   }

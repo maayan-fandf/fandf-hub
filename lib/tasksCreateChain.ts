@@ -58,7 +58,14 @@ export type TasksCreateChainInput = {
   campaign?: string;
   /** Departments inherited by every child step that doesn't set its own. */
   departments?: string[];
-  /** The umbrella container row that rolls everything up. */
+  /** Whether to spawn an umbrella container row that rolls the chain
+   *  up. Default true. When false, the chain orchestrator skips the
+   *  umbrella and creates only the N flat-linked children — useful
+   *  when the user doesn't want the rollup row appearing in lists. */
+  withUmbrella?: boolean;
+  /** The umbrella container row that rolls everything up. Required
+   *  when withUmbrella !== false (i.e. the default umbrella mode);
+   *  ignored otherwise. */
   umbrella: {
     title: string;
     description?: string;
@@ -84,7 +91,9 @@ export type TasksCreateChainInput = {
 
 export type TasksCreateChainResult = {
   ok: true;
-  umbrella: WorkTask;
+  /** The umbrella row when withUmbrella is true (default); null when
+   *  the caller opted out of the umbrella container. */
+  umbrella: WorkTask | null;
   children: WorkTask[];
 };
 
@@ -95,8 +104,13 @@ export async function tasksCreateChainDirect(
   if (!payload.project) {
     throw new Error("tasksCreateChain: project is required");
   }
-  if (!payload.umbrella?.title?.trim()) {
-    throw new Error("tasksCreateChain: umbrella.title is required");
+  // Umbrella title only required when an umbrella will actually be
+  // created. In flat-linked mode the field is ignored — the form
+  // may still send it (the user typed an umbrella name before
+  // unchecking the umbrella toggle), but we don't insist.
+  const wantsUmbrella = payload.withUmbrella !== false;
+  if (wantsUmbrella && !payload.umbrella?.title?.trim()) {
+    throw new Error("tasksCreateChain: umbrella.title is required when withUmbrella");
   }
   if (!Array.isArray(payload.steps) || payload.steps.length === 0) {
     throw new Error("tasksCreateChain: at least one step is required");
@@ -115,7 +129,10 @@ export async function tasksCreateChainDirect(
   );
 
   // Pre-generate IDs so we can wire the dep edges in one pass.
-  const umbrellaId = genId();
+  // The umbrella ID is only used when wantsUmbrella; we still
+  // generate it so the children's umbrella_id field can be set
+  // consistently (empty string when no umbrella).
+  const umbrellaId = wantsUmbrella ? genId() : "";
   const childIds = payload.steps.map(() => genId());
 
   // Defensive cycle check on the chain's edge set. A linear chain
@@ -140,25 +157,28 @@ export async function tasksCreateChainDirect(
     }
   }
 
-  // Step 1 — create the umbrella container. is_umbrella=true so the
-  // createTask flow skips Drive folder; assignees=[] so GT spawn +
-  // notification both no-op naturally. Status starts at
-  // awaiting_handling; the umbrella recompute hook fires on each
-  // child create below to converge the umbrella's derived status.
-  const umbrellaRes = await tasksCreateDirect(subjectEmail, {
-    id: umbrellaId,
-    project: payload.project,
-    company: payload.company,
-    brief: payload.brief,
-    campaign: payload.campaign,
-    departments: payload.departments,
-    title: payload.umbrella.title.trim(),
-    description: payload.umbrella.description ?? "",
-    is_umbrella: true,
-    // Explicit status so the createTask defaulting (which would
-    // otherwise leave it at awaiting_handling) is unambiguous.
-    status: "awaiting_handling",
-  });
+  // Step 1 — create the umbrella container (only when requested).
+  // is_umbrella=true so the createTask flow skips Drive folder;
+  // assignees=[] so GT spawn + notification both no-op naturally.
+  // Status starts at awaiting_handling; the umbrella recompute hook
+  // fires on each child create below to converge the umbrella's
+  // derived status.
+  const umbrellaRes = wantsUmbrella
+    ? await tasksCreateDirect(subjectEmail, {
+        id: umbrellaId,
+        project: payload.project,
+        company: payload.company,
+        brief: payload.brief,
+        campaign: payload.campaign,
+        departments: payload.departments,
+        title: payload.umbrella.title.trim(),
+        description: payload.umbrella.description ?? "",
+        is_umbrella: true,
+        // Explicit status so the createTask defaulting (which would
+        // otherwise leave it at awaiting_handling) is unambiguous.
+        status: "awaiting_handling",
+      })
+    : null;
 
   // Step 2 — create each child sequentially. Each child carries:
   //   umbrella_id  → the umbrella's pre-known ID
@@ -185,7 +205,9 @@ export async function tasksCreateChainDirect(
       assignees: step.assignees ?? [],
       approver_email: step.approver_email,
       requested_date: step.requested_date,
-      umbrella_id: umbrellaId,
+      // Empty when wantsUmbrella=false → no parent rollup row exists
+      // for these children (flat-linked chain).
+      umbrella_id: wantsUmbrella ? umbrellaId : "",
       blocks,
       blocked_by: blockedBy,
       // Status defaulting in createTask: empty blocked_by → awaiting_handling
@@ -197,7 +219,7 @@ export async function tasksCreateChainDirect(
 
   return {
     ok: true,
-    umbrella: umbrellaRes.task,
+    umbrella: umbrellaRes?.task ?? null,
     children: childTasks,
   };
 }

@@ -6493,39 +6493,72 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 
 /* Phase 5b dependencies — chain mode in TaskCreateForm. The toggle
-   sits subtly above the title field; the step picker replaces the
-   per-task fields when active. */
-.task-form-chain-toggle-row {
-  margin: .5em 0;
+   sits in a dedicated bar above the title field; the step picker
+   replaces the per-task fields when active. Theme-variable colors
+   so the UI reads correctly in both light + dark modes. */
+.task-form-chain-bar {
+  margin: 1em 0 .5em;
+  padding: .8em 1em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface-soft, var(--surface, #fff));
+  display: flex;
+  flex-direction: column;
+  gap: .5em;
+}
+.task-form-chain-bar.is-on {
+  border-color: var(--accent, #6366f1);
+  background: var(--accent-soft, color-mix(in srgb, var(--accent, #6366f1) 8%, var(--surface, #fff)));
 }
 .task-form-chain-toggle {
   display: flex;
   align-items: center;
   gap: .5em;
   cursor: pointer;
-  font-size: .95em;
-  color: #475569;
+  font-size: 1em;
+  color: var(--text, inherit);
 }
 .task-form-chain-toggle input[type="checkbox"] {
-  width: 1.1em;
-  height: 1.1em;
+  width: 1.2em;
+  height: 1.2em;
+  cursor: pointer;
+}
+.task-form-chain-toggle-label {
+  font-weight: 600;
+}
+.task-form-chain-toggle-hint {
+  color: var(--text-muted, #64748b);
+  font-size: .85em;
+}
+.task-form-chain-umbrella-toggle {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  cursor: pointer;
+  font-size: .9em;
+  color: var(--text-muted, #475569);
+  padding-inline-start: 1.7em; /* indent under the parent toggle */
+}
+.task-form-chain-umbrella-toggle input[type="checkbox"] {
+  width: 1.05em;
+  height: 1.05em;
   cursor: pointer;
 }
 .task-form-chain-steps {
   margin-top: 1em;
   padding: .8em 1em;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--border, #cbd5e1);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--surface-soft, var(--surface, #fff));
 }
 .task-form-chain-steps legend {
   font-weight: 600;
   padding: 0 .4em;
-  color: #1e293b;
+  color: var(--text, inherit);
 }
 .task-form-chain-steps-help {
   font-size: .85em;
-  color: #64748b;
+  color: var(--text-muted, #64748b);
   margin-bottom: .8em;
 }
 .task-form-chain-step-row {
@@ -6538,8 +6571,9 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .task-form-chain-step-num {
   text-align: center;
   font-weight: 600;
-  color: #64748b;
-  background: #e2e8f0;
+  color: var(--text-muted, #64748b);
+  background: var(--surface, #e2e8f0);
+  border: 1px solid var(--border, transparent);
   border-radius: 999px;
   padding: .15em 0;
   font-size: .9em;
@@ -6550,6 +6584,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 6px;
   background: var(--surface, #fff);
+  color: var(--text, inherit);
 }
 .task-form-chain-shared-approver {
   margin-top: 1em;
@@ -6561,11 +6596,11 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   gap: .6em;
   margin-bottom: .8em;
   padding-bottom: .6em;
-  border-bottom: 1px dashed #e2e8f0;
+  border-bottom: 1px dashed var(--border, #e2e8f0);
 }
 .task-form-chain-template-row > span {
   font-size: .85em;
-  color: #64748b;
+  color: var(--text-muted, #64748b);
   white-space: nowrap;
 }
 .task-form-chain-template-row > select {
@@ -6574,6 +6609,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 6px;
   background: var(--surface, #fff);
+  color: var(--text, inherit);
 }
 
 /* Phase 9 — append-step inline form on the umbrella detail page.
