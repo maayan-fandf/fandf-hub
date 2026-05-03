@@ -543,6 +543,9 @@ function TasksFilterBar({
     { val: "in_progress", label: "בעבודה" },
     { val: "awaiting_clarification", label: "ממתין לבירור" },
     { val: "awaiting_approval", label: "ממתין לאישור" },
+    // Phase 2 dependencies — blocked tasks are upstream-waiting; surfaced
+    // here so users can audit "what's stuck on whom" without scrolling.
+    { val: "blocked", label: "🔒 חסום" },
     { val: "done", label: "בוצע" },
     { val: "cancelled", label: "בוטל" },
   ];

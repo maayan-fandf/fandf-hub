@@ -561,6 +561,10 @@ const STATUS_HIGHLIGHT_ROLE: Record<WorkTaskStatus, string | null> = {
   awaiting_approval: "approver",
   done: null,
   cancelled: null,
+  // Blocked tasks have an assignee but they can't act yet — highlighting
+  // them as "yours" would imply actionable work. Leave null so the
+  // card renders neutrally; the 🔒 badge already signals waiting state.
+  blocked: null,
 };
 
 function buildPeopleInvolved(

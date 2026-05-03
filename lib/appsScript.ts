@@ -759,7 +759,15 @@ export type WorkTaskStatus =
   | "awaiting_clarification"
   | "awaiting_approval"
   | "done"
-  | "cancelled";
+  | "cancelled"
+  // System-managed: a task whose `blocked_by` array is non-empty and
+  // not yet fully terminal. Set on creation when the chain-creation
+  // flow includes upstream blockers; cleared by lib/dependencyCascade
+  // when all upstream tasks reach terminal state. The user can manually
+  // transition only `blocked → cancelled` — every other manual move
+  // out of blocked is rejected (must remove blockers first).
+  // Phase 2 of dependencies feature, 2026-05-03.
+  | "blocked";
 
 export type WorkTaskDepartment = "מדיה" | "קריאייטיב" | "UI/UX" | "תכנון" | "אחר";
 

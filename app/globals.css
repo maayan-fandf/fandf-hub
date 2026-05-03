@@ -5839,6 +5839,10 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-target.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-cell-target.tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cell-target.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+/* Phase 2 — `blocked` status palette. Slate-grey w/ dashed left
+ * accent so blocked tasks read as "waiting / not yours yet" rather
+ * than "abandoned" (which is what the cancelled palette signals). */
+.tasks-status-cell-target.tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
 .tasks-status-cell-err-inline {
   color: #c0392b;
   font-size: .78em;
@@ -5857,6 +5861,7 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-btn.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-cell-btn.tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cell-btn.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+.tasks-status-cell-btn.tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
 
 /* Portaled to document.body and positioned via JS (position: fixed +
    inline top/right). Keeps the menu above the table's overflow-x clip
@@ -6419,6 +6424,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+.tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
 
 .tasks-other {
   margin: 2em 0;

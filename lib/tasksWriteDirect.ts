@@ -74,6 +74,7 @@ const TASKS_STATUSES: WorkTaskStatus[] = [
   "awaiting_approval",
   "done",
   "cancelled",
+  "blocked",
 ];
 
 // Open lifecycle — every status routes to every other status (minus
@@ -82,13 +83,27 @@ const TASKS_STATUSES: WorkTaskStatus[] = [
 // arbitrary jumps (e.g. drag from done back to awaiting_handling), so
 // the whitelist became a friction source instead of a guard. Client
 // mirror in TaskStatusCell.tsx is generated the same way.
-const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> =
-  Object.fromEntries(
+const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = (() => {
+  const base: Record<WorkTaskStatus, WorkTaskStatus[]> = Object.fromEntries(
     TASKS_STATUSES.map((from) => [
       from,
       TASKS_STATUSES.filter((to) => to !== from),
     ]),
   ) as Record<WorkTaskStatus, WorkTaskStatus[]>;
+  // System-managed status overrides (phase 2, 2026-05-03):
+  //   - From `blocked`: only manual transition allowed is to `cancelled`
+  //     (the user can always abandon a blocked task). Every other move
+  //     out of blocked must come through dependencyCascade once
+  //     upstream blockers terminate.
+  //   - Into `blocked`: never allowed manually. Only the chain-creation
+  //     flow + dependency-cascade reverse-flow may set this status.
+  base.blocked = ["cancelled"];
+  for (const from of TASKS_STATUSES) {
+    if (from === "blocked") continue;
+    base[from] = base[from].filter((to) => to !== "blocked");
+  }
+  return base;
+})();
 
 const ADMIN_EMAILS = new Set([
   "maayan@fandf.co.il",
@@ -1798,6 +1813,56 @@ async function tasksUpdateDirectInner(
       // patchGoogleTaskWithRetry helper.
       await syncGoogleTasksStatus(fresh.google_tasks, "needsAction");
       await patchGoogleTaskTitles(fresh);
+    }
+  }
+
+  // Dependency cascade — when this transition reached a terminal
+  // status (`done` or `cancelled`), unblock every downstream task
+  // whose remaining `blocked_by` references are now all terminal.
+  // Fires AFTER the GT-sync block above so the user-facing status
+  // landed first; cascade failures are best-effort and don't bubble.
+  // Phase 2 of dependencies feature, 2026-05-03 — see
+  // memory/project_dependencies_chains_pending.md.
+  //
+  // Note: the cascade does NOT spawn personal Google Tasks for the
+  // newly-unblocked downstream assignees. That's phase 3's job
+  // (GT sync rework — defer spawn until task is ready). Until phase 3
+  // ships, the unblocked task's row updates but its assignee won't
+  // get a fresh GT until phase 3 is wired.
+  if (
+    changes.status &&
+    (changes.status === "done" || changes.status === "cancelled")
+  ) {
+    try {
+      const { cascadeAfterTerminal } = await import("@/lib/dependencyCascade");
+      const cascade = await cascadeAfterTerminal({
+        // Use the same subject the parent transition ran under — DWD
+        // gives them Sheets-write on Comments, no privilege bump needed.
+        // The cascade attribution in status_history is "system" rather
+        // than the subject email (it's an automatic effect, not the
+        // user's edit on the downstream row).
+        subjectEmail,
+        completedTaskId: taskId,
+        upstreamFinalStatus: changes.status as WorkTaskStatus,
+        nowIso: now,
+        commentsSpreadsheetId: commentsSsId,
+      });
+      if (cascade.unblocked.length > 0) {
+        console.log(
+          `[tasksWriteDirect] cascade after ${taskId} → ${changes.status}: unblocked ${cascade.unblocked.length} downstream (${cascade.unblocked.map((u) => u.taskId).join(", ")})`,
+        );
+      }
+      if (cascade.errors.length > 0) {
+        console.log(
+          `[tasksWriteDirect] cascade errors for ${taskId}:`,
+          cascade.errors.join("; "),
+        );
+      }
+    } catch (e) {
+      console.log(
+        `[tasksWriteDirect] cascade threw for ${taskId}:`,
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
