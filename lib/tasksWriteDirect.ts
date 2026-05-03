@@ -1024,6 +1024,14 @@ export async function tasksCreateDirect(
     status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
     edited_at: "",
     campaign: String(payload.campaign || "").trim(),
+    // Dependencies + chains (phase 1, 2026-05-03). Defaults — chain-
+    // creation flow will pass real values via payload extensions in
+    // phase 5. The cells builder downstream stringifies these for the
+    // sheet write.
+    blocks: [],
+    blocked_by: [],
+    umbrella_id: String(payload.umbrella_id || "").trim(),
+    is_umbrella: payload.is_umbrella === true || payload.is_umbrella === "true",
   };
 
   // Side effects — run in parallel where safe.
@@ -1135,6 +1143,17 @@ export async function tasksCreateDirect(
     updated_at: task.updated_at,
     campaign: task.campaign || "",
     rank: newTaskRank,
+    // Dependencies + chains (phase 1, 2026-05-03). Defaults emit empty
+    // arrays / "" / FALSE for plain tasks; chain-creation flow (phase 5)
+    // will pass real values through `task.blocks`/`task.blocked_by`/
+    // `task.umbrella_id`/`task.is_umbrella`. Headers added by
+    // scripts/add-dependency-headers.mjs — if those columns aren't on
+    // the live sheet yet, the headerRow.map below silently drops these
+    // keys (no error), making the rollout safe in either order.
+    blocks: JSON.stringify(task.blocks ?? []),
+    blocked_by: JSON.stringify(task.blocked_by ?? []),
+    umbrella_id: task.umbrella_id ?? "",
+    is_umbrella: task.is_umbrella ? "TRUE" : "FALSE",
   };
   // Reflect rank back on the in-memory task so callers see it.
   task.rank = newTaskRank;
@@ -1919,6 +1938,20 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),
     rank: Number.isFinite(parsedRank) ? parsedRank : fallbackRank,
+    // Dependencies + chains (phase 1, 2026-05-03). Mirrors the parser
+    // in lib/tasksDirect.ts rowToTask — keep these two in sync.
+    blocks: parseJsonField("blocks", true) as string[],
+    blocked_by: parseJsonField("blocked_by", true) as string[],
+    umbrella_id: String(cell("umbrella_id") ?? ""),
+    is_umbrella: (() => {
+      const v = cell("is_umbrella");
+      if (v === true || v === 1) return true;
+      if (typeof v === "string") {
+        const s = v.trim().toLowerCase();
+        return s === "true" || s === "1" || s === "yes";
+      }
+      return false;
+    })(),
   };
 }
 

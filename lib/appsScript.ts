@@ -857,6 +857,34 @@ export type WorkTask = {
    *  `priority` field stays orthogonal: it's a flag for "on fire"
    *  without dictating screen order. */
   rank?: number;
+
+  /* ── Dependencies + chains (phase 1, 2026-05-03) ──────────────────
+   * Additive fields. Existing rows without these columns parse as the
+   * empty defaults below, so the rollout is non-breaking. See
+   * memory/project_dependencies_chains_pending.md for the full design.
+   *
+   * Important separation: `parent_id` keeps its existing semantics
+   * (rounds-of-revisions). `umbrella_id` is a wholly separate primitive
+   * for chain containers — do NOT overload parent_id, the rounds logic
+   * depends on its current meaning. */
+
+  /** Task IDs this task BLOCKS (downstream — they can't start until
+   *  this task is `done`). Mirrored on the other side via `blocked_by`.
+   *  Empty array means this task blocks nothing. */
+  blocks: string[];
+  /** Task IDs blocking this task (upstream — this task can't start
+   *  until all of these are `done`). Mirrored on the other side via
+   *  `blocks`. Empty array means this task is unblocked. */
+  blocked_by: string[];
+  /** When set, this task is a CHILD of an umbrella container task;
+   *  the value is the umbrella's task ID. One-way pointer — children
+   *  are NOT stored as an array on the umbrella row (derive via query
+   *  for single-source-of-truth). Empty string means standalone. */
+  umbrella_id: string;
+  /** True when this row is itself an umbrella CONTAINER (rollup row,
+   *  no own work, status/dates derived from children via umbrella_id
+   *  back-reference). False on plain tasks and on chain children. */
+  is_umbrella: boolean;
 };
 
 export type TasksListFilters = {
@@ -1003,6 +1031,20 @@ export type TasksCreateInput = {
    *  moves under the task verbatim, in chronological order, with row
    *  identities + timestamps preserved. Direct-SA path only. */
   from_comment?: string;
+  /* ── Dependencies + chains (phase 1, 2026-05-03) ──────────────────
+   * Optional inputs for chain-creation flows (phase 5 wires the
+   * create-drawer "צור כשרשרת" toggle through to these). Plain task
+   * creates omit them — server defaults to standalone unblocked. */
+  /** When this new task should be a CHILD of an existing umbrella
+   *  container, set its task ID here. The new task's `umbrella_id`
+   *  cell is written; the umbrella's status auto-derives from it on
+   *  the next read. */
+  umbrella_id?: string;
+  /** When true, the new task IS itself an umbrella container — no own
+   *  work, status derives from children that point back via
+   *  umbrella_id. Accepted as boolean or the literal string "true"
+   *  for JSON-payload symmetry. */
+  is_umbrella?: boolean | "true" | "false";
 };
 
 export function tasksCreate(

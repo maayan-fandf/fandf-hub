@@ -35,7 +35,15 @@ import {
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 
-const JSON_ARRAY_FIELDS = new Set(["departments", "status_history"]);
+const JSON_ARRAY_FIELDS = new Set([
+  "departments",
+  "status_history",
+  // Dependencies + chains (phase 1, 2026-05-03). Both arrays are JSON-
+  // serialized lists of task IDs. Defaults to [] when absent or
+  // unparseable, same as departments / status_history.
+  "blocks",
+  "blocked_by",
+]);
 const JSON_OBJECT_FIELDS = new Set(["calendar_event_ids", "google_tasks"]);
 
 function envOrThrow(name: string): string {
@@ -142,6 +150,23 @@ function rowToTask(
       // Fallback: derive from created_at (newer = smaller = top).
       const ms = Date.parse(toIsoDate(cell("timestamp")));
       return Number.isFinite(ms) ? -ms : Number.MAX_SAFE_INTEGER / 2;
+    })(),
+    // Dependencies + chains — phase 1 additions. Default to empty
+    // arrays / "" / false when columns are missing, so legacy rows
+    // (and the rollout window before headers ship) parse cleanly.
+    blocks: parseJsonCell(cell("blocks"), true) as string[],
+    blocked_by: parseJsonCell(cell("blocked_by"), true) as string[],
+    umbrella_id: String(cell("umbrella_id") ?? ""),
+    // Boolean cell may arrive as bool, string "TRUE"/"true"/"1", or
+    // number 1. Anything else (incl. "" / null / undefined) → false.
+    is_umbrella: (() => {
+      const v = cell("is_umbrella");
+      if (v === true || v === 1) return true;
+      if (typeof v === "string") {
+        const s = v.trim().toLowerCase();
+        return s === "true" || s === "1" || s === "yes";
+      }
+      return false;
     })(),
   };
 }
