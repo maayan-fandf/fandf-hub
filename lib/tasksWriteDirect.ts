@@ -1005,9 +1005,28 @@ export async function tasksCreateDirect(
   // Default entry state is awaiting_handling — the assignee has a new
   // task to do. awaiting_approval is reserved for the end-of-cycle
   // review step.
-  const status = (TASKS_STATUSES as string[]).includes(String(payload.status || ""))
+  //
+  // Phase 3 dependencies: when the caller provides `blocked_by` and
+  // doesn't pin an explicit status, the new task starts in `blocked`.
+  // The GT-spawn block below skips when status === "blocked"
+  // (assignees would otherwise see "📋 לבצע" in their personal Tasks
+  // for work they can't actually start). The cascade in
+  // dependencyCascade.ts flips `blocked → awaiting_handling` once
+  // every upstream blocker reaches a terminal state, and the post-
+  // cascade hook in tasksUpdateDirect spawns the GTs at that point.
+  const incomingBlockedBy = Array.isArray(payload.blocked_by)
+    ? payload.blocked_by.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim())
+    : [];
+  const incomingBlocks = Array.isArray(payload.blocks)
+    ? payload.blocks.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim())
+    : [];
+  const explicitStatusValid =
+    (TASKS_STATUSES as string[]).includes(String(payload.status || ""));
+  const status: WorkTaskStatus = explicitStatusValid
     ? (payload.status as WorkTaskStatus)
-    : ("awaiting_handling" as WorkTaskStatus);
+    : incomingBlockedBy.length > 0
+      ? ("blocked" as WorkTaskStatus)
+      : ("awaiting_handling" as WorkTaskStatus);
 
   const task: WorkTask = {
     id,
@@ -1039,12 +1058,13 @@ export async function tasksCreateDirect(
     status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
     edited_at: "",
     campaign: String(payload.campaign || "").trim(),
-    // Dependencies + chains (phase 1, 2026-05-03). Defaults — chain-
-    // creation flow will pass real values via payload extensions in
-    // phase 5. The cells builder downstream stringifies these for the
-    // sheet write.
-    blocks: [],
-    blocked_by: [],
+    // Dependencies + chains. Phase 1 added the schema; phase 3 wires
+    // the actual values from the create payload (was previously
+    // always empty arrays). Chain-creation flow in phase 5 supplies
+    // these via TasksCreateInput.blocks / .blocked_by; manual creates
+    // omit them and the task starts standalone-unblocked.
+    blocks: incomingBlocks,
+    blocked_by: incomingBlockedBy,
     umbrella_id: String(payload.umbrella_id || "").trim(),
     is_umbrella: payload.is_umbrella === true || payload.is_umbrella === "true",
   };
@@ -1088,18 +1108,29 @@ export async function tasksCreateDirect(
   // when the Google Tasks due-date already covers the same need with
   // less clutter. Calendar code stays in `createCalendarEvents` for
   // possible revival but is no longer called on create.
-  const gt = await createGoogleTasks(
-    {
-      id: task.id,
-      title: task.title,
-      project: task.project,
-      description: task.description,
-      drive_folder_url: task.drive_folder_url,
-      requested_date: task.requested_date,
-    },
-    assignees,
-    { kind: "todo" },
-  );
+  //
+  // Phase 3 dependencies: skip GT spawn when status === "blocked".
+  // The task's assignees would otherwise see "📋 לבצע" for work they
+  // can't actually start. The cascade unblock-hook in
+  // tasksUpdateDirect spawns the GTs once the status flips to
+  // awaiting_handling. lib/pollTasks.ts already handles "blocked"
+  // correctly via expectedRecipientsForRow's default → [] branch
+  // (no reconciliation will try to create the missing GT).
+  const gt =
+    task.status === "blocked"
+      ? []
+      : await createGoogleTasks(
+          {
+            id: task.id,
+            title: task.title,
+            project: task.project,
+            description: task.description,
+            drive_folder_url: task.drive_folder_url,
+            requested_date: task.requested_date,
+          },
+          assignees,
+          { kind: "todo" },
+        );
   task.calendar_event_ids = {};
   task.google_tasks = gt;
 
@@ -1213,18 +1244,26 @@ export async function tasksCreateDirect(
   // pipeline — same dispatch writes a Notifications row + sends
   // email when the recipient hasn't muted it. Approver gets a
   // separate notification later when status flips to awaiting_approval.
-  await notifyTaskAssigned(
-    {
-      id: task.id,
-      project: task.project,
-      title: task.title,
-      description: task.description,
-      requested_date: task.requested_date,
-      priority: task.priority,
-      assignees: task.assignees,
-    },
-    task.author_email,
-  );
+  //
+  // Phase 3 dependencies: skip the new-task notification when the
+  // task lands in `blocked` — assignees would be told "you have a
+  // new task" for work they can't act on. The cascade unblock-hook
+  // in tasksUpdateDirect re-fires notifyTaskAssigned at the moment
+  // their work actually becomes actionable.
+  if (task.status !== "blocked") {
+    await notifyTaskAssigned(
+      {
+        id: task.id,
+        project: task.project,
+        title: task.title,
+        description: task.description,
+        requested_date: task.requested_date,
+        priority: task.priority,
+        assignees: task.assignees,
+      },
+      task.author_email,
+    );
+  }
 
   return { ok: true, task };
 }
@@ -1821,14 +1860,15 @@ async function tasksUpdateDirectInner(
   // whose remaining `blocked_by` references are now all terminal.
   // Fires AFTER the GT-sync block above so the user-facing status
   // landed first; cascade failures are best-effort and don't bubble.
-  // Phase 2 of dependencies feature, 2026-05-03 — see
+  // Phase 2-3 of dependencies feature, 2026-05-03 — see
   // memory/project_dependencies_chains_pending.md.
   //
-  // Note: the cascade does NOT spawn personal Google Tasks for the
-  // newly-unblocked downstream assignees. That's phase 3's job
-  // (GT sync rework — defer spawn until task is ready). Until phase 3
-  // ships, the unblocked task's row updates but its assignee won't
-  // get a fresh GT until phase 3 is wired.
+  // Phase 3 (GT sync rework): for each unblocked downstream task,
+  // spawn the personal Google Tasks for its assignees + persist the
+  // updated google_tasks cell + fire the new-task notification.
+  // This was deferred from createTask (which skipped GT spawn when
+  // status === "blocked"); the cascade is the right moment because
+  // it's the first time the assignees can actually act on the work.
   if (
     changes.status &&
     (changes.status === "done" || changes.status === "cancelled")
@@ -1857,6 +1897,63 @@ async function tasksUpdateDirectInner(
           `[tasksWriteDirect] cascade errors for ${taskId}:`,
           cascade.errors.join("; "),
         );
+      }
+
+      // Phase 3 GT-spawn-on-unblock: for each newly-unblocked task,
+      // spawn personal GTs for the assignees and merge the refs into
+      // the row's google_tasks cell. Best-effort per row — a failure
+      // on one downstream doesn't stop processing the others, and
+      // never bubbles to the user (their original transition already
+      // succeeded). Notification fires alongside so the assignee learns
+      // their work is now actionable.
+      for (const u of cascade.unblocked) {
+        if (u.assignees.length === 0) continue;
+        try {
+          const spawnedRefs = await createGoogleTasks(
+            u.taskForGTSpawn,
+            u.assignees,
+            { kind: "todo" },
+          );
+          if (spawnedRefs.length > 0) {
+            // Persist the new GT refs onto the unblocked row's cell.
+            // Cascade just wrote status + status_history + updated_at;
+            // this is a separate targeted write to the google_tasks
+            // column. Race risk: if a user is concurrently mutating the
+            // unblocked task in another tab, their write could land
+            // between our read & write. Mitigation: persistGoogleTasksCell
+            // does a targeted single-cell PUT, not a full row rewrite,
+            // so the worst case is a lost notification (next poll
+            // will re-spawn via reconciliation).
+            await persistGoogleTasksCell(
+              sheets,
+              commentsSsId,
+              idx,
+              u.sheetRowIndex - 1, // persistGoogleTasksCell adds +1 internally
+              spawnedRefs,
+            );
+          }
+          // New-task notification (mirrors createTask's post-write hook).
+          // Source attribution is "system" because the unblock fired
+          // automatically; we keep the original transition's actor for
+          // logging via console only.
+          await notifyTaskAssigned(
+            {
+              id: u.taskForGTSpawn.id,
+              project: u.taskForGTSpawn.project,
+              title: u.taskForGTSpawn.title,
+              description: u.taskForGTSpawn.description,
+              requested_date: u.taskForGTSpawn.requested_date,
+              priority: u.taskForGTSpawn.priority,
+              assignees: u.assignees,
+            },
+            "system",
+          );
+        } catch (e) {
+          console.log(
+            `[tasksWriteDirect] post-cascade spawn/notify failed for ${u.taskId}:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
       }
     } catch (e) {
       console.log(

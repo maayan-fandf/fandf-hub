@@ -266,6 +266,39 @@ async function run() {
   console.log(`    ✓ B.status=awaiting_handling`);
   console.log(`    ✓ B.status_history last: ${JSON.stringify(lastEntry)}`);
 
+  // Phase 3 verification — the cascade returned populated unblocked
+  // entries with assignees + sheetRowIndex + taskForGTSpawn. The
+  // post-cascade GT-spawn hook lives in tasksUpdateDirect (not in
+  // cascade itself), so this probe confirms the cascade RETURN VALUE
+  // carries the right data; the spawn itself is exercised by
+  // /api/worktasks/update path which we don't hit from this probe.
+  // The CSV-mentions field on B was empty in the test row (no
+  // assignees), so we can't verify a real spawn here — just shape.
+  const u = cascade.unblocked.find((x) => x.taskId === B_ID);
+  console.log("[5b] Verifying phase-3 cascade return shape …");
+  if (!u) { console.log("[FAIL] cascade.unblocked entry for B missing"); process.exit(1); }
+  if (typeof u.sheetRowIndex !== "number" || u.sheetRowIndex < 2) {
+    console.log(`[FAIL] u.sheetRowIndex invalid: ${u.sheetRowIndex}`);
+    process.exit(1);
+  }
+  if (!u.taskForGTSpawn || u.taskForGTSpawn.id !== B_ID) {
+    console.log(`[FAIL] u.taskForGTSpawn missing or wrong id`);
+    process.exit(1);
+  }
+  if (u.taskForGTSpawn.status !== "awaiting_handling") {
+    console.log(`[FAIL] u.taskForGTSpawn.status = ${u.taskForGTSpawn.status}, expected awaiting_handling`);
+    process.exit(1);
+  }
+  if (typeof u.taskForGTSpawn.priority !== "number") {
+    console.log(`[FAIL] u.taskForGTSpawn.priority not a number`);
+    process.exit(1);
+  }
+  if (!Array.isArray(u.assignees)) {
+    console.log(`[FAIL] u.assignees not an array`);
+    process.exit(1);
+  }
+  console.log(`    ✓ unblocked entry has sheetRowIndex=${u.sheetRowIndex}, assignees=${JSON.stringify(u.assignees)}, taskForGTSpawn.id=${u.taskForGTSpawn.id}`);
+
   console.log("[6/6] Cleanup — marking both as cancelled with probe note …");
   const cleanupNow = new Date().toISOString();
   for (const [tid, srow] of [[A_ID, aRow.sheetRowIndex], [B_ID, bRow2.sheetRowIndex]]) {

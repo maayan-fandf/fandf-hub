@@ -50,6 +50,31 @@ export type CascadeUnblock = {
   title: string;
   /** Upstream blocker IDs that were waiting on the just-completed task */
   unblockedBy: string[];
+  /** Assignees on the unblocked row — phase 3 GT-sync uses this so
+   *  the post-cascade spawn-hook in tasksUpdateDirect can call
+   *  createGoogleTasks without re-reading the sheet. Empty array
+   *  if the row has no assignees set (rare in practice). */
+  assignees: string[];
+  /** 1-indexed sheet row of the unblocked task — needed by the
+   *  post-cascade hook to call persistGoogleTasksCell against the
+   *  same row the cascade just patched. */
+  sheetRowIndex: number;
+  /** Minimal subset of the unblocked task's fields the post-cascade
+   *  GT spawn + notification needs. Captured here so the caller
+   *  doesn't re-parse the row. `priority` defaults to 2 (mid) when
+   *  the cell is unparseable so the notification body stays sane. */
+  taskForGTSpawn: {
+    id: string;
+    title: string;
+    project: string;
+    description: string;
+    drive_folder_url: string;
+    requested_date: string;
+    /** Always "awaiting_handling" right after cascade — included so
+     *  gtaskTitle picks the `📋 לבצע` prefix. */
+    status: string;
+    priority: number;
+  };
 };
 
 export type CascadeResult = {
@@ -308,10 +333,45 @@ export async function cascadeAfterTerminal(args: {
           data: ranges,
         },
       });
+      // Capture all the fields the post-cascade GT spawn-hook
+      // needs — saves the caller a re-read for each unblocked row.
+      // `mentions` is the legacy column name that holds assignees as
+      // CSV (see lib/tasksDirect.ts rowToTask). Other columns may be
+      // absent on older sheets; default to "" for resilience.
+      const colMentions = idx.get("mentions");
+      const colTitleAll = idx.get("title");
+      const colProject = idx.get("project");
+      const colBody = idx.get("body");
+      const colDriveUrl = idx.get("drive_folder_url");
+      const colReqDate = idx.get("requested_date");
+      const colPriority = idx.get("priority");
+      const cellStr = (c: number | undefined): string =>
+        c == null ? "" : String(u.candidate.row[c] ?? "");
+      const assignees = cellStr(colMentions)
+        .split(/[,;]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      const priorityNum = (() => {
+        const raw = cellStr(colPriority);
+        const n = parseInt(raw, 10);
+        return Number.isFinite(n) ? n : 2;
+      })();
       result.unblocked.push({
         taskId: u.candidate.id,
         title: colTitle != null ? String(u.candidate.row[colTitle] ?? "") : "",
         unblockedBy: u.unblockedByIds,
+        assignees,
+        sheetRowIndex: u.candidate.sheetRowIndex,
+        taskForGTSpawn: {
+          id: u.candidate.id,
+          title: cellStr(colTitleAll),
+          project: cellStr(colProject),
+          description: cellStr(colBody),
+          drive_folder_url: cellStr(colDriveUrl),
+          requested_date: cellStr(colReqDate),
+          status: "awaiting_handling",
+          priority: priorityNum,
+        },
       });
     } catch (e) {
       result.errors.push(

@@ -1053,6 +1053,17 @@ export type TasksCreateInput = {
    *  umbrella_id. Accepted as boolean or the literal string "true"
    *  for JSON-payload symmetry. */
   is_umbrella?: boolean | "true" | "false";
+  /** Task IDs this new task BLOCKS (downstream — they can't start
+   *  until this task is `done`). Phase 5 chain-creation flow passes
+   *  these from the per-step picker; manual creates can omit. */
+  blocks?: string[];
+  /** Task IDs blocking this new task (upstream — this task can't
+   *  start until all of these are `done`). When non-empty AND no
+   *  explicit `status` is provided, createTask defaults the new
+   *  task's status to `blocked` (phase-3 GT-sync rework: blocked
+   *  tasks skip the personal-GT spawn until the cascade unblocks
+   *  them). */
+  blocked_by?: string[];
 };
 
 export function tasksCreate(
