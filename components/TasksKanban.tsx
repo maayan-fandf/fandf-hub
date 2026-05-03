@@ -451,6 +451,22 @@ function KanbanCard({
       {...listeners}
     >
       <div className="kanban-card-header">
+        {/* Phase 6b — 🔒 badge for blocked tasks. Sits before the
+            title so the visual cue lands first. Title attribute
+            shows a quick hint of what's holding it up; the side
+            panel on the detail page lists the actual blockers. */}
+        {task.status === "blocked" && (
+          <span
+            className="tasks-card-blocked-badge"
+            title={
+              (task.blocked_by?.length ?? 0) > 0
+                ? `ממתין על ${task.blocked_by.length} משימות אחרות`
+                : "חסום"
+            }
+          >
+            🔒
+          </span>
+        )}
         <Link
           href={`/tasks/${encodeURIComponent(task.id)}`}
           className="kanban-card-title"

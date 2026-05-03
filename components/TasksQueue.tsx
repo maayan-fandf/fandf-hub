@@ -1017,6 +1017,22 @@ function TaskRow({
             chips wrap onto a second row underneath, separated by a
             small gap. Description preview goes below them as before. */}
         <div className="tasks-title-row">
+          {/* Phase 6b — 🔒 badge for blocked tasks. Sits before the
+              title for the visual cue. Hover hint shows blocker count;
+              the side panel on the detail page lists the actual
+              upstream tasks. */}
+          {task.status === "blocked" && (
+            <span
+              className="tasks-row-blocked-badge"
+              title={
+                (task.blocked_by?.length ?? 0) > 0
+                  ? `ממתין על ${task.blocked_by.length} משימות אחרות`
+                  : "חסום"
+              }
+            >
+              🔒
+            </span>
+          )}
           <Link
             href={`/tasks/${encodeURIComponent(task.id)}`}
             className="tasks-title-link"

@@ -6556,6 +6556,88 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   display: block;
 }
 
+/* Phase 6a dependencies — side-panel deps block on /tasks/[id]. Sits
+   above the People block; renders nothing when no edges exist. */
+.task-detail-side-deps {
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+  margin-bottom: 1em;
+  padding: .8em 1em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+.task-detail-deps-block {
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+.task-detail-deps-label {
+  font-size: .8em;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.task-detail-deps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+.task-detail-deps-row {
+  display: grid;
+  grid-template-columns: 1.4em 1fr auto;
+  gap: .4em;
+  align-items: center;
+  font-size: .9em;
+}
+.task-detail-deps-row.tasks-status-cancelled,
+.task-detail-deps-row.tasks-status-done {
+  opacity: .65;
+}
+.task-detail-deps-emoji {
+  text-align: center;
+}
+.task-detail-deps-title {
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-detail-deps-title:hover {
+  text-decoration: underline;
+}
+.task-detail-deps-row-missing {
+  color: #94a3b8;
+  font-style: italic;
+}
+.task-detail-deps-missing-tag {
+  font-size: .8em;
+  color: #ef4444;
+}
+
+/* Phase 6b — 🔒 badge for blocked tasks in list/kanban views. The
+   ::before pseudo-element prepends a small lock that stays inside
+   the row even on narrow viewports (no extra DOM). */
+.tasks-row-blocked-badge,
+.tasks-card-blocked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .2em;
+  font-size: .8em;
+  background: #e5e7eb;
+  color: #4b5563;
+  padding: .1em .5em;
+  border-radius: 999px;
+  margin-inline-end: .4em;
+  cursor: help;
+}
+
 .tasks-other {
   margin: 2em 0;
   border: 1px dashed var(--border);

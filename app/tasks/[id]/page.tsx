@@ -24,6 +24,7 @@ import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
+import TaskDependencyLinks from "@/components/TaskDependencyLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,17 @@ export default async function TaskDetailPage({
   // whose `umbrella_id` points back. We piggyback on tasksList (with
   // include_umbrellas=true so the umbrella's siblings — if any — also
   // surface for completeness; we filter to umbrella_id ourselves).
-  const [roundChain, driveName, adLinks, umbrellaChildren] = await Promise.all([
+  //
+  // Phase 6a dependencies — when this task has dep edges (blocks /
+  // blocked_by non-empty) we also need the project's tasks to look
+  // up titles/statuses for the side-panel deps block. The same
+  // tasksList call serves BOTH purposes — single Sheets read,
+  // already cached per request.
+  const needsProjectFetch =
+    t.is_umbrella ||
+    (t.blocks?.length ?? 0) > 0 ||
+    (t.blocked_by?.length ?? 0) > 0;
+  const [roundChain, driveName, adLinks, projectTasksForDeps] = await Promise.all([
     t.round_number > 1 || t.parent_id
       ? fetchRoundChain(t).catch(() => [])
       : Promise.resolve([]),
@@ -99,12 +110,27 @@ export default async function TaskDetailPage({
     showAdLinks && t.project
       ? getProjectAdLinks(t.project).catch(() => null)
       : Promise.resolve(null),
-    t.is_umbrella
+    needsProjectFetch
       ? tasksList({ project: t.project, include_umbrellas: true })
-          .then((r) => (r.tasks ?? []).filter((c) => c.umbrella_id === t.id))
+          .then((r) => r.tasks ?? [])
           .catch(() => [] as WorkTask[])
       : Promise.resolve([] as WorkTask[]),
   ]);
+  // Derive umbrella children list from the same fetched set.
+  const umbrellaChildren = t.is_umbrella
+    ? projectTasksForDeps.filter((c) => c.umbrella_id === t.id)
+    : ([] as WorkTask[]);
+  // Build the dep-lookup map (id → minimal info) for TaskDependencyLinks.
+  const depIds = new Set([...(t.blocks || []), ...(t.blocked_by || [])]);
+  const depLookup = new Map<
+    string,
+    { title: string; status: WorkTask["status"] }
+  >();
+  for (const x of projectTasksForDeps) {
+    if (depIds.has(x.id)) {
+      depLookup.set(x.id, { title: x.title, status: x.status });
+    }
+  }
   const localPaths = buildLocalDrivePaths({
     driveName,
     company: t.company,
@@ -305,6 +331,13 @@ export default async function TaskDetailPage({
               ✏️ מצב עריכה — עדכון יוצג לאחר שמירה
             </div>
           )}
+
+          {/* Phase 6a dependencies — chain context block. Self-renders
+              null when both blocks/blocked_by are empty, so the panel
+              stays compact for non-chain tasks. Placed above the
+              People block so chain state is the first thing users see
+              when relevant. */}
+          <TaskDependencyLinks task={t} lookup={depLookup} />
 
           {/* Umbrellas have no own assignees/approver/PM; suppress the
               People block entirely so the panel doesn't show 4 empty
