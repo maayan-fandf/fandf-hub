@@ -476,6 +476,7 @@ export default async function ProjectOverviewPage({
           totalComments={totalComments}
           openMentions={openMentions}
           projectName={projectName}
+          projectCompany={companyForDashboard}
           showResolved={showResolved}
           requestedView={sp.view}
           requestedChannel={sp.channel}
@@ -590,6 +591,7 @@ function DiscussionSection({
   totalComments,
   openMentions,
   projectName,
+  projectCompany,
   showResolved,
   requestedView,
   requestedChannel,
@@ -604,6 +606,10 @@ function DiscussionSection({
   totalComments: number;
   openMentions: number;
   projectName: string;
+  /** Resolved company for this (project, ?company=) combo — threaded
+   *  to InternalChannel/InternalDiscussionTab so the empty-state
+   *  CreateChatSpaceButton can disambiguate non-unique project names. */
+  projectCompany: string;
   showResolved: boolean;
   requestedView: string | undefined;
   requestedChannel: string | undefined;
@@ -684,6 +690,7 @@ function DiscussionSection({
           requestedView={requestedView}
           showResolved={showResolved}
           projectName={projectName}
+          projectCompany={projectCompany}
           isAdmin={isAdmin}
         />
       ) : channel === "tasks" ? (
@@ -719,6 +726,7 @@ async function InternalChannel({
   requestedView,
   showResolved,
   projectName,
+  projectCompany,
   isAdmin,
 }: {
   subjectEmail: string;
@@ -726,6 +734,10 @@ async function InternalChannel({
   requestedView: string | undefined;
   showResolved: boolean;
   projectName: string;
+  /** Resolved company for the (project, ?company=) combo. Lets the
+   *  empty-state CreateChatSpaceButton match the right Keys row when
+   *  the project name is non-unique (כללי, אחוזת אפרידר, …). */
+  projectCompany: string;
   /** Threaded down to InternalDiscussionTab so the empty-state can
    *  render a one-click "create chat space" button for admins. */
   isAdmin: boolean;
@@ -778,6 +790,7 @@ async function InternalChannel({
           myEmail={subjectEmail}
           myDisplayNames={myDisplayNames}
           projectName={projectName}
+          projectCompany={projectCompany}
           isAdmin={isAdmin}
         />
       </Suspense>

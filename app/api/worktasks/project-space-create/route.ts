@@ -6,7 +6,15 @@ import { createChatSpaceForProject } from "@/lib/chatSpaceCreate";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Body = { project: string };
+type Body = {
+  project: string;
+  /** Disambiguates non-unique project names (כללי has 4 rows). The
+   *  CreateChatSpaceButton on /projects/<name>?company=<X> pages the
+   *  current company through; without it, helper falls back to first-
+   *  by-name which silently picks the wrong row. Optional for back-
+   *  compat with the legacy /admin/chat-spaces flow. */
+  company?: string;
+};
 
 /**
  * Create a Google Chat Space for a project + write the URL back into
@@ -52,7 +60,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await createChatSpaceForProject(email, body.project);
+  const result = await createChatSpaceForProject(
+    email,
+    body.project,
+    body.company,
+  );
   if (!result.ok) {
     // Pass `howToFix` through so the admin UI can render the targeted
     // hint when the failure is the missing DWD scope.

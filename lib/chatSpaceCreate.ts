@@ -53,9 +53,48 @@ export type ChatSpaceCreateResult =
 export async function createChatSpaceForProject(
   adminEmail: string,
   projectName: string,
+  /**
+   * Disambiguator for project names that recur across companies (כללי
+   * has 4 rows, אחוזת אפרידר 2, …). When supplied, the (project,
+   * company) tuple gates BOTH the idempotency pre-read AND the Keys
+   * write target, so we don't read a sibling company's existing space
+   * id or write the new URL into the wrong row. Optional — falls back
+   * to first-by-name match when omitted (legacy /admin/chat-spaces
+   * caller, where unique-by-name was implicit).
+   */
+  companyHint?: string,
 ): Promise<ChatSpaceCreateResult> {
   const project = String(projectName ?? "").trim();
   if (!project) return { ok: false, error: "project required" };
+  const companyFilter = String(companyHint ?? "").trim();
+  // Locate the right Keys row when the project name is non-unique.
+  // Prefer (project, company) when companyFilter is supplied. When the
+  // tuple doesn't match anything in Keys we deliberately do NOT fall
+  // back to first-by-name — the caller knows the company, so a name-
+  // only match would silently target the wrong row (this is exactly
+  // the bug that bit the 2026-05-03 כללי report). Returns -1 in that
+  // case so the caller can preflight before creating an orphan space.
+  const findRowIndex = (
+    values: unknown[][],
+    iProj: number,
+    iCo: number,
+  ): number => {
+    let firstByName = -1;
+    for (let r = 1; r < values.length; r++) {
+      if (String(values[r][iProj] ?? "").trim() !== project) continue;
+      if (firstByName === -1) firstByName = r;
+      if (!companyFilter) return r;
+      if (
+        iCo >= 0 &&
+        String(values[r][iCo] ?? "").trim() === companyFilter
+      ) {
+        return r;
+      }
+    }
+    // companyFilter not supplied → first-by-name (legacy behavior).
+    // companyFilter supplied but no exact match → -1 (strict).
+    return companyFilter ? -1 : firstByName;
+  };
 
   // Step 0: pre-read Keys for two purposes:
   //   (a) Grab company so the displayName follows the canonical
@@ -70,6 +109,17 @@ export async function createChatSpaceForProject(
   //       result: many empty duplicates needing manual cleanup.
   let company = "";
   let existingSpaceId = "";
+  // Tracks whether the pre-read SUCCESSFULLY ran (regardless of match
+  // outcome). When pre-read throws (Sheets API down, perms drift, …)
+  // we don't know whether the row exists — skip the strict preflight
+  // below rather than fail-closed on infra blips.
+  let preReadOk = false;
+  // -1 means "row not found in Keys"; only meaningful when preReadOk
+  // is true. Used by the preflight to refuse creating an orphan space
+  // when the caller passed a company hint but Keys has no row for the
+  // (project, company) tuple. Common with `כללי` rows, which are
+  // user-created on demand (memory: project_general_project_manual).
+  let foundRowIndex = -1;
   try {
     const preReadSheets = sheetsClient(adminEmail);
     const ssId = envOrThrow("SHEET_ID_MAIN");
@@ -78,6 +128,7 @@ export async function createChatSpaceForProject(
       range: "Keys",
       valueRenderOption: "UNFORMATTED_VALUE",
     });
+    preReadOk = true;
     const values = (r.data.values ?? []) as unknown[][];
     if (values.length) {
       const headers = (values[0] as unknown[]).map((h) =>
@@ -87,13 +138,12 @@ export async function createChatSpaceForProject(
       const iCo = headers.indexOf("חברה");
       const iChat = findChatSpaceColumnIndex(headers);
       if (iProj >= 0) {
-        for (let r = 1; r < values.length; r++) {
-          if (String(values[r][iProj] ?? "").trim() === project) {
-            company = iCo >= 0 ? String(values[r][iCo] ?? "").trim() : "";
-            existingSpaceId =
-              iChat >= 0 ? parseSpaceId(String(values[r][iChat] ?? "").trim()) : "";
-            break;
-          }
+        const r = findRowIndex(values, iProj, iCo);
+        foundRowIndex = r;
+        if (r >= 1) {
+          company = iCo >= 0 ? String(values[r][iCo] ?? "").trim() : "";
+          existingSpaceId =
+            iChat >= 0 ? parseSpaceId(String(values[r][iChat] ?? "").trim()) : "";
         }
       }
     }
@@ -102,6 +152,17 @@ export async function createChatSpaceForProject(
     // prefix and skip the idempotency check. The downstream Keys-write
     // step will surface a clearer error if Keys is genuinely
     // unreachable.
+  }
+
+  // Preflight: the caller passed a company hint but Keys has no row
+  // for the (project, company) tuple. Refuse to create the Chat space
+  // — it would land as an orphan that the user has to clean up
+  // manually. For כללי this usually means "add the row to Keys first".
+  if (preReadOk && companyFilter && foundRowIndex < 0) {
+    return {
+      ok: false,
+      error: `אין שורה ב-Keys עבור (${project}, ${companyFilter}). הוסף את השורה לפני יצירת חלל הצ׳אט.`,
+    };
   }
 
   // (b) Idempotency: if a space is already linked, return early. The
@@ -194,6 +255,7 @@ export async function createChatSpaceForProject(
         .trim(),
     );
     const iProj = headers.indexOf("פרוייקט");
+    const iCo = headers.indexOf("חברה");
     const iChat = findChatSpaceColumnIndex(headers);
     if (iProj < 0 || iChat < 0) {
       return {
@@ -203,17 +265,12 @@ export async function createChatSpaceForProject(
           spaceUri,
       };
     }
-    let rowIndex = -1;
-    for (let r = 1; r < values.length; r++) {
-      if (String(values[r][iProj] ?? "").trim() === project) {
-        rowIndex = r;
-        break;
-      }
-    }
+    const rowIndex = findRowIndex(values, iProj, iCo);
     if (rowIndex < 0) {
+      const scope = companyFilter ? ` (company "${companyFilter}")` : "";
       return {
         ok: false,
-        error: `Space created but project "${project}" not found in Keys. Paste manually into the right row: ${spaceUri}`,
+        error: `Space created but project "${project}"${scope} not found in Keys. Paste manually into the right row: ${spaceUri}`,
       };
     }
     const sheetRow = rowIndex + 1;

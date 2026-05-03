@@ -38,6 +38,7 @@ export default async function InternalDiscussionTab({
   myEmail,
   myDisplayNames,
   projectName,
+  projectCompany,
   isAdmin,
 }: {
   subjectEmail: string;
@@ -59,6 +60,10 @@ export default async function InternalDiscussionTab({
   /** Project name, threaded down to the composer + convert-button so
    *  they know where to post / scope the new task. */
   projectName: string;
+  /** Company that owns this project. Disambiguates non-unique project
+   *  names (כללי has 4 rows) when the empty-state CreateChatSpaceButton
+   *  POSTs to the create route. Optional for back-compat. */
+  projectCompany?: string;
   /** When true and the project has no Chat Space configured, the
    *  empty state offers a one-click "create chat space" button.
    *  /api/worktasks/project-space-create is admin-gated server-side
@@ -79,7 +84,10 @@ export default async function InternalDiscussionTab({
           </span>
         </p>
         {isAdmin && (
-          <CreateChatSpaceButton projectName={projectName} />
+          <CreateChatSpaceButton
+            projectName={projectName}
+            company={projectCompany}
+          />
         )}
       </div>
     );

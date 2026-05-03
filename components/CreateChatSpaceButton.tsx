@@ -17,8 +17,14 @@ import { useRouter } from "next/navigation";
  */
 export default function CreateChatSpaceButton({
   projectName,
+  company,
 }: {
   projectName: string;
+  /** Disambiguator for project names that recur across companies (כללי
+   *  has 4 rows). When present, posted to the route so the helper
+   *  matches the right Keys row for both the idempotency pre-read AND
+   *  the URL write target. Optional — falls back to first-by-name. */
+  company?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -32,7 +38,10 @@ export default function CreateChatSpaceButton({
       const res = await fetch("/api/worktasks/project-space-create", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project: projectName }),
+        body: JSON.stringify({
+          project: projectName,
+          ...(company ? { company } : {}),
+        }),
       });
       const data = (await res.json()) as
         | { ok: true; space: { name: string; spaceUri: string; displayName: string } }
