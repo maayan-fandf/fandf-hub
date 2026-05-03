@@ -240,6 +240,36 @@ for (let i = 1; i < rows.length; i++) {
 //    For each open GT whose notes link to a hubTaskId of a terminal row,
 //    if that (user, gtId) isn't in the tracked set, it's an orphan.
 const HUB_URL_RE = /https:\/\/hub\.fandf\.co\.il\/tasks\/([A-Za-z0-9_-]+)/;
+// Title-prefix match for hub-spawned GTs that DON'T have the hub URL
+// in notes (legacy spawns from before the URL convention). All five
+// kind-prefix variants the hub uses today + the legacy `✅ לאישור`.
+const KIND_PREFIXES = [
+  "📋 לבצע",
+  "🛠️ בעבודה",
+  "👀 לאישור",
+  "✅ לאישור", // legacy approve, pre-2026-04 swap to 👀
+  "❓ לבירור",
+];
+function parseHubFormatTitle(title) {
+  if (!title) return null;
+  const stripped = String(title).replace(/^(?:🔙|🔄)\s+/, "").trim();
+  for (const prefix of KIND_PREFIXES) {
+    if (
+      stripped.startsWith(prefix + " ·") ||
+      stripped.startsWith(prefix + " ⋅")
+    ) {
+      const rest = stripped.slice(prefix.length).trim();
+      const parts = rest.split(/\s*[·⋅]\s*/).filter(Boolean);
+      if (parts.length >= 2) {
+        return { hubTitle: parts[0], hubProject: parts[1] };
+      }
+    }
+  }
+  return null;
+}
+const allHubTaskIds = new Set();
+const taskIdByTitleProject = new Map(); // "title|project" → hubTaskId
+const cellByTaskId = new Map(); // hubTaskId → cell raw string (for tracked-check)
 const terminalTaskIds = new Set();
 const trackedRefs = new Set(); // "user|gtId"
 const referencedUsers = new Set();
@@ -249,11 +279,20 @@ for (let i = 1; i < rows.length; i++) {
   if (String(row[I_KIND] ?? "").trim() !== "task") continue;
   const id = String(row[I_ID] ?? "").trim();
   const status = String(row[I_STATUS] ?? "").trim();
+  const title = String(row[I_TITLE] ?? "").trim();
+  const project = String(row[I_PROJECT] ?? "").trim();
   const refs = parseCell(String(row[I_GT] ?? ""));
   for (const ref of refs) {
     if (!ref?.u) continue;
     referencedUsers.add(ref.u.toLowerCase());
     if (ref?.t) trackedRefs.add(`${ref.u.toLowerCase()}|${ref.t}`);
+  }
+  if (id) {
+    allHubTaskIds.add(id);
+    cellByTaskId.set(id, String(row[I_GT] ?? ""));
+    if (title && project) {
+      taskIdByTitleProject.set(`${title}|${project}`, id);
+    }
   }
   if ((status === "done" || status === "cancelled") && id) {
     terminalTaskIds.add(id);
@@ -293,15 +332,31 @@ async function getUserOpenGTs(user) {
   return items;
 }
 
+// Also iterate users we'd see open GTs for via title-prefix legacy
+// detection — but those need the user already in referencedUsers
+// (otherwise we'd have to scan every @fandf user globally, which is
+// out of scope). The ongoing pollTasks self-heal will catch them in
+// practice once they're once referenced anywhere.
 for (const user of referencedUsers) {
   const gts = await getUserOpenGTs(user);
   for (const t of gts) {
+    // Try hub URL in notes first (modern convention).
+    let hubId = "";
     const m = String(t.notes || "").match(HUB_URL_RE);
-    if (!m) continue;
-    const hubId = m[1];
-    if (!terminalTaskIds.has(hubId)) continue; // active row — leave alone
-    const key = `${user}|${t.id}`;
-    if (trackedRefs.has(key)) continue; // tracked already (E8 path)
+    if (m) hubId = m[1];
+    // Fall back to title-prefix match (legacy spawns without URL).
+    if (!hubId) {
+      const parsed = parseHubFormatTitle(t.title);
+      if (parsed) {
+        hubId =
+          taskIdByTitleProject.get(`${parsed.hubTitle}|${parsed.hubProject}`) ||
+          "";
+      }
+    }
+    if (!hubId) continue;
+    if (!allHubTaskIds.has(hubId)) continue;
+    const cellRaw = cellByTaskId.get(hubId) || "";
+    if (cellRaw.includes(t.id)) continue; // tracked, not an orphan
     e10.push({
       taskId: hubId,
       user,

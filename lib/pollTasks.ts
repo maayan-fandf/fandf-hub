@@ -647,30 +647,77 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   }
 
   // Orphan-GT scan: close any open hub-spawned GT in a referenced
-  // user's tasklist that links (via notes hub URL) to a task whose
-  // hub status is terminal AND whose id isn't tracked in any cell.
-  // Catches the spawn-success-then-cell-persist-failure scenario
-  // above + historical double-spawns where one entry was lost. The
-  // 2026-05-03 audit on row T-mopjb27b-dr0t (sapir/approve) was a
-  // textbook case: cell tracked 2 sapir/approve refs, but a 3rd open
-  // GT existed in sapir's list pointing back to the same hub task.
+  // user's tasklist that links to a hub task — by hub URL in notes
+  // (modern convention) OR by title-prefix match (legacy spawns
+  // pre-URL-in-notes) — but whose id isn't tracked in any cell.
+  //
+  // Catches three failure modes:
+  //   1. spawn-success-then-cell-persist-failure (the
+  //      reconciliation-pass catch-swallow path above)
+  //   2. historical double-spawns where one entry got lost from
+  //      the cell
+  //   3. legacy `✅ לאישור` / older-prefix GTs spawned before the
+  //      hub URL was added to notes (2026-05-03 emma audit found
+  //      4 GTs in her list, only 2 tracked — both extras were
+  //      legacy-format with no URL)
+  //
+  // Title-prefix detection: hub-spawned titles always start with
+  // one of `📋 לבצע`, `🛠️ בעבודה`, `👀 לאישור`, `✅ לאישור` (legacy),
+  // `❓ לבירור` followed by ` · {title} · {project}`. We match
+  // (title, project) against the indexed Comments rows to recover
+  // the hub task id when notes don't carry the URL.
   const HUB_URL_RE = /https:\/\/hub\.fandf\.co\.il\/tasks\/([A-Za-z0-9_-]+)/;
-  const terminalTaskIds = new Set<string>();
+  const KIND_PREFIXES = [
+    "📋 לבצע",
+    "🛠️ בעבודה",
+    "👀 לאישור",
+    "✅ לאישור", // legacy approve
+    "❓ לבירור",
+  ];
+  function parseHubFormatTitle(
+    title: string | null | undefined,
+  ): { hubTitle: string; hubProject: string } | null {
+    if (!title) return null;
+    const stripped = String(title).replace(/^(?:🔙|🔄)\s+/, "").trim();
+    for (const prefix of KIND_PREFIXES) {
+      if (
+        stripped.startsWith(prefix + " ·") ||
+        stripped.startsWith(prefix + " ⋅")
+      ) {
+        const rest = stripped.slice(prefix.length).trim();
+        const parts = rest.split(/\s*[·⋅]\s*/).filter(Boolean);
+        if (parts.length >= 2) {
+          return { hubTitle: parts[0], hubProject: parts[1] };
+        }
+      }
+    }
+    return null;
+  }
+  const allHubTaskIds = new Set<string>();
+  const taskIdByTitleProject = new Map<string, string>();
+  const cellByTaskId = new Map<string, string>();
   const trackedRefs = new Set<string>(); // "user|gtId"
   const referencedUsers = new Set<string>();
+  const I_TITLE_IDX = headers.indexOf("title");
+  const I_PROJECT_IDX = headers.indexOf("project");
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (I_KIND < 0 || String(row[I_KIND] ?? "").trim() !== "task") continue;
     const id = String(row[I_ID] ?? "").trim();
-    const status = String(row[I_STATUS] ?? "").trim();
     const refs = parseCell(I_GT < 0 ? "" : row[I_GT]);
     for (const ref of refs) {
       if (!ref?.u) continue;
       referencedUsers.add(ref.u.toLowerCase());
       if (ref?.t) trackedRefs.add(`${ref.u.toLowerCase()}|${ref.t}`);
     }
-    if ((status === "done" || status === "cancelled") && id) {
-      terminalTaskIds.add(id);
+    if (id) {
+      allHubTaskIds.add(id);
+      cellByTaskId.set(id, String(I_GT < 0 ? "" : row[I_GT] ?? ""));
+      const tit =
+        I_TITLE_IDX >= 0 ? String(row[I_TITLE_IDX] ?? "").trim() : "";
+      const proj =
+        I_PROJECT_IDX >= 0 ? String(row[I_PROJECT_IDX] ?? "").trim() : "";
+      if (tit && proj) taskIdByTitleProject.set(`${tit}|${proj}`, id);
     }
   }
   let orphanLeakClosed = 0;
@@ -691,12 +738,24 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
         });
         for (const t of r.data.items ?? []) {
           if (!t.id) continue;
+          // 1. Try hub URL in notes (modern convention).
+          let hubId = "";
           const m = String(t.notes || "").match(HUB_URL_RE);
-          if (!m) continue;
-          const hubId = m[1];
-          if (!terminalTaskIds.has(hubId)) continue; // active task — leave alone
-          const key = `${user}|${t.id}`;
-          if (trackedRefs.has(key)) continue; // tracked — terminal-leak path handled it
+          if (m) hubId = m[1];
+          // 2. Fall back to title-prefix match (legacy spawns).
+          if (!hubId) {
+            const parsed = parseHubFormatTitle(t.title);
+            if (parsed) {
+              hubId =
+                taskIdByTitleProject.get(
+                  `${parsed.hubTitle}|${parsed.hubProject}`,
+                ) || "";
+            }
+          }
+          if (!hubId) continue;
+          if (!allHubTaskIds.has(hubId)) continue;
+          const cellRaw = cellByTaskId.get(hubId) || "";
+          if (cellRaw.includes(t.id)) continue; // tracked
           try {
             await tasksApi.tasks.patch({
               tasklist: listId,
@@ -705,7 +764,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
             });
             orphanLeakClosed++;
             console.log(
-              `[pollTasks] orphan-leak: closed ${t.id} for ${user} (hub task ${hubId} terminal)`,
+              `[pollTasks] orphan-leak: closed ${t.id} for ${user} (hub task ${hubId})`,
             );
           } catch (e) {
             console.log(
