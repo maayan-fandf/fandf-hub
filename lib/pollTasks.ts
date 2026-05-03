@@ -135,6 +135,12 @@ export type PollResult = {
    *  means a prior cascade dropped a close (quota / transient API
    *  failure) and we caught up here. */
   terminalLeakClosed: number;
+  /** Orphan-GT leak healing: hub-spawned GTs in a recipient's list that
+   *  link (via notes hub URL) to a terminal hub task but aren't tracked
+   *  in any cell. Caused by spawn-success-then-cell-persist-failure
+   *  (the catch-swallow case in the reconciliation pass) or historical
+   *  double-spawns. Should be 0 in steady state. */
+  orphanLeakClosed: number;
   durationMs: number;
 };
 
@@ -628,11 +634,93 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
           `[pollTasks] reconcile: healed ${taskId} — spawned ${spawnedThisRow} GT(s)`,
         );
       } catch (e) {
+        // Persist failed AFTER the spawn succeeded. The fresh GTs now
+        // exist in recipients' lists but no cell points at them — the
+        // orphan-scan below closes them on the next cycle (catches THIS
+        // cycle's regression as well, since it runs after this loop).
         console.log(
           `[pollTasks] reconcile: persist cell failed for ${taskId}:`,
           e instanceof Error ? e.message : String(e),
         );
       }
+    }
+  }
+
+  // Orphan-GT scan: close any open hub-spawned GT in a referenced
+  // user's tasklist that links (via notes hub URL) to a task whose
+  // hub status is terminal AND whose id isn't tracked in any cell.
+  // Catches the spawn-success-then-cell-persist-failure scenario
+  // above + historical double-spawns where one entry was lost. The
+  // 2026-05-03 audit on row T-mopjb27b-dr0t (sapir/approve) was a
+  // textbook case: cell tracked 2 sapir/approve refs, but a 3rd open
+  // GT existed in sapir's list pointing back to the same hub task.
+  const HUB_URL_RE = /https:\/\/hub\.fandf\.co\.il\/tasks\/([A-Za-z0-9_-]+)/;
+  const terminalTaskIds = new Set<string>();
+  const trackedRefs = new Set<string>(); // "user|gtId"
+  const referencedUsers = new Set<string>();
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (I_KIND < 0 || String(row[I_KIND] ?? "").trim() !== "task") continue;
+    const id = String(row[I_ID] ?? "").trim();
+    const status = String(row[I_STATUS] ?? "").trim();
+    const refs = parseCell(I_GT < 0 ? "" : row[I_GT]);
+    for (const ref of refs) {
+      if (!ref?.u) continue;
+      referencedUsers.add(ref.u.toLowerCase());
+      if (ref?.t) trackedRefs.add(`${ref.u.toLowerCase()}|${ref.t}`);
+    }
+    if ((status === "done" || status === "cancelled") && id) {
+      terminalTaskIds.add(id);
+    }
+  }
+  let orphanLeakClosed = 0;
+  for (const user of referencedUsers) {
+    try {
+      const tasksApi = tasksApiClient(user);
+      const lists = await tasksApi.tasklists.list({ maxResults: 1 });
+      const listId = lists.data.items?.[0]?.id;
+      if (!listId) continue;
+      let pageToken: string | undefined;
+      do {
+        const r = await tasksApi.tasks.list({
+          tasklist: listId,
+          showCompleted: false,
+          showHidden: false,
+          maxResults: 100,
+          pageToken,
+        });
+        for (const t of r.data.items ?? []) {
+          if (!t.id) continue;
+          const m = String(t.notes || "").match(HUB_URL_RE);
+          if (!m) continue;
+          const hubId = m[1];
+          if (!terminalTaskIds.has(hubId)) continue; // active task — leave alone
+          const key = `${user}|${t.id}`;
+          if (trackedRefs.has(key)) continue; // tracked — terminal-leak path handled it
+          try {
+            await tasksApi.tasks.patch({
+              tasklist: listId,
+              task: t.id,
+              requestBody: { status: "completed" },
+            });
+            orphanLeakClosed++;
+            console.log(
+              `[pollTasks] orphan-leak: closed ${t.id} for ${user} (hub task ${hubId} terminal)`,
+            );
+          } catch (e) {
+            console.log(
+              `[pollTasks] orphan-leak close failed for ${t.id}/${user}:`,
+              e instanceof Error ? e.message : String(e),
+            );
+          }
+        }
+        pageToken = r.data.nextPageToken ?? undefined;
+      } while (pageToken);
+    } catch (e) {
+      console.log(
+        `[pollTasks] orphan-scan list failed for ${user}:`,
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
@@ -649,6 +737,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     gtsSpawned,
     staleClosed,
     terminalLeakClosed,
+    orphanLeakClosed,
   );
 }
 
@@ -665,6 +754,7 @@ function summary(
   gtsSpawned = 0,
   staleClosed = 0,
   terminalLeakClosed = 0,
+  orphanLeakClosed = 0,
 ): PollResult {
   return {
     rowsScanned,
@@ -678,6 +768,7 @@ function summary(
     gtsSpawned,
     staleClosed,
     terminalLeakClosed,
+    orphanLeakClosed,
     durationMs: Date.now() - start,
   };
 }

@@ -142,6 +142,7 @@ console.log(`Sheet rows: ${rows.length - 1}\n`);
 
 const e8 = []; // {sheetRow, taskId, ref}
 const e9 = []; // {sheetRow, taskId, refs (deduped), closeOpen [refs to close]}
+const e10 = []; // {sheetRow, taskId, user, gt} — orphan GT not in cell
 const e56 = []; // {sheetRow, taskId, status, approver}
 
 for (let i = 1; i < rows.length; i++) {
@@ -176,8 +177,12 @@ for (let i = 1; i < rows.length; i++) {
     }
   }
 
-  // E9 — group by (email, kind), find groups with >1 entry
-  if (status !== "done" && status !== "cancelled" && refs.length > 0) {
+  // E9 — group by (email, kind), find groups with >1 entry. Active
+  // rows: pick the keeper based on which GT is still open. Terminal
+  // rows: pick the first arbitrarily (no open GTs to discriminate by;
+  // cell rewrite is purely cosmetic since E8 already closed any
+  // remaining-open GTs).
+  if (refs.length > 0) {
     const groups = new Map();
     for (const ref of refs) {
       if (!ref || typeof ref !== "object") continue;
@@ -225,8 +230,88 @@ for (let i = 1; i < rows.length; i++) {
   }
 }
 
+// ── E10 detection: scan recipient lists for hub-spawned GTs that link
+// to a terminal task but aren't in any row's cell. Caused by spawn-
+// success-then-cell-persist-failure (pollTasks reconciliation
+// catch-swallow), or by historical paths that double-spawned. To detect:
+// 1. Build hubTaskId → row map for terminal rows (id-aware).
+// 2. Build set of (user, gtId) tuples that ARE tracked in any cell.
+// 3. For every user referenced anywhere in cells, list their open GTs.
+//    For each open GT whose notes link to a hubTaskId of a terminal row,
+//    if that (user, gtId) isn't in the tracked set, it's an orphan.
+const HUB_URL_RE = /https:\/\/hub\.fandf\.co\.il\/tasks\/([A-Za-z0-9_-]+)/;
+const terminalTaskIds = new Set();
+const trackedRefs = new Set(); // "user|gtId"
+const referencedUsers = new Set();
+
+for (let i = 1; i < rows.length; i++) {
+  const row = rows[i];
+  if (String(row[I_KIND] ?? "").trim() !== "task") continue;
+  const id = String(row[I_ID] ?? "").trim();
+  const status = String(row[I_STATUS] ?? "").trim();
+  const refs = parseCell(String(row[I_GT] ?? ""));
+  for (const ref of refs) {
+    if (!ref?.u) continue;
+    referencedUsers.add(ref.u.toLowerCase());
+    if (ref?.t) trackedRefs.add(`${ref.u.toLowerCase()}|${ref.t}`);
+  }
+  if ((status === "done" || status === "cancelled") && id) {
+    terminalTaskIds.add(id);
+  }
+}
+
+const userOpenGTsCache = new Map();
+async function getUserOpenGTs(user) {
+  const lc = user.toLowerCase().trim();
+  if (userOpenGTsCache.has(lc)) return userOpenGTsCache.get(lc);
+  const items = [];
+  try {
+    const api = tasksClientFor(lc);
+    const lists = await api.tasklists.list({ maxResults: 1 });
+    const listId = lists.data.items?.[0]?.id;
+    if (listId) {
+      let pageToken;
+      do {
+        const r = await api.tasks.list({
+          tasklist: listId,
+          showCompleted: false,
+          showHidden: false,
+          maxResults: 100,
+          pageToken,
+        });
+        for (const t of r.data.items ?? []) {
+          items.push({ ...t, __listId: listId });
+        }
+        pageToken = r.data.nextPageToken;
+      } while (pageToken);
+    }
+  } catch (e) {
+    // Skip this user for orphan detection; log
+    console.log(`  (skip orphan-scan for ${lc}: ${e?.message || e})`);
+  }
+  userOpenGTsCache.set(lc, items);
+  return items;
+}
+
+for (const user of referencedUsers) {
+  const gts = await getUserOpenGTs(user);
+  for (const t of gts) {
+    const m = String(t.notes || "").match(HUB_URL_RE);
+    if (!m) continue;
+    const hubId = m[1];
+    if (!terminalTaskIds.has(hubId)) continue; // active row — leave alone
+    const key = `${user}|${t.id}`;
+    if (trackedRefs.has(key)) continue; // tracked already (E8 path)
+    e10.push({
+      taskId: hubId,
+      user,
+      gt: { id: t.id, listId: t.__listId, title: t.title, status: t.status },
+    });
+  }
+}
+
 // ── Report
-console.log(`──── E8 (leaked GTs on terminal rows) — ${e8.length} ────`);
+console.log(`──── E8 (leaked GTs on terminal rows, in cell) — ${e8.length} ────`);
 for (const f of e8) {
   console.log(
     `  row ${f.sheetRow}  task=${f.taskId}  ${f.project}  ${f.title.slice(0, 50)}`,
@@ -246,6 +331,13 @@ for (const f of e9) {
       console.log(`        - ${r.t}  (${r.u}/${r.kind ?? "todo"})`);
     }
   }
+}
+
+console.log(`\n──── E10 (orphan hub-spawned GTs, NOT in any cell) — ${e10.length} ────`);
+for (const f of e10) {
+  console.log(
+    `  task=${f.taskId}  user=${f.user}  gt=${f.gt.id}  title="${(f.gt.title || "").slice(0, 60)}"`,
+  );
 }
 
 console.log(`\n──── E5+E6 (stuck awaiting_approval) — ${e56.length} (NOT auto-fixable) ────`);
@@ -276,6 +368,23 @@ for (const f of e8) {
     ok++;
   } catch (e) {
     console.log(`  ✗ close ${f.ref.t}: ${e?.message || e}`);
+    failed++;
+  }
+}
+
+// E10: close orphan hub-spawned GTs (not in any cell).
+for (const f of e10) {
+  try {
+    const api = tasksClientFor(f.user);
+    await api.tasks.patch({
+      tasklist: f.gt.listId,
+      task: f.gt.id,
+      requestBody: { status: "completed" },
+    });
+    console.log(`  ✓ closed orphan ${f.gt.id} (${f.user})`);
+    ok++;
+  } catch (e) {
+    console.log(`  ✗ close orphan ${f.gt.id}: ${e?.message || e}`);
     failed++;
   }
 }
