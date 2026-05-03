@@ -11,7 +11,7 @@ import DriveFolderPicker, {
 } from "./DriveFolderPicker";
 import {
   CHAIN_TEMPLATES,
-  findChainTemplate,
+  type ChainTemplate,
 } from "@/lib/chainTemplates";
 
 /** Hardcoded fallback used only when the names-to-emails sheet has no
@@ -48,6 +48,7 @@ export default function TaskCreateForm({
   people,
   currentUserEmail,
   formSchema = null,
+  chainTemplates,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
@@ -88,6 +89,11 @@ export default function TaskCreateForm({
     allKinds: string[];
     kindsByDepartment: Record<string, string[]>;
   } | null;
+  /** Phase 10 — chain templates from the sheet-backed admin store
+   *  (or the hardcoded CHAIN_TEMPLATES seed when the sheet is empty).
+   *  Falls back to the hardcoded set when omitted, preserving the
+   *  pre-phase-10 behavior. */
+  chainTemplates?: ChainTemplate[];
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -146,7 +152,17 @@ export default function TaskCreateForm({
   // path (per the locked design — most quick client requests are NOT
   // chains).
   const [chainMode, setChainMode] = useState(false);
-  type ChainStep = { title: string; assignees: string; assigneeHint?: string };
+  type ChainStep = {
+    title: string;
+    assignees: string;
+    assigneeHint?: string;
+    /** When set, the step's assignee picker filters to people whose
+     *  Role on names-to-emails matches this value (case-insensitive).
+     *  Empty/undefined = "any role". Comes from the template; NOT
+     *  user-editable in the standard create form (the admin chain
+     *  builder manages template departments). */
+    department?: string;
+  };
   const [steps, setSteps] = useState<ChainStep[]>([
     { title: "", assignees: "" },
     { title: "", assignees: "" },
@@ -156,10 +172,13 @@ export default function TaskCreateForm({
   // supply assignees. Empty string = "no template, manual setup"
   // (the default — preserves the from-scratch flow).
   const [chainTemplateId, setChainTemplateId] = useState("");
+  // Effective list — prop wins when present (sheet-backed via /admin),
+  // else fall back to the hardcoded seed.
+  const effectiveChainTemplates = chainTemplates ?? CHAIN_TEMPLATES;
   function applyChainTemplate(id: string) {
     setChainTemplateId(id);
     if (!id) return;
-    const tpl = findChainTemplate(id);
+    const tpl = effectiveChainTemplates.find((t) => t.id === id);
     if (!tpl) return;
     // Only overwrite the umbrella title if it's empty — respects
     // user typing-ahead-of-picker. Steps always overwrite (the whole
@@ -170,6 +189,7 @@ export default function TaskCreateForm({
         title: s.title,
         assignees: "",
         assigneeHint: s.assigneeHint,
+        department: s.department,
       })),
     );
   }
@@ -720,7 +740,7 @@ export default function TaskCreateForm({
               onChange={(e) => applyChainTemplate(e.target.value)}
             >
               <option value="">— ללא תבנית (הקמה ידנית) —</option>
-              {CHAIN_TEMPLATES.map((t) => (
+              {effectiveChainTemplates.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.label}
                 </option>
@@ -728,56 +748,80 @@ export default function TaskCreateForm({
             </select>
           </label>
 
-          {steps.map((s, i) => (
-            <div key={i} className="task-form-chain-step-row">
-              <span className="task-form-chain-step-num">{i + 1}</span>
-              <input
-                type="text"
-                value={s.title}
-                onChange={(e) => {
-                  const next = [...steps];
-                  next[i] = { ...next[i], title: e.target.value };
-                  setSteps(next);
-                }}
-                placeholder={`שלב ${i + 1} — כותרת (לדוגמה: קופי)`}
-                className="task-form-chain-step-title"
-              />
-              <input
-                type="text"
-                value={s.assignees}
-                onChange={(e) => {
-                  const next = [...steps];
-                  next[i] = { ...next[i], assignees: e.target.value };
-                  setSteps(next);
-                }}
-                placeholder={
-                  s.assigneeHint
-                    ? `מבצע — ${s.assigneeHint}`
-                    : "מבצע — name@fandf.co.il"
-                }
-                list="tasks-people-chain"
-                className="task-form-chain-step-assignee"
-                title={s.assigneeHint ? `הצעה: ${s.assigneeHint}` : undefined}
-              />
-              <button
-                type="button"
-                className="btn-ghost btn-sm"
-                onClick={() => setSteps(steps.filter((_, j) => j !== i))}
-                disabled={steps.length === 1}
-                aria-label={`הסר שלב ${i + 1}`}
-                title="הסר שלב"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <datalist id="tasks-people-chain">
-            {filteredPeople.map((p) => (
-              <option key={p.email} value={p.email}>
-                {p.name} · {p.role}
-              </option>
-            ))}
-          </datalist>
+          {steps.map((s, i) => {
+            // Per-step filtering — when the step has a department
+            // bound (from the template), narrow the datalist to people
+            // with that role on names-to-emails. Empty department =
+            // "any role" → falls back to the chain-level filteredPeople
+            // (which respects the chain's department chips, if any).
+            const stepDept = (s.department || "").trim().toLowerCase();
+            const stepPeople = stepDept
+              ? people.filter(
+                  (p) => (p.role || "").trim().toLowerCase() === stepDept,
+                )
+              : filteredPeople;
+            const datalistId = `tasks-people-chain-${i}`;
+            return (
+              <div key={i} className="task-form-chain-step-row">
+                <span className="task-form-chain-step-num">{i + 1}</span>
+                <input
+                  type="text"
+                  value={s.title}
+                  onChange={(e) => {
+                    const next = [...steps];
+                    next[i] = { ...next[i], title: e.target.value };
+                    setSteps(next);
+                  }}
+                  placeholder={`שלב ${i + 1} — כותרת (לדוגמה: קופי)`}
+                  className="task-form-chain-step-title"
+                />
+                <input
+                  type="text"
+                  value={s.assignees}
+                  onChange={(e) => {
+                    const next = [...steps];
+                    next[i] = { ...next[i], assignees: e.target.value };
+                    setSteps(next);
+                  }}
+                  placeholder={
+                    s.assigneeHint
+                      ? `מבצע — ${s.assigneeHint}`
+                      : "מבצע — name@fandf.co.il"
+                  }
+                  list={datalistId}
+                  className="task-form-chain-step-assignee"
+                  title={
+                    s.assigneeHint
+                      ? `הצעה: ${s.assigneeHint}${
+                          stepDept ? ` (מסונן ל-${stepDept})` : ""
+                        }`
+                      : stepDept
+                        ? `מסונן ל-${stepDept}`
+                        : undefined
+                  }
+                />
+                {/* One datalist per step row, ID-suffixed by index, so
+                    the autocomplete narrows correctly per step's role. */}
+                <datalist id={datalistId}>
+                  {stepPeople.map((p) => (
+                    <option key={p.email} value={p.email}>
+                      {p.name} · {p.role}
+                    </option>
+                  ))}
+                </datalist>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => setSteps(steps.filter((_, j) => j !== i))}
+                  disabled={steps.length === 1}
+                  aria-label={`הסר שלב ${i + 1}`}
+                  title="הסר שלב"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
           <button
             type="button"
             className="btn-ghost btn-sm"

@@ -46,6 +46,14 @@ export default async function AdminHome() {
       ready: true,
     },
     {
+      href: "/admin/chain-templates",
+      title: "תבניות שרשרת",
+      emoji: "📦",
+      subtitle:
+        "תבניות מוכנות ליצירת שרשרת משימות (״עדכון ויזואל״, ״השקת קמפיין״ ועוד). מגדיר לכל שלב את המחלקה שמתוכה אפשר לשבץ מבצע.",
+      ready: true,
+    },
+    {
       href: "/admin/projects",
       title: "פרויקטים",
       emoji: "🏢",

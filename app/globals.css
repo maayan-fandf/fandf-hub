@@ -6627,6 +6627,95 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   word-break: break-all;
 }
 
+/* Phase 10 — admin chain templates editor (/admin/chain-templates) */
+.chain-templates-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  margin-top: 1em;
+}
+.chain-templates-seed-banner {
+  padding: .8em 1em;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  color: #92400e;
+}
+.chain-templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+.chain-template-card {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  padding: 0;
+}
+.chain-template-card-summary {
+  cursor: pointer;
+  padding: .8em 1em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+.chain-template-card-meta {
+  font-weight: normal;
+  font-size: .85em;
+  color: #64748b;
+}
+.chain-template-card-body {
+  padding: 0 1em 1em;
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+.chain-template-steps {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: .8em 1em;
+}
+.chain-template-step-row {
+  display: grid;
+  grid-template-columns: 1.6em 2fr 1fr 1fr auto;
+  gap: .5em;
+  align-items: center;
+  margin-bottom: .4em;
+}
+.chain-template-step-num {
+  text-align: center;
+  font-weight: 600;
+  color: #64748b;
+  background: #e2e8f0;
+  border-radius: 999px;
+  padding: .15em 0;
+  font-size: .9em;
+}
+.chain-template-step-title,
+.chain-template-step-dept,
+.chain-template-step-hint {
+  padding: .35em .5em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.chain-template-step-controls {
+  display: flex;
+  gap: .2em;
+}
+.btn-xs {
+  padding: .15em .4em;
+  font-size: .8em;
+}
+.chain-template-actions {
+  display: flex;
+  gap: .5em;
+}
+.chain-templates-add-row {
+  margin-top: 1em;
+}
+
 /* Phase 6a dependencies — side-panel deps block on /tasks/[id]. Sits
    above the People block; renders nothing when no edges exist. */
 .task-detail-side-deps {

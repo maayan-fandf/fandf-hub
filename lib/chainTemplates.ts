@@ -18,10 +18,25 @@
 export type ChainStepTemplate = {
   /** Step title pre-fill — user can edit before submit. */
   title: string;
-  /** Optional Hebrew hint shown next to the assignee input ("e.g.
-   *  copywriter") so the user knows what role to pick without having
-   *  to remember the workflow's owner-per-step contract. Not used
-   *  to filter the assignee dropdown — this is documentation only. */
+  /** Names-to-emails Role value the step's assignee MUST belong to.
+   *  When set, the per-step assignee picker filters the dropdown
+   *  to people whose role matches (case-insensitive). Empty / absent
+   *  means "any role" — useful for steps that span teams or for
+   *  workflows where role isn't a hard constraint.
+   *
+   *  Real role values from the names-to-emails sheet (2026-05-03):
+   *    media | client manager | copywriter | art | manager | designer
+   *
+   *  When you add a new template here, use one of these values
+   *  exactly (lowercase). The Role column on the sheet is the
+   *  authoritative source — promote new roles there first, then
+   *  reference them from templates.
+   */
+  department?: string;
+  /** Optional Hebrew hint shown in the assignee input placeholder
+   *  ("e.g. copywriter") for users who'd rather see a friendly
+   *  description than the raw role name. Doc-only; doesn't affect
+   *  filtering. */
   assigneeHint?: string;
 };
 
@@ -53,21 +68,20 @@ export const CHAIN_TEMPLATES: ChainTemplate[] = [
     label: "📷 עדכון ויזואל פייסבוק (קופי → אומנות → סטודיו → מדיה)",
     defaultUmbrellaTitle: "עדכון ויזואל",
     steps: [
-      { title: "כתיבת קופי",       assigneeHint: "קופירייטר" },
-      { title: "עיצוב + בחירת תמונה", assigneeHint: "אומן/אמנית" },
-      { title: "ביצוע בסטודיו",     assigneeHint: "סטודיו" },
-      { title: "העלאה למדיה",       assigneeHint: "מדיה" },
+      { title: "כתיבת קופי",         department: "copywriter", assigneeHint: "קופירייטר" },
+      { title: "עיצוב + בחירת תמונה", department: "art",        assigneeHint: "אומן/אמנית" },
+      { title: "ביצוע בסטודיו",       department: "art",        assigneeHint: "סטודיו" },
+      { title: "העלאה למדיה",         department: "media",      assigneeHint: "מדיה" },
     ],
   },
   {
     id: "landing-page",
-    label: "🌐 דף נחיתה (קופי → עיצוב → קוד → QA)",
+    label: "🌐 דף נחיתה (קופי → עיצוב → העלאה)",
     defaultUmbrellaTitle: "דף נחיתה חדש",
     steps: [
-      { title: "כתיבת תוכן + CTAs",  assigneeHint: "קופירייטר" },
-      { title: "עיצוב UI/UX",         assigneeHint: "מעצב/ת" },
-      { title: "פיתוח + אינטגרציה",   assigneeHint: "מפתח/ת" },
-      { title: "QA + העלאה",          assigneeHint: "QA / מדיה" },
+      { title: "כתיבת תוכן + CTAs", department: "copywriter", assigneeHint: "קופירייטר" },
+      { title: "עיצוב UI/UX",        department: "designer",   assigneeHint: "מעצב/ת" },
+      { title: "העלאה + בדיקה",       department: "media",      assigneeHint: "מדיה" },
     ],
   },
   {
@@ -75,11 +89,11 @@ export const CHAIN_TEMPLATES: ChainTemplate[] = [
     label: "🚀 השקת קמפיין (קופי → ויזואל → הקמה → אישור → לייב)",
     defaultUmbrellaTitle: "השקת קמפיין",
     steps: [
-      { title: "כתיבת קופי לקמפיין",  assigneeHint: "קופירייטר" },
-      { title: "ויזואלים + בנרים",    assigneeHint: "אומן/אמנית + סטודיו" },
-      { title: "הקמת קמפיין במערכת",  assigneeHint: "מדיה" },
-      { title: "אישור לקוח",          assigneeHint: "מנהל/ת קמפיין" },
-      { title: "העלאה ללייב",          assigneeHint: "מדיה" },
+      { title: "כתיבת קופי לקמפיין", department: "copywriter",     assigneeHint: "קופירייטר" },
+      { title: "ויזואלים + בנרים",   department: "art",            assigneeHint: "אומן/אמנית" },
+      { title: "הקמת קמפיין במערכת", department: "media",          assigneeHint: "מדיה" },
+      { title: "אישור לקוח",         department: "client manager", assigneeHint: "מנהל/ת קמפיין" },
+      { title: "העלאה ללייב",         department: "media",          assigneeHint: "מדיה" },
     ],
   },
   {
@@ -87,10 +101,10 @@ export const CHAIN_TEMPLATES: ChainTemplate[] = [
     label: "📊 דוח חודשי (איסוף → ניתוח → עיצוב → שליחה)",
     defaultUmbrellaTitle: "דוח חודשי",
     steps: [
-      { title: "איסוף נתונים",         assigneeHint: "מדיה" },
-      { title: "ניתוח + תובנות",       assigneeHint: "מנהל/ת קמפיין" },
-      { title: "עיצוב הדוח",            assigneeHint: "אומן/אמנית" },
-      { title: "שליחה ללקוח",          assigneeHint: "מנהל/ת קמפיין" },
+      { title: "איסוף נתונים",  department: "media",          assigneeHint: "מדיה" },
+      { title: "ניתוח + תובנות", department: "client manager", assigneeHint: "מנהל/ת קמפיין" },
+      { title: "עיצוב הדוח",     department: "art",            assigneeHint: "אומן/אמנית" },
+      { title: "שליחה ללקוח",    department: "client manager", assigneeHint: "מנהל/ת קמפיין" },
     ],
   },
 ];
