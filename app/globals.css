@@ -6555,6 +6555,26 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   margin-top: 1em;
   display: block;
 }
+.task-form-chain-template-row {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  margin-bottom: .8em;
+  padding-bottom: .6em;
+  border-bottom: 1px dashed #e2e8f0;
+}
+.task-form-chain-template-row > span {
+  font-size: .85em;
+  color: #64748b;
+  white-space: nowrap;
+}
+.task-form-chain-template-row > select {
+  flex: 1;
+  padding: .35em .5em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
 
 /* Phase 6a dependencies — side-panel deps block on /tasks/[id]. Sits
    above the People block; renders nothing when no edges exist. */

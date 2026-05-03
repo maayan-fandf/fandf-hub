@@ -9,6 +9,10 @@ import PersonCombobox from "./PersonCombobox";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
+import {
+  CHAIN_TEMPLATES,
+  findChainTemplate,
+} from "@/lib/chainTemplates";
 
 /** Hardcoded fallback used only when the names-to-emails sheet has no
  *  Role column populated. Real departments come from the people list
@@ -142,11 +146,33 @@ export default function TaskCreateForm({
   // path (per the locked design — most quick client requests are NOT
   // chains).
   const [chainMode, setChainMode] = useState(false);
-  type ChainStep = { title: string; assignees: string };
+  type ChainStep = { title: string; assignees: string; assigneeHint?: string };
   const [steps, setSteps] = useState<ChainStep[]>([
     { title: "", assignees: "" },
     { title: "", assignees: "" },
   ]);
+  // Phase 8 polish — chain template picker. Selecting a template
+  // pre-fills the umbrella title + step rows so users only need to
+  // supply assignees. Empty string = "no template, manual setup"
+  // (the default — preserves the from-scratch flow).
+  const [chainTemplateId, setChainTemplateId] = useState("");
+  function applyChainTemplate(id: string) {
+    setChainTemplateId(id);
+    if (!id) return;
+    const tpl = findChainTemplate(id);
+    if (!tpl) return;
+    // Only overwrite the umbrella title if it's empty — respects
+    // user typing-ahead-of-picker. Steps always overwrite (the whole
+    // point of picking a template is to reset the step list).
+    if (!title.trim()) setTitle(tpl.defaultUmbrellaTitle);
+    setSteps(
+      tpl.steps.map((s) => ({
+        title: s.title,
+        assignees: "",
+        assigneeHint: s.assigneeHint,
+      })),
+    );
+  }
   // Folder selection. Default is "use existing campaign folder" with
   // an empty folderId — the picker auto-selects the campaign folder
   // when it resolves (or, when the campaign folder doesn't exist yet,
@@ -683,6 +709,25 @@ export default function TaskCreateForm({
           <div className="task-form-chain-steps-help">
             כל שלב נפתח אוטומטית כשהשלב הקודם מסומן בוצע. השלב הראשון מתחיל מיד; השאר ממתינים בסטטוס &quot;חסום&quot;.
           </div>
+
+          {/* Phase 8 polish — template picker. Picking a template
+              pre-fills steps + umbrella title (when empty). User
+              still fills in assignees + can edit step titles. */}
+          <label className="task-form-chain-template-row">
+            <span>תבנית</span>
+            <select
+              value={chainTemplateId}
+              onChange={(e) => applyChainTemplate(e.target.value)}
+            >
+              <option value="">— ללא תבנית (הקמה ידנית) —</option>
+              {CHAIN_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           {steps.map((s, i) => (
             <div key={i} className="task-form-chain-step-row">
               <span className="task-form-chain-step-num">{i + 1}</span>
@@ -705,9 +750,14 @@ export default function TaskCreateForm({
                   next[i] = { ...next[i], assignees: e.target.value };
                   setSteps(next);
                 }}
-                placeholder="מבצע — name@fandf.co.il"
+                placeholder={
+                  s.assigneeHint
+                    ? `מבצע — ${s.assigneeHint}`
+                    : "מבצע — name@fandf.co.il"
+                }
                 list="tasks-people-chain"
                 className="task-form-chain-step-assignee"
+                title={s.assigneeHint ? `הצעה: ${s.assigneeHint}` : undefined}
               />
               <button
                 type="button"
