@@ -924,6 +924,12 @@ export type TasksListFilters = {
    *  the /tasks "מעורב במשימה" picker — surfaces every task someone
    *  touched regardless of role. Direct-read path only. */
   involved_with?: string;
+  /** Include umbrella container rows (`is_umbrella=true`). Default
+   *  is to filter them out so the standard list view shows only
+   *  real work — children already render individually, and the
+   *  umbrella row would just clutter. Surfaced via a chip toggle
+   *  on /tasks. Phase 4 dependencies, 2026-05-03. */
+  include_umbrellas?: boolean;
 };
 
 export async function tasksList(

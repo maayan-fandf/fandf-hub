@@ -362,6 +362,15 @@ export async function tasksListDirect(
      *  parent_id pointing at the task), so the cost is one extra
      *  pass over rows we'd read anyway. */
     involved_with?: string;
+    /** Surface umbrella container rows in the result. By default
+     *  (`false`/omitted) `is_umbrella=true` rows are filtered out so
+     *  the standard list view shows only "real" work — children of
+     *  a chain already appear individually, and the umbrella's only
+     *  purpose is rollup (which we deliberately keep out of the
+     *  busy table view). The /tasks chip toggle "📦 הצג עטיפות"
+     *  flips this to `true` so users can scan all chains at once.
+     *  Phase 4 of dependencies feature, 2026-05-03. */
+    include_umbrellas?: boolean;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
@@ -417,6 +426,14 @@ export async function tasksListDirect(
       continue;
     }
     t.comments_count = commentsCount.get(t.id) ?? 0;
+
+    // Phase 4 dependencies — hide umbrella container rows by default.
+    // Children of a chain already appear individually; the umbrella's
+    // job is rollup, which would clutter the busy list view. The
+    // /tasks "📦 הצג עטיפות" chip toggle flips include_umbrellas=true
+    // to surface them. Applied BEFORE the access gate so the count
+    // exclusion is consistent regardless of role.
+    if (t.is_umbrella && !filters.include_umbrellas) continue;
 
     // Non-admin access gate.
     if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) continue;

@@ -1265,6 +1265,32 @@ export async function tasksCreateDirect(
     );
   }
 
+  // Phase 4 dependencies — newborn child of an umbrella might shift
+  // the umbrella's derived status (e.g. first non-blocked child →
+  // umbrella moves awaiting_handling → in_progress). Best-effort
+  // recompute; doesn't bubble.
+  if (task.umbrella_id) {
+    try {
+      const { recomputeUmbrellaStatus } = await import("@/lib/umbrellaRecompute");
+      const r = await recomputeUmbrellaStatus({
+        subjectEmail,
+        umbrellaId: task.umbrella_id,
+        commentsSpreadsheetId: commentsSsId,
+        nowIso: now,
+      });
+      if (r.ok && r.changed) {
+        console.log(
+          `[tasksWriteDirect] umbrella ${task.umbrella_id} status: ${r.previous} → ${r.next} (after child ${task.id} created)`,
+        );
+      }
+    } catch (e) {
+      console.log(
+        `[tasksWriteDirect] umbrella recompute on create threw for ${task.umbrella_id}:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+
   return { ok: true, task };
 }
 
@@ -1960,6 +1986,42 @@ async function tasksUpdateDirectInner(
         `[tasksWriteDirect] cascade threw for ${taskId}:`,
         e instanceof Error ? e.message : String(e),
       );
+    }
+  }
+
+  // Phase 4 dependencies — umbrella recompute. When this task is a
+  // child of an umbrella container (`umbrella_id` is set), any status
+  // change might shift the umbrella's derived status. Re-derive +
+  // persist if changed. Best-effort; cascade-style soft failure.
+  // Fires for ALL status changes, not just terminals — e.g. a child
+  // moving from awaiting_handling → in_progress should flip the
+  // umbrella from awaiting_handling → in_progress too.
+  if (changes.status) {
+    const fresh = rowToTask(freshRow, idx);
+    if (fresh.umbrella_id) {
+      try {
+        const { recomputeUmbrellaStatus } = await import("@/lib/umbrellaRecompute");
+        const r = await recomputeUmbrellaStatus({
+          subjectEmail,
+          umbrellaId: fresh.umbrella_id,
+          commentsSpreadsheetId: commentsSsId,
+          nowIso: now,
+        });
+        if (r.ok && r.changed) {
+          console.log(
+            `[tasksWriteDirect] umbrella ${fresh.umbrella_id} status: ${r.previous} → ${r.next} (after child ${taskId} → ${changes.status})`,
+          );
+        } else if (!r.ok) {
+          console.log(
+            `[tasksWriteDirect] umbrella recompute failed for ${fresh.umbrella_id}: ${r.error}`,
+          );
+        }
+      } catch (e) {
+        console.log(
+          `[tasksWriteDirect] umbrella recompute threw for ${fresh.umbrella_id}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
     }
   }
 
