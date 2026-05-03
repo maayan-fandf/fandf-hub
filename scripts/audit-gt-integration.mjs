@@ -189,19 +189,60 @@ const I_GTASKS = idx("google_tasks");
 const I_PROJECT = idx("project");
 const I_AUTHOR = idx("author_email");
 
-const phantom = []; // GT id in cell, not in user's lists
-const closedButOpen = []; // GT completed but task row still open
+const phantom = []; // GT id in cell, GT not found anywhere (after .get fallback)
+const closedButOpen = []; // GT completed but task row still open AND
+                          // it's not a kind-status pair we expect to be closed
+const expectedHistory = []; // closed GT that's expected history (e.g. kind=todo
+                            // on a row at awaiting_approval — the close is what
+                            // TRIGGERED that status; the cell ref is kept for
+                            // audit, not because we expect it to still be open)
 const live = []; // both open
 const cellMisses = []; // entries that don't apply to this user (skipped silently)
 
 const OPEN_STATUSES = new Set([
   "open",
   "in_progress",
+  "awaiting_handling",
   "awaiting_approval",
+  "awaiting_clarification",
   "blocked",
   "todo",
   "",
 ]);
+
+// Kind→status pairs where a closed GT is the EXPECTED post-cascade state,
+// not a discrepancy. Mirrors lib/autoTransition.ts's transition matrix.
+function isExpectedClosed(kind, status) {
+  if (kind === "todo" && status === "awaiting_approval") return true;
+  if (kind === "todo" && status === "done") return true;
+  if (kind === "todo" && status === "cancelled") return true;
+  if (kind === "approve" && status === "done") return true;
+  if (kind === "approve" && status === "cancelled") return true;
+  if (kind === "clarify" && status === "in_progress") return true;
+  if (kind === "clarify" && status === "done") return true;
+  if (kind === "clarify" && status === "cancelled") return true;
+  return false;
+}
+
+// One-shot per-id .get() fallback for ids that didn't appear in the
+// list pages. Tasks API's tasks.list with showCompleted+showHidden
+// can omit some recently-completed tasks even when they exist; tasks.
+// get() on the same id succeeds. Cached so repeated cell entries
+// don't double-fetch.
+const getFallbackCache = new Map();
+async function getOneById(id) {
+  if (getFallbackCache.has(id)) return getFallbackCache.get(id);
+  let result;
+  try {
+    const r = await tasksApi.tasks.get({ tasklist: defaultList.id, task: id });
+    result = { id, status: r.data.status };
+  } catch (e) {
+    const code = e?.response?.status;
+    result = code === 404 ? null : { id, status: "unknown" };
+  }
+  getFallbackCache.set(id, result);
+  return result;
+}
 
 for (let r = 1; r < cRows.length; r++) {
   const row = cRows[r];
@@ -212,36 +253,55 @@ for (let r = 1; r < cRows.length; r++) {
   try {
     cell = JSON.parse(String(row[I_GTASKS] ?? "{}") || "{}");
   } catch {}
-  for (const [key, entry] of Object.entries(cell || {})) {
+  // Normalize legacy {email:{...}} shape to array.
+  const entries = Array.isArray(cell)
+    ? cell
+    : cell && typeof cell === "object"
+    ? Object.values(cell)
+    : [];
+  for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
     const u = String(entry.u || "").toLowerCase();
     if (u !== SUBJECT) {
-      cellMisses.push({ row: r, key, u });
+      cellMisses.push({ row: r, u });
       continue;
     }
     const tId = String(entry.t || "").trim();
     if (!tId) continue;
-    const gt = allById.get(tId);
+    const refKind = entry.kind || "todo";
+    let gt = allById.get(tId);
+    if (!gt) {
+      // Fallback: tasks.list missed it but tasks.get may still find it.
+      const direct = await getOneById(tId);
+      if (direct) gt = { id: direct.id, status: direct.status };
+    }
     const ctx = {
       taskRowId: String(row[I_ID] ?? "").trim(),
       title: String(row[I_TITLE] ?? "").trim(),
       project: String(row[I_PROJECT] ?? "").trim(),
       hubStatus: status,
       gtId: tId,
+      gtKind: refKind,
       gtStatus: gt?.status || null,
     };
-    if (!gt) phantom.push(ctx);
-    else if (gt.status === "completed") closedButOpen.push(ctx);
-    else live.push(ctx);
+    if (!gt) {
+      phantom.push(ctx);
+    } else if (gt.status === "completed") {
+      if (isExpectedClosed(refKind, status)) expectedHistory.push(ctx);
+      else closedButOpen.push(ctx);
+    } else {
+      live.push(ctx);
+    }
   }
 }
 
 console.log(
   `  Open task rows referencing ${SUBJECT} via google_tasks cell:`,
 );
-console.log(`    LIVE (both open):                       ${live.length}`);
-console.log(`    PHANTOM (cell ref, GT not found):       ${phantom.length}`);
-console.log(`    GT-CLOSED-BUT-ROW-OPEN (poller lag):    ${closedButOpen.length}`);
+console.log(`    LIVE (open ref + open GT):              ${live.length}`);
+console.log(`    EXPECTED-HISTORY (closed by design):    ${expectedHistory.length}`);
+console.log(`    PHANTOM (GT not found via list OR get): ${phantom.length}`);
+console.log(`    UNEXPECTED-CLOSED (real drift):         ${closedButOpen.length}`);
 console.log(`  (entries for other users skipped: ${cellMisses.length})`);
 
 if (phantom.length) {
@@ -253,10 +313,10 @@ if (phantom.length) {
   }
 }
 if (closedButOpen.length) {
-  console.log(`\n  --- GT CLOSED BUT ROW OPEN (${closedButOpen.length}) ---`);
+  console.log(`\n  --- UNEXPECTED-CLOSED (real drift, ${closedButOpen.length}) ---`);
   for (const c of closedButOpen) {
     console.log(
-      `    - rowId=${c.taskRowId}  proj="${c.project}"  hubStatus=${c.hubStatus}  gtId=${c.gtId}  title="${c.title.slice(0, 60)}"`,
+      `    - rowId=${c.taskRowId}  kind=${c.gtKind}  proj="${c.project}"  hubStatus=${c.hubStatus}  gtId=${c.gtId}  title="${c.title.slice(0, 60)}"`,
     );
   }
 }
