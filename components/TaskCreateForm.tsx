@@ -134,6 +134,19 @@ export default function TaskCreateForm({
   const [assignees, setAssignees] = useState(defaultAssignees);
   const [campaign, setCampaign] = useState("");
   const [title, setTitle] = useState(defaultTitle);
+  // Phase 5b — chain mode. When the user opts in, the form switches
+  // to a multi-step picker: the title is the umbrella's title, and
+  // the body becomes a list of step rows (title + assignees per step).
+  // Submit goes to /api/worktasks/create-chain instead of /create.
+  // Default OFF preserves the standard single-task UX as the dominant
+  // path (per the locked design — most quick client requests are NOT
+  // chains).
+  const [chainMode, setChainMode] = useState(false);
+  type ChainStep = { title: string; assignees: string };
+  const [steps, setSteps] = useState<ChainStep[]>([
+    { title: "", assignees: "" },
+    { title: "", assignees: "" },
+  ]);
   // Folder selection. Default is "use existing campaign folder" with
   // an empty folderId — the picker auto-selects the campaign folder
   // when it resolves (or, when the campaign folder doesn't exist yet,
@@ -304,6 +317,72 @@ export default function TaskCreateForm({
     setError(null);
     const fd = new FormData(e.currentTarget);
 
+    // Phase 5b chain branch — when the user opted into "צור כשרשרת",
+    // build the chain payload and POST to the chain endpoint instead
+    // of the standalone-create endpoint. Validation: at least one
+    // step with a title (the orchestrator throws otherwise; we surface
+    // it earlier for nicer UX).
+    if (chainMode) {
+      const trimmedSteps = steps
+        .map((s) => ({
+          title: s.title.trim(),
+          assignees: s.assignees
+            .split(/[,;\n]/)
+            .map((x) => x.trim())
+            .filter(Boolean),
+        }))
+        .filter((s) => s.title); // drop blank rows
+      if (trimmedSteps.length === 0) {
+        setError("יש להוסיף לפחות שלב אחד עם כותרת");
+        setSaving(false);
+        return;
+      }
+      if (!title.trim()) {
+        setError("כותרת השרשרת חובה");
+        setSaving(false);
+        return;
+      }
+      const chainPayload = {
+        project,
+        company,
+        brief: String(fd.get("brief") || ""),
+        campaign: campaign.trim(),
+        departments,
+        umbrella: {
+          title: title.trim(),
+          description: String(fd.get("description") || ""),
+        },
+        steps: trimmedSteps.map((s) => ({
+          title: s.title,
+          assignees: s.assignees,
+          // Per-step approver / departments / due could be exposed in
+          // a richer step editor later; v1 keeps the row compact.
+          approver_email: approver,
+          departments,
+        })),
+      };
+      try {
+        const res = await fetch("/api/worktasks/create-chain", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(chainPayload),
+        });
+        const data = (await res.json()) as
+          | { ok: true; umbrella: { id: string }; children: { id: string }[] }
+          | { ok: false; error: string };
+        if (!res.ok || !data.ok) {
+          throw new Error("error" in data ? data.error : "Failed to create chain");
+        }
+        // Land on the umbrella detail page — user gets the rollup view
+        // with all children listed.
+        router.push(`/tasks/${encodeURIComponent(data.umbrella.id)}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setSaving(false);
+      }
+      return;
+    }
+
     const assigneeList = assignees
       .split(/[,;\n]/)
       .map((s) => s.trim())
@@ -464,15 +543,38 @@ export default function TaskCreateForm({
         </label>
       </details>
 
+      {/* Phase 5b dependencies — chain-mode toggle. Default off
+          preserves the current single-task UX as the dominant path
+          (per the locked design — "keep current scheme for shorter
+          tasks"). Flipping on swaps the title/folder/assignees/etc.
+          fields for a multi-step picker; submit goes to the chain
+          endpoint. The toggle is intentionally subtle (small chip,
+          not a banner) so quick-create flows aren't disrupted. */}
+      <div className="task-form-chain-toggle-row">
+        <label className="task-form-chain-toggle">
+          <input
+            type="checkbox"
+            checked={chainMode}
+            onChange={(e) => setChainMode(e.target.checked)}
+          />
+          <span>📦 צור כשרשרת (כמה שלבים עם העברה אוטומטית בין מבצעים)</span>
+        </label>
+      </div>
+
       <label>
-        כותרת <span className="task-form-required" aria-hidden>*</span>
+        {chainMode ? "כותרת השרשרת" : "כותרת"}{" "}
+        <span className="task-form-required" aria-hidden>*</span>
         <input
           type="text"
           name="title"
           required
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="לדוגמה: Minisite_desktop — דף נחיתה לקמפיין כפר אז״ר"
+          placeholder={
+            chainMode
+              ? "לדוגמה: עדכון ויזואל לקמפיין Q1"
+              : "לדוגמה: Minisite_desktop — דף נחיתה לקמפיין כפר אז״ר"
+          }
         />
       </label>
 
@@ -486,16 +588,21 @@ export default function TaskCreateForm({
         />
       </label>
 
-      <DriveFolderPicker
-        company={company}
-        project={project}
-        campaign={campaign}
-        defaultNewName={suggestedFolderName}
-        value={folderSelection}
-        onChange={handleFolderChange}
-        onCampaignChange={setCampaign}
-        disabled={!project}
-      />
+      {/* Drive folder picker hidden in chain mode — umbrella has no
+          folder; each child gets its own via the standard create
+          path when the chain orchestrator iterates them. */}
+      {!chainMode && (
+        <DriveFolderPicker
+          company={company}
+          project={project}
+          campaign={campaign}
+          defaultNewName={suggestedFolderName}
+          value={folderSelection}
+          onChange={handleFolderChange}
+          onCampaignChange={setCampaign}
+          disabled={!project}
+        />
+      )}
 
       <label>
         מחלקות{" "}
@@ -518,45 +625,127 @@ export default function TaskCreateForm({
         </div>
       </label>
 
-      <div className="task-form-row">
-        <label>
-          סוג
-          <select
-            name="kind"
-            defaultValue={kindOptions[0]?.val ?? "ad_creative"}
-            key={kindOptions.map((k) => k.val).join("|")}
-          >
-            {kindOptions.map((k) => (
-              <option key={k.val} value={k.val}>
-                {k.label}
+      {/* Kind / priority / date are per-task concerns — in chain mode
+          they'd apply to the umbrella, which has no own work. Hide
+          them; each child step inherits chain-level departments and
+          gets its own assignees via the step picker below. */}
+      {!chainMode && (
+        <div className="task-form-row">
+          <label>
+            סוג
+            <select
+              name="kind"
+              defaultValue={kindOptions[0]?.val ?? "ad_creative"}
+              key={kindOptions.map((k) => k.val).join("|")}
+            >
+              {kindOptions.map((k) => (
+                <option key={k.val} value={k.val}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            דחיפות
+            <select name="priority" defaultValue="2">
+              <option value="1">1 — גבוהה</option>
+              <option value="2">2 — רגילה</option>
+              <option value="3">3 — נמוכה</option>
+            </select>
+          </label>
+
+          <label className="task-form-date-time">
+            תאריך מבוקש
+            <div className="date-time-inputs">
+              <DatePicker name="requested_date" />
+              <input
+                type="time"
+                name="requested_time"
+                aria-label="שעה (אופציונלי)"
+                title="שעה (אופציונלי)"
+              />
+            </div>
+          </label>
+        </div>
+      )}
+
+      {/* Step picker for chain mode — each row is a sequential step
+          with its own title + assignees. The chain orchestrator
+          applies blocks/blocked_by edges in order; first step starts
+          immediately, the rest start blocked until cascade unblocks
+          them. Per-step approver/due/departments could expand here
+          later; v1 keeps the row compact (chain-level approver +
+          departments inherited). */}
+      {chainMode && (
+        <fieldset className="task-form-chain-steps">
+          <legend>שלבים בשרשרת</legend>
+          <div className="task-form-chain-steps-help">
+            כל שלב נפתח אוטומטית כשהשלב הקודם מסומן בוצע. השלב הראשון מתחיל מיד; השאר ממתינים בסטטוס &quot;חסום&quot;.
+          </div>
+          {steps.map((s, i) => (
+            <div key={i} className="task-form-chain-step-row">
+              <span className="task-form-chain-step-num">{i + 1}</span>
+              <input
+                type="text"
+                value={s.title}
+                onChange={(e) => {
+                  const next = [...steps];
+                  next[i] = { ...next[i], title: e.target.value };
+                  setSteps(next);
+                }}
+                placeholder={`שלב ${i + 1} — כותרת (לדוגמה: קופי)`}
+                className="task-form-chain-step-title"
+              />
+              <input
+                type="text"
+                value={s.assignees}
+                onChange={(e) => {
+                  const next = [...steps];
+                  next[i] = { ...next[i], assignees: e.target.value };
+                  setSteps(next);
+                }}
+                placeholder="מבצע — name@fandf.co.il"
+                list="tasks-people-chain"
+                className="task-form-chain-step-assignee"
+              />
+              <button
+                type="button"
+                className="btn-ghost btn-sm"
+                onClick={() => setSteps(steps.filter((_, j) => j !== i))}
+                disabled={steps.length === 1}
+                aria-label={`הסר שלב ${i + 1}`}
+                title="הסר שלב"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <datalist id="tasks-people-chain">
+            {filteredPeople.map((p) => (
+              <option key={p.email} value={p.email}>
+                {p.name} · {p.role}
               </option>
             ))}
-          </select>
-        </label>
+          </datalist>
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={() =>
+              setSteps([...steps, { title: "", assignees: "" }])
+            }
+          >
+            + הוסף שלב
+          </button>
+        </fieldset>
+      )}
 
-        <label>
-          דחיפות
-          <select name="priority" defaultValue="2">
-            <option value="1">1 — גבוהה</option>
-            <option value="2">2 — רגילה</option>
-            <option value="3">3 — נמוכה</option>
-          </select>
-        </label>
-
-        <label className="task-form-date-time">
-          תאריך מבוקש
-          <div className="date-time-inputs">
-            <DatePicker name="requested_date" />
-            <input
-              type="time"
-              name="requested_time"
-              aria-label="שעה (אופציונלי)"
-              title="שעה (אופציונלי)"
-            />
-          </div>
-        </label>
-      </div>
-
+      {/* Approver / PM / assignees only apply to single tasks. In
+          chain mode the umbrella has no assignee; per-step assignees
+          live in the step picker above. The approver is shared
+          across the chain (single approver acts as the gate for
+          every step's `awaiting_approval` transition). */}
+      {!chainMode && (
       <div className="task-form-row">
         <label>
           גורם מאשר
@@ -646,6 +835,23 @@ export default function TaskCreateForm({
           )}
         </label>
       </div>
+      )}
+
+      {/* Chain-mode shared approver — sits inline below the step
+          picker, applies to every step. PM stays implicit (umbrella
+          inherits from Keys). */}
+      {chainMode && (
+        <label className="task-form-chain-shared-approver">
+          גורם מאשר משותף לכל השלבים{" "}
+          <span className="task-form-label-hint">(אופציונלי — חל על כל שלב שעובר ל&quot;ממתין לאישור&quot;)</span>
+          <PersonCombobox
+            value={approver}
+            onChange={setApprover}
+            options={people}
+            placeholder="חפש לפי שם או מייל"
+          />
+        </label>
+      )}
 
       {currentUserEmail && (
         <div className="task-form-author-line">
@@ -662,7 +868,9 @@ export default function TaskCreateForm({
             submitModeRef.current = "plain";
           }}
         >
-          {saving ? "יוצר…" : "צור משימה"}
+          {saving
+            ? chainMode ? "יוצר שרשרת…" : "יוצר…"
+            : chainMode ? "📦 צור שרשרת" : "צור משימה"}
         </button>
         {cleanupGmailTaskId && (
           <button

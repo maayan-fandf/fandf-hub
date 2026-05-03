@@ -6492,6 +6492,70 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   white-space: nowrap;
 }
 
+/* Phase 5b dependencies — chain mode in TaskCreateForm. The toggle
+   sits subtly above the title field; the step picker replaces the
+   per-task fields when active. */
+.task-form-chain-toggle-row {
+  margin: .5em 0;
+}
+.task-form-chain-toggle {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  cursor: pointer;
+  font-size: .95em;
+  color: #475569;
+}
+.task-form-chain-toggle input[type="checkbox"] {
+  width: 1.1em;
+  height: 1.1em;
+  cursor: pointer;
+}
+.task-form-chain-steps {
+  margin-top: 1em;
+  padding: .8em 1em;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.task-form-chain-steps legend {
+  font-weight: 600;
+  padding: 0 .4em;
+  color: #1e293b;
+}
+.task-form-chain-steps-help {
+  font-size: .85em;
+  color: #64748b;
+  margin-bottom: .8em;
+}
+.task-form-chain-step-row {
+  display: grid;
+  grid-template-columns: 1.6em 1fr 1fr 2em;
+  gap: .5em;
+  align-items: center;
+  margin-bottom: .4em;
+}
+.task-form-chain-step-num {
+  text-align: center;
+  font-weight: 600;
+  color: #64748b;
+  background: #e2e8f0;
+  border-radius: 999px;
+  padding: .15em 0;
+  font-size: .9em;
+}
+.task-form-chain-step-title,
+.task-form-chain-step-assignee {
+  padding: .4em .6em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.task-form-chain-shared-approver {
+  margin-top: 1em;
+  display: block;
+}
+
 .tasks-other {
   margin: 2em 0;
   border: 1px dashed var(--border);
