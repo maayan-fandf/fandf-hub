@@ -12,10 +12,15 @@
  */
 
 import { revalidateTag } from "next/cache";
-import { sheetsClient, chatSpaceCreateClient } from "@/lib/sa";
+import {
+  sheetsClient,
+  chatSpaceCreateClient,
+  chatMembershipsClient,
+} from "@/lib/sa";
 import { findChatSpaceColumnIndex, invalidateKeysCache } from "@/lib/keys";
 import { chatSpaceUrlFromWebhook } from "@/lib/projectsDirect";
 import { parseSpaceId } from "@/lib/chat";
+import { HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -40,6 +45,18 @@ export type ChatSpaceCreateResult =
       spaceName: string; // e.g. "spaces/AAAA..."
       spaceUri: string; // chat.google.com/room/<id>
       keysCellUrl: string; // mail-embedded deep-link as written to Keys
+      /** Outcome of the auto-invite step (best-effort — the space
+       *  itself is already created and Keys-linked when this runs).
+       *  `addedEmails` lists who got added; `failedEmails` is the
+       *  subset whose membership.create call failed (with reason).
+       *  `scopeMissing=true` when the underlying SA scope
+       *  (`chat.memberships`) isn't granted via DWD yet — UI surfaces
+       *  this as a one-time setup hint. */
+      invite: {
+        addedEmails: string[];
+        failedEmails: { email: string; reason: string }[];
+        scopeMissing: boolean;
+      };
     }
   | {
       ok: false;
@@ -109,6 +126,13 @@ export async function createChatSpaceForProject(
   //       result: many empty duplicates needing manual cleanup.
   let company = "";
   let existingSpaceId = "";
+  // Roster cell raw values captured during the same pre-read pass so
+  // we don't reread Keys for the auto-invite step. Names in C/D are
+  // Google People chips (display names); J/K are comma-separated.
+  let rosterMediaManager = ""; // col C
+  let rosterAcctManager = ""; // col D
+  let rosterInternalOnly = ""; // col J
+  let rosterClientFacing = ""; // col K
   // Tracks whether the pre-read SUCCESSFULLY ran (regardless of match
   // outcome). When pre-read throws (Sheets API down, perms drift, …)
   // we don't know whether the row exists — skip the strict preflight
@@ -137,6 +161,13 @@ export async function createChatSpaceForProject(
       const iProj = headers.indexOf("פרוייקט");
       const iCo = headers.indexOf("חברה");
       const iChat = findChatSpaceColumnIndex(headers);
+      const iCamp = headers.indexOf("מנהל קמפיינים");
+      const iAcct =
+        headers.indexOf("EMAIL Manager") >= 0
+          ? headers.indexOf("EMAIL Manager")
+          : headers.indexOf("EMAIL");
+      const iInternal = headers.indexOf("Access — internal only");
+      const iCf = headers.indexOf("Client-facing");
       if (iProj >= 0) {
         const r = findRowIndex(values, iProj, iCo);
         foundRowIndex = r;
@@ -144,6 +175,10 @@ export async function createChatSpaceForProject(
           company = iCo >= 0 ? String(values[r][iCo] ?? "").trim() : "";
           existingSpaceId =
             iChat >= 0 ? parseSpaceId(String(values[r][iChat] ?? "").trim()) : "";
+          rosterMediaManager = iCamp >= 0 ? String(values[r][iCamp] ?? "").trim() : "";
+          rosterAcctManager = iAcct >= 0 ? String(values[r][iAcct] ?? "").trim() : "";
+          rosterInternalOnly = iInternal >= 0 ? String(values[r][iInternal] ?? "").trim() : "";
+          rosterClientFacing = iCf >= 0 ? String(values[r][iCf] ?? "").trim() : "";
         }
       }
     }
@@ -168,7 +203,10 @@ export async function createChatSpaceForProject(
   // (b) Idempotency: if a space is already linked, return early. The
   // caller (CreateChatSpaceButton on the project page) will treat
   // this as success — router.refresh() picks up the existing URL on
-  // the next render, exactly the same as a fresh create would.
+  // the next render, exactly the same as a fresh create would. Empty
+  // invite-result: we don't re-invite roster members on idempotent
+  // returns; that's a separate "sync members" feature if the roster
+  // changes later.
   if (existingSpaceId) {
     const keysCellUrl = `https://mail.google.com/chat/u/0/#chat/space/${existingSpaceId}`;
     return {
@@ -177,12 +215,26 @@ export async function createChatSpaceForProject(
       spaceName: `spaces/${existingSpaceId}`,
       spaceUri: keysCellUrl,
       keysCellUrl,
+      invite: { addedEmails: [], failedEmails: [], scopeMissing: false },
     };
   }
 
   const displayName = company ? `${company} | ${project}` : project;
 
   // Step 1: create the Space via Chat API.
+  //
+  // accessSettings.audience = "audiences/default" makes the space
+  // DISCOVERABLE to the entire F&F Workspace ("All of F&F" in the
+  // Chat UI). Mirrors the older spaces that were created manually in
+  // Chat UI and shipped open-to-the-org by default. Skips the need
+  // to invite each project's roster (`Keys` cols C/D/J/K) one-by-one,
+  // and skips needing the `chat.memberships` DWD scope entirely —
+  // anyone at @fandf.co.il finds and joins the space themselves.
+  //
+  // externalUserAllowed stays true so external clients (col E) can
+  // still be invited later if the org policy changes; the audience
+  // setting controls *internal* discoverability, the externalUser
+  // flag controls *external* membership.
   let spaceName = "";
   let spaceUri = "";
   try {
@@ -192,6 +244,10 @@ export async function createChatSpaceForProject(
         spaceType: "SPACE",
         displayName,
         externalUserAllowed: true,
+        accessSettings: {
+          accessState: "DISCOVERABLE",
+          audience: "audiences/default",
+        },
       },
     });
     spaceName = res.data.name || "";
@@ -296,5 +352,181 @@ export async function createChatSpaceForProject(
     };
   }
 
-  return { ok: true, project, spaceName, spaceUri, keysCellUrl };
+  // Per-member invite is no longer needed — the space is created with
+  // accessSettings.audience="audiences/default" above, so anyone in
+  // F&F can find/view/join via Chat's directory + "Allow requests to
+  // join". Helper kept below in case we need it for future "force-add
+  // these specific people" scenarios. The roster fields captured at
+  // pre-read are unused for this code path; intentionally left in
+  // place so the helper still works if we ever wire it back in.
+  void rosterMediaManager;
+  void rosterAcctManager;
+  void rosterInternalOnly;
+  void rosterClientFacing;
+
+  return {
+    ok: true,
+    project,
+    spaceName,
+    spaceUri,
+    keysCellUrl,
+    invite: { addedEmails: [], failedEmails: [], scopeMissing: false },
+  };
+}
+
+/**
+ * Resolve every name in the project's roster cells (C/D/J/K) to an
+ * email via `names to emails`, dedupe with admins, filter to
+ * @fandf.co.il (external clients live in col E and are NOT invited
+ * to internal chat spaces by design), and add each as a member of
+ * the freshly-created space.
+ *
+ * Returns counts + per-failure reason. The space itself stays alive
+ * regardless of how this goes — the caller treats `scopeMissing` and
+ * any non-empty `failedEmails` as warnings, not errors.
+ */
+async function inviteProjectRoster(
+  adminEmail: string,
+  spaceName: string,
+  roster: {
+    mediaManager: string;
+    acctManager: string;
+    internalOnly: string;
+    clientFacing: string;
+  },
+): Promise<{
+  addedEmails: string[];
+  failedEmails: { email: string; reason: string }[];
+  scopeMissing: boolean;
+}> {
+  const empty = { addedEmails: [], failedEmails: [], scopeMissing: false };
+  // 1. Read the names→emails map once.
+  let nameToEmail = new Map<string, string>();
+  try {
+    const sheets = sheetsClient(adminEmail);
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: "names to emails",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const values = (r.data.values ?? []) as unknown[][];
+    if (values.length >= 2) {
+      const headers = (values[0] as unknown[]).map((h) =>
+        String(h ?? "").trim().toLowerCase(),
+      );
+      const iName = headers.findIndex((h) =>
+        ["full name", "name", "full_name", "fullname"].includes(h),
+      );
+      const iEmail = headers.findIndex((h) =>
+        ["email", "e-mail", "mail"].includes(h),
+      );
+      if (iName >= 0 && iEmail >= 0) {
+        for (let i = 1; i < values.length; i++) {
+          const name = String(values[i][iName] ?? "").trim().toLowerCase();
+          const email = String(values[i][iEmail] ?? "").trim().toLowerCase();
+          if (name && email) nameToEmail.set(name, email);
+        }
+      }
+    }
+  } catch (e) {
+    console.log(
+      "[chatSpaceCreate] names-to-emails read failed:",
+      e instanceof Error ? e.message : String(e),
+    );
+    // Continue with empty map — J/K cells that already contain raw
+    // emails will still resolve via the `@` heuristic below.
+  }
+
+  // 2. Build the candidate email set from C/D/J/K + admins. Each
+  // entry is either a display name (look up) or already an email
+  // (use as-is). We dedupe by lowercased email at the end.
+  function resolveOne(token: string): string {
+    const t = token.trim();
+    if (!t) return "";
+    if (t.includes("@")) return t.toLowerCase();
+    const hit = nameToEmail.get(t.toLowerCase());
+    return hit || "";
+  }
+  function splitNames(cell: string): string[] {
+    return cell
+      .split(/[,;\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  const candidates = new Set<string>();
+  for (const t of [roster.mediaManager, roster.acctManager]) {
+    const e = resolveOne(t);
+    if (e) candidates.add(e);
+  }
+  for (const t of splitNames(roster.internalOnly)) {
+    const e = resolveOne(t);
+    if (e) candidates.add(e);
+  }
+  for (const t of splitNames(roster.clientFacing)) {
+    const e = resolveOne(t);
+    if (e) candidates.add(e);
+  }
+  for (const a of HUB_ADMIN_EMAILS) {
+    candidates.add(a.toLowerCase());
+  }
+  // The space creator (adminEmail) is implicitly a member; skip.
+  candidates.delete(adminEmail.toLowerCase());
+  // Filter: chat space is internal-only — drop any non-@fandf.co.il
+  // entries. Defensive: external clients on J/K (rare) or admins
+  // imported from outside the domain shouldn't end up here.
+  const internalOnlyEmails = [...candidates].filter((e) =>
+    e.endsWith("@fandf.co.il"),
+  );
+  if (internalOnlyEmails.length === 0) return empty;
+
+  // 3. Add each as a member. The Chat API resolves `users/<email>`
+  // for users in the same workspace, so we don't need a per-email
+  // gaia lookup.
+  const chat = chatMembershipsClient(adminEmail);
+  const addedEmails: string[] = [];
+  const failedEmails: { email: string; reason: string }[] = [];
+  let scopeMissing = false;
+  for (const email of internalOnlyEmails) {
+    try {
+      await chat.spaces.members.create({
+        parent: spaceName,
+        requestBody: {
+          member: { name: `users/${email}`, type: "HUMAN" },
+        },
+      });
+      addedEmails.push(email);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const code =
+        (e as { code?: number; response?: { status?: number } }).code ??
+        (e as { response?: { status?: number } }).response?.status;
+      // 409 ALREADY_EXISTS — already a member. Idempotent success.
+      if (code === 409 || /already.*member|already.*exist/i.test(msg)) {
+        addedEmails.push(email);
+        continue;
+      }
+      // Same scope-missing detection as the create-space path.
+      if (
+        code === 403 ||
+        /unauthorized_client/i.test(msg) ||
+        /client not authorized/i.test(msg) ||
+        /access not configured/i.test(msg)
+      ) {
+        scopeMissing = true;
+        // Once we see "scope missing", every subsequent call will
+        // hit the same wall — stop trying so we don't spam logs.
+        failedEmails.push({ email, reason: "DWD scope chat.memberships not granted" });
+        break;
+      }
+      failedEmails.push({ email, reason: msg });
+    }
+  }
+  if (scopeMissing) {
+    console.log(
+      "[chatSpaceCreate] members invite blocked: DWD scope chat.memberships missing. " +
+        "Add it at Workspace Admin → Security → API controls → Domain-wide delegation → " +
+        "client 102907403320696302169.",
+    );
+  }
+  return { addedEmails, failedEmails, scopeMissing };
 }

@@ -72,6 +72,8 @@ export async function POST(req: Request) {
   }
   // Map to the response shape the existing ChatSpacesList client
   // already understands: { ok, space: { name, spaceUri, displayName } }.
+  // Plus `invite` so the UI can surface partial-success info (members
+  // added vs failed, scope-missing hint).
   return NextResponse.json({
     ok: true,
     space: {
@@ -80,5 +82,6 @@ export async function POST(req: Request) {
       displayName: result.project,
     },
     keysCellUrl: result.keysCellUrl,
+    invite: result.invite,
   });
 }

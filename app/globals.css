@@ -2123,6 +2123,16 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   max-width: 32em;
   text-align: center;
 }
+.create-chat-space-info {
+  font-size: 0.8em;
+  color: var(--muted);
+  max-width: 32em;
+  text-align: center;
+  padding: .35em .6em;
+  background: var(--surface-soft, #f4f4f4);
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+}
 
 /* Composer at the bottom of the internal Chat tab. Same bordered-
    box framing as .client-chat-composer on the client tab — the two

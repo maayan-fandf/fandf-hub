@@ -266,6 +266,27 @@ export function chatSpaceCreateClient(subjectEmail: string) {
   return google.chat({ version: "v1", auth });
 }
 
+/**
+ * Chat client scoped for adding members to existing spaces. Used by
+ * the "Create Chat Space" flow to invite the project's roster (Keys
+ * cols C/D/J/K + admins, internal-only) right after the space is
+ * created — so people don't have to be invited one-by-one in the
+ * Chat UI.
+ *
+ * REQUIRES adding the scope to DWD client 102907403320696302169 in
+ * Workspace Admin → Security → API controls → Domain-wide delegation:
+ *   - https://www.googleapis.com/auth/chat.memberships
+ * Until that's granted, calls return 403 / unauthorized_client. The
+ * create flow logs the failure and returns success with a partial-
+ * fan-out warning rather than rolling back the space.
+ */
+export function chatMembershipsClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/chat.memberships",
+  ]);
+  return google.chat({ version: "v1", auth });
+}
+
 /** True when the hub is configured to use the direct SA-backed reads. */
 export function useSATasksReads(): boolean {
   return String(process.env.USE_SA_TASKS_READS || "").trim() === "1";

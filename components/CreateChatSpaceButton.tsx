@@ -29,11 +29,17 @@ export default function CreateChatSpaceButton({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Lightweight info banner shown after a successful create — covers
+  // partial-fan-out cases (some members invited, some failed) and the
+  // "scope not yet granted" first-time setup case. Cleared on the
+  // next click.
+  const [info, setInfo] = useState<string | null>(null);
 
   async function onClick() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       const res = await fetch("/api/worktasks/project-space-create", {
         method: "POST",
@@ -44,11 +50,39 @@ export default function CreateChatSpaceButton({
         }),
       });
       const data = (await res.json()) as
-        | { ok: true; space: { name: string; spaceUri: string; displayName: string } }
+        | {
+            ok: true;
+            space: { name: string; spaceUri: string; displayName: string };
+            invite?: {
+              addedEmails: string[];
+              failedEmails: { email: string; reason: string }[];
+              scopeMissing: boolean;
+            };
+          }
         | { ok: false; error: string; howToFix?: string };
       if (!("ok" in data) || !data.ok) {
         const fix = "howToFix" in data && data.howToFix ? `\n${data.howToFix}` : "";
         throw new Error(("error" in data && data.error) || "create failed" + fix);
+      }
+      // Surface invite outcome. Three cases:
+      //   - All members added: show count.
+      //   - Some failed (scope missing): one-time setup hint.
+      //   - Idempotent return (existing space): empty addedEmails;
+      //     skip the banner so we don't confuse the user.
+      const inv = data.invite;
+      if (inv) {
+        if (inv.scopeMissing) {
+          setInfo(
+            "החלל נוצר, אבל הוספת חברים אוטומטית דורשת סקופ DWD נוסף " +
+              "(chat.memberships). הוסף ב-Workspace Admin ונסה שוב, או הזמן ידנית.",
+          );
+        } else if (inv.addedEmails.length > 0) {
+          setInfo(`✓ ${inv.addedEmails.length} חברים הוזמנו אוטומטית.`);
+        } else if (inv.failedEmails.length > 0) {
+          setInfo(
+            `החלל נוצר, אבל ${inv.failedEmails.length} הזמנות נכשלו. בדוק יומנים.`,
+          );
+        }
       }
       // Keys cache TTL is 5 min; refresh forces a re-render that
       // reads through. The route handler itself busts the keys tag
@@ -75,6 +109,11 @@ export default function CreateChatSpaceButton({
       {error && (
         <div className="create-chat-space-error" role="alert">
           {error}
+        </div>
+      )}
+      {info && !error && (
+        <div className="create-chat-space-info" role="status">
+          {info}
         </div>
       )}
     </div>
