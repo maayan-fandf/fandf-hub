@@ -168,7 +168,10 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function genId(): string {
+// Exported for chain-creation flows (lib/tasksCreateChain.ts) which
+// pre-generate IDs so they can wire blocks/blocked_by edges before
+// any rows exist on the sheet.
+export function genId(): string {
   return (
     "T-" +
     Date.now().toString(36) +
@@ -997,7 +1000,11 @@ export async function tasksCreateDirect(
   await assertProjectAccess(subjectEmail, project);
 
   const now = nowIso();
-  const id = genId();
+  // Pre-assigned ID for chain-creation flows (phase 5) — caller passes
+  // `payload.id` so it can wire blocks/blocked_by edges to siblings
+  // before any of them exist on the sheet. Normal callers omit, get
+  // a fresh id from genId().
+  const id = String(payload.id || "").trim() || genId();
   const assignees = parseAssignees(payload.assignees);
   const approver = String(payload.approver_email || "").toLowerCase().trim();
   const projectManager = String(payload.project_manager_email || "").toLowerCase().trim();
@@ -1072,13 +1079,20 @@ export async function tasksCreateDirect(
   // Side effects — run in parallel where safe.
   //
   // Drive folder:
+  //   - Phase 5 dependencies: skip Drive folder creation entirely for
+  //     umbrella container rows. Umbrellas have no own work and
+  //     shouldn't pollute the project's Drive tree with empty folders;
+  //     each child task gets its own folder via the normal path. If a
+  //     team later wants per-chain rollup folders we can revisit.
   //   - If the caller pinned `drive_folder_id` (folder picker "existing"
   //     mode), reuse it — just fetch its webViewLink so we can persist
   //     a stable URL alongside the ID.
   //   - Otherwise create a new folder. `drive_folder_name` overrides the
   //     auto-generated `<task-id> — <title>` leaf name.
   const pinnedFolderId = String(payload.drive_folder_id || "").trim();
-  if (pinnedFolderId) {
+  if (task.is_umbrella) {
+    // No-op — umbrella has no Drive folder.
+  } else if (pinnedFolderId) {
     try {
       const { getFolderRef } = await import("@/lib/driveFolders");
       const ref = await getFolderRef(subjectEmail, pinnedFolderId);

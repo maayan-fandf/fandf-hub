@@ -1070,6 +1070,13 @@ export type TasksCreateInput = {
    *  tasks skip the personal-GT spawn until the cascade unblocks
    *  them). */
   blocked_by?: string[];
+  /** Pre-assigned task ID. Normally createTask generates a fresh
+   *  ID via genId(); chain-creation flows (phase 5) need to know
+   *  IDs upfront to wire `blocks`/`blocked_by` edges in a single
+   *  pass without a second sheet write. When provided, the value
+   *  is trusted as-is — caller is responsible for uniqueness +
+   *  format (`T-<rand>`). */
+  id?: string;
 };
 
 export function tasksCreate(
