@@ -13,6 +13,14 @@ type Props = {
   defaultNewName: string;
   value: FolderPickerValue;
   onChange: (v: FolderPickerValue) => void;
+  /**
+   * Fired when the user picks a sibling campaign via the
+   * "קמפיינים אחרים בפרויקט" expander. Empty string when the user picks
+   * the project folder itself (no campaign). Optional — when omitted,
+   * the expander is hidden so the parent doesn't end up with a folder
+   * pointing at a different campaign than the form's `campaign` field.
+   */
+  onCampaignChange?: (newCampaign: string) => void;
   disabled?: boolean;
   compact?: boolean;
 };
@@ -33,6 +41,7 @@ export default function DriveFolderPicker({
   defaultNewName,
   value,
   onChange,
+  onCampaignChange,
   disabled,
   compact,
 }: Props) {
@@ -53,6 +62,59 @@ export default function DriveFolderPicker({
   // Drive — confirmed bug 2026-04-25 (see screenshot in this session).
   const [submittingNew, setSubmittingNew] = useState(false);
   const lastNewName = useRef<string>(value.mode === "new" ? value.name : "");
+
+  // Sibling-campaigns expander (option C, 2026-05-03). When the picker
+  // is rooted at a campaign folder, the user can expand a flat list of
+  // sibling campaigns under the same project. Picking one fires
+  // `onCampaignChange` so the form's CampaignCombobox stays in sync —
+  // the picker then re-anchors to the new campaign via the existing
+  // `resolveKey` effect. Lazy-loaded on first open.
+  type Siblings =
+    | null
+    | "loading"
+    | { error: string }
+    | { items: Child[] };
+  const [siblingsOpen, setSiblingsOpen] = useState(false);
+  const [siblings, setSiblings] = useState<Siblings>(null);
+
+  const loadSiblings = useCallback(async () => {
+    if (!project) return;
+    setSiblings("loading");
+    try {
+      // Step 1: resolve the project folder (campaign="") → its Drive id.
+      const r1 = await fetch("/api/drive/folders/resolve-campaign", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ company, project, campaign: "" }),
+      });
+      const d1 = (await r1.json()) as
+        | { ok: true; folderId: string | null; viewUrl: string | null }
+        | { ok: false; error: string };
+      if (!r1.ok || !("ok" in d1) || !d1.ok) {
+        throw new Error(("error" in d1 && d1.error) || `HTTP ${r1.status}`);
+      }
+      if (!d1.folderId) {
+        // Project folder doesn't exist yet (rare — would mean no
+        // campaigns have ever been saved for this project). Show empty
+        // list rather than an error so the UX stays calm.
+        setSiblings({ items: [] });
+        return;
+      }
+      // Step 2: list its children.
+      const r2 = await fetch(
+        `/api/drive/folders/children?parent=${encodeURIComponent(d1.folderId)}`,
+      );
+      const d2 = (await r2.json()) as
+        | { ok: true; children: Child[] }
+        | { ok: false; error: string };
+      if (!r2.ok || !d2.ok) {
+        throw new Error(("error" in d2 && d2.error) || `HTTP ${r2.status}`);
+      }
+      setSiblings({ items: d2.children });
+    } catch (e) {
+      setSiblings({ error: e instanceof Error ? e.message : String(e) });
+    }
+  }, [company, project]);
 
   // Coerce "new" → "existing" on mount. The mode switch UI was removed
   // 2026-05-02; if a parent still initialises with `{ mode: "new" }`
@@ -108,9 +170,20 @@ export default function DriveFolderPicker({
     if (disabled) return;
     if (lastKey.current === resolveKey) return;
     const isFirstRun = lastKey.current === "";
+    const prevKey = lastKey.current;
     lastKey.current = resolveKey;
     setChildren({});
     setExpanded(new Set());
+    // Drop the cached sibling list whenever company/project changes, so
+    // an expander opened in project A doesn't render A's campaigns
+    // after the user moves to project B. Pure campaign-only changes
+    // (same project) reuse the cache — siblings of campaign A and B
+    // are the same set, just with the "current" entry differing.
+    const [prevCo, prevProj] = prevKey.split("::");
+    if (prevCo !== company || prevProj !== project) {
+      setSiblings(null);
+      setSiblingsOpen(false);
+    }
     // Reset the folder selection on campaign change. Without this, a
     // user who picks campaign A → auto-selects A's folder → then
     // switches to a new campaign B would submit with B's name but A's
@@ -325,6 +398,128 @@ export default function DriveFolderPicker({
                   </>
                 )}
               </div>
+              {/* Sibling-campaigns expander (option C). Lets the user
+                  jump to a different campaign in the same project
+                  without leaving the picker. Hidden when there's no
+                  campaign in scope (we'd already be at the project
+                  level) or when the parent didn't wire up the campaign
+                  callback (any picked sibling would create form/folder
+                  divergence). */}
+              {campaign && onCampaignChange && (
+                <div className="drive-folder-siblings">
+                  <button
+                    type="button"
+                    className="drive-folder-siblings-toggle"
+                    aria-expanded={siblingsOpen}
+                    onClick={() => {
+                      const next = !siblingsOpen;
+                      setSiblingsOpen(next);
+                      if (next && siblings == null) void loadSiblings();
+                    }}
+                  >
+                    <span className="drive-folder-chevron drive-folder-chevron-fixed">
+                      {siblingsOpen ? "▾" : "▸"}
+                    </span>
+                    <span>קמפיינים אחרים בפרויקט</span>
+                  </button>
+                  {siblingsOpen && (
+                    <div className="drive-folder-siblings-body">
+                      {siblings === "loading" && (
+                        <div className="drive-folder-hint">טוען…</div>
+                      )}
+                      {siblings &&
+                        typeof siblings === "object" &&
+                        "error" in siblings && (
+                          <div className="drive-folder-error">
+                            {siblings.error}
+                            <button
+                              type="button"
+                              className="drive-folder-link"
+                              onClick={() => void loadSiblings()}
+                            >
+                              נסה שוב
+                            </button>
+                          </div>
+                        )}
+                      {siblings &&
+                        typeof siblings === "object" &&
+                        "items" in siblings &&
+                        (() => {
+                          // Filter the current campaign out — it's
+                          // already shown as the root row below — and
+                          // also skip system "shared" folders that
+                          // sneak in at the campaign level.
+                          const current = campaign.trim().toLowerCase();
+                          const list = siblings.items.filter(
+                            (s) => s.name.trim().toLowerCase() !== current,
+                          );
+                          if (list.length === 0) {
+                            return (
+                              <div className="drive-folder-hint">
+                                אין קמפיינים אחרים תחת פרויקט זה
+                              </div>
+                            );
+                          }
+                          return (
+                            <ul className="drive-folder-ul">
+                              {list.map((s) => (
+                                <li
+                                  key={s.id}
+                                  className="drive-folder-li"
+                                  data-depth={1}
+                                >
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    className="drive-folder-row"
+                                    onClick={() => {
+                                      // Select the sibling AND switch
+                                      // the form's campaign field. The
+                                      // resolveKey effect re-anchors
+                                      // the picker on the next render
+                                      // (which also wipes our explicit
+                                      // selection — but the auto-select
+                                      // effect picks the same folder
+                                      // back, so end state is correct).
+                                      onChange({
+                                        mode: "existing",
+                                        folderId: s.id,
+                                        folderName: s.name,
+                                      });
+                                      onCampaignChange?.(s.name);
+                                      setSiblingsOpen(false);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        onChange({
+                                          mode: "existing",
+                                          folderId: s.id,
+                                          folderName: s.name,
+                                        });
+                                        onCampaignChange?.(s.name);
+                                        setSiblingsOpen(false);
+                                      }
+                                    }}
+                                    title={`עבור לקמפיין "${s.name}"`}
+                                  >
+                                    <span className="drive-folder-chevron drive-folder-chevron-fixed">
+                                      ▸
+                                    </span>
+                                    <span className="drive-folder-icon">📁</span>
+                                    <span className="drive-folder-name">
+                                      {s.name}
+                                    </span>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          );
+                        })()}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="drive-folder-tree">
                 <div
                   role="button"

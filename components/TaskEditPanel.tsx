@@ -257,6 +257,7 @@ export default function TaskEditPanel({
             defaultNewName={task.title || task.id}
             value={folderSelection}
             onChange={setFolderSelection}
+            onCampaignChange={setCampaign}
           />
         )}
       </div>

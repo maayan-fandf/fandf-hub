@@ -493,6 +493,7 @@ export default function TaskCreateForm({
         defaultNewName={suggestedFolderName}
         value={folderSelection}
         onChange={handleFolderChange}
+        onCampaignChange={setCampaign}
         disabled={!project}
       />
 

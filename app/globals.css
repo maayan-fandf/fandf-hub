@@ -7285,6 +7285,43 @@ html[data-theme="dark"] .tasks-dept-chip {
 .drive-folder-creating-caption strong { color: var(--text); }
 .drive-folder-creating-block .drive-folder-creating { padding: 0; }
 
+/* Sibling-campaigns expander — option C, lets the user jump between
+   campaigns within the same project without leaving the picker. */
+.drive-folder-siblings {
+  margin: .25em 0 .35em;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--surface-soft, #fafafa);
+}
+.drive-folder-siblings-toggle {
+  display: flex;
+  align-items: center;
+  gap: .35em;
+  width: 100%;
+  padding: .35em .55em;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: start;
+}
+.drive-folder-siblings-toggle:hover { color: var(--text); }
+.drive-folder-siblings-toggle[aria-expanded="true"] { color: var(--text); }
+.drive-folder-siblings-body {
+  padding: 0 .25em .35em;
+}
+.drive-folder-siblings-body .drive-folder-hint {
+  padding-inline-start: 1.4em;
+}
+.drive-folder-siblings-body .drive-folder-row {
+  cursor: pointer;
+}
+.drive-folder-siblings-body .drive-folder-row:hover {
+  background: var(--surface, #fff);
+}
+
 /* CampaignCombobox — see components/CampaignCombobox.tsx */
 .combobox {
   position: relative;
