@@ -1138,6 +1138,15 @@ export async function tasksCreateDirect(
   };
   // Reflect rank back on the in-memory task so callers see it.
   task.rank = newTaskRank;
+  // Defensive guard: never write a task row with an empty id. Failure
+  // mode otherwise: row exists but `/tasks/<id>` 404s, the row is
+  // invisible in every list view (filtered by id), and pollTasks's
+  // reconciliation skips it (`if (!taskId) continue`). The 2026-05-03
+  // sweep caught one such row already; this guard prevents a future
+  // upstream id-generation bug from producing more.
+  if (!String(cells.id ?? "").trim()) {
+    throw new Error("createTask: refusing to write row with empty id");
+  }
   const row = headerRow.map((h) => (h in cells ? cells[h] : ""));
   await sheets.spreadsheets.values.append({
     spreadsheetId: commentsSsId,
@@ -1544,6 +1553,18 @@ async function tasksUpdateDirectInner(
   for (const [k, v] of Object.entries(changes)) {
     const colIdx = idx.get(k);
     if (colIdx == null) continue;
+    // Defensive guard: never let a patch wipe column A (id) on a task
+    // row. The patch shape doesn't expose `id` today, but a future
+    // refactor that accidentally threads an empty id through would
+    // produce the exact bug surfaced by the 2026-05-03 audit (row 117).
+    // The check is on `k === "id"` because that's the canonical
+    // header name; column-A index isn't necessarily 0 if the sheet
+    // schema ever changes.
+    if (k === "id" && !String(v ?? "").trim()) {
+      throw new Error(
+        `tasksUpdateDirect: refusing to write empty id to row ${sheetRow}`,
+      );
+    }
     const col = columnLetter(colIdx + 1);
     data.push({
       range: `Comments!${col}${sheetRow}`,

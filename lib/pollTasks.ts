@@ -129,6 +129,12 @@ export type PollResult = {
    *  e.g. assignees' todos still open after row moved to
    *  awaiting_approval, where the cascade close failed silently). */
   staleClosed: number;
+  /** Terminal-row leak healing: how many GTs were closed on rows whose
+   *  hub status is `done` / `cancelled`. Should be 0 in steady state —
+   *  every transition's cascade is supposed to close all refs. Non-zero
+   *  means a prior cascade dropped a close (quota / transient API
+   *  failure) and we caught up here. */
+  terminalLeakClosed: number;
   durationMs: number;
 };
 
@@ -266,13 +272,52 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   let skipped = 0;
   let errored = 0;
 
+  // Terminal-row leaks: a task row at status=done/cancelled SHOULD have
+  // every ref closed (the transition cascade does this). When that
+  // close fails — quota wall during cascade, transient API blip,
+  // anything — the GT stays open in the recipient's tasklist as a
+  // ghost. Sweeping caught two cases on 2026-05-03 (rows 97 and 120).
+  // Counted separately from `staleClosed` (which targets active-row
+  // wrong-kind refs) so the cron telemetry distinguishes them.
+  let terminalLeakClosed = 0;
+
   for (const job of jobs) {
     // Skip already-resolved comment rows (they're cosmetic — old refs
-    // there are kept for audit). For task rows, also skip if hub
-    // status is terminal — the cascade already closed the GTs, the
-    // refs are just history.
+    // are kept for audit, no recipient is meant to act on them).
+    if (job.resolved) continue;
+
+    // Terminal task rows: don't dispatch transitions, but DO check that
+    // every ref's GT is closed in the recipient's list. Best-effort —
+    // a failure here just leaks one more cycle, no data risk.
     const terminal = job.hubStatus === "done" || job.hubStatus === "cancelled";
-    if (job.resolved || terminal) continue;
+    if (terminal) {
+      if (job.rowKind !== "task") continue;
+      for (const ref of job.refs) {
+        if (!ref.t || !ref.l || !ref.u) continue;
+        const f = await fetchOne(ref);
+        if (f.ok && f.status === "completed") continue; // already closed
+        if (!f.ok && f.deleted) continue; // already gone
+        if (!f.ok && !f.deleted) continue; // unknown — don't false-close
+        try {
+          const tasksApi = tasksApiClient(ref.u);
+          await tasksApi.tasks.patch({
+            tasklist: ref.l,
+            task: ref.t,
+            requestBody: { status: "completed" },
+          });
+          terminalLeakClosed++;
+          console.log(
+            `[pollTasks] terminal-leak: closed ${ref.t} for ${ref.u} (task ${job.rowId} status=${job.hubStatus})`,
+          );
+        } catch (e) {
+          console.log(
+            `[pollTasks] terminal-leak close failed for ${ref.t}/${ref.u}:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+      continue;
+    }
 
     const fetched = await Promise.all(job.refs.map(fetchOne));
     refsFetched += fetched.length;
@@ -603,6 +648,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     rowsHealed,
     gtsSpawned,
     staleClosed,
+    terminalLeakClosed,
   );
 }
 
@@ -618,6 +664,7 @@ function summary(
   rowsHealed = 0,
   gtsSpawned = 0,
   staleClosed = 0,
+  terminalLeakClosed = 0,
 ): PollResult {
   return {
     rowsScanned,
@@ -630,6 +677,7 @@ function summary(
     rowsHealed,
     gtsSpawned,
     staleClosed,
+    terminalLeakClosed,
     durationMs: Date.now() - start,
   };
 }
