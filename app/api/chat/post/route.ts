@@ -34,6 +34,12 @@ export async function POST(req: Request) {
 
   let body: {
     project?: string;
+    /** Disambiguator for non-unique project names (כללי has 4 rows,
+     *  one per company). Threaded from the project page's
+     *  `?company=…` URL through the composer. Optional for back-
+     *  compat with any caller that doesn't have it; falls back to
+     *  first-by-name match. */
+    company?: string;
     text?: string;
     threadName?: string;
     mentions?: { email: string; name: string }[];
@@ -49,6 +55,7 @@ export async function POST(req: Request) {
   }
 
   const project = String(body.project || "").trim();
+  const company = String(body.company || "").trim();
   const text = String(body.text || "").trim();
   const threadName = String(body.threadName || "").trim();
   const mentions = Array.isArray(body.mentions)
@@ -94,12 +101,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // Resolve the project's Chat space ID from Keys col L. Same lookup
-  // path InternalDiscussionTab uses for read — single source of truth.
+  // Resolve the project's Chat space ID from Keys col L. When the
+  // caller supplies `company`, match the (project, company) tuple
+  // strictly — this is the same disambiguation pattern createChatSpace
+  // uses, and prevents the 2026-05-03 bug where posting on כללי under
+  // company X picked up a different כללי row's webhook (or empty,
+  // surfacing as "project not configured" even though the user just
+  // created the space). Falls back to first-by-name when company is
+  // absent (legacy callers).
   let webhookUrl = "";
   try {
     const { headers, rows } = await readKeysCached(session.user.email);
     const iProj = headers.indexOf("פרוייקט");
+    const iCo = headers.indexOf("חברה");
     const iWebhook = findChatSpaceColumnIndex(headers);
     if (iProj < 0 || iWebhook < 0) {
       return NextResponse.json(
@@ -108,11 +122,30 @@ export async function POST(req: Request) {
       );
     }
     const target = project.toLowerCase().trim();
+    const targetCo = company.toLowerCase().trim();
+    let firstByName = "";
     for (const row of rows) {
-      if (String(row[iProj] ?? "").toLowerCase().trim() === target) {
-        webhookUrl = String(row[iWebhook] ?? "").trim();
+      if (String(row[iProj] ?? "").toLowerCase().trim() !== target) continue;
+      const w = String(row[iWebhook] ?? "").trim();
+      if (!firstByName) firstByName = w;
+      if (!targetCo) {
+        webhookUrl = w;
         break;
       }
+      if (
+        iCo >= 0 &&
+        String(row[iCo] ?? "").toLowerCase().trim() === targetCo
+      ) {
+        webhookUrl = w;
+        break;
+      }
+    }
+    // companyHint provided but no exact (project, company) match — keep
+    // empty (the caller's company was wrong, or the row was deleted);
+    // do NOT fall back to first-by-name. Posting to a sibling company's
+    // space silently is much worse than a clear "not configured" error.
+    if (!webhookUrl && !targetCo) {
+      webhookUrl = firstByName;
     }
   } catch (e) {
     return NextResponse.json(

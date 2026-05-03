@@ -235,7 +235,10 @@ export default async function InternalDiscussionTab({
           (the new message wouldn't appear unless it mentions the
           user). Compose-from-Chat still works as the fallback. */}
       {!showOnlyMine && (
-        <InternalChatComposer project={projectName} />
+        <InternalChatComposer
+          project={projectName}
+          company={projectCompany}
+        />
       )}
       <div className="discussion-internal-foot">
         <Link href={spaceUrl} className="section-link">

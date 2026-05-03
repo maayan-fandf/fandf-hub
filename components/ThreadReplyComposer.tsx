@@ -19,9 +19,13 @@ const MAX = 4000;
  */
 export default function ThreadReplyComposer({
   project,
+  company,
   threadName,
 }: {
   project: string;
+  /** Disambiguator for non-unique project names (כללי has 4 rows).
+   *  Posted to /api/chat/post so the route picks the right Keys row. */
+  company?: string;
   /** Full thread resource name `spaces/<sid>/threads/<tid>` — passed
    *  through to the Chat API so the new message lands in this
    *  thread's reply chain. */
@@ -63,7 +67,12 @@ export default function ThreadReplyComposer({
         const res = await fetch("/api/chat/post", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ project, text, threadName }),
+          body: JSON.stringify({
+            project,
+            ...(company ? { company } : {}),
+            text,
+            threadName,
+          }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean;

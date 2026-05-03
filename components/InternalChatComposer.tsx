@@ -70,8 +70,14 @@ const CLOSED: PickerState = { queryStart: -1, query: "", index: 0, top: 0, left:
  */
 export default function InternalChatComposer({
   project,
+  company,
 }: {
   project: string;
+  /** Disambiguator for non-unique project names (כללי has 4 rows,
+   *  one per company). Posted to /api/chat/post so the route matches
+   *  the right Keys row. Optional — when omitted, the route falls
+   *  back to first-by-name. */
+  company?: string;
 }) {
   const router = useRouter();
   const [value, setValue] = useState("");
@@ -224,6 +230,7 @@ export default function InternalChatComposer({
 
     const form = new FormData();
     form.set("project", project);
+    if (company) form.set("company", company);
     form.set("file", file, file.name || "pasted-image.png");
     try {
       const res = await fetch("/api/chat/upload", {
@@ -424,6 +431,7 @@ export default function InternalChatComposer({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             project,
+            ...(company ? { company } : {}),
             text,
             mentions,
             attachments: sendingAttachments,
