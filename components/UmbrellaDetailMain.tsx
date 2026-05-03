@@ -5,6 +5,7 @@ import {
   STATUS_EMOJIS,
 } from "@/components/TaskStatusCell";
 import { deriveUmbrellaProgress } from "@/lib/umbrellaStatus";
+import AppendChainStepInline from "@/components/AppendChainStepInline";
 
 /**
  * Detail-page body for an umbrella container task. Replaces the
@@ -111,6 +112,11 @@ export default function UmbrellaDetailMain({
             ))}
           </ol>
         )}
+
+        {/* Phase 9 — append step at the bottom of the children list.
+            Collapsed to a single "+ הוסף שלב" button by default;
+            expands inline when clicked. */}
+        <AppendChainStepInline umbrellaId={umbrella.id} />
       </section>
     </div>
   );

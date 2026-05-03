@@ -6576,6 +6576,57 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   background: var(--surface, #fff);
 }
 
+/* Phase 9 — append-step inline form on the umbrella detail page.
+   Sits at the bottom of the children list; collapses to a single
+   button by default. */
+.umbrella-append-step-collapsed {
+  margin-top: .8em;
+  text-align: start;
+}
+.umbrella-append-step-form {
+  margin-top: .8em;
+  padding: .8em;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: .5em;
+}
+.umbrella-append-step-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5em;
+}
+.umbrella-append-step-title,
+.umbrella-append-step-assignee {
+  padding: .4em .6em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.umbrella-append-step-actions {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  flex-wrap: wrap;
+}
+.umbrella-append-step-hint {
+  font-size: .8em;
+  color: #64748b;
+}
+
+/* Long-URL display fix — bare URLs in comment bodies (e.g. Facebook
+   ads-manager URLs with ~500 chars of query string) would otherwise
+   render on one line and blow the comment column's width. The
+   `overflow-wrap: anywhere` lets the URL break at any character so
+   it wraps cleanly inside the column. `word-break: break-all` is
+   the older fallback for browsers that don't honor `anywhere`. */
+.comment-body-autolink {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 /* Phase 6a dependencies — side-panel deps block on /tasks/[id]. Sits
    above the People block; renders nothing when no edges exist. */
 .task-detail-side-deps {
