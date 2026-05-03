@@ -483,6 +483,11 @@ export default function UserSettingsMenu({
                       if (viewAsTimerRef.current) clearTimeout(viewAsTimerRef.current);
                       setViewAsDraft("");
                       commitViewAs("");
+                      // Also scrub any legacy `view_as_email` that may
+                      // be sitting on the prefs row from the pre-cookie
+                      // model — otherwise it would silently re-pin the
+                      // user on the next render. Mirrors ViewAsBanner.
+                      void save({ view_as_email: "" });
                     }}
                   >
                     חזור להציג את עצמי ({myEmail})
