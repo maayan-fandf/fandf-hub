@@ -465,6 +465,18 @@ async function patchGoogleTaskWithRetry(
  * just gets skipped. Each patch retries on 429 / 5xx (see helper) so
  * a transient quota blip doesn't leave hub→done with the assignee's
  * GT still open in their tasklist.
+ *
+ * BUG FIX 2026-05-03 (T-moju0aon-07uo regression): pre-fetch each GT's
+ * current state and SKIP patching when it's already in the desired
+ * state. The previous implementation patched unconditionally, which
+ * bumped the `updated` timestamp on Google's side for stale already-
+ * completed approve GTs. userFastSync (runs on every nav) then saw
+ * those refreshed timestamps in its 5-min `updatedMin` window,
+ * dispatched applyAutoTransition({kind:"approve"}) on each, and
+ * flipped the hub task back to `done` seconds after a user moved
+ * it to `awaiting_approval`. The fetch-first path costs one extra
+ * GET per GT per transition (typical N=3-6, so single-digit GETs)
+ * and breaks the feedback loop completely.
  */
 async function syncGoogleTasksStatus(
   googleTasks: GTaskRef[],
@@ -488,6 +500,31 @@ async function syncGoogleTasksStatus(
   await Promise.all(
     allowedEntries.map(async (gt) => {
       if (!gt) return;
+      // Skip if already in the desired state. tasks.get returns 404
+      // when the recipient deleted their GT — treat that as
+      // "nothing to do" and bail (the GT is gone; patching it would
+      // 404 anyway).
+      try {
+        const tasksApi = tasksApiClient(gt.u);
+        const cur = await tasksApi.tasks.get({
+          tasklist: gt.l,
+          task: gt.t,
+        });
+        const curStatus = cur.data?.status;
+        if (curStatus === desired) {
+          // Already in the target state — DO NOT re-patch. Re-patching
+          // bumps `updated` on Google's side and triggers userFastSync
+          // to re-dispatch autoTransition (the regression fixed here).
+          return;
+        }
+      } catch (e) {
+        const code =
+          (e as { code?: number; response?: { status?: number } }).code ??
+          (e as { response?: { status?: number } }).response?.status;
+        if (code === 404) return; // GT deleted by recipient — nothing to do
+        // Any other error: fall through to the patch attempt (its own
+        // retry logic handles transient errors).
+      }
       try {
         await patchGoogleTaskWithRetry(gt, { status: desired });
       } catch (e) {
