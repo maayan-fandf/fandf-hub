@@ -30,6 +30,13 @@ export type NotificationKind =
   | "task_returned"
   | "task_done"
   | "task_cancelled"
+  // Phase 7 of dependencies feature, 2026-05-03 — fired when an
+  // upstream task in a chain reaches terminal state and cascade
+  // flips a downstream from `blocked` → `awaiting_handling`.
+  // Distinct from `task_assigned` so users (and per-trigger email
+  // controls, when those land) can distinguish brand-new task work
+  // from "your turn — chain advanced" handoffs.
+  | "task_unblocked"
   | "comment_reply"
   | "mention"
   | "chat_mention";
@@ -454,6 +461,8 @@ function defaultEmailSubject(opts: {
       return `✅ משימה סומנה כבוצעה — ${tail}`;
     case "task_cancelled":
       return `🚫 משימה בוטלה — ${tail}`;
+    case "task_unblocked":
+      return `🔓 תורך — ${tail}`;
     case "comment_reply":
       return `💬 תגובה חדשה לשרשור — ${tail}`;
     case "mention":
@@ -481,6 +490,12 @@ function defaultEmailIntro(opts: {
       return `${esc(actor)} סימן/ה את המשימה כבוצעה.`;
     case "task_cancelled":
       return `${esc(actor)} ביטל/ה את המשימה.`;
+    case "task_unblocked":
+      // Actor is "system" since the cascade fires automatically; the
+      // user wants context on WHY their work just lit up. Body text
+      // (built by the caller) carries the upstream task hint;
+      // this intro stays generic.
+      return `שלב קודם בשרשרת בוצע — תורך עכשיו.`;
     case "comment_reply":
       return `${esc(actor)} הגיב/ה לשרשור שלך.`;
     case "mention":

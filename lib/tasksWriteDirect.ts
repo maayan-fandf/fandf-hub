@@ -1972,22 +1972,40 @@ async function tasksUpdateDirectInner(
               spawnedRefs,
             );
           }
-          // New-task notification (mirrors createTask's post-write hook).
-          // Source attribution is "system" because the unblock fired
-          // automatically; we keep the original transition's actor for
-          // logging via console only.
-          await notifyTaskAssigned(
-            {
-              id: u.taskForGTSpawn.id,
-              project: u.taskForGTSpawn.project,
-              title: u.taskForGTSpawn.title,
-              description: u.taskForGTSpawn.description,
-              requested_date: u.taskForGTSpawn.requested_date,
-              priority: u.taskForGTSpawn.priority,
-              assignees: u.assignees,
-            },
-            "system",
-          );
+          // Phase 7 polish — fire `task_unblocked` (NOT `task_assigned`)
+          // so users distinguish "your turn — chain advanced" from
+          // "you've been newly assigned to a task". Body prepends the
+          // upstream task ID so the recipient knows which step just
+          // wrapped (clickable when they expand the notification).
+          // Source actor is "system" because the cascade fires
+          // automatically; the original user's identity is captured
+          // in the hub task's status_history, not the notification.
+          try {
+            const { notifyOnce } = await import("@/lib/notifications");
+            const link = taskHubUrl(u.taskForGTSpawn.id);
+            const upstreamHint =
+              u.unblockedBy.length > 0
+                ? `הופעל לאחר סיום ${u.unblockedBy.join(", ")}`
+                : "הופעל אוטומטית";
+            const body = `${upstreamHint}\n\n${buildTaskBody(u.taskForGTSpawn as never)}`;
+            for (const to of u.assignees) {
+              await notifyOnce({
+                kind: "task_unblocked",
+                forEmail: to,
+                actorEmail: "system",
+                taskId: u.taskForGTSpawn.id,
+                project: u.taskForGTSpawn.project,
+                title: u.taskForGTSpawn.title,
+                body,
+                link,
+              });
+            }
+          } catch (e) {
+            console.log(
+              `[tasksWriteDirect] task_unblocked notify failed for ${u.taskId}:`,
+              e instanceof Error ? e.message : String(e),
+            );
+          }
         } catch (e) {
           console.log(
             `[tasksWriteDirect] post-cascade spawn/notify failed for ${u.taskId}:`,
