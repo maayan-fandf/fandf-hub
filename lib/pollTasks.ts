@@ -307,33 +307,59 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
       }
     }
 
-    // Find the FIRST completed ref and dispatch its kind. The cascade
-    // inside applyAutoTransition closes any other open refs on this
-    // row as part of the status transition (via syncGoogleTasksStatus
-    // in tasksUpdateDirect), so we don't need to dispatch each
-    // completed ref individually.
+    // Dispatch every completed ref to applyAutoTransition. Each ref's
+    // kind may or may not produce a valid transition from the row's
+    // current status — applyAutoTransition is idempotent (returns
+    // `skipped:true` when no transition applies). The first one that
+    // actually transitions wins and we stop; the cascade in
+    // tasksUpdateDirect closes any other still-open refs as part of
+    // the status change.
+    //
+    // Why iterate instead of "first completed wins": a row in
+    // awaiting_approval typically has BOTH a still-completed kind=todo
+    // ref (from the original transition into awaiting_approval, kept
+    // on the cell as history) AND a freshly-completed kind=approve
+    // ref. Cell ordering is insertion-time, so .find() picks the older
+    // todo ref → applyAutoTransition({kind:"todo"}) returns null from
+    // awaiting_approval → silent skip → the approve completion is
+    // never acted on and the row stays stuck. (Bug 2026-05-03; row
+    // T-moljg5uh-o8zb in audit-gt-integration output exhibited this.)
     if (job.rowKind !== "task") continue;
-    const completed = updatedRefs
+    const completedRefs = updatedRefs
       .map((r, k) => ({ r, f: fetched[k] }))
-      .find((p) => p.f.ok && p.f.status === "completed");
-    if (!completed) continue;
+      .filter((p) => p.f.ok && p.f.status === "completed");
+    if (completedRefs.length === 0) continue;
 
-    const kind: GTaskKind = (completed.r.kind as GTaskKind) || "todo";
-    const completedBy = completed.r.u || "";
-    const result = await applyAutoTransition({
-      taskId: job.rowId,
-      kind,
-      completedBy,
-    });
-    if ("error" in result) {
+    let actedOnRow = false;
+    let lastError: string | null = null;
+    for (const completed of completedRefs) {
+      const kind: GTaskKind = (completed.r.kind as GTaskKind) || "todo";
+      const completedBy = completed.r.u || "";
+      const result = await applyAutoTransition({
+        taskId: job.rowId,
+        kind,
+        completedBy,
+      });
+      if ("error" in result) {
+        lastError = result.error;
+      } else if (!result.skipped) {
+        actedOnRow = true;
+        break;
+      }
+    }
+    if (actedOnRow) {
+      dispatched++;
+    } else if (lastError) {
       errored++;
       console.log(
-        `[pollTasks] auto-transition failed for ${job.rowId}: ${result.error}`,
+        `[pollTasks] auto-transition failed for ${job.rowId}: ${lastError}`,
       );
-    } else if (result.skipped) {
-      skipped++;
     } else {
-      dispatched++;
+      // Every completed ref's kind was a no-op for the current status —
+      // expected when a row is in awaiting_approval and the only
+      // completed ref is the historical todo. Counted as skipped so
+      // the cron summary reflects the real picture.
+      skipped++;
     }
   }
 
