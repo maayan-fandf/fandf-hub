@@ -6426,6 +6426,72 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
 .tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
 
+/* Phase 4b dependencies — umbrella detail page styles. The header row
+   pairs a 📦 label with the aggregate progress badge ("2 / 4 ✓"). */
+.umbrella-header-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: .8em;
+}
+.umbrella-progress {
+  font-weight: normal;
+  font-size: .9em;
+  color: #475569;
+  background: #f1f5f9;
+  padding: .25em .7em;
+  border-radius: 1em;
+}
+.umbrella-cancelled-count {
+  color: #94a3b8;
+  font-size: .9em;
+}
+.umbrella-children-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+}
+.umbrella-child-row {
+  display: grid;
+  grid-template-columns: 1.5em 1fr auto auto;
+  align-items: center;
+  gap: .6em;
+  padding: .6em .8em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+}
+.umbrella-child-row.tasks-status-cancelled {
+  opacity: .5;
+}
+.umbrella-child-row.tasks-status-cancelled .umbrella-child-title {
+  text-decoration: line-through;
+}
+.umbrella-child-row.tasks-status-done .umbrella-child-title {
+  color: #065f46;
+}
+.umbrella-child-status {
+  font-size: 1.2em;
+  text-align: center;
+}
+.umbrella-child-title {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+}
+.umbrella-child-title:hover {
+  text-decoration: underline;
+}
+.umbrella-child-assignees {
+  font-size: .85em;
+  color: #64748b;
+  white-space: nowrap;
+}
+
 .tasks-other {
   margin: 2em 0;
   border: 1px dashed var(--border);

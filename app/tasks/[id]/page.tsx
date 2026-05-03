@@ -23,6 +23,7 @@ import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
+import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,13 @@ export default async function TaskDetailPage({
   // still skip the buttons (they don't have @fandf.co.il Google sessions
   // that the authuser= hint helps anyway).
   const showAdLinks = !!accessRes && (accessRes.isAdmin || accessRes.isInternal);
-  const [roundChain, driveName, adLinks] = await Promise.all([
+  // Phase 4b dependencies — when this task IS an umbrella container,
+  // fetch its children so the body render can list them with status
+  // badges + drill-down links. Children = rows in the same project
+  // whose `umbrella_id` points back. We piggyback on tasksList (with
+  // include_umbrellas=true so the umbrella's siblings — if any — also
+  // surface for completeness; we filter to umbrella_id ourselves).
+  const [roundChain, driveName, adLinks, umbrellaChildren] = await Promise.all([
     t.round_number > 1 || t.parent_id
       ? fetchRoundChain(t).catch(() => [])
       : Promise.resolve([]),
@@ -92,6 +99,11 @@ export default async function TaskDetailPage({
     showAdLinks && t.project
       ? getProjectAdLinks(t.project).catch(() => null)
       : Promise.resolve(null),
+    t.is_umbrella
+      ? tasksList({ project: t.project, include_umbrellas: true })
+          .then((r) => (r.tasks ?? []).filter((c) => c.umbrella_id === t.id))
+          .catch(() => [] as WorkTask[])
+      : Promise.resolve([] as WorkTask[]),
   ]);
   const localPaths = buildLocalDrivePaths({
     driveName,
@@ -222,6 +234,12 @@ export default async function TaskDetailPage({
       )}
 
       <section className="task-detail-grid">
+        {/* Phase 4b dependencies — umbrella container rows render a
+            different body (aggregate progress + child list); side
+            panel is also slimmed since umbrellas have no own work. */}
+        {t.is_umbrella ? (
+          <UmbrellaDetailMain umbrella={t} children={umbrellaChildren} />
+        ) : (
         <div className="task-detail-main">
           {t.description && (
             <div className="task-detail-body">
@@ -271,6 +289,7 @@ export default async function TaskDetailPage({
             )}
           </section>
         </div>
+        )}
 
         <aside
           className={`task-detail-side${editing ? " is-edit-mode" : ""}`}
@@ -287,28 +306,34 @@ export default async function TaskDetailPage({
             </div>
           )}
 
-          <SideBlock title="אנשים">
-            <PersonRow
-              label="כותב"
-              email={t.author_email}
-              filterKey="author"
-            />
-            <PersonRow
-              label="גורם מאשר"
-              email={t.approver_email}
-              filterKey="approver"
-            />
-            <PersonRow
-              label="מנהל פרויקט"
-              email={t.project_manager_email}
-              filterKey="project_manager"
-            />
-            <PeopleRow
-              label="עובדים במשימה"
-              emails={t.assignees || []}
-              filterKey="assignee"
-            />
-          </SideBlock>
+          {/* Umbrellas have no own assignees/approver/PM; suppress the
+              People block entirely so the panel doesn't show 4 empty
+              rows. The (umbrella's children) people are surfaced
+              individually on each child's drill-down. */}
+          {!t.is_umbrella && (
+            <SideBlock title="אנשים">
+              <PersonRow
+                label="כותב"
+                email={t.author_email}
+                filterKey="author"
+              />
+              <PersonRow
+                label="גורם מאשר"
+                email={t.approver_email}
+                filterKey="approver"
+              />
+              <PersonRow
+                label="מנהל פרויקט"
+                email={t.project_manager_email}
+                filterKey="project_manager"
+              />
+              <PeopleRow
+                label="עובדים במשימה"
+                emails={t.assignees || []}
+                filterKey="assignee"
+              />
+            </SideBlock>
+          )}
 
           <SideBlock title="שיוך">
             <KV label="חברה" value={t.company || "—"} />
