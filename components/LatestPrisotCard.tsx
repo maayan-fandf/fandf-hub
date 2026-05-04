@@ -62,9 +62,9 @@ export default async function LatestPrisotCard({
           ) : (
             <span
               className="prisot-unapproved-badge"
-              title="הפריסה לא ננעלה לאישור ב־Sheets — לחץ על Lock בתוך הקובץ כדי לאשר"
+              title="הפריסה ממתינה לאישור — אחרי האישור הקובץ יסומן בנעילה (Lock) ב־Sheets"
             >
-              ⏳ לא מאושר
+              ⏳ נשלח לאישור
             </span>
           )}
           {latest.source === "general" && (
