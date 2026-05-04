@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { pickLatestPrisotForCompanyOrProject } from "@/lib/driveFolders";
+import {
+  pickLatestPrisotForCompanyOrProject,
+  readPrisotData,
+} from "@/lib/driveFolders";
 import PrisotThumb from "./PrisotThumb";
 
 /**
@@ -34,6 +37,16 @@ export default async function LatestPrisotCard({
     project,
   ).catch(() => null);
   if (!latest) return null;
+
+  // Read the actual sheet contents (first tab, formatted values). When
+  // this succeeds we render the data inline as an HTML table — much
+  // more useful than the thumbnail since the thumbnail loses cell
+  // formatting + is upscaled-and-soft. Falls back to the thumbnail
+  // when the read fails (auth, deleted, no values, etc.) so the card
+  // never goes blank.
+  const data = await readPrisotData(subjectEmail, latest.id).catch(
+    () => null,
+  );
 
   const modified = formatRelativeHe(latest.modifiedTime);
   // Always proxy the thumbnail through the hub so external clients
@@ -91,14 +104,40 @@ export default async function LatestPrisotCard({
         rel="noreferrer"
         className="prisot-card"
       >
-        <div className="prisot-thumb">
-          <PrisotThumb
-            src={thumbSrc}
-            alt={`תצוגה מקדימה של ${latest.name}`}
-          />
-        </div>
+        {data ? (
+          <div className="prisot-data" dir="rtl">
+            <table className="prisot-data-table">
+              <tbody>
+                {data.rows.map((row, ri) => (
+                  <tr
+                    key={ri}
+                    className={ri === 0 ? "prisot-data-header" : undefined}
+                  >
+                    {row.map((cell, ci) => (
+                      <td key={ci}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="prisot-thumb">
+            <PrisotThumb
+              src={thumbSrc}
+              alt={`תצוגה מקדימה של ${latest.name}`}
+            />
+          </div>
+        )}
         <div className="prisot-meta">
-          <div className="prisot-name">{latest.name}</div>
+          <div className="prisot-name">
+            {latest.name}
+            {data && (
+              <span className="prisot-tab-name" title="שם הלשונית שנקראה">
+                · {data.sheetTitle}
+              </span>
+            )}
+          </div>
           <div className="prisot-modified">📅 עודכן {modified}</div>
         </div>
       </Link>

@@ -13,7 +13,7 @@
 
 import type { drive_v3 } from "googleapis";
 import { unstable_cache } from "next/cache";
-import { driveClient, driveFolderOwner } from "@/lib/sa";
+import { driveClient, driveFolderOwner, sheetsClient } from "@/lib/sa";
 
 export type FolderRef = {
   id: string;
@@ -347,6 +347,94 @@ async function findLatestPrisotInner(
     approved,
     approvedTime,
   };
+}
+
+/**
+ * Reads the first tab of a Google Sheet and returns its values as
+ * formatted strings (currency formatting, percentages, dates etc. are
+ * applied — same string the user sees in Sheets). Used by
+ * LatestPrisotCard to render the spread inline as an HTML table
+ * instead of just the low-res thumbnail.
+ *
+ * Bounded to A1:T50 (20 columns × 50 rows) to keep payloads reasonable.
+ * Trailing all-empty rows + columns are trimmed before return.
+ */
+export type PrisotData = {
+  /** Title of the tab read (typically the first tab — Sheets' default). */
+  sheetTitle: string;
+  /** Range that was actually read, e.g. "Sheet1!A1:T50". */
+  range: string;
+  /** 2-D array of cell display strings (post-trim). Rows may be ragged
+   *  if the sheet has trailing-empty cells on some rows but not others;
+   *  the renderer should pad to the longest row's column count. */
+  rows: string[][];
+};
+
+export async function readPrisotData(
+  subjectEmail: string,
+  fileId: string,
+): Promise<PrisotData | null> {
+  if (!fileId) return null;
+  try {
+    const sheets = sheetsClient(driveFolderOwner() || subjectEmail);
+    // Resolve the first tab's title — needed for the values.get range.
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: fileId,
+      fields: "sheets(properties(title,index,sheetType,hidden))",
+    });
+    // Take the first non-hidden, non-OBJECT sheet (charts as their
+    // own "sheet" slot are sheetType=OBJECT).
+    const tab = (meta.data.sheets || []).find((s) => {
+      const p = s.properties || {};
+      return !p.hidden && (p.sheetType || "GRID") === "GRID";
+    });
+    const sheetTitle = tab?.properties?.title || "";
+    if (!sheetTitle) return null;
+    const range = `${sheetTitle}!A1:T50`;
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: fileId,
+      range,
+      valueRenderOption: "FORMATTED_VALUE",
+      majorDimension: "ROWS",
+    });
+    const raw = (res.data.values as unknown as string[][] | undefined) ?? [];
+    const rows = trimEmpty(raw);
+    if (rows.length === 0) return null;
+    return { sheetTitle, range, rows };
+  } catch (e) {
+    console.warn("[readPrisotData] failed:", e);
+    return null;
+  }
+}
+
+/** Trim trailing all-empty rows and trailing all-empty columns so the
+ *  rendered table doesn't show a sea of blank cells. */
+function trimEmpty(rows: string[][]): string[][] {
+  // Strip trailing empty rows.
+  let lastNonEmpty = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if ((rows[i] || []).some((c) => String(c ?? "").trim() !== "")) {
+      lastNonEmpty = i;
+    }
+  }
+  if (lastNonEmpty < 0) return [];
+  const trimmedRows = rows.slice(0, lastNonEmpty + 1);
+  // Find rightmost non-empty column across all rows.
+  let lastCol = -1;
+  for (const row of trimmedRows) {
+    for (let c = (row?.length ?? 0) - 1; c > lastCol; c--) {
+      if (String(row[c] ?? "").trim() !== "") {
+        lastCol = c;
+        break;
+      }
+    }
+  }
+  if (lastCol < 0) return [];
+  return trimmedRows.map((row) => {
+    const out = (row || []).slice(0, lastCol + 1);
+    while (out.length < lastCol + 1) out.push("");
+    return out;
+  });
 }
 
 /** Backwards-compat wrapper for any external callers that imported the

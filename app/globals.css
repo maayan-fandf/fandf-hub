@@ -4357,6 +4357,57 @@ html[data-theme="dark"] .quick-note-saved {
 .prisot-thumb-fallback-text {
   font-size: 0.9rem;
 }
+
+/* Inline-rendered sheet data — HTML table built from the first tab's
+   formatted values. Replaces the thumbnail when the sheet read
+   succeeds (most cases). Scrolls inside the card on overflow so very
+   wide sheets don't blow up the page. */
+.prisot-data {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 700px;
+}
+.prisot-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+.prisot-data-table td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.65rem;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--surface);
+}
+.prisot-data-header td {
+  background: var(--surface-hi, #f3f4f6);
+  font-weight: 600;
+  color: var(--ink);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+/* Empty cell — render a thin rule so the user can tell it's a column,
+   not collapsed whitespace. */
+.prisot-data-table td:empty::before {
+  content: "—";
+  color: var(--muted);
+  opacity: 0.4;
+}
+.prisot-tab-name {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-inline-start: 0.4rem;
+}
+@media (max-width: 640px) {
+  .prisot-data { max-height: 480px; }
+  .prisot-data-table { font-size: 0.78rem; }
+  .prisot-data-table td { padding: 0.3rem 0.5rem; }
+}
 .prisot-meta {
   display: flex;
   align-items: center;
