@@ -4376,7 +4376,8 @@ html[data-theme="dark"] .quick-note-saved {
   white-space: nowrap;
 }
 .prisot-source-badge,
-.prisot-approved-badge {
+.prisot-approved-badge,
+.prisot-unapproved-badge {
   display: inline-flex;
   align-items: center;
   margin-inline-start: 0.55rem;
@@ -4393,6 +4394,12 @@ html[data-theme="dark"] .quick-note-saved {
 }
 .prisot-approved-badge {
   background: linear-gradient(135deg, #059669, #10b981);
+}
+/* "לא מאושר" — amber/coral, not red. The state is informational
+   ("waiting on approval") not alarming, so we use the same softer
+   tone we landed on for the budget-vs-spend over-budget stripes. */
+.prisot-unapproved-badge {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
 }
 @media (max-width: 640px) {
   .prisot-thumb,
