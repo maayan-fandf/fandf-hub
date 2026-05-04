@@ -570,14 +570,16 @@ function TasksFilterBar({
     0,
   );
   return (
-    // <details> gives us a CSS-only collapse on mobile — the form is
-    // hidden behind the summary on narrow viewports. We always set
-    // `open` so the form is visible by default; on desktop the
-    // summary is `display: none`, so the user can't accidentally
-    // collapse it. On mobile, clicking the summary toggles. The
-    // previous "open only when filters active" logic was a bug — it
-    // hid the form on desktop too whenever no filters were set.
-    <details className="tasks-filter-disclosure" open>
+    // <details> gives us a CSS-only collapse for the entire filter
+    // form. Closed by default — `/tasks` is busy enough that the
+    // search/filter row was eating screen real estate users rarely
+    // wanted. Auto-opens when any filter is active so a deep-linked
+    // /tasks?status=blocked still shows what's filtering. Summary
+    // chip is visible on both desktop and mobile.
+    <details
+      className="tasks-filter-disclosure"
+      open={activeFilterCount > 0}
+    >
       <summary className="tasks-filter-summary">
         <span>🔍 סינון</span>
         {activeFilterCount > 0 && (

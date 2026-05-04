@@ -5665,9 +5665,33 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
    pair is invisible on desktop (the form always shows) and turns
    into a tap-target chip on mobile that toggles the form. */
 .tasks-filter-disclosure { margin: 0 0 1.5em; }
+/* Filter form is collapsed by default on every viewport — the summary is
+   a chip-style trigger that auto-opens (via `open={activeFilterCount}`)
+   when a deep-link arrives with filters active. Mobile rules at the
+   bottom of this file used to be the only place where the chip was
+   visible; now both desktop + mobile share one rule. */
 .tasks-filter-disclosure > summary {
-  display: none; /* desktop default; mobile @media re-enables it */
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  padding: .55em .9em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: .9em;
+  cursor: pointer;
+  user-select: none;
   list-style: none;
+}
+.tasks-filter-disclosure > summary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tasks-filter-disclosure[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+  margin-bottom: .8em;
 }
 .tasks-filter-disclosure > summary::-webkit-details-marker { display: none; }
 .tasks-filter-summary-badge {
@@ -8986,25 +9010,8 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   .tasks-table th.num,
   .tasks-table td.num { display: none; }
 
-  /* Filter bar disclosure: summary becomes a tap-target chip, the
-     form (<.tasks-filter-bar>) is hidden until the user opens the
-     details. Native <details> handles all the show/hide for free. */
-  .tasks-filter-disclosure > summary {
-    display: inline-flex;
-    align-items: center;
-    gap: .35em;
-    padding: .55em .9em;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-weight: 600;
-    cursor: pointer;
-    user-select: none;
-  }
-  .tasks-filter-disclosure[open] > summary {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
+  /* Filter bar disclosure summary is now the same chip on every
+     viewport — see the desktop rule near .tasks-filter-disclosure. */
 
   /* Kanban: stop horizontal-scrolling on phones — stack the columns
      vertically as full-width sections with their own collapsibility
