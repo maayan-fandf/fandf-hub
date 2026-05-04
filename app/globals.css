@@ -2968,6 +2968,61 @@ a.section-link:hover {
   text-decoration: none;
 }
 
+/* Right-aligned cluster of section-head controls (picker + open-in-new-tab
+   link). Keeps the heading on the start side, controls on the end side. */
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+/* Hub-side dashboard month-override picker. Sits next to the "פתח
+   בכרטיסייה חדשה" link in the metrics section header. Picks one month
+   and the embedded dashboard rewinds to it via URL search-param. */
+.dash-month-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.dash-month-picker label {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dash-month-picker select {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 9rem;
+}
+.dash-month-picker select:hover { border-color: var(--accent); }
+.dash-month-picker-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 0.4rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.dash-month-picker-clear:hover {
+  background: var(--surface-hi, var(--surface));
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
 .empty-small {
   color: var(--muted);
   font-size: 0.88rem;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import {
+  getAvailableMonths,
   getProjectComments,
   getMyMentions,
   getMyProjects,
@@ -11,6 +12,7 @@ import {
   type MentionItem,
   type MorningProject,
 } from "@/lib/appsScript";
+import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePicker";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
@@ -59,6 +61,11 @@ type Search = {
    *  "first project with this name in the user's roster" behavior
    *  for backwards compatibility with old links. */
   company?: string;
+  /** Rewinds the embedded dashboard to a specific calendar month —
+   *  "YYYY-MM". Threaded into the iframe URL so the picker change
+   *  triggers a clean page+iframe re-render with month-override
+   *  applied at the data layer. Empty/invalid → live mode. */
+  monthOverride?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -235,6 +242,12 @@ export default async function ProjectOverviewPage({
     userEmail,
   });
   const dashboardBaseUrl = process.env.DASHBOARD_URL ?? "";
+  // monthOverride is read from search params; format-validated again in
+  // buildDashboardUrl so a malformed link doesn't poison the iframe URL.
+  const monthOverride =
+    typeof sp.monthOverride === "string" && /^\d{4}-\d{2}$/.test(sp.monthOverride)
+      ? sp.monthOverride
+      : "";
   // `authuser` hints Google to load the iframe under *this* account if the
   // browser is signed into multiple Google accounts. If it's signed into the
   // wrong one (or none), Google will redirect to its sign-in flow with our
@@ -244,6 +257,7 @@ export default async function ProjectOverviewPage({
         company: companyForDashboard,
         project: projectName,
         authuser: userEmail,
+        monthOverride,
       })
     : "";
   // Iframe URL selection:
@@ -299,9 +313,12 @@ export default async function ProjectOverviewPage({
         project: projectName,
         authuser: userEmail,
         embed: true,
+        monthOverride,
       })
     : "";
-  const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}`;
+  // External-client proxy URL — append monthOverride as a query param so the
+  // proxy route can forward it upstream to renderDashboardHtml.
+  const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}${monthOverride ? `?monthOverride=${encodeURIComponent(monthOverride)}` : ""}`;
   const dashboardEmbedUrl = isInternalUser ? legacyEmbedUrl : proxyEmbedUrl;
   // "Open in new tab" link next to the metrics section. Internal users get
   // the raw USER_ACCESSING /exec URL (preserves interactivity); external
@@ -506,14 +523,19 @@ export default async function ProjectOverviewPage({
         <section className="project-section project-section-metrics">
           <div className="section-head">
             <h2>📊 מטריקות</h2>
-            <a
-              className="section-link"
-              href={dashboardOpenUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              פתח בכרטיסייה חדשה ↗
-            </a>
+            <div className="section-head-actions">
+              <Suspense fallback={null}>
+                <DashboardMonthOverrideSlot current={monthOverride} />
+              </Suspense>
+              <a
+                className="section-link"
+                href={dashboardOpenUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                פתח בכרטיסייה חדשה ↗
+              </a>
+            </div>
           </div>
           <MetricsIframe
             src={dashboardEmbedUrl}
@@ -1319,6 +1341,9 @@ function buildDashboardUrl(
     /** When true, the dashboard hides its sticky filter bar — useful for
      *  iframe embedding since the URL already scopes to one project. */
     embed?: boolean;
+    /** "YYYY-MM" — auto-applies the dashboard's month-override mode on
+     *  initial load. Anything else is silently dropped. */
+    monthOverride?: string;
   },
 ): string {
   let url: URL;
@@ -1331,5 +1356,28 @@ function buildDashboardUrl(
   if (filters.project) url.searchParams.set("project", filters.project);
   if (filters.authuser) url.searchParams.set("authuser", filters.authuser);
   if (filters.embed) url.searchParams.set("embed", "1");
+  if (filters.monthOverride && /^\d{4}-\d{2}$/.test(filters.monthOverride)) {
+    url.searchParams.set("monthOverride", filters.monthOverride);
+  }
   return url.toString();
+}
+
+/**
+ * Async server component that fetches the available-months list from Apps
+ * Script and renders the client-side picker. Wrapped in <Suspense> at the
+ * call site so the page doesn't block on this network call — the picker
+ * materializes when the months arrive (typically <500ms). Failures (Apps
+ * Script down, etc.) silently render nothing — the iframe still works,
+ * users just can't pick a month from the hub side.
+ */
+async function DashboardMonthOverrideSlot({ current }: { current: string }) {
+  let months: string[] = [];
+  try {
+    const res = await getAvailableMonths();
+    months = Array.isArray(res?.months) ? res.months : [];
+  } catch {
+    return null;
+  }
+  if (!months.length) return null;
+  return <DashboardMonthOverridePicker current={current} months={months} />;
 }

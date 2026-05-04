@@ -29,7 +29,7 @@ import { currentUserEmail } from "@/lib/appsScript";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ project: string }> },
 ) {
   let email: string;
@@ -50,12 +50,19 @@ export async function GET(
   const { project: projectParam } = await params;
   const project = decodeURIComponent(projectParam);
 
+  // monthOverride forwarded from the iframe `src` query string. Format
+  // "YYYY-MM" — anything else is silently dropped so a malformed param
+  // can't poison the upstream call.
+  const monthOverrideRaw = new URL(req.url).searchParams.get("monthOverride") || "";
+  const monthOverride = /^\d{4}-\d{2}$/.test(monthOverrideRaw) ? monthOverrideRaw : "";
+
   const url = new URL(base);
   url.searchParams.set("api", "1");
   url.searchParams.set("action", "renderDashboardHtml");
   url.searchParams.set("token", token);
   url.searchParams.set("user", email);
   url.searchParams.set("project", project);
+  if (monthOverride) url.searchParams.set("monthOverride", monthOverride);
 
   // Cold-render on the Apps Script side can take 15–30s (sheet reads +
   // creative map + platform data). Allow plenty of headroom.
