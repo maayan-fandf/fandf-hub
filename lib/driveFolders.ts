@@ -332,19 +332,32 @@ async function fetchApprovalState(
     }
     const data = (await r.json().catch(() => ({}))) as {
       approvals?: Array<{
+        id?: string;
         status?: string;
-        approvalDecisions?: Array<{ status?: string }>;
+        requestTime?: string;
+        completionTime?: string;
       }>;
     };
     const approvals = data.approvals || [];
     if (approvals.length === 0) return "none";
-    let pending = false;
-    for (const a of approvals) {
-      const s = String(a.status || "").toUpperCase();
-      if (s === "APPROVED") return "approved";
-      if (s === "IN_PROGRESS") pending = true;
-    }
-    return pending ? "pending" : "none";
+    // Look at the LATEST approval only — sequence
+    //   [APPROVED, IN_PROGRESS]
+    // means a previously-approved file had a new review round started
+    // and should read as "pending", not "approved". Sort by requestTime
+    // desc; fall through to whatever the API order was when timestamps
+    // are missing.
+    const sorted = [...approvals].sort((a, b) =>
+      String(b.requestTime || "").localeCompare(String(a.requestTime || "")),
+    );
+    const latest = sorted[0];
+    const status = String(latest?.status || "").toUpperCase();
+    if (status === "APPROVED") return "approved";
+    if (status === "IN_PROGRESS") return "pending";
+    // CANCELED / DECLINED / unknown — file is not in an active flow,
+    // no badge. (Google's enum uses "CANCELED" with one L; we match
+    // the explicit positive states above and let everything else fall
+    // through to "none" — same effect, more forgiving to enum drift.)
+    return "none";
   } catch (e) {
     console.warn(
       `[fetchApprovalState] failed for fileId=${fileId}: ${
