@@ -4276,6 +4276,68 @@ html[data-theme="dark"] .quick-note-saved {
   text-align: center;
 }
 
+/* Latest פריסה card on the project overview page — a thumbnail + name +
+   modified-time tile that links to the most-recently-updated sheet
+   inside `<project>/פריסות/`. The whole card is the click target. */
+.project-section-prisot { margin-bottom: 1.5rem; }
+.prisot-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 1rem;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.prisot-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.15);
+  text-decoration: none;
+}
+.prisot-thumb {
+  background: var(--surface-hi, #f3f4f6);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  min-height: 9rem;
+}
+.prisot-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+.prisot-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.45rem;
+}
+.prisot-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  word-break: break-word;
+}
+.prisot-modified {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .prisot-card {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Bottom-left floating action button — global "+" for quick-task entry.
    Sits below the topnav z-index but above page content; persistent. */
 .quick-task-fab {

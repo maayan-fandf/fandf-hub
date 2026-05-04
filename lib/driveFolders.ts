@@ -217,6 +217,74 @@ export async function ensureCampaignFolderId(
  * per parent (page-size 1) to check if any child folder exists, which is
  * cheap and avoids a chevron with no content behind it.
  */
+/**
+ * Returns the latest Google Sheet inside `<project>/פריסות/` for a project.
+ * Used by the project-overview page to surface the most-recently-updated
+ * "spread" file at a glance, instead of forcing the user to navigate the
+ * Drive folder hierarchy. Returns `null` when:
+ *   - the project's Drive folder doesn't exist yet
+ *   - there's no `פריסות` subfolder
+ *   - the subfolder has no Google Sheets
+ *
+ * Two Drive round-trips total: one to find the פריסות folder, one to
+ * list its sheets ordered by modifiedTime desc with pageSize=1. Caller
+ * is expected to wrap with React's `cache()` for per-request dedup —
+ * we don't use unstable_cache because the multi-instance propagation
+ * issue around drive lookups (see feedback_unstable_cache_multi_instance.md)
+ * makes cross-request caching unreliable for files that change daily.
+ */
+export type LatestPrisot = {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  webViewLink: string;
+  thumbnailLink: string;
+};
+export async function findLatestPrisotForProject(
+  subjectEmail: string,
+  company: string,
+  project: string,
+): Promise<LatestPrisot | null> {
+  if (!company.trim() || !project.trim()) return null;
+  const { folderId: projectFolderId } = await findProjectFolderUrlCached(
+    company,
+    project,
+  );
+  if (!projectFolderId) return null;
+  const sharedDriveId = tasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  const prisotFolderId = await findFolder(
+    drive,
+    projectFolderId,
+    "פריסות",
+    sharedDriveId,
+  );
+  if (!prisotFolderId) return null;
+  const res = await drive.files.list({
+    q: [
+      "mimeType='application/vnd.google-apps.spreadsheet'",
+      `'${prisotFolderId}' in parents`,
+      "trashed=false",
+    ].join(" and "),
+    fields: "files(id, name, modifiedTime, webViewLink, thumbnailLink)",
+    orderBy: "modifiedTime desc",
+    pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "drive",
+    driveId: sharedDriveId,
+  });
+  const f = res.data.files?.[0];
+  if (!f?.id) return null;
+  return {
+    id: f.id,
+    name: f.name || "(ללא שם)",
+    modifiedTime: f.modifiedTime || "",
+    webViewLink: f.webViewLink || `https://docs.google.com/spreadsheets/d/${f.id}/edit`,
+    thumbnailLink: f.thumbnailLink || "",
+  };
+}
+
 export async function listFolderChildren(
   subjectEmail: string,
   parentId: string,

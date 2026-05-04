@@ -13,6 +13,7 @@ import {
   type MorningProject,
 } from "@/lib/appsScript";
 import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePicker";
+import LatestPrisotCard from "@/components/LatestPrisotCard";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
@@ -514,6 +515,19 @@ export default async function ProjectOverviewPage({
           materializes when ready; nothing visible while it's pending. */}
       <Suspense fallback={null}>
         <ProjectAlertsSection projectName={projectName} />
+      </Suspense>
+
+      {/* Latest פריסה (spread / deployment sheet) — the most-recently-
+          updated Google Sheet inside `<project>/פריסות/`. Renders as
+          null when the folder doesn't exist or has no sheets, so projects
+          that don't follow the convention silently degrade. Suspense
+          keeps the slow Drive lookup off the critical render path. */}
+      <Suspense fallback={null}>
+        <LatestPrisotCard
+          subjectEmail={userEmail}
+          company={companyForDashboard}
+          project={projectName}
+        />
       </Suspense>
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
