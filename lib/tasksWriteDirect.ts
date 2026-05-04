@@ -1479,6 +1479,64 @@ async function tasksUpdateDirectInner(
   const isAdmin = ADMIN_EMAILS.has(subjectEmail.toLowerCase().trim());
   if (!isAdmin) await assertProjectAccess(subjectEmail, project);
 
+  // Project-change semantics — fires when patch.project is set AND
+  // differs from the row's current project. The top-of-function access
+  // check only validated the OLD project, so we re-validate against the
+  // NEW project here; without this a user could move a personal note
+  // into a real project they have no business touching. Also handles
+  // pseudo→real Drive folder backfill (notes deliberately skip folder
+  // creation at create time, so leaving __personal__ is the natural
+  // moment to materialize the hierarchy).
+  const incomingProject =
+    typeof patch.project === "string" ? patch.project.trim() : null;
+  const projectChanging =
+    incomingProject != null && incomingProject !== project;
+  if (projectChanging) {
+    if (incomingProject.startsWith("__")) {
+      throw new Error("לא ניתן להעביר משימה לפרויקט פסאודו");
+    }
+    if (!isAdmin) await assertProjectAccess(subjectEmail, incomingProject);
+    // Resolve company for the new project — patch's explicit company
+    // wins (e.g. promote-personal endpoint pre-resolves it), otherwise
+    // we look it up from Keys here.
+    if (typeof patch.company !== "string" || !patch.company) {
+      const newCompany = await resolveCompany(subjectEmail, incomingProject);
+      if (newCompany) {
+        (patch as Record<string, unknown>).company = newCompany;
+      }
+    }
+    // Drive folder backfill — leaving __personal__ for a real project
+    // AND row has no folder yet → create one under the new project's
+    // company tree. Best-effort; on failure the project move still
+    // lands and the user can pick a folder later via the folder picker.
+    const currentFolderId = String(cell("drive_folder_id") ?? "").trim();
+    if (isPseudoProject(project) && !currentFolderId) {
+      try {
+        const folder = await createTaskFolder({
+          id: taskId,
+          title: String(cell("title") ?? ""),
+          company: String(
+            (patch as Record<string, unknown>).company ?? "",
+          ),
+          project: incomingProject,
+          campaign:
+            typeof patch.campaign === "string" ? patch.campaign : "",
+        });
+        if (folder) {
+          // Set drive_folder_id; the existing folder-repoint block
+          // below reads its webViewLink and persists both id + url.
+          (patch as Record<string, unknown>).drive_folder_id =
+            folder.folderId;
+        }
+      } catch (e) {
+        console.warn(
+          "[tasksUpdateDirect] Drive backfill on project change failed:",
+          e,
+        );
+      }
+    }
+  }
+
   // Build the changes map, keyed by Comments column names. Special
   // mapping: description → body, assignees → mentions, status → also
   // sync `resolved`. Mirrors Apps Script tasksUpdateForUser_.

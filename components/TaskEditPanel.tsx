@@ -27,9 +27,17 @@ const SUB_STATUSES = ["", "אושר", "ממתין לטיפול"];
 export default function TaskEditPanel({
   task,
   people,
+  projects = [],
 }: {
   task: WorkTask;
   people: TasksPerson[];
+  /** User's accessible projects, used as the datalist for the project
+   *  field. When omitted, the project field still accepts free-form
+   *  input (just no autocomplete). The dominant flow that depends on
+   *  this is "promote a personal note (__personal__) to a real project"
+   *  — typing the new project name here moves the row, backfills the
+   *  Drive folder, and updates the company server-side. */
+  projects?: { name: string; company: string }[];
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -64,6 +72,7 @@ export default function TaskEditPanel({
   const [subStatusCustom, setSubStatusCustom] = useState(
     SUB_STATUSES.includes(task.sub_status) ? "" : task.sub_status,
   );
+  const [project, setProject] = useState(task.project || "");
   const [campaign, setCampaign] = useState(task.campaign || "");
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
   const [campaignReloadNonce, setCampaignReloadNonce] = useState(0);
@@ -128,6 +137,15 @@ export default function TaskEditPanel({
       sub_status: subStatus,
       campaign: campaign.trim(),
     };
+    // Only include `project` in the patch when the user actually moved
+    // the task. The server-side update path treats project changes
+    // specially (validates access to the new project + backfills a
+    // Drive folder when leaving __personal__) and we want those side
+    // effects to fire only when the value really changed.
+    const projectTrimmed = project.trim();
+    if (projectTrimmed && projectTrimmed !== task.project) {
+      patch.project = projectTrimmed;
+    }
     // Only include drive_folder_id if the user actually picked a
     // different existing folder — no-op otherwise. Re-pointing to "new"
     // is deliberately not supported from the edit panel for now.
@@ -169,8 +187,7 @@ export default function TaskEditPanel({
         <h2>עריכת משימה</h2>
         <p className="subtitle">
           שינויים נשמרים למשימה ולוג הסטטוסים — לא נשלח מייל חדש לגורם המאשר.
-          פרויקט + חברה אינם ניתנים לעריכה (מחייבים יצירה מחדש של התיקייה
-          ב־Drive).
+          העברת המשימה לפרויקט אחר תיצור תיקייה חדשה ב־Drive במידת הצורך.
         </p>
       </div>
 
@@ -186,16 +203,34 @@ export default function TaskEditPanel({
 
       <div className="task-form-row">
         <label>
-          פרויקט (קבוע)
-          <input type="text" value={task.project} disabled readOnly />
+          פרויקט
+          <input
+            type="text"
+            value={project}
+            list="task-edit-projects"
+            onChange={(e) => setProject(e.target.value)}
+            placeholder={
+              task.project.startsWith("__")
+                ? "הזן שם פרויקט להעברת ההערה"
+                : "שם פרויקט"
+            }
+          />
+          <datalist id="task-edit-projects">
+            {projects.map((p) => (
+              <option key={`${p.company}|${p.name}`} value={p.name}>
+                {p.company ? `${p.company} · ${p.name}` : p.name}
+              </option>
+            ))}
+          </datalist>
         </label>
         <label>
-          חברה (קבוע)
+          חברה (אוטומטית)
           <input
             type="text"
             value={task.company || "—"}
             disabled
             readOnly
+            title="החברה נקבעת אוטומטית לפי הפרויקט"
           />
         </label>
         <label>

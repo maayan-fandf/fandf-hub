@@ -25,7 +25,6 @@ import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
-import PromoteToProjectButton from "@/components/PromoteToProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -253,27 +252,23 @@ export default async function TaskDetailPage({
               ✏️ ערוך
             </Link>
           )}
-          {/* Promote-to-project — only on personal-note rows, only for the
-              author. Collaborators added as assignees can edit content but
-              not move the task into a project (which may not even be in
-              their access scope). */}
-          {!editing &&
-            t.project.startsWith("__") &&
-            (t.author_email || "").toLowerCase() ===
-              (subjectEmail || "").toLowerCase() && (
-              <PromoteToProjectButton
-                taskId={t.id}
-                projects={(accessRes?.projects ?? []).map((p) => ({
-                  name: p.name,
-                  company: p.company,
-                }))}
-              />
-            )}
+          {/* Personal-note → real-project conversion is now folded into the
+              edit panel itself (TaskEditPanel's project field accepts a new
+              value; the server validates access + backfills Drive folder).
+              See lib/tasksWriteDirect.ts:projectChanging for the server
+              semantics, and TaskEditPanel for the UX. */}
         </div>
       </header>
 
       {editing && (
-        <TaskEditPanel task={t} people={peopleRes?.people ?? []} />
+        <TaskEditPanel
+          task={t}
+          people={peopleRes?.people ?? []}
+          projects={(accessRes?.projects ?? []).map((p) => ({
+            name: p.name,
+            company: p.company,
+          }))}
+        />
       )}
 
       <section className="task-detail-grid">
