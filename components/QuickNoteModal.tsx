@@ -221,10 +221,10 @@ export default function QuickNoteModal() {
           <div className="quick-note-saved">
             ✓ נשמר —{" "}
             <a
-              href={`/tasks/${encodeURIComponent(lastSaved.id)}`}
+              href={`/tasks/${encodeURIComponent(lastSaved.id)}?edit=1`}
               onClick={() => setOpen(false)}
             >
-              פתח “{lastSaved.title}”
+              פתח “{lastSaved.title}” לעריכה
             </a>
           </div>
         )}
