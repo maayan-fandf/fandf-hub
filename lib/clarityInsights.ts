@@ -1,5 +1,8 @@
 import { cache } from "react";
-import { getProjectLandingUrl } from "@/lib/projectsDirect";
+import {
+  getProjectLandingUrl,
+  getProjectClarityToken,
+} from "@/lib/projectsDirect";
 import {
   fetchClarityInsights,
   clarityDashboardUrlForUrl,
@@ -80,13 +83,14 @@ export const summarizeClarityForProject = cache(
     subjectEmail: string;
     project: string;
   }): Promise<ClaritySectionData | null> => {
-    const landingUrl = await getProjectLandingUrl(
-      args.subjectEmail,
-      args.project,
-    );
+    const [landingUrl, clarityToken] = await Promise.all([
+      getProjectLandingUrl(args.subjectEmail, args.project),
+      getProjectClarityToken(args.subjectEmail, args.project),
+    ]);
     if (!landingUrl) return null;
+    if (!clarityToken) return null;
 
-    const insights = await fetchClarityInsights(landingUrl);
+    const insights = await fetchClarityInsights(landingUrl, clarityToken);
     if (!insights) return null;
 
     let hebrewSummary = "";

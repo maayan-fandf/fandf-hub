@@ -168,3 +168,16 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # ─── Clarity + Claude landing-page insights section ──────────────
+  # Anthropic API key for the per-project Hebrew narrative on
+  # /projects/[name]. Per-project Clarity API tokens themselves are
+  # NOT here — they live on the Keys sheet (one workspace per project).
+  # GCP Secret Manager IAM: granted via
+  # `firebase apphosting:secrets:grantaccess ANTHROPIC_API_KEY --backend fandf-hub`
+  # on 2026-05-04. Re-run grantaccess if the backend is ever recreated.
+  - variable: ANTHROPIC_API_KEY
+    secret: ANTHROPIC_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME

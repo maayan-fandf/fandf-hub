@@ -42,23 +42,25 @@ const cache = new Map<string, CacheEntry>();
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Fetch the trailing-3-day insights for a single landing URL. URL
- * filtering goes through Clarity's `dimension1=URL` parameter so a
- * single shared workspace can serve all projects (one workspace
- * tracks every landing page; we filter at query time).
+ * Fetch the trailing-3-day insights for a single landing URL. Each
+ * F&F project has its own Clarity workspace and its own API token —
+ * resolved per-project from the Keys sheet upstream — so the token
+ * is passed in. URL filtering still goes through `dimension1=URL`
+ * for workspaces that track multiple landing pages.
  */
 export async function fetchClarityInsights(
   landingUrl: string,
+  apiToken: string,
 ): Promise<ClarityInsights | null> {
-  const token = process.env.CLARITY_API_TOKEN;
-  if (!token) {
-    console.warn("[clarity] CLARITY_API_TOKEN not set — section disabled");
-    return null;
-  }
+  const token = (apiToken || "").trim();
+  if (!token) return null;
   const url = (landingUrl || "").trim();
   if (!url) return null;
 
-  const cacheKey = normalizeUrl(url);
+  // Cache key includes the token so two projects pointed at the same
+  // URL but different workspaces never collide. Token is hashed-ish
+  // (last-8 suffix is enough for separation; we never log the full).
+  const cacheKey = `${token.slice(-8)}|${normalizeUrl(url)}`;
   const now = Date.now();
   const hit = cache.get(cacheKey);
   if (hit && hit.expiresAt > now) {

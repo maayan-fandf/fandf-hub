@@ -164,6 +164,47 @@ export const getProjectLandingUrl = cache(
   },
 );
 
+const CLARITY_TOKEN_HEADER_CANDIDATES = [
+  "clarity api token",
+  "clarity token",
+  "clarity api key",
+  "clarity key",
+  "clarity api",
+  "clarity",
+  "טוקן קלריטי",
+  "קלריטי",
+];
+
+export const getProjectClarityToken = cache(
+  async (subjectEmail: string, project: string): Promise<string> => {
+    const target = (project || "").toLowerCase().trim();
+    if (!target) return "";
+    try {
+      const { headers, rows } = await readKeysRows(subjectEmail);
+      const iProj = headers.indexOf("פרוייקט");
+      if (iProj < 0) return "";
+      const lowerHeaders = headers.map((h) => String(h ?? "").toLowerCase().trim());
+      let iToken = -1;
+      for (const candidate of CLARITY_TOKEN_HEADER_CANDIDATES) {
+        const idx = lowerHeaders.indexOf(candidate);
+        if (idx >= 0) {
+          iToken = idx;
+          break;
+        }
+      }
+      if (iToken < 0) return "";
+      for (const row of rows) {
+        const name = String(row[iProj] ?? "").toLowerCase().trim();
+        if (name !== target) continue;
+        return String(row[iToken] ?? "").trim();
+      }
+    } catch {
+      // Non-fatal — section silently disabled when token unreadable.
+    }
+    return "";
+  },
+);
+
 /** Split a "Name1, Name2" roster cell into an array of trimmed names.
  *  Empty entries are dropped; the input is treated as Unicode, so
  *  Hebrew names round-trip cleanly. */
