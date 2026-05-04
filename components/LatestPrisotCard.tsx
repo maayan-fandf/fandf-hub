@@ -63,7 +63,16 @@ export default async function LatestPrisotCard({
       <div className="section-head">
         <h2>
           📐 פריסה אחרונה
-          {latest.approved ? (
+          {/* Only show the green ✓ מאושר badge when the file is actually
+              locked (Drive's contentRestrictions[0].readOnly = true).
+              Earlier this branch also rendered an amber "נשלח לאישור"
+              badge for the un-approved case — but Drive's API can't
+              actually distinguish "sent for approval, awaiting" from
+              "just a draft no one started a flow on", so the badge was
+              overclaiming on files that hadn't been sent at all. The
+              absence of ✓ מאושר implies "not yet approved" without
+              making a state claim we can't verify. */}
+          {latest.approved && (
             <span
               className="prisot-approved-badge"
               title={
@@ -73,13 +82,6 @@ export default async function LatestPrisotCard({
               }
             >
               ✓ מאושר
-            </span>
-          ) : (
-            <span
-              className="prisot-unapproved-badge"
-              title="הפריסה ממתינה לאישור — אחרי האישור הקובץ יסומן בנעילה (Lock) ב־Sheets"
-            >
-              ⏳ נשלח לאישור
             </span>
           )}
           {latest.source === "general" && (
