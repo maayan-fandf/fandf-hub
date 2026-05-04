@@ -63,25 +63,32 @@ export default async function LatestPrisotCard({
       <div className="section-head">
         <h2>
           📐 פריסה אחרונה
-          {/* Only show the green ✓ מאושר badge when the file is actually
-              locked (Drive's contentRestrictions[0].readOnly = true).
-              Earlier this branch also rendered an amber "נשלח לאישור"
-              badge for the un-approved case — but Drive's API can't
-              actually distinguish "sent for approval, awaiting" from
-              "just a draft no one started a flow on", so the badge was
-              overclaiming on files that hadn't been sent at all. The
-              absence of ✓ מאושר implies "not yet approved" without
-              making a state claim we can't verify. */}
-          {latest.approved && (
+          {/* Three-state approval badge driven by the Drive Approvals
+              API + contentRestrictions readOnly fallback (see
+              lib/driveFolders.ts → fetchApprovalState). "approved" =
+              IN_PROGRESS resolved as APPROVED, OR file was manually
+              locked. "pending" = there's a real IN_PROGRESS approval
+              flow on the file. "none" = no badge — the absence of any
+              badge naturally reads as "not yet approved" without making
+              a state claim. */}
+          {latest.approvalState === "approved" && (
             <span
               className="prisot-approved-badge"
               title={
                 latest.approvedTime
-                  ? `הפריסה ננעלה לאישור ב־${formatRelativeHe(latest.approvedTime)}`
+                  ? `הפריסה אושרה / ננעלה ב־${formatRelativeHe(latest.approvedTime)}`
                   : "הפריסה מסומנת כגרסה מאושרת"
               }
             >
               ✓ מאושר
+            </span>
+          )}
+          {latest.approvalState === "pending" && (
+            <span
+              className="prisot-unapproved-badge"
+              title="קיים תהליך אישור פעיל על הפריסה (Drive Approvals API → IN_PROGRESS)"
+            >
+              ⏳ נשלח לאישור
             </span>
           )}
           {latest.source === "general" && (

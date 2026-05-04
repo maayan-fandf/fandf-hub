@@ -252,10 +252,14 @@ export type LatestPrisot = {
    *  פריסות, "general" = the company's כללי project served as the
    *  fallback. Renders as a small badge in the UI. */
   source: "project" | "general";
-  /** True when the file has a Drive contentRestriction with readOnly=
-   *  true — this is what Sheets' "Approved version" / "Locked" UI sets
-   *  under the hood. Files of any mime type can be locked the same
-   *  way, so this flag is meaningful for both sheets and images. */
+  /** Three-state approval signal. "approved" = file went through the
+   *  Drive Approvals API and received APPROVED, OR the file is manually
+   *  locked via contentRestrictions (Sheets' "Approved version" UI).
+   *  "pending" = an Approvals API flow is IN_PROGRESS. "none" = no
+   *  active approval flow + not locked. */
+  approvalState: "approved" | "pending" | "none";
+  /** True for backwards-compat with old call sites. Equivalent to
+   *  approvalState === "approved". */
   approved: boolean;
   /** ISO timestamp of when the file was locked/approved (the
    *  contentRestriction's restrictionTime). Empty when not approved. */
@@ -280,6 +284,75 @@ function extractDateFromName(name: string): string {
   const m = name.match(DATE_IN_NAME_RE);
   if (!m) return "";
   return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+}
+
+/**
+ * Fetches the Drive Approvals API state for one file. The googleapis
+ * SDK doesn't expose `drive.approvals` as a typed sub-resource yet, so
+ * we hit the REST endpoint directly with the SA's Bearer token.
+ *
+ * Returns:
+ *   "approved" — at least one APPROVED approval exists
+ *   "pending"  — at least one IN_PROGRESS approval exists, none APPROVED
+ *   "none"     — no approvals, all CANCELLED/DECLINED, or API unavailable
+ *                (silently fails so workspace tenants without the
+ *                Approvals feature don't 4xx-spam every page render)
+ *
+ * The endpoint is `GET /drive/v3/files/{fileId}/approvals`. Same Drive
+ * scope our existing reads use — no extra OAuth scope needed.
+ */
+type ApprovalState = "approved" | "pending" | "none";
+async function fetchApprovalState(
+  drive: drive_v3.Drive,
+  fileId: string,
+): Promise<ApprovalState> {
+  try {
+    const auth2 = drive.context._options.auth as
+      | { getAccessToken: () => Promise<{ token?: string | null }> }
+      | undefined;
+    const tokenResp = await auth2?.getAccessToken?.();
+    const token = tokenResp?.token;
+    if (!token) return "none";
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      fileId,
+    )}/approvals?supportsAllDrives=true`;
+    const r = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    // 404 = file not found OR Approvals API not enabled for this file.
+    // 403 = Approvals not enabled for the workspace. Both → "none".
+    if (!r.ok) {
+      if (r.status !== 404 && r.status !== 403) {
+        console.warn(
+          `[fetchApprovalState] unexpected ${r.status} for fileId=${fileId}`,
+        );
+      }
+      return "none";
+    }
+    const data = (await r.json().catch(() => ({}))) as {
+      approvals?: Array<{
+        status?: string;
+        approvalDecisions?: Array<{ status?: string }>;
+      }>;
+    };
+    const approvals = data.approvals || [];
+    if (approvals.length === 0) return "none";
+    let pending = false;
+    for (const a of approvals) {
+      const s = String(a.status || "").toUpperCase();
+      if (s === "APPROVED") return "approved";
+      if (s === "IN_PROGRESS") pending = true;
+    }
+    return pending ? "pending" : "none";
+  } catch (e) {
+    console.warn(
+      `[fetchApprovalState] failed for fileId=${fileId}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    return "none";
+  }
 }
 
 async function findLatestPrisotInner(
@@ -344,14 +417,22 @@ async function findLatestPrisotInner(
     }
   }
   if (!best?.id) return null;
-  // Approval signal — Sheets' "Approved version" / "Locked" UI sets
-  // contentRestrictions[0].readOnly = true. There can be other reasons
-  // a file is locked (manual restrict via Drive UI), so we surface this
-  // as the more general "approved/locked" badge rather than trying to
-  // distinguish workflow states.
+  // Approval signal: combine the Drive Approvals API state with the
+  // legacy contentRestrictions readOnly fallback. The formal API is
+  // authoritative when present; readOnly catches manually-locked files
+  // that didn't go through the Approvals workflow but the user still
+  // considers "signed off" (e.g. via Sheets' "Approved version" UI).
   const restriction = best.contentRestrictions?.[0];
-  const approved = !!restriction?.readOnly;
+  const isLocked = !!restriction?.readOnly;
   const approvedTime = restriction?.restrictionTime || "";
+  const apiState = await fetchApprovalState(drive, best.id);
+  // Resolve the three-state badge. `approved` wins; `pending` second;
+  // `none` last. Manual locks count as approved since users mark
+  // files locked specifically to declare them final.
+  let approvalState: ApprovalState;
+  if (apiState === "approved" || isLocked) approvalState = "approved";
+  else if (apiState === "pending") approvalState = "pending";
+  else approvalState = "none";
   return {
     id: best.id,
     name: best.name || "(ללא שם)",
@@ -363,7 +444,8 @@ async function findLatestPrisotInner(
     mimeType: best.mimeType || "",
     dateInName: extractDateFromName(best.name || ""),
     source,
-    approved,
+    approvalState,
+    approved: approvalState === "approved",
     approvedTime,
   };
 }
