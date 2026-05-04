@@ -518,17 +518,22 @@ export default async function ProjectOverviewPage({
       </Suspense>
 
       {/* Latest פריסה (spread / deployment sheet) — the most-recently-
-          updated Google Sheet inside `<project>/פריסות/`. Renders as
-          null when the folder doesn't exist or has no sheets, so projects
-          that don't follow the convention silently degrade. Suspense
-          keeps the slow Drive lookup off the critical render path. */}
-      <Suspense fallback={null}>
-        <LatestPrisotCard
-          subjectEmail={userEmail}
-          company={companyForDashboard}
-          project={projectName}
-        />
-      </Suspense>
+          updated Google Sheet inside `<project>/פריסות/`. Internal-only:
+          clients shouldn't see internal spreads (those are working
+          drafts before they're shared via the customer-emails flow).
+          Renders as null when the folder doesn't exist or has no
+          sheets, so projects that don't follow the convention silently
+          degrade. Suspense keeps the Drive lookup off the critical
+          render path. */}
+      {!isClientUser && (
+        <Suspense fallback={null}>
+          <LatestPrisotCard
+            subjectEmail={userEmail}
+            company={companyForDashboard}
+            project={projectName}
+          />
+        </Suspense>
+      )}
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
