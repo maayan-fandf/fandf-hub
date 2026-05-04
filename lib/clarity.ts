@@ -1,16 +1,22 @@
 /**
  * Microsoft Clarity Data Export API client.
  *
- * The free tier endpoint is `project-live-insights` and only supports
- * `numOfDays: 1 | 2 | 3` (trailing windows). We default to the maximum
- * (3 days) and rely on aggressive caching to stay well within the
- * 10-calls/project/day rate limit. To get longer windows or
- * arbitrary date ranges, see v1.5 in the plan: a Cloud Scheduler job
- * that snapshots once a day and persists to a sheet tab.
+ * The free-tier endpoint is `project-live-insights` with `numOfDays: 1|2|3`.
+ * We default to 3 and rely on aggressive caching to stay under the
+ * 10-calls/project/day rate limit. v1.5 (Cloud Scheduler daily snapshot
+ * to a sheet tab) is the path to longer windows.
+ *
+ * The API supports `dimension1=URL` which breaks down each metric per
+ * URL. The `dimension1Filter` parameter is silently ignored on the
+ * free-tier endpoint (probed 2026-05-04 — passing it returns the same
+ * 1000 rows as omitting it). So we ALWAYS request URL-broken-down data
+ * and filter to the target URL client-side using path-level matching
+ * (the `Url` field on each row includes UTM + fbclid query strings, so
+ * exact-string matching never hits).
  *
  * Returns null whenever the API gives us no useful data (no token,
- * 4xx/5xx, no sessions found for the URL filter, etc.) so the UI can
- * silently drop the section rather than crash the project page.
+ * 4xx/5xx, no sessions for the URL, etc.) so the UI silently drops
+ * the section rather than crash the project page.
  */
 
 export type ClarityInsights = {
@@ -21,32 +27,30 @@ export type ClarityInsights = {
   deadClicks: number;
   quickbacks: number;
   excessiveScroll: number;
+  /** Device split is not available on the free-tier project-live-insights
+   *  endpoint — kept on the type so the UI tile renders "—" instead of
+   *  disappearing. Populated by future v1.5 snapshot job. */
   deviceSplit: { desktop: number; mobile: number; tablet: number };
-  /** ms epoch — used in the UI's "fetched X minutes ago" hint and as
-   *  a debug aid when checking whether the cache is doing its job. */
   rawFetchedAt: number;
 };
 
 const ENDPOINT = "https://www.clarity.ms/export-data/api/v1/project-live-insights";
 
-// Module-scope in-memory cache. Per-instance — Firebase App Hosting
-// scales horizontally, so each instance has its own cache. With 6h
-// TTL × ≤4 instances we land at ≤16 calls/project/day, comfortably
-// under Clarity's 10-per-project-per-day limit (the limit is shared
-// across instances since it's per-project at the Clarity side, but
-// 6h cache means the worst-case is actually capped at 4× since each
-// instance independently waits 6h). If we hit 429s in logs we'll
-// bump TTL or move to v1.5's sheet-snapshot approach.
+// Module-scope in-memory cache. Per-instance cache keyed by
+// (token-suffix, normalized-target-url) so two projects sharing one
+// workspace token but pointing at different landing pages don't collide.
 type CacheEntry = { expiresAt: number; value: ClarityInsights };
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Fetch the trailing-3-day insights for a single landing URL. Each
- * F&F project has its own Clarity workspace and its own API token —
- * resolved per-project from the Keys sheet upstream — so the token
- * is passed in. URL filtering still goes through `dimension1=URL`
- * for workspaces that track multiple landing pages.
+ * Fetch the trailing-3-day insights for a single landing URL.
+ *
+ * Even when the workspace tracks multiple landing pages, we get all of
+ * them in one API call (`dimension1=URL`) and filter client-side. That
+ * means hitting two pages from the same workspace inside the cache
+ * window only costs one upstream call (the second is a cache miss on
+ * the URL key but we re-fetch — kept simple over premature optimization).
  */
 export async function fetchClarityInsights(
   landingUrl: string,
@@ -57,10 +61,10 @@ export async function fetchClarityInsights(
   const url = (landingUrl || "").trim();
   if (!url) return null;
 
-  // Cache key includes the token so two projects pointed at the same
-  // URL but different workspaces never collide. Token is hashed-ish
-  // (last-8 suffix is enough for separation; we never log the full).
-  const cacheKey = `${token.slice(-8)}|${normalizeUrl(url)}`;
+  const targetKey = pathKey(url);
+  if (!targetKey) return null;
+
+  const cacheKey = `${token.slice(-8)}|${targetKey}`;
   const now = Date.now();
   const hit = cache.get(cacheKey);
   if (hit && hit.expiresAt > now) {
@@ -71,7 +75,6 @@ export async function fetchClarityInsights(
     const params = new URLSearchParams({
       numOfDays: "3",
       dimension1: "URL",
-      dimension1Filter: url,
     });
     const res = await fetch(`${ENDPOINT}?${params.toString()}`, {
       headers: { authorization: `Bearer ${token}` },
@@ -87,13 +90,11 @@ export async function fetchClarityInsights(
       return null;
     }
     const raw = (await res.json().catch(() => null)) as unknown;
-    const parsed = parseClarityResponse(raw);
+    const parsed = parseClarityResponse(raw, targetKey);
     if (!parsed) {
       console.warn(`[clarity] no parseable data for landing=${url}`);
       return null;
     }
-    // If the URL filter matched zero traffic, suppress the section
-    // rather than show a wall of zeros.
     if (parsed.sessions === 0) return null;
     cache.set(cacheKey, { expiresAt: now + TTL_MS, value: parsed });
     return parsed;
@@ -106,13 +107,23 @@ export async function fetchClarityInsights(
 }
 
 /**
- * Parse Clarity's response into our flattened shape. The API returns
- * an array of `{ metricName, information: [...] }` objects. The
- * `information` array's shape varies per metric — sometimes a flat
- * scalar map, sometimes per-dimension breakdowns. We pull what we
- * need defensively and let missing metrics default to 0.
+ * Aggregate Clarity's per-URL response into our flattened shape, keeping
+ * only rows whose `Url` matches the target. URL matching compares
+ * `pathKey()` (host + path, lowercased, no trailing slash, no query)
+ * because Clarity stores the full URL with UTM + fbclid params on every
+ * row.
+ *
+ * Per-block aggregation rules (response schema probed 2026-05-04):
+ *   - Traffic:           sum totalSessionCount across matched rows
+ *   - EngagementTime:    average activeTime (seconds) across matched rows
+ *   - ScrollDepth:       average averageScrollDepth across matched rows
+ *   - frustration metrics (RageClick / DeadClick / Quickback /
+ *     ExcessiveScroll): sum subTotal (event count) across matched rows
  */
-function parseClarityResponse(raw: unknown): ClarityInsights | null {
+function parseClarityResponse(
+  raw: unknown,
+  targetKey: string,
+): ClarityInsights | null {
   if (!Array.isArray(raw)) return null;
 
   const out: ClarityInsights = {
@@ -127,84 +138,51 @@ function parseClarityResponse(raw: unknown): ClarityInsights | null {
     rawFetchedAt: Date.now(),
   };
 
+  const matchesTarget = (row: Record<string, unknown>): boolean => {
+    const u = row.Url ?? row.URL ?? row.url ?? row.pageUrl;
+    if (!u || typeof u !== "string") return false;
+    return pathKey(u) === targetKey;
+  };
+
   for (const block of raw) {
     if (!block || typeof block !== "object") continue;
     const b = block as { metricName?: string; information?: unknown };
     const name = String(b.metricName || "");
-    const info = Array.isArray(b.information) ? b.information : [];
+    const rows = (Array.isArray(b.information) ? b.information : []).filter(
+      (r): r is Record<string, unknown> =>
+        !!r && typeof r === "object" && matchesTarget(r as Record<string, unknown>),
+    );
 
     switch (name) {
       case "Traffic": {
-        // Each entry is per-segment (device/browser/etc); sum sessions.
-        // The metric name in the doc is "Traffic" but the field varies
-        // — check both `totalSessionCount` and `sessions`.
-        for (const row of info) {
-          if (!row || typeof row !== "object") continue;
-          const r = row as Record<string, unknown>;
-          const n = numOf(r.totalSessionCount ?? r.sessions);
-          out.sessions += n;
-          // Device split lives on this metric in some workspaces.
-          const device = String(r.deviceType || r.device || "").toLowerCase();
-          if (device === "desktop") out.deviceSplit.desktop += n;
-          else if (device === "mobile" || device === "phone")
-            out.deviceSplit.mobile += n;
-          else if (device === "tablet") out.deviceSplit.tablet += n;
-        }
+        for (const r of rows) out.sessions += numOf(r.totalSessionCount);
         break;
       }
       case "EngagementTime": {
-        out.engagementSecondsAvg = avgOf(info, [
-          "averageEngagementTime",
-          "engagementTime",
-          "averageDuration",
-        ]);
+        out.engagementSecondsAvg = avgField(rows, "activeTime");
         break;
       }
       case "ScrollDepth": {
-        out.scrollDepthPctAvg = avgOf(info, [
-          "averageScrollDepth",
-          "scrollDepth",
-          "scrollDepthPercentage",
-        ]);
+        out.scrollDepthPctAvg = avgField(rows, "averageScrollDepth");
         break;
       }
       case "RageClickCount":
       case "RageClick": {
-        out.rageClicks = sumOf(info, [
-          "subFrustration",
-          "totalSessionCount",
-          "rageClicks",
-          "count",
-        ]);
+        for (const r of rows) out.rageClicks += numOf(r.subTotal);
         break;
       }
       case "DeadClickCount":
       case "DeadClick": {
-        out.deadClicks = sumOf(info, [
-          "subFrustration",
-          "totalSessionCount",
-          "deadClicks",
-          "count",
-        ]);
+        for (const r of rows) out.deadClicks += numOf(r.subTotal);
         break;
       }
       case "QuickbackClick":
       case "Quickback": {
-        out.quickbacks = sumOf(info, [
-          "subFrustration",
-          "totalSessionCount",
-          "quickbacks",
-          "count",
-        ]);
+        for (const r of rows) out.quickbacks += numOf(r.subTotal);
         break;
       }
       case "ExcessiveScroll": {
-        out.excessiveScroll = sumOf(info, [
-          "subFrustration",
-          "totalSessionCount",
-          "excessiveScroll",
-          "count",
-        ]);
+        for (const r of rows) out.excessiveScroll += numOf(r.subTotal);
         break;
       }
     }
@@ -222,45 +200,40 @@ function numOf(v: unknown): number {
   return 0;
 }
 
-function sumOf(rows: unknown[], fieldCandidates: string[]): number {
-  let total = 0;
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as Record<string, unknown>;
-    for (const field of fieldCandidates) {
-      if (field in r) {
-        total += numOf(r[field]);
-        break;
-      }
+function avgField(rows: Record<string, unknown>[], field: string): number {
+  if (rows.length === 0) return 0;
+  let sum = 0;
+  let count = 0;
+  for (const r of rows) {
+    const n = numOf(r[field]);
+    if (Number.isFinite(n)) {
+      sum += n;
+      count++;
     }
   }
-  return total;
+  return count === 0 ? 0 : sum / count;
 }
 
-function avgOf(rows: unknown[], fieldCandidates: string[]): number {
-  const values: number[] = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as Record<string, unknown>;
-    for (const field of fieldCandidates) {
-      if (field in r) {
-        values.push(numOf(r[field]));
-        break;
-      }
-    }
-  }
-  if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-function normalizeUrl(url: string): string {
-  // Strip trailing slashes + lowercase host so cosmetic URL
-  // differences don't fragment the cache.
+/**
+ * Reduce a URL to "host+path" (lowercased, no trailing slash, no query
+ * string, www. stripped). Used as the cache key suffix and as the
+ * client-side filter key against Clarity's per-row `Url`. Returns "" on
+ * unparseable input so callers can early-exit.
+ */
+function pathKey(url: string): string {
   try {
     const u = new URL(url);
-    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+    const host = u.host.toLowerCase().replace(/^www\./, "");
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${host}${path}`;
   } catch {
-    return url.toLowerCase().replace(/\/+$/, "");
+    return url
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\?.*$/, "")
+      .replace(/#.*$/, "")
+      .replace(/\/+$/, "");
   }
 }
 
