@@ -71,7 +71,7 @@ const STATIC_ACTIONS: ActionCmd[] = [
     sublabel: "פתח חלון כתיבת הערה אישית — נכנסת לרשימת המשימות שלך",
     event: "hub:open-quick-note",
     haystack: "note quick הערה אישית self note todo personal reminder תזכורת",
-    hint: "Ctrl+Shift+N",
+    hint: "Ctrl+Shift+M",
   },
 ];
 

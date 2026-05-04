@@ -14,7 +14,9 @@ type LastSaved = {
 
 /**
  * Self-note quick-capture modal. Opens via:
- *   - `Ctrl+Shift+N` / `⌘+Shift+N` global shortcut
+ *   - `Ctrl+Shift+M` / `⌘+Shift+M` global shortcut (m for "memo" — Ctrl+Shift+N
+ *     is reserved by Chrome for incognito mode at the OS level, so we can't
+ *     use it; M was the closest free alternative across Chrome/Firefox/Edge/Safari)
  *   - The "g n" chord in CommandPalette → calls window.dispatchEvent('hub:open-quick-note')
  *   - The CommandPalette static action (search "הערה אישית" / "note")
  *
@@ -39,8 +41,10 @@ export default function QuickNoteModal() {
   // Global shortcut + custom open event.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Ctrl+Shift+N / ⌘+Shift+N — open the modal regardless of where focus is.
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "n") {
+      // Ctrl+Shift+M / ⌘+Shift+M — open the modal regardless of where focus is.
+      // (Ctrl+Shift+N is reserved by Chrome for incognito and can't be intercepted
+      // by web pages — this is enforced at the OS / browser level.)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "m") {
         e.preventDefault();
         setOpen(true);
         return;
@@ -189,11 +193,15 @@ export default function QuickNoteModal() {
           disabled={saving}
         />
 
+        {/* NOT a <label> — wrapping the DatePicker in a label would redirect
+            clicks on the day cells to the first form control inside (the
+            trigger button), closing the popover before the day's onClick
+            could fire. Keep this a plain <div>. */}
         <div className="quick-note-row">
-          <label className="quick-note-due-label">
+          <span className="quick-note-due-label">
             <span>📅 לתאריך:</span>
-            <DatePicker value={due} onChange={setDue} />
-          </label>
+            <DatePicker value={due} onChange={setDue} ariaLabel="תאריך יעד" />
+          </span>
           {due && (
             <button
               type="button"
@@ -241,7 +249,7 @@ export default function QuickNoteModal() {
         </div>
 
         <div className="quick-note-hint">
-          טיפ: Ctrl+Shift+N לפתיחה מכל מקום בהאב · המשימה תופיע ב־📋 משימות שלך
+          טיפ: Ctrl+Shift+M לפתיחה מכל מקום בהאב · המשימה תופיע ב־📋 משימות שלך
         </div>
       </div>
     </div>

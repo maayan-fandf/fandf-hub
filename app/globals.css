@@ -4175,7 +4175,16 @@ a.section-link:hover {
   gap: 0.4rem;
   font-size: 0.85rem;
   color: var(--muted);
+  /* DatePicker's popover is position:absolute relative to the nearest
+     positioned ancestor. Without this, the popover anchors to the page
+     instead of the trigger button. */
+  position: relative;
 }
+/* DatePicker root span — same anchoring guarantee for any other usage
+   that didn't explicitly wrap it in a positioned element. The picker's
+   internal popover is `position:absolute; top:100%`, which only works
+   when the picker itself forms a stacking/positioning context. */
+.date-picker { position: relative; display: inline-block; }
 .quick-note-due-clear {
   background: transparent;
   border: 1px solid var(--border);
