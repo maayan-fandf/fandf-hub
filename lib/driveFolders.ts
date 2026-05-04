@@ -239,11 +239,29 @@ export type LatestPrisot = {
   modifiedTime: string;
   webViewLink: string;
   thumbnailLink: string;
+  /** YYYY-MM-DD if the filename contains a date, "" otherwise. The
+   *  pickLatestPrisotForCompanyOrProject ranker prefers this over
+   *  modifiedTime since users sometimes re-open old sheets without the
+   *  data actually being more recent. */
+  dateInName: string;
+  /** Where the sheet was found — "project" = under the actual project's
+   *  פריסות, "general" = the company's כללי project served as the
+   *  fallback. Renders as a small badge in the UI. */
+  source: "project" | "general";
 };
-export async function findLatestPrisotForProject(
+
+const DATE_IN_NAME_RE = /(\d{4})-(\d{1,2})-(\d{1,2})/;
+function extractDateFromName(name: string): string {
+  const m = name.match(DATE_IN_NAME_RE);
+  if (!m) return "";
+  return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+}
+
+async function findLatestPrisotInner(
   subjectEmail: string,
   company: string,
   project: string,
+  source: "project" | "general",
 ): Promise<LatestPrisot | null> {
   if (!company.trim() || !project.trim()) return null;
   const { folderId: projectFolderId } = await findProjectFolderUrlCached(
@@ -268,21 +286,101 @@ export async function findLatestPrisotForProject(
     ].join(" and "),
     fields: "files(id, name, modifiedTime, webViewLink, thumbnailLink)",
     orderBy: "modifiedTime desc",
-    pageSize: 1,
+    // We need to find the file with the latest date-IN-NAME, not the
+    // latest modifiedTime — pull a small page and rank client-side.
+    pageSize: 30,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
     corpora: "drive",
     driveId: sharedDriveId,
   });
-  const f = res.data.files?.[0];
-  if (!f?.id) return null;
+  const items = res.data.files ?? [];
+  if (items.length === 0) return null;
+  // Rank: prefer the file with the latest date-in-name. Files without
+  // a parseable date in their name fall through to modifiedTime order
+  // (the API already returned them sorted that way). When everything
+  // has a date, the date-in-name wins.
+  let best: typeof items[number] | null = null;
+  let bestKey = "";
+  for (const f of items) {
+    if (!f.id) continue;
+    const dateInName = extractDateFromName(f.name || "");
+    const modified = f.modifiedTime || "";
+    // Composite key: date-in-name first (so it always wins), then
+    // modifiedTime as tiebreaker. Both are ISO-like, so string-compare
+    // works correctly.
+    const key = (dateInName || "0000-00-00") + "|" + modified;
+    if (key > bestKey) {
+      bestKey = key;
+      best = f;
+    }
+  }
+  if (!best?.id) return null;
   return {
-    id: f.id,
-    name: f.name || "(ללא שם)",
-    modifiedTime: f.modifiedTime || "",
-    webViewLink: f.webViewLink || `https://docs.google.com/spreadsheets/d/${f.id}/edit`,
-    thumbnailLink: f.thumbnailLink || "",
+    id: best.id,
+    name: best.name || "(ללא שם)",
+    modifiedTime: best.modifiedTime || "",
+    webViewLink:
+      best.webViewLink ||
+      `https://docs.google.com/spreadsheets/d/${best.id}/edit`,
+    thumbnailLink: best.thumbnailLink || "",
+    dateInName: extractDateFromName(best.name || ""),
+    source,
   };
+}
+
+/** Backwards-compat wrapper for any external callers that imported the
+ *  pre-2026-05-04 single-folder helper. New callers should use
+ *  pickLatestPrisotForCompanyOrProject which handles the כללי fallback. */
+export async function findLatestPrisotForProject(
+  subjectEmail: string,
+  company: string,
+  project: string,
+): Promise<LatestPrisot | null> {
+  return findLatestPrisotInner(subjectEmail, company, project, "project");
+}
+
+/**
+ * Two-step latest-spread resolution that rules over a project page:
+ *
+ *   1. Look up the project's own `<project>/פריסות/` folder, take the
+ *      file with the latest date-in-name (falling back to modifiedTime
+ *      when names lack a date).
+ *   2. ALSO look up `<company>/כללי/פריסות/` and take the same.
+ *   3. Pick the winner by date-in-name; the company-level כללי file
+ *      overrides the project file when its date-in-name is more recent.
+ *      This handles the workflow where a single "weekly spread" lives
+ *      in כללי and supersedes whatever's lying around in individual
+ *      project folders. When the project has no folder at all, the
+ *      כללי file fills in (sub-rule of the same comparison — `null`
+ *      always loses).
+ *
+ * No-op when company is "" or project is already "כללי" (no fallback
+ * to itself).
+ */
+export async function pickLatestPrisotForCompanyOrProject(
+  subjectEmail: string,
+  company: string,
+  project: string,
+): Promise<LatestPrisot | null> {
+  if (!company.trim()) return null;
+  const proj = project.trim();
+  // Run both lookups in parallel; either may be null.
+  const [own, general] = await Promise.all([
+    proj ? findLatestPrisotInner(subjectEmail, company, proj, "project") : null,
+    proj && proj !== "כללי"
+      ? findLatestPrisotInner(subjectEmail, company, "כללי", "general")
+      : null,
+  ]);
+  if (!own && !general) return null;
+  if (!own) return general;
+  if (!general) return own;
+  // Compare by date-in-name with modifiedTime as tiebreaker.
+  const ownKey =
+    (own.dateInName || "0000-00-00") + "|" + (own.modifiedTime || "");
+  const genKey =
+    (general.dateInName || "0000-00-00") + "|" + (general.modifiedTime || "");
+  return genKey > ownKey ? general : own;
 }
 
 export async function listFolderChildren(

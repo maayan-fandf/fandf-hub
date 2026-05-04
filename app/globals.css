@@ -4276,19 +4276,21 @@ html[data-theme="dark"] .quick-note-saved {
   text-align: center;
 }
 
-/* Latest פריסה card on the project overview page — a thumbnail + name +
-   modified-time tile that links to the most-recently-updated sheet
-   inside `<project>/פריסות/`. The whole card is the click target. */
+/* Latest פריסה card on the project overview page — a large readable
+   thumbnail + name + modified-time tile that links to the most-recently-
+   updated sheet inside `<project>/פריסות/` (or the company's כללי
+   project as fallback when more-recently-dated). The whole card is the
+   click target. The thumbnail dominates because Sheet content is the
+   point — at 220px it was unreadable. */
 .project-section-prisot { margin-bottom: 1.5rem; }
 .prisot-card {
-  display: grid;
-  grid-template-columns: minmax(180px, 240px) 1fr;
-  gap: 1rem;
-  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 0.85rem;
+  padding: 0.9rem;
   text-decoration: none;
   color: inherit;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -4304,23 +4306,27 @@ html[data-theme="dark"] .quick-note-saved {
   border-radius: 8px;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  aspect-ratio: 4 / 3;
-  min-height: 9rem;
+  /* No fixed aspect — let the thumbnail set its own height up to a
+     max so very tall sheets don't blow up the page. The Drive
+     thumbnail at sz=w1600 is typically ~1600x900-1800. */
+  max-height: 700px;
 }
 .prisot-thumb img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  max-height: 700px;
+  object-fit: contain;
   object-position: top center;
   display: block;
 }
 .prisot-meta {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.45rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-inline: 0.2rem;
 }
 .prisot-name {
   font-size: 1rem;
@@ -4331,10 +4337,29 @@ html[data-theme="dark"] .quick-note-saved {
 .prisot-modified {
   font-size: 0.85rem;
   color: var(--muted);
+  white-space: nowrap;
+}
+.prisot-source-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.55rem;
+  padding: 0.15rem 0.55rem;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  vertical-align: middle;
 }
 @media (max-width: 640px) {
-  .prisot-card {
-    grid-template-columns: 1fr;
+  .prisot-thumb,
+  .prisot-thumb img {
+    max-height: 480px;
+  }
+  .prisot-meta {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

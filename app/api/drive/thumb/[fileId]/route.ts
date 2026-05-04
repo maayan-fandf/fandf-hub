@@ -36,21 +36,17 @@ export async function GET(
     return new NextResponse("Bad file id", { status: 400 });
   }
 
+  // Optional ?sz= override; defaults to a wide thumbnail that's
+  // readable at typical card sizes (1600px-wide). Drive's documented
+  // thumbnail endpoint accepts `sz=w<N>` for width-bound rendering;
+  // the range it actually serves is roughly 200–2000px. Anything
+  // outside that range gets clamped server-side.
+  const url = new URL(_req.url);
+  const szRaw = url.searchParams.get("sz") || "w1600";
+  const sz = /^w\d{2,4}$/.test(szRaw) ? szRaw : "w1600";
+
   try {
     const drive = driveClient(driveFolderOwner() || session.user.email);
-    // Fetch the thumbnailLink URL from the file metadata, then GET it
-    // with the SA's auth header. We can't pass `alt: media` on the
-    // file itself for a sheet (the export endpoint is needed for that
-    // and is much heavier) — the thumbnailLink path is the lightweight
-    // version Drive UIs use.
-    const meta = await drive.files.get({
-      fileId,
-      fields: "thumbnailLink",
-      supportsAllDrives: true,
-    });
-    const link = meta.data.thumbnailLink;
-    if (!link) return new NextResponse("No thumbnail", { status: 404 });
-
     // Pull the access token off the underlying JWT auth so we can
     // forward it. googleapis lazily refreshes the token; calling
     // getAccessToken() ensures it's fresh.
@@ -63,7 +59,14 @@ export async function GET(
       return new NextResponse("No token", { status: 502 });
     }
 
-    const upstream = await fetch(link, {
+    // Drive's documented thumbnail endpoint — `sz=w<N>` returns a
+    // <N>-pixel-wide rendering. Much larger + readable than the default
+    // ~220px thumbnailLink. Auth via Bearer token works for any user
+    // who has Drive read on the file (DRIVE_FOLDER_OWNER does).
+    const upstreamUrl = `https://drive.google.com/thumbnail?id=${encodeURIComponent(
+      fileId,
+    )}&sz=${sz}`;
+    const upstream = await fetch(upstreamUrl, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
     });

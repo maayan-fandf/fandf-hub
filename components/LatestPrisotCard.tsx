@@ -1,14 +1,22 @@
 import Link from "next/link";
-import { findLatestPrisotForProject } from "@/lib/driveFolders";
+import { pickLatestPrisotForCompanyOrProject } from "@/lib/driveFolders";
 
 /**
  * Server component — fetches and renders the latest Google Sheet from
- * `<project>/פריסות/` on the project overview page. Renders nothing
- * when the folder doesn't exist or has no sheets, so the page silently
- * degrades for projects that don't follow the convention yet.
+ * `<project>/פריסות/` (or, when the project's own folder has no
+ * later-dated sheet, from `<company>/כללי/פריסות/`) on the project
+ * overview page.
  *
- * Wrapped in <Suspense> at the call site so the slow Drive lookup
- * (~500–1500ms cold) doesn't block the rest of the page rendering.
+ * The fallback rule: if the company-level כללי folder has a sheet whose
+ * filename contains a more recent date (YYYY-MM-DD pattern) than the
+ * project's own latest, we surface the כללי one instead — handles the
+ * "weekly spread lives in כללי and supersedes per-project drafts"
+ * workflow. A small badge marks the source when fallback fires so users
+ * can tell at a glance which folder the file came from.
+ *
+ * Wrapped in <Suspense> at the call site so the Drive lookup
+ * (~500–2000ms cold for two parallel folder traversals) doesn't block
+ * the rest of the page.
  */
 export default async function LatestPrisotCard({
   subjectEmail,
@@ -19,7 +27,7 @@ export default async function LatestPrisotCard({
   company: string;
   project: string;
 }) {
-  const latest = await findLatestPrisotForProject(
+  const latest = await pickLatestPrisotForCompanyOrProject(
     subjectEmail,
     company,
     project,
@@ -29,13 +37,25 @@ export default async function LatestPrisotCard({
   const modified = formatRelativeHe(latest.modifiedTime);
   // Always proxy the thumbnail through the hub so external clients
   // (whose browser has no F&F Google session) can still see the
-  // preview. The proxy route uses the SA bearer token under DWD.
+  // preview. The proxy uses the SA bearer token under DWD and serves
+  // a 1600px-wide rendering by default — much more readable than
+  // Drive's default ~220px thumbnailLink.
   const thumbSrc = `/api/drive/thumb/${encodeURIComponent(latest.id)}`;
 
   return (
     <section className="project-section project-section-prisot">
       <div className="section-head">
-        <h2>📐 פריסה אחרונה</h2>
+        <h2>
+          📐 פריסה אחרונה
+          {latest.source === "general" && (
+            <span
+              className="prisot-source-badge"
+              title="הפריסה לקוחה מתיקיית 'כללי' של החברה — אין פריסה חדשה יותר תחת הפרויקט עצמו"
+            >
+              מתוך כללי
+            </span>
+          )}
+        </h2>
         <a
           className="section-link"
           href={latest.webViewLink}
