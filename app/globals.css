@@ -4482,6 +4482,89 @@ html[data-theme="dark"] .quick-note-saved {
   }
 }
 
+/* Clarity landing-page insights section — Microsoft Clarity Data Export
+   API → KPI grid + Claude-generated Hebrew narrative. Sits below the
+   metrics iframe on /projects/[name]. Internal-only. */
+.project-section-clarity { margin-bottom: 1.5rem; }
+.clarity-summary-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.95rem 1.1rem 0.95rem 4.5rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%);
+  border: 1px solid #d8b4fe;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.clarity-summary-badge {
+  position: absolute;
+  top: 0.85rem;
+  inset-inline-start: 0.95rem;
+  padding: 0.18rem 0.6rem;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.clarity-summary-card p {
+  margin: 0;
+  padding-block-start: 0.1rem;
+}
+html[data-theme="dark"] .clarity-summary-card {
+  background: linear-gradient(135deg, #2e1065 0%, #4c1d95 100%);
+  border-color: #7c3aed;
+  color: #ede9fe;
+}
+.clarity-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+.clarity-kpi-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.clarity-kpi-tile-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.clarity-kpi-tile-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.clarity-kpi-tile-warn {
+  border-color: #fcd34d;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+.clarity-kpi-tile-warn .clarity-kpi-tile-value { color: #92400e; }
+html[data-theme="dark"] .clarity-kpi-tile-warn {
+  background: linear-gradient(135deg, #422006 0%, #78350f 100%);
+  border-color: #b45309;
+}
+html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
+  color: #fde68a;
+}
+@media (max-width: 640px) {
+  .clarity-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .clarity-kpi-tile-value { font-size: 1.15rem; }
+}
+
 /* Bottom-left floating action button — global "+" for quick-task entry.
    Sits below the topnav z-index but above page content; persistent. */
 .quick-task-fab {

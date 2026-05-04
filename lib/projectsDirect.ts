@@ -24,6 +24,7 @@
  * parallel. ~200–400 ms cold vs. ~1–2 s through Apps Script.
  */
 
+import { cache } from "react";
 import type { MyProjects, Project, ProjectRoster } from "@/lib/appsScript";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysRows, HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
@@ -106,6 +107,62 @@ export async function getProjectChatSpaceUrl(
   }
   return "";
 }
+
+/**
+ * Per-request landing-URL lookup. Used by ClarityInsightsSection to
+ * resolve which URL to query the Microsoft Clarity Data Export API for.
+ *
+ * Tolerant header match across English + Hebrew labels — the Keys sheet
+ * has been edited by hand for years, so column names drift. Returns ""
+ * when the project isn't found OR the row exists but the cell is blank;
+ * callers should treat both the same way (silently skip the section).
+ *
+ * Wrapped in React's `cache()` for per-request dedup. Not unstable_cache
+ * because Drive folder lookups in the same lib showed multi-instance
+ * staleness (see feedback_unstable_cache_multi_instance.md); landing
+ * URLs change rarely enough that React-cache is sufficient.
+ */
+const LANDING_URL_HEADER_CANDIDATES = [
+  "landing url",
+  "landing",
+  "landing page",
+  "url",
+  "דף נחיתה",
+  "קישור דף נחיתה",
+];
+
+export const getProjectLandingUrl = cache(
+  async (subjectEmail: string, project: string): Promise<string> => {
+    const target = (project || "").toLowerCase().trim();
+    if (!target) return "";
+    try {
+      const { headers, rows } = await readKeysRows(subjectEmail);
+      const iProj = headers.indexOf("פרוייקט");
+      if (iProj < 0) return "";
+      // Find the landing-URL column via tolerant case-insensitive match
+      // — header text varies row-to-row across the sheet's history.
+      const lowerHeaders = headers.map((h) => String(h ?? "").toLowerCase().trim());
+      let iLanding = -1;
+      for (const candidate of LANDING_URL_HEADER_CANDIDATES) {
+        const idx = lowerHeaders.indexOf(candidate);
+        if (idx >= 0) {
+          iLanding = idx;
+          break;
+        }
+      }
+      if (iLanding < 0) return "";
+      for (const row of rows) {
+        const name = String(row[iProj] ?? "").toLowerCase().trim();
+        if (name !== target) continue;
+        const url = String(row[iLanding] ?? "").trim();
+        return url;
+      }
+    } catch {
+      // Non-fatal — page just renders without the section.
+    }
+    return "";
+  },
+);
 
 /** Split a "Name1, Name2" roster cell into an array of trimmed names.
  *  Empty entries are dropped; the input is treated as Unicode, so

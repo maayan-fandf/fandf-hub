@@ -14,6 +14,7 @@ import {
 } from "@/lib/appsScript";
 import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePicker";
 import LatestPrisotCard from "@/components/LatestPrisotCard";
+import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
@@ -562,6 +563,20 @@ export default async function ProjectOverviewPage({
             expectedEmail={userEmail}
           />
         </section>
+      )}
+
+      {/* Landing-page behavior insights — Clarity API + Claude-generated
+          Hebrew narrative. Internal-only (mirrors the LatestPrisotCard
+          gate). Renders null on any failure so the page silently
+          degrades; Suspense keeps the API chain off the critical
+          render path. */}
+      {!isClientUser && (
+        <Suspense fallback={null}>
+          <ClarityInsightsSection
+            subjectEmail={userEmail}
+            project={projectName}
+          />
+        </Suspense>
       )}
     </main>
   );
