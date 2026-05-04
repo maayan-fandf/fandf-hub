@@ -4339,18 +4339,24 @@ html[data-theme="dark"] .quick-note-saved {
   color: var(--muted);
   white-space: nowrap;
 }
-.prisot-source-badge {
+.prisot-source-badge,
+.prisot-approved-badge {
   display: inline-flex;
   align-items: center;
   margin-inline-start: 0.55rem;
   padding: 0.15rem 0.55rem;
-  background: linear-gradient(135deg, #7c3aed, #a855f7);
   color: #fff;
   border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   vertical-align: middle;
+}
+.prisot-source-badge {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+}
+.prisot-approved-badge {
+  background: linear-gradient(135deg, #059669, #10b981);
 }
 @media (max-width: 640px) {
   .prisot-thumb,

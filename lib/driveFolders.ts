@@ -248,6 +248,14 @@ export type LatestPrisot = {
    *  פריסות, "general" = the company's כללי project served as the
    *  fallback. Renders as a small badge in the UI. */
   source: "project" | "general";
+  /** True when the file has a Drive contentRestriction with readOnly=
+   *  true — this is what Sheets' "Approved version" / "Locked" UI sets
+   *  under the hood. Surfaced as a green ✓ מאושר badge so users can
+   *  tell at a glance whether the spread has been signed off. */
+  approved: boolean;
+  /** ISO timestamp of when the file was locked/approved (the
+   *  contentRestriction's restrictionTime). Empty when not approved. */
+  approvedTime: string;
 };
 
 const DATE_IN_NAME_RE = /(\d{4})-(\d{1,2})-(\d{1,2})/;
@@ -284,7 +292,9 @@ async function findLatestPrisotInner(
       `'${prisotFolderId}' in parents`,
       "trashed=false",
     ].join(" and "),
-    fields: "files(id, name, modifiedTime, webViewLink, thumbnailLink)",
+    fields:
+      "files(id, name, modifiedTime, webViewLink, thumbnailLink, " +
+      "contentRestrictions(readOnly, reason, restrictionTime))",
     orderBy: "modifiedTime desc",
     // We need to find the file with the latest date-IN-NAME, not the
     // latest modifiedTime — pull a small page and rank client-side.
@@ -316,6 +326,14 @@ async function findLatestPrisotInner(
     }
   }
   if (!best?.id) return null;
+  // Approval signal — Sheets' "Approved version" / "Locked" UI sets
+  // contentRestrictions[0].readOnly = true. There can be other reasons
+  // a file is locked (manual restrict via Drive UI), so we surface this
+  // as the more general "approved/locked" badge rather than trying to
+  // distinguish workflow states.
+  const restriction = best.contentRestrictions?.[0];
+  const approved = !!restriction?.readOnly;
+  const approvedTime = restriction?.restrictionTime || "";
   return {
     id: best.id,
     name: best.name || "(ללא שם)",
@@ -326,6 +344,8 @@ async function findLatestPrisotInner(
     thumbnailLink: best.thumbnailLink || "",
     dateInName: extractDateFromName(best.name || ""),
     source,
+    approved,
+    approvedTime,
   };
 }
 

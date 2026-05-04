@@ -47,6 +47,18 @@ export default async function LatestPrisotCard({
       <div className="section-head">
         <h2>
           📐 פריסה אחרונה
+          {latest.approved && (
+            <span
+              className="prisot-approved-badge"
+              title={
+                latest.approvedTime
+                  ? `הפריסה ננעלה לאישור ב־${formatRelativeHe(latest.approvedTime)}`
+                  : "הפריסה מסומנת כגרסה מאושרת"
+              }
+            >
+              ✓ מאושר
+            </span>
+          )}
           {latest.source === "general" && (
             <span
               className="prisot-source-badge"
