@@ -38,22 +38,24 @@ export default async function LatestPrisotCard({
   ).catch(() => null);
   if (!latest) return null;
 
-  // Read the actual sheet contents (first tab, formatted values). When
-  // this succeeds we render the data inline as an HTML table — much
-  // more useful than the thumbnail since the thumbnail loses cell
-  // formatting + is upscaled-and-soft. Falls back to the thumbnail
-  // when the read fails (auth, deleted, no values, etc.) so the card
-  // never goes blank.
-  const data = await readPrisotData(subjectEmail, latest.id).catch(
-    () => null,
-  );
+  const isImage = latest.mimeType.startsWith("image/");
+  const isSheet =
+    latest.mimeType === "application/vnd.google-apps.spreadsheet";
+
+  // Sheets only — read the actual cell values for inline-table render.
+  // Skipped entirely for image files (we render the image directly).
+  // Falls back to the thumbnail when the read fails (auth, deleted, no
+  // values, etc.) so the card never goes blank.
+  const data = isSheet
+    ? await readPrisotData(subjectEmail, latest.id).catch(() => null)
+    : null;
 
   const modified = formatRelativeHe(latest.modifiedTime);
-  // Always proxy the thumbnail through the hub so external clients
-  // (whose browser has no F&F Google session) can still see the
-  // preview. The proxy uses the SA bearer token under DWD and serves
-  // a 1600px-wide rendering by default — much more readable than
-  // Drive's default ~220px thumbnailLink.
+  // Always proxy through the hub so external clients (whose browser
+  // has no F&F Google session) can still see the file. Two endpoints:
+  //   /api/drive/image/<id>  → streams the actual bytes (full fidelity)
+  //   /api/drive/thumb/<id>  → resized rendering (works for any file)
+  const imageSrc = `/api/drive/image/${encodeURIComponent(latest.id)}`;
   const thumbSrc = `/api/drive/thumb/${encodeURIComponent(latest.id)}`;
 
   return (
@@ -104,7 +106,21 @@ export default async function LatestPrisotCard({
         rel="noreferrer"
         className="prisot-card"
       >
-        {data ? (
+        {isImage ? (
+          // Image file — render the actual bytes via the hub's image
+          // proxy so we get full fidelity (not the small Drive
+          // thumbnail). Onerror falls back to the thumb proxy via
+          // the existing PrisotThumb wrapper, which has its own
+          // fallback chain.
+          <div className="prisot-thumb prisot-thumb-image">
+            <PrisotThumb
+              src={imageSrc}
+              alt={latest.name}
+            />
+          </div>
+        ) : data ? (
+          // Sheet file with successfully-read cell values → inline
+          // HTML table.
           <div className="prisot-data" dir="rtl">
             <table className="prisot-data-table">
               <tbody>
@@ -122,6 +138,8 @@ export default async function LatestPrisotCard({
             </table>
           </div>
         ) : (
+          // Sheet file but the data read failed (or unsupported file
+          // type) → fall back to the thumbnail proxy.
           <div className="prisot-thumb">
             <PrisotThumb
               src={thumbSrc}

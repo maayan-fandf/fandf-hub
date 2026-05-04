@@ -239,6 +239,10 @@ export type LatestPrisot = {
   modifiedTime: string;
   webViewLink: string;
   thumbnailLink: string;
+  /** Mime type from Drive — used by the card to choose between the
+   *  HTML-table render (sheets), the inline image render (image/*),
+   *  and the thumbnail fallback. */
+  mimeType: string;
   /** YYYY-MM-DD if the filename contains a date, "" otherwise. The
    *  pickLatestPrisotForCompanyOrProject ranker prefers this over
    *  modifiedTime since users sometimes re-open old sheets without the
@@ -250,13 +254,26 @@ export type LatestPrisot = {
   source: "project" | "general";
   /** True when the file has a Drive contentRestriction with readOnly=
    *  true — this is what Sheets' "Approved version" / "Locked" UI sets
-   *  under the hood. Surfaced as a green ✓ מאושר badge so users can
-   *  tell at a glance whether the spread has been signed off. */
+   *  under the hood. Files of any mime type can be locked the same
+   *  way, so this flag is meaningful for both sheets and images. */
   approved: boolean;
   /** ISO timestamp of when the file was locked/approved (the
    *  contentRestriction's restrictionTime). Empty when not approved. */
   approvedTime: string;
 };
+
+/** Mime types we surface from a פריסות folder — sheets + the common
+ *  image formats. Anything else (PDFs, Docs, raw bytes) is ignored
+ *  because the renderer doesn't have a meaningful display path for them
+ *  and the user only puts spreads/images in this folder by convention. */
+const PRISOT_MIMES = [
+  "application/vnd.google-apps.spreadsheet",
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/heic",
+];
 
 const DATE_IN_NAME_RE = /(\d{4})-(\d{1,2})-(\d{1,2})/;
 function extractDateFromName(name: string): string {
@@ -286,14 +303,15 @@ async function findLatestPrisotInner(
     sharedDriveId,
   );
   if (!prisotFolderId) return null;
+  const mimeQ = "(" + PRISOT_MIMES.map((m) => `mimeType='${m}'`).join(" or ") + ")";
   const res = await drive.files.list({
     q: [
-      "mimeType='application/vnd.google-apps.spreadsheet'",
+      mimeQ,
       `'${prisotFolderId}' in parents`,
       "trashed=false",
     ].join(" and "),
     fields:
-      "files(id, name, modifiedTime, webViewLink, thumbnailLink, " +
+      "files(id, name, mimeType, modifiedTime, webViewLink, thumbnailLink, " +
       "contentRestrictions(readOnly, reason, restrictionTime))",
     orderBy: "modifiedTime desc",
     // We need to find the file with the latest date-IN-NAME, not the
@@ -342,6 +360,7 @@ async function findLatestPrisotInner(
       best.webViewLink ||
       `https://docs.google.com/spreadsheets/d/${best.id}/edit`,
     thumbnailLink: best.thumbnailLink || "",
+    mimeType: best.mimeType || "",
     dateInName: extractDateFromName(best.name || ""),
     source,
     approved,
@@ -389,7 +408,12 @@ export async function readPrisotData(
       return !p.hidden && (p.sheetType || "GRID") === "GRID";
     });
     const sheetTitle = tab?.properties?.title || "";
-    if (!sheetTitle) return null;
+    if (!sheetTitle) {
+      console.warn(
+        `[readPrisotData] no visible GRID tab for fileId=${fileId}`,
+      );
+      return null;
+    }
     const range = `${sheetTitle}!A1:T50`;
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: fileId,
@@ -399,10 +423,24 @@ export async function readPrisotData(
     });
     const raw = (res.data.values as unknown as string[][] | undefined) ?? [];
     const rows = trimEmpty(raw);
-    if (rows.length === 0) return null;
+    if (rows.length === 0) {
+      console.warn(
+        `[readPrisotData] empty values for fileId=${fileId} range=${range}`,
+      );
+      return null;
+    }
     return { sheetTitle, range, rows };
   } catch (e) {
-    console.warn("[readPrisotData] failed:", e);
+    // Surface the failure mode (403 access denied, 404 deleted, etc.)
+    // so the broken-on-some-projects case is diagnosable from logs.
+    const code =
+      (e as { code?: number; response?: { status?: number } }).code ??
+      (e as { response?: { status?: number } }).response?.status;
+    console.warn(
+      `[readPrisotData] failed for fileId=${fileId} code=${code}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
     return null;
   }
 }

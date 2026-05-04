@@ -4321,6 +4321,18 @@ html[data-theme="dark"] .quick-note-saved {
   object-position: top center;
   display: block;
 }
+/* Image-file variant — when the latest פריסה is itself an image (jpg/png
+   etc.), give the image more vertical room since we're showing the
+   real file content, not a small thumbnail. */
+.prisot-thumb-image {
+  max-height: none;
+}
+.prisot-thumb-image img {
+  max-height: 1100px;
+}
+@media (max-width: 640px) {
+  .prisot-thumb-image img { max-height: 700px; }
+}
 .prisot-thumb-skeleton {
   width: 100%;
   min-height: 320px;
