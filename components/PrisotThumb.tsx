@@ -46,11 +46,31 @@ export default function PrisotThumb({ src, alt }: Props) {
       <img
         src={src}
         alt={alt}
-        loading="lazy"
         decoding="async"
         onLoad={() => setState("ready")}
         onError={() => setState("error")}
-        style={state === "loading" ? { display: "none" } : undefined}
+        // Position absolute + opacity-0 keeps the img in the layout
+        // tree (so the browser actually fetches it), but invisible until
+        // onLoad fires. Earlier version used `display: none` here which
+        // ALSO removes the element from layout — combined with
+        // `loading="lazy"` the browser never started the fetch (no
+        // intersection-observer hit because no layout box), `onLoad`
+        // never fired, the state stayed "loading", `display: none`
+        // stayed, and the image was permanently stuck loading. Lazy
+        // loading was also dropped: the card is in a Suspense boundary
+        // already so the page doesn't block on this fetch, and the
+        // image is small.
+        style={
+          state === "loading"
+            ? {
+                position: "absolute",
+                opacity: 0,
+                pointerEvents: "none",
+                width: 1,
+                height: 1,
+              }
+            : undefined
+        }
       />
     </>
   );
