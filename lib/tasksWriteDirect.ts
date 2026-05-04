@@ -74,6 +74,7 @@ const TASKS_STATUSES: WorkTaskStatus[] = [
   "awaiting_approval",
   "done",
   "cancelled",
+  "blocked",
 ];
 
 // Open lifecycle — every status routes to every other status (minus
@@ -82,13 +83,27 @@ const TASKS_STATUSES: WorkTaskStatus[] = [
 // arbitrary jumps (e.g. drag from done back to awaiting_handling), so
 // the whitelist became a friction source instead of a guard. Client
 // mirror in TaskStatusCell.tsx is generated the same way.
-const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> =
-  Object.fromEntries(
+const TASKS_ALLOWED_TRANSITIONS: Record<WorkTaskStatus, WorkTaskStatus[]> = (() => {
+  const base: Record<WorkTaskStatus, WorkTaskStatus[]> = Object.fromEntries(
     TASKS_STATUSES.map((from) => [
       from,
       TASKS_STATUSES.filter((to) => to !== from),
     ]),
   ) as Record<WorkTaskStatus, WorkTaskStatus[]>;
+  // System-managed status overrides (phase 2, 2026-05-03):
+  //   - From `blocked`: only manual transition allowed is to `cancelled`
+  //     (the user can always abandon a blocked task). Every other move
+  //     out of blocked must come through dependencyCascade once
+  //     upstream blockers terminate.
+  //   - Into `blocked`: never allowed manually. Only the chain-creation
+  //     flow + dependency-cascade reverse-flow may set this status.
+  base.blocked = ["cancelled"];
+  for (const from of TASKS_STATUSES) {
+    if (from === "blocked") continue;
+    base[from] = base[from].filter((to) => to !== "blocked");
+  }
+  return base;
+})();
 
 const ADMIN_EMAILS = new Set([
   "maayan@fandf.co.il",
@@ -153,7 +168,10 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function genId(): string {
+// Exported for chain-creation flows (lib/tasksCreateChain.ts) which
+// pre-generate IDs so they can wire blocks/blocked_by edges before
+// any rows exist on the sheet.
+export function genId(): string {
   return (
     "T-" +
     Date.now().toString(36) +
@@ -447,6 +465,18 @@ async function patchGoogleTaskWithRetry(
  * just gets skipped. Each patch retries on 429 / 5xx (see helper) so
  * a transient quota blip doesn't leave hub→done with the assignee's
  * GT still open in their tasklist.
+ *
+ * BUG FIX 2026-05-03 (T-moju0aon-07uo regression): pre-fetch each GT's
+ * current state and SKIP patching when it's already in the desired
+ * state. The previous implementation patched unconditionally, which
+ * bumped the `updated` timestamp on Google's side for stale already-
+ * completed approve GTs. userFastSync (runs on every nav) then saw
+ * those refreshed timestamps in its 5-min `updatedMin` window,
+ * dispatched applyAutoTransition({kind:"approve"}) on each, and
+ * flipped the hub task back to `done` seconds after a user moved
+ * it to `awaiting_approval`. The fetch-first path costs one extra
+ * GET per GT per transition (typical N=3-6, so single-digit GETs)
+ * and breaks the feedback loop completely.
  */
 async function syncGoogleTasksStatus(
   googleTasks: GTaskRef[],
@@ -470,6 +500,31 @@ async function syncGoogleTasksStatus(
   await Promise.all(
     allowedEntries.map(async (gt) => {
       if (!gt) return;
+      // Skip if already in the desired state. tasks.get returns 404
+      // when the recipient deleted their GT — treat that as
+      // "nothing to do" and bail (the GT is gone; patching it would
+      // 404 anyway).
+      try {
+        const tasksApi = tasksApiClient(gt.u);
+        const cur = await tasksApi.tasks.get({
+          tasklist: gt.l,
+          task: gt.t,
+        });
+        const curStatus = cur.data?.status;
+        if (curStatus === desired) {
+          // Already in the target state — DO NOT re-patch. Re-patching
+          // bumps `updated` on Google's side and triggers userFastSync
+          // to re-dispatch autoTransition (the regression fixed here).
+          return;
+        }
+      } catch (e) {
+        const code =
+          (e as { code?: number; response?: { status?: number } }).code ??
+          (e as { response?: { status?: number } }).response?.status;
+        if (code === 404) return; // GT deleted by recipient — nothing to do
+        // Any other error: fall through to the patch attempt (its own
+        // retry logic handles transient errors).
+      }
       try {
         await patchGoogleTaskWithRetry(gt, { status: desired });
       } catch (e) {
@@ -982,7 +1037,11 @@ export async function tasksCreateDirect(
   await assertProjectAccess(subjectEmail, project);
 
   const now = nowIso();
-  const id = genId();
+  // Pre-assigned ID for chain-creation flows (phase 5) — caller passes
+  // `payload.id` so it can wire blocks/blocked_by edges to siblings
+  // before any of them exist on the sheet. Normal callers omit, get
+  // a fresh id from genId().
+  const id = String(payload.id || "").trim() || genId();
   const assignees = parseAssignees(payload.assignees);
   const approver = String(payload.approver_email || "").toLowerCase().trim();
   const projectManager = String(payload.project_manager_email || "").toLowerCase().trim();
@@ -990,9 +1049,28 @@ export async function tasksCreateDirect(
   // Default entry state is awaiting_handling — the assignee has a new
   // task to do. awaiting_approval is reserved for the end-of-cycle
   // review step.
-  const status = (TASKS_STATUSES as string[]).includes(String(payload.status || ""))
+  //
+  // Phase 3 dependencies: when the caller provides `blocked_by` and
+  // doesn't pin an explicit status, the new task starts in `blocked`.
+  // The GT-spawn block below skips when status === "blocked"
+  // (assignees would otherwise see "📋 לבצע" in their personal Tasks
+  // for work they can't actually start). The cascade in
+  // dependencyCascade.ts flips `blocked → awaiting_handling` once
+  // every upstream blocker reaches a terminal state, and the post-
+  // cascade hook in tasksUpdateDirect spawns the GTs at that point.
+  const incomingBlockedBy = Array.isArray(payload.blocked_by)
+    ? payload.blocked_by.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim())
+    : [];
+  const incomingBlocks = Array.isArray(payload.blocks)
+    ? payload.blocks.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim())
+    : [];
+  const explicitStatusValid =
+    (TASKS_STATUSES as string[]).includes(String(payload.status || ""));
+  const status: WorkTaskStatus = explicitStatusValid
     ? (payload.status as WorkTaskStatus)
-    : ("awaiting_handling" as WorkTaskStatus);
+    : incomingBlockedBy.length > 0
+      ? ("blocked" as WorkTaskStatus)
+      : ("awaiting_handling" as WorkTaskStatus);
 
   const task: WorkTask = {
     id,
@@ -1024,18 +1102,34 @@ export async function tasksCreateDirect(
     status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
     edited_at: "",
     campaign: String(payload.campaign || "").trim(),
+    // Dependencies + chains. Phase 1 added the schema; phase 3 wires
+    // the actual values from the create payload (was previously
+    // always empty arrays). Chain-creation flow in phase 5 supplies
+    // these via TasksCreateInput.blocks / .blocked_by; manual creates
+    // omit them and the task starts standalone-unblocked.
+    blocks: incomingBlocks,
+    blocked_by: incomingBlockedBy,
+    umbrella_id: String(payload.umbrella_id || "").trim(),
+    is_umbrella: payload.is_umbrella === true || payload.is_umbrella === "true",
   };
 
   // Side effects — run in parallel where safe.
   //
   // Drive folder:
+  //   - Phase 5 dependencies: skip Drive folder creation entirely for
+  //     umbrella container rows. Umbrellas have no own work and
+  //     shouldn't pollute the project's Drive tree with empty folders;
+  //     each child task gets its own folder via the normal path. If a
+  //     team later wants per-chain rollup folders we can revisit.
   //   - If the caller pinned `drive_folder_id` (folder picker "existing"
   //     mode), reuse it — just fetch its webViewLink so we can persist
   //     a stable URL alongside the ID.
   //   - Otherwise create a new folder. `drive_folder_name` overrides the
   //     auto-generated `<task-id> — <title>` leaf name.
   const pinnedFolderId = String(payload.drive_folder_id || "").trim();
-  if (pinnedFolderId) {
+  if (task.is_umbrella) {
+    // No-op — umbrella has no Drive folder.
+  } else if (pinnedFolderId) {
     try {
       const { getFolderRef } = await import("@/lib/driveFolders");
       const ref = await getFolderRef(subjectEmail, pinnedFolderId);
@@ -1065,18 +1159,29 @@ export async function tasksCreateDirect(
   // when the Google Tasks due-date already covers the same need with
   // less clutter. Calendar code stays in `createCalendarEvents` for
   // possible revival but is no longer called on create.
-  const gt = await createGoogleTasks(
-    {
-      id: task.id,
-      title: task.title,
-      project: task.project,
-      description: task.description,
-      drive_folder_url: task.drive_folder_url,
-      requested_date: task.requested_date,
-    },
-    assignees,
-    { kind: "todo" },
-  );
+  //
+  // Phase 3 dependencies: skip GT spawn when status === "blocked".
+  // The task's assignees would otherwise see "📋 לבצע" for work they
+  // can't actually start. The cascade unblock-hook in
+  // tasksUpdateDirect spawns the GTs once the status flips to
+  // awaiting_handling. lib/pollTasks.ts already handles "blocked"
+  // correctly via expectedRecipientsForRow's default → [] branch
+  // (no reconciliation will try to create the missing GT).
+  const gt =
+    task.status === "blocked"
+      ? []
+      : await createGoogleTasks(
+          {
+            id: task.id,
+            title: task.title,
+            project: task.project,
+            description: task.description,
+            drive_folder_url: task.drive_folder_url,
+            requested_date: task.requested_date,
+          },
+          assignees,
+          { kind: "todo" },
+        );
   task.calendar_event_ids = {};
   task.google_tasks = gt;
 
@@ -1135,6 +1240,17 @@ export async function tasksCreateDirect(
     updated_at: task.updated_at,
     campaign: task.campaign || "",
     rank: newTaskRank,
+    // Dependencies + chains (phase 1, 2026-05-03). Defaults emit empty
+    // arrays / "" / FALSE for plain tasks; chain-creation flow (phase 5)
+    // will pass real values through `task.blocks`/`task.blocked_by`/
+    // `task.umbrella_id`/`task.is_umbrella`. Headers added by
+    // scripts/add-dependency-headers.mjs — if those columns aren't on
+    // the live sheet yet, the headerRow.map below silently drops these
+    // keys (no error), making the rollout safe in either order.
+    blocks: JSON.stringify(task.blocks ?? []),
+    blocked_by: JSON.stringify(task.blocked_by ?? []),
+    umbrella_id: task.umbrella_id ?? "",
+    is_umbrella: task.is_umbrella ? "TRUE" : "FALSE",
   };
   // Reflect rank back on the in-memory task so callers see it.
   task.rank = newTaskRank;
@@ -1179,18 +1295,52 @@ export async function tasksCreateDirect(
   // pipeline — same dispatch writes a Notifications row + sends
   // email when the recipient hasn't muted it. Approver gets a
   // separate notification later when status flips to awaiting_approval.
-  await notifyTaskAssigned(
-    {
-      id: task.id,
-      project: task.project,
-      title: task.title,
-      description: task.description,
-      requested_date: task.requested_date,
-      priority: task.priority,
-      assignees: task.assignees,
-    },
-    task.author_email,
-  );
+  //
+  // Phase 3 dependencies: skip the new-task notification when the
+  // task lands in `blocked` — assignees would be told "you have a
+  // new task" for work they can't act on. The cascade unblock-hook
+  // in tasksUpdateDirect re-fires notifyTaskAssigned at the moment
+  // their work actually becomes actionable.
+  if (task.status !== "blocked") {
+    await notifyTaskAssigned(
+      {
+        id: task.id,
+        project: task.project,
+        title: task.title,
+        description: task.description,
+        requested_date: task.requested_date,
+        priority: task.priority,
+        assignees: task.assignees,
+      },
+      task.author_email,
+    );
+  }
+
+  // Phase 4 dependencies — newborn child of an umbrella might shift
+  // the umbrella's derived status (e.g. first non-blocked child →
+  // umbrella moves awaiting_handling → in_progress). Best-effort
+  // recompute; doesn't bubble.
+  if (task.umbrella_id) {
+    try {
+      const { recomputeUmbrellaStatus } = await import("@/lib/umbrellaRecompute");
+      const r = await recomputeUmbrellaStatus({
+        subjectEmail,
+        umbrellaId: task.umbrella_id,
+        commentsSpreadsheetId: commentsSsId,
+        nowIso: now,
+      });
+      if (r.ok && r.changed) {
+        console.log(
+          `[tasksWriteDirect] umbrella ${task.umbrella_id} status: ${r.previous} → ${r.next} (after child ${task.id} created)`,
+        );
+      }
+    } catch (e) {
+      console.log(
+        `[tasksWriteDirect] umbrella recompute on create threw for ${task.umbrella_id}:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
 
   return { ok: true, task };
 }
@@ -1782,6 +1932,168 @@ async function tasksUpdateDirectInner(
     }
   }
 
+  // Dependency cascade — when this transition reached a terminal
+  // status (`done` or `cancelled`), unblock every downstream task
+  // whose remaining `blocked_by` references are now all terminal.
+  // Fires AFTER the GT-sync block above so the user-facing status
+  // landed first; cascade failures are best-effort and don't bubble.
+  // Phase 2-3 of dependencies feature, 2026-05-03 — see
+  // memory/project_dependencies_chains_pending.md.
+  //
+  // Phase 3 (GT sync rework): for each unblocked downstream task,
+  // spawn the personal Google Tasks for its assignees + persist the
+  // updated google_tasks cell + fire the new-task notification.
+  // This was deferred from createTask (which skipped GT spawn when
+  // status === "blocked"); the cascade is the right moment because
+  // it's the first time the assignees can actually act on the work.
+  if (
+    changes.status &&
+    (changes.status === "done" || changes.status === "cancelled")
+  ) {
+    try {
+      const { cascadeAfterTerminal } = await import("@/lib/dependencyCascade");
+      const cascade = await cascadeAfterTerminal({
+        // Use the same subject the parent transition ran under — DWD
+        // gives them Sheets-write on Comments, no privilege bump needed.
+        // The cascade attribution in status_history is "system" rather
+        // than the subject email (it's an automatic effect, not the
+        // user's edit on the downstream row).
+        subjectEmail,
+        completedTaskId: taskId,
+        upstreamFinalStatus: changes.status as WorkTaskStatus,
+        nowIso: now,
+        commentsSpreadsheetId: commentsSsId,
+      });
+      if (cascade.unblocked.length > 0) {
+        console.log(
+          `[tasksWriteDirect] cascade after ${taskId} → ${changes.status}: unblocked ${cascade.unblocked.length} downstream (${cascade.unblocked.map((u) => u.taskId).join(", ")})`,
+        );
+      }
+      if (cascade.errors.length > 0) {
+        console.log(
+          `[tasksWriteDirect] cascade errors for ${taskId}:`,
+          cascade.errors.join("; "),
+        );
+      }
+
+      // Phase 3 GT-spawn-on-unblock: for each newly-unblocked task,
+      // spawn personal GTs for the assignees and merge the refs into
+      // the row's google_tasks cell. Best-effort per row — a failure
+      // on one downstream doesn't stop processing the others, and
+      // never bubbles to the user (their original transition already
+      // succeeded). Notification fires alongside so the assignee learns
+      // their work is now actionable.
+      for (const u of cascade.unblocked) {
+        if (u.assignees.length === 0) continue;
+        try {
+          const spawnedRefs = await createGoogleTasks(
+            u.taskForGTSpawn,
+            u.assignees,
+            { kind: "todo" },
+          );
+          if (spawnedRefs.length > 0) {
+            // Persist the new GT refs onto the unblocked row's cell.
+            // Cascade just wrote status + status_history + updated_at;
+            // this is a separate targeted write to the google_tasks
+            // column. Race risk: if a user is concurrently mutating the
+            // unblocked task in another tab, their write could land
+            // between our read & write. Mitigation: persistGoogleTasksCell
+            // does a targeted single-cell PUT, not a full row rewrite,
+            // so the worst case is a lost notification (next poll
+            // will re-spawn via reconciliation).
+            await persistGoogleTasksCell(
+              sheets,
+              commentsSsId,
+              idx,
+              u.sheetRowIndex - 1, // persistGoogleTasksCell adds +1 internally
+              spawnedRefs,
+            );
+          }
+          // Phase 7 polish — fire `task_unblocked` (NOT `task_assigned`)
+          // so users distinguish "your turn — chain advanced" from
+          // "you've been newly assigned to a task". Body prepends the
+          // upstream task ID so the recipient knows which step just
+          // wrapped (clickable when they expand the notification).
+          // Source actor is "system" because the cascade fires
+          // automatically; the original user's identity is captured
+          // in the hub task's status_history, not the notification.
+          try {
+            const { notifyOnce } = await import("@/lib/notifications");
+            const link = taskHubUrl(u.taskForGTSpawn.id);
+            const upstreamHint =
+              u.unblockedBy.length > 0
+                ? `הופעל לאחר סיום ${u.unblockedBy.join(", ")}`
+                : "הופעל אוטומטית";
+            const body = `${upstreamHint}\n\n${buildTaskBody(u.taskForGTSpawn as never)}`;
+            for (const to of u.assignees) {
+              await notifyOnce({
+                kind: "task_unblocked",
+                forEmail: to,
+                actorEmail: "system",
+                taskId: u.taskForGTSpawn.id,
+                project: u.taskForGTSpawn.project,
+                title: u.taskForGTSpawn.title,
+                body,
+                link,
+              });
+            }
+          } catch (e) {
+            console.log(
+              `[tasksWriteDirect] task_unblocked notify failed for ${u.taskId}:`,
+              e instanceof Error ? e.message : String(e),
+            );
+          }
+        } catch (e) {
+          console.log(
+            `[tasksWriteDirect] post-cascade spawn/notify failed for ${u.taskId}:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+    } catch (e) {
+      console.log(
+        `[tasksWriteDirect] cascade threw for ${taskId}:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+
+  // Phase 4 dependencies — umbrella recompute. When this task is a
+  // child of an umbrella container (`umbrella_id` is set), any status
+  // change might shift the umbrella's derived status. Re-derive +
+  // persist if changed. Best-effort; cascade-style soft failure.
+  // Fires for ALL status changes, not just terminals — e.g. a child
+  // moving from awaiting_handling → in_progress should flip the
+  // umbrella from awaiting_handling → in_progress too.
+  if (changes.status) {
+    const fresh = rowToTask(freshRow, idx);
+    if (fresh.umbrella_id) {
+      try {
+        const { recomputeUmbrellaStatus } = await import("@/lib/umbrellaRecompute");
+        const r = await recomputeUmbrellaStatus({
+          subjectEmail,
+          umbrellaId: fresh.umbrella_id,
+          commentsSpreadsheetId: commentsSsId,
+          nowIso: now,
+        });
+        if (r.ok && r.changed) {
+          console.log(
+            `[tasksWriteDirect] umbrella ${fresh.umbrella_id} status: ${r.previous} → ${r.next} (after child ${taskId} → ${changes.status})`,
+          );
+        } else if (!r.ok) {
+          console.log(
+            `[tasksWriteDirect] umbrella recompute failed for ${fresh.umbrella_id}: ${r.error}`,
+          );
+        }
+      } catch (e) {
+        console.log(
+          `[tasksWriteDirect] umbrella recompute threw for ${fresh.umbrella_id}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
+  }
+
   // Hub-side title rename → patch every open GT's title so assignees /
   // approvers see the renamed task in their personal lists. Preserves
   // the kind prefix and drops the reissued marker (it's stale post-
@@ -1919,6 +2231,20 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),
     rank: Number.isFinite(parsedRank) ? parsedRank : fallbackRank,
+    // Dependencies + chains (phase 1, 2026-05-03). Mirrors the parser
+    // in lib/tasksDirect.ts rowToTask — keep these two in sync.
+    blocks: parseJsonField("blocks", true) as string[],
+    blocked_by: parseJsonField("blocked_by", true) as string[],
+    umbrella_id: String(cell("umbrella_id") ?? ""),
+    is_umbrella: (() => {
+      const v = cell("is_umbrella");
+      if (v === true || v === 1) return true;
+      if (typeof v === "string") {
+        const s = v.trim().toLowerCase();
+        return s === "true" || s === "1" || s === "yes";
+      }
+      return false;
+    })(),
   };
 }
 

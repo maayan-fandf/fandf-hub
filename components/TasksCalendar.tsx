@@ -59,6 +59,9 @@ const STATUS_PRIORITY: Record<WorkTaskStatus, number> = {
   in_progress: 2,
   awaiting_handling: 3,
   awaiting_approval: 4,
+  // Blocked tasks sort below the active set (user can't act on them)
+  // but above the terminal set (they're still alive in the chain).
+  blocked: 7,
   done: 9,
   cancelled: 10,
   draft: 11,

@@ -23,6 +23,8 @@ import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
+import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
+import TaskDependencyLinks from "@/components/TaskDependencyLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +84,23 @@ export default async function TaskDetailPage({
   // still skip the buttons (they don't have @fandf.co.il Google sessions
   // that the authuser= hint helps anyway).
   const showAdLinks = !!accessRes && (accessRes.isAdmin || accessRes.isInternal);
-  const [roundChain, driveName, adLinks] = await Promise.all([
+  // Phase 4b dependencies — when this task IS an umbrella container,
+  // fetch its children so the body render can list them with status
+  // badges + drill-down links. Children = rows in the same project
+  // whose `umbrella_id` points back. We piggyback on tasksList (with
+  // include_umbrellas=true so the umbrella's siblings — if any — also
+  // surface for completeness; we filter to umbrella_id ourselves).
+  //
+  // Phase 6a dependencies — when this task has dep edges (blocks /
+  // blocked_by non-empty) we also need the project's tasks to look
+  // up titles/statuses for the side-panel deps block. The same
+  // tasksList call serves BOTH purposes — single Sheets read,
+  // already cached per request.
+  const needsProjectFetch =
+    t.is_umbrella ||
+    (t.blocks?.length ?? 0) > 0 ||
+    (t.blocked_by?.length ?? 0) > 0;
+  const [roundChain, driveName, adLinks, projectTasksForDeps] = await Promise.all([
     t.round_number > 1 || t.parent_id
       ? fetchRoundChain(t).catch(() => [])
       : Promise.resolve([]),
@@ -92,7 +110,27 @@ export default async function TaskDetailPage({
     showAdLinks && t.project
       ? getProjectAdLinks(t.project).catch(() => null)
       : Promise.resolve(null),
+    needsProjectFetch
+      ? tasksList({ project: t.project, include_umbrellas: true })
+          .then((r) => r.tasks ?? [])
+          .catch(() => [] as WorkTask[])
+      : Promise.resolve([] as WorkTask[]),
   ]);
+  // Derive umbrella children list from the same fetched set.
+  const umbrellaChildren = t.is_umbrella
+    ? projectTasksForDeps.filter((c) => c.umbrella_id === t.id)
+    : ([] as WorkTask[]);
+  // Build the dep-lookup map (id → minimal info) for TaskDependencyLinks.
+  const depIds = new Set([...(t.blocks || []), ...(t.blocked_by || [])]);
+  const depLookup = new Map<
+    string,
+    { title: string; status: WorkTask["status"] }
+  >();
+  for (const x of projectTasksForDeps) {
+    if (depIds.has(x.id)) {
+      depLookup.set(x.id, { title: x.title, status: x.status });
+    }
+  }
   const localPaths = buildLocalDrivePaths({
     driveName,
     company: t.company,
@@ -222,6 +260,12 @@ export default async function TaskDetailPage({
       )}
 
       <section className="task-detail-grid">
+        {/* Phase 4b dependencies — umbrella container rows render a
+            different body (aggregate progress + child list); side
+            panel is also slimmed since umbrellas have no own work. */}
+        {t.is_umbrella ? (
+          <UmbrellaDetailMain umbrella={t} children={umbrellaChildren} />
+        ) : (
         <div className="task-detail-main">
           {t.description && (
             <div className="task-detail-body">
@@ -271,6 +315,7 @@ export default async function TaskDetailPage({
             )}
           </section>
         </div>
+        )}
 
         <aside
           className={`task-detail-side${editing ? " is-edit-mode" : ""}`}
@@ -287,28 +332,41 @@ export default async function TaskDetailPage({
             </div>
           )}
 
-          <SideBlock title="אנשים">
-            <PersonRow
-              label="כותב"
-              email={t.author_email}
-              filterKey="author"
-            />
-            <PersonRow
-              label="גורם מאשר"
-              email={t.approver_email}
-              filterKey="approver"
-            />
-            <PersonRow
-              label="מנהל פרויקט"
-              email={t.project_manager_email}
-              filterKey="project_manager"
-            />
-            <PeopleRow
-              label="עובדים במשימה"
-              emails={t.assignees || []}
-              filterKey="assignee"
-            />
-          </SideBlock>
+          {/* Phase 6a dependencies — chain context block. Self-renders
+              null when both blocks/blocked_by are empty, so the panel
+              stays compact for non-chain tasks. Placed above the
+              People block so chain state is the first thing users see
+              when relevant. */}
+          <TaskDependencyLinks task={t} lookup={depLookup} />
+
+          {/* Umbrellas have no own assignees/approver/PM; suppress the
+              People block entirely so the panel doesn't show 4 empty
+              rows. The (umbrella's children) people are surfaced
+              individually on each child's drill-down. */}
+          {!t.is_umbrella && (
+            <SideBlock title="אנשים">
+              <PersonRow
+                label="כותב"
+                email={t.author_email}
+                filterKey="author"
+              />
+              <PersonRow
+                label="גורם מאשר"
+                email={t.approver_email}
+                filterKey="approver"
+              />
+              <PersonRow
+                label="מנהל פרויקט"
+                email={t.project_manager_email}
+                filterKey="project_manager"
+              />
+              <PeopleRow
+                label="עובדים במשימה"
+                emails={t.assignees || []}
+                filterKey="assignee"
+              />
+            </SideBlock>
+          )}
 
           <SideBlock title="שיוך">
             <KV label="חברה" value={t.company || "—"} />

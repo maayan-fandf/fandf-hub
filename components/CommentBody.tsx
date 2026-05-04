@@ -80,10 +80,26 @@ function renderBody(body: string): React.ReactNode {
 type Part =
   | { kind: "text"; text: string }
   | { kind: "image"; alt: string; viewUrl: string; embedUrl: string }
-  | { kind: "link"; label: string; url: string };
+  | { kind: "link"; label: string; url: string }
+  // Bare http(s) URL detected in plain text — rendered as an
+  // auto-link with the URL itself as the label. CSS wraps long URLs
+  // inside the comment body so they don't blow the column width.
+  | { kind: "autolink"; url: string };
 
 const IMG_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/;
 const LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)\)/;
+// Bare URL detector — matches http:// or https:// followed by any
+// non-whitespace characters, trimming common trailing punctuation
+// (`.`, `,`, `)`, `]`) that's almost always sentence-final rather
+// than part of the URL. Tested against Facebook ads-manager URLs
+// (which include `?act=...&filter_set=...&selected_ad_ids=...%2C...`)
+// — those match cleanly.
+const BARE_URL_RE = /https?:\/\/[^\s<>"]+/;
+function trimUrlTrailingPunct(url: string): string {
+  // Strip trailing punctuation that's typically sentence-final, not
+  // part of the URL. Repeatedly trim — `).` happens too.
+  return url.replace(/[.,)\]>]+$/g, "");
+}
 
 function tokenizeLine(line: string): Part[] {
   const out: Part[] = [];
@@ -91,6 +107,7 @@ function tokenizeLine(line: string): Part[] {
   while (rest.length) {
     const imgMatch = rest.match(IMG_RE);
     const linkMatch = rest.match(LINK_RE);
+    const bareMatch = rest.match(BARE_URL_RE);
     let chosen: { idx: number; len: number; part: Part } | null = null;
     if (imgMatch && typeof imgMatch.index === "number") {
       const [whole, alt, url] = imgMatch;
@@ -107,6 +124,28 @@ function tokenizeLine(line: string): Part[] {
         const [whole, label, url] = linkMatch;
         const link = toLinkPart(label, url);
         if (link) chosen = { idx: linkMatch.index, len: whole.length, part: link };
+      }
+    }
+    if (bareMatch && typeof bareMatch.index === "number") {
+      // Don't auto-link inside a `[...](url)` or `![...](url)` token —
+      // the markdown matchers above own those URLs. We detect this
+      // by checking whether the bare URL match starts inside a
+      // markdown bracket pair: if the chosen markdown match's range
+      // covers this bare URL's position, skip.
+      const insideMarkdown =
+        chosen != null &&
+        bareMatch.index >= chosen.idx &&
+        bareMatch.index < chosen.idx + chosen.len;
+      if (
+        !insideMarkdown &&
+        (!chosen || bareMatch.index < chosen.idx)
+      ) {
+        const trimmed = trimUrlTrailingPunct(bareMatch[0]);
+        chosen = {
+          idx: bareMatch.index,
+          len: trimmed.length, // use trimmed length so trailing `.` stays in text
+          part: { kind: "autolink", url: trimmed },
+        };
       }
     }
     if (!chosen) {
@@ -183,6 +222,26 @@ function renderPart(part: Part, key: string): React.ReactNode {
           className="comment-body-image"
           loading="lazy"
         />
+      </a>
+    );
+  }
+  if (part.kind === "autolink") {
+    // Bare URL — render as a clickable link with the URL itself as
+    // the visible text. dir="ltr" forces LTR rendering even inside
+    // an RTL paragraph (URLs read left-to-right). The `comment-body-
+    // autolink` class adds overflow-wrap so very long URLs (Facebook
+    // ads-manager etc.) wrap inside the comment column instead of
+    // blowing the row width.
+    return (
+      <a
+        key={key}
+        href={part.url}
+        target="_blank"
+        rel="noreferrer"
+        dir="ltr"
+        className="comment-body-autolink"
+      >
+        {part.url}
       </a>
     );
   }

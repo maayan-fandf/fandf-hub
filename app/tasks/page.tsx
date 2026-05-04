@@ -21,6 +21,7 @@ import TasksKanban from "@/components/TasksKanban";
 import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
 import TasksArchiveToggle from "@/components/TasksArchiveToggle";
+import TasksUmbrellaToggle from "@/components/TasksUmbrellaToggle";
 import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
 import DateRangePicker from "@/components/DateRangePicker";
 
@@ -60,6 +61,9 @@ type Search = {
   sort?: string;
   /** asc | desc — column-specific default if absent. */
   order?: string;
+  /** `umbrellas=1` flips the default "hide umbrella container rows"
+   *  filter so users can scan all chains at once. Phase 4 dependencies. */
+  umbrellas?: string;
 };
 
 
@@ -148,6 +152,7 @@ export default async function TasksPage({
       requested_date_to: sp.requested_date_to || "",
       relevant_to_me: relevantToMe,
       involved_with: sp.involved_with || "",
+      include_umbrellas: sp.umbrellas === "1",
     })
       .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
       .catch((e: unknown) => ({
@@ -265,6 +270,7 @@ export default async function TasksPage({
               count={archivedCount}
               overridden={statusOverride}
             />
+            <TasksUmbrellaToggle showing={sp.umbrellas === "1"} />
           </div>
           <div className="subtitle">
             ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
@@ -344,6 +350,7 @@ export default async function TasksPage({
           order: sp.order || "",
           mine: sp.mine || "",
           month: sp.month || "",
+          umbrellas: sp.umbrellas || "",
         }}
         companies={companyOptions}
         allProjectNames={allProjectNames}
@@ -523,6 +530,7 @@ function TasksFilterBar({
     order: string;
     mine: string;
     month: string;
+    umbrellas: string;
   };
   companies: string[];
   /** All project names (deduped, sorted) — used as the project-list
@@ -543,6 +551,9 @@ function TasksFilterBar({
     { val: "in_progress", label: "בעבודה" },
     { val: "awaiting_clarification", label: "ממתין לבירור" },
     { val: "awaiting_approval", label: "ממתין לאישור" },
+    // Phase 2 dependencies — blocked tasks are upstream-waiting; surfaced
+    // here so users can audit "what's stuck on whom" without scrolling.
+    { val: "blocked", label: "🔒 חסום" },
     { val: "done", label: "בוצע" },
     { val: "cancelled", label: "בוטל" },
   ];
@@ -599,6 +610,9 @@ function TasksFilterBar({
       )}
       {passthrough.month && (
         <input type="hidden" name="month" value={passthrough.month} />
+      )}
+      {passthrough.umbrellas && (
+        <input type="hidden" name="umbrellas" value={passthrough.umbrellas} />
       )}
       {/* Field order: project/categorization first, then people in a
           visually-grouped <fieldset>. The four people-related axes

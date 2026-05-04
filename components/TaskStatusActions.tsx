@@ -42,6 +42,14 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; t
     { to: "awaiting_handling", label: "ממתין לטיפול", tone: "primary" },
     { to: "in_progress", label: "בעבודה", tone: "primary" },
   ],
+  // Phase 2 dependencies — `blocked` is system-managed. The user can
+  // only abandon a blocked task; every other transition out of blocked
+  // must come through dependencyCascade after upstream blockers
+  // terminate. Mirrors TaskStatusCell.tsx TRANSITIONS override + the
+  // server's TASKS_ALLOWED_TRANSITIONS.
+  blocked: [
+    { to: "cancelled", label: "בוטל", tone: "ghost" },
+  ],
 };
 
 export default function TaskStatusActions({ task }: { task: WorkTask }) {

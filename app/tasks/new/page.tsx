@@ -6,6 +6,8 @@ import {
   currentUserEmail,
 } from "@/lib/appsScript";
 import TaskCreateForm from "@/components/TaskCreateForm";
+import { listChainTemplates } from "@/lib/chainTemplatesStore";
+import { CHAIN_TEMPLATES } from "@/lib/chainTemplates";
 import { getCommentByIdDirect } from "@/lib/commentsDirect";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 
@@ -45,7 +47,7 @@ export default async function NewTaskPage({
   // Four independent fetches, all server-side so the form renders with
   // everything pre-populated (no loading spinners). The comment fetch
   // is skipped when `from_comment` isn't set — the common path.
-  const [projectsRes, peopleRes, me, commentSeed, formSchema] =
+  const [projectsRes, peopleRes, me, commentSeed, formSchema, chainTemplatesFromSheet] =
     await Promise.all([
       getMyProjects().catch(() => null),
       tasksPeopleList().catch(() => ({ ok: false, people: [] })),
@@ -64,7 +66,21 @@ export default async function NewTaskPage({
             : Promise.resolve(null),
         )
         .catch(() => null),
+      // Phase 10 dependencies — chain templates from the sheet-backed
+      // store. Falls back to the hardcoded CHAIN_TEMPLATES seed when
+      // the ChainTemplates tab doesn't exist yet (fresh install) or
+      // when the read fails.
+      currentUserEmail()
+        .then((email) =>
+          email ? listChainTemplates(email).catch(() => []) : Promise.resolve([]),
+        )
+        .catch(() => []),
     ]);
+  // Use the sheet-backed templates when present; otherwise fall back
+  // to the hardcoded defaults so chain mode works out-of-box even
+  // before an admin has configured the tab.
+  const chainTemplates =
+    chainTemplatesFromSheet.length > 0 ? chainTemplatesFromSheet : CHAIN_TEMPLATES;
   // Clients can't create tasks — bounce them to the home grid before
   // we render the form. Mirrors the gating on /tasks + the project
   // page's "+ משימה חדשה" button.
@@ -163,6 +179,7 @@ export default async function NewTaskPage({
               }
             : null
         }
+        chainTemplates={chainTemplates}
       />
     </main>
   );

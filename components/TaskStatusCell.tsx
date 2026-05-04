@@ -19,6 +19,9 @@ export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
   awaiting_approval: "ממתין לאישור",
   done: "בוצע",
   cancelled: "בוטל",
+  // System-managed; user can only manually transition `blocked → cancelled`.
+  // See TRANSITIONS override below + server-side TASKS_ALLOWED_TRANSITIONS.
+  blocked: "חסום",
 };
 
 /** Emoji decoration used by kanban + list bucket headers. Matches the
@@ -35,6 +38,9 @@ export const STATUS_EMOJIS: Record<WorkTaskStatus, string> = {
   awaiting_approval: "👀",
   done: "🎉",
   cancelled: "❌",
+  // 🔒 = locked / waiting on upstream. Same emoji whether shown inline
+  // (small chip on the row) or as a kanban bucket header.
+  blocked: "🔒",
 };
 
 const ALL_STATUSES: WorkTaskStatus[] = [
@@ -45,18 +51,33 @@ const ALL_STATUSES: WorkTaskStatus[] = [
   "done",
   "cancelled",
   "draft",
+  "blocked",
 ];
 
 export const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> =
-  Object.fromEntries(
-    ALL_STATUSES.map((from) => [
-      from,
-      ALL_STATUSES.filter((to) => to !== from).map((to) => ({
-        to,
-        label: STATUS_LABELS[to],
-      })),
-    ]),
-  ) as Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]>;
+  (() => {
+    const base: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]> =
+      Object.fromEntries(
+        ALL_STATUSES.map((from) => [
+          from,
+          ALL_STATUSES.filter((to) => to !== from).map((to) => ({
+            to,
+            label: STATUS_LABELS[to],
+          })),
+        ]),
+      ) as Record<WorkTaskStatus, { to: WorkTaskStatus; label: string }[]>;
+    // Mirror server-side override (TASKS_ALLOWED_TRANSITIONS in
+    // tasksWriteDirect.ts). The dropdown for a `blocked` task offers
+    // only "בוטל"; every other status hides "חסום" from its picker so
+    // users can't manually move a task INTO blocked (only the chain-
+    // creation flow + dependency cascade may set it).
+    base.blocked = [{ to: "cancelled", label: STATUS_LABELS.cancelled }];
+    for (const from of ALL_STATUSES) {
+      if (from === "blocked") continue;
+      base[from] = base[from].filter((t) => t.to !== "blocked");
+    }
+    return base;
+  })();
 
 /**
  * Inline status cell for the tasks queue. Click opens a floating menu

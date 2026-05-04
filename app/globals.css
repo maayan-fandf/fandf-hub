@@ -5839,6 +5839,10 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-target.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-cell-target.tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cell-target.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+/* Phase 2 — `blocked` status palette. Slate-grey w/ dashed left
+ * accent so blocked tasks read as "waiting / not yours yet" rather
+ * than "abandoned" (which is what the cancelled palette signals). */
+.tasks-status-cell-target.tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
 .tasks-status-cell-err-inline {
   color: #c0392b;
   font-size: .78em;
@@ -5857,6 +5861,7 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-btn.tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-cell-btn.tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cell-btn.tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+.tasks-status-cell-btn.tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
 
 /* Portaled to document.body and positioned via JS (position: fixed +
    inline top/right). Keeps the menu above the table's overflow-x clip
@@ -6419,6 +6424,415 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .tasks-status-awaiting_approval { background: #fef3c7; color: #92400e; }
 .tasks-status-done { background: #d1fae5; color: #065f46; }
 .tasks-status-cancelled { background: #f3f4f6; color: #6b7280; }
+.tasks-status-blocked { background: #e5e7eb; color: #4b5563; opacity: .85; }
+
+/* Phase 4b dependencies — umbrella detail page styles. The header row
+   pairs a 📦 label with the aggregate progress badge ("2 / 4 ✓"). */
+.umbrella-header-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: .8em;
+}
+.umbrella-progress {
+  font-weight: normal;
+  font-size: .9em;
+  color: #475569;
+  background: #f1f5f9;
+  padding: .25em .7em;
+  border-radius: 1em;
+}
+.umbrella-cancelled-count {
+  color: #94a3b8;
+  font-size: .9em;
+}
+.umbrella-children-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+}
+.umbrella-child-row {
+  display: grid;
+  grid-template-columns: 1.5em 1fr auto auto;
+  align-items: center;
+  gap: .6em;
+  padding: .6em .8em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+}
+.umbrella-child-row.tasks-status-cancelled {
+  opacity: .5;
+}
+.umbrella-child-row.tasks-status-cancelled .umbrella-child-title {
+  text-decoration: line-through;
+}
+.umbrella-child-row.tasks-status-done .umbrella-child-title {
+  color: #065f46;
+}
+.umbrella-child-status {
+  font-size: 1.2em;
+  text-align: center;
+}
+.umbrella-child-title {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+}
+.umbrella-child-title:hover {
+  text-decoration: underline;
+}
+.umbrella-child-assignees {
+  font-size: .85em;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+/* Phase 5b dependencies — chain mode in TaskCreateForm. The toggle
+   sits in a dedicated bar above the title field; the step picker
+   replaces the per-task fields when active. Theme-variable colors
+   so the UI reads correctly in both light + dark modes. */
+.task-form-chain-bar {
+  margin: 1em 0 .5em;
+  padding: .8em 1em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface-soft, var(--surface, #fff));
+  display: flex;
+  flex-direction: column;
+  gap: .5em;
+}
+.task-form-chain-bar.is-on {
+  border-color: var(--accent, #6366f1);
+  background: var(--accent-soft, color-mix(in srgb, var(--accent, #6366f1) 8%, var(--surface, #fff)));
+}
+.task-form-chain-toggle {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  cursor: pointer;
+  font-size: 1em;
+  color: var(--text, inherit);
+}
+.task-form-chain-toggle input[type="checkbox"] {
+  width: 1.2em;
+  height: 1.2em;
+  cursor: pointer;
+}
+.task-form-chain-toggle-label {
+  font-weight: 600;
+}
+.task-form-chain-toggle-hint {
+  color: var(--text-muted, #64748b);
+  font-size: .85em;
+}
+.task-form-chain-umbrella-toggle {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  cursor: pointer;
+  font-size: .9em;
+  color: var(--text-muted, #475569);
+  padding-inline-start: 1.7em; /* indent under the parent toggle */
+}
+.task-form-chain-umbrella-toggle input[type="checkbox"] {
+  width: 1.05em;
+  height: 1.05em;
+  cursor: pointer;
+}
+.task-form-chain-steps {
+  margin-top: 1em;
+  padding: .8em 1em;
+  border: 1px dashed var(--border, #cbd5e1);
+  border-radius: 8px;
+  background: var(--surface-soft, var(--surface, #fff));
+}
+.task-form-chain-steps legend {
+  font-weight: 600;
+  padding: 0 .4em;
+  color: var(--text, inherit);
+}
+.task-form-chain-steps-help {
+  font-size: .85em;
+  color: var(--text-muted, #64748b);
+  margin-bottom: .8em;
+}
+.task-form-chain-step-row {
+  display: grid;
+  grid-template-columns: 1.6em 1fr 1fr 2em;
+  gap: .5em;
+  align-items: center;
+  margin-bottom: .4em;
+}
+.task-form-chain-step-num {
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  background: var(--surface, #e2e8f0);
+  border: 1px solid var(--border, transparent);
+  border-radius: 999px;
+  padding: .15em 0;
+  font-size: .9em;
+}
+.task-form-chain-step-title,
+.task-form-chain-step-assignee {
+  padding: .4em .6em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+}
+.task-form-chain-shared-approver {
+  margin-top: 1em;
+  display: block;
+}
+.task-form-chain-template-row {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  margin-bottom: .8em;
+  padding-bottom: .6em;
+  border-bottom: 1px dashed var(--border, #e2e8f0);
+}
+.task-form-chain-template-row > span {
+  font-size: .85em;
+  color: var(--text-muted, #64748b);
+  white-space: nowrap;
+}
+.task-form-chain-template-row > select {
+  flex: 1;
+  padding: .35em .5em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+}
+
+/* Phase 9 — append-step inline form on the umbrella detail page.
+   Sits at the bottom of the children list; collapses to a single
+   button by default. */
+.umbrella-append-step-collapsed {
+  margin-top: .8em;
+  text-align: start;
+}
+.umbrella-append-step-form {
+  margin-top: .8em;
+  padding: .8em;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: .5em;
+}
+.umbrella-append-step-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5em;
+}
+.umbrella-append-step-title,
+.umbrella-append-step-assignee {
+  padding: .4em .6em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.umbrella-append-step-actions {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  flex-wrap: wrap;
+}
+.umbrella-append-step-hint {
+  font-size: .8em;
+  color: #64748b;
+}
+
+/* Long-URL display fix — bare URLs in comment bodies (e.g. Facebook
+   ads-manager URLs with ~500 chars of query string) would otherwise
+   render on one line and blow the comment column's width. The
+   `overflow-wrap: anywhere` lets the URL break at any character so
+   it wraps cleanly inside the column. `word-break: break-all` is
+   the older fallback for browsers that don't honor `anywhere`. */
+.comment-body-autolink {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Phase 10 — admin chain templates editor (/admin/chain-templates) */
+.chain-templates-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  margin-top: 1em;
+}
+.chain-templates-seed-banner {
+  padding: .8em 1em;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  color: #92400e;
+}
+.chain-templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+.chain-template-card {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  padding: 0;
+}
+.chain-template-card-summary {
+  cursor: pointer;
+  padding: .8em 1em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+.chain-template-card-meta {
+  font-weight: normal;
+  font-size: .85em;
+  color: #64748b;
+}
+.chain-template-card-body {
+  padding: 0 1em 1em;
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+}
+.chain-template-steps {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: .8em 1em;
+}
+.chain-template-step-row {
+  display: grid;
+  grid-template-columns: 1.6em 2fr 1fr 1fr auto;
+  gap: .5em;
+  align-items: center;
+  margin-bottom: .4em;
+}
+.chain-template-step-num {
+  text-align: center;
+  font-weight: 600;
+  color: #64748b;
+  background: #e2e8f0;
+  border-radius: 999px;
+  padding: .15em 0;
+  font-size: .9em;
+}
+.chain-template-step-title,
+.chain-template-step-dept,
+.chain-template-step-hint {
+  padding: .35em .5em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.chain-template-step-controls {
+  display: flex;
+  gap: .2em;
+}
+.btn-xs {
+  padding: .15em .4em;
+  font-size: .8em;
+}
+.chain-template-actions {
+  display: flex;
+  gap: .5em;
+}
+.chain-templates-add-row {
+  margin-top: 1em;
+}
+
+/* Phase 6a dependencies — side-panel deps block on /tasks/[id]. Sits
+   above the People block; renders nothing when no edges exist. */
+.task-detail-side-deps {
+  display: flex;
+  flex-direction: column;
+  gap: .8em;
+  margin-bottom: 1em;
+  padding: .8em 1em;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+.task-detail-deps-block {
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+.task-detail-deps-label {
+  font-size: .8em;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.task-detail-deps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+.task-detail-deps-row {
+  display: grid;
+  grid-template-columns: 1.4em 1fr auto;
+  gap: .4em;
+  align-items: center;
+  font-size: .9em;
+}
+.task-detail-deps-row.tasks-status-cancelled,
+.task-detail-deps-row.tasks-status-done {
+  opacity: .65;
+}
+.task-detail-deps-emoji {
+  text-align: center;
+}
+.task-detail-deps-title {
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-detail-deps-title:hover {
+  text-decoration: underline;
+}
+.task-detail-deps-row-missing {
+  color: #94a3b8;
+  font-style: italic;
+}
+.task-detail-deps-missing-tag {
+  font-size: .8em;
+  color: #ef4444;
+}
+
+/* Phase 6b — 🔒 badge for blocked tasks in list/kanban views. The
+   ::before pseudo-element prepends a small lock that stays inside
+   the row even on narrow viewports (no extra DOM). */
+.tasks-row-blocked-badge,
+.tasks-card-blocked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .2em;
+  font-size: .8em;
+  background: #e5e7eb;
+  color: #4b5563;
+  padding: .1em .5em;
+  border-radius: 999px;
+  margin-inline-end: .4em;
+  cursor: help;
+}
 
 .tasks-other {
   margin: 2em 0;

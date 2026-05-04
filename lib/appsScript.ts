@@ -759,7 +759,15 @@ export type WorkTaskStatus =
   | "awaiting_clarification"
   | "awaiting_approval"
   | "done"
-  | "cancelled";
+  | "cancelled"
+  // System-managed: a task whose `blocked_by` array is non-empty and
+  // not yet fully terminal. Set on creation when the chain-creation
+  // flow includes upstream blockers; cleared by lib/dependencyCascade
+  // when all upstream tasks reach terminal state. The user can manually
+  // transition only `blocked → cancelled` — every other manual move
+  // out of blocked is rejected (must remove blockers first).
+  // Phase 2 of dependencies feature, 2026-05-03.
+  | "blocked";
 
 export type WorkTaskDepartment = "מדיה" | "קריאייטיב" | "UI/UX" | "תכנון" | "אחר";
 
@@ -857,6 +865,34 @@ export type WorkTask = {
    *  `priority` field stays orthogonal: it's a flag for "on fire"
    *  without dictating screen order. */
   rank?: number;
+
+  /* ── Dependencies + chains (phase 1, 2026-05-03) ──────────────────
+   * Additive fields. Existing rows without these columns parse as the
+   * empty defaults below, so the rollout is non-breaking. See
+   * memory/project_dependencies_chains_pending.md for the full design.
+   *
+   * Important separation: `parent_id` keeps its existing semantics
+   * (rounds-of-revisions). `umbrella_id` is a wholly separate primitive
+   * for chain containers — do NOT overload parent_id, the rounds logic
+   * depends on its current meaning. */
+
+  /** Task IDs this task BLOCKS (downstream — they can't start until
+   *  this task is `done`). Mirrored on the other side via `blocked_by`.
+   *  Empty array means this task blocks nothing. */
+  blocks: string[];
+  /** Task IDs blocking this task (upstream — this task can't start
+   *  until all of these are `done`). Mirrored on the other side via
+   *  `blocks`. Empty array means this task is unblocked. */
+  blocked_by: string[];
+  /** When set, this task is a CHILD of an umbrella container task;
+   *  the value is the umbrella's task ID. One-way pointer — children
+   *  are NOT stored as an array on the umbrella row (derive via query
+   *  for single-source-of-truth). Empty string means standalone. */
+  umbrella_id: string;
+  /** True when this row is itself an umbrella CONTAINER (rollup row,
+   *  no own work, status/dates derived from children via umbrella_id
+   *  back-reference). False on plain tasks and on chain children. */
+  is_umbrella: boolean;
 };
 
 export type TasksListFilters = {
@@ -888,6 +924,12 @@ export type TasksListFilters = {
    *  the /tasks "מעורב במשימה" picker — surfaces every task someone
    *  touched regardless of role. Direct-read path only. */
   involved_with?: string;
+  /** Include umbrella container rows (`is_umbrella=true`). Default
+   *  is to filter them out so the standard list view shows only
+   *  real work — children already render individually, and the
+   *  umbrella row would just clutter. Surfaced via a chip toggle
+   *  on /tasks. Phase 4 dependencies, 2026-05-03. */
+  include_umbrellas?: boolean;
 };
 
 export async function tasksList(
@@ -1003,6 +1045,38 @@ export type TasksCreateInput = {
    *  moves under the task verbatim, in chronological order, with row
    *  identities + timestamps preserved. Direct-SA path only. */
   from_comment?: string;
+  /* ── Dependencies + chains (phase 1, 2026-05-03) ──────────────────
+   * Optional inputs for chain-creation flows (phase 5 wires the
+   * create-drawer "צור כשרשרת" toggle through to these). Plain task
+   * creates omit them — server defaults to standalone unblocked. */
+  /** When this new task should be a CHILD of an existing umbrella
+   *  container, set its task ID here. The new task's `umbrella_id`
+   *  cell is written; the umbrella's status auto-derives from it on
+   *  the next read. */
+  umbrella_id?: string;
+  /** When true, the new task IS itself an umbrella container — no own
+   *  work, status derives from children that point back via
+   *  umbrella_id. Accepted as boolean or the literal string "true"
+   *  for JSON-payload symmetry. */
+  is_umbrella?: boolean | "true" | "false";
+  /** Task IDs this new task BLOCKS (downstream — they can't start
+   *  until this task is `done`). Phase 5 chain-creation flow passes
+   *  these from the per-step picker; manual creates can omit. */
+  blocks?: string[];
+  /** Task IDs blocking this new task (upstream — this task can't
+   *  start until all of these are `done`). When non-empty AND no
+   *  explicit `status` is provided, createTask defaults the new
+   *  task's status to `blocked` (phase-3 GT-sync rework: blocked
+   *  tasks skip the personal-GT spawn until the cascade unblocks
+   *  them). */
+  blocked_by?: string[];
+  /** Pre-assigned task ID. Normally createTask generates a fresh
+   *  ID via genId(); chain-creation flows (phase 5) need to know
+   *  IDs upfront to wire `blocks`/`blocked_by` edges in a single
+   *  pass without a second sheet write. When provided, the value
+   *  is trusted as-is — caller is responsible for uniqueness +
+   *  format (`T-<rand>`). */
+  id?: string;
 };
 
 export function tasksCreate(
