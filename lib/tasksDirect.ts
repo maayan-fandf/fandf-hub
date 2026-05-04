@@ -436,7 +436,19 @@ export async function tasksListDirect(
     if (t.is_umbrella && !filters.include_umbrellas) continue;
 
     // Non-admin access gate.
-    if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) continue;
+    // Pseudo-projects (e.g. `__personal__`) bypass the Keys roster check —
+    // they're personal-notes rows that don't live in the Keys hierarchy.
+    // Privacy gate: only the listed assignees or the author see them, and
+    // we deliberately skip the admin shortcut so admins don't see other
+    // people's personal notes (different mental model from project rows).
+    if (t.project.startsWith("__")) {
+      const lcUser = subjectEmail.toLowerCase();
+      const isAssignee = (t.assignees || []).some((e) => e.toLowerCase() === lcUser);
+      const isAuthor   = (t.author_email || "").toLowerCase() === lcUser;
+      if (!isAssignee && !isAuthor) continue;
+    } else if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) {
+      continue;
+    }
 
     if (filters.company && t.company.trim() !== filters.company.trim()) continue;
     if (filters.project && t.project.trim() !== filters.project.trim()) continue;

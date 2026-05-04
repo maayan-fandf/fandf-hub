@@ -16,6 +16,8 @@ const SHORTCUTS: Shortcut[] = [
   { keys: ["/"], desc: "פתח חיפוש" },
   { keys: ["g", "p"], desc: "מעבר לפרויקטים" },
   { keys: ["g", "i"], desc: "מעבר לתיוגים" },
+  { keys: ["g", "n"], desc: "פתח הערה אישית חדשה" },
+  { keys: ["Ctrl/⌘", "Shift", "N"], desc: "פתח הערה אישית חדשה" },
   { keys: ["?"], desc: "פתח עזרה זו" },
   { keys: ["Esc"], desc: "סגור חלון קופץ" },
   { keys: ["⌘/Ctrl", "Enter"], desc: "שלח תגובה או משימה חדשה" },

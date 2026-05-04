@@ -9,7 +9,12 @@ type ActionCmd = {
   key: string;
   label: string;
   sublabel: string;
-  href: string;
+  /** Mutually exclusive with `event`. If set, runCommand navigates here. */
+  href?: string;
+  /** Mutually exclusive with `href`. If set, runCommand dispatches this
+   *  custom event on `window` so a listener (e.g. QuickNoteModal) can
+   *  open without a route change. */
+  event?: string;
   haystack: string;
   hint?: string;
 };
@@ -58,6 +63,15 @@ const STATIC_ACTIONS: ActionCmd[] = [
     href: "/inbox",
     haystack: "inbox mentions תיוגים אזכורים",
     hint: "g i",
+  },
+  {
+    kind: "action",
+    key: "action:quick-note",
+    label: "📝 הערה אישית חדשה",
+    sublabel: "פתח חלון כתיבת הערה אישית — נכנסת לרשימת המשימות שלך",
+    event: "hub:open-quick-note",
+    haystack: "note quick הערה אישית self note todo personal reminder תזכורת",
+    hint: "Ctrl+Shift+N",
   },
 ];
 
@@ -121,6 +135,14 @@ export default function CommandPalette() {
             e.preventDefault();
             chordActive = false;
             router.push("/inbox");
+            return;
+          }
+          if (e.key === "n") {
+            // g n — open quick-note modal. Same effect as Ctrl+Shift+N
+            // but reachable without modifier keys (chord mode).
+            e.preventDefault();
+            chordActive = false;
+            window.dispatchEvent(new CustomEvent("hub:open-quick-note"));
             return;
           }
         }
@@ -300,7 +322,15 @@ export default function CommandPalette() {
     if (cmd.kind === "content" && cmd.external) {
       // Deep links point into the Apps Script dashboard in another tab.
       window.open(cmd.href, "_blank", "noopener,noreferrer");
-    } else {
+    } else if (cmd.kind === "action" && cmd.event) {
+      // Event-driven actions (e.g. quick-note modal) open via a global
+      // CustomEvent the consumer is listening for. We defer one tick so
+      // the palette finishes its own close animation first.
+      const eventName = cmd.event;
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent(eventName));
+      });
+    } else if (cmd.href) {
       router.push(cmd.href);
     }
   }

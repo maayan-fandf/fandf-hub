@@ -210,10 +210,23 @@ function parseDepartments(raw: unknown): string[] {
 // dedupes via React's cache() across all callers within one request.)
 
 
+/**
+ * Pseudo-projects (anything starting with `__`) bypass Keys lookups for
+ * company + access-control. Used by the personal-notes feature where
+ * `__personal__` is the project name; rows are scoped to a single
+ * assignee (the author) and don't have a real company / roster /
+ * approver / drive folder. The read filter in `tasksListDirect` enforces
+ * "only the row's assignees see it" — see `tasksDirect.ts` for the gate.
+ */
+function isPseudoProject(project: string): boolean {
+  return project.startsWith("__");
+}
+
 async function resolveCompany(
   subjectEmail: string,
   project: string,
 ): Promise<string> {
+  if (isPseudoProject(project)) return "Personal";
   const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
@@ -232,6 +245,11 @@ async function assertProjectAccess(
   subjectEmail: string,
   project: string,
 ): Promise<void> {
+  // Pseudo-projects (e.g. __personal__) skip the Keys roster check. The
+  // assignee scope is what gates these rows downstream — anyone can write
+  // into their own pseudo-project but the read filter only surfaces it
+  // back to the listed assignees.
+  if (isPseudoProject(project)) return;
   // Delegate to the shared getAccessScope (lib/tasksDirect.ts) so the
   // write gate uses the same display-name resolution and @fandf.co.il
   // domain blanket the read paths use. Without this, non-admin
@@ -1129,6 +1147,10 @@ export async function tasksCreateDirect(
   const pinnedFolderId = String(payload.drive_folder_id || "").trim();
   if (task.is_umbrella) {
     // No-op — umbrella has no Drive folder.
+  } else if (isPseudoProject(task.project)) {
+    // No-op — personal-notes rows don't have a project hierarchy to
+    // nest under, so we deliberately skip Drive folder creation. Users
+    // can attach files later via the Drive picker if they care.
   } else if (pinnedFolderId) {
     try {
       const { getFolderRef } = await import("@/lib/driveFolders");

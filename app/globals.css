@@ -4077,6 +4077,196 @@ a.section-link:hover {
   margin: 0 0.15rem;
 }
 
+/* ─── Quick-note modal (Ctrl+Shift+N) ───────────────────────────── */
+/* Self-note quick-capture surface — minimal, RTL, keyboard-driven.
+   Mounted globally; opens on Ctrl+Shift+N, the "g n" chord, or the
+   "📝 הערה אישית חדשה" command-palette action. Saves to the
+   __personal__ pseudo-project and lands in /tasks. */
+.quick-note-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 8vh 1rem 2rem;
+  animation: quickNoteFade 0.12s ease-out;
+}
+@keyframes quickNoteFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.quick-note-dialog {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+  padding: 1.2rem 1.3rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.quick-note-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.1rem;
+}
+.quick-note-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.quick-note-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+}
+.quick-note-close:hover {
+  background: var(--surface-hi, rgba(0, 0, 0, 0.04));
+  color: var(--ink);
+}
+.quick-note-title {
+  width: 100%;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+}
+.quick-note-title:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+.quick-note-body {
+  width: 100%;
+  font-size: 0.92rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 3.5rem;
+}
+.quick-note-body:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+.quick-note-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.quick-note-due-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.quick-note-due-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.quick-note-due-clear:hover {
+  background: var(--surface-hi, rgba(0, 0, 0, 0.04));
+  color: var(--ink);
+}
+.quick-note-error {
+  font-size: 0.85rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.65rem;
+}
+html[data-theme="dark"] .quick-note-error {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+  border-color: rgba(153, 27, 27, 0.5);
+}
+.quick-note-saved {
+  font-size: 0.88rem;
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.65rem;
+}
+.quick-note-saved a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+html[data-theme="dark"] .quick-note-saved {
+  color: #a7f3d0;
+  background: rgba(6, 78, 59, 0.4);
+  border-color: rgba(6, 95, 70, 0.5);
+}
+.quick-note-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.3rem;
+}
+.quick-note-save {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.quick-note-save:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.quick-note-save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.quick-note-cancel {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.5rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+.quick-note-cancel:hover {
+  background: var(--surface-hi, rgba(0, 0, 0, 0.04));
+  color: var(--ink);
+}
+.quick-note-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+  text-align: center;
+}
+
 /* ─── Keyboard help overlay (?) ────────────────────────────────── */
 .help-backdrop {
   position: fixed;
