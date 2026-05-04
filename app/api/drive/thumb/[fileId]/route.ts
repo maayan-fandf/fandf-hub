@@ -48,41 +48,15 @@ export async function GET(
 
   try {
     const drive = driveClient(driveFolderOwner() || session.user.email);
-    // First step: read the file's thumbnailLink. Drive returns a URL
-    // pointing at googleusercontent with a size suffix (=s220, =w220,
-    // =w220-h220, etc.) — defaults to a small thumbnail. Rewriting the
-    // suffix lets us request a larger rendering without needing a
-    // separate Drive endpoint.
     const meta = await drive.files.get({
       fileId,
       fields: "thumbnailLink",
       supportsAllDrives: true,
     });
-    let link = meta.data.thumbnailLink || "";
+    const link = meta.data.thumbnailLink || "";
     if (!link) return new NextResponse("No thumbnail", { status: 404 });
-    // Drive returns thumbnailLink in two shapes depending on file type:
-    //   • Path-suffix form (used by Docs etc.):
-    //       https://lh3.googleusercontent.com/.../=s220
-    //       https://lh3.googleusercontent.com/.../=w220-h220
-    //   • Query-param form (used by Sheets):
-    //       https://docs.google.com/feeds/vt?...&sz=s220
-    // Rewrite both to request our target size.
-    const sz = `s${targetSize}`;
-    const wsz = `w${targetSize}`;
-    // Query-param form first since it's the Sheets-typical shape.
-    if (/[?&]sz=[ws]\d+(-[a-z]+)?(?=[&]|$)/.test(link)) {
-      link = link.replace(/([?&]sz=)[ws]\d+(-[a-z]+)?(?=[&]|$)/, `$1${sz}`);
-    } else if (/=w\d+-h\d+(-[a-z]+)?$/.test(link)) {
-      link = link.replace(/=w\d+-h\d+(-[a-z]+)?$/, `=${wsz}`);
-    } else if (/=w\d+(-[a-z]+)?$/.test(link)) {
-      link = link.replace(/=w\d+(-[a-z]+)?$/, `=${wsz}`);
-    } else if (/=s\d+(-[a-z]+)?$/.test(link)) {
-      link = link.replace(/=s\d+(-[a-z]+)?$/, `=${sz}`);
-    }
 
-    // Pull the access token off the underlying JWT auth so we can
-    // forward it. googleapis lazily refreshes the token; calling
-    // getAccessToken() ensures it's fresh.
+    // Pull a fresh access token off the underlying JWT auth.
     const auth2 = drive.context._options.auth as
       | { getAccessToken: () => Promise<{ token?: string | null }> }
       | undefined;
@@ -91,44 +65,91 @@ export async function GET(
     if (!token) {
       return new NextResponse("No token", { status: 502 });
     }
-    const upstream = await fetch(link, {
-      headers: { authorization: `Bearer ${token}` },
-      cache: "no-store",
-      redirect: "follow",
-    });
-    if (!upstream.ok) {
-      console.warn(
-        `[/api/drive/thumb] upstream ${upstream.status} for ${fileId} (size=${targetSize})`,
-      );
-      return new NextResponse(`Upstream ${upstream.status}`, {
-        status: 502,
-      });
+
+    // Build a fallback chain of candidate URLs. Drive's thumbnail
+    // serving differs by file type (Docs go through googleusercontent
+    // and accept arbitrary size, Sheets go through a separate
+    // docs.google.com/feeds/vt endpoint that hard-caps at ~220px),
+    // and individual files occasionally have stale/missing thumbnails.
+    // We try big-then-small variants, taking the first that returns
+    // an actual image. Always-original is the last resort so we never
+    // 404 when there's a working thumbnail at SOME size.
+    const candidates = buildCandidates(link, targetSize);
+    for (const url of candidates) {
+      const r = await tryFetchImage(url, token);
+      if (r) {
+        return new NextResponse(r.body, {
+          status: 200,
+          headers: {
+            "content-type": r.contentType,
+            // 5-minute browser cache — the underlying file changes
+            // when the user updates the sheet, but a 5-min stale
+            // image on the overview is fine; clicking through opens
+            // the live sheet.
+            "cache-control": "private, max-age=300",
+          },
+        });
+      }
     }
-    // Defensive content-type check — googleusercontent occasionally
-    // returns an HTML error page with 200 OK when it can't render the
-    // thumbnail (e.g. just-created sheets). Returning that as the
-    // response body to an <img> tag breaks the page rendering with
-    // garbage; fail cleanly instead.
-    const ct = upstream.headers.get("content-type") || "";
-    if (!ct.startsWith("image/")) {
-      console.warn(
-        `[/api/drive/thumb] non-image content-type for ${fileId}: ${ct}`,
-      );
-      return new NextResponse("Not an image", { status: 404 });
-    }
-    const buf = await upstream.arrayBuffer();
-    return new NextResponse(buf, {
-      status: 200,
-      headers: {
-        "content-type": ct,
-        // 5-minute browser cache — the underlying file changes when the
-        // user updates the sheet, but a 5-min stale image on the
-        // overview is fine; clicking through opens the live sheet.
-        "cache-control": "private, max-age=300",
-      },
-    });
+    console.warn(
+      `[/api/drive/thumb] all candidates failed for ${fileId} (size=${targetSize})`,
+    );
+    return new NextResponse("No image", { status: 404 });
   } catch (e) {
     console.warn("[/api/drive/thumb] failed:", e);
     return new NextResponse("Error", { status: 500 });
   }
+}
+
+/** Returns image body + content-type when the upstream URL responds with
+ *  an image, otherwise null. Caller iterates a candidate list. */
+async function tryFetchImage(
+  url: string,
+  token: string,
+): Promise<{ body: ArrayBuffer; contentType: string } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.startsWith("image/")) return null;
+    const body = await res.arrayBuffer();
+    if (body.byteLength === 0) return null;
+    return { body, contentType: ct };
+  } catch {
+    return null;
+  }
+}
+
+/** Generate ordered candidate URLs from a Drive thumbnailLink. The
+ *  first variant requests the user's target size; subsequent variants
+ *  step down to safer fallbacks ending with the unmodified original. */
+function buildCandidates(link: string, targetSize: number): string[] {
+  const out: string[] = [];
+  const sz = `s${targetSize}`;
+  const wsz = `w${targetSize}`;
+  // Query-param form (Sheets):  ?...&sz=s220
+  if (/[?&]sz=[ws]\d+(-[a-z]+)?(?=[&]|$)/.test(link)) {
+    out.push(
+      link.replace(/([?&]sz=)[ws]\d+(-[a-z]+)?(?=[&]|$)/, `$1${sz}`),
+    );
+  }
+  // Path-suffix forms (googleusercontent):
+  if (/=w\d+-h\d+(-[a-z]+)?$/.test(link)) {
+    out.push(link.replace(/=w\d+-h\d+(-[a-z]+)?$/, `=${wsz}`));
+  } else if (/=w\d+(-[a-z]+)?$/.test(link)) {
+    out.push(link.replace(/=w\d+(-[a-z]+)?$/, `=${wsz}`));
+  } else if (/=s\d+(-[a-z]+)?$/.test(link)) {
+    out.push(link.replace(/=s\d+(-[a-z]+)?$/, `=${sz}`));
+  }
+  // Always include the unmodified link as the last-resort fallback.
+  // This is the variant Drive itself serves to its UI, so it's the
+  // most likely to return a real image even if the resize request
+  // gets refused (Sheets-feeds-vt rejects sizes outside its narrow
+  // accepted range).
+  if (!out.includes(link)) out.push(link);
+  return out;
 }
