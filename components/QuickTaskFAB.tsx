@@ -6,37 +6,23 @@ import DatePicker from "./DatePicker";
 
 const MAX_TITLE = 200;
 
-export type QuickTaskProjectOption = {
-  name: string;
-  company: string;
-};
-
-type Props = {
-  /** Server-prefetched accessible projects (from layout.tsx). Used as the
-   *  datalist for the project picker so the modal opens instant — no
-   *  extra round-trip on first click. */
-  projects: QuickTaskProjectOption[];
-};
-
 /**
  * Bottom-left floating action button (FAB) — global "+" entry for quick
- * task creation from anywhere on the hub. Distinct from QuickNoteModal:
+ * capture from anywhere on the hub. Saves a personal note (`__personal__`
+ * pseudo-project) and redirects to the edit page so the user can elaborate
+ * (add description, departments, assignees, OR convert to a real project
+ * by typing a project name in the now-editable project field).
  *
- *   - Quick note  (Ctrl+Shift+M / "g n"): personal __personal__ scope,
- *     stays open after save for serial captures, no redirect
- *   - Quick task  (this FAB):              real-project scope, redirects
- *     to `/tasks/<id>?edit=1` after save so the user can keep filling
- *     details (departments, description, assignees) on the full edit
- *     panel
- *
- * Capture-then-refine pattern: title + project + optional due is enough
- * to land the row; the edit page handles everything else.
+ * Capture-then-refine pattern. Distinct from QuickNoteModal (which is
+ * triggered by Ctrl+Shift+M / "g n" and stays open for serial captures):
+ *   - FAB:           save → redirect to edit (single thought, refine now)
+ *   - QuickNoteModal: save → stay open ("✓ נשמר — פתח") for batches of
+ *                     thoughts where you want to keep capturing
  */
-export default function QuickTaskFAB({ projects }: Props) {
+export default function QuickTaskFAB() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [project, setProject] = useState("");
   const [due, setDue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,41 +45,27 @@ export default function QuickTaskFAB({ projects }: Props) {
   useEffect(() => {
     if (!open) {
       setTitle("");
-      setProject("");
       setDue("");
     }
   }, [open]);
 
   async function submit() {
     const t = title.trim();
-    const p = project.trim();
     if (!t) {
       setError("נדרשת כותרת");
       titleRef.current?.focus();
       return;
     }
-    if (!p) {
-      setError("נדרש פרויקט — או השתמש ב־Ctrl+Shift+M להערה אישית");
-      return;
-    }
-    if (p.startsWith("__")) {
-      setError("שם פרויקט לא חוקי");
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/worktasks/create", {
+      // Quick-note endpoint creates a __personal__ task assigned to the
+      // session user. Same path the Ctrl+Shift+M modal uses — single
+      // server-side surface for personal-scoped captures.
+      const res = await fetch("/api/worktasks/quick-note", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          project: p,
-          title: t,
-          requested_date: due,
-          // Default the assignee to self — the user is the natural owner
-          // of a task they just captured. They can change this on the
-          // edit page if it's actually for someone else.
-        }),
+        body: JSON.stringify({ title: t, due }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -104,9 +76,10 @@ export default function QuickTaskFAB({ projects }: Props) {
         setError(data?.error || `שגיאה (${res.status})`);
         return;
       }
-      // Redirect to edit page — capture-then-refine. The user just
-      // dropped the bare minimum (title + project); the edit panel is
-      // where they fill departments, description, assignees, etc.
+      // Redirect to edit page — capture-then-refine. From there the user
+      // can add description, departments, assignees, and (if it's bigger
+      // than a personal note) type a real project name into the now-
+      // editable פרויקט field to convert it.
       setOpen(false);
       router.push(`/tasks/${encodeURIComponent(data.task.id)}?edit=1`);
     } catch (err) {
@@ -171,29 +144,6 @@ export default function QuickTaskFAB({ projects }: Props) {
               disabled={saving}
             />
 
-            <input
-              type="text"
-              className="quick-note-title"
-              placeholder="פרויקט (חובה)"
-              value={project}
-              list="quick-task-project-list"
-              onChange={(e) => setProject(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              disabled={saving}
-            />
-            <datalist id="quick-task-project-list">
-              {projects.map((p) => (
-                <option key={`${p.company}|${p.name}`} value={p.name}>
-                  {p.company ? `${p.company} · ${p.name}` : p.name}
-                </option>
-              ))}
-            </datalist>
-
             <div className="quick-note-row">
               <span className="quick-note-due-label">
                 <span>📅 לתאריך:</span>
@@ -219,7 +169,7 @@ export default function QuickTaskFAB({ projects }: Props) {
                 type="button"
                 className="quick-note-save"
                 onClick={() => void submit()}
-                disabled={saving || !title.trim() || !project.trim()}
+                disabled={saving || !title.trim()}
               >
                 {saving ? "יוצר…" : "צור והמשך לעריכה"}
               </button>
@@ -234,8 +184,9 @@ export default function QuickTaskFAB({ projects }: Props) {
             </div>
 
             <div className="quick-note-hint">
-              טיפ: תעבור לעריכת המשימה אחרי השמירה — שם תוסיף מחלקה, תיאור,
-              משויכים וכו׳ · להערה אישית בלי פרויקט: Ctrl+Shift+M
+              טיפ: תיפתח עריכת המשימה אחרי השמירה — שם תוסיף תיאור, משויכים,
+              או תקליד שם פרויקט בשדה “פרויקט” כדי להפוך אותה למשימת פרויקט
+              רגילה
             </div>
           </div>
         </div>

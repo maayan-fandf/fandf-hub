@@ -189,14 +189,7 @@ export default async function RootLayout({
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
         {email && !isClientUser && <QuickNoteModal />}
-        {email && !isClientUser && (
-          <QuickTaskFAB
-            projects={navProjects.map((p) => ({
-              name: p.name,
-              company: p.company,
-            }))}
-          />
-        )}
+        {email && !isClientUser && <QuickTaskFAB />}
         <KeyboardHelp />
         {/* Listens for postMessage from nested iframes asking the hub
             to navigate to a whitelisted external URL. The dashboard's
