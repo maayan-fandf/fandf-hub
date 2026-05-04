@@ -91,6 +91,14 @@ export default async function LatestPrisotCard({
               ⏳ נשלח לאישור
             </span>
           )}
+          {latest.approvalState === "none" && (
+            <span
+              className="prisot-not-approved-badge"
+              title="הפריסה לא נשלחה לאישור ולא נעולה"
+            >
+              ⛔ לא מאושר
+            </span>
+          )}
           {latest.source === "general" && (
             <span
               className="prisot-source-badge"

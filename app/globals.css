@@ -4440,7 +4440,8 @@ html[data-theme="dark"] .quick-note-saved {
 }
 .prisot-source-badge,
 .prisot-approved-badge,
-.prisot-unapproved-badge {
+.prisot-unapproved-badge,
+.prisot-not-approved-badge {
   display: inline-flex;
   align-items: center;
   margin-inline-start: 0.55rem;
@@ -4458,11 +4459,17 @@ html[data-theme="dark"] .quick-note-saved {
 .prisot-approved-badge {
   background: linear-gradient(135deg, #059669, #10b981);
 }
-/* "לא מאושר" — amber/coral, not red. The state is informational
-   ("waiting on approval") not alarming, so we use the same softer
-   tone we landed on for the budget-vs-spend over-budget stripes. */
+/* Pending — amber/coral. State is informational ("waiting on
+   approval") not alarming, so we use the same softer tone we landed
+   on for the budget-vs-spend over-budget stripes. */
 .prisot-unapproved-badge {
   background: linear-gradient(135deg, #d97706, #f59e0b);
+}
+/* "לא מאושר" — neutral gray. Surfaces a factual state without
+   making the user feel like something is broken; the spread just
+   hasn't been put through any approval flow yet. */
+.prisot-not-approved-badge {
+  background: linear-gradient(135deg, #6b7280, #9ca3af);
 }
 @media (max-width: 640px) {
   .prisot-thumb,
