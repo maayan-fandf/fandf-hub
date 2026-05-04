@@ -6,6 +6,7 @@ import CommandPalette from "@/components/CommandPalette";
 import ExternalNavListener from "@/components/ExternalNavListener";
 import KeyboardHelp from "@/components/KeyboardHelp";
 import QuickNoteModal from "@/components/QuickNoteModal";
+import QuickTaskFAB from "@/components/QuickTaskFAB";
 import NavBellBadge from "@/components/NavBellBadge";
 import NavGmailTasks from "@/components/NavGmailTasks";
 import NavCustomerEmails from "@/components/NavCustomerEmails";
@@ -188,6 +189,14 @@ export default async function RootLayout({
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
         {email && !isClientUser && <QuickNoteModal />}
+        {email && !isClientUser && (
+          <QuickTaskFAB
+            projects={navProjects.map((p) => ({
+              name: p.name,
+              company: p.company,
+            }))}
+          />
+        )}
         <KeyboardHelp />
         {/* Listens for postMessage from nested iframes asking the hub
             to navigate to a whitelisted external URL. The dashboard's

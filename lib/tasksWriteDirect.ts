@@ -448,7 +448,13 @@ const TRANSIENT_TASKS_CODES = new Set([429, 500, 502, 503, 504]);
  */
 async function patchGoogleTaskWithRetry(
   gt: GTaskRef,
-  body: { status?: "completed" | "needsAction"; title?: string },
+  body: {
+    status?: "completed" | "needsAction";
+    title?: string;
+    /** RFC3339 due timestamp; pass `null` to clear. Used for two-way
+     *  date sync — see patchGoogleTaskDates. */
+    due?: string | null;
+  },
 ): Promise<void> {
   const tasksApi = tasksApiClient(gt.u);
   let lastError: unknown;
@@ -2131,6 +2137,16 @@ async function tasksUpdateDirectInner(
     await patchGoogleTaskTitles(fresh);
   }
 
+  // Hub-side requested_date change → patch every open GT card's `due`
+  // field so each assignee's personal Tasks view reflects the new
+  // deadline. Two-way sync (2026-05-04): hub is canonical, last-writer-
+  // wins. See memory/feedback_gt_due_date_sync.md for design notes on
+  // the multi-assignee conflict tradeoff this introduces.
+  if ("requested_date" in changes) {
+    const fresh = rowToTask(freshRow, idx);
+    await patchGoogleTaskDates(fresh);
+  }
+
   return { ok: true, task: rowToTask(freshRow, idx), changed: true };
 }
 
@@ -2180,6 +2196,51 @@ async function patchGoogleTaskTitles(task: WorkTask): Promise<void> {
       } catch (e) {
         console.log(
           `[tasksWriteDirect] GT title patch failed for ${gt.u} after retries:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }),
+  );
+}
+
+/**
+ * Mirror hub-side `requested_date` changes onto every open Google Tasks
+ * card linked to this task. Companion to `patchGoogleTaskTitles`. The
+ * cached `d` field on each ref is also updated so future polls don't
+ * misread the (now-stale) cell metadata as drift.
+ *
+ * **Two-way sync semantics (2026-05-04):** the hub's `requested_date`
+ * is now the canonical due date. Hub edits propagate to every assignee's
+ * GT card (last-writer-wins). The reverse direction — assignee edits
+ * the GT card, want it to flow back to the hub — is still observed by
+ * pollTasks but only stored in the `google_tasks` cell `d` field, NOT
+ * surfaced as the hub's displayed date. See
+ * memory/feedback_gt_due_date_sync.md for the full picture + the
+ * unresolved multi-assignee conflict question.
+ */
+async function patchGoogleTaskDates(task: WorkTask): Promise<void> {
+  const entries = task.google_tasks || [];
+  if (entries.length === 0) return;
+  // Empty string clears the GT due — Google's API treats `due: null` as
+  // "remove". `undefined` would be ignored, which is what we want when
+  // the hub's date is unset (preserve whatever the assignee already had).
+  // To keep "remove on hub clears" working, pass null when the hub date
+  // is empty.
+  const hasHubDate = !!(task.requested_date || "").trim();
+  const dueRfc = hasHubDate ? gtaskDueRfc(task.requested_date) : undefined;
+  await Promise.all(
+    entries.map(async (gt) => {
+      try {
+        if (hasHubDate && dueRfc) {
+          await patchGoogleTaskWithRetry(gt, { due: dueRfc });
+        } else if (!hasHubDate) {
+          // Hub date was cleared — clear the GT card's due too. Google's
+          // tasks API uses `null` for explicit removal.
+          await patchGoogleTaskWithRetry(gt, { due: null });
+        }
+      } catch (e) {
+        console.log(
+          `[tasksWriteDirect] GT due patch failed for ${gt.u} after retries:`,
           e instanceof Error ? e.message : String(e),
         );
       }
