@@ -218,11 +218,11 @@ function parseDepartments(raw: unknown): string[] {
  * approver / drive folder. The read filter in `tasksListDirect` enforces
  * "only the row's assignees see it" — see `tasksDirect.ts` for the gate.
  */
-function isPseudoProject(project: string): boolean {
+export function isPseudoProject(project: string): boolean {
   return project.startsWith("__");
 }
 
-async function resolveCompany(
+export async function resolveCompany(
   subjectEmail: string,
   project: string,
 ): Promise<string> {
@@ -331,7 +331,7 @@ async function getOrCreateFolderInSharedDrive(
   return created.data.id;
 }
 
-async function createTaskFolder(
+export async function createTaskFolder(
   task: {
     id: string;
     title: string;
@@ -1525,6 +1525,12 @@ async function tasksUpdateDirectInner(
     "sub_status",
     "campaign",
     "rank",
+    // `project` is patchable to support promote-personal-note → real-project
+    // flow. Callers that change `project` MUST validate access to the new
+    // value themselves (assertProjectAccess at the top of this function only
+    // validates the OLD project) — see /api/worktasks/promote-personal for
+    // the canonical guarded path.
+    "project",
   ] as const;
   for (const k of SIMPLE_DIRECT) {
     if (k in patch && patch[k] !== cell(k)) {

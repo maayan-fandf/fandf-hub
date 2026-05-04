@@ -25,6 +25,7 @@ import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
+import PromoteToProjectButton from "@/components/PromoteToProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -252,6 +253,22 @@ export default async function TaskDetailPage({
               ✏️ ערוך
             </Link>
           )}
+          {/* Promote-to-project — only on personal-note rows, only for the
+              author. Collaborators added as assignees can edit content but
+              not move the task into a project (which may not even be in
+              their access scope). */}
+          {!editing &&
+            t.project.startsWith("__") &&
+            (t.author_email || "").toLowerCase() ===
+              (subjectEmail || "").toLowerCase() && (
+              <PromoteToProjectButton
+                taskId={t.id}
+                projects={(accessRes?.projects ?? []).map((p) => ({
+                  name: p.name,
+                  company: p.company,
+                }))}
+              />
+            )}
         </div>
       </header>
 

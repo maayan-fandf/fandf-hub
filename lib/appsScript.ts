@@ -1123,6 +1123,13 @@ export type TasksUpdatePatch = {
   /** Manual sort rank. Drag-to-reorder on kanban / table issues this
    *  patch with the new computed midpoint. Lower = higher on screen. */
   rank?: number;
+  /** Move the task between projects. Currently used by the personal-note
+   *  promote flow (`__personal__` → real project). The server-side
+   *  /api/worktasks/promote-personal endpoint validates write access to
+   *  the new project before issuing this patch — direct callers MUST
+   *  do their own access check (assertProjectAccess at the top of
+   *  tasksUpdateDirect only validates the OLD project). */
+  project?: string;
 };
 
 /** Distinct campaigns that have at least one task on the given project,
