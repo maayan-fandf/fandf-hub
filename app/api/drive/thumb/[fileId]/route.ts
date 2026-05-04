@@ -36,17 +36,50 @@ export async function GET(
     return new NextResponse("Bad file id", { status: 400 });
   }
 
-  // Optional ?sz= override; defaults to a wide thumbnail that's
-  // readable at typical card sizes (1600px-wide). Drive's documented
-  // thumbnail endpoint accepts `sz=w<N>` for width-bound rendering;
-  // the range it actually serves is roughly 200–2000px. Anything
-  // outside that range gets clamped server-side.
+  // Optional ?sz= override; defaults to a width that's readable at
+  // typical card sizes. The number we put on the thumbnailLink suffix
+  // is the requested pixel size — Drive's googleusercontent CDN treats
+  // this as a hint and serves something close to that within its own
+  // bounds (~2000px max).
   const url = new URL(_req.url);
-  const szRaw = url.searchParams.get("sz") || "w1600";
-  const sz = /^w\d{2,4}$/.test(szRaw) ? szRaw : "w1600";
+  const szRaw = parseInt(url.searchParams.get("sz") || "1600", 10);
+  const targetSize =
+    Number.isFinite(szRaw) && szRaw >= 200 && szRaw <= 2000 ? szRaw : 1600;
 
   try {
     const drive = driveClient(driveFolderOwner() || session.user.email);
+    // First step: read the file's thumbnailLink. Drive returns a URL
+    // pointing at googleusercontent with a size suffix (=s220, =w220,
+    // =w220-h220, etc.) — defaults to a small thumbnail. Rewriting the
+    // suffix lets us request a larger rendering without needing a
+    // separate Drive endpoint.
+    const meta = await drive.files.get({
+      fileId,
+      fields: "thumbnailLink",
+      supportsAllDrives: true,
+    });
+    let link = meta.data.thumbnailLink || "";
+    if (!link) return new NextResponse("No thumbnail", { status: 404 });
+    // Drive returns thumbnailLink in two shapes depending on file type:
+    //   • Path-suffix form (used by Docs etc.):
+    //       https://lh3.googleusercontent.com/.../=s220
+    //       https://lh3.googleusercontent.com/.../=w220-h220
+    //   • Query-param form (used by Sheets):
+    //       https://docs.google.com/feeds/vt?...&sz=s220
+    // Rewrite both to request our target size.
+    const sz = `s${targetSize}`;
+    const wsz = `w${targetSize}`;
+    // Query-param form first since it's the Sheets-typical shape.
+    if (/[?&]sz=[ws]\d+(-[a-z]+)?(?=[&]|$)/.test(link)) {
+      link = link.replace(/([?&]sz=)[ws]\d+(-[a-z]+)?(?=[&]|$)/, `$1${sz}`);
+    } else if (/=w\d+-h\d+(-[a-z]+)?$/.test(link)) {
+      link = link.replace(/=w\d+-h\d+(-[a-z]+)?$/, `=${wsz}`);
+    } else if (/=w\d+(-[a-z]+)?$/.test(link)) {
+      link = link.replace(/=w\d+(-[a-z]+)?$/, `=${wsz}`);
+    } else if (/=s\d+(-[a-z]+)?$/.test(link)) {
+      link = link.replace(/=s\d+(-[a-z]+)?$/, `=${sz}`);
+    }
+
     // Pull the access token off the underlying JWT auth so we can
     // forward it. googleapis lazily refreshes the token; calling
     // getAccessToken() ensures it's fresh.
@@ -58,29 +91,36 @@ export async function GET(
     if (!token) {
       return new NextResponse("No token", { status: 502 });
     }
-
-    // Drive's documented thumbnail endpoint — `sz=w<N>` returns a
-    // <N>-pixel-wide rendering. Much larger + readable than the default
-    // ~220px thumbnailLink. Auth via Bearer token works for any user
-    // who has Drive read on the file (DRIVE_FOLDER_OWNER does).
-    const upstreamUrl = `https://drive.google.com/thumbnail?id=${encodeURIComponent(
-      fileId,
-    )}&sz=${sz}`;
-    const upstream = await fetch(upstreamUrl, {
+    const upstream = await fetch(link, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
+      redirect: "follow",
     });
     if (!upstream.ok) {
+      console.warn(
+        `[/api/drive/thumb] upstream ${upstream.status} for ${fileId} (size=${targetSize})`,
+      );
       return new NextResponse(`Upstream ${upstream.status}`, {
         status: 502,
       });
+    }
+    // Defensive content-type check — googleusercontent occasionally
+    // returns an HTML error page with 200 OK when it can't render the
+    // thumbnail (e.g. just-created sheets). Returning that as the
+    // response body to an <img> tag breaks the page rendering with
+    // garbage; fail cleanly instead.
+    const ct = upstream.headers.get("content-type") || "";
+    if (!ct.startsWith("image/")) {
+      console.warn(
+        `[/api/drive/thumb] non-image content-type for ${fileId}: ${ct}`,
+      );
+      return new NextResponse("Not an image", { status: 404 });
     }
     const buf = await upstream.arrayBuffer();
     return new NextResponse(buf, {
       status: 200,
       headers: {
-        "content-type":
-          upstream.headers.get("content-type") || "image/jpeg",
+        "content-type": ct,
         // 5-minute browser cache — the underlying file changes when the
         // user updates the sheet, but a 5-min stale image on the
         // overview is fine; clicking through opens the live sheet.

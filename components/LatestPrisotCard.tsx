@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { pickLatestPrisotForCompanyOrProject } from "@/lib/driveFolders";
+import PrisotThumb from "./PrisotThumb";
 
 /**
  * Server component — fetches and renders the latest Google Sheet from
@@ -84,12 +85,9 @@ export default async function LatestPrisotCard({
         className="prisot-card"
       >
         <div className="prisot-thumb">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <PrisotThumb
             src={thumbSrc}
             alt={`תצוגה מקדימה של ${latest.name}`}
-            loading="lazy"
-            decoding="async"
           />
         </div>
         <div className="prisot-meta">

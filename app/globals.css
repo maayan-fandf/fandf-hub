@@ -4321,6 +4321,42 @@ html[data-theme="dark"] .quick-note-saved {
   object-position: top center;
   display: block;
 }
+.prisot-thumb-skeleton {
+  width: 100%;
+  min-height: 320px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-hi, #f3f4f6) 0%,
+    var(--surface, #fff) 50%,
+    var(--surface-hi, #f3f4f6) 100%
+  );
+  background-size: 200% 100%;
+  animation: prisotShimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+@keyframes prisotShimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+.prisot-thumb-fallback {
+  width: 100%;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  padding: 2rem 1rem;
+  text-align: center;
+}
+.prisot-thumb-fallback-icon {
+  font-size: 2.4rem;
+  opacity: 0.55;
+}
+.prisot-thumb-fallback-text {
+  font-size: 0.9rem;
+}
 .prisot-meta {
   display: flex;
   align-items: center;
