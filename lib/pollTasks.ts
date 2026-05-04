@@ -557,19 +557,58 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
         missing.push(exp);
         continue;
       }
-      // Defensive cap: if the cell already has ≥3 refs for the same
-      // (email, kind), assume one of them is healthy enough and don't
-      // pile on. Prevents runaway loops if the visibility check is
-      // ever flaky again. Real-world cells should never exceed 1-2 per
-      // (email, kind) — anything past that is leftover history.
-      if (matchingRefs.length >= 3) continue;
-      // Cell has refs — verify ANY matching ref's GT is visible in the
-      // recipient's tasklist. If even one is healthy, the recipient
-      // already has a usable GT for this stage; don't spawn another.
+      // Visibility check (cached per-user list) — if any matching ref
+      // is still open in the recipient's tasklist, we're covered.
       const visible = await getVisibleGTs(exp.email);
-      if (!matchingRefs.some((r) => visible.has(r.t))) {
-        missing.push(exp);
+      if (matchingRefs.some((r) => visible.has(r.t))) continue;
+
+      // Cached list says no matching ref is open. Two interpretations:
+      //   (1) The recipient genuinely has no actionable GT for this
+      //       stage — refs are stale-closed from prior bounce cycles
+      //       (T-moju0aon-07uo regression: gtasks_sync was off when
+      //       the original spawn happened, so no GT was created; cell
+      //       still had 6 leftover refs from yesterday's bounce loop).
+      //       We SHOULD spawn a fresh GT.
+      //   (2) tasks.list is flaky / lagging and the GT IS open but
+      //       didn't show. We SHOULDN'T spawn — that's the original
+      //       endless-loop bug from 2026-04-30.
+      //
+      // To disambiguate: fetch each ref's actual state. If ALL are
+      // confirmed closed/deleted, we're in case (1) — safe to spawn.
+      // If ANY ref returns `needsAction` or unknown (transient error),
+      // we're in case (2) → leave it for next cycle.
+      let allConfirmedClosed = true;
+      for (const r of matchingRefs) {
+        if (!r.t || !r.l || !r.u) continue; // malformed, skip
+        const f = await fetchOne(r);
+        if (f.ok && f.status !== "completed") {
+          // Open / hidden / unknown-non-completed → don't spawn.
+          allConfirmedClosed = false;
+          break;
+        }
+        if (!f.ok && !f.deleted) {
+          // Transient error — can't confirm. Conservative: assume open.
+          allConfirmedClosed = false;
+          break;
+        }
+        // f.ok && completed → confirmed closed. f.deleted → confirmed gone.
+        // Both qualify as "no actionable GT exists for this ref."
       }
+      if (!allConfirmedClosed) continue;
+
+      // Hard runaway cap as last-resort guard. Real-world cells
+      // should never need >10 refs of the same (email, kind) — if
+      // we hit this, something else is very wrong; bail loudly.
+      if (matchingRefs.length >= 10) {
+        console.log(
+          `[pollTasks] reconcile: HARD CAP hit for ${taskId} (${exp.email} kind=${exp.kind}, ${matchingRefs.length} refs all closed). Refusing to spawn — investigate.`,
+        );
+        continue;
+      }
+
+      // All matching refs confirmed closed/deleted, under the hard
+      // cap → spawn a replacement.
+      missing.push(exp);
     }
     if (missing.length === 0) continue;
 
