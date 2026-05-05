@@ -331,7 +331,7 @@ export default function DriveFolderPicker({
   }
 
   const contextLabel = campaign
-    ? `תחת קמפיין: ${campaign}`
+    ? `תחת בריף: ${campaign}`
     : `תחת פרויקט: ${project || "—"}`;
 
   return (
@@ -348,11 +348,11 @@ export default function DriveFolderPicker({
           the tree below. The picker now always renders in "existing"
           mode; folder creation goes through the per-level "+" entry. */}
 
-      {resolving && <div className="drive-folder-hint">טוען תיקיית קמפיין…</div>}
+      {resolving && <div className="drive-folder-hint">טוען תיקיית בריף…</div>}
 
       {campaignFolder && "error" in campaignFolder && (
         <div className="drive-folder-error">
-          שגיאה בטעינת תיקיית הקמפיין: {campaignFolder.error}
+          שגיאה בטעינת תיקיית הבריף: {campaignFolder.error}
           <button
             type="button"
             className="drive-folder-link"
@@ -372,7 +372,7 @@ export default function DriveFolderPicker({
       <div className="drive-folder-existing-block">
           {isPending && (
             <div className="drive-folder-hint">
-              ✅ תיקיית הקמפיין תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
+              ✅ תיקיית הבריף תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
             </div>
           )}
           {rootId && (
@@ -501,7 +501,7 @@ export default function DriveFolderPicker({
                                         setSiblingsOpen(false);
                                       }
                                     }}
-                                    title={`עבור לקמפיין "${s.name}"`}
+                                    title={`עבור לבריף "${s.name}"`}
                                   >
                                     <span className="drive-folder-chevron drive-folder-chevron-fixed">
                                       ▸
@@ -544,7 +544,7 @@ export default function DriveFolderPicker({
                       });
                     }
                   }}
-                  title="בחר את תיקיית הקמפיין עצמה (ללא תת־תיקייה)"
+                  title="בחר את תיקיית הבריף עצמה (ללא תת־תיקייה)"
                 >
                   <span className="drive-folder-chevron drive-folder-chevron-fixed">▾</span>
                   <span className="drive-folder-icon">📁</span>
@@ -552,7 +552,7 @@ export default function DriveFolderPicker({
                     {campaign || project || "תיקייה"}
                   </span>
                   <span className="drive-folder-root-tag">
-                    {campaign ? "תיקיית קמפיין" : "תיקיית פרויקט"}
+                    {campaign ? "תיקיית בריף" : "תיקיית פרויקט"}
                   </span>
                 </div>
                 <div className="drive-folder-sub">

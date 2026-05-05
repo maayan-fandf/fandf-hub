@@ -696,6 +696,7 @@ function SortableTableSection({
         />
         <th>כותב</th>
         <th>מחלקות</th>
+        <th>בריף</th>
         <SortableTh
           column="priority"
           label="דחיפות"
@@ -1041,8 +1042,6 @@ function TaskRow({
           </Link>
         </div>
         {(isCreatedWithin24h(task.created_at) ||
-          task.brief ||
-          task.campaign ||
           task.round_number > 1) && (
           <div className="tasks-title-chips">
             {isCreatedWithin24h(task.created_at) && (
@@ -1051,16 +1050,6 @@ function TaskRow({
                 title="נוצרה ב־24 שעות האחרונות"
               >
                 🆕 חדש
-              </span>
-            )}
-            {task.brief && (
-              <span className="tasks-brief-chip" title="בריף">
-                #{task.brief}
-              </span>
-            )}
-            {task.campaign && (
-              <span className="tasks-campaign-chip" title="קמפיין">
-                📣 {task.campaign}
               </span>
             )}
             {task.round_number > 1 && (
@@ -1082,6 +1071,13 @@ function TaskRow({
         {(task.departments || []).length
           ? (task.departments || []).join(", ")
           : "—"}
+      </td>
+      <td className="tasks-brief-cell">
+        {task.campaign ? (
+          task.campaign
+        ) : (
+          <span className="task-empty-cell">—</span>
+        )}
       </td>
       <td className="priority-cell">
         <TaskPriorityCell task={task} />

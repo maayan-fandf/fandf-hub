@@ -157,7 +157,6 @@ export default async function TaskDetailPage({
             <Link href={`/projects/${encodeURIComponent(t.project)}`}>
               {t.project}
             </Link>
-            {t.brief && <> {" · "} בריף #{t.brief}</>}
           </div>
           <div className="task-detail-title-row">
             <h1 className="task-detail-title">{t.title}</h1>
@@ -383,8 +382,7 @@ export default async function TaskDetailPage({
           <SideBlock title="שיוך">
             <KV label="חברה" value={t.company || "—"} />
             <KV label="פרויקט" value={t.project} />
-            <KV label="קמפיין" value={t.campaign || "—"} />
-            <KV label="בריף" value={t.brief || "—"} />
+            <KV label="בריף" value={t.campaign || "—"} />
           </SideBlock>
 
           <SideBlock title="פרטים">

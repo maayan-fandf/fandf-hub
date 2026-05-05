@@ -45,7 +45,10 @@ export default function TaskEditPanel({
 
   const [title, setTitle] = useState(task.title || "");
   const [description, setDescription] = useState(task.description || "");
-  const [brief, setBrief] = useState(task.brief || "");
+  // Legacy `brief` field — UI was removed but existing values are passed
+  // through on edit so we don't accidentally wipe data on tasks that
+  // previously had it set. Will be retired from the data model later.
+  const brief = task.brief || "";
   const [departments, setDepartments] = useState<string[]>(
     task.departments || [],
   );
@@ -234,33 +237,20 @@ export default function TaskEditPanel({
           />
         </label>
         <label>
-          קמפיין
+          בריף
           <CampaignCombobox
             value={campaign}
             onChange={setCampaign}
             options={campaignOptions}
             project={task.project}
             onOptionsChanged={() => setCampaignReloadNonce((n) => n + 1)}
-            placeholder="בחר קמפיין קיים או הקלד חדש"
+            placeholder="בחר בריף קיים או הקלד חדש"
             hint={
               campaignOptions.length > 0 ? "ממוין מהחדש לישן" : undefined
             }
           />
         </label>
       </div>
-
-      <details className="task-form-extra" open={!!brief}>
-        <summary>שדות נוספים</summary>
-        <label>
-          בריף
-          <input
-            type="text"
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="10431"
-          />
-        </label>
-      </details>
 
       <div className="drive-folder-section">
         <div className="drive-folder-section-head">

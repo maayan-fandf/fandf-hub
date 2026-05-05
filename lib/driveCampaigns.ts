@@ -124,7 +124,7 @@ function bustCampaignFoldersCache() {
 }
 
 /**
- * Creates a campaign folder upfront — used by the "+ צור קמפיין חדש"
+ * Creates a campaign folder upfront — used by the "+ צור בריף חדש"
  * affordance in the picker so the folder exists the moment the user
  * commits the name, not lazily on first task save.
  *

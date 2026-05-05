@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  * Body: { project: string, name: string }
  *
  * Creates a Drive folder under `<company>/<project>/<name>` for a new
- * campaign — invoked when the user picks "+ צור קמפיין חדש" in the
+ * campaign — invoked when the user picks "+ צור בריף חדש" in the
  * picker so the folder is materialized upfront, not deferred to first
  * task save. Idempotent.
  *

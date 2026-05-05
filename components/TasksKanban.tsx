@@ -425,7 +425,6 @@ function KanbanCard({
   })();
   const hasChips =
     isNew ||
-    task.brief ||
     task.campaign ||
     task.round_number > 1 ||
     showPriorityChip;
@@ -498,13 +497,8 @@ function KanbanCard({
               {priorityClass === "high" ? "🔥 גבוהה" : "⏬ נמוכה"}
             </span>
           )}
-          {task.brief && (
-            <span className="tasks-brief-chip" title="בריף">
-              #{task.brief}
-            </span>
-          )}
           {task.campaign && (
-            <span className="tasks-campaign-chip" title="קמפיין">
+            <span className="tasks-campaign-chip" title="בריף">
               📣 {task.campaign}
             </span>
           )}

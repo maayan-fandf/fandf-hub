@@ -573,7 +573,7 @@ export default function TaskCreateForm({
         </label>
 
         <label>
-          קמפיין
+          בריף
           <CampaignCombobox
             value={campaign}
             onChange={setCampaign}
@@ -582,7 +582,7 @@ export default function TaskCreateForm({
             onOptionsChanged={() => setCampaignReloadNonce((n) => n + 1)}
             placeholder={
               project
-                ? "בחר קמפיין קיים או הקלד חדש"
+                ? "בחר בריף קיים או הקלד חדש"
                 : "בחר פרויקט תחילה"
             }
             disabled={!project}
@@ -594,19 +594,6 @@ export default function TaskCreateForm({
           />
         </label>
       </div>
-
-      <details className="task-form-extra">
-        <summary>שדות נוספים</summary>
-        <label>
-          בריף
-          <input
-            type="text"
-            name="brief"
-            placeholder="10431"
-            inputMode="text"
-          />
-        </label>
-      </details>
 
       {/* Phase 5b dependencies — chain-mode toggle bar. Sits as a
           dedicated banner-style row above the title field so it's

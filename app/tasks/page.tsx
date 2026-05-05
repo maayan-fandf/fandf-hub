@@ -638,7 +638,7 @@ function TasksFilterBar({
         companyToProjects={companyToProjects}
       />
       <label>
-        קמפיין
+        בריף
         <select
           name="campaign"
           defaultValue={current.campaign}
@@ -648,7 +648,7 @@ function TasksFilterBar({
         >
           <option value="">
             {campaignOptions.length === 0 && !current.campaign
-              ? "אין קמפיינים זמינים"
+              ? "אין בריפים זמינים"
               : "הכל"}
           </option>
           {/* If the user has filtered to a campaign that no longer

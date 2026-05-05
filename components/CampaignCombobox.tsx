@@ -23,12 +23,13 @@ type Props = {
 };
 
 /**
- * Combobox for the קמפיין field. Free-text-friendly (the user can type
+ * Combobox for the בריף field (data model still `campaign` — UI was
+ * renamed קמפיין → בריף on 2026-05-05). Free-text-friendly (the user can type
  * a brand-new campaign name) but with a visible chevron + clickable
  * dropdown panel listing existing campaigns sorted newest-first.
  *
  * Drive integration (added 2026-04-27):
- *   - Picking "+ צור קמפיין חדש: X" calls /api/campaigns/create which
+ *   - Picking "+ צור בריף חדש: X" calls /api/campaigns/create which
  *     materializes the Drive folder upfront. The form's later save
  *     finds the folder already there (idempotent ensure) so no folder
  *     duplication.
@@ -299,17 +300,17 @@ export default function CampaignCombobox({
                 <span className="combobox-option-icon">＋</span>
                 <span>
                   {busy ? (
-                    <>יוצר קמפיין…</>
+                    <>יוצר בריף…</>
                   ) : (
                     <>
-                      צור קמפיין חדש: <strong>{trimmed}</strong>
+                      צור בריף חדש: <strong>{trimmed}</strong>
                     </>
                   )}
                 </span>
               </li>
             )}
             {filtered.length === 0 && !showCreateNew && (
-              <li className="combobox-empty">אין קמפיינים קיימים בפרויקט זה</li>
+              <li className="combobox-empty">אין בריפים קיימים בפרויקט זה</li>
             )}
             {filtered.map((opt, i) => {
               const isRenaming = renamingName === opt;
@@ -349,7 +350,7 @@ export default function CampaignCombobox({
                         setRenamingName((cur) => (cur === opt ? null : cur));
                       }}
                       disabled={busy}
-                      aria-label={`שם חדש לקמפיין ${opt}`}
+                      aria-label={`שם חדש לבריף ${opt}`}
                     />
                   ) : (
                     <span className="combobox-option-text">{opt}</span>
@@ -361,8 +362,8 @@ export default function CampaignCombobox({
                     <button
                       type="button"
                       className="combobox-option-rename"
-                      title="שנה שם קמפיין (כולל בדרייב)"
-                      aria-label={`שנה שם לקמפיין ${opt}`}
+                      title="שנה שם בריף (כולל בדרייב)"
+                      aria-label={`שנה שם לבריף ${opt}`}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
