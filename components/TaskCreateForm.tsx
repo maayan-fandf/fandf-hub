@@ -253,27 +253,31 @@ export default function TaskCreateForm({
     setFolderSelection(v);
   }
 
-  // Resolve the project's Drive folder ID so the Drive Picker test-drive
-  // button can scope its initial view to "this project's בריפים" instead
-  // of dumping the user into "My Drive" root. Mirrors the resolution the
-  // inline DriveFolderPicker does internally for its siblings expander —
-  // same /api/drive/folders/resolve-campaign endpoint, `campaign: ""`
-  // returns the project parent. Yes this is a duplicate call while both
-  // pickers coexist; once we pick a winner the duplicate goes away.
-  const [projectFolderId, setProjectFolderId] = useState<string | null>(null);
+  // Resolve the Drive folder the Picker should open at:
+  //   - When the user has picked a בריף → that בריף's folder (drill in
+  //     so they're choosing a sub-folder or file inside it).
+  //   - When no בריף is picked → the project parent folder (browse all
+  //     בריפים).
+  // Mirrors the same /api/drive/folders/resolve-campaign endpoint the
+  // inline DriveFolderPicker uses internally. Yes this is a duplicate
+  // call while both pickers coexist during the test-drive — drops away
+  // when we pick a winner.
+  const [pickerParentFolderId, setPickerParentFolderId] = useState<
+    string | null
+  >(null);
   useEffect(() => {
     let cancelled = false;
-    setProjectFolderId(null);
+    setPickerParentFolderId(null);
     if (!project) return;
     void fetch("/api/drive/folders/resolve-campaign", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ company, project, campaign: "" }),
+      body: JSON.stringify({ company, project, campaign: campaign || "" }),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { ok?: boolean; folderId?: string | null } | null) => {
         if (cancelled) return;
-        if (d?.ok && d.folderId) setProjectFolderId(d.folderId);
+        if (d?.ok && d.folderId) setPickerParentFolderId(d.folderId);
       })
       .catch(() => {
         // Non-fatal — Picker just opens at My Drive root in this case.
@@ -281,7 +285,7 @@ export default function TaskCreateForm({
     return () => {
       cancelled = true;
     };
-  }, [company, project]);
+  }, [company, project, campaign]);
   // Existing campaigns for the selected project — populates the
   // datalist autocomplete. Refetched whenever the project changes,
   // and explicitly after CampaignCombobox creates / renames one
@@ -723,7 +727,7 @@ export default function TaskCreateForm({
           <DrivePickerButton
             accessToken={driveAccessToken}
             apiKey={drivePickerApiKey}
-            parentFolderId={projectFolderId ?? undefined}
+            parentFolderId={pickerParentFolderId ?? undefined}
             disabled={!project}
             onPick={(picked) => {
               handleFolderChange({
