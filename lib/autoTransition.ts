@@ -89,14 +89,11 @@ export async function applyAutoTransition(
     }
 
     // Quiet-hours guard — outside Israel work hours, a GT completion
-    // is much more likely to be a "dismiss this notification" than a
-    // genuine "I finished the work" signal. Defer the transition to
-    // the next pollTaskCompletions cycle that lands in the work
-    // window. The poller fires every few minutes via Cloud Scheduler,
-    // so this is bounded — at worst the transition lands a few
-    // minutes after 9am the next workday. The 2026-05-05 incident
-    // (sapir's 9pm dismissal flipping the task to ממתין לאישור) is
-    // exactly the case this prevents.
+    // is overwhelmingly more likely to be a "dismiss this notification"
+    // than a genuine "I finished the work" signal. Defer to the next
+    // pollTaskCompletions cycle that lands in the work window. The
+    // poller fires every few minutes via Cloud Scheduler, so the worst
+    // case lands a few minutes after 09:00 the next workday.
     if (isQuietHours()) {
       return {
         ok: true,
@@ -108,9 +105,23 @@ export async function applyAutoTransition(
       };
     }
 
+    // Banner-based confirmation flow (replaces the old auto-flip
+    // behaviour that bit us 2026-05-05). Instead of immediately
+    // transitioning the hub status, we record a pending-completion
+    // claim on the task. The detail page renders a confirm/revert
+    // banner; the approver decides if the GT click was a real
+    // completion or a noise dismissal.
+    const claim = JSON.stringify({
+      by: completedBy || "",
+      kind,
+      at: new Date().toISOString(),
+      prev: previous,
+    });
     const result = await tasksUpdateDirect(ADMIN_FALLBACK, taskId, {
-      status: target,
-      note: completedBy ? `via ${completedBy} · Google Tasks` : "via Google Tasks",
+      pending_complete: claim,
+      note: completedBy
+        ? `סומן כמשלמת ע״י ${completedBy} (Google Tasks) — ממתין לאישור באב`
+        : "סומן כמשלמת (Google Tasks) — ממתין לאישור באב",
     });
     return {
       ok: true,
@@ -118,6 +129,8 @@ export async function applyAutoTransition(
       taskId,
       kind,
       previous,
+      // Target stays in the response so the caller can log/audit what
+      // WOULD have happened, but the actual hub status hasn't moved.
       target,
       changed: result.changed,
     };

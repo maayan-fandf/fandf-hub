@@ -1607,6 +1607,11 @@ async function tasksUpdateDirectInner(
     // the row; the panel handles drift (files added/removed in Drive)
     // at render time.
     "file_order",
+    // Pending-completion claim JSON. Set by autoTransition when a GT
+    // completion is detected during work hours; cleared by the
+    // confirm-pending / revert-pending API endpoints. See WorkTask
+    // type for shape.
+    "pending_complete",
     // `project` is patchable to support promote-personal-note → real-project
     // flow. Callers that change `project` MUST validate access to the new
     // value themselves (assertProjectAccess at the top of this function only

@@ -6690,6 +6690,55 @@ html[data-theme="dark"] .tasks-campaign-chip {
   text-overflow: ellipsis;
 }
 
+/* TaskApprovalConfirmBanner — appears at the top of a task body when
+   a Google Task completion is awaiting confirmation (banner-based
+   approval flow, 2026-05-05). Amber tone so it reads as "needs
+   attention" without alarming. Hidden when no pending claim. */
+.task-approval-banner {
+  display: flex;
+  gap: .8rem;
+  align-items: flex-start;
+  padding: .9rem 1rem;
+  margin-bottom: 1.2rem;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, .12);  /* amber-400 @ 12% */
+  border: 1px solid rgba(251, 191, 36, .35);
+  color: var(--text);
+}
+.task-approval-banner-icon {
+  flex: 0 0 auto;
+  font-size: 1.4em;
+  line-height: 1.2;
+}
+.task-approval-banner-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  min-width: 0;
+}
+.task-approval-banner-text {
+  font-size: .94em;
+  line-height: 1.4;
+}
+.task-approval-banner-time {
+  color: var(--muted);
+  font-size: .9em;
+}
+.task-approval-banner-actions {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.task-approval-banner-err {
+  font-size: .85em;
+  color: var(--danger, #dc2626);
+}
+html[data-theme="dark"] .task-approval-banner {
+  background: rgba(251, 191, 36, .08);
+  border-color: rgba(251, 191, 36, .25);
+}
+
 /* TaskFilesPanel — unified files panel on /tasks/[id], mounted above
    TaskAttachments under the קבצים tab. Tile grid with drag-reorder
    (per-task `file_order` CSV) and drag-drop upload directly into the

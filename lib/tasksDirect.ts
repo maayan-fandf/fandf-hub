@@ -146,6 +146,9 @@ function rowToTask(
     // column doesn't exist yet (graceful — we ship code first, sheet
     // header gets added on first reorder save).
     file_order: String(cell("file_order") ?? ""),
+    // Pending-completion claim JSON. Empty when no GT completion is
+    // awaiting confirmation. See the type definition for shape.
+    pending_complete: String(cell("pending_complete") ?? ""),
     rank: (() => {
       const raw = cell("rank");
       const parsed =

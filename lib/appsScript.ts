@@ -883,6 +883,16 @@ export type WorkTask = {
    *  (two tasks pointing at the same folder can have independent
    *  orders). Added 2026-05-05 with the unified TaskFilesPanel. */
   file_order?: string;
+  /** Pending-completion claim. JSON-stringified
+   *  `{by: email, kind: "todo"|"approve"|"clarify", at: iso,
+   *    prev: WorkTaskStatus}` — set when a Google Task completion is
+   *  detected during work hours. The hub status DOESN'T flip
+   *  automatically anymore (sapir's 9pm dismissal incident, 2026-05-05);
+   *  instead the task detail page renders a banner asking the
+   *  approver / reporter to confirm "yes, real" or revert "no, was a
+   *  dismissal." Cleared on confirm or revert. Empty string when no
+   *  claim outstanding. */
+  pending_complete?: string;
 
   /* ── Dependencies + chains (phase 1, 2026-05-03) ──────────────────
    * Additive fields. Existing rows without these columns parse as the
@@ -1146,6 +1156,11 @@ export type TasksUpdatePatch = {
   /** CSV of Drive file IDs in display order — set by TaskFilesPanel's
    *  drag-reorder. See the WorkTask field of the same name. */
   file_order?: string;
+  /** Pending-completion claim JSON — set when a GT completion is
+   *  detected during work hours (instead of auto-flipping status).
+   *  See the WorkTask field of the same name. Cleared on confirm or
+   *  revert. */
+  pending_complete?: string;
   /** Move the task between projects. Currently used by the personal-note
    *  promote flow (`__personal__` → real project). The server-side
    *  /api/worktasks/promote-personal endpoint validates write access to

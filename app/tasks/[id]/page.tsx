@@ -18,6 +18,7 @@ import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskAttachments from "@/components/TaskAttachments";
 import TaskFilesPanel from "@/components/TaskFilesPanel";
+import TaskApprovalConfirmBanner from "@/components/TaskApprovalConfirmBanner";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
 import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
@@ -281,6 +282,18 @@ export default async function TaskDetailPage({
           <UmbrellaDetailMain umbrella={t} children={umbrellaChildren} />
         ) : (
         <div className="task-detail-main">
+          {/* Pending-completion banner — appears when a Google Task
+              completion is awaiting confirmation. Stays at the top of
+              the body so it can't be missed. The component returns
+              null when the claim is empty, so it's safe to mount
+              unconditionally. */}
+          {t.pending_complete && (
+            <TaskApprovalConfirmBanner
+              taskId={t.id}
+              claimJson={t.pending_complete}
+              people={peopleRes?.people ?? []}
+            />
+          )}
           {t.description && (
             <div className="task-detail-body">
               {t.description.split("\n").map((line, i) => (
