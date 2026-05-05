@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { listNotifications, type NotificationRow } from "@/lib/notifications";
+import { tasksPeopleList } from "@/lib/appsScript";
 import NotificationsList from "@/components/NotificationsList";
 
 export const dynamic = "force-dynamic";
@@ -29,13 +30,21 @@ export default async function NotificationsPage({
   const email = session?.user?.email ?? "";
   let items: NotificationRow[] = [];
   let error = "";
-  if (email) {
-    try {
-      items = await listNotifications(email, { unreadOnly, limit: 100 });
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
+  // People list parallels the items fetch so each notification's
+  // actor email can resolve to a Hebrew display name in the list.
+  const [, peopleRes] = await Promise.all([
+    email
+      ? listNotifications(email, { unreadOnly, limit: 100 })
+          .then((r) => {
+            items = r;
+          })
+          .catch((e) => {
+            error = e instanceof Error ? e.message : String(e);
+          })
+      : Promise.resolve(),
+    tasksPeopleList().catch(() => ({ ok: false, people: [] as never[] })),
+  ]);
+  const people = peopleRes.ok ? peopleRes.people : [];
 
   const unreadCount = items.filter((i) => !i.read_at).length;
 
@@ -86,6 +95,7 @@ export default async function NotificationsPage({
           items={items}
           unreadCount={unreadCount}
           kindLabels={KIND_LABELS}
+          people={people}
         />
       )}
     </main>

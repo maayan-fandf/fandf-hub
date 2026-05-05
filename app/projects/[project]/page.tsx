@@ -23,6 +23,7 @@ import CardActions from "@/components/CardActions";
 import CommentBody from "@/components/CommentBody";
 import InternalDiscussionTab from "@/components/InternalDiscussionTab";
 import { getDisplayNamesForEmail } from "@/lib/projectsDirect";
+import { personDisplayName } from "@/lib/personDisplay";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import ProjectFilterBar from "@/components/ProjectFilterBar";
@@ -504,6 +505,7 @@ export default async function ProjectOverviewPage({
           isAdmin={!!projectsData?.isAdmin}
           userEmail={userEmail}
           chatSpaceUrl={chatSpaceUrl}
+          people={peopleData?.ok ? peopleData.people : []}
         />
       </div>
 
@@ -656,6 +658,7 @@ function DiscussionSection({
   isAdmin,
   userEmail,
   chatSpaceUrl,
+  people,
 }: {
   comments: CommentItem[];
   mentions: MentionItem[];
@@ -678,6 +681,9 @@ function DiscussionSection({
   isAdmin: boolean;
   userEmail: string;
   chatSpaceUrl: string;
+  /** People list used to resolve channel-row author emails to Hebrew
+   *  names. Optional; falls back to email-prefix on miss. */
+  people: import("@/lib/appsScript").TasksPerson[];
 }) {
   const channel: "internal" | "client" | "tasks" =
     requestedChannel === "internal"
@@ -753,6 +759,7 @@ function DiscussionSection({
         <TasksChannel
           subjectEmail={userEmail}
           projectName={projectName}
+          people={people}
         />
       ) : (
         <ClientChannel
@@ -863,9 +870,11 @@ async function InternalChannel({
 async function TasksChannel({
   subjectEmail,
   projectName,
+  people,
 }: {
   subjectEmail: string;
   projectName: string;
+  people: import("@/lib/appsScript").TasksPerson[];
 }) {
   const { projectOpenTasksDiscussionDirect } = await import(
     "@/lib/commentsDirect"
@@ -923,7 +932,9 @@ async function TasksChannel({
             <div className="tasks-channel-body">
               <div className="tasks-channel-meta">
                 <span className="tasks-channel-author">
-                  {item.author_name || item.author_email.split("@")[0]}
+                  {personDisplayName(item.author_email, people) ||
+                    item.author_name ||
+                    item.author_email.split("@")[0]}
                 </span>
                 <span className="tasks-channel-time" title={item.timestamp}>
                   {formatRelativeIso(item.timestamp)}

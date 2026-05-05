@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { getMyMentions, getMyProjects, type MentionItem } from "@/lib/appsScript";
+import {
+  getMyMentions,
+  getMyProjects,
+  tasksPeopleList,
+  type MentionItem,
+  type TasksPerson,
+} from "@/lib/appsScript";
+import { personDisplayName } from "@/lib/personDisplay";
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import InboxFilterBar from "@/components/InboxFilterBar";
@@ -26,10 +33,17 @@ export default async function InboxPage({
   // recipient's own scope.
   const scopedPerson = await getScopedPerson(sp.person);
 
-  const [mentionsRes, projectsRes] = await Promise.allSettled([
+  const [mentionsRes, projectsRes, peopleRes] = await Promise.allSettled([
     getMyMentions(),
     scopedPerson ? getMyProjects() : Promise.resolve(null),
+    tasksPeopleList(),
   ]);
+  // Pass the resolved list down to MentionCard so author emails render
+  // as Hebrew names. Falls back to email-prefix when the call fails.
+  const people: TasksPerson[] =
+    peopleRes.status === "fulfilled" && peopleRes.value.ok
+      ? peopleRes.value.people
+      : [];
   const data =
     mentionsRes.status === "fulfilled" ? mentionsRes.value : undefined;
   const error =
@@ -125,7 +139,7 @@ export default async function InboxPage({
       {visible.length > 0 && (
         <ul className="mention-list">
           {visible.map((m) => (
-            <MentionCard key={m.comment_id} m={m} />
+            <MentionCard key={m.comment_id} m={m} people={people} />
           ))}
         </ul>
       )}
@@ -133,7 +147,17 @@ export default async function InboxPage({
   );
 }
 
-function MentionCard({ m }: { m: MentionItem }) {
+function MentionCard({
+  m,
+  people,
+}: {
+  m: MentionItem;
+  people: TasksPerson[];
+}) {
+  const authorDisplay =
+    personDisplayName(m.author_email, people) ||
+    m.author_name ||
+    m.author_email;
   // Resolve targets the thread root — only top-level comments can be
   // resolved on the Apps Script side. Falls back to comment_id for API
   // responses that don't yet include thread_root_id.
@@ -143,7 +167,7 @@ function MentionCard({ m }: { m: MentionItem }) {
       <div className="mention-head">
         <Avatar
           name={m.author_email}
-          title={m.author_name || m.author_email}
+          title={authorDisplay}
           size={32}
         />
         <Link
@@ -152,9 +176,7 @@ function MentionCard({ m }: { m: MentionItem }) {
         >
           {m.project}
         </Link>
-        <span className="mention-author">
-          {m.author_name || m.author_email}
-        </span>
+        <span className="mention-author">{authorDisplay}</span>
         {m.edited_at && (
           <span
             className="chip chip-muted"

@@ -5,12 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import type { NotificationRow } from "@/lib/notifications";
+import type { TasksPerson } from "@/lib/appsScript";
 import { formatDateIso } from "@/lib/dateFormat";
+import { personDisplayName } from "@/lib/personDisplay";
 
 type Props = {
   items: NotificationRow[];
   unreadCount: number;
   kindLabels: Record<string, { emoji: string; label: string }>;
+  /** People list for resolving actor emails to Hebrew display names.
+   *  Optional — when missing the rendering falls back to the email
+   *  prefix as before. */
+  people?: TasksPerson[];
 };
 
 /**
@@ -30,6 +36,7 @@ export default function NotificationsList({
   items: initialItems,
   unreadCount: initialUnread,
   kindLabels,
+  people,
 }: Props) {
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
@@ -105,7 +112,8 @@ export default function NotificationsList({
         {sorted.map((n) => {
           const k = kindLabels[n.kind] || { emoji: "🔔", label: n.kind };
           const unread = !n.read_at;
-          const actorHandle = n.actor_email.split("@")[0] || "מישהו";
+          const actorHandle =
+            personDisplayName(n.actor_email, people) || "מישהו";
           return (
             <li
               key={n.id}

@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import { STATUS_LABELS } from "@/components/TaskStatusCell";
-import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
+import type { TasksPerson, WorkTask, WorkTaskStatus } from "@/lib/appsScript";
+import { personDisplayName } from "@/lib/personDisplay";
 
 type Props = {
   history: WorkTask["status_history"];
+  /** People list for resolving `h.by` (email) to a Hebrew display
+   *  name. Falls back to email-prefix when missing or empty. */
+  people?: TasksPerson[];
 };
 
 const DEFAULT_VISIBLE = 3;
@@ -27,7 +31,7 @@ const DEFAULT_VISIBLE = 3;
  * Order: reverse-chronological (newest first). The audit-trail use
  * case is "what just happened?" — that lives at the top.
  */
-export default function TaskStatusHistory({ history }: Props) {
+export default function TaskStatusHistory({ history, people }: Props) {
   const [expanded, setExpanded] = useState(false);
   const items = history || [];
 
@@ -86,7 +90,7 @@ export default function TaskStatusHistory({ history }: Props) {
                   <>
                     <span aria-hidden>·</span>
                     <span className="task-status-history-by" title={h.by}>
-                      {shortName(h.by)}
+                      {personDisplayName(h.by, people)}
                     </span>
                   </>
                 )}
@@ -126,12 +130,6 @@ export default function TaskStatusHistory({ history }: Props) {
 function labelFor(s: WorkTaskStatus | string): string {
   if (s in STATUS_LABELS) return STATUS_LABELS[s as WorkTaskStatus];
   return String(s);
-}
-
-function shortName(email: string): string {
-  if (!email) return "";
-  const at = email.indexOf("@");
-  return at > 0 ? email.slice(0, at) : email;
 }
 
 function formatTime(iso: string): string {

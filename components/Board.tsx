@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { TaskItem } from "@/lib/appsScript";
+import type { TaskItem, TasksPerson } from "@/lib/appsScript";
 import { companyColorSlot } from "@/lib/colors";
+import { personDisplayName } from "@/lib/personDisplay";
 import Avatar from "./Avatar";
 import CardActions from "./CardActions";
 import DatePicker from "./DatePicker";
@@ -14,9 +15,19 @@ type Props = {
   today: string;
   assigneeFilter: string; // "" = all
   showDone: boolean;
+  /** People list for resolving column-header emails to Hebrew display
+   *  names. Optional; when missing renders fall back to email-prefix
+   *  via the personDisplayName resolver. */
+  people?: TasksPerson[];
 };
 
-export default function Board({ tasks, today, assigneeFilter, showDone }: Props) {
+export default function Board({
+  tasks,
+  today,
+  assigneeFilter,
+  showDone,
+  people,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [dragSrc, setDragSrc] = useState<{ commentId: string; from: string } | null>(
@@ -111,7 +122,9 @@ export default function Board({ tasks, today, assigneeFilter, showDone }: Props)
       <div className="board">
         {columns.map(([email, items]) => {
           const name =
-            items[0]?.assignee_name || email.split("@")[0] || "(לא מוקצה)";
+            personDisplayName(email, people) ||
+            items[0]?.assignee_name ||
+            "(לא מוקצה)";
           const openCount = items.filter((t) => !t.resolved).length;
           const isDropZone = dropTarget === email;
           return (

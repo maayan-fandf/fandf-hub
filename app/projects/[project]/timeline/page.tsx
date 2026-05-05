@@ -2,14 +2,17 @@ import Link from "next/link";
 import {
   getProjectTasks,
   getProjectComments,
+  tasksPeopleList,
   type TaskItem,
   type CommentItem,
+  type TasksPerson,
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
 import CardActions from "@/components/CardActions";
 import CommentBody from "@/components/CommentBody";
 import ScrollToThread from "@/components/ScrollToThread";
 import Avatar from "@/components/Avatar";
+import { personDisplayName } from "@/lib/personDisplay";
 
 export const dynamic = "force-dynamic";
 
@@ -49,14 +52,22 @@ export default async function ProjectTimelinePage({
   const queryLc = query.toLowerCase();
   const authorFilter = (sp.author ?? "").trim();
 
-  const [tasksRes, commentsRes] = await Promise.allSettled([
+  const [tasksRes, commentsRes, peopleRes] = await Promise.allSettled([
     getProjectTasks(projectName),
     getProjectComments(projectName, 100),
+    tasksPeopleList(),
   ]);
 
   const tasksData = tasksRes.status === "fulfilled" ? tasksRes.value : null;
   const commentsData =
     commentsRes.status === "fulfilled" ? commentsRes.value : null;
+  // People list for resolving author emails to Hebrew display names on
+  // every timeline entry (comment authors, "מאת" subnotes, avatar
+  // tooltips). Optional — falls back to email-prefix on miss.
+  const people: TasksPerson[] =
+    peopleRes.status === "fulfilled" && peopleRes.value.ok
+      ? peopleRes.value.people
+      : [];
   const firstError =
     tasksRes.status === "rejected"
       ? extractError(tasksRes.reason)
@@ -141,8 +152,15 @@ export default async function ProjectTimelinePage({
   // counts still reflect the broader feed. Authors are case-insensitive
   // matched against the stored full name OR email. Query matches the body
   // (comment.body or task.title + task.body) substring, case-insensitive.
-  const entryAuthorName = (e: FeedEntry): string =>
-    e.kind === "comment" ? e.comment.author_name || e.comment.author_email : e.task.author_name || e.task.author_email;
+  const entryAuthorName = (e: FeedEntry): string => {
+    const email =
+      e.kind === "comment" ? e.comment.author_email : e.task.author_email;
+    const fallback =
+      e.kind === "comment"
+        ? e.comment.author_name || e.comment.author_email
+        : e.task.author_name || e.task.author_email;
+    return personDisplayName(email, people) || fallback;
+  };
   const entryBodyLc = (e: FeedEntry): string =>
     e.kind === "comment"
       ? (e.comment.body || "").toLowerCase()
@@ -222,12 +240,17 @@ export default async function ProjectTimelinePage({
         <ul className="timeline-list">
           {visible.map((e) =>
             e.kind === "comment" ? (
-              <CommentRow key={`c:${e.comment.comment_id}`} entry={e} />
+              <CommentRow
+                key={`c:${e.comment.comment_id}`}
+                entry={e}
+                people={people}
+              />
             ) : (
               <TaskRow
                 key={`t:${e.task.comment_id}|${e.task.assignee_email}`}
                 entry={e}
                 today={today}
+                people={people}
               />
             ),
           )}
@@ -239,7 +262,13 @@ export default async function ProjectTimelinePage({
 
 /* ─── Row renderers ──────────────────────────────────────────────── */
 
-function CommentRow({ entry }: { entry: CommentEntry }) {
+function CommentRow({
+  entry,
+  people,
+}: {
+  entry: CommentEntry;
+  people: TasksPerson[];
+}) {
   const c = entry.comment;
   const isReply = !!c.parent_id;
   // Anchor id — target for #thread-{id} deep-links (⌘K results, dashboard
@@ -255,9 +284,21 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
       </div>
       <div className="timeline-card">
         <div className="timeline-head">
-          <Avatar name={c.author_email} title={c.author_name || c.author_email} size={26} />
+          <Avatar
+            name={c.author_email}
+            title={
+              personDisplayName(c.author_email, people) ||
+              c.author_name ||
+              c.author_email
+            }
+            size={26}
+          />
           <span className="chip chip-muted">💬 הערה</span>
-          <span className="author">{c.author_name || c.author_email}</span>
+          <span className="author">
+            {personDisplayName(c.author_email, people) ||
+              c.author_name ||
+              c.author_email}
+          </span>
           {c.parent_id && <span className="chip chip-muted">↩️ תגובה</span>}
           {c.reply_count > 0 && (
             <span className="chip chip-muted">{c.reply_count} תגובות</span>
@@ -323,7 +364,15 @@ function CommentRow({ entry }: { entry: CommentEntry }) {
   );
 }
 
-function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
+function TaskRow({
+  entry,
+  today,
+  people,
+}: {
+  entry: TaskEntry;
+  today: string;
+  people: TasksPerson[];
+}) {
   const t = entry.task;
   const state = taskState(t, today);
   // Tasks share the thread anchor with their source comment so a ⌘K deep
@@ -375,7 +424,10 @@ function TaskRow({ entry, today }: { entry: TaskEntry; today: string }) {
           className="timeline-body"
         />
         <div className="timeline-subnote">
-          מאת {t.author_name || t.author_email}
+          מאת{" "}
+          {personDisplayName(t.author_email, people) ||
+            t.author_name ||
+            t.author_email}
         </div>
         <div className="timeline-actions">
           <CardActions

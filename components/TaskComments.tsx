@@ -3,18 +3,28 @@ import TaskReplyComposer from "./TaskReplyComposer";
 import EditDrawer from "./EditDrawer";
 import DeleteButton from "./DeleteButton";
 import CommentBody from "./CommentBody";
-import { getTaskComments } from "@/lib/appsScript";
+import { getTaskComments, tasksPeopleList } from "@/lib/appsScript";
 import { formatDateIso } from "@/lib/dateFormat";
+import { personDisplayName } from "@/lib/personDisplay";
 
 type Props = {
   taskId: string;
 };
 
 export default async function TaskComments({ taskId }: Props) {
-  const data = await getTaskComments(taskId).catch((e: unknown) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { error: msg } as const;
-  });
+  // Pull comments + people in parallel — people drives the
+  // English-email → Hebrew-name resolution for comment authors so the
+  // discussion thread shows "מעין" instead of "maayan". The people
+  // call is cheap (~60 entries portfolio-wide) and the fetch was
+  // already running on the parent page anyway.
+  const [data, peopleRes] = await Promise.all([
+    getTaskComments(taskId).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { error: msg } as const;
+    }),
+    tasksPeopleList().catch(() => ({ ok: false, people: [] as never[] })),
+  ]);
+  const people = peopleRes.ok ? peopleRes.people : [];
 
   if ("error" in data) {
     return (
@@ -53,13 +63,19 @@ export default async function TaskComments({ taskId }: Props) {
               <li key={c.comment_id} className="thread-reply">
                 <Avatar
                   name={c.author_email}
-                  title={c.author_name || c.author_email}
+                  title={
+                    personDisplayName(c.author_email, people) ||
+                    c.author_name ||
+                    c.author_email
+                  }
                   size={26}
                 />
                 <div className="thread-reply-body">
                   <div className="thread-reply-head">
                     <span className="thread-reply-author">
-                      {c.author_name || c.author_email}
+                      {personDisplayName(c.author_email, people) ||
+                        c.author_name ||
+                        c.author_email}
                     </span>
                     <span className="thread-reply-time" title={c.timestamp}>
                       {formatRelative(c.timestamp)}
