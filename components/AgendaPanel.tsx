@@ -125,32 +125,60 @@ function AgendaRow({
 }: {
   item: Awaited<ReturnType<typeof getAgendaForUser>>[number];
 }) {
-  return (
-    <li className="agenda-panel-row">
-      <Link href={item.href} className="agenda-panel-row-link">
-        <span
-          className={`agenda-panel-row-dot ${item.toneClass}`}
-          aria-hidden
-        />
-        <div className="agenda-panel-row-body">
-          <div className="agenda-panel-row-line">
-            {item.time && (
-              <span className="agenda-panel-row-time" dir="ltr">
-                {item.time}
+  // Calendar events open in a new tab (the htmlLink points at
+  // calendar.google.com); tasks navigate within the hub via the
+  // standard Link prefetch flow.
+  const isEvent = item.source === "event";
+  const inner = (
+    <>
+      <span
+        className={`agenda-panel-row-dot ${item.toneClass}`}
+        aria-hidden
+      />
+      <div className="agenda-panel-row-body">
+        <div className="agenda-panel-row-line">
+          {item.time && (
+            <span className="agenda-panel-row-time" dir="ltr">
+              {item.time}
+            </span>
+          )}
+          <span className="agenda-panel-row-title">
+            {isEvent && (
+              <span className="agenda-panel-row-event-glyph" aria-hidden>
+                📅{" "}
               </span>
             )}
-            <span className="agenda-panel-row-title">{item.title}</span>
-          </div>
-          {item.subtitle && (
-            <div className="agenda-panel-row-subtitle">{item.subtitle}</div>
-          )}
-          {item.status && (
-            <div className="agenda-panel-row-status">
-              {STATUS_LABELS[item.status] || item.status}
-            </div>
-          )}
+            {item.title}
+          </span>
         </div>
-      </Link>
+        {item.subtitle && (
+          <div className="agenda-panel-row-subtitle">{item.subtitle}</div>
+        )}
+        {item.status && (
+          <div className="agenda-panel-row-status">
+            {STATUS_LABELS[item.status] || item.status}
+          </div>
+        )}
+      </div>
+    </>
+  );
+  return (
+    <li className="agenda-panel-row">
+      {isEvent ? (
+        <a
+          href={item.href}
+          target="_blank"
+          rel="noreferrer"
+          className="agenda-panel-row-link"
+          title="פתח ב-Google Calendar"
+        >
+          {inner}
+        </a>
+      ) : (
+        <Link href={item.href} className="agenda-panel-row-link">
+          {inner}
+        </Link>
+      )}
     </li>
   );
 }

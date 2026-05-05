@@ -159,6 +159,23 @@ export function calendarClient(subjectEmail: string) {
 }
 
 /**
+ * Calendar API client — read-only, narrow scope. Used by the
+ * AgendaPanel to list today's events on the impersonated user's
+ * primary calendar. Separate from `calendarClient` (full read+write)
+ * so agenda reads don't carry write authority they don't need —
+ * principle of least privilege.
+ *
+ * The `auth/calendar.events.readonly` scope was added to the F&F
+ * service account's domain-wide delegation entry on 2026-05-05.
+ */
+export function calendarReadonlyClient(subjectEmail: string) {
+  const auth = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/calendar.events.readonly",
+  ]);
+  return google.calendar({ version: "v3", auth });
+}
+
+/**
  * Gmail send-as client. Impersonates the email sender (usually the task
  * author) so the approval-request email lands "from" a real person,
  * matching the Apps Script MailApp behavior.

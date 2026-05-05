@@ -6846,6 +6846,7 @@ html[data-theme="dark"] .tasks-campaign-chip {
 .agenda-tone-draft             { background: #94a3b8; }
 .agenda-tone-done              { background: #10b981; }
 .agenda-tone-cancelled         { background: #94a3b8; }
+.agenda-tone-event             { background: #0ea5e9; }  /* sky-500 — calendar events */
 .agenda-panel-row-body {
   flex: 1 1 auto;
   min-width: 0;
