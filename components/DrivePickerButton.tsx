@@ -144,22 +144,46 @@ export default function DrivePickerButton({
       // know it — keeps the user from getting lost in their personal
       // Drive. They can still navigate up/out via the Picker chrome.
       if (parentFolderId) view.setParent(parentFolderId);
+      // Upload tab — drag-drop files from desktop straight into the
+      // בריף's folder. Files land in `parentFolderId` (the currently
+      // scoped folder) and the user can immediately pick them. Drive's
+      // own UI doesn't support file reordering at all so we don't try
+      // to surface that — uploads land sorted by Drive's default
+      // (modified date, newest first).
+      const uploadView = new window.google.picker.DocsUploadView();
+      if (parentFolderId) uploadView.setParent(parentFolderId);
       const picker = new window.google.picker.PickerBuilder()
         .addView(view)
+        .addView(uploadView)
+        // Note: NOT enabling MULTISELECT_ENABLED — that would also let
+        // users multi-select folders, and our callback only handles
+        // a single folder pick. The Upload tab natively supports
+        // multiple files dropped at once regardless of this flag.
         .setOAuthToken(accessToken)
         .setDeveloperKey(apiKey)
         // Right-to-left UI to match the rest of the hub.
         .setLocale("he")
-        .setTitle("בחר תיקייה ב-Drive")
+        .setTitle("בחר תיקייה או העלה קבצים")
         .setCallback((data: any) => {
           const Action = window.google.picker.Action;
           if (data.action === Action.PICKED) {
-            const doc = data.docs?.[0];
-            if (doc?.id) {
+            // The Picker fires PICKED for both folder selections AND
+            // for files the user just uploaded via the Upload tab.
+            // We only forward FOLDER picks to the parent — file picks
+            // would otherwise set drive_folder_id to a file ID, which
+            // would break Drive folder operations downstream. Uploaded
+            // files are still in the בריף folder regardless (Picker
+            // already wrote them) — they just don't change the task's
+            // folder selection.
+            const FOLDER_MIME = "application/vnd.google-apps.folder";
+            const folderDoc = (data.docs || []).find(
+              (d: any) => d?.mimeType === FOLDER_MIME && d?.id,
+            );
+            if (folderDoc) {
               onPick({
-                id: String(doc.id),
-                name: String(doc.name || ""),
-                mimeType: doc.mimeType ? String(doc.mimeType) : undefined,
+                id: String(folderDoc.id),
+                name: String(folderDoc.name || ""),
+                mimeType: String(folderDoc.mimeType),
               });
             }
           }
