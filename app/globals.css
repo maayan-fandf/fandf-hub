@@ -6700,14 +6700,32 @@ html[data-theme="dark"] .tasks-campaign-chip {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0;
+  /* Smooth column-width transition when the panel collapses/expands.
+     Skipped under prefers-reduced-motion (block at the end of this
+     section). */
+  transition: grid-template-columns .18s ease;
 }
 @media (min-width: 1024px) {
   .app-shell-with-agenda {
     grid-template-columns: 1fr 320px;
   }
+  /* Collapsed state — the agenda column shrinks to a thin strip
+     (just enough for the toggle button + vertical label). Uses
+     :has() to read the panel's data-collapsed attribute and adjust
+     the grid column accordingly. Modern browsers (Chrome 105+,
+     Firefox 121+, Safari 15.4+) support this — covers our user
+     base. Fallback for older browsers: column stays at 320px and
+     the inner content is still hidden by the existing
+     [data-collapsed="1"] > *:not(...) rule, just less elegantly. */
+  .app-shell-with-agenda:has(.agenda-panel[data-collapsed="1"]) {
+    grid-template-columns: 1fr 2.4em;
+  }
 }
 .app-shell-main {
   min-width: 0; /* let inner overflow ellipsize correctly */
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-with-agenda { transition: none; }
 }
 
 .agenda-panel {
@@ -6732,18 +6750,44 @@ html[data-theme="dark"] .tasks-campaign-chip {
     gap: .8em;
   }
 }
+/* Collapsed state — paired with the parent's grid-template-columns
+   shrink (see .app-shell-with-agenda:has(...) above). The panel
+   becomes a thin vertical strip with just the toggle button + a
+   rotated "סדר היום" label. */
 .agenda-panel[data-collapsed="1"] {
-  /* When collapsed the grid column shrinks; we don't have JS that
-     re-flows the grid here, so the panel stays narrow but its
-     content collapses to just the toggle tab. The grid column
-     stays 320px which is wasted space — acceptable for v1; v2
-     can shrink the column dynamically via container queries
-     or a JS-controlled grid template. */
   align-items: center;
-  padding: 1em .35em;
+  padding: .8em .25em;
+  width: 100%;
+  overflow: visible;
 }
 .agenda-panel[data-collapsed="1"] > *:not(.agenda-panel-head) {
   display: none;
+}
+.agenda-panel[data-collapsed="1"] .agenda-panel-head {
+  flex-direction: column;
+  border-bottom: none;
+  padding-bottom: 0;
+  gap: .8em;
+  width: 100%;
+}
+.agenda-panel[data-collapsed="1"] .agenda-panel-head-title {
+  /* Rotate the label 90° so "סדר היום" reads vertically along the
+     thin collapsed strip — same affordance as Notion / Linear's
+     collapsed sidebars. */
+  flex-direction: column;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  align-items: center;
+  gap: .4em;
+  font-size: .85em;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.agenda-panel[data-collapsed="1"] .agenda-panel-head-emoji {
+  transform: rotate(180deg);
+}
+.agenda-panel[data-collapsed="1"] .agenda-panel-head-date {
+  display: none; /* too long for the vertical strip */
 }
 .agenda-panel-head {
   display: flex;

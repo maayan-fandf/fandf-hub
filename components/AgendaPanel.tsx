@@ -56,17 +56,17 @@ export default async function AgendaPanel({ userEmail }: Props) {
     >
       <header className="agenda-panel-head">
         <AgendaPanelToggle initialCollapsed={collapsed} />
-        {!collapsed && (
-          <div className="agenda-panel-head-title">
-            <div className="agenda-panel-head-emoji" aria-hidden>
-              📅
-            </div>
-            <div>
-              <div className="agenda-panel-head-label">היום</div>
-              <div className="agenda-panel-head-date">{headerDate}</div>
-            </div>
+        {/* Title always renders; collapsed-mode CSS rotates it so it
+            reads vertically along the thin collapsed strip. */}
+        <div className="agenda-panel-head-title">
+          <div className="agenda-panel-head-emoji" aria-hidden>
+            📅
           </div>
-        )}
+          <div>
+            <div className="agenda-panel-head-label">היום</div>
+            <div className="agenda-panel-head-date">{headerDate}</div>
+          </div>
+        </div>
       </header>
 
       {!collapsed && (
