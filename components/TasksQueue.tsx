@@ -46,6 +46,7 @@ import {
 } from "@/components/TaskInlineEditors";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { personDisplayName } from "@/lib/personDisplay";
+import { displayProjectOrCompany } from "@/lib/personalLabel";
 
 // Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
 // left on screen) the way work actually flows:
@@ -579,8 +580,10 @@ export default function TasksQueue({
                       <TaskStatusCell task={t} />
                     </td>
                     <td>
-                      {t.company ? `${t.company} / ` : ""}
-                      {t.project}
+                      {t.company
+                        ? `${displayProjectOrCompany(t.company)} / `
+                        : ""}
+                      {displayProjectOrCompany(t.project)}
                     </td>
                     <td>
                       <Link href={`/tasks/${encodeURIComponent(t.id)}`}>
@@ -973,10 +976,13 @@ function TaskRow({
               // company has only one project (the row's own project)
               // since a dropdown of one item is just noise.
               <div className="tasks-company-hover-menu">
-                <span className="tasks-company-name">{task.company}</span>
+                <span className="tasks-company-name">
+                  {displayProjectOrCompany(task.company)}
+                </span>
                 <div className="tasks-company-dropdown" role="menu">
                   <div className="tasks-company-dropdown-head">
-                    {task.company} · {companyProjects.length} פרויקטים
+                    {displayProjectOrCompany(task.company)} ·{" "}
+                    {companyProjects.length} פרויקטים
                   </div>
                   <ul className="tasks-company-dropdown-list">
                     {companyProjects.map((p) => (
@@ -990,7 +996,7 @@ function TaskRow({
                               : undefined
                           }
                         >
-                          {p}
+                          {displayProjectOrCompany(p)}
                         </Link>
                       </li>
                     ))}
@@ -998,7 +1004,7 @@ function TaskRow({
                 </div>
               </div>
             ) : (
-              task.company
+              displayProjectOrCompany(task.company)
             )
           ) : (
             <span className="task-empty-cell">—</span>
@@ -1012,7 +1018,7 @@ function TaskRow({
             href={projectHref(task.project, task.company)}
             className="tasks-project-link"
           >
-            {task.project}
+            {displayProjectOrCompany(task.project)}
           </Link>
         </td>
       )}

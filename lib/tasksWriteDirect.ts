@@ -227,7 +227,11 @@ export async function resolveCompany(
   subjectEmail: string,
   project: string,
 ): Promise<string> {
-  if (isPseudoProject(project)) return "Personal";
+  // "אישי" matches the display label users see in the queue + kanban
+  // (see lib/personalLabel.ts). Legacy rows persisted "Personal"
+  // (English) before 2026-05-05; the display helper maps both forms
+  // to "אישי" so legacy data renders consistently with new writes.
+  if (isPseudoProject(project)) return "אישי";
   const { headers, rows } = await readKeysCached(subjectEmail);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");

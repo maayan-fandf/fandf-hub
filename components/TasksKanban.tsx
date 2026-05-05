@@ -29,6 +29,7 @@ import { STATUS_LABELS, STATUS_EMOJIS } from "@/components/TaskStatusCell";
 import Avatar from "@/components/Avatar";
 import { fireConfetti, firePulse } from "@/lib/confetti";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
+import { displayProjectOrCompany } from "@/lib/personalLabel";
 
 type ColumnDef = {
   key: WorkTaskStatus;
@@ -477,9 +478,13 @@ function KanbanCard({
       </div>
       {(task.company || task.project) && (
         <div className="kanban-card-project">
-          {task.company && <span>{task.company}</span>}
+          {task.company && (
+            <span>{displayProjectOrCompany(task.company)}</span>
+          )}
           {task.company && task.project && <span aria-hidden> · </span>}
-          {task.project && <span>{task.project}</span>}
+          {task.project && (
+            <span>{displayProjectOrCompany(task.project)}</span>
+          )}
         </div>
       )}
       {hasChips && (

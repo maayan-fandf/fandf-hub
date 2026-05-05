@@ -19,6 +19,7 @@ import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskAttachments from "@/components/TaskAttachments";
 import TaskFilesPanel from "@/components/TaskFilesPanel";
 import TaskApprovalConfirmBanner from "@/components/TaskApprovalConfirmBanner";
+import { displayProjectOrCompany } from "@/lib/personalLabel";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
 import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
@@ -153,13 +154,13 @@ export default async function TaskDetailPage({
             {t.company && (
               <>
                 <Link href={`/tasks?company=${encodeURIComponent(t.company)}`}>
-                  {t.company}
+                  {displayProjectOrCompany(t.company)}
                 </Link>
                 {" / "}
               </>
             )}
             <Link href={`/projects/${encodeURIComponent(t.project)}`}>
-              {t.project}
+              {displayProjectOrCompany(t.project)}
             </Link>
           </div>
           <div className="task-detail-title-row">
@@ -419,8 +420,8 @@ export default async function TaskDetailPage({
           )}
 
           <SideBlock title="שיוך">
-            <KV label="חברה" value={t.company || "—"} />
-            <KV label="פרויקט" value={t.project} />
+            <KV label="חברה" value={displayProjectOrCompany(t.company) || "—"} />
+            <KV label="פרויקט" value={displayProjectOrCompany(t.project)} />
             <KV label="בריף" value={t.campaign || "—"} />
           </SideBlock>
 
