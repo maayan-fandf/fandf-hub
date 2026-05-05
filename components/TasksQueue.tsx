@@ -686,28 +686,16 @@ function SortableTableSection({
         </th>
         {dragEnabled && <th className="drag-handle-col" aria-hidden></th>}
         {!compact && <th>חברה</th>}
-        {groupByCompany && <th>פרטי הפרוייקט</th>}
-        {!groupByCompany && !compact && <th>פרויקט</th>}
-        <SortableTh
-          column="title"
-          label="פרטי המשימה"
-          sort={sort}
-          sortOrder={sortOrder}
-          searchParams={searchParams}
-        />
-        <th>כותב</th>
-        <th>מחלקות</th>
+        {/* Project header — same column whether the page groups by
+            company (portfolio /tasks) or not (project page). Used to
+            be "פרטי הפרוייקט" in the grouped variant; collapsed to
+            just "פרויקט" 2026-05-05 for consistency with the rest of
+            the column labels in this row. */}
+        {!compact && <th>פרויקט</th>}
         <th>בריף</th>
         <SortableTh
-          column="priority"
-          label="דחיפות"
-          sort={sort}
-          sortOrder={sortOrder}
-          searchParams={searchParams}
-        />
-        <SortableTh
-          column="requested_date"
-          label="תאריך"
+          column="title"
+          label="משימה"
           sort={sort}
           sortOrder={sortOrder}
           searchParams={searchParams}
@@ -715,15 +703,31 @@ function SortableTableSection({
         {!compact && (
           <SortableTh
             column="created_at"
-            label="נוצרה"
+            label="תאריך יצירה"
             sort={sort}
             sortOrder={sortOrder}
             searchParams={searchParams}
           />
         )}
-        <th>סטטוס</th>
+        <SortableTh
+          column="requested_date"
+          label="תאריך יעד"
+          sort={sort}
+          sortOrder={sortOrder}
+          searchParams={searchParams}
+        />
+        <SortableTh
+          column="priority"
+          label="דחיפות"
+          sort={sort}
+          sortOrder={sortOrder}
+          searchParams={searchParams}
+        />
+        <th>מחלקה</th>
+        <th>כותב</th>
         <th>עובדים</th>
         <th>מאשר</th>
+        <th>סטטוס</th>
         <th className="icons">פעולות</th>
       </tr>
     </thead>
@@ -1012,6 +1016,18 @@ function TaskRow({
           </Link>
         </td>
       )}
+      {/* Column order (2026-05-05): brief → משימה → תאריך יצירה →
+          תאריך יעד → דחיפות → מחלקה → כותב → עובדים → מאשר → סטטוס →
+          פעולות. Matches the headers in the `head` block above; any
+          reorder there has to be mirrored here. Cells use the same
+          inner content as before; only the sequence changed. */}
+      <td className="tasks-brief-cell">
+        {task.campaign ? (
+          task.campaign
+        ) : (
+          <span className="task-empty-cell">—</span>
+        )}
+      </td>
       <td className="title-cell">
         {/* Title + chip cluster split into two rows: the title link
             owns the first line so the (often long) task name doesn't
@@ -1067,36 +1083,29 @@ function TaskRow({
           </div>
         )}
       </td>
-      <td>{shortName(task.author_email, people) || "—"}</td>
+      {!compact && (
+        <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
+      )}
+      <td className="date-cell">
+        <TaskRequestedDateCell task={task} />
+      </td>
+      <td className="priority-cell">
+        <TaskPriorityCell task={task} />
+      </td>
       <td>
         {(task.departments || []).length
           ? (task.departments || []).join(", ")
           : "—"}
       </td>
-      <td className="tasks-brief-cell">
-        {task.campaign ? (
-          task.campaign
-        ) : (
-          <span className="task-empty-cell">—</span>
-        )}
-      </td>
-      <td className="priority-cell">
-        <TaskPriorityCell task={task} />
-      </td>
-      <td className="date-cell">
-        <TaskRequestedDateCell task={task} />
-      </td>
-      {!compact && (
-        <td className="date-cell">{formatCreatedAt(task.created_at)}</td>
-      )}
-      <td>
-        <TaskStatusCell task={task} />
-      </td>
+      <td>{shortName(task.author_email, people) || "—"}</td>
       <td>
         <TaskAssigneesCell task={task} people={people} />
       </td>
       <td>
         <TaskApproverCell task={task} people={people} />
+      </td>
+      <td>
+        <TaskStatusCell task={task} />
       </td>
       <td className="icons">
         <div className="tasks-row-icons">

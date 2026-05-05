@@ -6353,7 +6353,14 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
   vertical-align: top;
   text-align: start;
 }
+/* Headers vertical-align: middle so plain `<th>` text and sortable
+   `<th>` (with inline link + indicator) sit on the same baseline.
+   With `top` they drifted because the link's flex container has a
+   different content height than raw text. Body cells stay `top` —
+   they often have multi-line content (chips, descriptions) where
+   top-anchoring reads more naturally. */
 .tasks-table th {
+  vertical-align: middle;
   font-size: .78em;
   text-transform: uppercase;
   letter-spacing: .04em;
