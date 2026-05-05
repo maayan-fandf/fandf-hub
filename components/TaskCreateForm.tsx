@@ -6,6 +6,7 @@ import type { TasksPerson } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
+import DrivePickerButton from "./DrivePickerButton";
 import { displayNameOf } from "@/lib/personDisplay";
 import DriveFolderPicker, {
   type FolderPickerValue,
@@ -50,6 +51,8 @@ export default function TaskCreateForm({
   currentUserEmail,
   formSchema = null,
   chainTemplates,
+  driveAccessToken,
+  drivePickerApiKey,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
@@ -95,6 +98,16 @@ export default function TaskCreateForm({
    *  Falls back to the hardcoded set when omitted, preserving the
    *  pre-phase-10 behavior. */
   chainTemplates?: ChainTemplate[];
+  /** Drive Picker test-drive (2026-05-05). User's Google OAuth access
+   *  token (drive.file scope) forwarded from the NextAuth session via
+   *  the new-task page's server-side `auth()` call. Empty when the
+   *  user signed in before the scope was added — falls back to the
+   *  inline picker only. */
+  driveAccessToken?: string;
+  /** Browser API key for the Drive Picker SDK. Comes from
+   *  `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`. Empty disables the
+   *  experimental button without breaking the rest of the form. */
+  drivePickerApiKey?: string;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -659,16 +672,37 @@ export default function TaskCreateForm({
           folder; each child gets its own via the standard create
           path when the chain orchestrator iterates them. */}
       {!chainMode && (
-        <DriveFolderPicker
-          company={company}
-          project={project}
-          campaign={campaign}
-          defaultNewName={suggestedFolderName}
-          value={folderSelection}
-          onChange={handleFolderChange}
-          onCampaignChange={setCampaign}
-          disabled={!project}
-        />
+        <>
+          <DriveFolderPicker
+            company={company}
+            project={project}
+            campaign={campaign}
+            defaultNewName={suggestedFolderName}
+            value={folderSelection}
+            onChange={handleFolderChange}
+            onCampaignChange={setCampaign}
+            disabled={!project}
+          />
+          {/* Test-drive sibling — Google's official Drive Picker SDK,
+              mounted alongside the custom picker so we can compare both
+              before committing to one. Stays disabled when the access
+              token or API key isn't configured (graceful no-op). When
+              the user picks a folder it populates the SAME state the
+              inline picker does, so the rest of the create flow doesn't
+              care which one was used. */}
+          <DrivePickerButton
+            accessToken={driveAccessToken}
+            apiKey={drivePickerApiKey}
+            disabled={!project}
+            onPick={(picked) => {
+              handleFolderChange({
+                mode: "existing",
+                folderId: picked.id,
+                folderName: picked.name,
+              });
+            }}
+          />
+        </>
       )}
 
       {/* Chain-level departments are obsolete in chain mode — each

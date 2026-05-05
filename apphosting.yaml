@@ -181,3 +181,17 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # ─── Google Drive Picker (new-task page) ──────────────────────────
+  # Browser API key for Google's Picker SDK. NEXT_PUBLIC_ prefix is
+  # deliberate — Next.js inlines it into client bundles, which is fine
+  # because Picker keys are designed to be exposed publicly. Lock it
+  # down in GCP Console → Credentials → API key with HTTP-referer
+  # restriction to the hub's domain + API restriction to "Google
+  # Picker API" only. Without this set, the Picker button on
+  # /tasks/new stays disabled (no client crash).
+  - variable: NEXT_PUBLIC_GOOGLE_PICKER_API_KEY
+    secret: GOOGLE_PICKER_API_KEY
+    availability:
+      - BUILD
+      - RUNTIME

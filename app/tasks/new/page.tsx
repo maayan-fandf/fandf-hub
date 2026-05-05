@@ -10,6 +10,7 @@ import { listChainTemplates } from "@/lib/chainTemplatesStore";
 import { CHAIN_TEMPLATES } from "@/lib/chainTemplates";
 import { getCommentByIdDirect } from "@/lib/commentsDirect";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
+import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,13 @@ export default async function NewTaskPage({
   searchParams: Promise<Search>;
 }) {
   const sp = await searchParams;
+  // NextAuth session — used to forward the user's Google access_token
+  // (drive.file scope) to the experimental Drive Picker. Token is
+  // short-lived (~1h) but freshly minted on the server render, which
+  // is when the form is built. Falls back to undefined when the user
+  // hasn't re-consented to the new scope yet — the Picker button just
+  // stays disabled, the inline picker still works.
+  const session = await auth().catch(() => null);
   // Four independent fetches, all server-side so the form renders with
   // everything pre-populated (no loading spinners). The comment fetch
   // is skipped when `from_comment` isn't set — the common path.
@@ -180,6 +188,8 @@ export default async function NewTaskPage({
             : null
         }
         chainTemplates={chainTemplates}
+        driveAccessToken={session?.user?.accessToken}
+        drivePickerApiKey={process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY}
       />
     </main>
   );

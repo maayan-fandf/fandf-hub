@@ -6683,6 +6683,25 @@ html[data-theme="dark"] .tasks-campaign-chip {
   text-overflow: ellipsis;
 }
 
+/* Drive Picker test-drive button (2026-05-05) — sibling of the inline
+   DriveFolderPicker on /tasks/new. Subtle so it doesn't compete
+   visually with the primary form controls. */
+.drive-picker-button-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-top: .6rem;
+  flex-wrap: wrap;
+}
+.drive-picker-button-hint,
+.drive-picker-button-err {
+  font-size: .82em;
+  color: var(--muted);
+}
+.drive-picker-button-err {
+  color: var(--danger, #dc2626);
+}
+
 .tasks-company-cell {
   font-weight: 600;
   color: var(--text);
