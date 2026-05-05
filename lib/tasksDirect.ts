@@ -142,6 +142,10 @@ function rowToTask(
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),
+    // CSV of file IDs — TaskFilesPanel's manual order. Empty when the
+    // column doesn't exist yet (graceful — we ship code first, sheet
+    // header gets added on first reorder save).
+    file_order: String(cell("file_order") ?? ""),
     rank: (() => {
       const raw = cell("rank");
       const parsed =

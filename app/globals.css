@@ -6683,6 +6683,160 @@ html[data-theme="dark"] .tasks-campaign-chip {
   text-overflow: ellipsis;
 }
 
+/* TaskFilesPanel — unified files panel on /tasks/[id], mounted above
+   TaskAttachments under the קבצים tab. Tile grid with drag-reorder
+   (per-task `file_order` CSV) and drag-drop upload directly into the
+   בריף folder. 2026-05-05. */
+.task-files-panel {
+  position: relative;
+  border: 1px solid var(--border, rgba(0,0,0,.08));
+  border-radius: 12px;
+  padding: 1rem 1.1rem 1.2rem;
+  margin-bottom: 1.4rem;
+  background: var(--surface, #fff);
+  transition: background .15s, border-color .15s;
+}
+.task-files-panel[data-drag-over="1"] {
+  background: var(--accent-soft, #eef2ff);
+  border-color: var(--accent, #6366f1);
+}
+.task-files-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+  margin-bottom: .8rem;
+}
+.task-files-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: .35em;
+  font-size: .92em;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.task-files-breadcrumb-piece {
+  color: var(--text);
+  font-weight: 500;
+}
+.task-files-breadcrumb-sep {
+  color: var(--muted);
+  margin: 0 .1em;
+}
+.task-files-panel-actions {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+}
+.task-files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: .6rem;
+  min-height: 4rem;
+}
+.task-files-tile {
+  position: relative;
+  border: 1px solid var(--border, rgba(0,0,0,.08));
+  border-radius: 8px;
+  padding: .75rem .8rem;
+  background: var(--surface-soft, #f8fafc);
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow .12s, transform .12s, border-color .12s;
+}
+.task-files-tile:hover {
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 2px 6px rgba(0,0,0,.06);
+}
+.task-files-tile.is-dragging {
+  cursor: grabbing;
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+}
+.task-files-tile.is-uploading {
+  opacity: .6;
+  cursor: progress;
+}
+.task-files-tile-link {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  text-decoration: none;
+  color: var(--text);
+  min-width: 0;
+}
+.task-files-tile-icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-size: 1.4em;
+}
+.task-files-tile-name {
+  font-size: .88em;
+  line-height: 1.25;
+  word-break: break-word;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.task-files-empty {
+  color: var(--muted);
+  font-size: .92em;
+  padding: .8rem 0;
+}
+.task-files-empty-grid {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 1.2rem 0;
+}
+.task-files-error {
+  color: var(--danger, #dc2626);
+  font-size: .88em;
+  padding: .5rem .8rem;
+  background: rgba(220,38,38,.06);
+  border: 1px solid rgba(220,38,38,.2);
+  border-radius: 6px;
+  margin-bottom: .6rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.task-files-error-retry {
+  background: none;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 4px;
+  padding: .15em .6em;
+  font-size: .9em;
+  cursor: pointer;
+}
+.task-files-saving {
+  position: absolute;
+  bottom: .5rem;
+  inset-inline-start: 1.1rem;
+  font-size: .78em;
+  color: var(--muted);
+}
+.task-files-drop-hint {
+  display: none;
+  font-size: .78em;
+  color: var(--muted);
+  margin-top: .6rem;
+  text-align: center;
+}
+.task-files-panel[data-drag-over="1"] .task-files-drop-hint {
+  display: block;
+  color: var(--accent, #6366f1);
+  font-weight: 500;
+}
+html[data-theme="dark"] .task-files-tile {
+  background: rgba(255,255,255,.04);
+}
+html[data-theme="dark"] .task-files-panel[data-drag-over="1"] {
+  background: rgba(99,102,241,.12);
+}
+
 /* Drive Picker test-drive button (2026-05-05) — sibling of the inline
    DriveFolderPicker on /tasks/new. Subtle so it doesn't compete
    visually with the primary form controls. */

@@ -679,6 +679,116 @@ export async function listFolderChildren(
   }));
 }
 
+export type DriveFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  /** Small Drive icon URL (16x16 or 32x32). Use for tile rendering
+   *  when no thumbnail is available. */
+  iconLink: string;
+  /** Open-in-Drive URL — opens the file in its native viewer (Docs,
+   *  Sheets, Drive PDF preview, etc.) in a new tab. */
+  webViewLink: string;
+  modifiedTime: string;
+  /** Size in bytes; missing for native Google Docs / Sheets etc. */
+  size?: string;
+  /** Optional thumbnail URL (cosmetic; v1 doesn't render but the field
+   *  is exposed so the upcoming preview pass can slot in). */
+  thumbnailLink?: string;
+};
+
+/**
+ * Lists FILES (non-folder items) directly under a parent folder.
+ * Mirrors `listFolderChildren` (which lists folders only) — used by
+ * the TaskFilesPanel tile grid on /tasks/[id].
+ */
+export async function listFolderFiles(
+  subjectEmail: string,
+  parentId: string,
+): Promise<DriveFile[]> {
+  const sharedDriveId = tasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  const res = await drive.files.list({
+    q: [
+      // Inverse of the folder filter — everything that isn't a folder.
+      "mimeType!='application/vnd.google-apps.folder'",
+      `'${parentId}' in parents`,
+      "trashed=false",
+    ].join(" and "),
+    fields:
+      "files(id, name, mimeType, iconLink, webViewLink, modifiedTime, size, thumbnailLink)",
+    orderBy: "modifiedTime desc",
+    pageSize: 200,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "drive",
+    driveId: sharedDriveId,
+  });
+  const items = res.data.files ?? [];
+  return items.map((f) => ({
+    id: f.id || "",
+    name: f.name || "",
+    mimeType: f.mimeType || "",
+    iconLink: f.iconLink || "",
+    webViewLink: f.webViewLink || "",
+    modifiedTime: f.modifiedTime || "",
+    size: f.size || undefined,
+    thumbnailLink: f.thumbnailLink || undefined,
+  }));
+}
+
+/**
+ * Uploads a file to the given parent folder. Used by TaskFilesPanel's
+ * drag-drop upload zone. Goes through the SA (impersonating the
+ * driveFolderOwner) so the resulting file is owned by the shared
+ * drive's owner — not the uploading user — which keeps file
+ * ownership consistent across the team. The user's `drive.file`
+ * OAuth scope is bypassed entirely for this path.
+ */
+export async function uploadFileToFolder(
+  subjectEmail: string,
+  parentId: string,
+  fileName: string,
+  mimeType: string,
+  body: Buffer,
+): Promise<DriveFile> {
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  const res = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      parents: [parentId],
+      mimeType: mimeType || "application/octet-stream",
+    },
+    media: {
+      mimeType: mimeType || "application/octet-stream",
+      body: bufferToReadable(body),
+    },
+    fields:
+      "id, name, mimeType, iconLink, webViewLink, modifiedTime, size, thumbnailLink",
+    supportsAllDrives: true,
+  });
+  const f = res.data;
+  return {
+    id: f.id || "",
+    name: f.name || fileName,
+    mimeType: f.mimeType || mimeType,
+    iconLink: f.iconLink || "",
+    webViewLink: f.webViewLink || "",
+    modifiedTime: f.modifiedTime || "",
+    size: f.size || undefined,
+    thumbnailLink: f.thumbnailLink || undefined,
+  };
+}
+
+// googleapis' `media.body` accepts a Readable stream. The route wraps
+// the multipart File data into a Buffer; this helper converts it.
+function bufferToReadable(buf: Buffer): NodeJS.ReadableStream {
+  // Lazy require so the module-load cost only fires for upload calls.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Readable } = require("node:stream") as typeof import("node:stream");
+  return Readable.from(buf);
+}
+
 /**
  * Creates a subfolder under the given parent. Used by the picker's
  * "+ new folder" action.

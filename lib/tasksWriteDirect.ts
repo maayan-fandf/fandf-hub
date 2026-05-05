@@ -1589,6 +1589,10 @@ async function tasksUpdateDirectInner(
     "sub_status",
     "campaign",
     "rank",
+    // CSV of Drive file IDs — TaskFilesPanel reorder. Stored as-is on
+    // the row; the panel handles drift (files added/removed in Drive)
+    // at render time.
+    "file_order",
     // `project` is patchable to support promote-personal-note → real-project
     // flow. Callers that change `project` MUST validate access to the new
     // value themselves (assertProjectAccess at the top of this function only

@@ -17,6 +17,7 @@ import TaskEditPanel from "@/components/TaskEditPanel";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskAttachments from "@/components/TaskAttachments";
+import TaskFilesPanel from "@/components/TaskFilesPanel";
 import TaskDetailTabs from "@/components/TaskDetailTabs";
 import IdCopyRow from "@/components/IdCopyRow";
 import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
@@ -313,6 +314,22 @@ export default async function TaskDetailPage({
             id="task-files"
             className="task-detail-section task-detail-section-files"
           >
+            {/* Unified files panel — the task's main בריף folder
+                contents with drag-reorder + drag-drop upload. Mounted
+                above the chat-attachments grid so both file surfaces
+                live together under the קבצים tab without competing.
+                Future: may absorb TaskAttachments when we collapse
+                the "main folder" + "attachments subfolder" distinction. */}
+            <TaskFilesPanel
+              taskId={t.id}
+              folderId={t.drive_folder_id || ""}
+              folderUrl={t.drive_folder_url}
+              company={t.company}
+              project={t.project}
+              campaign={t.campaign}
+              taskTitle={t.title}
+              fileOrder={t.file_order || ""}
+            />
             <TaskAttachments
               taskId={t.id}
               taskTitle={t.title}

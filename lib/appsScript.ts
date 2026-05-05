@@ -874,6 +874,15 @@ export type WorkTask = {
    *  `priority` field stays orthogonal: it's a flag for "on fire"
    *  without dictating screen order. */
   rank?: number;
+  /** Manual order of files inside `drive_folder_id`, persisted as a
+   *  CSV of file IDs. Drives the tile order in TaskFilesPanel on the
+   *  task detail page. Files in Drive but not in this list render
+   *  appended (modified-date desc); IDs in the list but no longer in
+   *  Drive are dropped on next reorder save. Empty / missing column
+   *  → tiles render in modified-date desc, no manual order. Per-task
+   *  (two tasks pointing at the same folder can have independent
+   *  orders). Added 2026-05-05 with the unified TaskFilesPanel. */
+  file_order?: string;
 
   /* ── Dependencies + chains (phase 1, 2026-05-03) ──────────────────
    * Additive fields. Existing rows without these columns parse as the
@@ -1134,6 +1143,9 @@ export type TasksUpdatePatch = {
   /** Manual sort rank. Drag-to-reorder on kanban / table issues this
    *  patch with the new computed midpoint. Lower = higher on screen. */
   rank?: number;
+  /** CSV of Drive file IDs in display order — set by TaskFilesPanel's
+   *  drag-reorder. See the WorkTask field of the same name. */
+  file_order?: string;
   /** Move the task between projects. Currently used by the personal-note
    *  promote flow (`__personal__` → real project). The server-side
    *  /api/worktasks/promote-personal endpoint validates write access to
