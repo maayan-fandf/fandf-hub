@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTaskStatus } from "@/lib/appsScript";
+import { displayNameOf } from "@/lib/personDisplay";
 
 type Props = {
   selectedIds: Set<string>;
@@ -227,7 +228,7 @@ export default function TasksBulkBar({
       <datalist id="tasks-bulk-people-fallback">
         {people.map((p) => (
           <option key={p.email} value={p.email}>
-            {p.name} · {p.role}
+            {displayNameOf(p)} · {p.role}
           </option>
         ))}
       </datalist>

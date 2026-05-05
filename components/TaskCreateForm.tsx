@@ -6,6 +6,7 @@ import type { TasksPerson } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
+import { displayNameOf } from "@/lib/personDisplay";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -832,7 +833,7 @@ export default function TaskCreateForm({
                 <datalist id={datalistId}>
                   {stepPeople.map((p) => (
                     <option key={p.email} value={p.email}>
-                      {p.name} · {p.role}
+                      {displayNameOf(p)} · {p.role}
                     </option>
                   ))}
                 </datalist>
@@ -926,7 +927,7 @@ export default function TaskCreateForm({
                     className={`task-form-assignee-chip${
                       already ? " is-active" : ""
                     }`}
-                    title={`${p.name} · ${p.role}`}
+                    title={`${displayNameOf(p)} · ${p.role}`}
                     onClick={() => {
                       // Toggle: click once to append, click again to remove
                       // (matches the department chip row pattern above).
@@ -948,7 +949,7 @@ export default function TaskCreateForm({
                       }
                     }}
                   >
-                    {p.name.split(/\s+/)[0]}
+                    {displayNameOf(p)}
                   </button>
                 );
               })}

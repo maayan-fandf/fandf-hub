@@ -15,7 +15,14 @@ type Prefs = {
   gmail_customer_poll: boolean;
 };
 
-type Person = { email: string; name: string; role: string };
+type Person = {
+  email: string;
+  name: string;
+  /** Optional Hebrew display name from the names_to_emails sheet's
+   *  `he name` column. */
+  he_name?: string;
+  role: string;
+};
 
 const DEFAULT_PREFS: Prefs = {
   email_notifications: true,
@@ -471,7 +478,7 @@ export default function UserSettingsMenu({
                 <datalist id="settings-menu-people">
                   {people.map((p) => (
                     <option key={p.email} value={p.email}>
-                      {p.name} · {p.role}
+                      {(p.he_name || p.name) + " · " + p.role}
                     </option>
                   ))}
                 </datalist>

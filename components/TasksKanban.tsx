@@ -611,7 +611,8 @@ function buildPeopleInvolved(
       const p = peopleByEmail.get(email);
       seen.set(email, {
         email,
-        name: p?.name || email.split("@")[0] || email,
+        name:
+          p?.he_name || p?.name || email.split("@")[0] || email,
         roles: [role],
       });
     }

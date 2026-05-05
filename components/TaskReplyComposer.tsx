@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { displayNameOf } from "@/lib/personDisplay";
 
 type Props = {
   taskId: string;
@@ -12,7 +13,14 @@ type Props = {
   project?: string;
 };
 
-type Person = { email: string; name: string; role: string };
+type Person = {
+  email: string;
+  name: string;
+  /** Optional Hebrew display name from the names_to_emails sheet's
+   *  `he name` column. Mirrors the field on `TasksPerson`. */
+  he_name?: string;
+  role: string;
+};
 
 const MAX = 4000;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -96,7 +104,8 @@ export default function TaskReplyComposer({ taskId, project }: Props) {
       : people.filter(
           (p) =>
             p.email.toLowerCase().includes(f) ||
-            p.name.toLowerCase().includes(f),
+            p.name.toLowerCase().includes(f) ||
+            (p.he_name || "").toLowerCase().includes(f),
         );
     return list.slice(0, 8);
   })();
@@ -406,7 +415,7 @@ export default function TaskReplyComposer({ taskId, project }: Props) {
                   pickMention(p);
                 }}
               >
-                <span className="mention-picker-name">{p.name}</span>
+                <span className="mention-picker-name">{displayNameOf(p)}</span>
                 <span className="mention-picker-email" dir="ltr">
                   {p.email}
                 </span>

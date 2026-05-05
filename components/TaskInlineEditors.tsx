@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import InlineEditCell from "@/components/InlineEditCell";
 import DatePicker from "@/components/DatePicker";
+import { displayNameOf, personDisplayName } from "@/lib/personDisplay";
 
 // router.refresh() was silently no-op'ing on /tasks in production even
 // with `export const dynamic = "force-dynamic"` on the page, leaving
@@ -213,7 +214,9 @@ export function TaskApproverCell({
     <InlineEditCell
       title="לחץ לשינוי גורם מאשר"
       minWidth={18}
-      display={<span>{shortName(task.approver_email) || "—"}</span>}
+      display={
+        <span>{personDisplayName(task.approver_email, people) || "—"}</span>
+      }
     >
       {(close) => (
         <div className="inline-edit-body">
@@ -231,7 +234,7 @@ export function TaskApproverCell({
           <datalist id="tasks-people-inline">
             {people.map((p) => (
               <option key={p.email} value={p.email}>
-                {p.name} · {p.role}
+                {displayNameOf(p)} · {p.role}
               </option>
             ))}
           </datalist>
@@ -286,7 +289,10 @@ export function TaskAssigneesCell({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const currentDisplay = (task.assignees || []).map(shortName).join(", ") || "—";
+  const currentDisplay =
+    (task.assignees || [])
+      .map((email) => personDisplayName(email, people))
+      .join(", ") || "—";
 
   return (
     <InlineEditCell
@@ -308,7 +314,7 @@ export function TaskAssigneesCell({
                   type="button"
                   className={`task-form-assignee-chip${on ? " is-active" : ""}`}
                   disabled={busy}
-                  title={`${p.name} · ${p.role}`}
+                  title={`${displayNameOf(p)} · ${p.role}`}
                   onClick={() =>
                     setList((cur) =>
                       on
@@ -319,7 +325,7 @@ export function TaskAssigneesCell({
                     )
                   }
                 >
-                  {p.name.split(/\s+/)[0]}
+                  {displayNameOf(p)}
                 </button>
               );
             })}
@@ -364,10 +370,3 @@ export function TaskAssigneesCell({
   );
 }
 
-/* ── Shared ────────────────────────────────────────────────────────── */
-
-function shortName(email: string): string {
-  if (!email) return "";
-  const at = email.indexOf("@");
-  return at > 0 ? email.slice(0, at) : email;
-}

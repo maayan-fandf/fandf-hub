@@ -15,7 +15,7 @@ type Props = {
   onChange: (v: FolderPickerValue) => void;
   /**
    * Fired when the user picks a sibling campaign via the
-   * "קמפיינים אחרים בפרויקט" expander. Empty string when the user picks
+   * "בריפים אחרים בפרויקט" expander. Empty string when the user picks
    * the project folder itself (no campaign). Optional — when omitted,
    * the expander is hidden so the parent doesn't end up with a folder
    * pointing at a different campaign than the form's `campaign` field.
@@ -420,7 +420,7 @@ export default function DriveFolderPicker({
                     <span className="drive-folder-chevron drive-folder-chevron-fixed">
                       {siblingsOpen ? "▾" : "▸"}
                     </span>
-                    <span>קמפיינים אחרים בפרויקט</span>
+                    <span>בריפים אחרים בפרויקט</span>
                   </button>
                   {siblingsOpen && (
                     <div className="drive-folder-siblings-body">
@@ -456,7 +456,7 @@ export default function DriveFolderPicker({
                           if (list.length === 0) {
                             return (
                               <div className="drive-folder-hint">
-                                אין קמפיינים אחרים תחת פרויקט זה
+                                אין בריפים אחרים תחת פרויקט זה
                               </div>
                             );
                           }

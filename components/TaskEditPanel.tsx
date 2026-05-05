@@ -8,6 +8,7 @@ import DatePicker from "./DatePicker";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
+import { displayNameOf } from "@/lib/personDisplay";
 
 const DEPARTMENTS = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 const KINDS = [
@@ -199,7 +200,7 @@ export default function TaskEditPanel({
       <datalist id="tasks-people-edit">
         {people.map((p) => (
           <option key={p.email} value={p.email}>
-            {p.name} · {p.role}
+            {displayNameOf(p)} · {p.role}
           </option>
         ))}
       </datalist>
@@ -434,7 +435,7 @@ export default function TaskEditPanel({
                   className={`task-form-assignee-chip${
                     already ? " is-active" : ""
                   }`}
-                  title={`${p.name} · ${p.role}`}
+                  title={`${displayNameOf(p)} · ${p.role}`}
                   onClick={() => {
                     if (already) {
                       const next = assignees
@@ -454,7 +455,7 @@ export default function TaskEditPanel({
                     }
                   }}
                 >
-                  {p.name.split(/\s+/)[0]}
+                  {displayNameOf(p)}
                 </button>
               );
             })}

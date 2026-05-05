@@ -8,7 +8,8 @@ import {
   tasksList,
   tasksPeopleList,
 } from "@/lib/appsScript";
-import type { WorkTask } from "@/lib/appsScript";
+import type { WorkTask, TasksPerson } from "@/lib/appsScript";
+import { personDisplayName } from "@/lib/personDisplay";
 import { getSharedDriveName } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TaskStatusCell from "@/components/TaskStatusCell";
@@ -40,18 +41,19 @@ export default async function TaskDetailPage({
   const decodedId = decodeURIComponent(id);
   const editing = sp.edit === "1";
 
-  // When we're entering edit mode we need the people list for the
-  // autocomplete datalist + chip picker. Parallel fetch — the people
-  // call is cheap enough (~60 entries across the whole portfolio).
-  // The access lookup runs alongside so we can bounce clients out
-  // before rendering any task UI.
+  // We always load the people list now so read-mode chips can resolve
+  // emails to Hebrew display names (sheet's `he name` column). The call
+  // is cheap (~60 entries across the whole portfolio) and runs in
+  // parallel with everything else. Edit-mode also uses it to back the
+  // autocomplete datalist + chip picker. Access lookup alongside so we
+  // can bounce clients out before rendering any task UI.
   const [res, peopleRes, accessRes] = await Promise.all([
     tasksGet(decodedId).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.toLowerCase().includes("not found")) return null;
       throw e;
     }),
-    editing ? tasksPeopleList().catch(() => ({ ok: false, people: [] })) : null,
+    tasksPeopleList().catch(() => ({ ok: false, people: [] })),
     getMyProjects().catch(() => null),
   ]);
   if (accessRes) {
@@ -360,21 +362,25 @@ export default async function TaskDetailPage({
                 label="כותב"
                 email={t.author_email}
                 filterKey="author"
+                people={peopleRes?.people ?? []}
               />
               <PersonRow
                 label="גורם מאשר"
                 email={t.approver_email}
                 filterKey="approver"
+                people={peopleRes?.people ?? []}
               />
               <PersonRow
                 label="מנהל פרויקט"
                 email={t.project_manager_email}
                 filterKey="project_manager"
+                people={peopleRes?.people ?? []}
               />
               <PeopleRow
                 label="עובדים במשימה"
                 emails={t.assignees || []}
                 filterKey="assignee"
+                people={peopleRes?.people ?? []}
               />
             </SideBlock>
           )}
@@ -421,12 +427,6 @@ function SideBlock({
   );
 }
 
-function shortName(email: string): string {
-  if (!email) return "";
-  const at = email.indexOf("@");
-  return at > 0 ? email.slice(0, at) : email;
-}
-
 function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="task-kv">
@@ -447,17 +447,19 @@ function PersonRow({
   label,
   email,
   filterKey,
+  people,
 }: {
   label: string;
   email: string;
   filterKey: string;
+  people?: TasksPerson[];
 }) {
   return (
     <div className="task-kv">
       <dt>{label}</dt>
       <dd>
         {email ? (
-          <PersonChip email={email} filterKey={filterKey} />
+          <PersonChip email={email} filterKey={filterKey} people={people} />
         ) : (
           <span className="task-kv-empty">—</span>
         )}
@@ -471,10 +473,12 @@ function PeopleRow({
   label,
   emails,
   filterKey,
+  people,
 }: {
   label: string;
   emails: string[];
   filterKey: string;
+  people?: TasksPerson[];
 }) {
   return (
     <div className="task-kv">
@@ -485,7 +489,12 @@ function PeopleRow({
         ) : (
           <div className="task-people-row">
             {emails.map((email) => (
-              <PersonChip key={email} email={email} filterKey={filterKey} />
+              <PersonChip
+                key={email}
+                email={email}
+                filterKey={filterKey}
+                people={people}
+              />
             ))}
           </div>
         )}
@@ -494,7 +503,15 @@ function PeopleRow({
   );
 }
 
-function PersonChip({ email, filterKey }: { email: string; filterKey: string }) {
+function PersonChip({
+  email,
+  filterKey,
+  people,
+}: {
+  email: string;
+  filterKey: string;
+  people?: TasksPerson[];
+}) {
   return (
     <Link
       href={`/tasks?${filterKey}=${encodeURIComponent(email)}`}
@@ -502,7 +519,9 @@ function PersonChip({ email, filterKey }: { email: string; filterKey: string }) 
       title={email}
     >
       <Avatar name={email} title={email} size={22} />
-      <span className="task-person-chip-name">{shortName(email)}</span>
+      <span className="task-person-chip-name">
+        {personDisplayName(email, people)}
+      </span>
     </Link>
   );
 }

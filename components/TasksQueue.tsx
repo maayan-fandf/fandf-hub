@@ -45,6 +45,7 @@ import {
   TaskAssigneesCell,
 } from "@/components/TaskInlineEditors";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
+import { personDisplayName } from "@/lib/personDisplay";
 
 // Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
 // left on screen) the way work actually flows:
@@ -587,7 +588,7 @@ export default function TasksQueue({
                       </Link>
                     </td>
                     <td>{t.requested_date || "—"}</td>
-                    <td>{shortName(t.author_email)}</td>
+                    <td>{shortName(t.author_email, people)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1066,7 +1067,7 @@ function TaskRow({
           </div>
         )}
       </td>
-      <td>{shortName(task.author_email) || "—"}</td>
+      <td>{shortName(task.author_email, people) || "—"}</td>
       <td>
         {(task.departments || []).length
           ? (task.departments || []).join(", ")
@@ -1154,10 +1155,12 @@ function isCreatedWithin24h(iso: string): boolean {
   return Date.now() - ms < 24 * 60 * 60 * 1000;
 }
 
-function shortName(email: string): string {
-  if (!email) return "";
-  const at = email.indexOf("@");
-  return at > 0 ? email.slice(0, at) : email;
+// `shortName` was an inline email-prefix fallback before the
+// names_to_emails sheet got a `he name` column. Now we route through
+// the shared resolver so every employee chip prefers the Hebrew name,
+// then English name, then email-prefix as last resort.
+function shortName(email: string, people?: TasksPerson[]): string {
+  return personDisplayName(email, people);
 }
 
 function formatCreatedAt(iso: string): string {

@@ -983,7 +983,18 @@ export async function tasksGet(
   return callApi<{ ok: boolean; task: WorkTask }>("tasksGet", { id });
 }
 
-export type TasksPerson = { email: string; name: string; role: string };
+export type TasksPerson = {
+  email: string;
+  /** Full English name (e.g. "Maayan Sachs"). Read from `Full Name`. */
+  name: string;
+  /** Optional Hebrew name (e.g. "מעין"). Read from `he name` column on
+   *  the names_to_emails sheet. Preferred over `name` for any UI surface
+   *  that displays the person — see `lib/personDisplay.ts`. */
+  he_name?: string;
+  /** Job role from the sheet's `role` column (e.g. "media",
+   *  "client manager", "copywriter", "manager"). */
+  role: string;
+};
 
 export async function tasksPeopleList(): Promise<{
   ok: boolean;

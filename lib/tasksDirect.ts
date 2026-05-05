@@ -664,6 +664,18 @@ export async function tasksPeopleListDirect(
   const iName = findFirst(headers, ["full name", "name", "full_name"]);
   const iEmail = findFirst(headers, ["email", "e-mail", "mail"]);
   const iRole = findFirst(headers, ["role", "תפקיד", "job", "title"]);
+  // Optional Hebrew-name column added 2026-05-05 — preferred over the
+  // English `Full Name` for every UI surface that displays the person
+  // (see lib/personDisplay.ts). Tolerant header matching so the sheet
+  // owner can rename the column without code changes.
+  const iHeName = findFirst(headers, [
+    "he name",
+    "hebrew name",
+    "he_name",
+    "שם בעברית",
+    "שם עברית",
+    "שם",
+  ]);
   if (iName < 0 || iEmail < 0) return { ok: true, people: [] };
 
   const seen = new Set<string>();
@@ -672,9 +684,11 @@ export async function tasksPeopleListDirect(
     const name = String(values[i][iName] ?? "").trim();
     const email = String(values[i][iEmail] ?? "").toLowerCase().trim();
     const role = iRole >= 0 ? String(values[i][iRole] ?? "").trim() : "";
+    const heName =
+      iHeName >= 0 ? String(values[i][iHeName] ?? "").trim() : "";
     if (!email || seen.has(email)) continue;
     seen.add(email);
-    people.push({ name, email, role });
+    people.push({ name, email, role, ...(heName ? { he_name: heName } : {}) });
   }
   return { ok: true, people };
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TasksPerson } from "@/lib/appsScript";
+import { displayNameOf } from "@/lib/personDisplay";
 
 type Props = {
   /** Currently selected email (free-text allowed for people not in the list). */
@@ -50,7 +51,8 @@ export default function PersonCombobox({
     const matchesText = (p: TasksPerson) =>
       !needle ||
       p.email.toLowerCase().includes(needle) ||
-      (p.name || "").toLowerCase().includes(needle);
+      (p.name || "").toLowerCase().includes(needle) ||
+      (p.he_name || "").toLowerCase().includes(needle);
     const inRole = (p: TasksPerson) =>
       !roleFilter ||
       roleFilter.length === 0 ||
@@ -211,7 +213,7 @@ export default function PersonCombobox({
               >
                 <span className="combobox-option-icon">👤</span>
                 <span className="combobox-option-text">
-                  <span>{p.name || p.email}</span>
+                  <span>{displayNameOf(p) || p.email}</span>
                   {p.role && (
                     <span className="combobox-option-meta"> · {p.role}</span>
                   )}
@@ -248,7 +250,7 @@ export default function PersonCombobox({
                 >
                   <span className="combobox-option-icon">👤</span>
                   <span className="combobox-option-text">
-                    <span>{p.name || p.email}</span>
+                    <span>{displayNameOf(p) || p.email}</span>
                     {p.role && (
                       <span className="combobox-option-meta"> · {p.role}</span>
                     )}
