@@ -6690,6 +6690,199 @@ html[data-theme="dark"] .tasks-campaign-chip {
   text-overflow: ellipsis;
 }
 
+/* AgendaPanel — right-rail sticky sidebar with today's hub tasks
+   (Phase A) + future calendar events (Phase B). Wraps page children
+   in a grid: main content at the inline-start, agenda at the
+   inline-end. Collapses behind a thin tab on click; hidden entirely
+   below 1024px since the existing main-content already needs the
+   width. 2026-05-05. */
+.app-shell-with-agenda {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+@media (min-width: 1024px) {
+  .app-shell-with-agenda {
+    grid-template-columns: 1fr 320px;
+  }
+}
+.app-shell-main {
+  min-width: 0; /* let inner overflow ellipsize correctly */
+}
+
+.agenda-panel {
+  display: none;
+  /* Sticky to the viewport top so it stays visible while the page
+     scrolls. Top offset matches the topnav height (~3em). */
+  position: sticky;
+  top: 3em;
+  align-self: start;
+  /* Vertical scroll inside the panel for long agendas. */
+  max-height: calc(100vh - 4em);
+  overflow-y: auto;
+  padding: 1em .9em;
+  border-inline-start: 1px solid var(--border);
+  background: var(--surface, #fff);
+  font-size: .9em;
+}
+@media (min-width: 1024px) {
+  .agenda-panel {
+    display: flex;
+    flex-direction: column;
+    gap: .8em;
+  }
+}
+.agenda-panel[data-collapsed="1"] {
+  /* When collapsed the grid column shrinks; we don't have JS that
+     re-flows the grid here, so the panel stays narrow but its
+     content collapses to just the toggle tab. The grid column
+     stays 320px which is wasted space — acceptable for v1; v2
+     can shrink the column dynamically via container queries
+     or a JS-controlled grid template. */
+  align-items: center;
+  padding: 1em .35em;
+}
+.agenda-panel[data-collapsed="1"] > *:not(.agenda-panel-head) {
+  display: none;
+}
+.agenda-panel-head {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .8em;
+}
+.agenda-panel-head-title {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agenda-panel-head-emoji { font-size: 1.4em; }
+.agenda-panel-head-label {
+  font-size: .78em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+.agenda-panel-head-date {
+  font-weight: 600;
+  font-size: 1em;
+}
+.agenda-panel-toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--surface-soft, #f8fafc);
+  border-radius: 6px;
+  width: 1.6em;
+  height: 1.6em;
+  font-size: 1.1em;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+}
+.agenda-panel-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent, #6366f1);
+}
+.agenda-panel-empty {
+  padding: 1.2em .4em;
+  color: var(--muted);
+  text-align: center;
+  font-size: .95em;
+}
+.agenda-panel-empty-hint {
+  margin-top: .5em;
+  font-size: .82em;
+  color: var(--muted);
+}
+.agenda-panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+}
+.agenda-panel-divider {
+  font-size: .72em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  padding: .6em .35em .2em;
+  border-top: 1px dashed var(--border);
+  margin-top: .3em;
+}
+.agenda-panel-row {
+  list-style: none;
+}
+.agenda-panel-row-link {
+  display: flex;
+  gap: .55em;
+  align-items: flex-start;
+  padding: .5em .4em;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text);
+  transition: background .12s;
+}
+.agenda-panel-row-link:hover {
+  background: var(--surface-soft, rgba(0, 0, 0, .04));
+}
+.agenda-panel-row-dot {
+  flex: 0 0 auto;
+  width: .55em;
+  height: .55em;
+  border-radius: 50%;
+  margin-top: .55em;
+  background: var(--muted);
+}
+.agenda-tone-awaiting_handling { background: #6366f1; }
+.agenda-tone-in_progress       { background: #3b82f6; }
+.agenda-tone-awaiting_approval { background: #f59e0b; }
+.agenda-tone-awaiting_clarification { background: #8b5cf6; }
+.agenda-tone-blocked           { background: #ef4444; }
+.agenda-tone-draft             { background: #94a3b8; }
+.agenda-tone-done              { background: #10b981; }
+.agenda-tone-cancelled         { background: #94a3b8; }
+.agenda-panel-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agenda-panel-row-line {
+  display: flex;
+  gap: .4em;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.agenda-panel-row-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: .85em;
+  color: var(--muted);
+}
+.agenda-panel-row-title {
+  font-weight: 500;
+  word-break: break-word;
+}
+.agenda-panel-row-subtitle {
+  font-size: .8em;
+  color: var(--muted);
+  margin-top: .2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agenda-panel-row-status {
+  font-size: .75em;
+  color: var(--muted);
+  margin-top: .15em;
+}
+html[data-theme="dark"] .agenda-panel {
+  background: rgba(255, 255, 255, .02);
+}
+
 /* TaskApprovalConfirmBanner — appears at the top of a task body when
    a Google Task completion is awaiting confirmation (banner-based
    approval flow, 2026-05-05). Amber tone so it reads as "needs

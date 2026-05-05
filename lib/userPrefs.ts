@@ -65,6 +65,10 @@ export type UserPrefs = {
    *  senders, which is a different trust model than the existing
    *  user-tagged "Add to Tasks" flow. */
   gmail_customer_poll: boolean;
+  /** Collapsed-state of the right-side AgendaPanel (today's tasks +
+   *  calendar). False = expanded (default). Persisted so the user's
+   *  layout choice survives navigation + reload. */
+  agenda_collapsed: boolean;
 };
 
 const DEFAULT_PREFS: UserPrefs = {
@@ -77,6 +81,7 @@ const DEFAULT_PREFS: UserPrefs = {
   hide_archived: true,
   archive_after_days: "14",
   gmail_customer_poll: false,
+  agenda_collapsed: false,
 };
 
 const TAB = "User Preferences";
@@ -91,6 +96,7 @@ const HEADERS = [
   "hide_archived",
   "archive_after_days",
   "gmail_customer_poll",
+  "agenda_collapsed",
   "updated_at",
 ];
 
@@ -196,6 +202,7 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
     const iHideArch = headers.indexOf("hide_archived");
     const iArchDays = headers.indexOf("archive_after_days");
     const iGmailPoll = headers.indexOf("gmail_customer_poll");
+    const iAgenda = headers.indexOf("agenda_collapsed");
     if (iEmail < 0) return prefs;
     for (const row of rows) {
       const e = String(row[iEmail] ?? "").toLowerCase().trim();
@@ -228,6 +235,10 @@ export async function getUserPrefs(targetEmail: string): Promise<UserPrefs> {
           iGmailPoll >= 0
             ? asBool(row[iGmailPoll], DEFAULT_PREFS.gmail_customer_poll)
             : DEFAULT_PREFS.gmail_customer_poll,
+        agenda_collapsed:
+          iAgenda >= 0
+            ? asBool(row[iAgenda], DEFAULT_PREFS.agenda_collapsed)
+            : DEFAULT_PREFS.agenda_collapsed,
       };
       break;
     }
@@ -288,6 +299,7 @@ export async function setUserPrefs(
     const iHideArchExisting = headers.indexOf("hide_archived");
     const iArchDaysExisting = headers.indexOf("archive_after_days");
     const iGmailPollExisting = headers.indexOf("gmail_customer_poll");
+    const iAgendaExisting = headers.indexOf("agenda_collapsed");
     return {
       email_notifications: asBool(
         r[headers.indexOf("email_notifications")],
@@ -321,6 +333,10 @@ export async function setUserPrefs(
         iGmailPollExisting >= 0
           ? asBool(r[iGmailPollExisting], DEFAULT_PREFS.gmail_customer_poll)
           : DEFAULT_PREFS.gmail_customer_poll,
+      agenda_collapsed:
+        iAgendaExisting >= 0
+          ? asBool(r[iAgendaExisting], DEFAULT_PREFS.agenda_collapsed)
+          : DEFAULT_PREFS.agenda_collapsed,
     };
   })();
   const merged: UserPrefs = { ...existing, ...partial };
@@ -352,6 +368,7 @@ export async function setUserPrefs(
     hide_archived: merged.hide_archived,
     archive_after_days: merged.archive_after_days,
     gmail_customer_poll: merged.gmail_customer_poll,
+    agenda_collapsed: merged.agenda_collapsed,
     updated_at: now,
   };
   const newRow: unknown[] = headers.map((h) =>
@@ -399,6 +416,7 @@ export async function listAllUserPrefs(
   const iHideArch = headers.indexOf("hide_archived");
   const iArchDays = headers.indexOf("archive_after_days");
   const iGmailPoll = headers.indexOf("gmail_customer_poll");
+  const iAgenda = headers.indexOf("agenda_collapsed");
   const iUpdated = headers.indexOf("updated_at");
   const out: Array<{ email: string; prefs: UserPrefs; updatedAt: string }> = [];
   for (const row of rows) {
@@ -429,6 +447,10 @@ export async function listAllUserPrefs(
         iGmailPoll >= 0
           ? asBool(row[iGmailPoll], DEFAULT_PREFS.gmail_customer_poll)
           : DEFAULT_PREFS.gmail_customer_poll,
+      agenda_collapsed:
+        iAgenda >= 0
+          ? asBool(row[iAgenda], DEFAULT_PREFS.agenda_collapsed)
+          : DEFAULT_PREFS.agenda_collapsed,
     };
     const updatedAt = iUpdated >= 0 ? String(row[iUpdated] ?? "").trim() : "";
     out.push({ email: e, prefs, updatedAt });

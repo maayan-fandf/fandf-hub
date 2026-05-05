@@ -20,6 +20,7 @@ import UserSettingsMenu from "@/components/UserSettingsMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
+import AgendaPanel from "@/components/AgendaPanel";
 import { getMyProjects, type Project } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
 
@@ -185,7 +186,21 @@ export default async function RootLayout({
         {email && (
           <ViewAsBanner serverViewAs={viewAs} myEmail={email} />
         )}
-        {children}
+        {/* Wrap children + the agenda right-rail in a grid so the
+            sidebar stays sticky next to the page content. The grid
+            collapses to a single column on narrow screens via the
+            `.app-shell-with-agenda` rules in globals.css. The panel
+            renders as a no-op for unauthenticated visitors (signin
+            page etc.) — AgendaPanel itself returns null when
+            userEmail is empty. */}
+        <div className="app-shell-with-agenda">
+          <div className="app-shell-main">{children}</div>
+          {email && !isClientUser && (
+            <Suspense fallback={null}>
+              <AgendaPanel userEmail={email} />
+            </Suspense>
+          )}
+        </div>
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
         {email && !isClientUser && <QuickNoteModal />}
