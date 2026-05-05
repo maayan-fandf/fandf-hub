@@ -134,38 +134,27 @@ export default function DrivePickerButton({
     setLoading(true);
     try {
       await ensureSdkLoaded();
-      // Folders tab — picking a folder here updates the task's
-      // drive_folder_id. Filtered to folder-mimeType so the user can't
-      // accidentally pick a file from this view.
-      const foldersView = new window.google.picker.DocsView(
-        window.google.picker.ViewId.FOLDERS,
-      )
+      // Single unified view — folders AND files in one grid. The user
+      // sees the full contents of the current folder, clicks a folder
+      // to pick it as the task's drive_folder_id, or clicks a file to
+      // open it in a new tab (file picks are routed to window.open by
+      // the callback below — the task's folder selection is unchanged).
+      //
+      // Why one tab instead of three: previously we split into Folders
+      // (mime-filtered for selection), Files (browse-only), and Upload
+      // (drag-drop UI). The split was a Picker SDK constraint, not a
+      // semantic distinction — from the user's POV they're all just
+      // "stuff in this folder". Upload moves out to TaskFilesPanel's
+      // drag-drop zone (which is mounted right next to this button on
+      // both /tasks/new and /tasks/[id]) so the Picker stays focused
+      // on browse + select.
+      const view = new window.google.picker.DocsView()
         .setIncludeFolders(true)
-        .setSelectFolderEnabled(true)
-        .setMimeTypes("application/vnd.google-apps.folder");
-      if (parentFolderId) foldersView.setParent(parentFolderId);
-
-      // Files tab (browse-only) — shows everything inside the current
-      // folder so the user can preview what's there + click to open in
-      // a new tab. NOT used for folder selection: the callback below
-      // detects file picks from this view and routes them to
-      // `window.open(url)` instead of forwarding to onPick. This is the
-      // closest the Picker SDK gets to a "browse only" mode.
-      const filesView = new window.google.picker.DocsView()
-        .setIncludeFolders(true)
-        .setSelectFolderEnabled(false);
-      if (parentFolderId) filesView.setParent(parentFolderId);
-
-      // Upload tab — drag-drop files from desktop straight into the
-      // בריף's folder. Files land in `parentFolderId` (the currently
-      // scoped folder).
-      const uploadView = new window.google.picker.DocsUploadView();
-      if (parentFolderId) uploadView.setParent(parentFolderId);
+        .setSelectFolderEnabled(true);
+      if (parentFolderId) view.setParent(parentFolderId);
 
       const picker = new window.google.picker.PickerBuilder()
-        .addView(foldersView)
-        .addView(filesView)
-        .addView(uploadView)
+        .addView(view)
         // Note: NOT enabling MULTISELECT_ENABLED — that would also let
         // users multi-select folders, and our callback only handles
         // a single folder pick. The Upload tab natively supports
@@ -174,24 +163,16 @@ export default function DrivePickerButton({
         .setDeveloperKey(apiKey)
         // Right-to-left UI to match the rest of the hub.
         .setLocale("he")
-        .setTitle("תיקיות / קבצים / העלאה")
+        .setTitle("בחר ב-Drive")
         .setCallback((data: any) => {
           const Action = window.google.picker.Action;
           if (data.action === Action.PICKED) {
-            // Three picks possible from three views:
-            //   - Folders view → folder pick → forward to onPick to
-            //     update task's drive_folder_id
-            //   - Files view → file pick → open in new tab (browse only)
-            //   - Upload view → file pick after upload completes →
-            //     ignored (the file already landed in the folder; we
-            //     just don't change the folder selection or open it)
-            // We distinguish "browsed" file pick from "uploaded" file
-            // pick by checking whether the doc has a `url` field. Both
-            // do, but uploaded files come back from the Upload view
-            // which we know via `data.viewToken[0]`. Simpler: ALL file
-            // picks from any tab open the file's URL — that's the
-            // useful default for browsing anyway, and harmless after
-            // upload (the user wanted to see the file they uploaded).
+            // Single combined view → either kind of doc can come back:
+            //   - Folder pick → forward to onPick (sets task's folder)
+            //   - File pick   → open in a new tab (browse semantics);
+            //     leaves the task's folder selection unchanged.
+            // If somehow both arrive in one PICKED event (shouldn't,
+            // but be defensive), folder wins.
             const FOLDER_MIME = "application/vnd.google-apps.folder";
             const docs = data.docs || [];
             const folderDoc = docs.find(
@@ -204,10 +185,9 @@ export default function DrivePickerButton({
                 mimeType: String(folderDoc.mimeType),
               });
             } else {
-              // No folder picked → all docs are files. Open each in a
-              // new tab so the user can preview what they clicked. Skip
-              // gracefully when popup-blocked (one window.open per
-              // user gesture is allowed; multiple may be blocked).
+              // Files only — open each in a new tab for browse. Skips
+              // gracefully when popup-blocked (browsers allow one
+              // window.open per user gesture; multiple may be blocked).
               for (const d of docs) {
                 if (d?.url) {
                   window.open(String(d.url), "_blank", "noopener,noreferrer");
@@ -246,7 +226,7 @@ export default function DrivePickerButton({
         disabled={disabled || cantUse || loading}
         title={hint || "פתח Google Drive Picker"}
       >
-        {loading ? "טוען Picker…" : "🆕 בחר עם Drive Picker (ניסיוני)"}
+        {loading ? "טוען…" : "🔍 עיין ב-Drive"}
       </button>
       {err && (
         <span className="drive-picker-button-err" role="alert">
