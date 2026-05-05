@@ -18,6 +18,7 @@
 
 import { tasksGetDirect } from "@/lib/tasksDirect";
 import { tasksUpdateDirect } from "@/lib/tasksWriteDirect";
+import { isQuietHours } from "@/lib/quietHours";
 import type { GTaskKind, WorkTaskStatus } from "@/lib/appsScript";
 
 export type AutoTransitionInput = {
@@ -84,6 +85,26 @@ export async function applyAutoTransition(
         kind,
         previous,
         reason: `No transition for kind=${kind} from status=${previous}`,
+      };
+    }
+
+    // Quiet-hours guard — outside Israel work hours, a GT completion
+    // is much more likely to be a "dismiss this notification" than a
+    // genuine "I finished the work" signal. Defer the transition to
+    // the next pollTaskCompletions cycle that lands in the work
+    // window. The poller fires every few minutes via Cloud Scheduler,
+    // so this is bounded — at worst the transition lands a few
+    // minutes after 9am the next workday. The 2026-05-05 incident
+    // (sapir's 9pm dismissal flipping the task to ממתין לאישור) is
+    // exactly the case this prevents.
+    if (isQuietHours()) {
+      return {
+        ok: true,
+        skipped: true,
+        taskId,
+        kind,
+        previous,
+        reason: `deferred — quiet hours (target=${target})`,
       };
     }
 

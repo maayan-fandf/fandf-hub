@@ -30,6 +30,7 @@ import {
   driveFolderOwner,
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
+import { isQuietHours, nextWorkDateIso } from "@/lib/quietHours";
 import type {
   GTaskKind,
   TasksCreateInput,
@@ -722,8 +723,21 @@ export async function createGoogleTasks(
   const allowed = await filterByGtasksPref(recipients);
   if (allowed.length === 0) return out;
   const title = gtaskTitle(opts.kind, task, opts.reissued);
-  const notes = gtaskNotes(task, opts.notePrefix);
-  const dueRfc = gtaskDueRfc(task.requested_date);
+  let notes = gtaskNotes(task, opts.notePrefix);
+  // Quiet-hours guard on GT creation. Outside Israel work hours we
+  // shift the GT's `due` field to the next work-day morning so the
+  // task lands in the assignee's "Today" / "Upcoming" bucket
+  // tomorrow rather than pinging their phone at 9pm. Adds a Hebrew
+  // note explaining the shift so the assignee knows it's not lost.
+  // The hub task's own `requested_date` is unchanged — only the GT's
+  // notification timing is deferred.
+  let dueRfc = gtaskDueRfc(task.requested_date);
+  if (isQuietHours()) {
+    const deferredDate = nextWorkDateIso();
+    dueRfc = `${deferredDate}T00:00:00.000Z`;
+    const quietNote = "🌙 נוצר מחוץ לשעות עבודה — יופיע ברשימה ב־9:00 בבוקר.";
+    notes = notes ? `${notes}\n\n${quietNote}` : quietNote;
+  }
   await Promise.all(
     allowed.map(async (email) => {
       try {
