@@ -1646,12 +1646,31 @@ async function tasksUpdateDirectInner(
       const cleanedGT: GTaskRef[] = [];
       for (const ref of currentGT) {
         const email = String(ref.u || "").toLowerCase();
-        if (removedSet.has(email) && (ref.kind ?? "todo") === "todo") {
+        if (removedSet.has(email)) {
+          // Drop EVERY ref belonging to a removed assignee, regardless
+          // of kind or status. The previous filter was kind==="todo"
+          // only, which left a removed assignee's already-completed
+          // todo refs (or their approve / clarify refs) lingering in
+          // the cell. The poller would then re-detect those completed
+          // refs on the next run and fire auto-transition again — the
+          // "task keeps flipping to ממתין לאישור after reassignment"
+          // bug surfaced 2026-05-05 (T-morbhf3w-lfvi).
+          //
+          // Open refs (status !== "completed" in Google's storage)
+          // still get patched closed first so the user's GT list
+          // doesn't keep an orphan; closed refs are just dropped
+          // from the cell. Either way the ref leaves the hub's
+          // tracking, so it can never trigger a future transition.
           try {
             await patchGoogleTaskWithRetry(ref, { status: "completed" });
           } catch (e) {
+            // Best-effort — a removed assignee's GT might already be
+            // completed (in which case the patch is a no-op via the
+            // 2026-05-04 fetch-first guard) or not exist (404 if
+            // they manually deleted it). Either way the ref is
+            // safe to drop from the cell.
             console.log(
-              `[tasksWriteDirect] could not complete removed assignee's Google Task (${email}) after retries:`,
+              `[tasksWriteDirect] could not close removed assignee's Google Task (${email}, kind=${ref.kind ?? "todo"}) after retries:`,
               e instanceof Error ? e.message : String(e),
             );
           }
