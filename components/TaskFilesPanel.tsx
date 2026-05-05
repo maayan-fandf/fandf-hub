@@ -52,6 +52,10 @@ type DriveFile = {
 };
 
 type Props = {
+  /** Task identifier. Pass "" on the new-task page (task isn't saved
+   *  yet) — the panel shifts into "preview" mode: tiles render, file
+   *  upload still works, but tile drag-reorder is disabled (there's
+   *  no row to persist `file_order` to until the task is created). */
   taskId: string;
   /** The task's Drive folder ID. When empty, the panel renders an
    *  empty state pointing the user to either pick or create a folder
@@ -157,7 +161,15 @@ export default function TaskFilesPanel({
     return out;
   }, [files, orderCsv]);
 
+  // Reorder persistence requires a task row to write to. On /tasks/new
+  // (taskId === "") we skip the SortableContext entirely so users
+  // don't get a misleading "I can drag this" affordance that wouldn't
+  // survive page refresh. Upload is still wired — files land in the
+  // selected folder and survive task creation independently.
+  const enableReorder = !!taskId;
+
   async function persistOrder(nextOrder: string[]) {
+    if (!enableReorder) return;
     setSavingOrder(true);
     try {
       const r = await fetch(`/api/worktasks/update`, {
@@ -327,33 +339,57 @@ export default function TaskFilesPanel({
       )}
 
       {folderId && files && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={onDragEnd}
-        >
-          <SortableContext
-            items={ordered.map((f) => f.id)}
-            strategy={rectSortingStrategy}
+        enableReorder ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
           >
-            <div className="task-files-grid">
-              {ordered.map((f) => (
-                <FileTile key={f.id} file={f} />
-              ))}
-              {uploadingNames.map((n) => (
-                <div key={`up-${n}`} className="task-files-tile is-uploading">
-                  <div className="task-files-tile-icon">⬆</div>
-                  <div className="task-files-tile-name">{n}</div>
-                </div>
-              ))}
-              {ordered.length === 0 && uploadingNames.length === 0 && (
-                <div className="task-files-empty task-files-empty-grid">
-                  אין קבצים. גרור לכאן או לחץ ״העלה קבצים״.
-                </div>
-              )}
-            </div>
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={ordered.map((f) => f.id)}
+              strategy={rectSortingStrategy}
+            >
+              <div className="task-files-grid">
+                {ordered.map((f) => (
+                  <FileTile key={f.id} file={f} />
+                ))}
+                {uploadingNames.map((n) => (
+                  <div
+                    key={`up-${n}`}
+                    className="task-files-tile is-uploading"
+                  >
+                    <div className="task-files-tile-icon">⬆</div>
+                    <div className="task-files-tile-name">{n}</div>
+                  </div>
+                ))}
+                {ordered.length === 0 && uploadingNames.length === 0 && (
+                  <div className="task-files-empty task-files-empty-grid">
+                    אין קבצים. גרור לכאן או לחץ ״העלה קבצים״.
+                  </div>
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
+        ) : (
+          // Reorder disabled (new-task mode) — render plain tiles
+          // without the sortable wrapper. Upload still works.
+          <div className="task-files-grid">
+            {ordered.map((f) => (
+              <StaticFileTile key={f.id} file={f} />
+            ))}
+            {uploadingNames.map((n) => (
+              <div key={`up-${n}`} className="task-files-tile is-uploading">
+                <div className="task-files-tile-icon">⬆</div>
+                <div className="task-files-tile-name">{n}</div>
+              </div>
+            ))}
+            {ordered.length === 0 && uploadingNames.length === 0 && (
+              <div className="task-files-empty task-files-empty-grid">
+                אין קבצים. גרור לכאן או לחץ ״העלה קבצים״.
+              </div>
+            )}
+          </div>
+        )
       )}
 
       {savingOrder && (
@@ -366,6 +402,36 @@ export default function TaskFilesPanel({
         גרור קבצים מהמחשב לכל מקום בתוך הפאנל כדי להעלות.
       </div>
     </section>
+  );
+}
+
+/** Plain (non-draggable) tile for the new-task page where reorder
+ *  isn't available yet. Same visual + click behaviour as FileTile. */
+function StaticFileTile({ file }: { file: DriveFile }) {
+  return (
+    <div className="task-files-tile">
+      <a
+        href={file.webViewLink}
+        target="_blank"
+        rel="noreferrer"
+        className="task-files-tile-link"
+        title={file.name}
+      >
+        {file.iconLink ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={file.iconLink.replace(/\/16\//, "/32/")}
+            alt=""
+            className="task-files-tile-icon"
+            width={32}
+            height={32}
+          />
+        ) : (
+          <div className="task-files-tile-icon">📄</div>
+        )}
+        <div className="task-files-tile-name">{file.name}</div>
+      </a>
+    </div>
   );
 }
 

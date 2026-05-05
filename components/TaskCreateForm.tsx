@@ -7,6 +7,7 @@ import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
 import DrivePickerButton from "./DrivePickerButton";
+import TaskFilesPanel from "./TaskFilesPanel";
 import { displayNameOf } from "@/lib/personDisplay";
 import DriveFolderPicker, {
   type FolderPickerValue,
@@ -737,6 +738,28 @@ export default function TaskCreateForm({
               });
             }}
           />
+          {/* Files panel — same component as /tasks/[id], in
+              "preview" mode (taskId="" disables tile reorder since
+              there's no row to persist file_order to yet). Drag-drop
+              upload from desktop still works; files land in the
+              currently selected folder via SA. Once the user submits
+              and the task exists, the live-task page picks up where
+              this leaves off. Hidden until the user has actually
+              picked an existing folder — `mode: "new"` means the
+              folder doesn't exist in Drive yet so there's nothing to
+              upload INTO. */}
+          {folderSelection.mode === "existing" &&
+            !!folderSelection.folderId && (
+              <TaskFilesPanel
+                taskId=""
+                folderId={folderSelection.folderId}
+                company={company}
+                project={project}
+                campaign={campaign}
+                taskTitle={title}
+                fileOrder=""
+              />
+            )}
         </>
       )}
 
