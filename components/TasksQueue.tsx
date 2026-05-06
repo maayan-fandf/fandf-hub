@@ -51,6 +51,45 @@ import { kindLabel } from "@/lib/kindLabel";
 import Avatar, { avatarHoverText } from "@/components/Avatar";
 import { roleEmoji, roleLabel } from "@/components/RoleChip";
 
+/** Render-time label for a bucket key under a non-status group axis.
+ *  For the assignee axis we also surface a small avatar via the
+ *  `humanizeBucketAvatar` companion below — but the label-only path
+ *  is what the bucket-header text uses. Falls back to the raw key
+ *  for unmappable values so nothing renders blank. */
+function humanizeBucketKey(
+  key: string,
+  axis: string,
+  people: TasksPerson[],
+): string {
+  // Sentinel "no value" markers — same set used in bucketKeysFor above.
+  const SENTINELS: Record<string, string> = {
+    __no_company__: "ללא חברה",
+    __no_project__: "ללא פרויקט",
+    __no_department__: "ללא מחלקה",
+    __no_assignee__: "ללא משויך",
+    __standalone__: "ללא מטריה",
+    __all__: "כל המשימות",
+    __unknown__: "—",
+  };
+  if (key in SENTINELS) return SENTINELS[key];
+  if (axis === "assignee") {
+    return personDisplayName(key, people) || key;
+  }
+  if (axis === "department") {
+    // Prefer the canonical English label (matches the dept chip on
+    // each row); fall back to whatever's stored when unrecognized.
+    return roleLabel(key);
+  }
+  if (axis === "umbrella") {
+    // Bucket key is the umbrella's task id. Look it up in the page's
+    // task list to surface its title — graceful fallback to the id.
+    // Note: this lookup is O(n) per umbrella bucket; acceptable
+    // since the bucket count is small.
+    return key;
+  }
+  return key;
+}
+
 // Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
 // left on screen) the way work actually flows:
 //   ממתין לטיפול → בעבודה → ממתין לאישור → בוצע, with ממתין לבירור
@@ -201,6 +240,26 @@ type Props = {
    * fold inside the bucket. Defaults to 14 — overridden via the
    * archive_after_days gear-menu pref. */
   archiveAfterDays?: number;
+  /**
+   * Group-by axis for the bucket headers.
+   *   - "" / "status" / undefined → today's behavior: five lifecycle
+   *     buckets (ממתין לטיפול / בעבודה / etc.). DEFAULT.
+   *   - "company"      → bucket per task.company
+   *   - "project"      → bucket per task.project
+   *   - "department"   → bucket per task.departments[i] (multi-fan-out)
+   *   - "assignee"     → bucket per task.assignees[i] (multi-fan-out);
+   *                      header shows avatar + Hebrew name + role chip
+   *   - "umbrella"     → bucket per task.umbrella_id, with the umbrella
+   *                      itself sharing the bucket; standalone tasks
+   *                      land in a "ללא מטריה" bucket
+   *   - "none"         → one big flat list, no buckets
+   *
+   * Drag-to-reorder stays scoped per-bucket. Cross-bucket drops are
+   * disabled when the axis isn't "status" — a v2 enhancement could
+   * reinterpret a cross-bucket drop as "change the task's company /
+   * department / assignee" but for now the UX is: same axis → rank
+   * reorder; different axis → no-op. */
+  groupBy?: string;
 };
 
 /** Default order per sort axis: dates default to descending (newest
@@ -280,6 +339,7 @@ export default function TasksQueue({
   searchParams,
   hideArchived = false,
   archiveAfterDays,
+  groupBy = "",
 }: Props) {
   // Local task state lets us optimistically reorder rows on drop and
   // revert on server error — same pattern the kanban uses. Initial
@@ -328,12 +388,16 @@ export default function TasksQueue({
     () => comparatorFor(sort, effectiveOrder),
     [sort, effectiveOrder],
   );
-  // Drag is always enabled — under a non-rank sort, dropping still
-  // updates the row's rank and we auto-flip the URL back to rank
-  // sort so the user sees the new manual order. Without the auto-
-  // flip, the rank update would be invisible (the active sort would
-  // override). See onDragEnd's post-success branch.
-  const dragEnabled = true;
+  // Drag is always enabled UNDER STATUS GROUPING — under a non-rank
+  // sort, dropping still updates the row's rank and we auto-flip the
+  // URL back to rank sort so the user sees the new manual order.
+  // Disabled when the user picks a non-status group axis: cross-bucket
+  // drops on those axes would be ambiguous (drop the task into another
+  // company → re-categorize? change the field? rerank within the new
+  // bucket?). Cleaner UX: turn drag off; user can always switch back
+  // to status grouping to reorder. v2 may interpret cross-bucket drops
+  // as "change this task's company / department / assignee".
+  const dragEnabled = !groupBy || groupBy === "status";
 
   // 8px activation distance keeps a click on a row's title link from
   // accidentally starting a drag — pointer movement past the threshold
@@ -351,17 +415,72 @@ export default function TasksQueue({
     }),
   );
 
-  // Bucketize once. Anything off the canonical list sinks into `other`.
+  // Bucketize once. Default behavior (groupBy empty/status) → group
+  // by lifecycle status using STATUS_BUCKETS — anything outside the
+  // canonical list sinks into `other` (drafts, anomalies). Other
+  // axes (company / project / assignee / department / umbrella /
+  // none) generate dynamic buckets with a synthetic
+  // {key, label, tone, isTerminal:false} shape so the existing
+  // bucket render loop below works unchanged.
   const byStatus = useMemo(() => {
-    const map: Record<string, WorkTask[]> = {};
-    for (const b of STATUS_BUCKETS) map[b.key] = [];
-    const out: WorkTask[] = [];
-    for (const t of tasks) {
-      if (map[t.status]) map[t.status].push(t);
-      else out.push(t);
+    if (!groupBy || groupBy === "status") {
+      const map: Record<string, WorkTask[]> = {};
+      for (const b of STATUS_BUCKETS) map[b.key] = [];
+      const out: WorkTask[] = [];
+      for (const t of tasks) {
+        if (map[t.status]) map[t.status].push(t);
+        else out.push(t);
+      }
+      return { byStatus: map, other: out, dynamicBuckets: null };
     }
-    return { byStatus: map, other: out };
-  }, [tasks]);
+    // Custom axis. Build a Map (preserves insertion order →
+    // buckets render in the order tasks land in them, which is
+    // close enough to "alphabetical / size-desc" without an
+    // extra sort). For multi-value fields (assignee / department)
+    // a task fans out into each value's bucket.
+    const map = new Map<string, WorkTask[]>();
+    function bucketKeysFor(t: WorkTask): string[] {
+      switch (groupBy) {
+        case "company":    return [t.company || "__no_company__"];
+        case "project":    return [t.project || "__no_project__"];
+        case "department": return t.departments && t.departments.length > 0 ? t.departments : ["__no_department__"];
+        case "assignee":   return t.assignees && t.assignees.length > 0 ? t.assignees : ["__no_assignee__"];
+        case "umbrella":
+          if (t.is_umbrella) return [t.id];
+          if (t.umbrella_id) return [t.umbrella_id];
+          return ["__standalone__"];
+        case "none":       return ["__all__"];
+        default:           return ["__unknown__"];
+      }
+    }
+    for (const t of tasks) {
+      for (const key of bucketKeysFor(t)) {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(t);
+      }
+    }
+    // Build the synthetic STATUS_BUCKETS-shape array.
+    const buckets: { key: string; label: string; tone: string; isTerminal?: boolean }[] = [];
+    const flat: Record<string, WorkTask[]> = {};
+    // Sort buckets by size desc (most populated first); push
+    // empty-meta keys (__no_*__ / __standalone__) to the end.
+    const entries = Array.from(map.entries());
+    entries.sort((a, b) => {
+      const aMeta = a[0].startsWith("__");
+      const bMeta = b[0].startsWith("__");
+      if (aMeta !== bMeta) return aMeta ? 1 : -1;
+      return b[1].length - a[1].length;
+    });
+    for (const [key, list] of entries) {
+      buckets.push({
+        key,
+        label: humanizeBucketKey(key, groupBy, people),
+        tone: "neutral",
+      });
+      flat[key] = list;
+    }
+    return { byStatus: flat, other: [], dynamicBuckets: buckets };
+  }, [tasks, groupBy, people]);
 
   async function onDragEnd(e: DragEndEvent) {
     setError(null);
@@ -446,7 +565,21 @@ export default function TasksQueue({
     );
   }
 
-  const { byStatus: byStatusMap, other } = byStatus;
+  const { byStatus: byStatusMap, other, dynamicBuckets } = byStatus;
+  // Bucket list to render — STATUS_BUCKETS for the default axis,
+  // synthesized from the data otherwise. The status path keeps its
+  // {tone, isTerminal} metadata (drives terminal-bucket folding); the
+  // dynamic path uses neutral chrome.
+  const bucketsToRender: { key: string; label: string; tone: string; isTerminal?: boolean }[] =
+    dynamicBuckets ?? STATUS_BUCKETS.map((b) => ({ ...b }));
+  // For the umbrella axis, build an id → task lookup so the bucket
+  // header can show the umbrella's TITLE (not its task id). For
+  // assignee axis, the same task-list-derived people roster is
+  // already passed in via props; humanizeBucketKey handles that.
+  const tasksById = new Map<string, WorkTask>();
+  if (groupBy === "umbrella") {
+    for (const t of tasks) tasksById.set(t.id, t);
+  }
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
@@ -463,7 +596,7 @@ export default function TasksQueue({
           </button>
         </div>
       )}
-      {STATUS_BUCKETS.map((b) => {
+      {bucketsToRender.map((b) => {
         const list = byStatusMap[b.key] || [];
         if (!list.length) return null;
         // Terminal-state buckets (done / cancelled) split into recent
@@ -534,7 +667,8 @@ export default function TasksQueue({
             >
               <summary className="tasks-bucket-head tasks-bucket-head-summary">
                 <span aria-hidden>📦</span>
-                <span aria-hidden>{STATUS_EMOJIS[b.key]}</span>
+                {/* Terminal-fold path is status-only; cast is safe. */}
+                <span aria-hidden>{STATUS_EMOJIS[b.key as WorkTaskStatus]}</span>
                 {b.label}
                 <span className="tasks-bucket-count">{list.length}</span>
                 <span className="tasks-bucket-archived-hint">
@@ -545,11 +679,108 @@ export default function TasksQueue({
             </details>
           );
         }
+        // Bucket header chrome — varies by axis. Status (default) uses
+        // the existing emoji + Hebrew label. Other axes:
+        //   - assignee → 20px avatar (with role tooltip via Avatar)
+        //                + Hebrew name from the resolver
+        //   - umbrella → 🪆 + the umbrella's actual title (fall back to
+        //                the sentinel label for standalone bucket)
+        //   - company / project / department / none → small icon + label
+        const renderHeadContent = () => {
+          if (!groupBy || groupBy === "status") {
+            // Status branch — b.key is a real WorkTaskStatus.
+            return (
+              <>
+                <span aria-hidden>{STATUS_EMOJIS[b.key as WorkTaskStatus]}</span>
+                {b.label}
+              </>
+            );
+          }
+          if (groupBy === "assignee") {
+            const isSentinel = b.key.startsWith("__");
+            if (isSentinel) {
+              return (
+                <>
+                  <span aria-hidden>👤</span>
+                  {b.label}
+                </>
+              );
+            }
+            const person = people.find(
+              (p) => p.email.toLowerCase() === b.key.toLowerCase(),
+            );
+            return (
+              <span className="tasks-bucket-head-person">
+                <Avatar
+                  name={b.key}
+                  role={person?.role}
+                  title={b.label}
+                  size={22}
+                />
+                <span>{b.label}</span>
+                {person?.role && (
+                  <span className="tasks-bucket-head-role">
+                    {roleEmoji(person.role)} {roleLabel(person.role)}
+                  </span>
+                )}
+              </span>
+            );
+          }
+          if (groupBy === "umbrella") {
+            if (b.key === "__standalone__") {
+              return (
+                <>
+                  <span aria-hidden>📋</span>
+                  {b.label}
+                </>
+              );
+            }
+            const umbrella = tasksById.get(b.key);
+            return (
+              <>
+                <span aria-hidden>🪆</span>
+                {umbrella?.title || b.label}
+              </>
+            );
+          }
+          if (groupBy === "company") {
+            return (
+              <>
+                <span aria-hidden>🏢</span>
+                {b.label}
+              </>
+            );
+          }
+          if (groupBy === "project") {
+            return (
+              <>
+                <span aria-hidden>📁</span>
+                {b.label}
+              </>
+            );
+          }
+          if (groupBy === "department") {
+            return (
+              <>
+                <span aria-hidden>{roleEmoji(b.key) || "🏷"}</span>
+                {b.label}
+              </>
+            );
+          }
+          if (groupBy === "none") {
+            return (
+              <>
+                <span aria-hidden>📋</span>
+                {b.label}
+              </>
+            );
+          }
+          return <>{b.label}</>;
+        };
         return (
           <section key={b.key} className={`tasks-bucket tasks-bucket-${b.tone}`}>
             <h2 className="tasks-bucket-head">
-              <span aria-hidden>{STATUS_EMOJIS[b.key]}</span>
-              {b.label}
+              {renderHeadContent()}
               <span className="tasks-bucket-count">{list.length}</span>
               {sort !== "rank" && searchParams && (
                 <Link

@@ -24,6 +24,7 @@ import TasksArchiveToggle from "@/components/TasksArchiveToggle";
 import TasksUmbrellaToggle from "@/components/TasksUmbrellaToggle";
 import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
 import DateRangePicker from "@/components/DateRangePicker";
+import FilterPersonInput from "@/components/FilterPersonInput";
 import { kindLabel } from "@/lib/kindLabel";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +68,12 @@ type Search = {
   /** `umbrellas=1` flips the default "hide umbrella container rows"
    *  filter so users can scan all chains at once. Phase 4 dependencies. */
   umbrellas?: string;
+  /** Group-by axis for the table view's bucket headers. Default
+   *  (empty) keeps today's behavior — five lifecycle status buckets.
+   *  Other values: company / project / assignee / department /
+   *  umbrella. Presentation-side only; doesn't change which tasks
+   *  the server returns. */
+  group_by?: string;
 };
 
 
@@ -344,7 +351,11 @@ export default async function TasksPage({
           campaign: sp.campaign || "",
           requested_date_from: sp.requested_date_from || "",
           requested_date_to: sp.requested_date_to || "",
+          group_by: sp.group_by || "",
         }}
+        // Note: group_by passes via `current` (becomes the visible
+        // <select> default), not passthrough — since the <select> is
+        // the canonical source for that param.
         // Presentational params that aren't filter inputs but need to
         // ride through a form submission so submitting the filter
         // doesn't bounce the user out of kanban / sort / "show all"
@@ -395,6 +406,7 @@ export default async function TasksPage({
         <TasksQueue
           tasks={tasks}
           groupByCompany={true}
+          groupBy={sp.group_by || ""}
           people={people}
           driveName={driveName}
           userEmail={me}
@@ -533,6 +545,7 @@ function TasksFilterBar({
     campaign: string;
     requested_date_from: string;
     requested_date_to: string;
+    group_by: string;
   };
   /** Presentational URL params (view / sort / order / mine / month)
    *  that the form submission must preserve. The previous form was
@@ -762,63 +775,61 @@ function TasksFilterBar({
         initialTo={current.requested_date_to}
         label="תאריך מבוקש"
       />
+      <label>
+        קיבוץ
+        <select
+          name="group_by"
+          defaultValue={current.group_by}
+          data-active={current.group_by ? "1" : undefined}
+          title="קבץ את המשימות לפי הציר הנבחר. ברירת מחדל: סטטוס (חמשת השלבים בלייפ-סייקל)."
+        >
+          <option value="">סטטוס (ברירת מחדל)</option>
+          <option value="company">חברה</option>
+          <option value="project">פרויקט</option>
+          <option value="assignee">עובד מבצע</option>
+          <option value="department">מחלקה</option>
+          <option value="umbrella">מטריה (קבץ ילדים תחת משימת-על)</option>
+          <option value="none">ללא קיבוץ</option>
+        </select>
+      </label>
 
       <fieldset className="tasks-filter-people-group">
         <legend className="tasks-filter-people-legend">אנשים</legend>
         <label>
           כותב
-          <input
-            type="text"
+          <FilterPersonInput
             name="author"
-            list="tasks-people"
-            placeholder={current.author || "name@domain"}
             defaultValue={current.author}
-            data-active={current.author ? "1" : undefined}
+            options={people}
           />
         </label>
         <label>
           עובד מבצע
-          <input
-            type="text"
+          <FilterPersonInput
             name="assignee"
-            list="tasks-people"
-            placeholder="name@domain"
             defaultValue={current.assignee}
-            data-active={current.assignee ? "1" : undefined}
+            options={people}
           />
         </label>
         <label>
           מאשר
-          <input
-            type="text"
+          <FilterPersonInput
             name="approver"
-            list="tasks-people"
-            placeholder="name@domain"
             defaultValue={current.approver}
-            data-active={current.approver ? "1" : undefined}
+            options={people}
           />
         </label>
-        <label>
+        <label
+          title="כל המשימות שאדם זה מעורב בהן — כותב / מאשר / מנהל פרויקט / עובד מבצע / או תויג בדיון"
+        >
           מעורב במשימה
-          <input
-            type="text"
+          <FilterPersonInput
             name="involved_with"
-            list="tasks-people"
-            placeholder="name@domain"
             defaultValue={current.involved_with}
-            data-active={current.involved_with ? "1" : undefined}
-            title="כל המשימות שאדם זה מעורב בהן — כותב / מאשר / מנהל פרויקט / עובד מבצע / או תויג בדיון"
+            options={people}
           />
         </label>
       </fieldset>
-      {/* Shared datalist populates every person input above. */}
-      <datalist id="tasks-people">
-        {people.map((p) => (
-          <option key={p.email} value={p.email}>
-            {p.name} · {p.role}
-          </option>
-        ))}
-      </datalist>
       <div className="tasks-filter-actions">
         <button type="submit" className="btn-primary">
           סנן

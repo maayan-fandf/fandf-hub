@@ -11612,6 +11612,22 @@ html[data-theme="dark"] .tasks-row-umbrella > td {
   background: rgba(139, 92, 246, 0.16);
 }
 
+/* Group-by bucket header chrome for the assignee axis — avatar +
+   Hebrew name + role chip, all inline. Mirrors the per-row
+   .cell-person treatment so the bucket header reads as "the person"
+   at a glance. Used only when ?group_by=assignee on /tasks. */
+.tasks-bucket-head-person {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+}
+.tasks-bucket-head-role {
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-inline-start: .25em;
+}
+
 /* Drag handle in the table view — narrow column at the row's start
    that wears the grab cursor, otherwise the row is fully clickable.
    The grip glyph is muted by default and brightens on row hover so
