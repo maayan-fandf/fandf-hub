@@ -171,6 +171,14 @@ export default function TaskCreateForm({
   // path (per the locked design — most quick client requests are NOT
   // chains).
   const [chainMode, setChainMode] = useState(false);
+  // Multi-assignee mode picker — only meaningful when assignees has
+  // 2+ emails AND chainMode is off. "joined" preserves the historical
+  // single-task semantics (today's default; multiple people, one
+  // shared row); "parallel" splits into N peer children under a
+  // shared umbrella, no dependency edges. The third option from the
+  // user-facing picker (chain) is handled by flipping `chainMode`
+  // directly — it's an action, not a persistent state on this picker.
+  const [multiMode, setMultiMode] = useState<"joined" | "parallel">("joined");
   // Phase 10 follow-up — explicit umbrella toggle. Default ON because
   // the umbrella's rollup (the parent task in /tasks/[id] showing
   // aggregate progress) is what most users want for chains. Turning
@@ -541,6 +549,71 @@ export default function TaskCreateForm({
     const timeRaw = String(fd.get("requested_time") || "").trim();
     const requestedDate =
       dateRaw && timeRaw ? `${dateRaw}T${timeRaw}` : dateRaw;
+
+    // Parallel-umbrella branch — when the user picked 2+ assignees and
+    // chose "מטריה עם משימות מקבילות", route through the chain
+    // orchestrator with mode=parallel. Builds 1 umbrella + N peer
+    // children (one per assignee) that share title/brief/etc.; no
+    // dependency edges between children. The umbrella's status rolls
+    // up via lib/umbrellaRecompute.ts (which enumerates by umbrella_id
+    // — no graph traversal — so the empty edges are fine).
+    if (multiMode === "parallel" && assigneeList.length >= 2) {
+      if (!title.trim()) {
+        setError("כותרת חובה");
+        setSaving(false);
+        return;
+      }
+      const parallelPayload = {
+        project,
+        company,
+        brief: String(fd.get("brief") || ""),
+        campaign: campaign.trim(),
+        departments,
+        mode: "parallel" as const,
+        // Parallel mode forces the umbrella server-side; sending
+        // withUmbrella explicitly keeps the intent obvious in logs.
+        withUmbrella: true,
+        umbrella: {
+          title: title.trim(),
+          description: String(fd.get("description") || ""),
+        },
+        // One step per assignee — same title, single-email assignees.
+        // requested_date/approver/departments inherited per child.
+        steps: assigneeList.map((email) => ({
+          title: title.trim(),
+          assignees: [email],
+          approver_email: approver,
+          requested_date: requestedDate,
+          departments,
+        })),
+      };
+      try {
+        const res = await fetch("/api/worktasks/create-chain", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(parallelPayload),
+        });
+        const data = (await res.json()) as
+          | {
+              ok: true;
+              umbrella: { id: string } | null;
+              children: { id: string }[];
+            }
+          | { ok: false; error: string };
+        if (!res.ok || !data.ok) {
+          throw new Error(
+            "error" in data ? data.error : "Failed to create parallel umbrella",
+          );
+        }
+        const dest = data.umbrella?.id ?? data.children[0]?.id ?? "";
+        if (dest) router.push(`/tasks/${encodeURIComponent(dest)}`);
+        else router.push("/tasks");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setSaving(false);
+      }
+      return;
+    }
 
     const payload: Record<string, unknown> = {
       project: project,
@@ -1097,6 +1170,85 @@ export default function TaskCreateForm({
               })}
             </div>
           )}
+          {/* Multi-assignee mode picker — appears once 2+ people are
+              selected (single-assignee tasks have no choice to surface).
+              Three options:
+                joined   = current behavior: one task, all assignees jointly own it
+                parallel = new: 1 umbrella + N peer children, each owned by one person
+                chain    = existing chain UX: pre-fill steps from picked assignees + flip into it
+              Default stays at "joined" — preserves the historical UX
+              for users who don't actively pick a different mode. */}
+          {(() => {
+            const picked = assignees
+              .split(/[,;\n]/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            if (picked.length < 2) return null;
+            return (
+              <div
+                className="task-form-multi-mode-row"
+                role="radiogroup"
+                aria-label="אופן חלוקת המשימה בין מספר מבצעים"
+              >
+                <span className="task-form-multi-mode-hint">
+                  בחרת {picked.length} אנשים — איך לשייך?
+                </span>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={multiMode === "joined"}
+                  className={`task-form-multi-mode-chip${
+                    multiMode === "joined" ? " is-active" : ""
+                  }`}
+                  onClick={() => setMultiMode("joined")}
+                  title="משימה אחת משותפת — כולם בעלים יחד"
+                >
+                  <span aria-hidden>👥</span> משימה משותפת
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={multiMode === "parallel"}
+                  className={`task-form-multi-mode-chip${
+                    multiMode === "parallel" ? " is-active" : ""
+                  }`}
+                  onClick={() => setMultiMode("parallel")}
+                  title="מטריה אחת + תת-משימה לכל אדם, ללא תלות ביניהן"
+                >
+                  <span aria-hidden>🌂</span> מטריה עם משימות מקבילות
+                </button>
+                <button
+                  type="button"
+                  className="task-form-multi-mode-chip task-form-multi-mode-chip-action"
+                  onClick={() => {
+                    // Switch the form into chain mode + pre-populate
+                    // steps from the picked assignees. Each step gets
+                    // the form's current title (or empty) and ONE
+                    // email. The user can then refine order / titles /
+                    // per-step depts in the chain UX before submit.
+                    const chainSteps = picked.map((email) => ({
+                      title: title.trim() || "",
+                      assignees: email,
+                    }));
+                    // Chain UI requires at least 2 step rows visually;
+                    // pad with blanks if only 2 picked but the user
+                    // wants to add more.
+                    while (chainSteps.length < 2) {
+                      chainSteps.push({ title: "", assignees: "" });
+                    }
+                    setSteps(chainSteps);
+                    setChainMode(true);
+                    // Reset the multiMode so re-toggling chain off
+                    // returns to the default "joined" presentation.
+                    setMultiMode("joined");
+                  }}
+                  title="פתח עורך שרשרת ומלא שלב לכל אדם — סדר ההעברה ניתן לשינוי"
+                >
+                  <span aria-hidden>🔗</span> שרשרת משימות →
+                </button>
+              </div>
+            );
+          })()}
         </label>
       </div>
       )}

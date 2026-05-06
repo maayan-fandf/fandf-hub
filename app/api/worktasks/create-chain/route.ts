@@ -58,9 +58,21 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // Parallel mode requires the umbrella — without rollup it's just N
+  // independent /create calls. Reject early so the caller fixes their
+  // payload instead of getting orphan tasks.
+  if (body.mode === "parallel" && body.withUmbrella === false) {
+    return NextResponse.json(
+      { ok: false, error: "parallel mode requires withUmbrella" },
+      { status: 400 },
+    );
+  }
   // umbrella.title is only required in the default umbrella mode;
   // flat-linked mode (withUmbrella=false) skips the umbrella entirely.
-  if (body.withUmbrella !== false && !body.umbrella?.title) {
+  // Parallel mode forces an umbrella (above) so the title is needed.
+  const umbrellaWanted =
+    body.mode === "parallel" ? true : body.withUmbrella !== false;
+  if (umbrellaWanted && !body.umbrella?.title) {
     return NextResponse.json(
       { ok: false, error: "umbrella.title is required when withUmbrella" },
       { status: 400 },

@@ -58,10 +58,29 @@ export type TasksCreateChainInput = {
   campaign?: string;
   /** Departments inherited by every child step that doesn't set its own. */
   departments?: string[];
+  /** Edge model:
+   *   - "chain"    (default) — sequential, each step blocks the next.
+   *     Step 1 starts immediately; steps 2..N start `blocked` and the
+   *     dependency cascade unblocks each one when its predecessor
+   *     reaches `done`.
+   *   - "parallel" — N peer children under the umbrella, no edges.
+   *     Every child starts in `awaiting_handling` (immediately
+   *     actionable) with empty `blocks` and `blocked_by`. The
+   *     umbrella's status rolls up via lib/umbrellaRecompute.ts —
+   *     it enumerates children by umbrella_id, not by graph traversal,
+   *     so no edges is fine.
+   *
+   *  Parallel mode requires `withUmbrella !== false` — without an
+   *  umbrella, "parallel" is just N independent tasks (no rollup
+   *  benefit) which the caller can already produce by hitting
+   *  /api/worktasks/create N times. The route + this orchestrator
+   *  both reject that combination defensively. */
+  mode?: "chain" | "parallel";
   /** Whether to spawn an umbrella container row that rolls the chain
    *  up. Default true. When false, the chain orchestrator skips the
    *  umbrella and creates only the N flat-linked children — useful
-   *  when the user doesn't want the rollup row appearing in lists. */
+   *  when the user doesn't want the rollup row appearing in lists.
+   *  Ignored (forced true) when mode === "parallel". */
   withUmbrella?: boolean;
   /** The umbrella container row that rolls everything up. Required
    *  when withUmbrella !== false (i.e. the default umbrella mode);
@@ -104,11 +123,19 @@ export async function tasksCreateChainDirect(
   if (!payload.project) {
     throw new Error("tasksCreateChain: project is required");
   }
+  const mode = payload.mode === "parallel" ? "parallel" : "chain";
+  // Parallel mode requires the umbrella — see TasksCreateChainInput.mode
+  // doc for the rationale. Defensive: also rejected at the route layer.
+  if (mode === "parallel" && payload.withUmbrella === false) {
+    throw new Error(
+      "tasksCreateChain: parallel mode requires withUmbrella (no rollup → no benefit over /create)",
+    );
+  }
   // Umbrella title only required when an umbrella will actually be
   // created. In flat-linked mode the field is ignored — the form
   // may still send it (the user typed an umbrella name before
   // unchecking the umbrella toggle), but we don't insist.
-  const wantsUmbrella = payload.withUmbrella !== false;
+  const wantsUmbrella = mode === "parallel" ? true : payload.withUmbrella !== false;
   if (wantsUmbrella && !payload.umbrella?.title?.trim()) {
     throw new Error("tasksCreateChain: umbrella.title is required when withUmbrella");
   }
@@ -137,10 +164,17 @@ export async function tasksCreateChainDirect(
 
   // Defensive cycle check on the chain's edge set. A linear chain
   // can't cycle by construction, but if we ever extend to non-linear
-  // chains (DAGs) the same code path catches misuse.
+  // chains (DAGs) the same code path catches misuse. Parallel mode
+  // has no edges so the cycle check is a structural no-op (we still
+  // run it for symmetry / future-proofing).
   const edges: Array<{ from: string; to: string; blocks: string[] }> = [];
   for (let i = 0; i < childIds.length; i++) {
-    const blocks = i < childIds.length - 1 ? [childIds[i + 1]] : [];
+    const blocks =
+      mode === "parallel"
+        ? []
+        : i < childIds.length - 1
+          ? [childIds[i + 1]]
+          : [];
     edges.push({ from: childIds[i], to: blocks[0] || "", blocks });
   }
   // Build the proposed graph and validate every new edge.
@@ -191,8 +225,17 @@ export async function tasksCreateChainDirect(
   const childTasks: WorkTask[] = [];
   for (let i = 0; i < payload.steps.length; i++) {
     const step = payload.steps[i];
-    const blocks = i < childIds.length - 1 ? [childIds[i + 1]] : [];
-    const blockedBy = i > 0 ? [childIds[i - 1]] : [];
+    // Parallel mode: no edges; every child starts in awaiting_handling.
+    // Chain mode: step (i) blocks step (i+1); step (i) is blocked_by
+    // step (i-1); step 0's blocked_by is empty (immediately actionable).
+    const blocks =
+      mode === "parallel"
+        ? []
+        : i < childIds.length - 1
+          ? [childIds[i + 1]]
+          : [];
+    const blockedBy =
+      mode === "parallel" ? [] : i > 0 ? [childIds[i - 1]] : [];
     const res = await tasksCreateDirect(subjectEmail, {
       id: childIds[i],
       project: payload.project,

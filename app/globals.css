@@ -7473,6 +7473,48 @@ html[data-theme="dark"] .task-files-panel[data-drag-over="1"] {
   color: #fff;
 }
 
+/* Multi-assignee mode picker — appears below the assignee row when
+   2+ people are selected. Visual sibling of `.task-form-dept-row`
+   so the form's chip language stays consistent. The third chip
+   (chain) is an action button (it triggers a mode switch rather
+   than holding state) so it gets a slightly distinct treatment
+   via `.task-form-multi-mode-chip-action`. */
+.task-form-multi-mode-row {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: .4em;
+  margin-top: .6em;
+  padding: .55em .7em;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.task-form-multi-mode-hint {
+  font-size: .85em; color: var(--muted);
+  margin-inline-end: .25em;
+}
+.task-form-multi-mode-chip {
+  padding: .35em .9em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.task-form-multi-mode-chip:hover { background: var(--surface-soft); }
+.task-form-multi-mode-chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.task-form-multi-mode-chip-action {
+  /* Action chip (chain) is dashed to telegraph "this opens a different
+     editor" rather than "this is a persistent selection". */
+  border-style: dashed;
+}
+
 /* Chat Spaces admin page — project list grouped by company with per-row
    "create space" buttons that call /api/worktasks/project-space-create. */
 .chat-spaces-notice {
