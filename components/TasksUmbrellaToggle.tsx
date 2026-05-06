@@ -38,6 +38,12 @@ export default function TasksUmbrellaToggle({ showing, count }: Props) {
     else params.set("umbrellas", "1");
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
+    // Next.js 15 App Router holds a client-side route cache; pushing
+    // to /tasks?umbrellas=1 from /tasks (or back) was returning the
+    // pre-toggle render without re-hitting the server, so the user saw
+    // identical row counts. Force a refetch — the page is force-dynamic
+    // server-side anyway, this just bypasses the route segment cache.
+    router.refresh();
   }
 
   // Long-form explanation — same text both states (so hovering before
