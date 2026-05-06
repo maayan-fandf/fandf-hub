@@ -53,6 +53,7 @@ import { displayProjectOrCompany } from "@/lib/personalLabel";
 import { kindLabel } from "@/lib/kindLabel";
 import Avatar, { avatarHoverText } from "@/components/Avatar";
 import { roleEmoji, roleLabel } from "@/components/RoleChip";
+import { useTaskPreview } from "@/components/TaskPreviewProvider";
 
 /** Render-time label for a bucket key under a non-status group axis.
  *  For the assignee axis we also surface a small avatar via the
@@ -1231,6 +1232,12 @@ function TaskRow({
       }
     : {};
 
+  // Quick-preview hook — used by the 👁 button below to open the
+  // side drawer without leaving /tasks. The hook returns no-op
+  // functions when no provider is mounted, so isolated tests /
+  // SSR snapshots don't crash; the layout root mounts the provider
+  // for every authenticated page.
+  const preview = useTaskPreview();
   // Drive Desktop local path. We deliberately don't include the
   // task-specific subfolder (drive_folder_url is a web URL, not a path);
   // the user can drill into it once Explorer opens at the campaign
@@ -1519,6 +1526,20 @@ function TaskRow({
       </td>
       <td className="icons">
         <div className="tasks-row-icons">
+          <button
+            type="button"
+            className="tasks-row-icon"
+            title="תצוגה מקדימה — תיאור מלא ופרטים, ללא מעבר עמוד"
+            aria-label="תצוגה מקדימה"
+            onClick={(e) => {
+              // Stop propagation so a click on the eye doesn't bubble
+              // to the row's drag handlers or the title link.
+              e.stopPropagation();
+              preview.open(task, people);
+            }}
+          >
+            👁
+          </button>
           <Link
             href={`/tasks/${encodeURIComponent(task.id)}`}
             className="tasks-row-icon"

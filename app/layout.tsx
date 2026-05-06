@@ -22,6 +22,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
 import AgendaPanel from "@/components/AgendaPanel";
 import LightboxProvider from "@/components/LightboxProvider";
+import TaskPreviewProvider from "@/components/TaskPreviewProvider";
 import { getMyProjects, type Project } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
 
@@ -200,14 +201,16 @@ export default async function RootLayout({
             consumer can call `useLightbox().open(src, alt, viewUrl)`
             without prop-drilling. */}
         <LightboxProvider>
-          <div className="app-shell-with-agenda">
-            <div className="app-shell-main">{children}</div>
-            {email && !isClientUser && (
-              <Suspense fallback={null}>
-                <AgendaPanel userEmail={email} />
-              </Suspense>
-            )}
-          </div>
+          <TaskPreviewProvider>
+            <div className="app-shell-with-agenda">
+              <div className="app-shell-main">{children}</div>
+              {email && !isClientUser && (
+                <Suspense fallback={null}>
+                  <AgendaPanel userEmail={email} />
+                </Suspense>
+              )}
+            </div>
+          </TaskPreviewProvider>
         </LightboxProvider>
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
