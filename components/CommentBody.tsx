@@ -2,6 +2,7 @@ import type React from "react";
 import type { TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
 import CommentBodyImage from "./CommentBodyImage";
+import Avatar from "./Avatar";
 
 /**
  * Renders a comment / mention / task body. Supports the markdown-ish
@@ -310,12 +311,15 @@ function renderPart(
     );
   }
   if (part.kind === "mention") {
-    // `@email@host.tld` → `@<HebrewName>` when the roster is
-    // available; falls back to the email prefix (the part before the
-    // `@`) if not. Full email kept on the title attribute so a hover
-    // confirms exactly who was tagged. Reported by Maayan 2026-05-06
-    // — raw emails crowded the comment text and made Hebrew threads
-    // feel less native.
+    // `@email@host.tld` → `<Avatar/> @<HebrewName>` when the roster
+    // is available; falls back to the email prefix when no roster
+    // was passed. Full email kept on the title attribute so a hover
+    // confirms exactly who was tagged.
+    //
+    // The Avatar uses the email as its key so the workspace photo
+    // overlay (when present) shows directly inside the mention chip
+    // — the chip becomes recognizable at a glance even without
+    // reading the name. Reported by Maayan 2026-05-06.
     const fallbackHandle = part.email.split("@")[0];
     const display = people
       ? personDisplayName(part.email, people) || fallbackHandle
@@ -327,6 +331,7 @@ function renderPart(
         title={part.email}
         dir="auto"
       >
+        <Avatar name={part.email} size={16} />
         @{display}
       </span>
     );

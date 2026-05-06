@@ -6,6 +6,7 @@ import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import TimePicker from "./TimePicker";
+import Avatar from "./Avatar";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -583,6 +584,7 @@ export default function TaskEditPanel({
                     }
                   }}
                 >
+                  <Avatar name={p.email} size={18} />
                   {displayNameOf(p)}
                 </button>
               );

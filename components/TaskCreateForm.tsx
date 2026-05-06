@@ -8,6 +8,7 @@ import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
 import PeopleMultiCombobox from "./PeopleMultiCombobox";
 import TimePicker from "./TimePicker";
+import Avatar from "./Avatar";
 import DrivePickerButton from "./DrivePickerButton";
 import TaskFilesPanel from "./TaskFilesPanel";
 import { displayNameOf } from "@/lib/personDisplay";
@@ -1068,6 +1069,7 @@ export default function TaskCreateForm({
                       }
                     }}
                   >
+                    <Avatar name={p.email} size={18} />
                     {displayNameOf(p)}
                   </button>
                 );

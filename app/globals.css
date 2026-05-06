@@ -7510,7 +7510,10 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   margin-top: .4em;
 }
 .task-form-assignee-chip {
-  padding: .25em .7em;
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  padding: .25em .7em .25em .35em;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -7820,15 +7823,25 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 /* `@<name>` mention chip rendered by CommentBody. Styled to look like
    a Discord-/Slack-style inline tag — accent color so it pops, slight
    bg + radius so the eye lands on it, semibold so the name reads as a
-   reference rather than free text. */
+   reference rather than free text. The inline `<Avatar size={16}>`
+   sits at the start of the chip; gap + align-items keep it baseline-
+   centered against the @ + name text. */
 .comment-body-mention {
-  display: inline-block;
-  padding: 0 .35em;
+  display: inline-flex;
+  align-items: center;
+  gap: .3em;
+  padding: 0 .45em 0 .35em;
   background: var(--accent-soft, rgba(99, 102, 241, .12));
   color: var(--accent, #4f46e5);
-  border-radius: 4px;
+  border-radius: 999px;
   font-weight: 600;
   white-space: nowrap;
+  vertical-align: middle;
+}
+.comment-body-mention .avatar {
+  /* Slight pull-up so the small avatar circle reads as part of the
+     pill rather than poking above its bottom edge. */
+  margin-block: -1px;
 }
 /* Wrapper around an image-only line in a comment body. dir="rtl" on
    the JSX side aligns the inline-block image to the start of the
@@ -9055,29 +9068,27 @@ html[data-theme="dark"] .tasks-dept-chip {
   outline-offset: 1px;
 }
 /* Multi-select variant — used by PeopleMultiCombobox for the
-   עובדים במשימה field. Padding, border, radius, font-size, and
-   line-height all match `.combobox-input` so an empty
-   PeopleMultiCombobox reads as a perfect sibling of the
-   PersonCombobox fields next to it (גורם מאשר, מנהל פרויקט).
-   When chips are present the wrap grows downward (flex-wrap) but
-   each row keeps the input's baseline. Reported by Maayan
-   2026-05-06 — the previous .4em padding made it visibly shorter
-   than its siblings. */
+   עובדים במשימה field. Mirrors `.combobox-input`'s box rules
+   property-for-property so an empty PeopleMultiCombobox is
+   pixel-identical to the empty PersonCombobox fields next to it
+   (גורם מאשר, מנהל פרויקט). The flex-wrap + gap rules are the
+   layout extras the chip row needs; everything else is verbatim
+   from .combobox-input. Reported by Maayan 2026-05-06 — earlier
+   attempts that touched padding/line-height drifted from the
+   sibling shape. */
 .combobox-multi-wrap {
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .3em .35em;
+  width: 100%;
+  font: inherit;
   padding: .55em .8em;
   padding-inline-end: 2.2em; /* room for the chevron */
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface, #fff);
-  font: inherit;
-  /* Explicit line-height so the inline input + inline-flex chips
-     share a common baseline. Without it the chips' inflated
-     line-height fights the input's default and the row reads
-     ragged. */
-  line-height: 1.4;
+  color: var(--text);
+  /* Chip-row layout extras. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .3em .35em;
   cursor: text;
 }
 .combobox.combobox-multi.is-open .combobox-multi-wrap,
@@ -9194,8 +9205,20 @@ html[data-theme="dark"] .tasks-dept-chip {
 .combobox-option:hover,
 .combobox-option.is-highlight { background: var(--accent-soft, #e7f0ff); }
 .combobox-option.is-selected { font-weight: 600; }
-.combobox-option-icon { opacity: .8; font-size: 1em; }
-.combobox-option-text { flex: 1; min-width: 0; }
+.combobox-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1em;
+  flex: 0 0 auto;
+}
+.combobox-option-text {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+}
 .combobox-option-tag {
   font-size: .7em;
   padding: .1em .55em;

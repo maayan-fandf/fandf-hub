@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TasksPerson } from "@/lib/appsScript";
 import { displayNameOf } from "@/lib/personDisplay";
+import Avatar from "./Avatar";
+import RoleChip from "./RoleChip";
 
 type Props = {
   /** CSV of selected emails — parsed for display, written back via
@@ -287,12 +289,12 @@ export default function PeopleMultiCombobox({
                 }}
                 onMouseEnter={() => setHighlight(i)}
               >
-                <span className="combobox-option-icon">👤</span>
+                <span className="combobox-option-icon">
+                  <Avatar name={p.email} size={22} />
+                </span>
                 <span className="combobox-option-text">
                   <span>{displayNameOf(p) || p.email}</span>
-                  {p.role && (
-                    <span className="combobox-option-meta"> · {p.role}</span>
-                  )}
+                  {p.role && <RoleChip role={p.role} />}
                 </span>
                 <span className="combobox-option-tag" dir="ltr">
                   {p.email}
