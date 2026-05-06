@@ -31,17 +31,21 @@ const META: Record<
   internal:        { emoji: "🎨", label: "קריאייטיב",  cls: "role-creative" },
   internal_cf:     { emoji: "🌈", label: "קריאייטיב",  cls: "role-creative-cf" },
   client:          { emoji: "🛍️", label: "לקוח",       cls: "role-client" },
-  // Current names_to_emails column values. Hebrew labels mirror
-  // the Role column verbatim where possible — when the column
-  // value is already a recognizable English term we keep it and
-  // pair it with a contextual emoji.
-  media:           { emoji: "📺", label: "media",        cls: "role-media" },
-  manager:         { emoji: "👔", label: "manager",      cls: "role-account" },
+  // Current names_to_emails column values (revised by Maayan
+  // 2026-05-06). Hebrew labels mirror the Role column verbatim
+  // where possible — when the column value is already a
+  // recognizable English term we keep it and pair it with a
+  // contextual emoji. Lookup is case-insensitive (lowercased on
+  // entry) so the column can be written "Media" or "media" or
+  // "MEDIA" with no behavioural change.
+  media:           { emoji: "📺", label: "media",         cls: "role-media" },
+  manager:         { emoji: "👔", label: "manager",       cls: "role-account" },
   "client manager":{ emoji: "🤝", label: "client manager",cls: "role-account" },
-  copywriter:      { emoji: "✍️", label: "copywriter",   cls: "role-creative" },
-  art:             { emoji: "🎨", label: "art",          cls: "role-creative" },
-  designer:        { emoji: "🖌️", label: "designer",     cls: "role-creative" },
-  video:           { emoji: "🎬", label: "video",        cls: "role-creative" },
+  copywriter:      { emoji: "✍️", label: "copywriter",    cls: "role-creative" },
+  art:             { emoji: "🎨", label: "art",           cls: "role-creative" },
+  studio:          { emoji: "🖥️", label: "studio",        cls: "role-creative" },
+  designer:        { emoji: "🖌️", label: "designer",      cls: "role-creative" },
+  video:           { emoji: "🎬", label: "video",         cls: "role-creative" },
 };
 
 function lookup(role: string) {

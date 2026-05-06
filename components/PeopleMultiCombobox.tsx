@@ -185,58 +185,25 @@ export default function PeopleMultiCombobox({
     }
   }
 
-  // Resolve display name for a chip. Falls through to the email
-  // itself when the person isn't on the roster (free-text entries).
-  function chipLabel(email: string): string {
-    const p = options.find(
-      (o) => o.email.toLowerCase() === email.toLowerCase(),
-    );
-    return p ? displayNameOf(p) || email : email;
-  }
-
   return (
     <div
       ref={wrapRef}
-      className={`combobox combobox-multi${disabled ? " is-disabled" : ""}${open ? " is-open" : ""}`}
+      className={`combobox${disabled ? " is-disabled" : ""}${open ? " is-open" : ""}`}
     >
-      <div
-        className="combobox-input-wrap combobox-multi-wrap"
-        onClick={(e) => {
-          // Clicks on the wrapper bring focus into the input (so the
-          // user can start typing immediately) UNLESS the click was on
-          // a chip's remove button, which has its own handler. The
-          // typeahead input is the only focus target inside the wrap;
-          // chips and the chevron use buttons that don't take focus.
-          if (disabled) return;
-          if (e.target === e.currentTarget) inputRef.current?.focus();
-        }}
-      >
-        {emails.map((email) => (
-          <span key={email} className="combobox-multi-chip" dir="auto">
-            <span className="combobox-multi-chip-name">
-              {chipLabel(email)}
-            </span>
-            <button
-              type="button"
-              className="combobox-multi-chip-remove"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                removeEmail(email);
-              }}
-              tabIndex={-1}
-              aria-label={`הסר ${chipLabel(email)}`}
-              title={email}
-              disabled={disabled}
-            >
-              ×
-            </button>
-          </span>
-        ))}
+      <div className="combobox-input-wrap">
+        {/* Pure search input — visually identical to PersonCombobox.
+            Selected people live ONLY in the bubble row below the
+            field, never inside this wrap. The previous chip-inside-
+            box rendering made the field disagree visually with its
+            single-person siblings (גורם מאשר / מנהל פרויקט) on the
+            same row; reported by Maayan 2026-05-06. The bubble row
+            already gives the user a clear "who's selected" signal
+            via its is-active state, so re-rendering chips here was
+            redundant on top of being a visual mismatch. */}
         <input
           ref={inputRef}
           type="text"
-          className="combobox-multi-input"
+          className="combobox-input"
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -245,7 +212,7 @@ export default function PeopleMultiCombobox({
           onFocus={() => !disabled && setOpen(true)}
           onClick={() => !disabled && setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={emails.length ? "" : placeholder}
+          placeholder={placeholder}
           disabled={disabled}
           aria-autocomplete="list"
           aria-expanded={open}
