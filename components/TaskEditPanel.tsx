@@ -277,6 +277,26 @@ export default function TaskEditPanel({
           </option>
         ))}
       </datalist>
+      {/* Separate datalist for the מנהל פרויקט field — narrowed to
+          role values containing "manager" (today: "manager" + "client
+          manager"). The unfiltered list dumped every employee into
+          the autocomplete, which made designers/copywriters/video
+          editors look like valid PM picks. Falls back to the full
+          list when no role matches the substring (defensive — keeps
+          the picker usable if the column hasn't been populated). */}
+      <datalist id="tasks-pms-edit">
+        {(() => {
+          const matches = people.filter((p) =>
+            (p.role || "").toLowerCase().includes("manager"),
+          );
+          const list = matches.length > 0 ? matches : people;
+          return list.map((p) => (
+            <option key={p.email} value={p.email}>
+              {displayNameOf(p)} · {p.role}
+            </option>
+          ));
+        })()}
+      </datalist>
 
       <div className="task-form-row">
         {/* Field order [company, project, brief] — matches the

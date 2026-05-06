@@ -330,6 +330,22 @@ export default function TaskCreateForm({
     });
   })();
 
+  // Project-manager candidates — narrowed from the full people list to
+  // role values containing "manager" (case-insensitive). Today that's
+  // "manager" + "client manager" per names-to-emails. The previous
+  // unfiltered list dumped every employee (designers, copywriters,
+  // video editors) into the autocomplete, which is wrong: the מנהל
+  // פרויקט slot is meant for the actual PM, not "anyone in the agency".
+  // Reported by Maayan 2026-05-06. Falls back to the full people list
+  // when no role on names-to-emails matches — better to show too many
+  // than show none if the column hasn't been populated yet.
+  const projectManagerCandidates = useMemo(() => {
+    const matches = people.filter((p) =>
+      (p.role || "").toLowerCase().includes("manager"),
+    );
+    return matches.length > 0 ? matches : people;
+  }, [people]);
+
   // Departments — schema sheet wins when provided; falls back to the
   // live `Role` column on names-to-emails; falls back to the hardcoded
   // list. The schema is the authoritative source once admin has shaped
@@ -976,7 +992,7 @@ export default function TaskCreateForm({
           <PersonCombobox
             value={projectManager}
             onChange={setProjectManager}
-            options={people}
+            options={projectManagerCandidates}
             placeholder="חפש לפי שם או מייל"
             hint={defaultPm ? "ברירת מחדל: מנהל הפרויקט מ־Keys" : undefined}
           />
