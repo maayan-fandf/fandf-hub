@@ -630,7 +630,15 @@ function TasksFilterBar({
           CSS uses it to tint the field with --accent-soft so users can
           scan at a glance which filters are narrowing the result set
           (otherwise it's easy to miss e.g. a stuck חברה filter). */}
+      {/* Key the child on the URL params so a hard "נקה" navigation
+          (which goes to /tasks?mine=0 and clears every server-rendered
+          uncontrolled <select defaultValue=…>) also remounts this
+          client component, re-seeding its useState from the new — now
+          empty — defaults. Without the key the old company/project
+          selections survive the navigation because useState only
+          initializes on first mount. */}
       <TasksFilterCompanyProject
+        key={`${current.company}|${current.project}`}
         defaultCompany={current.company}
         defaultProject={current.project}
         companies={companies}
