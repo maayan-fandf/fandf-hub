@@ -40,19 +40,26 @@ export default function TasksUmbrellaToggle({ showing, count }: Props) {
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
+  // Long-form explanation — same text both states (so hovering before
+  // and after a click shows a consistent picture of what the toggle
+  // governs), with the action prefix swapping based on current state.
+  // Native title tooltips wrap on most browsers; line breaks help.
+  const concept =
+    "כל שרשרת (סדר מסירה) או מטריה מקבילה (משימה לכל אדם תחת אותה משימת-על) " +
+    "נשמרת תחת שורת 'עטיפה' שמרכזת את הסטטוס של תתי-המשימות. " +
+    "ברירת המחדל מסתירה את שורות העטיפה כדי להציג רק עבודה קונקרטית.";
+  const action = showing
+    ? "לחץ כדי להסתיר את שורות העטיפה (חזרה לברירת המחדל)."
+    : "לחץ כדי להציג גם את שורות העטיפה (שימושי לסקירת כל השרשראות והמטריות במבט-על).";
   return (
     <button
       type="button"
       className={`tasks-archive-toggle${showing ? " is-showing" : " is-hiding"}`}
       onClick={toggle}
       aria-pressed={showing}
-      title={
-        showing
-          ? "מסתיר את שורות העטיפה (ברירת מחדל)"
-          : "מציג את שורות העטיפה של שרשראות"
-      }
+      title={`${concept}\n\n${action}`}
     >
-      <span aria-hidden>📦</span>
+      <span aria-hidden>🪆</span>
       <span>עטיפות</span>
       {typeof count === "number" && count > 0 && (
         <span className="tasks-archive-toggle-count">
