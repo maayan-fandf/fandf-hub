@@ -4,6 +4,7 @@ import { useState } from "react";
 import { STATUS_LABELS } from "@/components/TaskStatusCell";
 import type { TasksPerson, WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
+import { linkifyText } from "@/lib/linkify";
 
 type Props = {
   history: WorkTask["status_history"];
@@ -97,7 +98,9 @@ export default function TaskStatusHistory({ history, people }: Props) {
                 {h.note && (
                   <>
                     <span aria-hidden>·</span>
-                    <span className="task-status-history-note">{h.note}</span>
+                    <span className="task-status-history-note">
+                      {linkifyText(h.note)}
+                    </span>
                   </>
                 )}
               </div>

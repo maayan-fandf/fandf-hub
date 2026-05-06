@@ -29,6 +29,7 @@ import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
+import { linkifyParagraphs } from "@/lib/linkify";
 
 export const dynamic = "force-dynamic";
 
@@ -297,9 +298,7 @@ export default async function TaskDetailPage({
           )}
           {t.description && (
             <div className="task-detail-body">
-              {t.description.split("\n").map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
+              {linkifyParagraphs(t.description)}
             </div>
           )}
 

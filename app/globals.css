@@ -7756,10 +7756,21 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
    `overflow-wrap: anywhere` lets the URL break at any character so
    it wraps cleanly inside the column. `word-break: break-all` is
    the older fallback for browsers that don't honor `anywhere`. */
-.comment-body-autolink {
+.comment-body-autolink,
+.autolink {
   overflow-wrap: anywhere;
   word-break: break-all;
 }
+/* Generic autolink (used by lib/linkify.tsx — task descriptions,
+   status-history notes, and any other free-form text surface). Same
+   wrap behaviour as CommentBody's autolink so a single long URL
+   doesn't blow the column width. Underlined + accent colour so the
+   link affordance is unambiguous. */
+.autolink {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.autolink:hover { text-decoration: none; }
 
 /* Phase 10 — admin chain templates editor (/admin/chain-templates) */
 .chain-templates-editor {

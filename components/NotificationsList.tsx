@@ -150,6 +150,11 @@ export default function NotificationsList({
                   {n.title && (
                     <div className="notification-row-title">{n.title}</div>
                   )}
+                  {/* Body stays plain text — the whole row is a <Link>,
+                      so adding <a> inside via linkifyText would be a
+                      nested-anchor DOM error. Notification bodies are
+                      short auto-generated strings ("task X was assigned
+                      to you") that rarely contain URLs anyway. */}
                   {n.body && (
                     <div className="notification-row-text">{n.body}</div>
                   )}
