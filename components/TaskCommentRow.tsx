@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Avatar from "./Avatar";
+import Avatar, { avatarHoverText } from "./Avatar";
 import CommentBody from "./CommentBody";
 import DeleteButton from "./DeleteButton";
 import { formatDateIso } from "@/lib/dateFormat";
