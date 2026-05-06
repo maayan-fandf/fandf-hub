@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
+import PeopleMultiCombobox from "./PeopleMultiCombobox";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -561,11 +562,15 @@ export default function TaskEditPanel({
 
       <label>
         עובדים במשימה
-        <textarea
-          rows={2}
+        {/* Same swap as TaskCreateForm — emails-as-textarea replaced
+            with a Hebrew-name chip combobox so this row reads in
+            sync with the rest of the edit panel's person fields.
+            The bubble row below stays as quick-toggle. */}
+        <PeopleMultiCombobox
           value={assignees}
-          onChange={(e) => setAssignees(e.target.value)}
-          placeholder="felix@fandf.co.il, nadav@fandf.co.il"
+          onChange={setAssignees}
+          options={people}
+          placeholder="חפש לפי שם או מייל"
         />
         {people.length > 0 && (
           <div className="task-form-assignee-chips">

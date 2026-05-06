@@ -6,6 +6,7 @@ import type { TasksPerson } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
+import PeopleMultiCombobox from "./PeopleMultiCombobox";
 import DrivePickerButton from "./DrivePickerButton";
 import TaskFilesPanel from "./TaskFilesPanel";
 import { displayNameOf } from "@/lib/personDisplay";
@@ -1000,11 +1001,18 @@ export default function TaskCreateForm({
 
         <label>
           עובדים במשימה
-          <textarea
-            rows={2}
+          {/* PeopleMultiCombobox replaces the previous CSV textarea —
+              same store format (comma-separated emails) but rendered
+              with Hebrew name chips inside a combobox-styled box, to
+              match the גורם מאשר / מנהל פרויקט fields beside it.
+              Reported by Maayan 2026-05-06. The bubble row below
+              still works as a quick-toggle, useful for picking a
+              whole team at once. */}
+          <PeopleMultiCombobox
             value={assignees}
-            onChange={(e) => setAssignees(e.target.value)}
-            placeholder="felix@fandf.co.il, nadav@fandf.co.il"
+            onChange={setAssignees}
+            options={filteredPeople.length > 0 ? filteredPeople : people}
+            placeholder="חפש לפי שם או מייל"
           />
           {departments.length > 0 && (
             <div className="task-form-dept-filter-line">
