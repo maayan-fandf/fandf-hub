@@ -162,6 +162,27 @@ export default function NotificationsList({
                   />
                 )}
               </Link>
+              {/* Per-row dismiss — marks JUST this notification as read
+                  without navigating anywhere. Clicking the row body still
+                  navigates + marks; this is for "I'm just clearing the
+                  list, I don't want to chase every link" cases. Sits
+                  outside the <Link> so its click doesn't bubble into the
+                  navigation. Only rendered for unread rows; read rows
+                  hide the button to keep the row visually quiet. */}
+              {unread && (
+                <button
+                  type="button"
+                  className="notification-row-dismiss"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    markOneRead(n.id);
+                  }}
+                  title="סמן כנקראה"
+                  aria-label="סמן כנקראה"
+                >
+                  ✓
+                </button>
+              )}
             </li>
           );
         })}

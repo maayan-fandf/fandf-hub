@@ -11208,6 +11208,10 @@ html[data-theme="dark"] .kanban-error {
   border: 1px solid var(--border);
   border-radius: 10px;
   transition: background 0.12s, border-color 0.12s;
+  /* Flex layout so the per-row dismiss button can sit alongside the
+     link without collapsing into the link's click target. */
+  display: flex;
+  align-items: stretch;
 }
 .notification-row.is-unread {
   background: rgba(79, 70, 229, 0.05);
@@ -11221,6 +11225,36 @@ html[data-theme="dark"] .kanban-error {
   padding: 0.7em 0.9em;
   text-decoration: none;
   color: inherit;
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Per-row "mark just this one read" affordance. Only rendered on
+   unread rows. Sits at the inline-end (leftmost in RTL) of the row,
+   outside the navigation link's click target so clicking it doesn't
+   accidentally jump to /tasks/<id>. */
+.notification-row-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  border-inline-start: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 1.1em;
+  padding: 0 0.9em;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+  border-radius: 0 10px 10px 0; /* visually merges with the row's edge */
+}
+[dir="rtl"] .notification-row-dismiss,
+:where([dir="rtl"]) .notification-row-dismiss {
+  border-radius: 10px 0 0 10px;
+}
+.notification-row-dismiss:hover {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--accent);
+}
+.notification-row-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .notification-row-body { flex: 1 1 0; min-width: 0; }
 .notification-row-head {
