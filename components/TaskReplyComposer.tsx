@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { TasksPerson } from "@/lib/appsScript";
 import { displayNameOf } from "@/lib/personDisplay";
 
 type Props = {
@@ -11,6 +12,15 @@ type Props = {
    *  caller), the picker is disabled and the user can still type
    *  raw `@<email>` — server-side parsing already handles that. */
   project?: string;
+  /** Optional roster passed down from the parent (TaskComments). Used
+   *  ONLY to enrich the @-mention picker rows with Hebrew names —
+   *  /api/projects/assignees returns `email/name/role` (no he_name)
+   *  so picker rows fell back to English-name / email-prefix even
+   *  when names_to_emails had a he_name set. We look up each picker
+   *  row's email in this list and prefer its he_name when found.
+   *  Pure presentational enrichment; mention identity stays the
+   *  email and the picker still shows `email` next to the name. */
+  people?: TasksPerson[];
 };
 
 type Person = {
@@ -54,13 +64,32 @@ type MentionState = {
  * dismisses. Server-side `@<email>` parsing already exists, so users
  * who prefer to type the full email manually still work.
  */
-export default function TaskReplyComposer({ taskId, project }: Props) {
+export default function TaskReplyComposer({
+  taskId,
+  project,
+  people: heRoster,
+}: Props) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Lookup map for he_name enrichment of the picker rows. Built once
+  // per render of the prop list; lookups inside the picker map are
+  // O(1). Local-state `people` (project assignees from
+  // /api/projects/assignees, lazily fetched) carries email/name/role
+  // only — `heRoster` covers the gap by exposing `he_name` per email.
+  const heByEmail = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of heRoster || []) {
+      const email = (p.email || "").toLowerCase();
+      const he = (p.he_name || "").trim();
+      if (email && he) m.set(email, he);
+    }
+    return m;
+  }, [heRoster]);
 
   // @-mention picker state. `people` is loaded lazily on first @
   // keystroke and cached for the lifetime of the composer.
@@ -415,7 +444,15 @@ export default function TaskReplyComposer({ taskId, project }: Props) {
                   pickMention(p);
                 }}
               >
-                <span className="mention-picker-name">{displayNameOf(p)}</span>
+                {/* Hebrew-name override: prefer the he_name passed
+                    down from TaskComments' tasksPeopleList payload.
+                    /api/projects/assignees doesn't return he_name, so
+                    without this the picker fell back to the English
+                    `name` (or email prefix) — Maayan flagged the
+                    mismatch with the rest of the now-Hebrew chrome. */}
+                <span className="mention-picker-name">
+                  {heByEmail.get(p.email.toLowerCase()) || displayNameOf(p)}
+                </span>
                 <span className="mention-picker-email" dir="ltr">
                   {p.email}
                 </span>

@@ -119,7 +119,7 @@ export default async function TaskComments({ taskId }: Props) {
         </ul>
       )}
 
-      <TaskReplyComposer taskId={taskId} project={project} />
+      <TaskReplyComposer taskId={taskId} project={project} people={people} />
     </section>
   );
 }

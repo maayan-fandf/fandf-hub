@@ -90,8 +90,22 @@ function renderBody(body: string, people?: TasksPerson[]): React.ReactNode {
         </div>
       );
     }
+    // Lines that contain ONLY mentions (or only links / autolinks /
+    // images mixed with mentions but no strong-direction text) need
+    // an explicit dir="rtl" too — same root cause as the image-only
+    // case. The leading `@` in `@<HebrewName>` is a weak character,
+    // so `dir="auto"` on the parent looked at the next strong
+    // character, which (because the chip's body is rendered as
+    // independent inline-block content) is whatever comes AFTER the
+    // chip on the line. When a line is mention-only, there's nothing
+    // after, and the browser fell back to LTR — leaving the chip
+    // pinned to the LEFT of an otherwise RTL comment column.
+    // Reported by Maayan 2026-05-06.
+    const hasStrongText = parts.some(
+      (p) => p.kind === "text" && /\S/.test(p.text),
+    );
     return (
-      <p key={i} dir="auto">
+      <p key={i} dir={hasStrongText ? "auto" : "rtl"}>
         {parts.map((p, j) => (
           <span key={`${i}-${j}`}>{renderPart(p, `${i}-${j}`, people)}</span>
         ))}
