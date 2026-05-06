@@ -108,9 +108,24 @@ export default function TaskEditPanel({
       : { mode: "new", name: task.title || task.id },
   );
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  // Effective project for downstream lookups: local `project` state
+  // (what the user has currently typed/picked) takes precedence over
+  // the server-side row value, so promoting a personal task immediately
+  // re-fetches campaigns for the newly-picked project. Falls back to
+  // `task.project` only when the input is blank — relevant on first
+  // open of a non-pseudo task before the user changes anything.
+  const effectiveProject = project.trim() || task.project;
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/tasks/campaigns?project=${encodeURIComponent(task.project)}`)
+    // Skip the fetch for pseudo projects (`__personal__`, etc.) — the
+    // /api/tasks/campaigns endpoint runs an access-scope check that
+    // legitimately rejects them. Empty string is rejected too. Either
+    // case we just want an empty options list.
+    if (!effectiveProject || effectiveProject.startsWith("__")) {
+      setCampaignOptions([]);
+      return;
+    }
+    fetch(`/api/tasks/campaigns?project=${encodeURIComponent(effectiveProject)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled) return;
@@ -120,7 +135,7 @@ export default function TaskEditPanel({
     return () => {
       cancelled = true;
     };
-  }, [task.project, campaignReloadNonce]);
+  }, [effectiveProject, campaignReloadNonce]);
 
   // Derive company options from the project list (passed from the
    // page's access-scoped getMyProjects). Used by the pseudo-task
@@ -264,42 +279,14 @@ export default function TaskEditPanel({
       </datalist>
 
       <div className="task-form-row">
-        {/* Field order is intentionally [project, company, brief] —
-            when promoting a pseudo-task we want the user's eye to
-            land on the project field first since that's the primary
-            decision; the company select sits adjacent so they can
-            switch the order if it's easier to think company-first.
-            For real-project rows the order is unchanged from before;
-            company is a readonly display either way. */}
-        <label>
-          פרויקט
-          <input
-            type="text"
-            value={project}
-            list="task-edit-projects"
-            onChange={(e) => {
-              setProject(e.target.value);
-              // Try to back-fill the company on every change so the
-              // datalist's "auto-suggest match → enter" path lights
-              // up the company too. Cheap — Map lookup against props.
-              if (startsAsPseudo) syncCompanyFromProject(e.target.value);
-            }}
-            placeholder={
-              startsAsPseudo
-                ? selectedCompany
-                  ? `הזן שם פרויקט מ־${selectedCompany}`
-                  : "הזן שם פרויקט להעברת ההערה"
-                : "שם פרויקט"
-            }
-          />
-          <datalist id="task-edit-projects">
-            {filteredProjects.map((p) => (
-              <option key={`${p.company}|${p.name}`} value={p.name}>
-                {p.company ? `${p.company} · ${p.name}` : p.name}
-              </option>
-            ))}
-          </datalist>
-        </label>
+        {/* Field order [company, project, brief] — matches the
+            convention used by /tasks filter bar, /tasks/new form,
+            and the queue table headers. RTL means the first child
+            is rendered rightmost, so this lays out as:
+                חברה  →  פרויקט  →  בריף  (right to left)
+            Reported by Maayan 2026-05-06 — the previous pseudo-task
+            edit mode flipped this and looked inconsistent with the
+            rest of the task surfaces. */}
         {startsAsPseudo ? (
           <label>
             חברה
@@ -344,12 +331,45 @@ export default function TaskEditPanel({
           </label>
         )}
         <label>
+          פרויקט
+          <input
+            type="text"
+            value={project}
+            list="task-edit-projects"
+            onChange={(e) => {
+              setProject(e.target.value);
+              // Try to back-fill the company on every change so the
+              // datalist's "auto-suggest match → enter" path lights
+              // up the company too. Cheap — Map lookup against props.
+              if (startsAsPseudo) syncCompanyFromProject(e.target.value);
+            }}
+            placeholder={
+              startsAsPseudo
+                ? selectedCompany
+                  ? `הזן שם פרויקט מ־${selectedCompany}`
+                  : "הזן שם פרויקט להעברת ההערה"
+                : "שם פרויקט"
+            }
+          />
+          <datalist id="task-edit-projects">
+            {filteredProjects.map((p) => (
+              <option key={`${p.company}|${p.name}`} value={p.name}>
+                {p.company ? `${p.company} · ${p.name}` : p.name}
+              </option>
+            ))}
+          </datalist>
+        </label>
+        <label>
           בריף
           <CampaignCombobox
             value={campaign}
             onChange={setCampaign}
             options={campaignOptions}
-            project={task.project}
+            // Mirror the effective project used for the campaigns
+            // fetch — passing `task.project` (a stale __personal__
+            // for promoted-pseudo rows) made create-new campaign land
+            // on the wrong project tree.
+            project={effectiveProject}
             onOptionsChanged={() => setCampaignReloadNonce((n) => n + 1)}
             placeholder="בחר בריף קיים או הקלד חדש"
             hint={
