@@ -748,25 +748,31 @@ export default function TaskCreateForm({
         </label>
       </div>
 
-      {/* Phase 5b dependencies — chain-mode toggle bar. Sits as a
-          dedicated banner-style row above the title field so it's
-          discoverable but not intrusive. When on, expands to show
-          the umbrella sub-toggle + step picker takes over the body. */}
-      <div className={`task-form-chain-bar${chainMode ? " is-on" : ""}`}>
-        <label className="task-form-chain-toggle">
-          <input
-            type="checkbox"
-            checked={chainMode}
-            onChange={(e) => setChainMode(e.target.checked)}
-          />
-          <span className="task-form-chain-toggle-label">
-            📦 צור כשרשרת
-          </span>
-          <span className="task-form-chain-toggle-hint">
-            כמה שלבים עם העברה אוטומטית בין מבצעים
-          </span>
-        </label>
-        {chainMode && (
+      {/* Chain-mode bar — historically a top-level toggle to enter
+          chain mode from a fresh form. Now redundant: the
+          multi-assignee picker (below the assignee row, ≥2 people
+          selected) carries a "🔗 שרשרת משימות →" chip that flips
+          chainMode on AND pre-fills the steps. So the bar only
+          renders when chainMode is already ON — its job becomes
+          (1) showing the user they're in chain mode, (2) letting
+          them turn it OFF, (3) exposing the withUmbrella sub-toggle.
+          Reported by Maayan 2026-05-06: "scrape this here, it's only
+          relevant when picking more than one assignee". */}
+      {chainMode && (
+        <div className="task-form-chain-bar is-on">
+          <label className="task-form-chain-toggle">
+            <input
+              type="checkbox"
+              checked={chainMode}
+              onChange={(e) => setChainMode(e.target.checked)}
+            />
+            <span className="task-form-chain-toggle-label">
+              📦 מצב שרשרת פעיל
+            </span>
+            <span className="task-form-chain-toggle-hint">
+              סר את הסימון כדי לחזור למשימה רגילה
+            </span>
+          </label>
           <label className="task-form-chain-umbrella-toggle">
             <input
               type="checkbox"
@@ -777,8 +783,8 @@ export default function TaskCreateForm({
               🔝 צור עטיפה (משימת־על שמרכזת את כל השלבים)
             </span>
           </label>
-        )}
-      </div>
+        </div>
+      )}
 
       <label>
         {chainMode ? "כותרת השרשרת" : "כותרת"}{" "}
