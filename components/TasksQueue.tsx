@@ -24,14 +24,17 @@ import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 
 /** Sort axes exposed via clickable column headers. `rank` is the
  *  drag-driven manual order (default); the rest sort within each
- *  status bucket. */
+ *  bucket. `status` is most useful when the user is grouping by
+ *  something OTHER than status (e.g. assignee) — it surfaces each
+ *  person's pending work first, in-progress next, done last. */
 export type TasksSortKey =
   | "rank"
   | "title"
   | "priority"
   | "requested_date"
   | "created_at"
-  | "updated_at";
+  | "updated_at"
+  | "status";
 export type TasksSortOrder = "asc" | "desc";
 import TaskStatusCell, { STATUS_EMOJIS } from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
@@ -277,6 +280,39 @@ function defaultOrderFor(sort: TasksSortKey): TasksSortOrder {
   }
 }
 
+/** Map a group-by axis to the column whose content the bucket header
+ *  already shows — so the column can be hidden on the table to save
+ *  width. Returned value becomes the `data-hide-col` attribute on
+ *  `.tasks-table-wrap`; matching CSS rules drop the matching `th`/`td`
+ *  via `display:none`. Returns undefined when no column should be
+ *  hidden (status/umbrella/none). */
+function hideColumnByAxis(axis: string): string | undefined {
+  switch (axis) {
+    case "company":    return "company";
+    case "project":    return "project";
+    case "department": return "department";
+    case "assignee":   return "assignees";
+    default:           return undefined;
+  }
+}
+
+/** Workflow position for the `status` sort axis. Lower number = earlier
+ *  in the lifecycle (= surfaces first under ascending sort). Anything
+ *  outside the canonical set (legacy values, typos, etc.) lands at
+ *  the end so it doesn't push real work down. */
+function statusOrder(status: string): number {
+  switch (status) {
+    case "awaiting_handling":     return 0;
+    case "blocked":               return 1;
+    case "in_progress":           return 2;
+    case "awaiting_clarification":return 3;
+    case "awaiting_approval":     return 4;
+    case "done":                  return 5;
+    case "cancelled":             return 6;
+    default:                      return 99;
+  }
+}
+
 /** Build the /tasks href that resets sort to rank, preserving every
  *  other current search param. */
 function buildResetSortHref(
@@ -312,6 +348,8 @@ function comparatorFor(
       return (a, b) => dir * a.created_at.localeCompare(b.created_at);
     case "updated_at":
       return (a, b) => dir * a.updated_at.localeCompare(b.updated_at);
+    case "status":
+      return (a, b) => dir * (statusOrder(a.status) - statusOrder(b.status));
   }
 }
 
@@ -610,7 +648,7 @@ export default function TasksQueue({
         const bucketBody = (
           <>
             {recent.length > 0 && (
-              <div className="tasks-table-wrap">
+              <div className="tasks-table-wrap" data-hide-col={hideColumnByAxis(groupBy)}>
                 <SortableTableSection
                   rows={recent}
                   compact={compact}
@@ -634,7 +672,7 @@ export default function TasksQueue({
                 <summary>
                   {`${older.length} משימות ${b.label.toLowerCase()} ישנות (לפני יותר מ‑${effectiveArchiveDays} יום) — לחץ להצגה`}
                 </summary>
-                <div className="tasks-table-wrap">
+                <div className="tasks-table-wrap" data-hide-col={hideColumnByAxis(groupBy)}>
                   <SortableTableSection
                     rows={older}
                     compact={compact}
@@ -941,13 +979,13 @@ function SortableTableSection({
           />
         </th>
         {dragEnabled && <th className="drag-handle-col" aria-hidden></th>}
-        {!compact && <th>חברה</th>}
+        {!compact && <th className="col-company">חברה</th>}
         {/* Project header — same column whether the page groups by
             company (portfolio /tasks) or not (project page). Used to
             be "פרטי הפרוייקט" in the grouped variant; collapsed to
             just "פרויקט" 2026-05-05 for consistency with the rest of
             the column labels in this row. */}
-        {!compact && <th>פרויקט</th>}
+        {!compact && <th className="col-project">פרויקט</th>}
         <th>בריף</th>
         {/* סוג משימה — task kind. Stored on `task.kind` either as a
             schema-driven Hebrew label (newer rows) or a legacy enum
@@ -984,11 +1022,17 @@ function SortableTableSection({
           sortOrder={sortOrder}
           searchParams={searchParams}
         />
-        <th>מחלקה</th>
+        <th className="col-department">מחלקה</th>
         <th>כותב</th>
-        <th>עובדים</th>
+        <th className="col-assignees">עובדים</th>
         <th>מאשר</th>
-        <th>סטטוס</th>
+        <SortableTh
+          column="status"
+          label="סטטוס"
+          sort={sort}
+          sortOrder={sortOrder}
+          searchParams={searchParams}
+        />
         <th className="icons">פעולות</th>
       </tr>
     </thead>
@@ -1238,7 +1282,7 @@ function TaskRow({
         </td>
       )}
       {!compact && (
-        <td className="tasks-company-cell">
+        <td className="tasks-company-cell col-company">
           {task.company ? (
             companyProjects.length > 1 ? (
               // Hover-reveal dropdown listing every project under this
@@ -1285,7 +1329,7 @@ function TaskRow({
       )}
       {/* Project cell omitted in compact mode (page is already scoped). */}
       {!compact && (
-        <td className="tasks-project-cell-nested">
+        <td className="tasks-project-cell-nested col-project">
           <Link
             href={projectHref(task.project, task.company)}
             className="tasks-project-link"
@@ -1409,7 +1453,7 @@ function TaskRow({
       <td className="priority-cell">
         <TaskPriorityCell task={task} />
       </td>
-      <td>
+      <td className="col-department">
         {(task.departments || []).length === 0 ? (
           "—"
         ) : (
@@ -1459,7 +1503,7 @@ function TaskRow({
           "—"
         )}
       </td>
-      <td>
+      <td className="col-assignees">
         <TaskAssigneesCell task={task} people={people} />
       </td>
       <td>

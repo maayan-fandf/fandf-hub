@@ -10377,6 +10377,59 @@ html[data-theme="dark"] .tasks-view-toggle-btn:hover:not(.is-active) {
   color: #c7d2fe;
 }
 
+/* Scope toggle (רק שלי / הכל) — same segmented-control vocabulary
+   as the view-toggle so the two read as a single control row above
+   the queue. The Link variant means each segment is a real <a> →
+   keyboard-tabbable + middle-click-to-new-tab works naturally. */
+.tasks-scope-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  font-size: .8rem;
+  font-weight: 600;
+}
+.tasks-scope-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  padding: .4em .9em;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.tasks-scope-toggle-btn:hover:not(.is-active) {
+  background: rgba(79, 70, 229, .08);
+  color: var(--accent);
+  text-decoration: none;
+}
+.tasks-scope-toggle-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(79, 70, 229, .35);
+}
+html[data-theme="dark"] .tasks-scope-toggle {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.12);
+}
+html[data-theme="dark"] .tasks-scope-toggle-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+html[data-theme="dark"] .tasks-scope-toggle-btn:hover:not(.is-active) {
+  background: rgba(99, 102, 241, .18);
+  color: #c7d2fe;
+}
+
 /* ─── Kanban board ───────────────────────────────────────────────────
    Six lifecycle columns side-by-side. The board itself owns the
    horizontal scroll so the page never gets one — that keeps the filter
@@ -11648,6 +11701,22 @@ html[data-theme="dark"] .task-date-overdue {
 }
 html[data-theme="dark"] .tasks-row-umbrella > td {
   background: rgba(139, 92, 246, 0.16);
+}
+
+/* When the queue is grouped by a field that already names each
+   bucket (company / project / department / assignee), hide the
+   matching column on every row so the same value doesn't repeat
+   alongside the bucket header. Saves horizontal width on a table
+   that's already at the edge of fitting the viewport. The wrap
+   div carries `data-hide-col=<axis>`; matching `th`/`td` carry
+   `col-<axis>` classes. Reported by Maayan: "the rows are now
+   truncated and you have horizontal scroll. how can we address
+   this?" */
+.tasks-table-wrap[data-hide-col="company"] .col-company,
+.tasks-table-wrap[data-hide-col="project"] .col-project,
+.tasks-table-wrap[data-hide-col="department"] .col-department,
+.tasks-table-wrap[data-hide-col="assignees"] .col-assignees {
+  display: none;
 }
 
 /* Kanban card umbrella/child chrome — mirrors the table view's

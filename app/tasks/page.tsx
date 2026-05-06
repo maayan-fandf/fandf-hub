@@ -22,6 +22,7 @@ import TasksCalendar from "@/components/TasksCalendar";
 import TasksViewToggle from "@/components/TasksViewToggle";
 import TasksArchiveToggle from "@/components/TasksArchiveToggle";
 import TasksUmbrellaToggle from "@/components/TasksUmbrellaToggle";
+import TasksScopeToggle from "@/components/TasksScopeToggle";
 import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
 import DateRangePicker from "@/components/DateRangePicker";
 import FilterPersonInput from "@/components/FilterPersonInput";
@@ -276,6 +277,21 @@ export default async function TasksPage({
               משימות
             </h1>
             <TasksViewToggle current={view} searchParams={sp} />
+            <TasksScopeToggle
+              mineOptIn={mineOptIn}
+              showAllHref={buildHref(sp, {
+                mine: "0",
+                author: "",
+                approver: "",
+                assignee: "",
+              })}
+              defaultHref={buildHref(sp, {
+                mine: "1",
+                author: "",
+                approver: "",
+                assignee: "",
+              })}
+            />
             <TasksArchiveToggle
               hidden={userPrefHideArchived}
               count={archivedCount}
@@ -293,6 +309,16 @@ export default async function TasksPage({
                 {" "}(שינוי בגלגל ההגדרות)
               </>
             )}
+            {/* Scope toggle now lives in the header row — see
+                TasksScopeToggle. The previous inline link / hint
+                copy was redundant once the toggle made the active
+                scope visible at a glance. We keep RoleDefaultHint
+                still around (it shows a small "מציג משימות הקשורות
+                אליך (handle)" status line when the role-default is
+                active) but its embedded "הצג את כולם" link is now
+                redundant — the prop is no-op'd via an empty
+                showAllHref so the link doesn't render alongside the
+                new toggle. */}
             {mineOptIn && effectiveMe && (
               <RoleDefaultHint
                 role={role}
@@ -301,29 +327,8 @@ export default async function TasksPage({
                 hasExplicitAuthor={sp.author !== undefined}
                 hasExplicitApprover={sp.approver !== undefined}
                 hasExplicitAssignee={sp.assignee !== undefined}
-                showAllHref={buildHref(sp, {
-                  mine: "0",
-                  author: "",
-                  approver: "",
-                  assignee: "",
-                })}
+                showAllHref=""
               />
-            )}
-            {!mineOptIn && (
-              <>
-                {" "}
-                · מציג את כולם —{" "}
-                <Link
-                  href={buildHref(sp, {
-                    mine: "1",
-                    author: "",
-                    approver: "",
-                    assignee: "",
-                  })}
-                >
-                  חזרה לברירת מחדל
-                </Link>
-              </>
             )}
           </div>
         </div>
@@ -471,11 +476,20 @@ function RoleDefaultHint({
       : `מציג משימות הקשורות אליך (${handle})`;
   }
   if (!text) return null;
+  // showAllHref empty → the parent has its own scope toggle in the
+  // header row, so we render the status line WITHOUT the inline
+  // "הצג את כולם" link (no double-up).
   return (
     <>
       {" "}
-      · {text} —{" "}
-      <Link href={showAllHref}>הצג את כולם</Link>
+      · {text}
+      {showAllHref && (
+        <>
+          {" "}
+          —{" "}
+          <Link href={showAllHref}>הצג את כולם</Link>
+        </>
+      )}
     </>
   );
 }
@@ -489,6 +503,7 @@ function parseSort(raw: string | undefined): TasksSortKey {
     case "requested_date":
     case "created_at":
     case "updated_at":
+    case "status":
       return raw;
     default:
       return "rank";
