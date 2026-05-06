@@ -47,6 +47,7 @@ import {
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { personDisplayName } from "@/lib/personDisplay";
 import { displayProjectOrCompany } from "@/lib/personalLabel";
+import { kindLabel } from "@/lib/kindLabel";
 
 // Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
 // left on screen) the way work actually flows:
@@ -696,6 +697,11 @@ function SortableTableSection({
             the column labels in this row. */}
         {!compact && <th>פרויקט</th>}
         <th>בריף</th>
+        {/* סוג משימה — task kind. Stored on `task.kind` either as a
+            schema-driven Hebrew label (newer rows) or a legacy enum
+            key (ad_creative, landing_page, …). `kindLabel` normalizes
+            both forms; raw value is the filter key. */}
+        <th>סוג משימה</th>
         <SortableTh
           column="title"
           label="משימה"
@@ -1030,6 +1036,13 @@ function TaskRow({
       <td className="tasks-brief-cell">
         {task.campaign ? (
           task.campaign
+        ) : (
+          <span className="task-empty-cell">—</span>
+        )}
+      </td>
+      <td className="tasks-kind-cell">
+        {task.kind ? (
+          kindLabel(task.kind)
         ) : (
           <span className="task-empty-cell">—</span>
         )}

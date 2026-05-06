@@ -347,6 +347,8 @@ export async function tasksListDirect(
     status?: WorkTaskStatus | "";
     priority?: string;
     department?: string;
+    /** Exact-match on `task.kind`. */
+    kind?: string;
     author?: string;
     approver?: string;
     project_manager?: string;
@@ -467,6 +469,10 @@ export async function tasksListDirect(
     if (filters.department) {
       const f = filters.department.trim();
       if (!t.departments.some((d) => d.trim() === f)) continue;
+    }
+    if (filters.kind) {
+      const f = filters.kind.trim();
+      if ((t.kind || "").trim() !== f) continue;
     }
     if (
       filters.brief &&

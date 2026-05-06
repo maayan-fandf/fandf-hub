@@ -24,6 +24,7 @@ import TasksArchiveToggle from "@/components/TasksArchiveToggle";
 import TasksUmbrellaToggle from "@/components/TasksUmbrellaToggle";
 import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
 import DateRangePicker from "@/components/DateRangePicker";
+import { kindLabel } from "@/lib/kindLabel";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,8 @@ type Search = {
   status?: string;
   priority?: string;
   department?: string;
+  /** Exact-match on `task.kind` (e.g. "דף נחיתה", "ad_creative"). */
+  kind?: string;
   author?: string;
   approver?: string;
   project_manager?: string;
@@ -143,6 +146,7 @@ export default async function TasksPage({
       status: (sp.status as WorkTaskStatus) || "",
       priority: sp.priority || "",
       department: sp.department || "",
+      kind: sp.kind || "",
       author: effectiveAuthor,
       approver: effectiveApprover,
       project_manager: sp.project_manager || "",
@@ -331,6 +335,7 @@ export default async function TasksPage({
           status: sp.status || "",
           priority: sp.priority || "",
           department: sp.department || "",
+          kind: sp.kind || "",
           author: effectiveAuthor,
           approver: effectiveApprover,
           project_manager: sp.project_manager || "",
@@ -360,6 +365,14 @@ export default async function TasksPage({
         campaignOptions={Array.from(
           new Set(tasks.map((t) => (t.campaign || "").trim()).filter(Boolean)),
         ).sort()}
+        // Derived from the loaded tasks (same approach as campaignOptions).
+        // When kind itself is the active filter the list is narrowed to one
+        // entry; the form makes sure `current.kind` always survives in the
+        // <select> even if it disappears from the option list, so the user
+        // can still see what they're filtered to and clear it.
+        kindOptions={Array.from(
+          new Set(tasks.map((t) => (t.kind || "").trim()).filter(Boolean)),
+        ).sort((a, b) => a.localeCompare(b, "he"))}
       />
 
       {error && (
@@ -502,6 +515,7 @@ function TasksFilterBar({
   departments,
   people,
   campaignOptions,
+  kindOptions,
 }: {
   current: {
     company: string;
@@ -510,6 +524,7 @@ function TasksFilterBar({
     status: string;
     priority: string;
     department: string;
+    kind: string;
     author: string;
     approver: string;
     project_manager: string;
@@ -544,6 +559,9 @@ function TasksFilterBar({
   departments: string[];
   people: TasksPerson[];
   campaignOptions: string[];
+  /** Distinct task-kind values present on the loaded set, sorted for
+   *  the picker. */
+  kindOptions: string[];
 }) {
   const statuses = [
     { val: "", label: "כל הסטטוסים" },
@@ -683,6 +701,28 @@ function TasksFilterBar({
           {departments.map((d) => (
             <option key={d} value={d}>
               {d}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        סוג משימה
+        <select
+          name="kind"
+          defaultValue={current.kind}
+          data-active={current.kind ? "1" : undefined}
+          disabled={kindOptions.length === 0 && !current.kind}
+        >
+          <option value="">הכל</option>
+          {/* If the user is filtering to a kind that no longer appears
+              in the loaded set (e.g. the row was renamed in the
+              schema), surface it anyway so they can deselect. */}
+          {current.kind && !kindOptions.includes(current.kind) && (
+            <option value={current.kind}>{kindLabel(current.kind)}</option>
+          )}
+          {kindOptions.map((k) => (
+            <option key={k} value={k}>
+              {kindLabel(k)}
             </option>
           ))}
         </select>

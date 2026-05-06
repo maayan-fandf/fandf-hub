@@ -930,6 +930,11 @@ export type TasksListFilters = {
   status?: WorkTaskStatus | "";
   priority?: string; // "1" | "2" | "3" | ""
   department?: string;
+  /** Exact-match filter on `task.kind`. Free-text — matches the value
+   *  stored on the row, which is typically the schema's Hebrew label
+   *  (e.g. "דף נחיתה") for tasks created via the new-task form, or one
+   *  of the legacy enum keys (e.g. "ad_creative") for older rows. */
+  kind?: string;
   author?: string;
   approver?: string;
   project_manager?: string;
@@ -980,6 +985,7 @@ export async function tasksList(
   if (filters.status) params.status = filters.status;
   if (filters.priority) params.priority = filters.priority;
   if (filters.department) params.department = filters.department;
+  if (filters.kind) params.kind = filters.kind;
   if (filters.author) params.author = filters.author;
   if (filters.approver) params.approver = filters.approver;
   if (filters.project_manager) params.project_manager = filters.project_manager;
