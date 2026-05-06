@@ -6,6 +6,18 @@ import InlineEditCell from "@/components/InlineEditCell";
 import DatePicker from "@/components/DatePicker";
 import TimePicker from "@/components/TimePicker";
 import { displayNameOf, personDisplayName } from "@/lib/personDisplay";
+import Avatar, { avatarHoverText } from "@/components/Avatar";
+
+/** Find a TasksPerson row by email (case-insensitive). Used by the
+ *  cell components to enrich the avatar tooltip with the role. */
+function lookupPerson(
+  email: string,
+  people: TasksPerson[],
+): TasksPerson | undefined {
+  if (!email) return undefined;
+  const needle = email.toLowerCase();
+  return people.find((p) => p.email.toLowerCase() === needle);
+}
 
 // router.refresh() was silently no-op'ing on /tasks in production even
 // with `export const dynamic = "force-dynamic"` on the page, leaving
@@ -209,12 +221,34 @@ export function TaskApproverCell({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const approverPerson = lookupPerson(task.approver_email || "", people);
+  const approverName =
+    personDisplayName(task.approver_email, people) || task.approver_email;
   return (
     <InlineEditCell
       title="לחץ לשינוי גורם מאשר"
       minWidth={18}
       display={
-        <span>{personDisplayName(task.approver_email, people) || "—"}</span>
+        task.approver_email ? (
+          <span
+            className="cell-person"
+            title={avatarHoverText(
+              approverName,
+              task.approver_email,
+              approverPerson?.role,
+            )}
+          >
+            <Avatar
+              name={task.approver_email}
+              role={approverPerson?.role}
+              title={approverName}
+              size={18}
+            />
+            <span className="cell-person-name">{approverName}</span>
+          </span>
+        ) : (
+          <span>—</span>
+        )
       }
     >
       {(close) => (
@@ -288,16 +322,38 @@ export function TaskAssigneesCell({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const currentDisplay =
-    (task.assignees || [])
-      .map((email) => personDisplayName(email, people))
-      .join(", ") || "—";
-
+  const currentAssignees = task.assignees || [];
   return (
     <InlineEditCell
       title="לחץ לשינוי עובדים במשימה"
       minWidth={22}
-      display={<span>{currentDisplay}</span>}
+      display={
+        currentAssignees.length === 0 ? (
+          <span>—</span>
+        ) : (
+          <span className="cell-people-list">
+            {currentAssignees.map((email) => {
+              const person = lookupPerson(email, people);
+              const name = personDisplayName(email, people) || email;
+              return (
+                <span
+                  key={email}
+                  className="cell-person"
+                  title={avatarHoverText(name, email, person?.role)}
+                >
+                  <Avatar
+                    name={email}
+                    role={person?.role}
+                    title={name}
+                    size={18}
+                  />
+                  <span className="cell-person-name">{name}</span>
+                </span>
+              );
+            })}
+          </span>
+        )
+      }
     >
       {(close) => (
         <div className="inline-edit-body">

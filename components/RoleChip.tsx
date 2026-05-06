@@ -46,6 +46,13 @@ const META: Record<
   studio:          { emoji: "🖼️", label: "studio",        cls: "role-creative" },
   designer:        { emoji: "🖌️", label: "designer",      cls: "role-creative" },
   video:           { emoji: "🎬", label: "video",         cls: "role-creative" },
+  // Hebrew legacy aliases — older tasks were created when the dept
+  // sheet stored Hebrew strings ("מדיה" / "קריאייטיב" / etc.) before
+  // the Role column was migrated to English. Mapping just the
+  // unambiguous case here so the queue cell shows "🎯 media" instead
+  // of bare "מדיה". The fuzzy ones (קריאייטיב, תכנון, אחר) stay
+  // unmapped — caller decides how to display them.
+  "מדיה":           { emoji: "🎯", label: "media",         cls: "role-media" },
 };
 
 function lookup(role: string) {
@@ -60,6 +67,16 @@ function lookup(role: string) {
 export function roleEmoji(role: string): string {
   const m = lookup(role);
   return m ? m.emoji : "";
+}
+
+/** Canonical English label for a role string. Returns the META label
+ *  when the input matches a known key (case-insensitive); falls back
+ *  to the trimmed input when unknown. Used by surfaces that want the
+ *  CONSISTENT spelling (e.g. the queue's dept cell) regardless of how
+ *  the value drifted in storage. */
+export function roleLabel(role: string): string {
+  const m = lookup(role);
+  return m ? m.label : (role || "").trim();
 }
 
 export default function RoleChip({ role }: { role: Role }) {

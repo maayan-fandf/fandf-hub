@@ -48,6 +48,8 @@ import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { personDisplayName } from "@/lib/personDisplay";
 import { displayProjectOrCompany } from "@/lib/personalLabel";
 import { kindLabel } from "@/lib/kindLabel";
+import Avatar, { avatarHoverText } from "@/components/Avatar";
+import { roleEmoji, roleLabel } from "@/components/RoleChip";
 
 // Canonical lifecycle buckets, ordered left-to-right (RTL: right-to-
 // left on screen) the way work actually flows:
@@ -1112,11 +1114,55 @@ function TaskRow({
         <TaskPriorityCell task={task} />
       </td>
       <td>
-        {(task.departments || []).length
-          ? (task.departments || []).join(", ")
-          : "—"}
+        {(task.departments || []).length === 0 ? (
+          "—"
+        ) : (
+          <span className="tasks-cell-depts">
+            {(task.departments || []).map((d, i) => {
+              const emoji = roleEmoji(d);
+              const label = roleLabel(d);
+              return (
+                <span key={i} className="tasks-cell-dept" title={label || d}>
+                  {emoji && <span aria-hidden>{emoji}</span>}
+                  {emoji ? " " : ""}
+                  {label || d}
+                </span>
+              );
+            })}
+          </span>
+        )}
       </td>
-      <td>{shortName(task.author_email, people) || "—"}</td>
+      <td>
+        {task.author_email ? (
+          (() => {
+            const authorPerson = people.find(
+              (p) =>
+                p.email.toLowerCase() === task.author_email.toLowerCase(),
+            );
+            const name = shortName(task.author_email, people) || task.author_email;
+            return (
+              <span
+                className="cell-person"
+                title={avatarHoverText(
+                  name,
+                  task.author_email,
+                  authorPerson?.role,
+                )}
+              >
+                <Avatar
+                  name={task.author_email}
+                  role={authorPerson?.role}
+                  title={name}
+                  size={18}
+                />
+                <span className="cell-person-name">{name}</span>
+              </span>
+            );
+          })()
+        ) : (
+          "—"
+        )}
+      </td>
       <td>
         <TaskAssigneesCell task={task} people={people} />
       </td>

@@ -7515,6 +7515,40 @@ html[data-theme="dark"] .task-files-panel[data-drag-over="1"] {
   border-style: dashed;
 }
 
+/* Person + role rendering shared by the queue's people columns
+   (כותב / מאשר / עובדים) and the InlineEditCell display surfaces.
+   Inline grouping of the avatar + Hebrew name; gap kept small so the
+   pair stays compact in narrow columns. */
+.cell-person {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  vertical-align: middle;
+}
+.cell-person-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cell-people-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5em;
+}
+
+/* Dept cell on the queue — emoji + canonical English label, one
+   span per department. Multi-dept tasks wrap to a second line; no
+   chip background to keep the row visually quiet. */
+.tasks-cell-depts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: .35em .65em;
+}
+.tasks-cell-dept {
+  white-space: nowrap;
+}
+
 /* Chat Spaces admin page — project list grouped by company with per-row
    "create space" buttons that call /api/worktasks/project-space-create. */
 .chat-spaces-notice {
