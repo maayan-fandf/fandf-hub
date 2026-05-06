@@ -9012,21 +9012,29 @@ html[data-theme="dark"] .tasks-dept-chip {
   outline-offset: 1px;
 }
 /* Multi-select variant — used by PeopleMultiCombobox for the
-   עובדים במשימה field. Same border / radius / focus chrome as
-   .combobox-input above so the field reads as a sibling of the
-   single-person fields nearby (גורם מאשר, מנהל פרויקט). The wrap
-   is the styled box; the inner input is borderless and grows with
-   the chip count. */
+   עובדים במשימה field. Padding, border, radius, font-size, and
+   line-height all match `.combobox-input` so an empty
+   PeopleMultiCombobox reads as a perfect sibling of the
+   PersonCombobox fields next to it (גורם מאשר, מנהל פרויקט).
+   When chips are present the wrap grows downward (flex-wrap) but
+   each row keeps the input's baseline. Reported by Maayan
+   2026-05-06 — the previous .4em padding made it visibly shorter
+   than its siblings. */
 .combobox-multi-wrap {
   flex-wrap: wrap;
   align-items: center;
-  gap: .3em;
-  padding: .4em .8em;
+  gap: .3em .35em;
+  padding: .55em .8em;
   padding-inline-end: 2.2em; /* room for the chevron */
-  min-height: calc(2.4em + 2px); /* match single-person height */
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface, #fff);
+  font: inherit;
+  /* Explicit line-height so the inline input + inline-flex chips
+     share a common baseline. Without it the chips' inflated
+     line-height fights the input's default and the row reads
+     ragged. */
+  line-height: 1.4;
   cursor: text;
 }
 .combobox.combobox-multi.is-open .combobox-multi-wrap,
@@ -9038,7 +9046,7 @@ html[data-theme="dark"] .tasks-dept-chip {
   display: inline-flex;
   align-items: center;
   gap: .25em;
-  padding: .15em .55em;
+  padding: 0 .55em;
   background: var(--accent-soft, rgba(99, 102, 241, .12));
   color: var(--accent, #4f46e5);
   border-radius: 999px;
@@ -9046,6 +9054,9 @@ html[data-theme="dark"] .tasks-dept-chip {
   font-weight: 600;
   white-space: nowrap;
   max-width: 100%;
+  /* Tighter line-height inside the pill so it stays compact while
+     still aligning to the input's baseline at the wrap level. */
+  line-height: 1.7;
 }
 .combobox-multi-chip-name {
   overflow: hidden;
@@ -9067,12 +9078,16 @@ html[data-theme="dark"] .tasks-dept-chip {
 /* The typeahead input shares the wrap with chips. Borderless +
    transparent so it looks like an extension of the box rather than
    an inset field. flex:1 with min-width:6em so it shrinks down as
-   chips fill the row but never disappears entirely. */
+   chips fill the row but never disappears entirely. Padding zeroed
+   here — the wrap's own padding controls the field's outer margins
+   and any inner padding would visually offset the input from the
+   chips on the same row. */
 .combobox-multi-input {
   flex: 1 1 6em;
   min-width: 6em;
   font: inherit;
-  padding: .2em 0;
+  line-height: inherit;
+  padding: 0;
   border: none;
   outline: none;
   background: transparent;
