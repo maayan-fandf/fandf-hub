@@ -357,13 +357,24 @@ export default function TaskCreateForm({
     if (formSchema && formSchema.departments.length > 0) {
       return formSchema.departments;
     }
-    const set = new Set<string>();
+    // Dedupe on a lowercased key so the same role spelled with
+    // different casing in names_to_emails ("Media" vs "media")
+    // collapses to a single chip. The DISPLAY value is the first
+    // casing we encounter (preserves what the sheet owner typed)
+    // — we just don't render the same role twice. Reported by
+    // Maayan 2026-05-06 after the roster revision introduced
+    // mixed casing.
+    const seen = new Map<string, string>();
     for (const p of people) {
       const r = (p.role || "").trim();
-      if (r) set.add(r);
+      if (!r) continue;
+      const key = r.toLowerCase();
+      if (!seen.has(key)) seen.set(key, r);
     }
-    if (set.size === 0) return DEPARTMENTS_FALLBACK;
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
+    if (seen.size === 0) return DEPARTMENTS_FALLBACK;
+    return Array.from(seen.values()).sort((a, b) =>
+      a.localeCompare(b, "he"),
+    );
   }, [people, formSchema]);
 
   // Kind dropdown — schema-driven, filtered by selected department(s).

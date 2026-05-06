@@ -705,18 +705,14 @@ export async function tasksPeopleListDirect(
   for (let i = 1; i < values.length; i++) {
     const name = String(values[i][iName] ?? "").trim();
     const email = String(values[i][iEmail] ?? "").toLowerCase().trim();
-    // Role is human-typed and the column has drifted to mixed case
-    // ("Media" / "manager" / "Manager" / "Client Manager" all
-    // appear). Normalize to lowercase at the data source so every
-    // downstream surface — department-filter Set in the new-task
-    // form, the "manager"-substring check on the PM picker, the
-    // RoleChip lookup — sees a single canonical form. The
-    // human-readable label still comes from RoleChip's META map,
-    // which carries the title-cased form per role. Reported by
-    // Maayan 2026-05-06 after revising names_to_emails.
-    const role = iRole >= 0
-      ? String(values[i][iRole] ?? "").trim().toLowerCase()
-      : "";
+    // Role passes through verbatim (preserving the sheet's typed
+    // case — "Media", "Client Manager" — which several display
+    // surfaces render directly). Comparison sites (PM-substring
+    // check, RoleChip lookup, dept filter) all lowercase locally
+    // when they need to, so leaving the case intact here is safe
+    // and makes the rendered " · {role}" labels match what was
+    // typed in the sheet.
+    const role = iRole >= 0 ? String(values[i][iRole] ?? "").trim() : "";
     const heName =
       iHeName >= 0 ? String(values[i][iHeName] ?? "").trim() : "";
     if (!email || seen.has(email)) continue;
