@@ -11606,16 +11606,12 @@ html[data-theme="dark"] .tasks-row-umbrella > td:first-of-type {
      (not the row's other cells) so every column stays aligned. */
   padding-inline-start: 1.5em;
 }
-/* Children get a thinner stripe in the kind's color (teal for
-   parallel, amber for chain) — visually links them to their
-   umbrella's purple stripe without screaming. Same inline-start
-   edge so all three (umbrella + its children) line up vertically. */
-.tasks-row-child.tasks-row-parallel-child > td:first-of-type {
-  border-inline-start: 2px solid #06b6d4;
-}
-.tasks-row-child.tasks-row-chain-child > td:first-of-type {
-  border-inline-start: 2px solid #f59e0b;
-}
+/* No stripe on children. The chip + indent + smaller title already
+   carry the "this is part of an umbrella" signal; a per-kind colored
+   stripe on every child would paint the queue in teal + amber even
+   when umbrellas are hidden (the default), turning a relationship
+   cue into visual noise. The umbrella's purple stripe is the only
+   stripe — and it appears only on the rare row that's worth marking. */
 
 /* Drag handle in the table view — narrow column at the row's start
    that wears the grab cursor, otherwise the row is fully clickable.
