@@ -3,6 +3,8 @@ import { revalidateTag } from "next/cache";
 import { auth } from "@/auth";
 import { postMessage, parseSpaceId, listThreadMentionedEmails } from "@/lib/chat";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
+import { ensureUserInSpace } from "@/lib/chatSpaceCreate";
+import { driveFolderOwner } from "@/lib/sa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,8 +170,35 @@ export async function POST(req: Request) {
     );
   }
 
-  // Post as the session user. If they're not a member of the space,
-  // the Chat API will return 403 / 404 — surface the underlying error
+  // Internal-staff auto-onboarding. Chat-space memberships seed from
+  // the project's Keys roster (cols C/D/J/K), so any @fandf.co.il
+  // user not on that roster hits the "Failed to post — check
+  // membership" wall on their first message — even though everyone
+  // on the domain is meant to have access. Pre-emptively add the
+  // session user to the space here so they self-onboard on first
+  // post. Idempotent (409-already-member is treated as success), best-
+  // effort (any failure logs and continues — the post itself will
+  // surface the original error if the membership couldn't be granted
+  // for an unrelated reason). Skipped for non-domain users so we don't
+  // accidentally widen access to clients posting via composer paths
+  // they shouldn't reach.
+  if (session.user.email.toLowerCase().endsWith("@fandf.co.il")) {
+    try {
+      await ensureUserInSpace(
+        driveFolderOwner(),
+        spaceId,
+        session.user.email,
+      );
+    } catch (e) {
+      // ensureUserInSpace already swallows expected errors; this catch
+      // is a belt-and-suspenders for the unexpected (e.g. SA misconfig).
+      console.log("[chat/post] ensureUserInSpace threw unexpectedly:", e);
+    }
+  }
+
+  // Post as the session user. If they're STILL not a member of the
+  // space (e.g. ensureUserInSpace returned scope_missing), the Chat
+  // API will return 403 / 404 — surface the underlying error
   // verbatim so the user sees something actionable.
   // threadName (when provided) makes this a reply within an existing
   // thread; otherwise it starts a new top-level thread.

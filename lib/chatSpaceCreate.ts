@@ -530,3 +530,96 @@ async function inviteProjectRoster(
   }
   return { addedEmails, failedEmails, scopeMissing };
 }
+
+/**
+ * Add a single user to an existing Chat space, idempotently. Mirrors
+ * the per-email branch of the batch invite above (409 = already
+ * member = success), but split out so the hub composer can call it
+ * lazily on post-time — letting any @fandf.co.il user start
+ * conversations in any project's space without being on its roster.
+ *
+ * Reported by Maayan 2026-05-06 (Lora couldn't post): chat-space
+ * memberships are seeded from the project's Keys roster only, so
+ * staff outside that roster (other PMs, designers covering for a
+ * teammate) hit the membership wall on first post. With this helper
+ * called pre-emptively in /api/chat/post, internal users self-
+ * onboard on their first message — admin doesn't have to babysit the
+ * roster for every cross-project collaboration.
+ *
+ * `actorEmail` is the impersonated identity that performs the add —
+ * MUST be a current member with SPACE_MANAGER role on the target
+ * space (else 403). Hub spaces are created by the deployer identity
+ * (driveFolderOwner ≈ maayan@fandf.co.il), who is space-manager by
+ * default — pass that.
+ *
+ * Returns:
+ *   - "added"          — newly granted membership
+ *   - "already_member" — 409, no-op
+ *   - "scope_missing"  — DWD scope chat.memberships not granted; the
+ *                        caller may want to log+continue rather than fail
+ *   - "failed"         — every other error (logged with the message)
+ *
+ * Best-effort by design: callers should not bail their primary action
+ * on a failure here. The post-time path treats all non-success
+ * outcomes as "carry on, the post itself will surface the membership
+ * error if it really matters".
+ */
+export async function ensureUserInSpace(
+  actorEmail: string,
+  spaceId: string,
+  memberEmail: string,
+): Promise<"added" | "already_member" | "scope_missing" | "failed"> {
+  const targetEmail = (memberEmail || "").toLowerCase().trim();
+  if (!targetEmail || !targetEmail.includes("@") || !spaceId) {
+    return "failed";
+  }
+  // Adding the actor to themselves is a no-op the API rejects; short
+  // circuit so the post path doesn't double-fail when an admin is
+  // posting in a space they already own.
+  if (targetEmail === (actorEmail || "").toLowerCase().trim()) {
+    return "already_member";
+  }
+  try {
+    const chat = chatMembershipsClient(actorEmail);
+    await chat.spaces.members.create({
+      parent: `spaces/${spaceId}`,
+      requestBody: {
+        member: { name: `users/${targetEmail}`, type: "HUMAN" },
+      },
+    });
+    return "added";
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const code =
+      (e as { code?: number; response?: { status?: number } }).code ??
+      (e as { response?: { status?: number } }).response?.status;
+    if (code === 409 || /already.*member|already.*exist/i.test(msg)) {
+      return "already_member";
+    }
+    if (
+      code === 403 ||
+      /unauthorized_client/i.test(msg) ||
+      /client not authorized/i.test(msg) ||
+      /access not configured/i.test(msg)
+    ) {
+      console.log(
+        "[ensureUserInSpace] DWD scope chat.memberships blocked the add for " +
+          targetEmail +
+          " in spaces/" +
+          spaceId +
+          ": " +
+          msg,
+      );
+      return "scope_missing";
+    }
+    console.log(
+      "[ensureUserInSpace] add failed for " +
+        targetEmail +
+        " in spaces/" +
+        spaceId +
+        ": " +
+        msg,
+    );
+    return "failed";
+  }
+}
