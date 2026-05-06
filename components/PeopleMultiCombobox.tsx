@@ -268,9 +268,6 @@ export default function PeopleMultiCombobox({
                   <span>{displayNameOf(p) || p.email}</span>
                   {p.role && <RoleChip role={p.role} />}
                 </span>
-                <span className="combobox-option-tag" dir="ltr">
-                  {p.email}
-                </span>
               </li>
             ))}
             {isFreeText && (

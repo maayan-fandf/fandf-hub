@@ -4931,6 +4931,64 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   background-clip: padding-box;
 }
 
+/* Auto-apply the themed scrollbar to high-traffic scrollable
+   surfaces that don't add the utility class explicitly. Saves
+   touching dozens of components for a purely visual concern;
+   anything new can still opt-in via `.themed-scrollbar`. The
+   selector list is intentionally short — only user-visible chrome
+   like popovers, dropdowns, agenda rail, and command palette. */
+.mention-dropdown,
+.projects-nav-projects,
+.assignee-grid,
+.palette-results,
+.nav-gmail-tasks-popover,
+.agenda-panel,
+.tasks-company-dropdown-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.mention-dropdown::-webkit-scrollbar,
+.projects-nav-projects::-webkit-scrollbar,
+.assignee-grid::-webkit-scrollbar,
+.palette-results::-webkit-scrollbar,
+.nav-gmail-tasks-popover::-webkit-scrollbar,
+.agenda-panel::-webkit-scrollbar,
+.tasks-company-dropdown-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.mention-dropdown::-webkit-scrollbar-track,
+.projects-nav-projects::-webkit-scrollbar-track,
+.assignee-grid::-webkit-scrollbar-track,
+.palette-results::-webkit-scrollbar-track,
+.nav-gmail-tasks-popover::-webkit-scrollbar-track,
+.agenda-panel::-webkit-scrollbar-track,
+.tasks-company-dropdown-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mention-dropdown::-webkit-scrollbar-thumb,
+.projects-nav-projects::-webkit-scrollbar-thumb,
+.assignee-grid::-webkit-scrollbar-thumb,
+.palette-results::-webkit-scrollbar-thumb,
+.nav-gmail-tasks-popover::-webkit-scrollbar-thumb,
+.agenda-panel::-webkit-scrollbar-thumb,
+.tasks-company-dropdown-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.mention-dropdown::-webkit-scrollbar-thumb:hover,
+.projects-nav-projects::-webkit-scrollbar-thumb:hover,
+.assignee-grid::-webkit-scrollbar-thumb:hover,
+.palette-results::-webkit-scrollbar-thumb:hover,
+.nav-gmail-tasks-popover::-webkit-scrollbar-thumb:hover,
+.agenda-panel::-webkit-scrollbar-thumb:hover,
+.tasks-company-dropdown-list::-webkit-scrollbar-thumb:hover {
+  background: var(--muted, var(--border));
+  background-clip: padding-box;
+}
+
 /* ─── View-as banner ──────────────────────────────────────────────
    Shown below the topnav whenever the gear-menu's "view as" cookie
    (or the sheet's view_as_email default) is active. Sticks to top so
@@ -9180,6 +9238,23 @@ html[data-theme="dark"] .tasks-dept-chip {
   max-height: 320px;
   overflow: auto;
   padding: .25em 0;
+  /* Match the rest of the hub's scrollbar chrome (default native bar
+     looks foreign in dark mode + stretches the option rows when it
+     reserves layout space). Mirrors `.themed-scrollbar` verbatim. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.combobox-panel::-webkit-scrollbar { width: 8px; height: 8px; }
+.combobox-panel::-webkit-scrollbar-track { background: transparent; }
+.combobox-panel::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.combobox-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--muted, var(--border));
+  background-clip: padding-box;
 }
 .combobox-hint {
   padding: .35em .8em;

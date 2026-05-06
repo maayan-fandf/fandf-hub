@@ -225,9 +225,6 @@ export default function PersonCombobox({
                   <span>{displayNameOf(p) || p.email}</span>
                   {p.role && <RoleChip role={p.role} />}
                 </span>
-                <span className="combobox-option-tag" dir="ltr">
-                  {p.email}
-                </span>
               </li>
             ))}
             {secondary.length > 0 && (
@@ -261,9 +258,6 @@ export default function PersonCombobox({
                     {p.role && (
                       <span className="combobox-option-meta"> · {p.role}</span>
                     )}
-                  </span>
-                  <span className="combobox-option-tag" dir="ltr">
-                    {p.email}
                   </span>
                 </li>
               );
