@@ -7053,26 +7053,44 @@ html[data-theme="dark"] .task-approval-banner {
 }
 .task-files-tile-link {
   display: flex;
-  align-items: center;
-  gap: .6rem;
+  flex-direction: column;
+  gap: .5rem;
   text-decoration: none;
   color: var(--text);
   min-width: 0;
 }
+/* Image preview — fills the tile width, fixed height, cropped to fit
+   so a portrait + landscape image grid still aligns. */
+.task-files-tile-thumb {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface);
+  display: block;
+}
+/* Non-image tiles render the Drive icon (or 📄 emoji fallback)
+   centered in a same-sized box so non-image rows still line up with
+   thumbnail rows. The inner <img> for Drive's iconLink keeps its
+   natural 32×32 size; the box gives it the height it needs. */
 .task-files-tile-icon {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  font-size: 1.4em;
+  width: 100%;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2em;
+  background: var(--surface);
+  border-radius: 6px;
 }
 .task-files-tile-name {
-  font-size: .88em;
+  font-size: .85em;
   line-height: 1.25;
   word-break: break-word;
-  flex: 1 1 auto;
-  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .task-files-empty {
   color: var(--muted);
@@ -9162,12 +9180,6 @@ html[data-theme="dark"] .tasks-dept-chip {
   font-size: .9em;
 }
 .task-attachments-folder-link:hover { text-decoration: underline; }
-.task-attachments-empty .muted,
-.task-attachments-empty-hint {
-  color: var(--muted);
-  font-size: .92em;
-  margin: .25em 0 0;
-}
 .task-attachments-error {
   color: var(--danger, #b91c1c);
   font-size: .9em;

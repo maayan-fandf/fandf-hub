@@ -405,6 +405,52 @@ export default function TaskFilesPanel({
   );
 }
 
+/**
+ * Preview area shared by both tile variants. Image files (mimeType
+ * `image/*`) with a `thumbnailLink` render the actual bytes; everything
+ * else falls back to Drive's `iconLink` upscaled from 16px → 32px (the
+ * URL pattern Drive serves), with a 📄 emoji as last resort.
+ *
+ * Drive's thumbnailLink is short-lived but cache-busts naturally on
+ * file replacement; loading="lazy" keeps off-screen tiles cheap. On
+ * thumbnail error (revoked token, deleted bytes), we swap to the icon
+ * variant so a single broken tile doesn't show a missing-image glyph.
+ */
+function TilePreview({ file }: { file: DriveFile }) {
+  const isImage =
+    (file.mimeType || "").startsWith("image/") && !!file.thumbnailLink;
+  const [thumbBroken, setThumbBroken] = useState(false);
+  if (isImage && !thumbBroken) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={file.thumbnailLink!}
+        alt=""
+        className="task-files-tile-thumb"
+        loading="lazy"
+        onError={() => setThumbBroken(true)}
+      />
+    );
+  }
+  if (file.iconLink) {
+    return (
+      // Drive's `iconLink` is a small (16x16) icon URL. We render it
+      // 2x scaled for tile clarity, centered inside the same-sized box
+      // an image thumbnail would occupy so rows line up.
+      <div className="task-files-tile-icon">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={file.iconLink.replace(/\/16\//, "/32/")}
+          alt=""
+          width={32}
+          height={32}
+        />
+      </div>
+    );
+  }
+  return <div className="task-files-tile-icon">📄</div>;
+}
+
 /** Plain (non-draggable) tile for the new-task page where reorder
  *  isn't available yet. Same visual + click behaviour as FileTile. */
 function StaticFileTile({ file }: { file: DriveFile }) {
@@ -417,18 +463,7 @@ function StaticFileTile({ file }: { file: DriveFile }) {
         className="task-files-tile-link"
         title={file.name}
       >
-        {file.iconLink ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={file.iconLink.replace(/\/16\//, "/32/")}
-            alt=""
-            className="task-files-tile-icon"
-            width={32}
-            height={32}
-          />
-        ) : (
-          <div className="task-files-tile-icon">📄</div>
-        )}
+        <TilePreview file={file} />
         <div className="task-files-tile-name">{file.name}</div>
       </a>
     </div>
@@ -463,21 +498,7 @@ function FileTile({ file }: { file: DriveFile }) {
         className="task-files-tile-link"
         title={file.name}
       >
-        {file.iconLink ? (
-          // Drive's `iconLink` is a small (16x16) icon URL. We render
-          // it 2x scaled for tile clarity. Falls back to a 📄 emoji
-          // when missing.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={file.iconLink.replace(/\/16\//, "/32/")}
-            alt=""
-            className="task-files-tile-icon"
-            width={32}
-            height={32}
-          />
-        ) : (
-          <div className="task-files-tile-icon">📄</div>
-        )}
+        <TilePreview file={file} />
         <div className="task-files-tile-name">{file.name}</div>
       </a>
     </div>

@@ -14,10 +14,16 @@ type Props = {
  * dedicated subfolder inside the task's Drive folder where the
  * discussion composer uploads pasted screenshots and dragged files.
  *
- * Always renders a heading + folder link, even with zero files,
- * so the קבצים tab in the in-page nav has visible content to scroll
- * to (the previous component returned null on empty, which made the
- * tab feel dead).
+ * Visibility rule (2026-05-06): renders ONLY when the subfolder has
+ * at least one file (or there's a load error worth surfacing). With
+ * the unified TaskFilesPanel rendering above this section for the
+ * task's main בריף folder, having an always-visible second "Drive
+ * instance" with an empty-state hint felt confusing — readers
+ * couldn't tell whether they'd accidentally landed on two different
+ * folders. Now: empty subfolder → section is invisible. The chat
+ * composer (TaskReplyComposer) still uploads to this same subfolder
+ * via paste/drag-drop, and `router.refresh()` after a post will
+ * reveal this section as soon as a file lands.
  */
 export default async function TaskAttachments({
   taskId,
@@ -25,17 +31,14 @@ export default async function TaskAttachments({
   driveFolderId,
   driveFolderUrl,
 }: Props) {
-  if (!driveFolderId) {
-    return (
-      <div className="task-attachments task-attachments-empty">
-        <h3>📁 קבצים מהדיון</h3>
-        <p className="muted">למשימה זו עוד אין תיקיית Drive.</p>
-      </div>
-    );
-  }
+  // Without a parent Drive folder there's nothing to list — and
+  // there's no useful affordance for the user here either, so we stay
+  // hidden. (The folder is provisioned at task creation; if it's
+  // missing that's an upstream issue surfaced elsewhere.)
+  if (!driveFolderId) return null;
 
-  // Best-effort listing — render the heading even on failure so the
-  // tab anchor isn't an empty section.
+  // Best-effort listing — surface a load error if it happens, but
+  // otherwise stay quiet when the subfolder is empty.
   let result: Awaited<ReturnType<typeof listTaskAttachments>> = {
     folderId: "",
     folderUrl: "",
@@ -47,6 +50,9 @@ export default async function TaskAttachments({
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
+
+  // Empty + no error → don't add a second Drive UI to the page.
+  if (!error && result.files.length === 0) return null;
 
   const folderLink = result.folderUrl || driveFolderUrl || "";
 
@@ -71,12 +77,6 @@ export default async function TaskAttachments({
         <div className="task-attachments-error">
           לא ניתן לטעון קבצים: {error}
         </div>
-      )}
-
-      {!error && result.files.length === 0 && (
-        <p className="task-attachments-empty-hint muted">
-          אין עדיין קבצים מהדיון. גרור/י לכאן קובץ, או הדבק/י צילום באזור הדיון, והוא יישמר כאן.
-        </p>
       )}
 
       {result.files.length > 0 && (
