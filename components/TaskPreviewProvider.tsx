@@ -322,7 +322,7 @@ function PreviewPanel({
             className="btn-primary btn-sm"
             onClick={onClose}
           >
-            פתח משימה →
+            פתח משימה ←
           </Link>
           <button
             type="button"

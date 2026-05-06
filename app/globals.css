@@ -6729,6 +6729,34 @@ html[data-theme="dark"] .inline-edit-err {
   overflow-wrap: anywhere;
 }
 .tasks-title-link:hover { text-decoration: underline; }
+/* Inline 👁 quick-preview button next to the title. Muted by default
+   (low opacity) so it's there when needed but doesn't clutter the
+   row; brightens on title-cell hover. Reported by Maayan: "maybe
+   display the eye icon next to the headline of the task?" */
+.tasks-title-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1em;
+  padding: .15em .35em;
+  margin-inline-start: .35em;
+  border-radius: 6px;
+  opacity: .35;
+  vertical-align: -.15em;
+  color: var(--muted);
+  transition: opacity .15s ease, background .15s ease;
+}
+.tasks-title-row:hover .tasks-title-preview-btn,
+.tasks-title-preview-btn:focus-visible {
+  opacity: 1;
+}
+.tasks-title-preview-btn:hover {
+  background: var(--surface-soft, rgba(0,0,0,.06));
+  opacity: 1;
+}
 .tasks-title-chips {
   display: flex;
   flex-wrap: wrap;
@@ -12152,19 +12180,25 @@ html[data-theme="dark"] .kanban-error {
   background: rgba(79, 70, 229, 0.06);
 }
 .tasks-bulk-bar {
-  position: sticky;
-  bottom: 0.6em;
-  margin: 1.5em 0 0;
+  /* Fixed so the bar is visible AS SOON AS rows get checked,
+     regardless of where the user is scrolled. Previously `sticky`,
+     which required the bar's natural position (after all buckets)
+     to be in or near the viewport — on tall queues that's far below
+     the fold, so the bar appeared invisible after a click. */
+  position: fixed;
+  bottom: 0.8em;
+  inset-inline: 1.2em;
+  margin: 0;
   padding: 0.6em 0.85em;
   background: var(--surface);
   border: 1px solid var(--accent);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   border-radius: 12px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.6em;
-  z-index: 50;
+  z-index: 60;
 }
 .tasks-bulk-bar-info {
   font-weight: 600;
@@ -12246,11 +12280,14 @@ html[data-theme="dark"] .btn-danger.btn-sm:hover:not(:disabled) {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 60;
+  z-index: 70;
   display: flex;
-  /* RTL-safe via flex-end: the panel sits on the page's logical
-     start edge — right in RTL, left in LTR. */
-  justify-content: flex-end;
+  /* `flex-start` puts the panel on the LOGICAL start edge — visual
+     right in RTL, visual left in LTR. Previously used `flex-end`
+     which flipped the panel to the wrong side in RTL (Hebrew users
+     read start-to-end, so the drawer arriving from the right is the
+     natural "open from where you started reading" direction). */
+  justify-content: flex-start;
   animation: task-preview-fade-in .15s ease;
 }
 @keyframes task-preview-fade-in {
@@ -12262,23 +12299,30 @@ html[data-theme="dark"] .btn-danger.btn-sm:hover:not(:disabled) {
   max-width: 100%;
   height: 100%;
   background: var(--surface);
-  border-inline-start: 1px solid var(--border);
+  /* Border faces the page content (panel's inline-end edge in
+     LTR — its left edge; in RTL the visual left edge of the panel
+     which is the inline-end too since the panel sits on the right
+     visual side and content is to its left). Same logical
+     property covers both directions. */
+  border-inline-end: 1px solid var(--border);
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
   padding: 1.25em 1.5em;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1.1em;
-  animation: task-preview-slide-in .2s ease;
+  animation: task-preview-slide-in-ltr .2s ease;
 }
-@keyframes task-preview-slide-in {
+/* LTR: panel on the visual left edge → slide IN from off-left. */
+@keyframes task-preview-slide-in-ltr {
   from { transform: translateX(-100%); }
   to   { transform: translateX(0); }
 }
+/* RTL: panel on the visual right edge → slide IN from off-right.
+   `translateX` is direction-agnostic in CSS (positive = visual
+   right), so positive 100% means "off to the right of the panel's
+   resting place." */
 html[dir="rtl"] .task-preview-panel {
-  /* RTL the panel renders on the visual right edge of the screen
-     (flex-end), so the slide-in animation has to come from the
-     right, not the left. The negative-translateX flips. */
   animation-name: task-preview-slide-in-rtl;
 }
 @keyframes task-preview-slide-in-rtl {

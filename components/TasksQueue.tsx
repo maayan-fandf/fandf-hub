@@ -1398,6 +1398,22 @@ function TaskRow({
           >
             {task.title}
           </Link>
+          {/* Quick-preview eye button — sits next to the title so
+              it's discoverable on the title row instead of buried in
+              the actions cell. Visually muted by default; brightens
+              on title-cell hover so it doesn't clutter the row. */}
+          <button
+            type="button"
+            className="tasks-title-preview-btn"
+            title="תצוגה מקדימה — תיאור מלא ופרטים, ללא מעבר עמוד"
+            aria-label="תצוגה מקדימה"
+            onClick={(e) => {
+              e.stopPropagation();
+              preview.open(task, people);
+            }}
+          >
+            👁
+          </button>
         </div>
         {(() => {
           const isNew = isCreatedWithin24h(task.created_at);
@@ -1526,20 +1542,6 @@ function TaskRow({
       </td>
       <td className="icons">
         <div className="tasks-row-icons">
-          <button
-            type="button"
-            className="tasks-row-icon"
-            title="תצוגה מקדימה — תיאור מלא ופרטים, ללא מעבר עמוד"
-            aria-label="תצוגה מקדימה"
-            onClick={(e) => {
-              // Stop propagation so a click on the eye doesn't bubble
-              // to the row's drag handlers or the title link.
-              e.stopPropagation();
-              preview.open(task, people);
-            }}
-          >
-            👁
-          </button>
           <Link
             href={`/tasks/${encodeURIComponent(task.id)}`}
             className="tasks-row-icon"
