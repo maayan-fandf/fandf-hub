@@ -589,12 +589,19 @@ export async function findLatestPrisotForProject(
  *      when names lack a date).
  *   2. ALSO look up `<company>/כללי/פריסות/` and take the same.
  *   3. Pick the winner by date-in-name; the company-level כללי file
- *      overrides the project file when its date-in-name is more recent.
- *      This handles the workflow where a single "weekly spread" lives
- *      in כללי and supersedes whatever's lying around in individual
- *      project folders. When the project has no folder at all, the
- *      כללי file fills in (sub-rule of the same comparison — `null`
- *      always loses).
+ *      overrides the project file ONLY when its date-in-name is
+ *      STRICTLY more recent. On equal dates the project's own file
+ *      wins — reported by Maayan 2026-05-06 against
+ *      "גיא ודורון לוי / אורנבך", where כללי and the project both
+ *      had a spread for the same date and the page kept showing the
+ *      כללי one. The semantics: a כללי spread is a fallback /
+ *      portfolio-wide drop, so when the project ALSO published its
+ *      own version for that same date, the project's is the source of
+ *      truth for that project's page. modifiedTime is no longer a
+ *      tiebreaker — it leaked through previously when the כללי file
+ *      happened to be touched later, even with identical dates.
+ *      When the project has no folder at all, the כללי file fills in
+ *      (sub-rule of the same comparison — null always loses).
  *
  * No-op when company is "" or project is already "כללי" (no fallback
  * to itself).
@@ -616,12 +623,10 @@ export async function pickLatestPrisotForCompanyOrProject(
   if (!own && !general) return null;
   if (!own) return general;
   if (!general) return own;
-  // Compare by date-in-name with modifiedTime as tiebreaker.
-  const ownKey =
-    (own.dateInName || "0000-00-00") + "|" + (own.modifiedTime || "");
-  const genKey =
-    (general.dateInName || "0000-00-00") + "|" + (general.modifiedTime || "");
-  return genKey > ownKey ? general : own;
+  // Compare by date-in-name only. Equal dates → project's own wins.
+  const ownDate = own.dateInName || "0000-00-00";
+  const genDate = general.dateInName || "0000-00-00";
+  return genDate > ownDate ? general : own;
 }
 
 export async function listFolderChildren(
