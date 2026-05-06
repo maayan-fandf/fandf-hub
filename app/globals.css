@@ -11228,6 +11228,44 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
   padding: 0.05em 0.5em;
 }
 
+/* Umbrella toggle (📦 → 🪆). When active, lift the styling to match
+   the view-toggle's segmented-control feel: accent fill + white
+   text + lift shadow. The base archive-toggle's quieter "is-showing"
+   stays for the ארכיון button — only the umbrella one upgrades.
+   Reported by Maayan: "make the design closer to the קנבן vs לוח שנה
+   selector". */
+.tasks-umbrella-toggle.is-showing {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 1px 4px rgba(79, 70, 229, .35);
+  font-weight: 600;
+}
+.tasks-umbrella-toggle.is-showing:hover {
+  /* Slight lift on hover so the button still telegraphs interactivity
+     even at peak emphasis. Same pattern view-toggle uses. */
+  box-shadow: 0 2px 6px rgba(79, 70, 229, .42);
+}
+html[data-theme="dark"] .tasks-umbrella-toggle.is-showing {
+  /* Dark mode keeps the accent fill but tones the shadow since the
+     surface is already dark. */
+  box-shadow: 0 1px 4px rgba(99, 102, 241, .45);
+}
+/* Inactive (umbrellas hidden) gets a subtle outline + accent text
+   on hover so it reads as "click me to surface umbrellas". */
+.tasks-umbrella-toggle.is-hiding:hover {
+  background: rgba(79, 70, 229, .08);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* Count badge inside the active state — reverse polarity so it stays
+   readable against the accent fill. */
+.tasks-umbrella-toggle.is-showing .tasks-archive-toggle-count {
+  background: rgba(255, 255, 255, .25);
+  color: #fff;
+  border-color: rgba(255, 255, 255, .35);
+}
+
 /* Table view — done/cancelled bucket renders as a collapsed
    <details> when hideArchived is on. Summary mirrors the regular
    bucket-head styling so the visual rhythm doesn't break. */
@@ -11610,6 +11648,46 @@ html[data-theme="dark"] .task-date-overdue {
 }
 html[data-theme="dark"] .tasks-row-umbrella > td {
   background: rgba(139, 92, 246, 0.16);
+}
+
+/* Kanban card umbrella/child chrome — mirrors the table view's
+   .tasks-row-umbrella / .tasks-row-child treatment so a user
+   toggling between views sees a consistent visual hierarchy.
+   Reported by Maayan: "i need a better visual cue on kanban for
+   the עטיפה filter, as of now its unclear which is which".
+
+   Umbrella card → bold + slightly larger title, subtle purple
+   background tint, more weight overall ("this is a header card").
+   Child card → slightly smaller title with a start-indent so it
+   reads as subordinate.
+   Standalone cards → unchanged baseline. */
+.kanban-card-umbrella {
+  /* Subtle purple tint matching the umbrella chip color. Stronger
+     than the table-row tint (rgba 0.07) because kanban cards already
+     have a base surface color — we need a touch more saturation to
+     read against it. */
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.10),
+    rgba(139, 92, 246, 0.04)
+  );
+}
+html[data-theme="dark"] .kanban-card-umbrella {
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.22),
+    rgba(139, 92, 246, 0.10)
+  );
+}
+.kanban-card-umbrella .kanban-card-title {
+  font-weight: 700;
+  font-size: 1.05em;
+}
+.kanban-card-child .kanban-card-title {
+  font-size: 0.92em;
+  /* Indent — RTL-safe via padding-inline-start so the title text
+     hangs visibly inset from the card's edge. */
+  padding-inline-start: 1.5em;
 }
 
 /* Group-by bucket header chrome for the assignee axis — avatar +

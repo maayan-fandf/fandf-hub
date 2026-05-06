@@ -31,6 +31,18 @@ import { fireConfetti, firePulse } from "@/lib/confetti";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { displayProjectOrCompany } from "@/lib/personalLabel";
 
+/** Same classification as the table view's TasksQueue. Pulled inline
+ *  so the kanban card can render a matching parent/child visual cue
+ *  when the user toggles the עטיפות filter on. */
+type KanbanCardKind = "umbrella" | "parallel-child" | "chain-child" | null;
+function classifyKanbanTask(task: WorkTask): KanbanCardKind {
+  if (task.is_umbrella) return "umbrella";
+  const hasEdges =
+    (task.blocks?.length ?? 0) > 0 || (task.blocked_by?.length ?? 0) > 0;
+  if (task.umbrella_id) return hasEdges ? "chain-child" : "parallel-child";
+  return hasEdges ? "chain-child" : null;
+}
+
 type ColumnDef = {
   key: WorkTaskStatus;
   label: string;
@@ -432,11 +444,17 @@ function KanbanCard({
     if (!Number.isFinite(ms)) return false;
     return Date.now() - ms < 24 * 60 * 60 * 1000;
   })();
+  // Umbrella/child kind — when the user has surfaced umbrellas (only
+  // visible when ?umbrellas=1), this drives the parent/child visual
+  // cue per card. Same classification as the table view in
+  // TasksQueue so the two views stay in sync.
+  const cardKind = classifyKanbanTask(task);
   const hasChips =
     isNew ||
     task.campaign ||
     task.round_number > 1 ||
-    showPriorityChip;
+    showPriorityChip ||
+    cardKind !== null;
   // Every person involved with the task — author, approver, project
   // manager, and each assignee — collapsed into one ordered list with
   // their roles merged when the same email shows up under multiple
@@ -450,11 +468,22 @@ function KanbanCard({
   const peopleVisible = peopleInvolved.slice(0, PEOPLE_CAP);
   const peopleOverflow = peopleInvolved.length - PEOPLE_CAP;
 
+  // Per-card class hooks for the umbrella/child styling (purple tint
+  // on umbrella cards, smaller-text + indented on children). Mirrors
+  // the row-level treatment in the table view.
+  const kindClass =
+    cardKind === "umbrella"
+      ? " kanban-card-umbrella"
+      : cardKind === "parallel-child"
+        ? " kanban-card-child kanban-card-parallel-child"
+        : cardKind === "chain-child"
+          ? " kanban-card-child kanban-card-chain-child"
+          : "";
   return (
     <article
       ref={setNodeRef}
       style={style}
-      className={`kanban-card kanban-card-edge-${priorityClass}${isOverlay ? " is-overlay" : ""}${isDragging ? " is-dragging" : ""}`}
+      className={`kanban-card kanban-card-edge-${priorityClass}${kindClass}${isOverlay ? " is-overlay" : ""}${isDragging ? " is-dragging" : ""}`}
       {...attributes}
       {...listeners}
     >
@@ -500,6 +529,32 @@ function KanbanCard({
           {isNew && (
             <span className="kanban-card-new-chip" title="נוצרה ב־24 שעות האחרונות">
               🆕 חדש
+            </span>
+          )}
+          {/* Umbrella/child chips — same vocabulary as the table view
+              so a user toggling between views sees the same labels. */}
+          {cardKind === "umbrella" && (
+            <span
+              className="tasks-type-chip tasks-type-chip-umbrella"
+              title="שורת עטיפה — מרכזת את כל תתי-המשימות שתחתיה"
+            >
+              🪆 עטיפה
+            </span>
+          )}
+          {cardKind === "parallel-child" && (
+            <span
+              className="tasks-type-chip tasks-type-chip-parallel"
+              title="תת-משימה מקבילה תחת עטיפה"
+            >
+              🌂 מקבילה
+            </span>
+          )}
+          {cardKind === "chain-child" && (
+            <span
+              className="tasks-type-chip tasks-type-chip-chain"
+              title="שלב בשרשרת — סדר מסירה אוטומטי"
+            >
+              🔗 בשרשרת
             </span>
           )}
           {showPriorityChip && (

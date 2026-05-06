@@ -60,7 +60,13 @@ export default function TasksUmbrellaToggle({ showing, count }: Props) {
   return (
     <button
       type="button"
-      className={`tasks-archive-toggle${showing ? " is-showing" : " is-hiding"}`}
+      // The shared `tasks-archive-toggle` class still hosts the count
+      // badge + base layout. The added `tasks-umbrella-toggle` is the
+      // hook that lets CSS target this button distinctly so its
+      // active state can be more prominent (segmented-control feel,
+      // matching the view-toggle next to it) without affecting the
+      // archive toggle's quieter styling.
+      className={`tasks-archive-toggle tasks-umbrella-toggle${showing ? " is-showing" : " is-hiding"}`}
       onClick={toggle}
       aria-pressed={showing}
       title={`${concept}\n\n${action}`}
