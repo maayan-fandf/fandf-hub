@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
-import PeopleMultiCombobox from "./PeopleMultiCombobox";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -535,15 +534,21 @@ export default function TaskEditPanel({
 
       <label>
         עובדים במשימה
-        {/* Same swap as TaskCreateForm — emails-as-textarea replaced
-            with a Hebrew-name chip combobox so this row reads in
-            sync with the rest of the edit panel's person fields.
-            The bubble row below stays as quick-toggle. */}
-        <PeopleMultiCombobox
+        {/* Plain single-line text input — visually matches the
+            sibling גורם מאשר / מנהל פרויקט fields above, which are
+            also native `<input list>`s in this edit-panel surface.
+            CSV format kept (the bubble row below toggles entries),
+            so the form's submit logic doesn't need to change.
+            Reported by Maayan 2026-05-06: the prior chip-inside-box
+            combobox introduced an "extra box" of chrome that
+            mismatched the edit panel's other inputs. The Hebrew-
+            name affordance lives entirely on the bubble row below. */}
+        <input
+          type="text"
           value={assignees}
-          onChange={setAssignees}
-          options={people}
-          placeholder="חפש לפי שם או מייל"
+          onChange={(e) => setAssignees(e.target.value)}
+          placeholder="felix@fandf.co.il, nadav@fandf.co.il"
+          dir="ltr"
         />
         {people.length > 0 && (
           <div className="task-form-assignee-chips">
