@@ -146,17 +146,28 @@ export default function TaskCommentRow({
     personDisplayName(comment.author_email, people) ||
     comment.author_name ||
     comment.author_email;
+  const authorRole = people?.find(
+    (p) => p.email.toLowerCase() === comment.author_email.toLowerCase(),
+  )?.role;
+  const authorHover = avatarHoverText(
+    authorDisplay,
+    comment.author_email,
+    authorRole,
+  );
 
   return (
     <li className="thread-reply">
       <Avatar
         name={comment.author_email}
         title={authorDisplay}
+        role={authorRole}
         size={26}
       />
       <div className="thread-reply-body">
         <div className="thread-reply-head">
-          <span className="thread-reply-author">{authorDisplay}</span>
+          <span className="thread-reply-author" title={authorHover}>
+            {authorDisplay}
+          </span>
           <span className="thread-reply-time" title={comment.timestamp}>
             {formatRelative(comment.timestamp)}
           </span>

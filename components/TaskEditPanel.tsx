@@ -6,7 +6,7 @@ import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import TimePicker from "./TimePicker";
-import Avatar from "./Avatar";
+import Avatar, { avatarHoverText } from "./Avatar";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -564,7 +564,7 @@ export default function TaskEditPanel({
                   className={`task-form-assignee-chip${
                     already ? " is-active" : ""
                   }`}
-                  title={`${displayNameOf(p)} · ${p.role}`}
+                  title={avatarHoverText(displayNameOf(p), p.email, p.role)}
                   onClick={() => {
                     if (already) {
                       const next = assignees

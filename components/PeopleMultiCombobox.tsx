@@ -257,7 +257,12 @@ export default function PeopleMultiCombobox({
                 onMouseEnter={() => setHighlight(i)}
               >
                 <span className="combobox-option-icon">
-                  <Avatar name={p.email} size={22} />
+                  <Avatar
+                    name={p.email}
+                    title={displayNameOf(p) || p.email}
+                    role={p.role}
+                    size={22}
+                  />
                 </span>
                 <span className="combobox-option-text">
                   <span>{displayNameOf(p) || p.email}</span>

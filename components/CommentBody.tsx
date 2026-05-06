@@ -2,7 +2,7 @@ import type React from "react";
 import type { TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
 import CommentBodyImage from "./CommentBodyImage";
-import Avatar from "./Avatar";
+import Avatar, { avatarHoverText } from "./Avatar";
 
 /**
  * Renders a comment / mention / task body. Supports the markdown-ish
@@ -324,14 +324,17 @@ function renderPart(
     const display = people
       ? personDisplayName(part.email, people) || fallbackHandle
       : fallbackHandle;
+    const mentionedRole = people?.find(
+      (p) => p.email.toLowerCase() === part.email.toLowerCase(),
+    )?.role;
     return (
       <span
         key={key}
         className="comment-body-mention"
-        title={part.email}
+        title={avatarHoverText(display, part.email, mentionedRole)}
         dir="auto"
       >
-        <Avatar name={part.email} size={16} />
+        <Avatar name={part.email} size={16} role={mentionedRole} />
         @{display}
       </span>
     );

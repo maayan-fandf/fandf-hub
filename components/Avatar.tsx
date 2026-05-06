@@ -1,13 +1,33 @@
 import { colorForKey, initialsForKey } from "@/lib/colors";
+import { roleEmoji } from "./RoleChip";
 
 type Props = {
   /** Email or name — used as the hash key for color + initials. */
   name: string;
   /** Optional pretty name to show in the tooltip. Defaults to `name`. */
   title?: string;
+  /** Optional role string from names_to_emails. When provided, the
+   *  tooltip becomes `<title> · <emoji> <role>` so hovering reveals
+   *  who the person is + what dept they're in. */
+  role?: string;
   /** Size in px. Defaults to 28. */
   size?: number;
 };
+
+/** Build the hover tooltip text. Pure helper so the surrounding-name
+ *  span (where applicable) can mirror the same string and hovering
+ *  either part of the row shows identical info. */
+export function avatarHoverText(
+  title: string | undefined,
+  name: string,
+  role: string | undefined,
+): string {
+  const base = title || name;
+  const r = (role || "").trim();
+  if (!r) return base;
+  const emoji = roleEmoji(r);
+  return emoji ? `${base} · ${emoji} ${r}` : `${base} · ${r}`;
+}
 
 /**
  * Colorful initials avatar with a Workspace-photo overlay. The initials
@@ -18,7 +38,7 @@ type Props = {
  * underneath without needing client-side error handling. External
  * (non-fandf) addresses skip the request entirely and keep initials.
  */
-export default function Avatar({ name, title, size = 28 }: Props) {
+export default function Avatar({ name, title, role, size = 28 }: Props) {
   const { solid } = colorForKey(name);
   const initials = initialsForKey(name);
   const px = `${size}px`;
@@ -26,11 +46,12 @@ export default function Avatar({ name, title, size = 28 }: Props) {
   const photoSrc = showPhoto
     ? `/api/avatar/${encodeURIComponent(name.toLowerCase().trim())}`
     : null;
+  const hover = avatarHoverText(title, name, role);
   return (
     <span
       className="avatar"
-      title={title || name}
-      aria-label={title || name}
+      title={hover}
+      aria-label={hover}
       dir="ltr"
       style={{
         position: "relative",

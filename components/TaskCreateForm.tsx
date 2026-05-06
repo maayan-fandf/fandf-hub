@@ -8,7 +8,7 @@ import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
 import PeopleMultiCombobox from "./PeopleMultiCombobox";
 import TimePicker from "./TimePicker";
-import Avatar from "./Avatar";
+import Avatar, { avatarHoverText } from "./Avatar";
 import DrivePickerButton from "./DrivePickerButton";
 import TaskFilesPanel from "./TaskFilesPanel";
 import { displayNameOf } from "@/lib/personDisplay";
@@ -1068,7 +1068,7 @@ export default function TaskCreateForm({
                     className={`task-form-assignee-chip${
                       already ? " is-active" : ""
                     }`}
-                    title={`${displayNameOf(p)} · ${p.role}`}
+                    title={avatarHoverText(displayNameOf(p), p.email, p.role)}
                     onClick={() => {
                       // Toggle: click once to append, click again to remove
                       // (matches the department chip row pattern above).
