@@ -11567,6 +11567,32 @@ html[data-theme="dark"] .task-date-overdue {
   color: #fca5a5;
 }
 
+/* Row-level visual hierarchy for umbrella/child tasks on the queue.
+   Three stacked cues so the relationship reads at a glance even
+   without reading the chip text:
+
+     - Umbrella row → bold + slightly larger title. Reads as a
+       "header" in its bucket without breaking row alignment.
+     - Child row   → slightly smaller title + start-indent on the
+       title link, so the title hangs visibly inset from the
+       umbrella's column line.
+     - Standalone  → unchanged baseline.
+
+   Size deltas kept small (1.05× / 0.95×) on purpose — bigger jumps
+   would drift row heights across the table and break column
+   scanning. The indent on children is the load-bearing cue; size
+   + weight just nudge it. */
+.tasks-row-umbrella .tasks-title-link {
+  font-weight: 700;
+  font-size: 1.05em;
+}
+.tasks-row-child .tasks-title-link {
+  font-size: 0.95em;
+  /* RTL-safe via padding-inline-start. Targets only the title link
+     (not the row's other cells) so every column stays aligned. */
+  padding-inline-start: 1.5em;
+}
+
 /* Drag handle in the table view — narrow column at the row's start
    that wears the grab cursor, otherwise the row is fully clickable.
    The grip glyph is muted by default and brightens on row hover so

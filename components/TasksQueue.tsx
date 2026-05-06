@@ -959,11 +959,23 @@ function TaskRow({
     campaign: task.campaign,
     userEmail,
   });
+  // Visual hierarchy by row kind — umbrella reads as a header
+  // (bold + slightly larger title), children render slightly smaller
+  // with a start-indent on the title so the eye sees them as
+  // subordinate. Standalone rows keep the baseline. Pure CSS via the
+  // row-level class; per-cell overrides target the title link only.
+  const rowKind = classifyTask(task);
+  const rowKindCls =
+    rowKind === "umbrella"
+      ? " tasks-row-umbrella"
+      : rowKind === "parallel-child" || rowKind === "chain-child"
+        ? " tasks-row-child"
+        : "";
   return (
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
       style={rowStyle}
-      className={selected ? "is-selected" : undefined}
+      className={`${selected ? "is-selected" : ""}${rowKindCls}`.trim() || undefined}
     >
       <td className="bulk-select-cell">
         <input
@@ -1096,12 +1108,11 @@ function TaskRow({
         </div>
         {(() => {
           const isNew = isCreatedWithin24h(task.created_at);
-          const kind = classifyTask(task);
           // Overdue is rendered on the date cell (red text + ⚠️) so it
           // doesn't clutter the title row alongside structural chips.
           // See `task-date-overdue` styling on TaskRequestedDateCell.
           const hasAnyChip =
-            isNew || task.round_number > 1 || kind !== null;
+            isNew || task.round_number > 1 || rowKind !== null;
           if (!hasAnyChip) return null;
           return (
             <div className="tasks-title-chips">
@@ -1118,7 +1129,7 @@ function TaskRow({
                   סבב #{task.round_number}
                 </span>
               )}
-              {kind === "umbrella" && (
+              {rowKind === "umbrella" && (
                 <span
                   className="tasks-type-chip tasks-type-chip-umbrella"
                   title="שורת עטיפה — מרכזת את כל תתי-המשימות שתחתיה"
@@ -1126,7 +1137,7 @@ function TaskRow({
                   🪆 עטיפה
                 </span>
               )}
-              {kind === "parallel-child" && (
+              {rowKind === "parallel-child" && (
                 <span
                   className="tasks-type-chip tasks-type-chip-parallel"
                   title="תת-משימה מקבילה תחת עטיפה — אין תלות בתתי-משימות אחרות"
@@ -1134,7 +1145,7 @@ function TaskRow({
                   🌂 מקבילה
                 </span>
               )}
-              {kind === "chain-child" && (
+              {rowKind === "chain-child" && (
                 <span
                   className="tasks-type-chip tasks-type-chip-chain"
                   title="שלב בשרשרת — סדר מסירה אוטומטי מאחד לבא"
