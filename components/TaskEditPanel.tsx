@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
@@ -91,6 +91,11 @@ export default function TaskEditPanel({
   const [project, setProject] = useState(
     startsAsPseudo ? "" : task.project || "",
   );
+  // Selected company drives the project datalist's narrowing while a
+  // pseudo-task is being promoted. Only relevant in the pseudo path —
+  // real-project rows show company as a readonly auto-derived display
+  // (the row's own `task.company` value).
+  const [selectedCompany, setSelectedCompany] = useState("");
   const [campaign, setCampaign] = useState(task.campaign || "");
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
   const [campaignReloadNonce, setCampaignReloadNonce] = useState(0);
@@ -116,6 +121,45 @@ export default function TaskEditPanel({
       cancelled = true;
     };
   }, [task.project, campaignReloadNonce]);
+
+  // Derive company options from the project list (passed from the
+   // page's access-scoped getMyProjects). Used by the pseudo-task
+   // promote flow's company select.
+  const companyOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of projects) {
+      if (p.company) set.add(p.company);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
+  }, [projects]);
+  // Project datalist narrows to the selected company when one is
+  // picked; otherwise the full list (deduped by name) shows.
+  const filteredProjects = useMemo(() => {
+    const seen = new Set<string>();
+    const source = selectedCompany
+      ? projects.filter((p) => p.company === selectedCompany)
+      : projects;
+    const out: { name: string; company: string }[] = [];
+    for (const p of source) {
+      if (seen.has(p.name)) continue;
+      seen.add(p.name);
+      out.push(p);
+    }
+    return out;
+  }, [projects, selectedCompany]);
+  // When the user picks a project (typing or selecting an option),
+  // back-fill the company select if the chosen project unambiguously
+  // belongs to one. Keeps the two fields in lockstep so picking a
+  // project from "all companies" mode also reveals which company it's
+  // under.
+  function syncCompanyFromProject(pickedProject: string) {
+    const trimmed = pickedProject.trim();
+    if (!trimmed) return;
+    const matches = projects.filter((p) => p.name === trimmed);
+    if (matches.length === 1 && matches[0].company) {
+      setSelectedCompany(matches[0].company);
+    }
+  }
 
   function toggleDept(d: string) {
     setDepartments((cur) =>
@@ -220,37 +264,85 @@ export default function TaskEditPanel({
       </datalist>
 
       <div className="task-form-row">
+        {/* Field order is intentionally [project, company, brief] —
+            when promoting a pseudo-task we want the user's eye to
+            land on the project field first since that's the primary
+            decision; the company select sits adjacent so they can
+            switch the order if it's easier to think company-first.
+            For real-project rows the order is unchanged from before;
+            company is a readonly display either way. */}
         <label>
           פרויקט
           <input
             type="text"
             value={project}
             list="task-edit-projects"
-            onChange={(e) => setProject(e.target.value)}
+            onChange={(e) => {
+              setProject(e.target.value);
+              // Try to back-fill the company on every change so the
+              // datalist's "auto-suggest match → enter" path lights
+              // up the company too. Cheap — Map lookup against props.
+              if (startsAsPseudo) syncCompanyFromProject(e.target.value);
+            }}
             placeholder={
-              task.project.startsWith("__")
-                ? "הזן שם פרויקט להעברת ההערה"
+              startsAsPseudo
+                ? selectedCompany
+                  ? `הזן שם פרויקט מ־${selectedCompany}`
+                  : "הזן שם פרויקט להעברת ההערה"
                 : "שם פרויקט"
             }
           />
           <datalist id="task-edit-projects">
-            {projects.map((p) => (
+            {filteredProjects.map((p) => (
               <option key={`${p.company}|${p.name}`} value={p.name}>
                 {p.company ? `${p.company} · ${p.name}` : p.name}
               </option>
             ))}
           </datalist>
         </label>
-        <label>
-          חברה (אוטומטית)
-          <input
-            type="text"
-            value={task.company || "—"}
-            disabled
-            readOnly
-            title="החברה נקבעת אוטומטית לפי הפרויקט"
-          />
-        </label>
+        {startsAsPseudo ? (
+          <label>
+            חברה
+            <select
+              value={selectedCompany}
+              onChange={(e) => {
+                const next = e.target.value;
+                setSelectedCompany(next);
+                // If the currently-typed project doesn't belong to
+                // the new company, clear it so the user doesn't end
+                // up with a hidden mismatch (project not in the
+                // narrowed list anymore).
+                if (project) {
+                  const stillValid = projects.some(
+                    (p) =>
+                      p.name === project &&
+                      (!next || p.company === next),
+                  );
+                  if (!stillValid) setProject("");
+                }
+              }}
+              data-active={selectedCompany ? "1" : undefined}
+            >
+              <option value="">בחר חברה (לסינון פרויקטים)…</option>
+              {companyOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label>
+            חברה (אוטומטית)
+            <input
+              type="text"
+              value={task.company || "—"}
+              disabled
+              readOnly
+              title="החברה נקבעת אוטומטית לפי הפרויקט"
+            />
+          </label>
+        )}
         <label>
           בריף
           <CampaignCombobox
