@@ -169,7 +169,7 @@ export default function NavCustomerEmails() {
       </button>
       {open && (
         <div
-          className="nav-customer-emails-popover"
+          className="nav-customer-emails-popover themed-scrollbar"
           role="dialog"
           aria-label="מיילים מלקוחות"
         >

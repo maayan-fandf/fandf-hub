@@ -174,7 +174,7 @@ export default function NavGmailTasks() {
         </span>
       </button>
       {open && (
-        <div className="nav-gmail-tasks-popover" role="dialog" aria-label="משימות מ-Gmail">
+        <div className="nav-gmail-tasks-popover themed-scrollbar" role="dialog" aria-label="משימות מ-Gmail">
           <div className="nav-gmail-tasks-popover-head">
             <h3>📥 משימות מ-Gmail</h3>
             <p className="muted">
