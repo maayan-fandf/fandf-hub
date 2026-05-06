@@ -345,12 +345,16 @@ export default async function TaskDetailPage({
               campaign={t.campaign}
               taskTitle={t.title}
               fileOrder={t.file_order || ""}
+              localPath={localPaths.windows}
+              localPathMac={localPaths.mac}
             />
             <TaskAttachments
               taskId={t.id}
               taskTitle={t.title}
               driveFolderId={t.drive_folder_id}
               driveFolderUrl={t.drive_folder_url}
+              localPath={localPaths.windows}
+              localPathMac={localPaths.mac}
             />
             {t.drive_folder_id && (
               <TaskDriveComments

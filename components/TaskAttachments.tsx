@@ -1,12 +1,20 @@
 import { listTaskAttachments } from "@/lib/taskUpload";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import TaskAttachmentsDropzone from "@/components/TaskAttachmentsDropzone";
+import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 
 type Props = {
   taskId: string;
   taskTitle: string;
   driveFolderId: string;
   driveFolderUrl?: string;
+  /** Optional local-disk path (Windows + Mac variants) for the
+   *  task's PARENT folder when Drive Desktop is mirroring. The
+   *  attachments subfolder lives at `<localPath>\<taskTitle>` —
+   *  copying the parent path is close enough for navigation; the
+   *  user lands one folder above and can step in. */
+  localPath?: string;
+  localPathMac?: string;
 };
 
 /**
@@ -30,6 +38,8 @@ export default async function TaskAttachments({
   taskTitle,
   driveFolderId,
   driveFolderUrl,
+  localPath,
+  localPathMac,
 }: Props) {
   // Without a parent Drive folder there's nothing to list — and
   // there's no useful affordance for the user here either, so we stay
@@ -61,15 +71,29 @@ export default async function TaskAttachments({
     <div className="task-attachments">
       <header className="task-attachments-head">
         <h3>📁 קבצים מהדיון</h3>
+        {/* Header actions — Drive folder + local-path copy. Both
+            icon-only to match the polish on TaskFilesPanel. The
+            folder link still opens in a new tab; the local-path
+            button copies + shows OS-specific paste instructions
+            (same component used in /tasks queue + page header). */}
         {folderLink && (
           <a
             href={folderLink}
             target="_blank"
             rel="noreferrer"
-            className="task-attachments-folder-link"
+            className="task-attachments-folder-link btn-icon-only"
+            title="פתח את התיקייה ב-Drive"
+            aria-label="פתח את התיקייה ב-Drive"
           >
-            <GoogleDriveIcon size="1em" /> פתח תיקייה
+            <GoogleDriveIcon size="1.05em" />
           </a>
+        )}
+        {localPath && (
+          <CopyLocalPathButton
+            path={localPath}
+            pathMac={localPathMac}
+            title="העתק נתיב מקומי — Drive Desktop"
+          />
         )}
       </header>
 

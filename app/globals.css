@@ -5828,6 +5828,19 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   border-radius: 6px;
   gap: .3rem;
 }
+/* Icon-only ghost button — square aspect, tight padding, used by the
+   header rows on TaskFilesPanel and TaskAttachments where the
+   "Drive" / "upload" affordances render as just icons. The aria-
+   label / title still carries the full Hebrew description for a11y
+   + hover. */
+.btn-icon-only {
+  padding: .35rem .5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2em;
+  line-height: 1;
+}
 
 /* Buttons that lead with the Drive logo (an inline SVG) — keep the
    icon flush to the start edge with a slightly tighter gap so the

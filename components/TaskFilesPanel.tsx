@@ -39,6 +39,8 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import GoogleDriveIcon from "./GoogleDriveIcon";
+import CopyLocalPathButton from "./CopyLocalPathButton";
 
 type DriveFile = {
   id: string;
@@ -73,6 +75,12 @@ type Props = {
   /** Stored file order CSV. Empty string means no manual order yet —
    *  files render in modified-date desc. */
   fileOrder: string;
+  /** Optional local-disk path (Windows + Mac variants) for the
+   *  task's folder when Drive Desktop is mirroring. When provided,
+   *  surfaces a CopyLocalPathButton in the header so the user can
+   *  jump from the panel to File Explorer / Finder. */
+  localPath?: string;
+  localPathMac?: string;
 };
 
 export default function TaskFilesPanel({
@@ -84,6 +92,8 @@ export default function TaskFilesPanel({
   campaign,
   taskTitle,
   fileOrder,
+  localPath,
+  localPathMac,
 }: Props) {
   const [files, setFiles] = useState<DriveFile[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -288,19 +298,29 @@ export default function TaskFilesPanel({
               href={folderUrl}
               target="_blank"
               rel="noreferrer"
-              className="btn-ghost btn-sm"
+              className="btn-ghost btn-sm btn-icon-only"
               title="פתח את התיקייה ב-Drive"
+              aria-label="פתח את התיקייה ב-Drive"
             >
-              ↗ פתח ב-Drive
+              <GoogleDriveIcon size="1.05em" />
             </a>
+          )}
+          {localPath && (
+            <CopyLocalPathButton
+              path={localPath}
+              pathMac={localPathMac}
+              title="העתק נתיב מקומי — Drive Desktop"
+            />
           )}
           <button
             type="button"
-            className="btn-ghost btn-sm"
+            className="btn-ghost btn-sm btn-icon-only"
             onClick={() => fileInputRef.current?.click()}
             disabled={!folderId || uploadingNames.length > 0}
+            title="העלה קבצים לתיקייה"
+            aria-label="העלה קבצים לתיקייה"
           >
-            ⬆ העלה קבצים
+            ⬆
           </button>
           <input
             ref={fileInputRef}
