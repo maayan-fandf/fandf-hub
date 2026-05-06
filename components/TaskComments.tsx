@@ -107,7 +107,11 @@ export default async function TaskComments({ taskId }: Props) {
                       </span>
                     )}
                   </div>
-                  <CommentBody body={c.body} className="thread-reply-text" />
+                  <CommentBody
+                    body={c.body}
+                    className="thread-reply-text"
+                    people={people}
+                  />
                 </div>
               </li>
             );

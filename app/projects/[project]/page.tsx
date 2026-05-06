@@ -771,6 +771,7 @@ function DiscussionSection({
           showResolved={showResolved}
           requestedView={requestedView}
           isClientUser={isClientUser}
+          people={people}
         />
       )}
     </section>
@@ -1000,6 +1001,7 @@ function ClientChannel({
   showResolved,
   requestedView,
   isClientUser,
+  people,
 }: {
   comments: CommentItem[];
   mentions: MentionItem[];
@@ -1009,6 +1011,10 @@ function ClientChannel({
   showResolved: boolean;
   requestedView: string | undefined;
   isClientUser: boolean;
+  /** Roster threaded down through CommentsPreview / MentionsPreview /
+   *  CommentBody so `@email` mentions render as the person's Hebrew
+   *  display name. */
+  people: import("@/lib/appsScript").TasksPerson[];
 }) {
   const view: "all" | "mine" =
     requestedView === "all"
@@ -1088,6 +1094,7 @@ function ClientChannel({
           mentions={mentions}
           showResolved={showResolved}
           isClientUser={isClientUser}
+          people={people}
         />
       ) : (
         <CommentsPreview
@@ -1096,6 +1103,7 @@ function ClientChannel({
           showResolved={showResolved}
           mentionedThreadIds={mentionedThreadIds}
           isClientUser={isClientUser}
+          people={people}
         />
       )}
       {view === "all" && totalComments > comments.length && (
@@ -1126,6 +1134,7 @@ function CommentsPreview({
   showResolved,
   mentionedThreadIds,
   isClientUser,
+  people,
 }: {
   comments: CommentItem[];
   projectName: string;
@@ -1137,6 +1146,9 @@ function CommentsPreview({
   /** When true, hide the "convert to task" affordance on each card —
    *  clients can't create tasks. */
   isClientUser?: boolean;
+  /** Roster forwarded to CommentBody so mention tokens render Hebrew
+   *  names. Optional — falls back to email-prefix when missing. */
+  people?: import("@/lib/appsScript").TasksPerson[];
 }) {
   // Only top-level threads render in the preview; replies are reached via
   // the inline ThreadReplies control on each thread. When showResolved is
@@ -1196,6 +1208,7 @@ function CommentsPreview({
                   parentCommentId={c.comment_id}
                   project={c.project}
                   count={c.reply_count}
+                  people={people}
                 />
                 {c.edited_at && (
                   <span
@@ -1210,6 +1223,7 @@ function CommentsPreview({
                 body={c.body}
                 truncateChars={220}
                 className="chat-message-text"
+                people={people}
               />
               <div className="discussion-client-actions">
                 <CardActions
@@ -1244,10 +1258,14 @@ function MentionsPreview({
   mentions,
   showResolved,
   isClientUser,
+  people,
 }: {
   mentions: MentionItem[];
   showResolved: boolean;
   isClientUser?: boolean;
+  /** Roster forwarded to CommentBody so mention tokens render Hebrew
+   *  names. Optional. */
+  people?: import("@/lib/appsScript").TasksPerson[];
 }) {
   // Filter behavior mirrors the page-level filter bar: default hides
   // resolved; toggle on to include them inline (fades via .is-resolved).
@@ -1313,12 +1331,14 @@ function MentionsPreview({
                   parentCommentId={actionTarget}
                   project={m.project}
                   count={m.reply_count ?? 0}
+                  people={people}
                 />
               </div>
               <CommentBody
                 body={m.body}
                 truncateChars={200}
                 className="chat-message-text"
+                people={people}
               />
               <div className="discussion-client-actions">
                 <CardActions

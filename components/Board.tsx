@@ -162,6 +162,7 @@ export default function Board({
                       setDragSrc({ commentId: t.comment_id, from: t.assignee_email })
                     }
                     onDueChange={(d) => handleDueChange(t, d)}
+                    people={people}
                   />
                 ))}
               </ul>
@@ -179,12 +180,17 @@ function TaskCard({
   busy,
   onDragStart,
   onDueChange,
+  people,
 }: {
   task: TaskItem;
   today: string;
   busy: boolean;
   onDragStart: () => void;
   onDueChange: (d: string) => void;
+  /** Roster forwarded to ThreadReplies → CommentBody so reply bodies
+   *  render `@email` mentions as Hebrew names. Optional — falls back
+   *  to email-prefix when missing. */
+  people?: TasksPerson[];
 }) {
   const state = taskState(task, today);
   const [editing, setEditing] = useState(false);
@@ -273,6 +279,7 @@ function TaskCard({
           parentCommentId={task.comment_id}
           project={task.project}
           count={task.reply_count ?? 0}
+          people={people}
         />
       </div>
       <div className="task-actions">

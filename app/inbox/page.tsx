@@ -192,12 +192,14 @@ function MentionCard({
           parentCommentId={resolveTarget}
           project={m.project}
           count={m.reply_count ?? 0}
+          people={people}
         />
       </div>
       <CommentBody
         body={m.body}
         truncateChars={400}
         className="mention-body"
+        people={people}
       />
       <div className="mention-actions">
         <CardActions

@@ -7761,6 +7761,27 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   overflow-wrap: anywhere;
   word-break: break-all;
 }
+/* `@<name>` mention chip rendered by CommentBody. Styled to look like
+   a Discord-/Slack-style inline tag — accent color so it pops, slight
+   bg + radius so the eye lands on it, semibold so the name reads as a
+   reference rather than free text. */
+.comment-body-mention {
+  display: inline-block;
+  padding: 0 .35em;
+  background: var(--accent-soft, rgba(99, 102, 241, .12));
+  color: var(--accent, #4f46e5);
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Wrapper around an image-only line in a comment body. dir="rtl" on
+   the JSX side aligns the inline-block image to the start of the
+   line; this rule just makes the wrapper take the full column width
+   so the alignment is enforced predictably. */
+.comment-body-image-row {
+  display: block;
+  width: 100%;
+}
 /* Generic autolink (used by lib/linkify.tsx — task descriptions,
    status-history notes, and any other free-form text surface). Same
    wrap behaviour as CommentBody's autolink so a single long URL

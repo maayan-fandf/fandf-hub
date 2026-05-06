@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import Avatar from "./Avatar";
 import CommentBody from "./CommentBody";
-import type { CommentItem } from "@/lib/appsScript";
+import type { CommentItem, TasksPerson } from "@/lib/appsScript";
 import { formatDateIso } from "@/lib/dateFormat";
 
 type Props = {
@@ -14,6 +14,10 @@ type Props = {
   /** Reply count hint from the parent's payload — shown in the chip label.
    *  If 0 or missing, the chip doesn't render at all. */
   count: number;
+  /** Roster forwarded to CommentBody so reply bodies render Hebrew names
+   *  for `@email` mentions. Optional — falls back to email-prefix when
+   *  missing. */
+  people?: TasksPerson[];
 };
 
 /**
@@ -29,6 +33,7 @@ export default function ThreadReplies({
   parentCommentId,
   project,
   count,
+  people,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -118,6 +123,7 @@ export default function ThreadReplies({
                     <CommentBody
                       body={r.body}
                       className="thread-reply-text"
+                      people={people}
                     />
                   </div>
                 </li>

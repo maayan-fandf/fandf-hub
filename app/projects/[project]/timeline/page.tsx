@@ -319,6 +319,7 @@ function CommentRow({
           body={c.body}
           truncateChars={600}
           className="timeline-body"
+          people={people}
         />
         {entry.spawnedTasks.length > 0 && (
           <div className="timeline-tasks">
@@ -422,6 +423,7 @@ function TaskRow({
           body={t.title || t.body}
           truncateChars={600}
           className="timeline-body"
+          people={people}
         />
         <div className="timeline-subnote">
           מאת{" "}

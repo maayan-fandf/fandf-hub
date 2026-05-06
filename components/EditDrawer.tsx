@@ -144,10 +144,17 @@ export default function EditDrawer({
 
   return (
     <div className="reply-drawer">
+      {/* Edit drawer textarea — taller than ReplyDrawer's (which is
+          rows=3 for compact quick replies) because edits commonly
+          touch existing multi-line bodies. The textarea is still
+          resize: vertical (per .reply-textarea CSS) so the user can
+          shrink or grow it from here. Reported by Maayan 2026-05-06:
+          the prior 3-row default felt cramped when editing anything
+          longer than a one-liner. */}
       <textarea
         ref={textareaRef}
         className="reply-textarea"
-        rows={3}
+        rows={8}
         value={value}
         placeholder="ערוך… (⌘/Ctrl+Enter לשמירה, Esc לביטול)"
         onChange={(e) => setValue(e.target.value)}

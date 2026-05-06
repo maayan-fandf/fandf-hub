@@ -1,11 +1,18 @@
 import type React from "react";
+import type { TasksPerson } from "@/lib/appsScript";
+import { personDisplayName } from "@/lib/personDisplay";
 
 /**
- * Renders a comment / mention / task body. Supports two markdown-ish
+ * Renders a comment / mention / task body. Supports the markdown-ish
  * tokens we use across the hub:
  *   - `![alt](url)` → inline image (URL whitelisted to drive.google.com /
  *     googleusercontent / docs.google.com / fandf hosts)
  *   - `[label](url)` → anchor link (same whitelist)
+ *   - `@<email>` → person mention; rendered as the person's Hebrew
+ *     display name (resolved from the optional `people` prop) with the
+ *     full email kept as a `title` tooltip. Falls back to the email
+ *     prefix when `people` is missing, so the omission only degrades
+ *     the rendered name — never the meaning.
  *
  * Anything that doesn't match the whitelist is rendered as plain text —
  * blocks `javascript:` URLs and arbitrary tracking hosts even if a user
@@ -26,10 +33,15 @@ export default function CommentBody({
   body,
   truncateChars,
   className,
+  people,
 }: {
   body: string;
   truncateChars?: number;
   className?: string;
+  /** Optional roster — when supplied, `@email` tokens are rendered as
+   *  the person's Hebrew display name. Without it mentions still render
+   *  (just as the email prefix). */
+  people?: TasksPerson[];
 }) {
   const text = maybeTruncate(body || "", truncateChars);
   // dir="auto" lets the browser pick LTR vs RTL per comment based on
@@ -38,7 +50,7 @@ export default function CommentBody({
   // pasted into a comment by an English-first user.
   return (
     <div className={className} dir="auto">
-      {renderBody(text)}
+      {renderBody(text, people)}
     </div>
   );
 }
@@ -50,7 +62,7 @@ function maybeTruncate(body: string, max?: number): string {
   return slice + "…";
 }
 
-function renderBody(body: string): React.ReactNode {
+function renderBody(body: string, people?: TasksPerson[]): React.ReactNode {
   const lines = body.split("\n");
   // dir="auto" on each <p> so lines pick LTR/RTL independently from
   // their own first strong character. Container-level dir="auto"
@@ -65,12 +77,23 @@ function renderBody(body: string): React.ReactNode {
     if (parts.length === 1 && parts[0].kind === "image") {
       // Single-image lines render as block elements so the image gets
       // its natural size instead of being stuck inside an inline <p>.
-      return renderPart(parts[0], `${i}-0`);
+      // Wrapped in dir="rtl" because an image-only line has no strong
+      // text characters for `dir="auto"` on the parent to anchor on,
+      // which made the inline-block image float to the LEFT of the
+      // RTL comment column. Reported by Maayan 2026-05-06. The hub is
+      // Hebrew-first, so RTL is the right default for image-only
+      // lines (text + image lines still inherit dir="auto" via their
+      // own <p> wrapper below — that case is unchanged).
+      return (
+        <div key={i} dir="rtl" className="comment-body-image-row">
+          {renderPart(parts[0], `${i}-0`, people)}
+        </div>
+      );
     }
     return (
       <p key={i} dir="auto">
         {parts.map((p, j) => (
-          <span key={`${i}-${j}`}>{renderPart(p, `${i}-${j}`)}</span>
+          <span key={`${i}-${j}`}>{renderPart(p, `${i}-${j}`, people)}</span>
         ))}
       </p>
     );
@@ -84,7 +107,12 @@ type Part =
   // Bare http(s) URL detected in plain text — rendered as an
   // auto-link with the URL itself as the label. CSS wraps long URLs
   // inside the comment body so they don't blow the column width.
-  | { kind: "autolink"; url: string };
+  | { kind: "autolink"; url: string }
+  // `@email@host.tld` token — renders as the person's Hebrew display
+  // name when the people roster is available, otherwise as the email
+  // prefix. Email is preserved on the rendered span as a tooltip so
+  // hover reveals who exactly was tagged.
+  | { kind: "mention"; email: string };
 
 const IMG_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/;
 const LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)\)/;
@@ -95,6 +123,13 @@ const LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)\)/;
 // (which include `?act=...&filter_set=...&selected_ad_ids=...%2C...`)
 // — those match cleanly.
 const BARE_URL_RE = /https?:\/\/[^\s<>"]+/;
+// `@email` mention token — leading `@` followed by a standard email.
+// Captures the email (without the leading `@`) as group 1 so the
+// renderer can resolve it against the people roster. Conservative
+// pattern: stops at whitespace, common punctuation, and angle
+// brackets. Not anchored — multiple mentions on a single line are
+// matched one by one as the tokenizer advances.
+const MENTION_RE = /@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/;
 function trimUrlTrailingPunct(url: string): string {
   // Strip trailing punctuation that's typically sentence-final, not
   // part of the URL. Repeatedly trim — `).` happens too.
@@ -108,6 +143,7 @@ function tokenizeLine(line: string): Part[] {
     const imgMatch = rest.match(IMG_RE);
     const linkMatch = rest.match(LINK_RE);
     const bareMatch = rest.match(BARE_URL_RE);
+    const mentionMatch = rest.match(MENTION_RE);
     let chosen: { idx: number; len: number; part: Part } | null = null;
     if (imgMatch && typeof imgMatch.index === "number") {
       const [whole, alt, url] = imgMatch;
@@ -145,6 +181,20 @@ function tokenizeLine(line: string): Part[] {
           idx: bareMatch.index,
           len: trimmed.length, // use trimmed length so trailing `.` stays in text
           part: { kind: "autolink", url: trimmed },
+        };
+      }
+    }
+    if (mentionMatch && typeof mentionMatch.index === "number") {
+      // Mentions live INSIDE no other token (img/link consume their
+      // own brackets, bare URLs are http(s)://). We still gate on
+      // chosen-precedence to keep the leftmost-match-wins ordering
+      // consistent across all token kinds.
+      if (!chosen || mentionMatch.index < chosen.idx) {
+        const [whole, email] = mentionMatch;
+        chosen = {
+          idx: mentionMatch.index,
+          len: whole.length,
+          part: { kind: "mention", email },
         };
       }
     }
@@ -204,7 +254,11 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
-function renderPart(part: Part, key: string): React.ReactNode {
+function renderPart(
+  part: Part,
+  key: string,
+  people?: TasksPerson[],
+): React.ReactNode {
   if (part.kind === "text") return <span key={key}>{part.text}</span>;
   if (part.kind === "image") {
     return (
@@ -243,6 +297,28 @@ function renderPart(part: Part, key: string): React.ReactNode {
       >
         {part.url}
       </a>
+    );
+  }
+  if (part.kind === "mention") {
+    // `@email@host.tld` → `@<HebrewName>` when the roster is
+    // available; falls back to the email prefix (the part before the
+    // `@`) if not. Full email kept on the title attribute so a hover
+    // confirms exactly who was tagged. Reported by Maayan 2026-05-06
+    // — raw emails crowded the comment text and made Hebrew threads
+    // feel less native.
+    const fallbackHandle = part.email.split("@")[0];
+    const display = people
+      ? personDisplayName(part.email, people) || fallbackHandle
+      : fallbackHandle;
+    return (
+      <span
+        key={key}
+        className="comment-body-mention"
+        title={part.email}
+        dir="auto"
+      >
+        @{display}
+      </span>
     );
   }
   return (
