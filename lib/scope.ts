@@ -1,5 +1,11 @@
 import type { Project } from "@/lib/appsScript";
 
+/** Company-level catch-all project name. Hardcoded here (matching the
+ *  pattern in lib/projectHref.ts) to keep this module client-safe and
+ *  free of Apps Script imports — the canonical source is
+ *  lib/appsScript.GENERAL_PROJECT_NAME. */
+const GENERAL_PROJECT_NAME = "כללי";
+
 /**
  * Shared person-scope logic. Used by:
  *   - app/page.tsx      — filters the home-page project grid
@@ -78,5 +84,28 @@ export function scopeProjectsToPerson(
 ): Project[] {
   if (isClient || !personName) return projects;
   const filtered = projects.filter((p) => isPersonOnProject(p, personName));
-  return filtered.length > 0 ? filtered : projects;
+  if (filtered.length === 0) return projects;
+
+  // Re-attach each represented company's "כללי" catch-all project,
+  // even when the user isn't explicitly on its roster. כללי rows are
+  // manually maintained (per `feedback_general_project_manual.md`)
+  // and typically don't list every staff member — without this, an
+  // internal user who's on, say, two of "גיא ודורון"'s projects
+  // would see those two but not the company's כללי, which is
+  // confusing because the personal-scope rule "you're on this
+  // company's work" should imply access to its catch-all too.
+  // Reported by Itay 2026-05-06: every company missing its כללי.
+  const representedCompanies = new Set(filtered.map((p) => p.company));
+  const filteredKeys = new Set(
+    filtered.map((p) => `${p.company}|${p.name}`),
+  );
+  for (const p of projects) {
+    if (p.name !== GENERAL_PROJECT_NAME) continue;
+    if (!representedCompanies.has(p.company)) continue;
+    const key = `${p.company}|${p.name}`;
+    if (filteredKeys.has(key)) continue;
+    filtered.push(p);
+    filteredKeys.add(key);
+  }
+  return filtered;
 }
