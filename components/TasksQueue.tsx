@@ -843,6 +843,11 @@ export default function TasksQueue({
       <TasksBulkBar
         selectedIds={selectedIds}
         people={people}
+        campaigns={Array.from(
+          new Set(
+            tasks.map((t) => (t.campaign || "").trim()).filter(Boolean),
+          ),
+        ).sort()}
         onClear={clearSelection}
       />
       {!hideOther && other.length > 0 && (

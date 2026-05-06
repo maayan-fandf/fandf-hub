@@ -12185,6 +12185,18 @@ html[data-theme="dark"] .kanban-error {
   align-items: center;
   gap: 0.3em;
 }
+.tasks-bulk-input-group-people {
+  /* Wider container for the people pickers since PersonCombobox owns
+     a search input inside its own combobox-input wrapper, which has
+     its own min-width. Without explicit room, the combobox compresses
+     to ~5em and the placeholder gets cut off. */
+  min-width: 14em;
+}
+.tasks-bulk-input-label {
+  font-size: .8em;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .tasks-bulk-input {
   font: inherit;
   padding: 0.35em 0.6em;
@@ -12193,6 +12205,35 @@ html[data-theme="dark"] .kanban-error {
   background: var(--surface);
   color: var(--text);
   width: 11em;
+}
+/* Destructive button + soft-delete styling — there's no global
+   `btn-danger` rule today, so define the destructive variant here
+   alongside the bulk bar's other adjustments. Same shape as
+   btn-ghost btn-sm, palette swapped to red. The soft-delete
+   button reads as destructive even though it's a status change
+   under the hood (status → cancelled, recoverable). */
+.btn-danger.btn-sm,
+button.btn-danger.btn-sm {
+  background: rgba(220, 38, 38, .08);
+  color: #b91c1c;
+  border: 1px solid rgba(220, 38, 38, .35);
+}
+.btn-danger.btn-sm:hover:not(:disabled),
+button.btn-danger.btn-sm:hover:not(:disabled) {
+  background: rgba(220, 38, 38, .15);
+  border-color: rgba(220, 38, 38, .55);
+}
+html[data-theme="dark"] .btn-danger.btn-sm {
+  background: rgba(248, 113, 113, .14);
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, .35);
+}
+html[data-theme="dark"] .btn-danger.btn-sm:hover:not(:disabled) {
+  background: rgba(248, 113, 113, .22);
+  border-color: rgba(248, 113, 113, .55);
+}
+.tasks-bulk-soft-delete {
+  white-space: nowrap;
 }
 .tasks-bulk-status {
   color: var(--muted);
