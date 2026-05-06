@@ -19,6 +19,7 @@ import {
   CHAIN_TEMPLATES,
   type ChainTemplate,
 } from "@/lib/chainTemplates";
+import { roleEmoji } from "./RoleChip";
 
 /** Hardcoded fallback used only when the names-to-emails sheet has no
  *  Role column populated. Real departments come from the people list
@@ -805,18 +806,27 @@ export default function TaskCreateForm({
             (ניתן לבחור יותר מאחת — בחירה תסנן את רשימת העובדים בהמשך)
           </span>
           <div className="task-form-dept-row">
-            {departmentOptions.map((d) => (
-              <button
-                key={d}
-                type="button"
-                className={`task-form-dept-chip${
-                  departments.includes(d) ? " is-active" : ""
-                }`}
-                onClick={() => toggleDept(d)}
-              >
-                {d}
-              </button>
-            ))}
+            {departmentOptions.map((d) => {
+              const emoji = roleEmoji(d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  className={`task-form-dept-chip${
+                    departments.includes(d) ? " is-active" : ""
+                  }`}
+                  onClick={() => toggleDept(d)}
+                >
+                  {emoji ? (
+                    <>
+                      <span aria-hidden>{emoji}</span> {d}
+                    </>
+                  ) : (
+                    d
+                  )}
+                </button>
+              );
+            })}
           </div>
         </label>
       )}

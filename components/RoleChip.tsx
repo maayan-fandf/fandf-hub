@@ -38,12 +38,12 @@ const META: Record<
   // contextual emoji. Lookup is case-insensitive (lowercased on
   // entry) so the column can be written "Media" or "media" or
   // "MEDIA" with no behavioural change.
-  media:           { emoji: "📺", label: "media",         cls: "role-media" },
+  media:           { emoji: "🎯", label: "media",         cls: "role-media" },
   manager:         { emoji: "👔", label: "manager",       cls: "role-account" },
   "client manager":{ emoji: "🤝", label: "client manager",cls: "role-account" },
   copywriter:      { emoji: "✍️", label: "copywriter",    cls: "role-creative" },
   art:             { emoji: "🎨", label: "art",           cls: "role-creative" },
-  studio:          { emoji: "🖥️", label: "studio",        cls: "role-creative" },
+  studio:          { emoji: "🖼️", label: "studio",        cls: "role-creative" },
   designer:        { emoji: "🖌️", label: "designer",      cls: "role-creative" },
   video:           { emoji: "🎬", label: "video",         cls: "role-creative" },
 };
@@ -51,6 +51,15 @@ const META: Record<
 function lookup(role: string) {
   const key = String(role || "").toLowerCase().trim();
   return META[key];
+}
+
+/** Bare-emoji lookup for surfaces that already have their own chip
+ *  chrome (e.g. the dept multi-select on the task form). Returns "" for
+ *  unknown / empty roles so callers can render `{emoji} {label}` and
+ *  the missing emoji simply collapses without an awkward placeholder. */
+export function roleEmoji(role: string): string {
+  const m = lookup(role);
+  return m ? m.emoji : "";
 }
 
 export default function RoleChip({ role }: { role: Role }) {
