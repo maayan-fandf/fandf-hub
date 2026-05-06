@@ -381,6 +381,49 @@ a:hover {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+/* In-place edit — the textarea takes the body's slot rather than
+   opening as a separate floating drawer. The container inherits the
+   thread-reply-text class so width / spacing match what the rendered
+   body would have; we add minimal extra layout to host the textarea
+   + Save/Cancel toolbar. Reported by Maayan 2026-05-06. */
+.thread-reply-edit {
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+}
+.thread-reply-edit-textarea {
+  width: 100%;
+  min-height: 4em;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .5em .65em;
+  resize: vertical;
+  outline: none;
+}
+.thread-reply-edit-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.thread-reply-edit-foot {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  font-size: .78rem;
+  color: var(--muted);
+}
+.thread-reply-edit-count.is-over {
+  color: var(--danger, #b91c1c);
+  font-weight: 600;
+}
+.thread-reply-edit-error {
+  color: var(--danger, #b91c1c);
+}
+.thread-reply-edit-spacer { flex: 1 1 auto; }
 
 /* ─── Unified card-action row ────────────────────────────────────────
    Comment / task / mention cards all surface the same four actions:
