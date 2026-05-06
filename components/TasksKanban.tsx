@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -89,6 +89,14 @@ export default function TasksKanban({
   // server error without re-fetching. The parent page passes the
   // server-rendered list as the seed.
   const [tasks, setTasks] = useState(initialTasks);
+  // Re-sync from props when the parent re-renders with a new task
+  // list (URL-driven filter toggles, etc.). Mirrors the fix in
+  // TasksQueue.tsx — without this, useState's mount-time init would
+  // hold the old data even after `router.refresh()` brought fresh
+  // server-rendered props.
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

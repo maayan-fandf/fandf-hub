@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { projectHref } from "@/lib/projectHref";
 import { useRouter } from "next/navigation";
@@ -285,6 +285,21 @@ export default function TasksQueue({
   // revert on server error — same pattern the kanban uses. Initial
   // value is the server-rendered list passed in by the page.
   const [tasks, setTasks] = useState(initialTasks);
+  // Re-sync from props when the parent re-renders with a new task
+  // list. Without this, the local state initialized once at mount and
+  // never picked up server-data changes — so URL-driven filter toggles
+  // (e.g. ?umbrellas=1 via router.push + router.refresh) flipped the
+  // active query state but the table kept rendering the original list.
+  // Verified live 2026-05-06: clicking the עטיפות chip pushed the URL
+  // and the parent re-rendered with umbrella rows in `initialTasks`,
+  // but TasksQueue's internal `tasks` stayed stale → bucket counts
+  // didn't change. Hard reload "fixed" it because remount re-ran
+  // `useState(initialTasks)`. The optimistic-update flicker on
+  // drag-end is acceptable: router.refresh after a successful save
+  // re-syncs to the server's view, which is the source of truth.
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   // Bulk-selection state. A row's checkbox toggles its id in/out of

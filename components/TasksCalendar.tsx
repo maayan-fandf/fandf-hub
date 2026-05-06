@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -113,6 +113,11 @@ export default function TasksCalendar({
   // grid optimistically before the server roundtrip lands. The parent
   // page passes in the server-rendered list as the seed.
   const [tasks, setTasks] = useState(initialTasks);
+  // Re-sync from props on URL-driven filter changes — mirrors the
+  // fix in TasksQueue.tsx + TasksKanban.tsx.
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
   const [error, setError] = useState<string | null>(null);
 
   // dnd-kit sensors. Same activation thresholds as the table view so
