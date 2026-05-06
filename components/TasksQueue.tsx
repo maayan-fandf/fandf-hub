@@ -968,9 +968,11 @@ function TaskRow({
   const rowKindCls =
     rowKind === "umbrella"
       ? " tasks-row-umbrella"
-      : rowKind === "parallel-child" || rowKind === "chain-child"
-        ? " tasks-row-child"
-        : "";
+      : rowKind === "parallel-child"
+        ? " tasks-row-child tasks-row-parallel-child"
+        : rowKind === "chain-child"
+          ? " tasks-row-child tasks-row-chain-child"
+          : "";
   return (
     <tr
       ref={dragEnabled ? setNodeRef : undefined}

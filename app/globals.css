@@ -11586,11 +11586,35 @@ html[data-theme="dark"] .task-date-overdue {
   font-weight: 700;
   font-size: 1.05em;
 }
+/* Accent stripe on umbrella rows — a 3px colored bar on the row's
+   inline-start edge (right side in RTL, left in LTR). Uses
+   `border-inline-start` so the stripe flips automatically with
+   document direction, no media-query gymnastics. Matches the
+   umbrella chip's purple palette so the cue is consistent across
+   every surface that calls out an umbrella. The first cell carries
+   it; the rest of the row's cells are unchanged so column alignment
+   stays clean. */
+.tasks-row-umbrella > td:first-of-type {
+  border-inline-start: 3px solid #8b5cf6;
+}
+html[data-theme="dark"] .tasks-row-umbrella > td:first-of-type {
+  border-inline-start-color: #a78bfa;
+}
 .tasks-row-child .tasks-title-link {
   font-size: 0.95em;
   /* RTL-safe via padding-inline-start. Targets only the title link
      (not the row's other cells) so every column stays aligned. */
   padding-inline-start: 1.5em;
+}
+/* Children get a thinner stripe in the kind's color (teal for
+   parallel, amber for chain) — visually links them to their
+   umbrella's purple stripe without screaming. Same inline-start
+   edge so all three (umbrella + its children) line up vertically. */
+.tasks-row-child.tasks-row-parallel-child > td:first-of-type {
+  border-inline-start: 2px solid #06b6d4;
+}
+.tasks-row-child.tasks-row-chain-child > td:first-of-type {
+  border-inline-start: 2px solid #f59e0b;
 }
 
 /* Drag handle in the table view — narrow column at the row's start
