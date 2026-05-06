@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import InlineEditCell from "@/components/InlineEditCell";
 import DatePicker from "@/components/DatePicker";
+import TimePicker from "@/components/TimePicker";
 import { displayNameOf, personDisplayName } from "@/lib/personDisplay";
 
 // router.refresh() was silently no-op'ing on /tasks in production even
@@ -149,13 +150,11 @@ export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
               disabled={busy}
               className="inline-edit-input"
             />
-            <input
-              type="time"
-              className="inline-edit-input"
+            <TimePicker
               value={time}
-              onChange={(e) => setTime(e.target.value)}
+              onChange={setTime}
               disabled={busy}
-              aria-label="שעה (אופציונלי)"
+              ariaLabel="שעה (אופציונלי)"
             />
           </div>
           <div className="inline-edit-actions">

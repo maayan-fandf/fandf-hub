@@ -10012,6 +10012,63 @@ html[data-theme="dark"] .admin-default-client { background: rgba(52,211,153,.2);
   font-variant-numeric: tabular-nums;
 }
 
+/* Material 3 input-mode time picker — pair of large outlined cells
+   with a centered `:` separator. Replaces the browser's native
+   `<input type="time">` chrome on task forms. Cells share the
+   form's input height so the picker sits flush with the date input
+   beside it. Mobile users still get the numeric keyboard (the cell
+   inputs are type="text" with inputMode="numeric"); they just don't
+   get the platform's wheel/clock — the M3 cells are a more
+   intentional desktop UX. */
+.time-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  font-variant-numeric: tabular-nums;
+}
+.time-picker-cell {
+  width: 2.6em;
+  text-align: center;
+  font: inherit;
+  font-size: 1.05em;
+  font-weight: 500;
+  padding: .45em .25em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  /* Hide the spinner buttons that some Chrome variants render on
+     numeric-mode text inputs. Belt-and-suspenders — type="text"
+     normally avoids them but inputMode="numeric" can re-trigger it
+     in older Webkit. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.time-picker-cell::-webkit-outer-spin-button,
+.time-picker-cell::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.time-picker-cell:focus {
+  outline: none;
+  border-color: var(--accent, #4f46e5);
+  background: var(--accent-soft, rgba(99, 102, 241, .12));
+  color: var(--accent, #4f46e5);
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(99, 102, 241, .12));
+}
+.time-picker-cell::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+  opacity: .7;
+}
+.time-picker-sep {
+  font-size: 1.1em;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 0 .1em;
+  user-select: none;
+}
+
 /* Fold for old terminal-state tasks (done/cancelled > 14 days). */
 .tasks-archive-fold {
   margin: .4em 0 .2em;

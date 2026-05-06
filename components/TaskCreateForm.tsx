@@ -7,6 +7,7 @@ import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
 import PeopleMultiCombobox from "./PeopleMultiCombobox";
+import TimePicker from "./TimePicker";
 import DrivePickerButton from "./DrivePickerButton";
 import TaskFilesPanel from "./TaskFilesPanel";
 import { displayNameOf } from "@/lib/personDisplay";
@@ -842,11 +843,13 @@ export default function TaskCreateForm({
             תאריך מבוקש
             <div className="date-time-inputs">
               <DatePicker name="requested_date" />
-              <input
-                type="time"
+              {/* Native <input type="time"> replaced with the M3
+                  input-mode picker. Hidden mirror keeps the form's
+                  `requested_time` submission identical so the
+                  surrounding submit handler doesn't change. */}
+              <TimePicker
                 name="requested_time"
-                aria-label="שעה (אופציונלי)"
-                title="שעה (אופציונלי)"
+                ariaLabel="שעה (אופציונלי)"
               />
             </div>
           </label>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
+import TimePicker from "./TimePicker";
 import DriveFolderPicker, {
   type FolderPickerValue,
 } from "./DriveFolderPicker";
@@ -496,12 +497,10 @@ export default function TaskEditPanel({
               value={requestedDate}
               onChange={setRequestedDate}
             />
-            <input
-              type="time"
+            <TimePicker
               value={requestedTime}
-              onChange={(e) => setRequestedTime(e.target.value)}
-              aria-label="שעה (אופציונלי)"
-              title="שעה (אופציונלי)"
+              onChange={setRequestedTime}
+              ariaLabel="שעה (אופציונלי)"
             />
           </div>
         </label>
