@@ -787,7 +787,11 @@ export default function TasksQueue({
                   href={buildResetSortHref(searchParams)}
                   scroll={false}
                   className="tasks-bucket-sort-reset"
-                  title="חזור למיון ברירת המחדל (סדר ידני)"
+                  title={
+                    "סדר ידני = הסדר שאת/ה קובע/ת ביד על ידי גרירת שורות. " +
+                    "בכל פעם שגוררים שורה למיקום חדש המיקום נשמר, וזו ברירת המחדל של הרשימה. " +
+                    "כעת התצוגה ממוינת לפי עמודה — לחץ/י כאן כדי לחזור לסדר הידני."
+                  }
                 >
                   ↺ סדר ידני
                 </Link>
