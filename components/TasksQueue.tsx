@@ -1079,24 +1079,63 @@ function TaskRow({
             {task.title}
           </Link>
         </div>
-        {(isCreatedWithin24h(task.created_at) ||
-          task.round_number > 1) && (
-          <div className="tasks-title-chips">
-            {isCreatedWithin24h(task.created_at) && (
-              <span
-                className="tasks-new-chip"
-                title="נוצרה ב־24 שעות האחרונות"
-              >
-                🆕 חדש
-              </span>
-            )}
-            {task.round_number > 1 && (
-              <span className="tasks-round-chip" title="סבב תיקונים">
-                סבב #{task.round_number}
-              </span>
-            )}
-          </div>
-        )}
+        {(() => {
+          const isNew = isCreatedWithin24h(task.created_at);
+          const kind = classifyTask(task);
+          const overdue = isOverdue(task);
+          const hasAnyChip =
+            isNew || task.round_number > 1 || kind !== null || overdue;
+          if (!hasAnyChip) return null;
+          return (
+            <div className="tasks-title-chips">
+              {isNew && (
+                <span
+                  className="tasks-new-chip"
+                  title="נוצרה ב־24 שעות האחרונות"
+                >
+                  🆕 חדש
+                </span>
+              )}
+              {task.round_number > 1 && (
+                <span className="tasks-round-chip" title="סבב תיקונים">
+                  סבב #{task.round_number}
+                </span>
+              )}
+              {kind === "umbrella" && (
+                <span
+                  className="tasks-type-chip tasks-type-chip-umbrella"
+                  title="שורת עטיפה — מרכזת את כל תתי-המשימות שתחתיה"
+                >
+                  🪆 עטיפה
+                </span>
+              )}
+              {kind === "parallel-child" && (
+                <span
+                  className="tasks-type-chip tasks-type-chip-parallel"
+                  title="תת-משימה מקבילה תחת עטיפה — אין תלות בתתי-משימות אחרות"
+                >
+                  🌂 מקבילה
+                </span>
+              )}
+              {kind === "chain-child" && (
+                <span
+                  className="tasks-type-chip tasks-type-chip-chain"
+                  title="שלב בשרשרת — סדר מסירה אוטומטי מאחד לבא"
+                >
+                  🔗 בשרשרת
+                </span>
+              )}
+              {overdue && (
+                <span
+                  className="tasks-overdue-chip"
+                  title="עברה תאריך היעד ועדיין לא בוצעה"
+                >
+                  ⚠️ באיחור
+                </span>
+              )}
+            </div>
+          );
+        })()}
         {!compact && task.description && (
           <div className="tasks-desc-preview">
             {task.description.slice(0, 90)}
@@ -1227,6 +1266,38 @@ function isCreatedWithin24h(iso: string): boolean {
   const ms = Date.parse(iso || "");
   if (!Number.isFinite(ms)) return false;
   return Date.now() - ms < 24 * 60 * 60 * 1000;
+}
+
+/** Classify a row's place in the dependency graph for the inline chip.
+ *  Returns null for plain standalone tasks (the dominant case — we'd
+ *  add visual noise to every row otherwise). The four cases:
+ *   - umbrella       → row IS an umbrella container
+ *   - parallel-child → row sits under an umbrella with NO edges
+ *   - chain-child    → row sits under an umbrella with edges, OR has
+ *                      edges without an umbrella (rare standalone-link)
+ *   - null           → standalone task with no umbrella and no edges */
+type TaskKind = "umbrella" | "parallel-child" | "chain-child";
+function classifyTask(task: WorkTask): TaskKind | null {
+  if (task.is_umbrella) return "umbrella";
+  const hasEdges =
+    (task.blocks?.length ?? 0) > 0 || (task.blocked_by?.length ?? 0) > 0;
+  if (task.umbrella_id) {
+    return hasEdges ? "chain-child" : "parallel-child";
+  }
+  return hasEdges ? "chain-child" : null;
+}
+
+/** Past `requested_date` and not in a terminal state. Time portion
+ *  is honored when present (`YYYY-MM-DDTHH:MM`); date-only values use
+ *  end-of-day so a task due "today" doesn't read overdue all day. */
+function isOverdue(task: WorkTask): boolean {
+  if (!task.requested_date) return false;
+  if (task.status === "done" || task.status === "cancelled") return false;
+  const raw = task.requested_date.trim();
+  // "YYYY-MM-DD" → 23:59 of that day; "YYYY-MM-DDTHH:MM" → exact moment.
+  const ms = raw.length <= 10 ? Date.parse(`${raw}T23:59:59`) : Date.parse(raw);
+  if (!Number.isFinite(ms)) return false;
+  return ms < Date.now();
 }
 
 // `shortName` was an inline email-prefix fallback before the

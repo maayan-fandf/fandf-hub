@@ -11502,6 +11502,78 @@ html[data-theme="dark"] .tasks-new-chip {
   font-size: .7rem;
 }
 
+/* Type chips on the queue's title cell — telegraph the row's place
+   in the dependency graph (umbrella / parallel-child / chain-child).
+   Same chip vocabulary as `.tasks-new-chip` so they sit naturally in
+   the `.tasks-title-chips` row; only the palette varies per kind so
+   the eye can sort them at a glance.
+
+   Skipped for plain standalone tasks — adding a "standalone" chip
+   would noise every row, since standalone IS the dominant case. */
+.tasks-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  font-size: .7rem;
+  font-weight: 600;
+  padding: .15em .55em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* Umbrella — purple, the "container" tone. Distinct from the in-progress
+   blue + the new-row green so umbrella rows pop when you flip the
+   🪆 עטיפות chip. */
+.tasks-type-chip-umbrella {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+html[data-theme="dark"] .tasks-type-chip-umbrella {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+}
+/* Parallel-child — teal/cyan, the "peer" tone. Distinct enough from
+   the umbrella purple that an umbrella + its parallel children read
+   as related-but-different at a glance. */
+.tasks-type-chip-parallel {
+  background: #cffafe;
+  color: #155e75;
+}
+html[data-theme="dark"] .tasks-type-chip-parallel {
+  background: rgba(6, 182, 212, 0.18);
+  color: #67e8f9;
+}
+/* Chain-child — amber/honey, the "in-line" tone. Different again from
+   the parallel teal so the user can tell at a glance whether a child
+   is parallel or part of a sequenced pipeline. */
+.tasks-type-chip-chain {
+  background: #fef3c7;
+  color: #92400e;
+}
+html[data-theme="dark"] .tasks-type-chip-chain {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+}
+
+/* Overdue chip — red/rose. Only renders when the row's requested_date
+   has already passed AND the task isn't done/cancelled, so seeing
+   one means real action is needed. */
+.tasks-overdue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  font-size: .7rem;
+  font-weight: 600;
+  padding: .15em .55em;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: #fee2e2;
+  color: #991b1b;
+}
+html[data-theme="dark"] .tasks-overdue-chip {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
 /* Drag handle in the table view — narrow column at the row's start
    that wears the grab cursor, otherwise the row is fully clickable.
    The grip glyph is muted by default and brightens on row hover so
