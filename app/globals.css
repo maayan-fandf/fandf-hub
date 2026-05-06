@@ -7795,6 +7795,103 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   display: block;
   width: 100%;
 }
+/* Image trigger button — replaces the previous `<a>` for chat-image
+   tokens. Resets the default <button> chrome so the bare image still
+   renders the same as before; the only difference is the click
+   handler now opens the lightbox instead of navigating to Drive. */
+.comment-body-image-trigger {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: zoom-in;
+}
+.task-attachment-trigger {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: zoom-in;
+  text-align: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+  width: 100%;
+}
+
+/* Lightbox overlay — single instance mounted by LightboxProvider in
+   app/layout.tsx, portaled into <body>. Covers the full viewport
+   with a dimmed backdrop + a centered image up to 92vw × 92vh. */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .8em;
+  padding: 2vh 2vw;
+  background: rgba(8, 10, 18, .82);
+  backdrop-filter: blur(2px);
+  cursor: zoom-out;
+  /* Fade in — keeps the open feeling soft rather than abrupt. */
+  animation: lightbox-fade-in .12s ease-out;
+}
+@keyframes lightbox-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.lightbox-image {
+  max-width: 92vw;
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 10px 50px rgba(0,0,0,.5);
+  cursor: default;
+}
+.lightbox-caption {
+  color: rgba(255,255,255,.85);
+  font-size: .9em;
+  max-width: 92vw;
+  text-align: center;
+  word-break: break-word;
+  background: rgba(0,0,0,.4);
+  padding: .35em .8em;
+  border-radius: 6px;
+}
+.lightbox-actions {
+  position: absolute;
+  top: 1.2vh;
+  inset-inline-end: 1.2vw;
+  display: flex;
+  gap: .5em;
+}
+.lightbox-action {
+  width: 2.4em;
+  height: 2.4em;
+  border-radius: 999px;
+  background: rgba(255,255,255,.95);
+  border: none;
+  color: #1a1a2e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1em;
+  text-decoration: none;
+  transition: background .12s, transform .12s;
+}
+.lightbox-action:hover {
+  background: #fff;
+  transform: scale(1.08);
+}
+.lightbox-action-close {
+  font-weight: 700;
+}
 /* Generic autolink (used by lib/linkify.tsx — task descriptions,
    status-history notes, and any other free-form text surface). Same
    wrap behaviour as CommentBody's autolink so a single long URL

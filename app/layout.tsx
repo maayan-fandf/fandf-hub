@@ -21,6 +21,7 @@ import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
 import AgendaPanel from "@/components/AgendaPanel";
+import LightboxProvider from "@/components/LightboxProvider";
 import { getMyProjects, type Project } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
 
@@ -193,14 +194,21 @@ export default async function RootLayout({
             renders as a no-op for unauthenticated visitors (signin
             page etc.) — AgendaPanel itself returns null when
             userEmail is empty. */}
-        <div className="app-shell-with-agenda">
-          <div className="app-shell-main">{children}</div>
-          {email && !isClientUser && (
-            <Suspense fallback={null}>
-              <AgendaPanel userEmail={email} />
-            </Suspense>
-          )}
-        </div>
+        {/* LightboxProvider mounts a single shared image-viewer
+            overlay used by chat-attachment image clicks across the
+            hub. Wraps the whole app shell so any deeply-nested
+            consumer can call `useLightbox().open(src, alt, viewUrl)`
+            without prop-drilling. */}
+        <LightboxProvider>
+          <div className="app-shell-with-agenda">
+            <div className="app-shell-main">{children}</div>
+            {email && !isClientUser && (
+              <Suspense fallback={null}>
+                <AgendaPanel userEmail={email} />
+              </Suspense>
+            )}
+          </div>
+        </LightboxProvider>
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
         {email && !isClientUser && <QuickNoteModal />}

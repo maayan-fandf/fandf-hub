@@ -2,6 +2,7 @@ import { listTaskAttachments } from "@/lib/taskUpload";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import TaskAttachmentsDropzone from "@/components/TaskAttachmentsDropzone";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
+import TaskAttachmentTile from "@/components/TaskAttachmentTile";
 
 type Props = {
   taskId: string;
@@ -105,43 +106,18 @@ export default async function TaskAttachments({
 
       {result.files.length > 0 && (
         <ul className="task-attachments-grid">
-          {result.files.map((f) => {
-            const isImage = (f.mimeType || "").startsWith("image/");
-            return (
-              <li key={f.fileId} className="task-attachment">
-                <a
-                  href={f.viewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="task-attachment-link"
-                  title={f.name}
-                >
-                  {isImage && f.thumbnailLink ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={f.thumbnailLink}
-                      alt={f.name}
-                      className="task-attachment-thumb"
-                      loading="lazy"
-                    />
-                  ) : f.iconLink ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={f.iconLink}
-                      alt=""
-                      className="task-attachment-icon"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="task-attachment-icon-fallback" aria-hidden>
-                      📄
-                    </span>
-                  )}
-                  <span className="task-attachment-name">{f.name}</span>
-                </a>
-              </li>
-            );
-          })}
+          {result.files.map((f) => (
+            <li key={f.fileId} className="task-attachment">
+              <TaskAttachmentTile
+                fileId={f.fileId}
+                name={f.name}
+                mimeType={f.mimeType}
+                viewUrl={f.viewUrl}
+                thumbnailLink={f.thumbnailLink}
+                iconLink={f.iconLink}
+              />
+            </li>
+          ))}
         </ul>
       )}
     </div>

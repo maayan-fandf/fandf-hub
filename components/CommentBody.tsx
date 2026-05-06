@@ -1,6 +1,7 @@
 import type React from "react";
 import type { TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
+import CommentBodyImage from "./CommentBodyImage";
 
 /**
  * Renders a comment / mention / task body. Supports the markdown-ish
@@ -275,22 +276,17 @@ function renderPart(
 ): React.ReactNode {
   if (part.kind === "text") return <span key={key}>{part.text}</span>;
   if (part.kind === "image") {
+    // Image tokens render through a client subcomponent that opens
+    // the in-app lightbox on click instead of navigating to Drive.
+    // The original viewUrl is preserved on the lightbox's "פתח
+    // ב-Drive" button for users who DO want the Drive view.
     return (
-      <a
+      <CommentBodyImage
         key={key}
-        href={part.viewUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="comment-body-image-link"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={part.embedUrl}
-          alt={part.alt}
-          className="comment-body-image"
-          loading="lazy"
-        />
-      </a>
+        alt={part.alt}
+        viewUrl={part.viewUrl}
+        embedUrl={part.embedUrl}
+      />
     );
   }
   if (part.kind === "autolink") {
