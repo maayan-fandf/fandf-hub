@@ -164,7 +164,7 @@ export default function TasksBulkBar({
         <input
           ref={assigneeRef}
           type="text"
-          list="tasks-people"
+          list="tasks-bulk-people-fallback"
           placeholder="עובד מבצע…"
           className="tasks-bulk-input"
           dir="ltr"
@@ -184,7 +184,7 @@ export default function TasksBulkBar({
         <input
           ref={approverRef}
           type="text"
-          list="tasks-people"
+          list="tasks-bulk-people-fallback"
           placeholder="מאשר…"
           className="tasks-bulk-input"
           dir="ltr"
@@ -221,10 +221,14 @@ export default function TasksBulkBar({
           {error}
         </div>
       )}
-      {/* People datalist is shared with the filter bar above; we rely
-          on its #tasks-people id being mounted on the same page. If
-          this component renders without that, the autocomplete falls
-          back to free-text — still works, just no suggestions. */}
+      {/* People datalist — local to the bulk bar. Used to live as a
+          shared `#tasks-people` datalist on the filter form, but
+          that datalist was retired when the filter people-pickers
+          were upgraded to PersonCombobox (commit 8e0ffac). Keeping
+          this one local + named *-fallback so the bulk bar's
+          autocomplete keeps working without any cross-component
+          coupling. Future enhancement: swap these inputs for
+          PersonCombobox to match the rest of the hub. */}
       <datalist id="tasks-bulk-people-fallback">
         {people.map((p) => (
           <option key={p.email} value={p.email}>
