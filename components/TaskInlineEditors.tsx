@@ -128,6 +128,21 @@ export function TaskPriorityCell({ task }: { task: WorkTask }) {
 
 /* ── Requested date ────────────────────────────────────────────────── */
 
+/** Overdue test for the date cell — same semantics as the queue's
+ *  isOverdue helper, scoped to here so this component stays
+ *  self-contained. Date-only "YYYY-MM-DD" treats end-of-day as the
+ *  due moment so a task due "today" doesn't flicker overdue all day;
+ *  a value with an explicit time portion uses that exact moment.
+ *  Done / cancelled tasks never read overdue regardless of the date. */
+function isCellOverdue(task: WorkTask): boolean {
+  if (!task.requested_date) return false;
+  if (task.status === "done" || task.status === "cancelled") return false;
+  const raw = task.requested_date.trim();
+  const ms = raw.length <= 10 ? Date.parse(`${raw}T23:59:59`) : Date.parse(raw);
+  if (!Number.isFinite(ms)) return false;
+  return ms < Date.now();
+}
+
 export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
   // requested_date can be "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" — split
   // for editing, recombine on save.
@@ -138,13 +153,19 @@ export function TaskRequestedDateCell({ task }: { task: WorkTask }) {
   const [time, setTime] = useState(initialTime);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const overdue = isCellOverdue(task);
 
   return (
     <InlineEditCell
-      title="לחץ לשינוי תאריך מבוקש"
+      title={
+        overdue
+          ? "תאריך היעד עבר — לחץ לעדכון"
+          : "לחץ לשינוי תאריך מבוקש"
+      }
       minWidth={14}
       display={
-        <span>
+        <span className={overdue ? "task-date-overdue" : undefined}>
+          {overdue && <span aria-hidden>⚠️ </span>}
           {initialDate || "—"}
           {initialTime && (
             <span className="task-time-chip"> · {initialTime}</span>

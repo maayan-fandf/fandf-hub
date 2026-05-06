@@ -1097,9 +1097,11 @@ function TaskRow({
         {(() => {
           const isNew = isCreatedWithin24h(task.created_at);
           const kind = classifyTask(task);
-          const overdue = isOverdue(task);
+          // Overdue is rendered on the date cell (red text + ⚠️) so it
+          // doesn't clutter the title row alongside structural chips.
+          // See `task-date-overdue` styling on TaskRequestedDateCell.
           const hasAnyChip =
-            isNew || task.round_number > 1 || kind !== null || overdue;
+            isNew || task.round_number > 1 || kind !== null;
           if (!hasAnyChip) return null;
           return (
             <div className="tasks-title-chips">
@@ -1138,14 +1140,6 @@ function TaskRow({
                   title="שלב בשרשרת — סדר מסירה אוטומטי מאחד לבא"
                 >
                   🔗 בשרשרת
-                </span>
-              )}
-              {overdue && (
-                <span
-                  className="tasks-overdue-chip"
-                  title="עברה תאריך היעד ועדיין לא בוצעה"
-                >
-                  ⚠️ באיחור
                 </span>
               )}
             </div>
@@ -1302,18 +1296,6 @@ function classifyTask(task: WorkTask): TaskKind | null {
   return hasEdges ? "chain-child" : null;
 }
 
-/** Past `requested_date` and not in a terminal state. Time portion
- *  is honored when present (`YYYY-MM-DDTHH:MM`); date-only values use
- *  end-of-day so a task due "today" doesn't read overdue all day. */
-function isOverdue(task: WorkTask): boolean {
-  if (!task.requested_date) return false;
-  if (task.status === "done" || task.status === "cancelled") return false;
-  const raw = task.requested_date.trim();
-  // "YYYY-MM-DD" → 23:59 of that day; "YYYY-MM-DDTHH:MM" → exact moment.
-  const ms = raw.length <= 10 ? Date.parse(`${raw}T23:59:59`) : Date.parse(raw);
-  if (!Number.isFinite(ms)) return false;
-  return ms < Date.now();
-}
 
 // `shortName` was an inline email-prefix fallback before the
 // names_to_emails sheet got a `he name` column. Now we route through

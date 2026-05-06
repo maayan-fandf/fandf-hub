@@ -11554,23 +11554,16 @@ html[data-theme="dark"] .tasks-type-chip-chain {
   color: #fcd34d;
 }
 
-/* Overdue chip — red/rose. Only renders when the row's requested_date
-   has already passed AND the task isn't done/cancelled, so seeing
-   one means real action is needed. */
-.tasks-overdue-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: .25em;
-  font-size: .7rem;
-  font-weight: 600;
-  padding: .15em .55em;
-  border-radius: 999px;
-  white-space: nowrap;
-  background: #fee2e2;
+/* Overdue date cell — red foreground + ⚠️ prefix on the תאריך יעד
+   column instead of a separate chip on the title row. Less clutter,
+   faster scan: the same column where the user looks for the date is
+   where the "this is past due" signal appears. Only fires when
+   requested_date has passed AND the task isn't done/cancelled. */
+.task-date-overdue {
   color: #991b1b;
+  font-weight: 600;
 }
-html[data-theme="dark"] .tasks-overdue-chip {
-  background: rgba(239, 68, 68, 0.18);
+html[data-theme="dark"] .task-date-overdue {
   color: #fca5a5;
 }
 
