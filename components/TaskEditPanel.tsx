@@ -21,10 +21,12 @@ const KINDS = [
   { val: "revision", label: "סבב תיקונים" },
   { val: "other", label: "אחר" },
 ];
-// Known sub_status values from the Data Plus screenshot. Free-form text
-// still wins — the select has an "(אחר)" option that reveals a text
-// input so uncommon labels remain entrable.
-const SUB_STATUSES = ["", "אושר", "ממתין לטיפול"];
+// `sub_status` is a legacy Data-Plus field — the hub stored values
+// on the row but no surface ever read them back. Retired 2026-05-06
+// per Maayan: the edit panel's UI is gone, the write path no longer
+// includes it in patches, and the column isn't dropped (preserves
+// historical data). New tasks created after this commit don't write
+// to it; existing rows keep their values for archival purposes.
 
 export default function TaskEditPanel({
   task,
@@ -70,12 +72,6 @@ export default function TaskEditPanel({
   );
   const [assignees, setAssignees] = useState(
     (task.assignees || []).join(", "),
-  );
-  const [subStatusSelect, setSubStatusSelect] = useState(
-    SUB_STATUSES.includes(task.sub_status) ? task.sub_status : "__custom__",
-  );
-  const [subStatusCustom, setSubStatusCustom] = useState(
-    SUB_STATUSES.includes(task.sub_status) ? "" : task.sub_status,
   );
   // Pseudo-project rows (`__personal__`, future `__inbox__`, etc.) start
   // with an EMPTY project field even though the underlying value is
@@ -193,14 +189,13 @@ export default function TaskEditPanel({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const subStatus =
-      subStatusSelect === "__custom__" ? subStatusCustom : subStatusSelect;
-
     const combinedRequestedDate =
       requestedDate && requestedTime
         ? `${requestedDate}T${requestedTime}`
         : requestedDate;
 
+    // sub_status retired 2026-05-06 — no longer included in patches.
+    // Existing rows keep their stored value; new edits don't touch it.
     const patch: Record<string, unknown> = {
       title,
       description,
@@ -212,7 +207,6 @@ export default function TaskEditPanel({
       approver_email: approver,
       project_manager_email: projectManager,
       assignees: assigneeList,
-      sub_status: subStatus,
       campaign: campaign.trim(),
     };
     // Only include `project` in the patch when the user actually moved
@@ -537,27 +531,6 @@ export default function TaskEditPanel({
           />
         </label>
 
-        <label>
-          סטטוס משני
-          <select
-            value={subStatusSelect}
-            onChange={(e) => setSubStatusSelect(e.target.value)}
-          >
-            <option value="">—</option>
-            <option value="אושר">אושר</option>
-            <option value="ממתין לטיפול">ממתין לטיפול</option>
-            <option value="__custom__">(אחר)</option>
-          </select>
-          {subStatusSelect === "__custom__" && (
-            <input
-              type="text"
-              value={subStatusCustom}
-              onChange={(e) => setSubStatusCustom(e.target.value)}
-              placeholder="טקסט חופשי"
-              style={{ marginTop: ".4em" }}
-            />
-          )}
-        </label>
       </div>
 
       <label>

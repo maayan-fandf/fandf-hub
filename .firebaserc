@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "fandf-dashboard"
-  }
+    "default": "fandf-dashboard",
+    "fandf-dashboard": "fandf-dashboard"
+  },
+  "targets": {},
+  "etags": {}
 }
