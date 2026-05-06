@@ -23,6 +23,29 @@ import {
 } from "@/lib/driveFolders";
 import { isSharedFolderName } from "@/lib/driveSharedFolder";
 
+/**
+ * Subfolder names that physically live under `<company>/<project>/` but
+ * aren't בריפים — they serve a different system role and should never
+ * appear in the campaign picker. Matched case-insensitively after a
+ * trim so accidental whitespace / casing variants are still excluded.
+ *
+ * Keep the list small and intentional. Each entry needs a justification:
+ *
+ *   - "פריסות" — landing-page layout sheets folder. Read by
+ *     `getLatestPrisotSheet` for the LatestPrisotCard on the project
+ *     page; surfacing it as a בריף would let users accidentally attach
+ *     tasks to it (and pollute the layouts surface with task subfolders).
+ *
+ * `<project> תיקיה משותפת` is filtered separately via `isSharedFolderName`
+ * because that one is per-project (project-name-prefixed) and needs the
+ * project name in scope to recognize.
+ */
+const RESERVED_CAMPAIGN_SUBFOLDER_NAMES = new Set<string>(["פריסות"]);
+
+export function isReservedCampaignSubfolderName(name: string): boolean {
+  return RESERVED_CAMPAIGN_SUBFOLDER_NAMES.has((name || "").trim());
+}
+
 function tasksSharedDriveId(): string {
   const v = process.env.TASKS_SHARED_DRIVE_ID;
   if (!v) throw new Error("TASKS_SHARED_DRIVE_ID is not set");
@@ -83,7 +106,14 @@ async function listInner(
   });
   const items = res.data.files ?? [];
   return items
-    .filter((f) => !isSharedFolderName(f.name || ""))
+    .filter((f) => {
+      const name = f.name || "";
+      // Per-project shared folder ("<project> תיקיה משותפת").
+      if (isSharedFolderName(name)) return false;
+      // Cross-project reserved subfolders ("פריסות", …).
+      if (isReservedCampaignSubfolderName(name)) return false;
+      return true;
+    })
     .map((f) => ({
       id: f.id || "",
       name: f.name || "",
@@ -137,6 +167,15 @@ export async function createCampaignFolder(
 ): Promise<CampaignFolder> {
   const name = args.name.trim();
   if (!name) throw new Error("Campaign name is required");
+  // Reserved subfolder names ("פריסות", …) physically exist under most
+  // project folders for non-בריף purposes. Allowing the picker's
+  // "+ צור בריף חדש" path to land on one would silently attach the new
+  // task to the wrong surface (the existing פריסות folder gets returned
+  // by ensureCampaignFolderId since it's name-matched). Hard-fail here
+  // so the user gets an explicit error instead of a confusing no-op.
+  if (isReservedCampaignSubfolderName(name)) {
+    throw new Error(`"${name}" שמור לתיקיית מערכת ולא ניתן להשתמש בו כבריף.`);
+  }
   const created = await ensureCampaignFolderId(subjectEmail, {
     company: args.company,
     project: args.project,

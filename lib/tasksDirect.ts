@@ -637,8 +637,17 @@ export async function tasksCampaignsDirect(
   // matching Drive folder). The rename / create paths backfill folders
   // for these; until then, keep them visible so the user can still pick
   // them when assigning a task.
+  //
+  // Defensively skip names that match the reserved-subfolder list — a
+  // stray task row stored before the picker filter went in (e.g. a user
+  // manually typed "פריסות" as a בריף) shouldn't keep resurrecting the
+  // option here. Source of truth is `lib/driveCampaigns.ts`.
+  const { isReservedCampaignSubfolderName } = await import(
+    "@/lib/driveCampaigns"
+  );
   const orphans = Array.from(taskCampaigns.entries())
     .filter(([name]) => !seen.has(name))
+    .filter(([name]) => !isReservedCampaignSubfolderName(name))
     .sort((a, b) => b[1].localeCompare(a[1]))
     .map(([name]) => name);
   for (const n of orphans) {

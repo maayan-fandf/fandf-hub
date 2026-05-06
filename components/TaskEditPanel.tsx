@@ -76,7 +76,21 @@ export default function TaskEditPanel({
   const [subStatusCustom, setSubStatusCustom] = useState(
     SUB_STATUSES.includes(task.sub_status) ? "" : task.sub_status,
   );
-  const [project, setProject] = useState(task.project || "");
+  // Pseudo-project rows (`__personal__`, future `__inbox__`, etc.) start
+  // with an EMPTY project field even though the underlying value is
+  // `__personal__`. Reasoning: when the input is pre-filled with the
+  // literal pseudo string, the browser's datalist filters to "options
+  // that match `__personal__`" — i.e. nothing — so clicking the dropdown
+  // caret looks broken (no projects shown). Initializing empty makes the
+  // placeholder hint visible AND lets the full project list drop down
+  // immediately. The save logic at line ~150 only sends `patch.project`
+  // when the field is non-empty AND differs from the row's current
+  // value, so an empty field saved unchanged correctly keeps the row on
+  // its pseudo-project.
+  const startsAsPseudo = task.project.startsWith("__");
+  const [project, setProject] = useState(
+    startsAsPseudo ? "" : task.project || "",
+  );
   const [campaign, setCampaign] = useState(task.campaign || "");
   const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
   const [campaignReloadNonce, setCampaignReloadNonce] = useState(0);
