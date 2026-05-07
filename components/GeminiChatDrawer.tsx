@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePageContext } from "@/components/PageContextProvider";
 import { capturePageContext } from "@/lib/pageContextSnapshot";
+import GoogleIcon from "@/components/GoogleIcon";
 
 /**
  * Gemini chat assistant drawer.
@@ -399,7 +400,10 @@ export default function GeminiChatDrawer() {
               aria-pressed={webMode}
               aria-label={webMode ? "מצב web פעיל" : "מצב כלים פעיל"}
             >
-              {webMode ? "🌐 web" : "🛠️ hub"}
+              <span className="gemini-mode-toggle-icon" aria-hidden>
+                {webMode ? <GoogleIcon size={14} /> : "🛠️"}
+              </span>
+              <span>{webMode ? "web" : "hub"}</span>
             </button>
             <textarea
               ref={inputRef}

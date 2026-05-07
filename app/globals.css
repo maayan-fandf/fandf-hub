@@ -2055,6 +2055,9 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
    will use. Stays compact so the input row doesn't reflow. */
 .gemini-mode-toggle {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font: inherit;
   font-size: 0.78rem;
   font-weight: 600;
@@ -2067,6 +2070,11 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   white-space: nowrap;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   align-self: center;
+}
+.gemini-mode-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 .gemini-mode-toggle:hover:not(:disabled) {
   color: var(--text);
