@@ -447,6 +447,21 @@ export default async function TaskDetailPage({
               when relevant. */}
           <TaskDependencyLinks task={t} lookup={depLookup} />
 
+          {/* "סבבים" mini-list — surfaces the round chain at the very
+              top of the side panel when this task is part of one (i.e.
+              has siblings via parent_id). The same chain links also
+              live deep in the פרטים block via RoundRow, but the audit
+              flagged that as too easy to miss when reviewing a later
+              round. Top placement makes the round context the first
+              thing the eye lands on for multi-round tasks; single-
+              round tasks skip this block entirely (the inline "ראשון"
+              label inside פרטים is enough). */}
+          {roundChain.length > 1 && (
+            <SideBlock title="סבבים">
+              <RoundRow task={t} chain={roundChain} />
+            </SideBlock>
+          )}
+
           {/* Umbrellas have no own assignees/approver/PM; suppress the
               People block entirely so the panel doesn't show 4 empty
               rows. The (umbrella's children) people are surfaced
@@ -489,7 +504,13 @@ export default async function TaskDetailPage({
           <SideBlock title="פרטים">
             <KV label="סוג" value={t.kind} />
             <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
-            <RoundRow task={t} chain={roundChain} />
+            {/* For single-round tasks, RoundRow shows the simple
+                "ראשון" label here. Multi-round tasks have the chain
+                hoisted to the top "סבבים" block above; suppressing the
+                duplicate here keeps the panel tidy. */}
+            {roundChain.length <= 1 && (
+              <RoundRow task={t} chain={roundChain} />
+            )}
             <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
             <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
             <IdCopyRow id={t.id} />
