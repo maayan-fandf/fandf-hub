@@ -28,6 +28,8 @@ import CopyTaskLinkButton from "@/components/CopyTaskLinkButton";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import TaskStatusHistory from "@/components/TaskStatusHistory";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
+import FacebookAdsIcon from "@/components/FacebookAdsIcon";
+import GoogleAdsIcon from "@/components/GoogleAdsIcon";
 import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
@@ -97,11 +99,22 @@ export default async function TaskDetailPage({
   // /tasks and /projects/[name]).
   const session = await auth();
   const subjectEmail = session?.user?.email ?? "";
-  // Internal-or-admin gate for the ad-platform buttons. Clients shouldn't
-  // see ad-platform deep-links; for staff who aren't internal-domain we
-  // still skip the buttons (they don't have @fandf.co.il Google sessions
-  // that the authuser= hint helps anyway).
-  const showAdLinks = !!accessRes && (accessRes.isAdmin || accessRes.isInternal);
+  // Ad-platform deep-link gate — the buttons hand off to FB Ads Manager /
+  // Google Ads, which only the people who actually do media work need to
+  // see. Per Maayan 2026-05-08: scope to the Media role on names_to_emails
+  // (Maayan + Nadav today) plus Felix specifically (he's the agency lead
+  // on media operations even though his role row reads "Manager").
+  // Replaces the looser "any internal user" gate that surfaced FB/Google
+  // pills to designers / copywriters / video editors who never click
+  // them.
+  const FELIX_AD_LINK_BYPASS_EMAIL = "felix@fandf.co.il";
+  const subjectEmailLc = subjectEmail.toLowerCase().trim();
+  const subjectRole = (peopleRes?.people ?? []).find(
+    (p) => p.email.toLowerCase().trim() === subjectEmailLc,
+  )?.role ?? "";
+  const showAdLinks =
+    subjectRole.toLowerCase() === "media" ||
+    subjectEmailLc === FELIX_AD_LINK_BYPASS_EMAIL;
   // Phase 4b dependencies — when this task IS an umbrella container,
   // fetch its children so the body render can list them with status
   // badges + drill-down links. Children = rows in the same project
@@ -213,7 +226,7 @@ export default async function TaskDetailPage({
               href={adLinks.gAdsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-ghost btn-sm"
+              className="btn-ghost btn-sm btn-with-brand-icon"
               title={
                 adLinks.gAdsAcctName
                   ? `Google Ads — ${adLinks.gAdsAcctName}` +
@@ -223,7 +236,7 @@ export default async function TaskDetailPage({
                   : "פתח ב-Google Ads"
               }
             >
-              🔍 Google Ads
+              <GoogleAdsIcon size="1.05em" /> Google Ads
             </a>
           )}
           {adLinks?.fbAdsUrl && (
@@ -231,7 +244,7 @@ export default async function TaskDetailPage({
               href={adLinks.fbAdsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-ghost btn-sm"
+              className="btn-ghost btn-sm btn-with-brand-icon"
               title={
                 adLinks.fbAcctName
                   ? `Facebook Ads — ${adLinks.fbAcctName}` +
@@ -241,7 +254,7 @@ export default async function TaskDetailPage({
                   : "פתח ב-Facebook Ads"
               }
             >
-              📘 Facebook Ads
+              <FacebookAdsIcon size="1.05em" /> Facebook Ads
             </a>
           )}
           {t.drive_folder_url && (

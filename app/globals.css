@@ -6506,6 +6506,19 @@ html[data-theme="dark"] .morning-signal-dismissed-chip {
   vertical-align: middle;
 }
 
+/* Brand-icon buttons (Facebook Ads / Google Ads on /tasks/[id]) — same
+   gap + alignment pattern as the Drive button so the brand mark reads
+   as part of a single label. Defined separately so future ad-platform
+   buttons (TikTok, LinkedIn, …) can opt in without dragging the Drive-
+   specific class along. */
+.btn-with-brand-icon {
+  gap: .45rem;
+}
+.btn-with-brand-icon svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
 /* Compact "copy local path" button — clipboard icon by default,
    flips to "✓ הועתק" on success. */
 .copy-local-path-wrap {
