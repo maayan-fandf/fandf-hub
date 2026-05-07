@@ -353,11 +353,22 @@ export async function POST(req: Request) {
   systemParts.push(
     mode === "web"
       ? `=== ACTIVE MODE: WEB ===
-On THIS turn you have Google Search available, and NO hub function
-tools. Use Search liberally for the user's question (competitors,
-news, market research, "find their landing page", etc.). Cite sources
-inline as '[label](url)' — Vertex also surfaces the search queries
-you ran and the cited URLs to the UI automatically.
+On THIS turn you have BOTH:
+  • Google Search (the web_search tool — public web, news, competitors,
+    "find their landing page", market research)
+  • The full hub tool catalog (getTask, getProject, getCompanyContacts,
+    searchGmail, readGmailThread, searchDrive, readDoc,
+    getSheetMetadata, readSheetTab)
+
+Pick the right tool for each part of the question. Common pattern:
+  1. Use hub tools first to disambiguate Hebrew names / find slugs /
+     load context (e.g. getProject('גוהרי') to confirm which company).
+  2. Then web_search with the precise terms.
+  3. Synthesize across both sources.
+
+Cite sources inline as '[label](url)' — the UI surfaces search
+queries + cited URLs automatically. For hub-internal references use
+relative paths ('[task title](/tasks/T-id)', '[project](/projects/name)').
 === END MODE ===`
       : `=== ACTIVE MODE: HUB TOOLS ===
 On THIS turn you have hub function tools (getTask, getProject,
@@ -389,19 +400,46 @@ whatever hub data IS relevant.
 
       try {
         if (mode === "web") {
-          // ── Claude web mode ────────────────────────────────────
-          // Single-pass: Claude runs Anthropic's web_search tool
-          // server-side and streams the answer back along with the
-          // queries it ran + the cited sources. No tool-execution
-          // loop on this side — Claude finishes in one stream call.
+          // ── Claude web mode (now: web_search + hub function tools) ─
+          // Anthropic accepts both built-in web_search AND custom
+          // function tools in a single request, so web mode now has
+          // everything hub mode has + Google Search. The internal
+          // tool-execution loop lives inside streamClaudeChat;
+          // this branch just forwards events + executes tools when
+          // asked.
           let totalInput = 0;
           let totalOutput = 0;
           let lastFinishReason = "";
-          for await (const chunk of streamClaudeChat({ system, history })) {
+          for await (const chunk of streamClaudeChat({
+            system,
+            history,
+            tools: TOOL_DECLARATIONS,
+            executeTool: async (name, args) => {
+              const tool = getTool(name);
+              if (!tool) {
+                return { ok: false, error: `unknown tool: ${name}` };
+              }
+              try {
+                const result = await tool.execute(subjectEmail, args);
+                return { ok: true, result };
+              } catch (e) {
+                return {
+                  ok: false,
+                  error: e instanceof Error ? e.message : String(e),
+                };
+              }
+            },
+          })) {
             if ("text" in chunk) {
               send("text", { text: chunk.text });
             } else if ("searchQuery" in chunk) {
               send("search", { query: chunk.searchQuery });
+            } else if ("toolCall" in chunk) {
+              // Custom tool the assistant wants to call. Surface
+              // the chip immediately for transparency; the actual
+              // execution + result-feed-back happens inside
+              // streamClaudeChat via the executeTool callback above.
+              send("tool", chunk.toolCall);
             } else {
               totalInput = chunk.inputTokens;
               totalOutput = chunk.outputTokens;
