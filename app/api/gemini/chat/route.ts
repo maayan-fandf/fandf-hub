@@ -190,6 +190,26 @@ guess column positions — always read headers first.
        The match column is 'Campaign match' (preferred) or
        'campaign ID' (fallback). Both carry the same slug.
 
+     *** CRITICAL: SUM all matching rows. Never report a single row's
+         value as the total. ***
+       A project on a single day usually has MULTIPLE rows on
+       these tabs:
+         - 'Facebook-adsets'     → one row per (date × adset) — a
+                                   project with 3 adsets running
+                                   that day = 3 rows that DAY.
+         - 'facebook-ads-metrics'→ one row per (date × ad) — a
+                                   project with 5 ads running
+                                   that day = 5 rows that DAY.
+         - 'גוגל'                 → one row per (date × campaign).
+       To answer "how much did X spend yesterday?", READ EVERY row
+       where (campaign-id-slug = X) AND (Date = yesterday), then
+       SUM the Cost column and SUM the Leads column. Show your
+       arithmetic when useful: "Facebook-adsets had 3 rows for
+       cazar on 2026-05-06 — costs 200/350/333 = 883, leads
+       1/1/1 = 3."
+       If the user asks for "total" / "סה״כ" / "כמה יצא" — they
+       always mean the sum, not a sample row.
+
      STEP 4 — If the slug returns 0 rows, fall back BEFORE giving up:
        (a) Read the tab's headers via getSheetMetadata to confirm
            which match column it actually uses.
