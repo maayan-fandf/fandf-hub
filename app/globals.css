@@ -1754,7 +1754,11 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 .gemini-fab {
   position: fixed;
   bottom: 1.25rem;
-  inset-inline-end: 1.25rem;
+  /* Visual RIGHT in RTL — `inline-start` is the start of the inline
+     axis, which under dir="rtl" means the right edge. Avoids
+     overlapping the QuickTaskFAB (`+`), which sits at visual LEFT
+     via a literal `left: 1.6rem`. */
+  inset-inline-start: 1.25rem;
   z-index: 40;            /* above the topnav (20), below modals (50+) */
   width: 3.25rem;
   height: 3.25rem;
@@ -1782,13 +1786,16 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   position: fixed;
   top: 0;
   bottom: 0;
-  inset-inline-end: 0;
+  /* Anchor to visual RIGHT in RTL — same side as the FAB. */
+  inset-inline-start: 0;
   width: 26rem;
   max-width: 92vw;
   z-index: 41;
   background: var(--surface, var(--card-bg, #fff));
-  border-inline-start: 1px solid var(--border);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  /* Border on the page-facing edge of the drawer (visual LEFT in RTL,
+     which is `inline-end`). */
+  border-inline-end: 1px solid var(--border);
+  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2003,11 +2010,11 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   .gemini-drawer {
     width: 100vw;
     max-width: 100vw;
-    border-inline-start: none;
+    border-inline-end: none;
   }
   .gemini-fab {
     bottom: 1rem;
-    inset-inline-end: 1rem;
+    inset-inline-start: 1rem;
     width: 2.85rem;
     height: 2.85rem;
     font-size: 1.3rem;
