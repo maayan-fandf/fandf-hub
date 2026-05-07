@@ -27,6 +27,7 @@ import {
   type GeminiTurn,
   type GeminiFunctionCall,
 } from "@/lib/gemini";
+import { streamClaudeChat } from "@/lib/claudeChat";
 import { TOOL_DECLARATIONS, getTool } from "@/lib/geminiTools";
 import {
   snapshotToSystemBlock,
@@ -387,9 +388,42 @@ whatever hub data IS relevant.
         controller.enqueue(ssePack(event, data));
 
       try {
-        // Tool-execution loop. Bound at 8 iterations — generous enough
-        // for "search Gmail then read thread then look up task" chains
-        // without letting a runaway loop burn tokens.
+        if (mode === "web") {
+          // ── Claude web mode ────────────────────────────────────
+          // Single-pass: Claude runs Anthropic's web_search tool
+          // server-side and streams the answer back along with the
+          // queries it ran + the cited sources. No tool-execution
+          // loop on this side — Claude finishes in one stream call.
+          let totalInput = 0;
+          let totalOutput = 0;
+          let lastFinishReason = "";
+          for await (const chunk of streamClaudeChat({ system, history })) {
+            if ("text" in chunk) {
+              send("text", { text: chunk.text });
+            } else if ("searchQuery" in chunk) {
+              send("search", { query: chunk.searchQuery });
+            } else {
+              totalInput = chunk.inputTokens;
+              totalOutput = chunk.outputTokens;
+              lastFinishReason = chunk.finishReason;
+              if (chunk.groundingChunks.length > 0) {
+                send("sources", { chunks: chunk.groundingChunks });
+              }
+            }
+          }
+          send("done", {
+            inputTokens: totalInput,
+            outputTokens: totalOutput,
+            finishReason: lastFinishReason,
+          });
+          controller.close();
+          return;
+        }
+
+        // ── Gemini hub-tools mode (default) ──────────────────────
+        // Tool-execution loop. Bound at 8 iterations — generous
+        // enough for "search Gmail then read thread then look up
+        // task" chains without letting a runaway loop burn tokens.
         const MAX_ITERATIONS = 8;
         let totalInput = 0;
         let totalOutput = 0;
@@ -404,31 +438,22 @@ whatever hub data IS relevant.
           for await (const chunk of streamGemini({
             system,
             history,
-            // Per-turn mode switch (request body field). Vertex rejects
-            // combining functionDeclarations with googleSearch in one
-            // request ("Multiple tools are supported only when they are
-            // all search tools"), so we send EITHER tools OR search
-            // for any given turn. Conversation history rides along in
-            // both modes so the assistant always has the full thread.
-            tools: mode === "web" ? undefined : TOOL_DECLARATIONS,
-            enableSearch: mode === "web",
+            tools: TOOL_DECLARATIONS,
+            enableSearch: false,
           })) {
             if ("text" in chunk) {
               textInThisTurn += chunk.text;
               send("text", { text: chunk.text });
             } else if ("searchQuery" in chunk) {
-              // Surface the in-progress search query as a chip so
-              // the user sees what the model is looking up.
+              // Defensive — Gemini wouldn't emit search queries when
+              // enableSearch:false, but keep the case so a future
+              // toggle doesn't drop them silently.
               send("search", { query: chunk.searchQuery });
             } else {
               lastFunctionCalls = chunk.functionCalls;
               lastInputTokens = chunk.inputTokens;
               lastOutputTokens = chunk.outputTokens;
               lastFinishReason = chunk.finishReason;
-              // Per-iteration `done` carries grounding chunks for
-              // the FINAL message (this loop iteration's sources);
-              // forward them so the UI can append a "Sources:"
-              // footer to the assistant bubble.
               if (chunk.groundingChunks.length > 0) {
                 send("sources", { chunks: chunk.groundingChunks });
               }
@@ -439,10 +464,6 @@ whatever hub data IS relevant.
           totalOutput += lastOutputTokens;
 
           if (lastFunctionCalls.length === 0) {
-            // Model finished — terminate the loop. Forward the final
-            // `finishReason` so the UI can show "(truncated)" /
-            // "(blocked by safety)" indicators when it's not a clean
-            // STOP. Empty/STOP both mean "done normally."
             send("done", {
               inputTokens: totalInput,
               outputTokens: totalOutput,
@@ -452,13 +473,7 @@ whatever hub data IS relevant.
             return;
           }
 
-          // Append the model's function-call turn + execute each tool +
-          // append a function-results turn. Then loop back to let the
-          // model see the results and either call more tools or compose
-          // the final answer.
           if (textInThisTurn) {
-            // Some Gemini turns emit BOTH text and function calls.
-            // Preserve the partial text in history alongside the calls.
             history.push({ role: "model", text: textInThisTurn });
           }
           history.push({ role: "model", functionCalls: lastFunctionCalls });
@@ -490,8 +505,6 @@ whatever hub data IS relevant.
           history.push({ role: "function", results });
         }
 
-        // Hit the iteration cap without a clean answer — surface that
-        // to the user instead of silently truncating.
         send("error", {
           error: `tool-execution loop exceeded ${MAX_ITERATIONS} iterations`,
         });
