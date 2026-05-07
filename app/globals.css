@@ -2048,6 +2048,43 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-top: 1px solid var(--border);
   background: var(--card-bg, var(--surface));
 }
+
+/* Per-turn mode toggle. Default state ("hub tools") reads as a muted
+   pill; flipped to "web" lights up with the search-chip gradient so
+   the user has unambiguous feedback on which toolset the next turn
+   will use. Stays compact so the input row doesn't reflow. */
+.gemini-mode-toggle {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  align-self: center;
+}
+.gemini-mode-toggle:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.gemini-mode-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.gemini-mode-toggle.is-on {
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.18),
+    rgba(236, 72, 153, 0.18)
+  );
+  color: var(--text);
+  border-color: rgba(124, 58, 237, 0.55);
+}
 .gemini-input {
   flex: 1;
   font: inherit;

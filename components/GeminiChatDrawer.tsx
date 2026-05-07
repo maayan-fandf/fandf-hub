@@ -65,6 +65,13 @@ export default function GeminiChatDrawer() {
   >([]);
   const [streamSearchQueries, setStreamSearchQueries] = useState<string[]>([]);
   const [streamSources, setStreamSources] = useState<GroundingSource[]>([]);
+  // Per-turn mode toggle. When false (default) the next message ships
+  // the hub function tools (getTask, readSheetTab, …) and the model
+  // can't search the web. When true, the next message ships
+  // googleSearch ONLY (Vertex rejects combining the two — see
+  // lib/gemini.ts comment). Conversation history rides along either
+  // way, so the model still has full context when you flip mid-thread.
+  const [webMode, setWebMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { payload: registeredContext } = usePageContext();
   const threadRef = useRef<HTMLDivElement>(null);
@@ -152,6 +159,7 @@ export default function GeminiChatDrawer() {
         body: JSON.stringify({
           messages: nextMessages.map((m) => ({ role: m.role, text: m.text })),
           pageContext,
+          mode: webMode ? "web" : "tools",
         }),
         signal: ac.signal,
       });
@@ -378,12 +386,31 @@ export default function GeminiChatDrawer() {
               void send();
             }}
           >
+            <button
+              type="button"
+              className={`gemini-mode-toggle${webMode ? " is-on" : ""}`}
+              onClick={() => setWebMode((m) => !m)}
+              disabled={streaming}
+              title={
+                webMode
+                  ? "מצב חיפוש באינטרנט — Google Search על השאלה הבאה. לחץ כדי לחזור למצב כלי-Hub."
+                  : "מצב כלי-Hub — קורא ממשימות / פרויקטים / Gmail / Drive / גיליונות. לחץ כדי לעבור לחיפוש Google."
+              }
+              aria-pressed={webMode}
+              aria-label={webMode ? "מצב web פעיל" : "מצב כלים פעיל"}
+            >
+              {webMode ? "🌐 web" : "🛠️ hub"}
+            </button>
             <textarea
               ref={inputRef}
               className="gemini-input"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="שאל משהו..."
+              placeholder={
+                webMode
+                  ? "שאל את האינטרנט (Google Search)..."
+                  : "שאל משהו..."
+              }
               rows={2}
               disabled={streaming}
               onKeyDown={(e) => {

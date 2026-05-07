@@ -41,6 +41,16 @@ type ClientMessage = { role: "user" | "model"; text: string };
 type Body = {
   messages: ClientMessage[];
   pageContext?: PageContextSnapshot;
+  /** Per-turn toolset switch.
+   *    "tools" (default) → function calling (hub resolvers + Workspace
+   *                        + sheet introspection); NO web search.
+   *    "web"             → Google Search grounding ONLY; no function
+   *                        tools. Use for competitor research / news /
+   *                        public-web questions.
+   *  Vertex doesn't allow combining the two in one request, so the
+   *  client toggles per turn — conversation history rides along
+   *  either way so the model always has full context. */
+  mode?: "tools" | "web";
 };
 
 const SYSTEM_PERSONA = `
@@ -97,16 +107,20 @@ Tool usage:
   for the thread the user actually cares about — don't fan out to all of
   them. Same with readDoc after searchDrive.
 
-Web search:
-- You currently DO NOT have Google Search available — Vertex's
-  googleSearch tool can't be combined with function calling on
-  Gemini 2.5 Pro right now. Don't promise to "search the web" or
-  "look that up online." If a question genuinely requires the
-  public web (competitor research, a brand's external presence,
-  news), say so plainly: "אין לי כרגע גישה לחיפוש באינטרנט,
-  אבל אני יכול לעזור עם <hub data alternative>."
-- This is wired and will switch back on the moment the API
-  supports the combination — no action needed on your end.
+Web search vs. hub tools:
+- Each turn runs in EITHER hub-tools mode OR web-search mode (Vertex
+  rejects combining the two). The user toggles between them with the
+  "🌐 web" / "🛠️ hub" button next to the input. Look at the
+  ACTIVE MODE block (added per turn at the end of this prompt) to
+  know which one is on right now.
+- In web mode you have Google Search and NO function tools — use it
+  for the public web (competitors, news, market research).
+- In tools mode you have function tools and NO Google Search — use
+  the hub resolvers + Workspace tools + sheet introspection.
+- Conversation history carries between modes, so when the user flips
+  mid-thread you still know what they asked before.
+- If the user is in tools mode but clearly needs the web, suggest
+  the toggle: "כדי לבדוק את זה ברשת, לחץ על 🌐 web ושאל שוב."
 
 Privacy: only the signed-in user's data. Tools impersonate the user via
 domain-wide delegation, so you can't see anyone else's Gmail/Drive. Keep
@@ -326,9 +340,34 @@ export async function POST(req: Request) {
   const viewAs = await getEffectiveViewAs(myEmail).catch(() => "");
   const subjectEmail = viewAs || myEmail;
 
+  // Resolve which toolset is active for this turn.
+  const mode: "tools" | "web" = body.mode === "web" ? "web" : "tools";
+
   // Build system prompt. Page context renders as a clearly-delimited
   // block at the end so the model treats it as data, not instructions.
+  // Append a small ACTIVE MODE block so Gemini knows what's available
+  // on this turn (the rest of the persona doesn't change between
+  // modes — only the available tools do).
   const systemParts = [SYSTEM_PERSONA];
+  systemParts.push(
+    mode === "web"
+      ? `=== ACTIVE MODE: WEB ===
+On THIS turn you have Google Search available, and NO hub function
+tools. Use Search liberally for the user's question (competitors,
+news, market research, "find their landing page", etc.). Cite sources
+inline as '[label](url)' — Vertex also surfaces the search queries
+you ran and the cited URLs to the UI automatically.
+=== END MODE ===`
+      : `=== ACTIVE MODE: HUB TOOLS ===
+On THIS turn you have hub function tools (getTask, getProject,
+getCompanyContacts, searchGmail, readGmailThread, searchDrive,
+readDoc, getSheetMetadata, readSheetTab) and NO web search. If the
+user clearly needs the public web (a brand's external presence,
+competitors, news), tell them they can switch to web mode by tapping
+the "🌐 web" button next to the input — and meanwhile answer with
+whatever hub data IS relevant.
+=== END MODE ===`,
+  );
   if (body.pageContext) {
     systemParts.push(snapshotToSystemBlock(body.pageContext));
   }
@@ -365,18 +404,14 @@ export async function POST(req: Request) {
           for await (const chunk of streamGemini({
             system,
             history,
-            tools: TOOL_DECLARATIONS,
-            // Web search via Vertex's googleSearch tool is currently
-            // INCOMPATIBLE with functionDeclarations on Gemini 2.5
-            // Pro — the API rejects with "Multiple tools are supported
-            // only when they are all search tools" (400). We tested
-            // with the modern shape; same response. Until Vertex
-            // re-enables the combination (or we add a mode toggle in
-            // the UI that flips between "tools" and "search"), keep
-            // search off so the function tools stay live. The
-            // enableSearch wiring + finishReason / sources / chip
-            // handling all stay — just dormant.
-            enableSearch: false,
+            // Per-turn mode switch (request body field). Vertex rejects
+            // combining functionDeclarations with googleSearch in one
+            // request ("Multiple tools are supported only when they are
+            // all search tools"), so we send EITHER tools OR search
+            // for any given turn. Conversation history rides along in
+            // both modes so the assistant always has the full thread.
+            tools: mode === "web" ? undefined : TOOL_DECLARATIONS,
+            enableSearch: mode === "web",
           })) {
             if ("text" in chunk) {
               textInThisTurn += chunk.text;
