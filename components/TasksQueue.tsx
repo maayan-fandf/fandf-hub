@@ -532,20 +532,30 @@ export default function TasksQueue({
     if (!dragged) return;
 
     // Drop targets in the table are always other rows in the same
-    // bucket (each SortableContext is scoped per-bucket). We compute
-    // the new rank from the bucket's currently-rendered order, sorted
-    // by rank ascending.
-    const bucketTasks = (byStatus.byStatus[dragged.status] || [])
-      .filter((t) => t.id !== draggedId)
+    // bucket (each SortableContext is scoped per-bucket). Compute the
+    // new rank from the bucket's currently-rendered order (rank asc).
+    //
+    // Direction-aware insert anchor: dnd-kit's verticalListSortingStrategy
+    // mirrors `arrayMove(items, oldIdx, newIdx)` — the dragged item
+    // lands AT over's position in the resulting array. So:
+    //   - Dragging DOWN (fromIdx < toIdx) → insert AFTER overId
+    //   - Dragging UP   (fromIdx > toIdx) → insert BEFORE overId
+    // The previous code unconditionally inserted before, which made
+    // a one-slot-down drag compute newRank === dragged.rank and snap
+    // back via the no-op early return below.
+    const fullList = (byStatus.byStatus[dragged.status] || [])
       .slice()
       .sort(compareByRank);
-
-    const overIdx = bucketTasks.findIndex((t) => t.id === overId);
-    if (overIdx === -1) return;
-    // We always insert before the over-row — that's the standard
-    // verticalListSortingStrategy behavior; user's eye lands on the
-    // target, the dropped row takes its place.
-    const newRank = computeInsertRank(bucketTasks, overId);
+    const fromIdx = fullList.findIndex((t) => t.id === draggedId);
+    const toIdx = fullList.findIndex((t) => t.id === overId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const filteredList = fullList.filter((t) => t.id !== draggedId);
+    const overInFiltered = filteredList.findIndex((t) => t.id === overId);
+    const insertBeforeIdx =
+      fromIdx < toIdx ? overInFiltered + 1 : overInFiltered;
+    const insertBeforeId =
+      filteredList[insertBeforeIdx]?.id ?? null; // null = append at bottom
+    const newRank = computeInsertRank(filteredList, insertBeforeId);
 
     if (dragged.rank === newRank) return;
 

@@ -185,12 +185,36 @@ export default function TasksKanban({
 
     // Compute new rank from the column's currently-rendered order
     // (already sorted by rank asc in `byStatus`).
+    //
+    // Direction-aware insert anchor for SAME-COLUMN reorders: dnd-kit's
+    // verticalListSortingStrategy mirrors `arrayMove(items, oldIdx, newIdx)`
+    // so the dragged card lands AT over's position. Always inserting
+    // before over (the previous behavior) made a one-slot-down drag
+    // compute newRank === task.rank → early return → snap back. Cross-
+    // column drops and "drop on empty column body" don't have a from-
+    // index in the target column, so they keep the simple "insert before"
+    // path (or null = append).
+    const sameColumn = task.status === targetStatus;
+    if (sameColumn && insertBeforeId) {
+      const fullCol = (byStatus[targetStatus] || []).slice().sort(compareByRank);
+      const fromIdx = fullCol.findIndex((t) => t.id === id);
+      const toIdx = fullCol.findIndex((t) => t.id === insertBeforeId);
+      if (fromIdx !== -1 && toIdx !== -1 && fromIdx < toIdx) {
+        // Dragging DOWN within the same column → land AFTER over,
+        // i.e. insertBefore the row that follows over in the filtered
+        // list. Null when over is the last row (append).
+        const filteredCol = fullCol.filter((t) => t.id !== id);
+        const overInFiltered = filteredCol.findIndex(
+          (t) => t.id === insertBeforeId,
+        );
+        insertBeforeId = filteredCol[overInFiltered + 1]?.id ?? null;
+      }
+    }
     const colTasks = (byStatus[targetStatus] || []).filter((t) => t.id !== id);
     const newRank = computeInsertRank(colTasks, insertBeforeId);
 
-    const sameStatus = task.status === targetStatus;
     const sameRank = task.rank === newRank;
-    if (sameStatus && sameRank) return;
+    if (sameColumn && sameRank) return;
 
     // Optimistic local update — flips status + rank before the fetch
     // round-trip lands.
@@ -203,7 +227,7 @@ export default function TasksKanban({
     const patch: { status?: WorkTaskStatus; rank?: number; note?: string } = {
       rank: newRank,
     };
-    if (!sameStatus) {
+    if (!sameColumn) {
       patch.status = targetStatus;
       patch.note = `kanban: ${STATUS_LABELS[targetStatus]}`;
     } else {
@@ -225,7 +249,7 @@ export default function TasksKanban({
       // Reuse the same celebration cues the inline pill fires so kanban
       // moves feel as alive as table moves. Origin is the page center
       // because the dragged card has already been re-parented by now.
-      if (!sameStatus) {
+      if (!sameColumn) {
         if (targetStatus === "done") {
           fireConfetti();
         } else if (targetStatus === "awaiting_approval") {
