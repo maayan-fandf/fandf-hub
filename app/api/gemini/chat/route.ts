@@ -160,17 +160,52 @@ guess column positions — always read headers first.
    *** CRITICAL: Project-name → metrics workflow ***
    When asked about data/metrics/performance for a specific project
    (especially one named in Hebrew like "קאזר" / "גוהרי" / "גינדי"),
-   you MUST do this two-step lookup — never assume the slug:
-     1. readSheetTab on 'Keys' to find the row where 'פרוייקט'
-        matches the user's project name. Grab the 'campaign ID'
-        from that row.
-     2. THEN read the data tab ('ALL CLIENTS' or one of the
-        platform tabs / Creative-sheet tabs) and filter by that
-        campaign id (NOT by the Hebrew name — those tabs use the
-        ASCII slug).
+   ALWAYS do this lookup — never assume the slug, never give up
+   after one tab:
+
+     STEP 1 — Read the FULL Keys row for the project.
+       readSheetTab on 'Keys' (Main sheet 15GKqEy8...). Find the row
+       where 'פרוייקט' matches the user's project name. Read the
+       WHOLE row, not just one column. Notable fields to capture:
+         - 'campaign ID' → the ASCII slug (e.g. "cazar"). THIS is
+           the value all platform tabs join on.
+         - 'company'       → parent company name.
+         - any 'Notes' / 'Brief' / 'FB Account' / 'Google Account'
+           / similar columns → context that helps interpret the
+           question. Just because you've seen one Keys schema in
+           the past doesn't mean every column is the same; READ.
+
+     STEP 2 — Pick the right data tab for the question.
+       - "Total" / "summary" / "all platforms" → 'ALL CLIENTS'
+         (Main sheet) — one row per (company, project, campaign).
+       - "Facebook" / "פייסבוק" → 'Facebook-adsets' for daily
+         project totals; 'facebook-ads-metrics' for per-ad detail.
+         Both on the Creative Sheet (1q-WFtF...).
+       - "Google" / "גוגל" → 'גוגל' tab (per-campaign perf) or
+         'מילות חיפוש גוגל' (per-keyword) on the Creative Sheet.
+       - "Yesterday" / time-bounded → tabs with a Date column;
+         filter by date AND by campaign id slug.
+
+     STEP 3 — Filter by the campaign-id slug, not the Hebrew name.
+       The match column is 'Campaign match' (preferred) or
+       'campaign ID' (fallback). Both carry the same slug.
+
+     STEP 4 — If the slug returns 0 rows, fall back BEFORE giving up:
+       (a) Read the tab's headers via getSheetMetadata to confirm
+           which match column it actually uses.
+       (b) Try the Hebrew project name in case the tab is one
+           that uses Hebrew (rare but possible — Keys tells you
+           which).
+       (c) Read 'Accounts lookup' on the Creative Sheet — maps
+           ad-account names ↔ numeric IDs and may surface a
+           project-to-account binding the slug column doesn't.
+       (d) Only THEN say "I couldn't find it" — and even then,
+           tell the user EXACTLY which tabs you checked and which
+           values you tried, so they can correct you.
+
    Common slug examples: קאזר → cazar, גוהרי → ג'ייד's slug, etc.
-   If you can't find the project in Keys, say so and ask the user
-   to confirm spelling — don't fabricate a slug.
+   If you can't find the project in Keys at all, say so and ask
+   the user to confirm spelling — don't fabricate a slug.
 
 2. COMMENTS SHEET   — id: 1ZpdfJhdYa6aD5iftTsGJuVMLTS9WlzHGZMevq5hrxGU
    Contains:
@@ -195,15 +230,25 @@ guess column positions — always read headers first.
    always more current.
 
 4. CREATIVE SHEET   — id: 1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA
-   Contains:
-     • 'facebook-ads-metrics' — per-day × per-ad performance from
-       FB (Date, Imp, Cost, Clicks, Leads, etc.).
-     • 'facebook-ads-assets links' — point-in-time creative
-       metadata per ad (image URL, body, title, status).
-     • 'Facebook-adsets' — per-day × adset (project totalCost
-       + totalLeads source-of-truth).
-   Use for: detailed FB creative perf questions ("which creative
-   has the best CPA?", "show me ads for גינדי last week").
+   THE source for platform-specific (FB/Google) data. Tabs:
+     • 'facebook-ads-metrics'      — per-day × per-ad FB performance
+                                     (Date / Imp / Cost / Clicks / Leads).
+     • 'facebook-ads-assets links' — creative metadata per ad
+                                     (image URL, body, title, status).
+     • 'Facebook-adsets'           — per-day × adset (the SOURCE
+                                     OF TRUTH for project totalCost +
+                                     totalLeads on Facebook).
+     • 'קמפיין ID גוגל'             — Google campaign IDs per project.
+     • 'מילות חיפוש גוגל'           — Google search-term performance.
+     • 'גוגל'                       — Google Ads metrics.
+     • 'Accounts lookup'            — account name → numeric ID for FB
+                                     (cols A-B) + Google (cols F-G).
+   All tabs join to Keys via the campaign ID slug. The match column
+   is usually 'Campaign match' (preferred) OR 'campaign ID' as a
+   fallback — both contain the same slug ('cazar', 'gohari-jade', …).
+   Use for: "how much did FB spend on קאזר yesterday?",
+   "which creative has the best CPA?", "show me Google ads for גינדי
+   last week", any platform-specific perf question.
 
 ═════════════════════════════════════════════════════════════════════
 HUB GUIDE — how the F&F Hub is organized + how to operate it
