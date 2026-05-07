@@ -1,6 +1,8 @@
 import { type MorningSignal, type MorningSeverity } from "@/lib/appsScript";
 import CopyAmountButton from "./CopyAmountButton";
 import MorningDismissButton from "./MorningDismissButton";
+import FacebookAdsIcon from "./FacebookAdsIcon";
+import GoogleAdsIcon from "./GoogleAdsIcon";
 
 /* Single alert row — used by the morning-dashboard page AND by the
    per-project alert section on the project overview. Keeps visual +
@@ -28,6 +30,24 @@ export default function MorningSignalRow({ signal }: { signal: MorningSignal }) 
         </span>
         <div className="morning-signal-body">
           <div className="morning-signal-title">
+            {/* Platform badge — when the signal is bound to a specific
+                ad platform (the per-channel pacing / pixel / cost
+                alerts), prepend its brand mark so the row reads at a
+                glance without parsing the channel name. Project-level
+                signals (budget / deadline / paused-budget) leave the
+                badge slot empty since they aren't platform-specific. */}
+            {signal.platform === "google" && (
+              <GoogleAdsIcon
+                size="1em"
+                className="morning-signal-platform-icon"
+              />
+            )}
+            {signal.platform === "facebook" && (
+              <FacebookAdsIcon
+                size="1em"
+                className="morning-signal-platform-icon"
+              />
+            )}
             {signal.title}
             {signal.dismissed && (
               <span

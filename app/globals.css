@@ -6252,6 +6252,14 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
 .morning-signal-title {
   font-weight: 700; color: var(--text);
   font-size: .92em;
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: .35em;
+}
+/* Platform brand icon prepended to per-channel pacing / pixel /
+   cost-vs-portfolio alerts. Aligns with the title's text baseline so
+   the row reads as a single label, not "icon + label". */
+.morning-signal-platform-icon {
+  vertical-align: -.15em;
+  flex-shrink: 0;
 }
 .morning-signal-detail {
   color: var(--muted); font-size: .82em;
