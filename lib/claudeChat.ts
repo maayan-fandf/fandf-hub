@@ -130,7 +130,13 @@ export async function* streamClaudeChat(
   ] as unknown as Anthropic.Messages.Tool[];
 
   const stream = c.messages.stream({
-    model: args.model || "claude-opus-4-7",
+    // Haiku 4.5 is the V1 default — ~10x cheaper than Opus, plenty
+    // strong for "summarize 3 web pages and pull out the relevant
+    // bits". If web-mode quality feels weak (multi-source synthesis,
+    // nuanced positioning compares), bump callers to claude-sonnet-4-5
+    // via the `model` arg, and only escalate to claude-opus-4-7 for
+    // cases where Sonnet visibly underperforms.
+    model: args.model || "claude-haiku-4-5",
     // 4096 matches the Gemini side. Web search answers can be long
     // (multi-source synthesis), so don't be stingy.
     max_tokens: 4096,
