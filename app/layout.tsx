@@ -25,6 +25,8 @@ import TopProgressBar from "@/components/TopProgressBar";
 import AgendaPanel from "@/components/AgendaPanel";
 import LightboxProvider from "@/components/LightboxProvider";
 import TaskPreviewProvider from "@/components/TaskPreviewProvider";
+import { PageContextProvider } from "@/components/PageContextProvider";
+import GeminiChatDrawer from "@/components/GeminiChatDrawer";
 import {
   getMyProjects,
   tasksPeopleList,
@@ -229,14 +231,21 @@ export default async function RootLayout({
             without prop-drilling. */}
         <LightboxProvider>
           <TaskPreviewProvider>
-            <div className="app-shell-with-agenda">
-              <div className="app-shell-main">{children}</div>
-              {email && !isClientUser && (
-                <Suspense fallback={null}>
-                  <AgendaPanel userEmail={email} />
-                </Suspense>
-              )}
-            </div>
+            <PageContextProvider>
+              <div className="app-shell-with-agenda">
+                <div className="app-shell-main">{children}</div>
+                {email && !isClientUser && (
+                  <Suspense fallback={null}>
+                    <AgendaPanel userEmail={email} />
+                  </Suspense>
+                )}
+              </div>
+              {/* Gemini chat assistant — staff-only. Hidden in the UI
+                  for client users + the route handler enforces the
+                  same gate server-side. Lives at the layout root so
+                  the FAB + drawer overlay every page consistently. */}
+              {email && !isClientUser && <GeminiChatDrawer />}
+            </PageContextProvider>
           </TaskPreviewProvider>
         </LightboxProvider>
         {/* Global overlays — mounted once, listen for their own key combos. */}
