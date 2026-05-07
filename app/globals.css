@@ -1746,6 +1746,274 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-color: var(--accent);
 }
 
+/* ── Gemini chat drawer (GeminiChatDrawer) ─────────────────────────
+   Floating action button (bottom-inline-end) + slide-in drawer.
+   Staff-only — mounted by app/layout.tsx behind the same client-user
+   gate as the rest of the staff-only nav surface. */
+
+.gemini-fab {
+  position: fixed;
+  bottom: 1.25rem;
+  inset-inline-end: 1.25rem;
+  z-index: 40;            /* above the topnav (20), below modals (50+) */
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--violet, #7c3aed), var(--pink, #ec4899));
+  color: white;
+  font-size: 1.55rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.gemini-fab:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.45);
+}
+.gemini-fab.is-open {
+  transform: rotate(90deg);
+}
+
+.gemini-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  inset-inline-end: 0;
+  width: 26rem;
+  max-width: 92vw;
+  z-index: 41;
+  background: var(--surface, var(--card-bg, #fff));
+  border-inline-start: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gemini-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-bg, var(--surface));
+}
+.gemini-drawer-title {
+  flex: 1;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.gemini-drawer-clear,
+.gemini-drawer-close {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gemini-drawer-clear:hover:not(:disabled),
+.gemini-drawer-close:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--border);
+}
+.gemini-drawer-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.gemini-drawer-close {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.gemini-drawer-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.gemini-empty {
+  margin: auto 0;
+  padding: 1rem 0.5rem;
+  text-align: center;
+  color: var(--muted);
+}
+.gemini-empty-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+.gemini-empty-title {
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.gemini-empty-hint {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.gemini-empty-examples {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+.gemini-empty-examples li {
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+}
+
+.gemini-msg {
+  max-width: 90%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;   /* preserve paragraph breaks Gemini emits */
+  word-wrap: break-word;
+  overflow-wrap: anywhere; /* wrap absurdly long URLs/ids gracefully */
+}
+.gemini-msg-user {
+  align-self: flex-end;
+  background: var(--accent, #7c3aed);
+  color: white;
+}
+.gemini-msg-model {
+  align-self: flex-start;
+  background: var(--surface-soft, var(--accent-soft));
+  color: var(--text);
+}
+.gemini-msg-streaming {
+  border: 1px dashed var(--accent);
+}
+
+.gemini-tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.4rem;
+}
+.gemini-tool-chip {
+  font-size: 0.72rem;
+  background: var(--card-bg, var(--surface));
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.gemini-thinking {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  height: 1rem;
+}
+.gemini-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--muted);
+  animation: gemini-pulse 1.2s infinite ease-in-out;
+}
+.gemini-dot:nth-child(2) { animation-delay: 0.15s; }
+.gemini-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes gemini-pulse {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+
+.gemini-error {
+  align-self: stretch;
+  background: var(--danger-soft, #fee2e2);
+  color: var(--danger, #b91c1c);
+  border: 1px solid var(--danger, #b91c1c);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.gemini-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border-top: 1px solid var(--border);
+  background: var(--card-bg, var(--surface));
+}
+.gemini-input {
+  flex: 1;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  resize: none;
+  min-height: 2.5rem;
+  max-height: 8rem;
+}
+.gemini-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.gemini-send-btn,
+.gemini-stop-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  font: inherit;
+  font-size: 1rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gemini-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.gemini-stop-btn {
+  background: var(--danger, #b91c1c);
+}
+
+@media (max-width: 640px) {
+  .gemini-drawer {
+    width: 100vw;
+    max-width: 100vw;
+    border-inline-start: none;
+  }
+  .gemini-fab {
+    bottom: 1rem;
+    inset-inline-end: 1rem;
+    width: 2.85rem;
+    height: 2.85rem;
+    font-size: 1.3rem;
+  }
+}
+
 /* Sign-in / unauthorized cards */
 .signin-container {
   display: flex;
