@@ -583,10 +583,13 @@ const readSheetTabTool: Tool = {
     const tab = requireString(args, "tab");
     const localRange = optionalString(args, "range");
     const sheets = sheetsClient(email);
-    // Sheets API range syntax: '<tab>!<range>'. Quote the tab when it
-    // contains spaces / Hebrew characters — the API accepts either,
-    // but quoting is safer.
-    const quotedTab = `'${tab.replace(/'/g, "''")}'`;
+    // Resolve the actual tab name. Sheets API is strict about tab
+    // names — `'גוגל'` and `'גוגל '` (trailing space) are different
+    // tabs. The model often gets the visual name right but misses
+    // trailing whitespace. Look up the real titles and find a
+    // case-insensitive trimmed match before quoting.
+    const actualTab = await resolveTabName(sheets, spreadsheetId, tab);
+    const quotedTab = `'${actualTab.replace(/'/g, "''")}'`;
     const fullRange = localRange
       ? `${quotedTab}!${localRange}`
       : `${quotedTab}!A1:ZZ200`;
@@ -634,6 +637,207 @@ const readSheetTabTool: Tool = {
   },
 };
 
+/** Look up the canonical tab title in a spreadsheet given a name the
+ *  caller provided. Tolerates trailing/leading whitespace + case
+ *  differences (Hebrew sheet names sometimes carry a trailing space —
+ *  e.g. 'גוגל ' vs 'גוגל' — that's the most common cause of a
+ *  "tab not found" error from the Sheets API). Falls back to the
+ *  caller's input verbatim when no match is found, so the original
+ *  Sheets-API error surfaces naturally. */
+async function resolveTabName(
+  sheets: ReturnType<typeof sheetsClient>,
+  spreadsheetId: string,
+  requested: string,
+): Promise<string> {
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "sheets.properties.title",
+    });
+    const titles = (meta.data.sheets || [])
+      .map((s) => s.properties?.title || "")
+      .filter(Boolean);
+    const norm = requested.trim().toLowerCase();
+    const exact = titles.find((t) => t === requested);
+    if (exact) return exact;
+    const fuzzy = titles.find((t) => t.trim().toLowerCase() === norm);
+    if (fuzzy) return fuzzy;
+  } catch {
+    // Best-effort — fall through to the caller's input.
+  }
+  return requested;
+}
+
+// ── searchSheetRows: filter+sum tool that handles full-sheet queries ─
+//
+// Replaces the common "readSheetTab → filter client-side → discover
+// the row I want is past the 200-row cap" failure mode. Reads the
+// ENTIRE sheet server-side, applies caller-provided filters by
+// column name (resolved fuzzily), and returns matching rows + a
+// pre-computed sum for every numeric column. Pre-computed sums make
+// "how much did X spend?" answers structurally correct — the model
+// can't pick a single row's value because the sums are right there.
+
+const searchSheetRowsTool: Tool = {
+  declaration: {
+    name: "searchSheetRows",
+    description:
+      "Filter rows in a Google Sheet tab by column-value matches and " +
+      "return ONLY matching rows + pre-computed sums for every numeric " +
+      "column. Reads the WHOLE tab (no 200-row cap), so use this for " +
+      "any 'find rows for project X' / 'sum cost for slug Y on date Z' " +
+      "question. Tab name + filter column names are resolved fuzzily " +
+      "(case-insensitive, trim whitespace) so 'גוגל' matches 'גוגל '. " +
+      "Filter values support exact match (single string) or 'any of' " +
+      "(string array). Returns up to 100 sample rows + the count of " +
+      "all matches. ALWAYS use this for metrics queries instead of " +
+      "readSheetTab + manual filtering.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        spreadsheetId: {
+          type: SchemaType.STRING,
+          description: "Google Sheets spreadsheet id.",
+        },
+        tab: {
+          type: SchemaType.STRING,
+          description:
+            "Tab name (e.g. 'Facebook-adsets', 'ALL CLIENTS', 'גוגל').",
+        },
+        filters: {
+          type: SchemaType.OBJECT,
+          description:
+            "Object mapping COLUMN HEADER → expected value(s). Example: " +
+            "{ \"Campaign match\": \"cazar\", \"Date\": \"2026-05-06\" }. " +
+            "Pass an array as the value to mean 'any of'. Column header " +
+            "names are case-insensitive trimmed. Pass an empty object " +
+            "to read every row (capped at 100 sample rows + sums).",
+        },
+      },
+      required: ["spreadsheetId", "tab", "filters"],
+    },
+  },
+  execute: async (email, args) => {
+    const spreadsheetId = requireString(args, "spreadsheetId");
+    const tabRequested = requireString(args, "tab");
+    const filtersRaw = (args.filters || {}) as Record<string, unknown>;
+    const sheets = sheetsClient(email);
+    const tab = await resolveTabName(sheets, spreadsheetId, tabRequested);
+    const quotedTab = `'${tab.replace(/'/g, "''")}'`;
+    // Read the whole tab. No row limit — we'll filter then cap output.
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${quotedTab}!A1:ZZ`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const values = (res.data.values || []) as unknown[][];
+    if (values.length < 2) {
+      return {
+        ok: true,
+        tab,
+        headers: [],
+        matchCount: 0,
+        rows: [],
+        columnSums: {},
+        note: "tab is empty or has only a header row",
+      };
+    }
+    const headers = (values[0] as unknown[]).map((h) =>
+      String(h ?? "").trim(),
+    );
+    const headerIdx = (name: string): number => {
+      const norm = name.trim().toLowerCase();
+      return headers.findIndex((h) => h.trim().toLowerCase() === norm);
+    };
+
+    // Resolve filter column names to indices. Filters whose column
+    // doesn't exist are reported as warnings (not errors) so the
+    // model can correct itself on the next call.
+    const activeFilters: { col: number; values: string[]; header: string }[] = [];
+    const unknownFilters: string[] = [];
+    for (const [col, val] of Object.entries(filtersRaw)) {
+      const idx = headerIdx(col);
+      if (idx < 0) {
+        unknownFilters.push(col);
+        continue;
+      }
+      const vals = (Array.isArray(val) ? val : [val]).map((v) =>
+        String(v ?? "").trim().toLowerCase(),
+      );
+      activeFilters.push({ col: idx, values: vals, header: headers[idx] });
+    }
+
+    // Walk every row applying filters. Slugs / dates / etc. compare
+    // case-insensitive and trimmed so "Cazar" and " cazar " both match.
+    const matchingRows: unknown[][] = [];
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      let ok = true;
+      for (const f of activeFilters) {
+        const cell = String(row[f.col] ?? "").trim().toLowerCase();
+        if (!f.values.includes(cell)) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) matchingRows.push(row);
+    }
+
+    // Pre-compute SUM for every column where the matching values look
+    // numeric. This is the killer feature — model can NEVER pick one
+    // row as the project total, because the sums are computed from
+    // every match. Falls through gracefully when a column isn't
+    // numeric (skip).
+    const columnSums: Record<string, number> = {};
+    if (matchingRows.length > 0) {
+      for (let c = 0; c < headers.length; c++) {
+        let sum = 0;
+        let numericCount = 0;
+        for (const r of matchingRows) {
+          const raw = r[c];
+          if (raw === undefined || raw === null || raw === "") continue;
+          const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+          if (Number.isFinite(n)) {
+            sum += n;
+            numericCount++;
+          }
+        }
+        // Only report sums for columns where AT LEAST 50% of matching
+        // rows had numeric values — avoids reporting "Date" or
+        // "Campaign match" as if they had numeric sums.
+        if (numericCount >= matchingRows.length * 0.5 && numericCount > 0) {
+          columnSums[headers[c]] = Number(sum.toFixed(4));
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      tab,
+      headers,
+      filtersApplied: activeFilters.map((f) => ({
+        column: f.header,
+        values: f.values,
+      })),
+      ...(unknownFilters.length > 0
+        ? {
+            unknownFilters,
+            warning: `These filter columns weren't found in the headers: ${unknownFilters.join(", ")}. Available headers: ${headers.join(", ")}`,
+          }
+        : {}),
+      matchCount: matchingRows.length,
+      columnSums,
+      rows: matchingRows.slice(0, 100),
+      ...(matchingRows.length > 100
+        ? {
+            rowsTruncated: true,
+            rowsNote: `${matchingRows.length} rows matched; showing first 100. Sums above are over ALL ${matchingRows.length} matches.`,
+          }
+        : {}),
+    };
+  },
+};
+
 // ── Catalog ──────────────────────────────────────────────────────────
 
 export const TOOL_CATALOG: Tool[] = [
@@ -646,6 +850,7 @@ export const TOOL_CATALOG: Tool[] = [
   readDocTool,
   getSheetMetadataTool,
   readSheetTabTool,
+  searchSheetRowsTool,
 ];
 
 export const TOOL_DECLARATIONS = TOOL_CATALOG.map((t) => t.declaration);

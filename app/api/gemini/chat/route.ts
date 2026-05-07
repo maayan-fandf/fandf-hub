@@ -190,6 +190,28 @@ guess column positions — always read headers first.
        The match column is 'Campaign match' (preferred) or
        'campaign ID' (fallback). Both carry the same slug.
 
+       *** USE searchSheetRows, NOT readSheetTab + manual filtering. ***
+       searchSheetRows reads the WHOLE tab (no 200-row cap), filters
+       server-side by exact column-value matches, and returns:
+         - matchCount: total rows matching
+         - columnSums: pre-computed SUM for every numeric column,
+           computed across ALL matches (not just the 100 sample
+           rows returned)
+         - rows: first 100 matching rows
+       This is the right tool for any "how much did X spend on Y" —
+       you read columnSums.Cost (or whatever the cost column is
+       called) directly. No client-side iteration, no risk of
+       picking a single row.
+
+       Example call shape:
+         searchSheetRows({
+           spreadsheetId: '1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA',
+           tab: 'Facebook-adsets',
+           filters: { 'Campaign match': 'cazar', 'Date': '2026-05-06' }
+         })
+       Returns: columnSums.Cost = 883.42 (sum across 3 adsets),
+       columnSums.Leads = 3, etc.
+
      *** CRITICAL: SUM all matching rows. Never report a single row's
          value as the total. ***
        A project on a single day usually has MULTIPLE rows on
