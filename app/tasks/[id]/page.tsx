@@ -10,6 +10,7 @@ import {
   tasksPeopleList,
 } from "@/lib/appsScript";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
+import { canViewAdLinks } from "@/lib/adLinkAccess";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
 import { getSharedDriveName } from "@/lib/driveFolders";
@@ -99,22 +100,11 @@ export default async function TaskDetailPage({
   // /tasks and /projects/[name]).
   const session = await auth();
   const subjectEmail = session?.user?.email ?? "";
-  // Ad-platform deep-link gate — the buttons hand off to FB Ads Manager /
-  // Google Ads, which only the people who actually do media work need to
-  // see. Per Maayan 2026-05-08: scope to the Media role on names_to_emails
-  // (Maayan + Nadav today) plus Felix specifically (he's the agency lead
-  // on media operations even though his role row reads "Manager").
-  // Replaces the looser "any internal user" gate that surfaced FB/Google
-  // pills to designers / copywriters / video editors who never click
-  // them.
-  const FELIX_AD_LINK_BYPASS_EMAIL = "felix@fandf.co.il";
-  const subjectEmailLc = subjectEmail.toLowerCase().trim();
-  const subjectRole = (peopleRes?.people ?? []).find(
-    (p) => p.email.toLowerCase().trim() === subjectEmailLc,
-  )?.role ?? "";
-  const showAdLinks =
-    subjectRole.toLowerCase() === "media" ||
-    subjectEmailLc === FELIX_AD_LINK_BYPASS_EMAIL;
+  // Ad-platform deep-link gate — see lib/adLinkAccess.ts for the why.
+  // Scoped to Media role + Felix; same helper is used on /morning and
+  // (manually mirrored) on the legacy dashboard's project cards so the
+  // gate stays consistent across surfaces.
+  const showAdLinks = canViewAdLinks(subjectEmail, peopleRes?.people);
   // Phase 4b dependencies — when this task IS an umbrella container,
   // fetch its children so the body render can list them with status
   // badges + drill-down links. Children = rows in the same project

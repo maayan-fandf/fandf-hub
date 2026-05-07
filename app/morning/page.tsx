@@ -3,13 +3,17 @@ import {
   currentUserEmail,
   getMorningFeed,
   getMyProjects,
+  tasksPeopleList,
   type MorningFeed,
   type MorningProject,
 } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
+import { canViewAdLinks } from "@/lib/adLinkAccess";
 import MorningSignalRow from "@/components/MorningSignalRow";
+import FacebookAdsIcon from "@/components/FacebookAdsIcon";
+import GoogleAdsIcon from "@/components/GoogleAdsIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +40,12 @@ export default async function MorningPage({
   const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
 
-  const [feedRes, projectsRes] = await Promise.allSettled([
+  const [feedRes, projectsRes, peopleRes] = await Promise.allSettled([
     getMorningFeed({ scope, overrideEmail }),
     scopedPerson || overrideEmail
       ? getMyProjects(overrideEmail)
       : Promise.resolve(null),
+    tasksPeopleList(),
   ]);
   const data: MorningFeed | null =
     feedRes.status === "fulfilled" ? feedRes.value : null;
@@ -52,6 +57,15 @@ export default async function MorningPage({
       : null;
   const projectsData =
     projectsRes.status === "fulfilled" ? projectsRes.value : null;
+  // Ad-platform deep-link gate — Media role + Felix only. Honors the
+  // gear-menu view-as so impersonation hides the buttons too when the
+  // impersonated user isn't on the access list.
+  const peopleListData =
+    peopleRes.status === "fulfilled" && peopleRes.value.ok
+      ? peopleRes.value.people
+      : [];
+  const adLinkSubject = overrideEmail || me;
+  const showAdLinks = canViewAdLinks(adLinkSubject, peopleListData);
 
   const allProjects = data?.projects ?? [];
   // Narrow to projects where the scoped person is on the roster. Null set
@@ -183,7 +197,7 @@ export default async function MorningPage({
       {alertProjects.length > 0 && (
         <ul className="morning-list">
           {alertProjects.map((p) => (
-            <ProjectCard key={p.name} p={p} />
+            <ProjectCard key={p.name} p={p} showAdLinks={showAdLinks} />
           ))}
         </ul>
       )}
@@ -195,7 +209,7 @@ export default async function MorningPage({
           </summary>
           <ul className="morning-list morning-list-compact">
             {clearProjects.map((p) => (
-              <ProjectCard key={p.name} p={p} compact />
+              <ProjectCard key={p.name} p={p} compact showAdLinks={showAdLinks} />
             ))}
           </ul>
         </details>
@@ -253,9 +267,13 @@ function SeverityChip({
 function ProjectCard({
   p,
   compact,
+  showAdLinks,
 }: {
   p: MorningProject;
   compact?: boolean;
+  /** Show Facebook Ads / Google Ads deep-link buttons. Gated to Media
+   *  role + Felix only — see lib/adLinkAccess.ts. */
+  showAdLinks?: boolean;
 }) {
   const sevClass =
     p.maxSeverity === 3
@@ -305,7 +323,7 @@ function ProjectCard({
               📊 גיליון
             </a>
           )}
-          {p.gAdsUrl && (
+          {showAdLinks && p.gAdsUrl && (
             <a
               href={p.gAdsUrl}
               target="_blank"
@@ -313,10 +331,10 @@ function ProjectCard({
               className="morning-link morning-link-google"
               title="פתח את החשבון ב־Google Ads"
             >
-              🔍 Google Ads
+              <GoogleAdsIcon size="1em" /> Google Ads
             </a>
           )}
-          {p.fbAdsUrl && (
+          {showAdLinks && p.fbAdsUrl && (
             <a
               href={p.fbAdsUrl}
               target="_blank"
@@ -324,7 +342,7 @@ function ProjectCard({
               className="morning-link morning-link-fb"
               title="פתח את החשבון ב־Facebook Ads"
             >
-              📘 Facebook Ads
+              <FacebookAdsIcon size="1em" /> Facebook Ads
             </a>
           )}
         </div>
