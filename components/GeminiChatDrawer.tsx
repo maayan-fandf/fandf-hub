@@ -295,7 +295,9 @@ export default function GeminiChatDrawer() {
                   </div>
                 )}
                 <div className="gemini-msg-text">
-                  {streamText || (
+                  {streamText ? (
+                    renderRichText(streamText)
+                  ) : (
                     <span className="gemini-thinking">
                       <span className="gemini-dot" />
                       <span className="gemini-dot" />
@@ -368,9 +370,76 @@ function MessageBubble({ message }: { message: Message }) {
           ))}
         </div>
       )}
-      <div className="gemini-msg-text">{message.text}</div>
+      <div className="gemini-msg-text">
+        {message.role === "user" ? message.text : renderRichText(message.text)}
+      </div>
     </div>
   );
+}
+
+/**
+ * Tiny markdown-ish renderer for assistant messages. Handles four
+ * patterns inline:
+ *   - **bold**                → <strong>
+ *   - [label](url)            → clickable link (target=_blank for absolute, in-app for relative)
+ *   - bare https://...        → clickable link (target=_blank)
+ *   - bare /tasks|/projects/… → in-app link
+ *
+ * Anything else passes through as plain text. Newlines are preserved
+ * by the parent's `white-space: pre-wrap` CSS, so we don't need to
+ * split into lines here. Returns React nodes interleaved with strings.
+ *
+ * Why not pull in a markdown library: the assistant emits short
+ * answers (a few sentences plus a list at most), and we already have
+ * full control over the prompt to keep the formatting predictable.
+ * Adding `react-markdown` + `remark-gfm` would balloon the bundle for
+ * a handful of patterns.
+ */
+function renderRichText(text: string): React.ReactNode[] {
+  // Single regex with five alternations — capture group 1 = bold body,
+  // 2 = markdown link label + 3 = its url, 4 = bare http(s) URL,
+  // 5 = bare hub-internal path. The character classes for URLs
+  // exclude common trailing punctuation so a sentence-ending period
+  // doesn't get sucked into the link.
+  const regex =
+    /\*\*([^*]+)\*\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)|(https?:\/\/[^\s<>"'),]+)|(\/(?:tasks|projects|companies|campaigns|admin|notifications|inbox)\/[^\s<>"'),]+)/g;
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1] !== undefined) {
+      out.push(<strong key={`k${key++}`}>{m[1]}</strong>);
+    } else if (m[2] !== undefined && m[3] !== undefined) {
+      const href = m[3];
+      const internal = href.startsWith("/");
+      out.push(
+        <a
+          key={`k${key++}`}
+          href={href}
+          {...(internal ? {} : { target: "_blank", rel: "noreferrer" })}
+        >
+          {m[2]}
+        </a>,
+      );
+    } else if (m[4] !== undefined) {
+      out.push(
+        <a key={`k${key++}`} href={m[4]} target="_blank" rel="noreferrer">
+          {m[4]}
+        </a>,
+      );
+    } else if (m[5] !== undefined) {
+      out.push(
+        <a key={`k${key++}`} href={m[5]}>
+          {m[5]}
+        </a>,
+      );
+    }
+    last = regex.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 /** Tiny emoji map for tool-call chips so the user gets a quick visual
