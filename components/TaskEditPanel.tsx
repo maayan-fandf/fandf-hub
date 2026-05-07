@@ -12,7 +12,13 @@ import DriveFolderPicker, {
 } from "./DriveFolderPicker";
 import { displayNameOf } from "@/lib/personDisplay";
 
-const DEPARTMENTS = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
+/** Last-resort department list. Used only when the TaskFormSchema sheet
+ *  is empty AND the names-to-emails Role column is empty too — i.e. on
+ *  a brand-new workspace before any seeding has happened. The /tasks/new
+ *  flow uses the same fallback (TaskCreateForm.tsx). Real workspaces
+ *  source departments from the schema sheet first, the live Role
+ *  column second. */
+const DEPARTMENTS_FALLBACK = ["מדיה", "קריאייטיב", "UI/UX", "תכנון", "אחר"];
 const KINDS = [
   { val: "ad_creative", label: "קריאייטיב פרסומי" },
   { val: "landing_page", label: "דף נחיתה" },
@@ -33,6 +39,7 @@ export default function TaskEditPanel({
   task,
   people,
   projects = [],
+  formSchema = null,
 }: {
   task: WorkTask;
   people: TasksPerson[];
@@ -43,6 +50,16 @@ export default function TaskEditPanel({
    *  — typing the new project name here moves the row, backfills the
    *  Drive folder, and updates the company server-side. */
   projects?: { name: string; company: string }[];
+  /** TaskFormSchema sheet contents — drives the dept chips and the
+   *  department-filtered people picker. Same shape + fallback chain as
+   *  TaskCreateForm uses on /tasks/new. When null (sheet empty, fetch
+   *  failed, etc.) the panel falls back to roles from the live people
+   *  list, then to the legacy hardcoded set. */
+  formSchema?: {
+    departments: string[];
+    allKinds: string[];
+    kindsByDepartment: Record<string, string[]>;
+  } | null;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -179,6 +196,54 @@ export default function TaskEditPanel({
       cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d],
     );
   }
+
+  // Department chip list — schema sheet wins, falls back to the live
+  // Role column on names_to_emails (deduped case-insensitively), falls
+  // back to DEPARTMENTS_FALLBACK. Mirrors the derivation TaskCreateForm
+  // uses on /tasks/new so both surfaces stay in sync. We then UNION any
+  // departments already saved on the task — even if they're legacy values
+  // that are no longer in the schema, they should still render as chips
+  // (with the "is-active" state) so editing doesn't silently drop them.
+  const departmentOptions = useMemo(() => {
+    let base: string[];
+    if (formSchema && formSchema.departments.length > 0) {
+      base = formSchema.departments;
+    } else {
+      const seen = new Map<string, string>();
+      for (const p of people) {
+        const r = (p.role || "").trim();
+        if (!r) continue;
+        const key = r.toLowerCase();
+        if (!seen.has(key)) seen.set(key, r);
+      }
+      base = seen.size > 0
+        ? Array.from(seen.values()).sort((a, b) => a.localeCompare(b, "he"))
+        : DEPARTMENTS_FALLBACK;
+    }
+    // Append any saved-but-unknown departments so legacy values stay
+    // visible / removable. Lower-cased compare so "Media" vs "media"
+    // collapse to one chip.
+    const lcExisting = new Set(base.map((d) => d.toLowerCase()));
+    const extras: string[] = [];
+    for (const d of departments) {
+      const lc = d.toLowerCase();
+      if (lc && !lcExisting.has(lc)) {
+        lcExisting.add(lc);
+        extras.push(d);
+      }
+    }
+    return extras.length ? [...base, ...extras] : base;
+  }, [formSchema, people, departments]);
+
+  // People-picker chip row narrows to people whose role matches one of
+  // the selected departments — the "nested choice" the user asked for.
+  // Empty selection = show everyone, preserving the existing UX for tasks
+  // edited without picking a department first.
+  const filteredPeople = useMemo(() => {
+    if (departments.length === 0) return people;
+    const wanted = new Set(departments.map((d) => d.toLowerCase()));
+    return people.filter((p) => wanted.has((p.role || "").toLowerCase()));
+  }, [people, departments]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -452,7 +517,7 @@ export default function TaskEditPanel({
       <label>
         מחלקות
         <div className="task-form-dept-row">
-          {DEPARTMENTS.map((d) => (
+          {departmentOptions.map((d) => (
             <button
               key={d}
               type="button"
@@ -550,9 +615,9 @@ export default function TaskEditPanel({
           placeholder="felix@fandf.co.il, nadav@fandf.co.il"
           dir="ltr"
         />
-        {people.length > 0 && (
+        {filteredPeople.length > 0 && (
           <div className="task-form-assignee-chips">
-            {people.slice(0, 24).map((p) => {
+            {filteredPeople.slice(0, 24).map((p) => {
               const already = assignees
                 .split(/[,;\n]/)
                 .map((s) => s.trim().toLowerCase())

@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
+  currentUserEmail,
   getMyProjects,
   getProjectAdLinks,
   tasksGet,
   tasksList,
   tasksPeopleList,
 } from "@/lib/appsScript";
+import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
 import { getSharedDriveName } from "@/lib/driveFolders";
@@ -51,7 +53,10 @@ export default async function TaskDetailPage({
   // parallel with everything else. Edit-mode also uses it to back the
   // autocomplete datalist + chip picker. Access lookup alongside so we
   // can bounce clients out before rendering any task UI.
-  const [res, peopleRes, accessRes] = await Promise.all([
+  // formSchema is fetched only when we're going to render the edit
+  // panel — non-edit (read-mode) renders don't need it. Same TTL-cached
+  // helper /tasks/new uses, so it's effectively free on a warm cache.
+  const [res, peopleRes, accessRes, formSchemaRes] = await Promise.all([
     tasksGet(decodedId).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.toLowerCase().includes("not found")) return null;
@@ -59,6 +64,13 @@ export default async function TaskDetailPage({
     }),
     tasksPeopleList().catch(() => ({ ok: false, people: [] })),
     getMyProjects().catch(() => null),
+    editing
+      ? currentUserEmail()
+          .then((email) =>
+            email ? getTaskFormSchema(email).catch(() => null) : null,
+          )
+          .catch(() => null)
+      : Promise.resolve(null),
   ]);
   if (accessRes) {
     const isClientUser =
@@ -273,6 +285,15 @@ export default async function TaskDetailPage({
             name: p.name,
             company: p.company,
           }))}
+          formSchema={
+            formSchemaRes && !formSchemaRes.isEmpty
+              ? {
+                  departments: formSchemaRes.departments,
+                  allKinds: formSchemaRes.allKinds,
+                  kindsByDepartment: formSchemaRes.kindsByDepartment,
+                }
+              : null
+          }
         />
       )}
 
