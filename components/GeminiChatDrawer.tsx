@@ -30,6 +30,7 @@ import { capturePageContext } from "@/lib/pageContextSnapshot";
  */
 
 type Role = "user" | "model";
+type GroundingSource = { uri: string; title: string };
 type Message = {
   id: string;
   role: Role;
@@ -38,6 +39,13 @@ type Message = {
    *  while streaming. Persisted so a reload still shows what the
    *  assistant did to compose the answer. */
   toolCalls?: { name: string; args: Record<string, unknown> }[];
+  /** Google Search queries the model ran while composing this turn.
+   *  Persisted alongside toolCalls for the same "see what the
+   *  assistant did" reason. */
+  searchQueries?: string[];
+  /** Web sources Vertex grounded against, surfaced as a "Sources:"
+   *  footer on the bubble. */
+  sources?: GroundingSource[];
 };
 
 const STORAGE_KEY_PREFIX = "hub:gemini:chat:";
@@ -51,6 +59,8 @@ export default function GeminiChatDrawer() {
   const [streamTools, setStreamTools] = useState<
     { name: string; args: Record<string, unknown> }[]
   >([]);
+  const [streamSearchQueries, setStreamSearchQueries] = useState<string[]>([]);
+  const [streamSources, setStreamSources] = useState<GroundingSource[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { payload: registeredContext } = usePageContext();
   const threadRef = useRef<HTMLDivElement>(null);
@@ -123,6 +133,8 @@ export default function GeminiChatDrawer() {
     setStreaming(true);
     setStreamText("");
     setStreamTools([]);
+    setStreamSearchQueries([]);
+    setStreamSources([]);
 
     const ac = new AbortController();
     abortRef.current = ac;
@@ -155,6 +167,8 @@ export default function GeminiChatDrawer() {
       let buffer = "";
       let accText = "";
       let accTools: { name: string; args: Record<string, unknown> }[] = [];
+      let accSearchQueries: string[] = [];
+      let accSources: GroundingSource[] = [];
       let aborted = false;
 
       while (!aborted) {
@@ -187,6 +201,24 @@ export default function GeminiChatDrawer() {
             const tool = data as { name: string; args: Record<string, unknown> };
             accTools = [...accTools, tool];
             setStreamTools(accTools);
+          } else if (event === "search" && (data as { query?: string }).query) {
+            const q = (data as { query: string }).query;
+            if (!accSearchQueries.includes(q)) {
+              accSearchQueries = [...accSearchQueries, q];
+              setStreamSearchQueries(accSearchQueries);
+            }
+          } else if (event === "sources") {
+            const chunks = (data as { chunks?: GroundingSource[] }).chunks || [];
+            // Dedup by URI as we go, since sources can stream in
+            // multiple events across the iteration.
+            const seen = new Set(accSources.map((s) => s.uri));
+            for (const c of chunks) {
+              if (!seen.has(c.uri)) {
+                seen.add(c.uri);
+                accSources.push(c);
+              }
+            }
+            setStreamSources([...accSources]);
           } else if (event === "done") {
             aborted = true;
             break;
@@ -204,6 +236,10 @@ export default function GeminiChatDrawer() {
         role: "model",
         text: accText,
         ...(accTools.length > 0 ? { toolCalls: accTools } : {}),
+        ...(accSearchQueries.length > 0
+          ? { searchQueries: accSearchQueries }
+          : {}),
+        ...(accSources.length > 0 ? { sources: accSources } : {}),
       };
       setMessages((cur) => [...cur, assistantMsg]);
     } catch (e) {
@@ -216,6 +252,8 @@ export default function GeminiChatDrawer() {
       setStreaming(false);
       setStreamText("");
       setStreamTools([]);
+      setStreamSearchQueries([]);
+      setStreamSources([]);
       abortRef.current = null;
     }
   }, [draft, messages, registeredContext, streaming]);
@@ -285,11 +323,20 @@ export default function GeminiChatDrawer() {
             ))}
             {streaming && (
               <div className="gemini-msg gemini-msg-model gemini-msg-streaming">
-                {streamTools.length > 0 && (
+                {(streamTools.length > 0 || streamSearchQueries.length > 0) && (
                   <div className="gemini-tool-chips">
                     {streamTools.map((t, i) => (
-                      <span key={i} className="gemini-tool-chip" title={JSON.stringify(t.args)}>
+                      <span key={`t${i}`} className="gemini-tool-chip" title={JSON.stringify(t.args)}>
                         {toolEmoji(t.name)} {t.name}
+                      </span>
+                    ))}
+                    {streamSearchQueries.map((q, i) => (
+                      <span
+                        key={`s${i}`}
+                        className="gemini-tool-chip gemini-search-chip"
+                        title={`Google Search: ${q}`}
+                      >
+                        🌐 {q}
                       </span>
                     ))}
                   </div>
@@ -305,6 +352,9 @@ export default function GeminiChatDrawer() {
                     </span>
                   )}
                 </div>
+                {streamSources.length > 0 && (
+                  <SourcesFooter sources={streamSources} />
+                )}
               </div>
             )}
             {error && <div className="gemini-error">{error}</div>}
@@ -359,13 +409,25 @@ export default function GeminiChatDrawer() {
 }
 
 function MessageBubble({ message }: { message: Message }) {
+  const hasChips =
+    (message.toolCalls && message.toolCalls.length > 0) ||
+    (message.searchQueries && message.searchQueries.length > 0);
   return (
     <div className={`gemini-msg gemini-msg-${message.role}`}>
-      {message.toolCalls && message.toolCalls.length > 0 && (
+      {hasChips && (
         <div className="gemini-tool-chips">
-          {message.toolCalls.map((t, i) => (
-            <span key={i} className="gemini-tool-chip" title={JSON.stringify(t.args)}>
+          {(message.toolCalls || []).map((t, i) => (
+            <span key={`t${i}`} className="gemini-tool-chip" title={JSON.stringify(t.args)}>
               {toolEmoji(t.name)} {t.name}
+            </span>
+          ))}
+          {(message.searchQueries || []).map((q, i) => (
+            <span
+              key={`s${i}`}
+              className="gemini-tool-chip gemini-search-chip"
+              title={`Google Search: ${q}`}
+            >
+              🌐 {q}
             </span>
           ))}
         </div>
@@ -373,6 +435,44 @@ function MessageBubble({ message }: { message: Message }) {
       <div className="gemini-msg-text">
         {message.role === "user" ? message.text : renderRichText(message.text)}
       </div>
+      {message.sources && message.sources.length > 0 && (
+        <SourcesFooter sources={message.sources} />
+      )}
+    </div>
+  );
+}
+
+/** Footer block listing the web sources Vertex grounded against.
+ *  Rendered under the assistant text bubble when Google Search was
+ *  used. Hostname-only labels keep the list compact; full URL goes
+ *  on hover via title. */
+function SourcesFooter({ sources }: { sources: GroundingSource[] }) {
+  return (
+    <div className="gemini-sources">
+      <div className="gemini-sources-head">🌐 מקורות:</div>
+      <ol className="gemini-sources-list">
+        {sources.map((s, i) => {
+          let host = s.uri;
+          try {
+            host = new URL(s.uri).hostname.replace(/^www\./, "");
+          } catch {
+            /* leave raw URI as fallback */
+          }
+          return (
+            <li key={`${s.uri}-${i}`}>
+              <a
+                href={s.uri}
+                target="_blank"
+                rel="noreferrer"
+                title={s.title || s.uri}
+              >
+                {s.title || host}
+                <span className="gemini-source-host"> · {host}</span>
+              </a>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

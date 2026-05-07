@@ -91,13 +91,27 @@ function getModel(args: {
   model?: string;
   systemInstruction: string;
   tools?: FunctionDeclaration[];
+  /** Enable Google Search grounding alongside the function tools.
+   *  Gemini 2.0+ supports combining Search + function calling in
+   *  one request. The model decides when to search; Vertex returns
+   *  groundingMetadata (cited URLs + queries) on the response that
+   *  the streaming wrapper surfaces back to the chat route. Costs
+   *  ~$0.035 per request that uses search, free first 1500/day. */
+  enableSearch?: boolean;
 }): GenerativeModel {
   const v = vertex();
   const model = args.model || "gemini-2.5-pro";
-  const wrappedTools: Tool[] | undefined =
-    args.tools && args.tools.length > 0
-      ? [{ functionDeclarations: args.tools }]
-      : undefined;
+  const wrappedTools: Tool[] = [];
+  if (args.tools && args.tools.length > 0) {
+    wrappedTools.push({ functionDeclarations: args.tools });
+  }
+  if (args.enableSearch) {
+    // SDK 1.12 typing predates the `googleSearch` field name (it ships
+    // `googleSearchRetrieval`, the older shape). Cast through unknown
+    // so we can pass the modern shape that Gemini 2.5 expects. When
+    // we bump @google-cloud/vertexai we can drop the cast.
+    wrappedTools.push({ googleSearch: {} } as unknown as Tool);
+  }
   return v.getGenerativeModel({
     model,
     systemInstruction: {
@@ -152,6 +166,17 @@ export type GeminiCallArgs = {
   tools?: FunctionDeclaration[];
   /** Override the default 2.5 Pro. */
   model?: string;
+  /** When true, also expose Google Search to the model (the built-in
+   *  Vertex grounding tool). Costs a small per-request fee when the
+   *  model elects to search; first 1500 grounded reqs/day are free. */
+  enableSearch?: boolean;
+};
+
+/** A web source Gemini cited via Google Search grounding. Surfaced to
+ *  the chat UI so the assistant message can render a "Sources:" list. */
+export type GeminiGroundingChunk = {
+  uri: string;
+  title: string;
 };
 
 /** A non-streaming generation result. For streaming, use `streamGemini`
@@ -276,9 +301,11 @@ export async function callGemini(
  */
 export async function* streamGemini(args: GeminiCallArgs): AsyncGenerator<
   | { text: string }
+  | { searchQuery: string }
   | {
       done: true;
       functionCalls: GeminiFunctionCall[];
+      groundingChunks: GeminiGroundingChunk[];
       inputTokens: number;
       outputTokens: number;
     }
@@ -287,15 +314,53 @@ export async function* streamGemini(args: GeminiCallArgs): AsyncGenerator<
     model: args.model,
     systemInstruction: args.system,
     tools: args.tools,
+    enableSearch: args.enableSearch,
   });
   const request: GenerateContentRequest = {
     contents: turnsToContents(args.history),
   };
   const result = await model.generateContentStream(request);
   const collectedFunctionCalls: GeminiFunctionCall[] = [];
+  // Grounding metadata can show up on any chunk's candidate (and the
+  // final aggregated response). Collect across all chunks, dedup by
+  // URI for citations and by query for the in-progress search chip.
+  const collectedChunks: GeminiGroundingChunk[] = [];
+  const seenUris = new Set<string>();
+  const seenQueries = new Set<string>();
+
+  function harvestGrounding(
+    candidate: { groundingMetadata?: unknown } | undefined,
+  ): string[] {
+    const newQueries: string[] = [];
+    const gm = candidate?.groundingMetadata as
+      | {
+          webSearchQueries?: string[];
+          groundingChunks?: { web?: { uri?: string; title?: string } }[];
+        }
+      | undefined;
+    if (!gm) return newQueries;
+    for (const q of gm.webSearchQueries || []) {
+      if (!q || seenQueries.has(q)) continue;
+      seenQueries.add(q);
+      newQueries.push(q);
+    }
+    for (const c of gm.groundingChunks || []) {
+      const uri = c.web?.uri;
+      if (!uri || seenUris.has(uri)) continue;
+      seenUris.add(uri);
+      collectedChunks.push({ uri, title: c.web?.title || uri });
+    }
+    return newQueries;
+  }
+
   for await (const chunk of result.stream) {
     const candidate = chunk.candidates?.[0];
     if (!candidate) continue;
+    // Emit any new search queries first so the UI's "🌐 web" chip
+    // appears as the model decides to ground.
+    for (const q of harvestGrounding(candidate)) {
+      yield { searchQuery: q };
+    }
     const parts = candidate.content?.parts || [];
     for (const part of parts) {
       if ("text" in part && part.text) {
@@ -309,12 +374,19 @@ export async function* streamGemini(args: GeminiCallArgs): AsyncGenerator<
     }
   }
   // After the stream completes, the SDK exposes the aggregated
-  // response (with usage metadata) on `response`.
+  // response (with usage metadata) on `response`. Some grounding
+  // metadata only lands on the aggregated candidate, not per-chunk —
+  // harvest one more time before yielding `done`.
   const finalResp = await result.response;
+  const finalCandidate = finalResp.candidates?.[0];
+  for (const q of harvestGrounding(finalCandidate)) {
+    yield { searchQuery: q };
+  }
   const usage = finalResp.usageMetadata;
   yield {
     done: true,
     functionCalls: collectedFunctionCalls,
+    groundingChunks: collectedChunks,
     inputTokens: usage?.promptTokenCount ?? 0,
     outputTokens: usage?.candidatesTokenCount ?? 0,
   };

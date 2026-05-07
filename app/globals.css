@@ -1951,6 +1951,51 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-radius: 999px;
 }
 
+/* Search chips (Google Search grounding) sit alongside tool chips
+   but tinted to differentiate web-sourced calls from hub-tool calls. */
+.gemini-search-chip {
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.08),
+    rgba(236, 72, 153, 0.08)
+  );
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--text);
+}
+
+/* Web-sources footer — rendered under the assistant message bubble
+   when Vertex grounding cited any URLs. Compact ordered list with
+   hostnames so the bubble doesn't grow unbounded. */
+.gemini-sources {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--border);
+  font-size: 0.78rem;
+}
+.gemini-sources-head {
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+.gemini-sources-list {
+  list-style: decimal inside;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.gemini-sources-list a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.gemini-sources-list a:hover {
+  text-decoration: underline;
+}
+.gemini-source-host {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
 .gemini-thinking {
   display: inline-flex;
   gap: 0.25rem;
