@@ -533,29 +533,41 @@ export default function TasksQueue({
 
     // Drop targets in the table are always other rows in the same
     // bucket (each SortableContext is scoped per-bucket). Compute the
-    // new rank from the bucket's currently-rendered order (rank asc).
+    // new rank from the bucket's currently-rendered order — which is
+    // sortFn order under a non-rank sort, NOT rank order. dnd-kit's
+    // visual rearrangement happens in the order of SortableContext.items,
+    // and that list is `ordered` from SortableTableSection (sortFn ||
+    // compareByRank). So fromIdx/toIdx must use the same order, otherwise
+    // the direction logic gets pointed in the wrong direction.
     //
     // Direction-aware insert anchor: dnd-kit's verticalListSortingStrategy
     // mirrors `arrayMove(items, oldIdx, newIdx)` — the dragged item
-    // lands AT over's position in the resulting array. So:
+    // lands AT over's position in the resulting array:
     //   - Dragging DOWN (fromIdx < toIdx) → insert AFTER overId
     //   - Dragging UP   (fromIdx > toIdx) → insert BEFORE overId
-    // The previous code unconditionally inserted before, which made
-    // a one-slot-down drag compute newRank === dragged.rank and snap
-    // back via the no-op early return below.
-    const fullList = (byStatus.byStatus[dragged.status] || [])
+    const visualSort = sortFn || compareByRank;
+    const visualList = (byStatus.byStatus[dragged.status] || [])
       .slice()
-      .sort(compareByRank);
-    const fromIdx = fullList.findIndex((t) => t.id === draggedId);
-    const toIdx = fullList.findIndex((t) => t.id === overId);
+      .sort(visualSort);
+    const fromIdx = visualList.findIndex((t) => t.id === draggedId);
+    const toIdx = visualList.findIndex((t) => t.id === overId);
     if (fromIdx === -1 || toIdx === -1) return;
-    const filteredList = fullList.filter((t) => t.id !== draggedId);
-    const overInFiltered = filteredList.findIndex((t) => t.id === overId);
-    const insertBeforeIdx =
+    const filteredVisual = visualList.filter((t) => t.id !== draggedId);
+    const overInFiltered = filteredVisual.findIndex((t) => t.id === overId);
+    const insertVisualIdx =
       fromIdx < toIdx ? overInFiltered + 1 : overInFiltered;
+
+    // Compute newRank. Under rank sort the visual list IS rank-ordered
+    // and `computeInsertRank` (midpoint of neighbors) Just Works. Under
+    // a non-rank sort the visual neighbors aren't necessarily rank-
+    // adjacent — using their rank values as midpoint anchors places the
+    // dragged "between" them in rank-space, which is the closest we can
+    // do without rewriting other rows' ranks. After the save the auto-
+    // reset switches the user to rank sort, where this rank lands the
+    // dragged near the position they dropped it in.
     const insertBeforeId =
-      filteredList[insertBeforeIdx]?.id ?? null; // null = append at bottom
-    const newRank = computeInsertRank(filteredList, insertBeforeId);
+      filteredVisual[insertVisualIdx]?.id ?? null; // null = append
+    const newRank = computeInsertRank(filteredVisual, insertBeforeId);
 
     if (dragged.rank === newRank) return;
 
@@ -584,17 +596,41 @@ export default function TasksQueue({
       // If the user was sorted by something other than rank, the
       // rank update we just saved would be invisible until they
       // reset sort manually. Auto-reset so the drag's outcome
-      // shows up immediately. Preserve every other URL param so
-      // filters / view stay intact.
-      if (sort !== "rank" && searchParams) {
-        const merged: Record<string, string> = {};
-        for (const [k, v] of Object.entries(searchParams)) {
-          if (!v) continue;
-          if (k === "sort" || k === "order") continue;
-          merged[k] = v;
+      // shows up immediately. Two parts:
+      //   1. Persist sort:"" (= rank) on the user's prefs row.
+      //      Without this, the page re-reads the persisted sort
+      //      from /api/me/prefs on the next render and re-applies
+      //      whatever the user had saved (e.g. "status"). Just
+      //      clearing URL params doesn't help.
+      //   2. Push the URL without ?sort=&order= and refresh, so
+      //      the page picks up the cleared pref + renders in rank
+      //      order. We deliberately don't add an explicit
+      //      ?sort=rank — the empty pref + empty URL is the
+      //      canonical "default" state.
+      if (sort !== "rank") {
+        // Fire-and-forget pref clear; same shape as persistSortPref
+        // below. keepalive lets the request survive the navigation.
+        void fetch("/api/me/prefs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            tasks_sort: "",
+            tasks_sort_order: "",
+          }),
+          keepalive: true,
+        }).catch(() => {
+          /* best-effort — auto-reset is a UX nicety, not critical */
+        });
+        if (searchParams) {
+          const merged: Record<string, string> = {};
+          for (const [k, v] of Object.entries(searchParams)) {
+            if (!v) continue;
+            if (k === "sort" || k === "order") continue;
+            merged[k] = v;
+          }
+          const qs = new URLSearchParams(merged).toString();
+          router.push(qs ? `/tasks?${qs}` : "/tasks");
         }
-        const qs = new URLSearchParams(merged).toString();
-        router.push(qs ? `/tasks?${qs}` : "/tasks");
         router.refresh();
       }
     } catch (err) {
