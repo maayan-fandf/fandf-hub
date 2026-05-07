@@ -7,21 +7,24 @@
  * end up clicking them, so we scope to:
  *
  *   - role === "Media" on names_to_emails (Maayan + Nadav today)
- *   - email === felix@fandf.co.il (he's the agency lead on media
- *     operations even though his Role row reads "Manager")
+ *   - role === "Client Manager" — the account managers loop into
+ *     ad-platform sessions to read campaign performance with clients
+ *   - email === felix@fandf.co.il (agency lead on media operations
+ *     even though his Role row reads "Manager")
  *
- * Designers / copywriters / video editors / client managers see no
- * ad-platform pills anywhere in the hub.
+ * Designers / copywriters / video editors / generic "Manager" rows
+ * still see no ad-platform pills anywhere in the hub.
  */
 import type { TasksPerson } from "@/lib/appsScript";
 
 export const FELIX_AD_LINK_BYPASS_EMAIL = "felix@fandf.co.il";
+const AD_LINK_ROLES = new Set(["media", "client manager"]);
 
 /**
- * Returns true when the given email belongs to a Media-role staffer
- * OR to Felix specifically. Falls through (false) for empty input or
- * unrecognized emails — i.e. the gate fails closed when we can't
- * resolve the user's role.
+ * Returns true when the given email's role on names_to_emails matches
+ * one of the ad-platform-eligible roles, OR when the email is Felix's.
+ * Falls through (false) for empty input or unrecognized emails — i.e.
+ * the gate fails closed when we can't resolve the user's role.
  */
 export function canViewAdLinks(
   email: string,
@@ -33,5 +36,5 @@ export function canViewAdLinks(
   const role = (people ?? []).find(
     (p) => p.email.toLowerCase().trim() === lc,
   )?.role ?? "";
-  return role.toLowerCase() === "media";
+  return AD_LINK_ROLES.has(role.toLowerCase().trim());
 }
