@@ -27,11 +27,7 @@ import {
   type GeminiTurn,
   type GeminiFunctionCall,
 } from "@/lib/gemini";
-import {
-  TOOL_CATALOG,
-  TOOL_DECLARATIONS,
-  getTool,
-} from "@/lib/geminiTools";
+import { TOOL_DECLARATIONS, getTool } from "@/lib/geminiTools";
 import {
   snapshotToSystemBlock,
   type PageContextSnapshot,
@@ -270,7 +266,3 @@ export async function POST(req: Request) {
   });
 }
 
-// Suppress an "unused" lint complaint on TOOL_CATALOG — re-exported
-// here so future debug surfaces (an /admin/gemini-tools page, say)
-// can introspect what's available without re-importing.
-export const _exposedCatalog = TOOL_CATALOG;
