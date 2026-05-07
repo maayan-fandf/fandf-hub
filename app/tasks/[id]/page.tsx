@@ -15,7 +15,7 @@ import { personDisplayName } from "@/lib/personDisplay";
 import { getSharedDriveName } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TaskStatusCell from "@/components/TaskStatusCell";
-import TaskEditPanel from "@/components/TaskEditPanel";
+import TaskCreateForm from "@/components/TaskCreateForm";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
 import TaskAttachments from "@/components/TaskAttachments";
@@ -269,22 +269,28 @@ export default async function TaskDetailPage({
               ✏️ ערוך
             </Link>
           )}
-          {/* Personal-note → real-project conversion is now folded into the
-              edit panel itself (TaskEditPanel's project field accepts a new
-              value; the server validates access + backfills Drive folder).
-              See lib/tasksWriteDirect.ts:projectChanging for the server
-              semantics, and TaskEditPanel for the UX. */}
+          {/* Edit surface is now the same TaskCreateForm component used
+              on /tasks/new — when given an `editingTask` prop it switches
+              to update semantics (POST /api/worktasks/update with a
+              patch) and hides the create-only chain / multi-mode UI.
+              Personal-note → real-project conversion still works via the
+              project picker — leaving __personal__ triggers the same
+              server-side migration. */}
         </div>
       </header>
 
       {editing && (
-        <TaskEditPanel
-          task={t}
-          people={peopleRes?.people ?? []}
+        <TaskCreateForm
+          editingTask={t}
           projects={(accessRes?.projects ?? []).map((p) => ({
             name: p.name,
             company: p.company,
+            projectManagerFull: p.roster?.projectManagerFull ?? "",
           }))}
+          defaultProject={t.project.startsWith("__") ? "" : t.project}
+          defaultCompany={t.company || ""}
+          people={peopleRes?.people ?? []}
+          currentUserEmail={subjectEmail}
           formSchema={
             formSchemaRes && !formSchemaRes.isEmpty
               ? {

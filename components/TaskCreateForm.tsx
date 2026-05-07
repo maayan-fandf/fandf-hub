@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { TasksPerson } from "@/lib/appsScript";
+import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
 import DatePicker from "./DatePicker";
 import PersonCombobox from "./PersonCombobox";
@@ -58,6 +58,7 @@ export default function TaskCreateForm({
   chainTemplates,
   driveAccessToken,
   drivePickerApiKey,
+  editingTask = null,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
@@ -113,7 +114,21 @@ export default function TaskCreateForm({
    *  `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`. Empty disables the
    *  experimental button without breaking the rest of the form. */
   drivePickerApiKey?: string;
+  /** When supplied, the form switches to EDIT mode: every initial state
+   *  is seeded from the existing task, the chain / multi-mode UI is
+   *  hidden, and submit POSTs to /api/worktasks/update with a patch
+   *  derived from the form. The page that renders this should also
+   *  pre-fill defaultProject/defaultCompany/defaultTitle/etc. so those
+   *  fall through to the same code paths as create.
+   *
+   *  This is the unification path — replaces the legacy TaskEditPanel.
+   *  Both surfaces now go through TaskCreateForm so departments / kind /
+   *  people-picker behavior never drifts again. */
+  editingTask?: WorkTask | null;
 }) {
+  // Edit mode shorthand. Used in many places below to fork initial
+  // state, hide create-only UI sections, and route the submit handler.
+  const isEditing = !!editingTask;
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,14 +170,45 @@ export default function TaskCreateForm({
     ? nameToEmail.get(defaultProjectOpt.projectManagerFull.trim().toLowerCase()) || ""
     : "";
 
-  const [company, setCompany] = useState(defaultCompany);
-  const [project, setProject] = useState(defaultProject);
-  const [departments, setDepartments] = useState<string[]>([]);
-  const [projectManager, setProjectManager] = useState(defaultPm);
-  const [approver, setApprover] = useState("");
-  const [assignees, setAssignees] = useState(defaultAssignees);
-  const [campaign, setCampaign] = useState("");
-  const [title, setTitle] = useState(defaultTitle);
+  // Initial state seeds from `editingTask` when in edit mode; falls
+  // through to the create-flow defaults otherwise. The page that
+  // renders the form is expected to forward editingTask values into
+  // the matching `default*` props for the fields that are uncontrolled
+  // (description, kind, priority, requested_date, brief) — the rest
+  // are seeded directly here.
+  const [company, setCompany] = useState(
+    isEditing ? editingTask!.company || "" : defaultCompany,
+  );
+  // Pseudo-project rows (`__personal__`) start with an EMPTY project
+  // field even though the row's stored value is `__personal__`. Lets
+  // the user pick a real project to promote the personal note onto.
+  const [project, setProject] = useState(
+    isEditing
+      ? editingTask!.project.startsWith("__")
+        ? ""
+        : editingTask!.project || ""
+      : defaultProject,
+  );
+  const [departments, setDepartments] = useState<string[]>(
+    isEditing ? editingTask!.departments || [] : [],
+  );
+  const [projectManager, setProjectManager] = useState(
+    isEditing ? editingTask!.project_manager_email || "" : defaultPm,
+  );
+  const [approver, setApprover] = useState(
+    isEditing ? editingTask!.approver_email || "" : "",
+  );
+  const [assignees, setAssignees] = useState(
+    isEditing
+      ? (editingTask!.assignees || []).join(", ")
+      : defaultAssignees,
+  );
+  const [campaign, setCampaign] = useState(
+    isEditing ? editingTask!.campaign || "" : "",
+  );
+  const [title, setTitle] = useState(
+    isEditing ? editingTask!.title || "" : defaultTitle,
+  );
   // Phase 5b — chain mode. When the user opts in, the form switches
   // to a multi-step picker: the title is the umbrella's title, and
   // the body becomes a list of step rows (title + assignees per step).
@@ -458,6 +504,81 @@ export default function TaskCreateForm({
     setSaving(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
+
+    // ── EDIT MODE BRANCH ─────────────────────────────────────────────
+    // When `editingTask` is supplied, the form is updating an existing
+    // task instead of creating one. Build a `patch` object covering
+    // every field the form exposes, POST to /api/worktasks/update,
+    // then strip ?edit=1 and refresh so the read-only detail view
+    // reflects the saved values. Replaces the legacy TaskEditPanel
+    // submit path verbatim — same endpoint, same patch shape, same
+    // navigation. The chain / multi-mode / cleanup-Gmail branches
+    // below are skipped entirely in edit mode.
+    if (isEditing && editingTask) {
+      const assigneeList = assignees
+        .split(/[,;\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const dateRaw = String(fd.get("requested_date") || "").trim();
+      const timeRaw = String(fd.get("requested_time") || "").trim();
+      const requestedDateCombined =
+        dateRaw && timeRaw ? `${dateRaw}T${timeRaw}` : dateRaw;
+
+      const patch: Record<string, unknown> = {
+        title,
+        description: String(fd.get("description") || ""),
+        brief: String(fd.get("brief") || editingTask.brief || ""),
+        departments,
+        kind: String(fd.get("kind") || editingTask.kind || "other"),
+        priority: Number(fd.get("priority") || editingTask.priority || 2),
+        requested_date: requestedDateCombined,
+        approver_email: approver,
+        project_manager_email: projectManager,
+        assignees: assigneeList,
+        campaign: campaign.trim(),
+      };
+      // Only include `project` in the patch when the user actually
+      // moved the task. The server treats project changes specially
+      // (validates access + backfills Drive folder when leaving
+      // __personal__); we only want those side effects when the value
+      // really changed. Same gate as the legacy TaskEditPanel had.
+      const projectTrimmed = project.trim();
+      if (projectTrimmed && projectTrimmed !== editingTask.project) {
+        patch.project = projectTrimmed;
+      }
+      // Drive folder — only include when the user picked a different
+      // existing folder. "new" mode isn't supported from the edit path
+      // (matches legacy behavior).
+      if (
+        folderSelection.mode === "existing" &&
+        folderSelection.folderId &&
+        folderSelection.folderId !== editingTask.drive_folder_id
+      ) {
+        patch.drive_folder_id = folderSelection.folderId;
+      }
+
+      try {
+        const res = await fetch("/api/worktasks/update", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: editingTask.id, patch }),
+        });
+        const data = (await res.json()) as
+          | { ok: true; changed: boolean }
+          | { ok: false; error: string };
+        if (!res.ok || !data.ok) {
+          throw new Error(
+            "error" in data ? data.error : "Failed to save changes",
+          );
+        }
+        router.replace(`/tasks/${encodeURIComponent(editingTask.id)}`);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setSaving(false);
+      }
+      return;
+    }
 
     // Phase 5b chain branch — when the user opted into "צור כשרשרת",
     // build the chain payload and POST to the chain endpoint instead
@@ -758,7 +879,7 @@ export default function TaskCreateForm({
           them turn it OFF, (3) exposing the withUmbrella sub-toggle.
           Reported by Maayan 2026-05-06: "scrape this here, it's only
           relevant when picking more than one assignee". */}
-      {chainMode && (
+      {chainMode && !isEditing && (
         <div className="task-form-chain-bar is-on">
           <label className="task-form-chain-toggle">
             <input
@@ -809,7 +930,9 @@ export default function TaskCreateForm({
           name="description"
           rows={5}
           placeholder="מה צריך לעשות, מה הקונטקסט, קישורים רלוונטיים…"
-          defaultValue={defaultDescription}
+          defaultValue={
+            isEditing ? editingTask!.description || "" : defaultDescription
+          }
         />
       </label>
 
@@ -920,9 +1043,25 @@ export default function TaskCreateForm({
             סוג
             <select
               name="kind"
-              defaultValue={kindOptions[0]?.val ?? "ad_creative"}
-              key={kindOptions.map((k) => k.val).join("|")}
+              defaultValue={
+                isEditing
+                  ? editingTask!.kind || "other"
+                  : kindOptions[0]?.val ?? "ad_creative"
+              }
+              key={
+                (isEditing ? editingTask!.kind || "" : "") +
+                "|" + kindOptions.map((k) => k.val).join("|")
+              }
             >
+              {/* When editing a task whose stored `kind` isn't in the
+                  schema-derived kindOptions list, surface it as an
+                  extra option so it stays selectable instead of
+                  silently downgrading on save. */}
+              {isEditing &&
+                editingTask!.kind &&
+                !kindOptions.some((k) => k.val === editingTask!.kind) && (
+                  <option value={editingTask!.kind}>{editingTask!.kind}</option>
+                )}
               {kindOptions.map((k) => (
                 <option key={k.val} value={k.val}>
                   {k.label}
@@ -933,7 +1072,12 @@ export default function TaskCreateForm({
 
           <label>
             דחיפות
-            <select name="priority" defaultValue="2">
+            <select
+              name="priority"
+              defaultValue={
+                isEditing ? String(editingTask!.priority || 2) : "2"
+              }
+            >
               <option value="1">1 — גבוהה</option>
               <option value="2">2 — רגילה</option>
               <option value="3">3 — נמוכה</option>
@@ -943,7 +1087,16 @@ export default function TaskCreateForm({
           <label className="task-form-date-time">
             תאריך מבוקש
             <div className="date-time-inputs">
-              <DatePicker name="requested_date" />
+              <DatePicker
+                name="requested_date"
+                defaultValue={
+                  isEditing
+                    ? (editingTask!.requested_date || "").match(
+                        /^\d{4}-\d{2}-\d{2}/,
+                      )?.[0]
+                    : undefined
+                }
+              />
               {/* Native <input type="time"> replaced with the M3
                   input-mode picker. Hidden mirror keeps the form's
                   `requested_time` submission identical so the
@@ -951,6 +1104,13 @@ export default function TaskCreateForm({
               <TimePicker
                 name="requested_time"
                 ariaLabel="שעה (אופציונלי)"
+                defaultValue={
+                  isEditing
+                    ? (editingTask!.requested_date || "").match(
+                        /[T\s](\d{2}:\d{2})/,
+                      )?.[1]
+                    : undefined
+                }
               />
             </div>
           </label>
@@ -1185,6 +1345,12 @@ export default function TaskCreateForm({
               Default stays at "joined" — preserves the historical UX
               for users who don't actively pick a different mode. */}
           {(() => {
+            // Multi-mode picker is only meaningful for new tasks. In edit
+            // mode the row is already a single shared task — converting
+            // to parallel/chain post-creation is a different operation
+            // (would have to spawn umbrella + migrate references) and
+            // isn't supported from the edit surface.
+            if (isEditing) return null;
             const picked = assignees
               .split(/[,;\n]/)
               .map((s) => s.trim())
@@ -1290,11 +1456,25 @@ export default function TaskCreateForm({
             submitModeRef.current = "plain";
           }}
         >
-          {saving
-            ? chainMode ? "יוצר שרשרת…" : "יוצר…"
-            : chainMode ? "📦 צור שרשרת" : "צור משימה"}
+          {isEditing
+            ? saving ? "שומר…" : "💾 שמור"
+            : saving
+              ? chainMode ? "יוצר שרשרת…" : "יוצר…"
+              : chainMode ? "📦 צור שרשרת" : "צור משימה"}
         </button>
-        {cleanupGmailTaskId && (
+        {isEditing && editingTask && (
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={saving}
+            onClick={() =>
+              router.replace(`/tasks/${encodeURIComponent(editingTask.id)}`)
+            }
+          >
+            ביטול
+          </button>
+        )}
+        {!isEditing && cleanupGmailTaskId && (
           <button
             type="submit"
             className="btn-primary"
