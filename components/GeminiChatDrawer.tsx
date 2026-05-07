@@ -46,6 +46,10 @@ type Message = {
   /** Web sources Vertex grounded against, surfaced as a "Sources:"
    *  footer on the bubble. */
   sources?: GroundingSource[];
+  /** Reason the model stopped this turn. Empty / "STOP" = clean.
+   *  Anything else (MAX_TOKENS / SAFETY / RECITATION / OTHER) is
+   *  surfaced as a small banner under the bubble. */
+  finishReason?: string;
 };
 
 const STORAGE_KEY_PREFIX = "hub:gemini:chat:";
@@ -169,6 +173,7 @@ export default function GeminiChatDrawer() {
       let accTools: { name: string; args: Record<string, unknown> }[] = [];
       let accSearchQueries: string[] = [];
       let accSources: GroundingSource[] = [];
+      let finishReason = "";
       let aborted = false;
 
       while (!aborted) {
@@ -220,6 +225,8 @@ export default function GeminiChatDrawer() {
             }
             setStreamSources([...accSources]);
           } else if (event === "done") {
+            const fr = (data as { finishReason?: string }).finishReason;
+            if (typeof fr === "string") finishReason = fr;
             aborted = true;
             break;
           } else if (event === "error") {
@@ -231,6 +238,10 @@ export default function GeminiChatDrawer() {
       }
 
       // Finalize: flush stream into a real message.
+      const cleanFinish =
+        finishReason === "" ||
+        finishReason === "STOP" ||
+        finishReason === "FINISH_REASON_UNSPECIFIED";
       const assistantMsg: Message = {
         id: `m-${Date.now()}`,
         role: "model",
@@ -240,6 +251,7 @@ export default function GeminiChatDrawer() {
           ? { searchQueries: accSearchQueries }
           : {}),
         ...(accSources.length > 0 ? { sources: accSources } : {}),
+        ...(cleanFinish ? {} : { finishReason }),
       };
       setMessages((cur) => [...cur, assistantMsg]);
     } catch (e) {
@@ -435,11 +447,28 @@ function MessageBubble({ message }: { message: Message }) {
       <div className="gemini-msg-text">
         {message.role === "user" ? message.text : renderRichText(message.text)}
       </div>
+      {message.finishReason && (
+        <FinishReasonBanner reason={message.finishReason} />
+      )}
       {message.sources && message.sources.length > 0 && (
         <SourcesFooter sources={message.sources} />
       )}
     </div>
   );
+}
+
+/** Small banner under a bubble whose finishReason was non-clean.
+ *  MAX_TOKENS = the assistant ran out of room and was cut off; user
+ *  can ask "המשך" to continue. SAFETY/RECITATION = Vertex's content
+ *  filter blocked something. Anything else = unknown but not STOP. */
+function FinishReasonBanner({ reason }: { reason: string }) {
+  const label =
+    reason === "MAX_TOKENS"
+      ? "ההודעה נחתכה — חרגה ממכסת הפלט. שאל \"המשך\" כדי להשלים."
+      : reason === "SAFETY" || reason === "RECITATION"
+        ? "המודל עצר את התשובה (מסנן תוכן של Vertex)."
+        : `המודל סיים בלי STOP (${reason}).`;
+  return <div className="gemini-finish-banner">⚠️ {label}</div>;
 }
 
 /** Footer block listing the web sources Vertex grounded against.

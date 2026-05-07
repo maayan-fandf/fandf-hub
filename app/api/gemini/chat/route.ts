@@ -134,13 +134,38 @@ guess column positions — always read headers first.
    Contains:
      • 'ALL CLIENTS' — master cross-platform metrics, one row per
        (company, project, campaign). Live, refreshed by Supermetrics.
-     • 'Keys' — project roster: company, project, mediaManager,
-       projectManager, clientEmails (col E), internal team (col J),
-       client-facing team (col K), Chat-space URL, etc.
+     • 'Keys' — project roster + the SLUG TABLE that joins everywhere
+       else. Columns include:
+         - 'פרוייקט'           — Hebrew project name (e.g. "קאזר")
+         - 'campaign ID'       — ASCII slug used by every downstream
+                                 tab (e.g. "cazar"). Lower-case ASCII,
+                                 hyphens for spaces. THIS is the field
+                                 every metrics tab joins on.
+         - 'Access — internal only'   (col J)
+         - 'Client-facing'            (col K)
+         - 'Chat Webhook'      — Google Chat space webhook URL
+         - 'company'           — parent company name
+         - clientEmails (col E), media/account managers (cols C/D), …
      • Several per-platform feed tabs (GADS2, Facebook adsets, etc.)
+       — all keyed off the same campaign-id slug.
      • Per-platform creative tabs.
    Use for: "who's on this project?", "which projects under גוהרי?",
    "what's the live spend on Q3 שלמי?"
+
+   *** CRITICAL: Project-name → metrics workflow ***
+   When asked about data/metrics/performance for a specific project
+   (especially one named in Hebrew like "קאזר" / "גוהרי" / "גינדי"),
+   you MUST do this two-step lookup — never assume the slug:
+     1. readSheetTab on 'Keys' to find the row where 'פרוייקט'
+        matches the user's project name. Grab the 'campaign ID'
+        from that row.
+     2. THEN read the data tab ('ALL CLIENTS' or one of the
+        platform tabs / Creative-sheet tabs) and filter by that
+        campaign id (NOT by the Hebrew name — those tabs use the
+        ASCII slug).
+   Common slug examples: קאזר → cazar, גוהרי → ג'ייד's slug, etc.
+   If you can't find the project in Keys, say so and ask the user
+   to confirm spelling — don't fabricate a slug.
 
 2. COMMENTS SHEET   — id: 1ZpdfJhdYa6aD5iftTsGJuVMLTS9WlzHGZMevq5hrxGU
    Contains:
@@ -344,6 +369,7 @@ export async function POST(req: Request) {
           let lastFunctionCalls: GeminiFunctionCall[] = [];
           let lastInputTokens = 0;
           let lastOutputTokens = 0;
+          let lastFinishReason = "";
           let textInThisTurn = "";
 
           for await (const chunk of streamGemini({
@@ -367,6 +393,7 @@ export async function POST(req: Request) {
               lastFunctionCalls = chunk.functionCalls;
               lastInputTokens = chunk.inputTokens;
               lastOutputTokens = chunk.outputTokens;
+              lastFinishReason = chunk.finishReason;
               // Per-iteration `done` carries grounding chunks for
               // the FINAL message (this loop iteration's sources);
               // forward them so the UI can append a "Sources:"
@@ -381,10 +408,14 @@ export async function POST(req: Request) {
           totalOutput += lastOutputTokens;
 
           if (lastFunctionCalls.length === 0) {
-            // Model finished — terminate the loop.
+            // Model finished — terminate the loop. Forward the final
+            // `finishReason` so the UI can show "(truncated)" /
+            // "(blocked by safety)" indicators when it's not a clean
+            // STOP. Empty/STOP both mean "done normally."
             send("done", {
               inputTokens: totalInput,
               outputTokens: totalOutput,
+              finishReason: lastFinishReason,
             });
             controller.close();
             return;

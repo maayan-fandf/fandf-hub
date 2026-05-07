@@ -125,7 +125,11 @@ function getModel(args: {
     generationConfig: {
       temperature: 0.2,
       topP: 0.95,
-      maxOutputTokens: 2048,
+      // 4096 covers ~3000 Hebrew words / ~1500 English. The chat
+      // assistant emits long responses when listing tasks or
+      // explaining workflows; 2048 was hitting MAX_TOKENS partway
+      // through multi-iteration tool fan-outs.
+      maxOutputTokens: 4096,
     },
   });
 }
@@ -308,6 +312,11 @@ export async function* streamGemini(args: GeminiCallArgs): AsyncGenerator<
       groundingChunks: GeminiGroundingChunk[];
       inputTokens: number;
       outputTokens: number;
+      /** Why the model stopped this turn. STOP = clean finish.
+       *  MAX_TOKENS = output cap was hit (response is truncated).
+       *  SAFETY / RECITATION / OTHER = filter or error.
+       *  Empty string means Vertex didn't include one. */
+      finishReason: string;
     }
 > {
   const model = getModel({
@@ -383,11 +392,19 @@ export async function* streamGemini(args: GeminiCallArgs): AsyncGenerator<
     yield { searchQuery: q };
   }
   const usage = finalResp.usageMetadata;
+  // Vertex's `finishReason` field is what tells us whether the model
+  // ran out of output tokens, hit a content filter, etc. Stringified
+  // here for the SSE consumer; "STOP" / "" / undefined are all clean.
+  const finishReason = String(
+    (finalCandidate as { finishReason?: string } | undefined)?.finishReason ||
+      "",
+  );
   yield {
     done: true,
     functionCalls: collectedFunctionCalls,
     groundingChunks: collectedChunks,
     inputTokens: usage?.promptTokenCount ?? 0,
     outputTokens: usage?.candidatesTokenCount ?? 0,
+    finishReason,
   };
 }

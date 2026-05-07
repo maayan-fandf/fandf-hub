@@ -1963,6 +1963,20 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   color: var(--text);
 }
 
+/* Finish-reason banner — appears under a bubble whose generation
+   ended with anything other than STOP (typically MAX_TOKENS when the
+   assistant was cut mid-sentence). Yellow tint to read as a warning
+   without being alarming. */
+.gemini-finish-banner {
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
 /* Web-sources footer — rendered under the assistant message bubble
    when Vertex grounding cited any URLs. Compact ordered list with
    hostnames so the bubble doesn't grow unbounded. */
