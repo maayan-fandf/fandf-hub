@@ -1230,6 +1230,107 @@ export async function getProjectAdLinks(
   return callApi<ProjectAdLinks>("projectAdLinks", { project });
 }
 
+/** Per-channel performance for a project — same shape the dashboard
+ *  iframe renders charts from. Numbers are rounded to 2 decimals on
+ *  the Apps Script side. */
+export type ProjectMetricsChannel = {
+  channel: string;
+  budget: number;
+  spend: number;
+  leads: number;
+  relevant: number;
+  scheduled: number;
+  meetings: number;
+  sales: number;
+  dailyRate: number;
+  costPerLead: number;
+  costPerScheduled: number;
+  costPerMeeting: number;
+  pixelLeadsSheet: number;
+  pixelCplSheet: number;
+};
+
+export type ProjectMetricsMonthlyRow = {
+  month: string;
+  channel: string;
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  relevant: number;
+  budget: number;
+};
+
+export type ProjectMetrics = {
+  name: string;
+  slug: string;
+  company: string;
+  landingUrl: string;
+  startDate: string;
+  endDate: string;
+  startIso: string;
+  endIso: string;
+  fbAdsUrl: string;
+  gAdsUrl: string;
+  sheetTabUrl: string;
+  monthOverride: string;
+  totals: {
+    budget: number;
+    spend: number;
+    leads: number;
+    relevant: number;
+    scheduled: number;
+    meetings: number;
+    sales: number;
+    costPerLead: number;
+    costPerScheduled: number;
+    costPerMeeting: number;
+  };
+  channels: ProjectMetricsChannel[];
+  monthlyRaw: ProjectMetricsMonthlyRow[];
+  creatives: {
+    google: Record<string, unknown> | null;
+    fb: Record<string, unknown> | null;
+  } | null;
+  adPlatform: {
+    google?: { impressions: number; clicks: number; cost: number; conversions: number };
+    facebook?: { impressions: number; clicks: number; cost: number; leads: number };
+  } | null;
+};
+
+export type ProjectMetricsResponse =
+  | { ok: true; project: ProjectMetrics; monthOverride: string }
+  | { ok: false; error: string };
+
+/**
+ * Fetch the per-project metrics aggregate the dashboard charts render
+ * from. One Apps Script call returns totals + channel breakdown +
+ * monthly history + creative aggregation, scoped server-side to the
+ * one project the caller named.
+ *
+ * `monthOverride` is "YYYY-MM" — when supplied, totals + channels are
+ * reconstructed from monthly rows for that calendar month (same path
+ * the dashboard's month picker uses). Empty / invalid → live mode.
+ */
+export async function getProjectMetrics(
+  project: string,
+  monthOverride?: string,
+  overrideEmail?: string,
+): Promise<ProjectMetricsResponse> {
+  const params: Record<string, string> = { project };
+  if (monthOverride && /^\d{4}-\d{2}$/.test(monthOverride)) {
+    params.monthOverride = monthOverride;
+  }
+  if (overrideEmail) {
+    return callApiAs<ProjectMetricsResponse>(
+      overrideEmail,
+      "projectMetrics",
+      params,
+    );
+  }
+  return callApi<ProjectMetricsResponse>("projectMetrics", params);
+}
+
 export function tasksUpdate(
   id: string,
   patch: TasksUpdatePatch,

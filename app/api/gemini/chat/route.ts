@@ -163,6 +163,33 @@ guess column positions — always read headers first.
    ALWAYS do this lookup — never assume the slug, never give up
    after one tab:
 
+     STEP 0 — TRY getProjectMetrics FIRST.
+       getProjectMetrics(project) returns the SAME data the dashboard
+       graphs render from — totals (budget/spend/leads/CPL/scheduled/
+       meetings/sales), per-channel breakdown (facebook / google-search
+       / google-pmax / google-display / …), monthly history, and
+       creative aggregation (impressions/clicks/cost/leads on each
+       platform). One call, no slug juggling — accepts Hebrew or slug.
+       Use for ANY of:
+         - "how is project X doing?" / "מה המצב של X?"
+         - "spend / leads / CPL on X" (whole period or current)
+         - "channel breakdown on X" / "ערוצים של X"
+         - "monthly trend on X" (use monthlyRaw[])
+         - "X vs last month" — call twice with different monthOverride
+       The response includes startIso/endIso so you can tell the user
+       what window it covers, plus fbAdsUrl / gAdsUrl deep links to
+       hand off to the ad platform when relevant.
+
+       FALL BACK to STEP 1 below ONLY when getProjectMetrics is
+       insufficient — specifically:
+         - The user asked about a SPECIFIC DATE (yesterday / a
+           given day / a date range narrower than one month).
+           getProjectMetrics is whole-period or whole-month; per-day
+           detail lives in the platform tabs.
+         - The user asked about a SPECIFIC CREATIVE / AD / KEYWORD
+           (per-ad or per-keyword performance).
+         - getProjectMetrics returned ok:false (project not found).
+
      STEP 1 — Read the FULL Keys row for the project.
        readSheetTab on 'Keys' (Main sheet 15GKqEy8...). Find the row
        where 'פרוייקט' matches the user's project name. Read the

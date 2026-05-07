@@ -146,6 +146,49 @@ const getProjectTool: Tool = {
   },
 };
 
+const getProjectMetricsTool: Tool = {
+  declaration: {
+    name: "getProjectMetrics",
+    description:
+      "Get the dashboard performance metrics for a project — totals " +
+      "(budget, spend, leads, relevant, scheduled, meetings, sales, " +
+      "CPL, CPS, CPM), per-channel breakdown (facebook, google-search, " +
+      "google-pmax, etc.), monthly history, and creative aggregation. " +
+      "This is the SAME data the project page's dashboard graphs render " +
+      "from — one call replaces the manual Keys → slug → searchSheetRows " +
+      "workflow. ALWAYS try this first when the user asks about a " +
+      "project's spend / leads / channels / pacing / CPL. Falls back to " +
+      "searchSheetRows only when the question is about a specific date " +
+      "(yesterday's spend) or a specific creative / ad. Project name " +
+      "can be Hebrew (אורנבך ראשון) OR slug (Orenbach-rishon-letzion).",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description:
+            "Project name as it appears in the hub (Hebrew) OR the " +
+            "ASCII campaign-id slug from the Keys tab. Either works.",
+        },
+        monthOverride: {
+          type: SchemaType.STRING,
+          description:
+            "Optional 'YYYY-MM' to rewind metrics to a specific month — " +
+            "totals and channels reconstruct from that month's חודשי rows. " +
+            "Omit for live (current period) data.",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  execute: async (email, args) => {
+    const project = requireString(args, "project");
+    const monthOverride = optionalString(args, "monthOverride");
+    const { getProjectMetrics } = await import("@/lib/appsScript");
+    return getProjectMetrics(project, monthOverride, email);
+  },
+};
+
 const getCompanyContactsTool: Tool = {
   declaration: {
     name: "getCompanyContacts",
@@ -843,6 +886,7 @@ const searchSheetRowsTool: Tool = {
 export const TOOL_CATALOG: Tool[] = [
   getTaskTool,
   getProjectTool,
+  getProjectMetricsTool,
   getCompanyContactsTool,
   searchGmailTool,
   readGmailThreadTool,
