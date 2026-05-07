@@ -247,6 +247,34 @@ export default async function TaskDetailPage({
               <FacebookAdsIcon size="1.05em" /> Facebook Ads
             </a>
           )}
+          {/* "💬 פתח בצ'אט" — opens the project's Google Chat space.
+              Mirrors the same affordance on the project overview
+              (/projects/[name]'s discussion footer). Hidden for
+              personal-note rows (no chat space) and for projects whose
+              Keys row doesn't have a Chat URL configured yet. Resolved
+              from accessRes.projects so we don't pay an extra Sheets
+              read just for this button. */}
+          {(() => {
+            if (t.project.startsWith("__")) return null;
+            const chatUrl =
+              (accessRes?.projects ?? []).find(
+                (p) =>
+                  p.name === t.project &&
+                  (!t.company || p.company === t.company),
+              )?.chatSpaceUrl ?? "";
+            if (!chatUrl) return null;
+            return (
+              <a
+                href={chatUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-ghost btn-sm"
+                title="פתח את חלל הצ׳אט הפנימי של הפרויקט ב-Google Chat"
+              >
+                💬 פתח בצ׳אט
+              </a>
+            );
+          })()}
           {t.drive_folder_url && (
             <a
               href={t.drive_folder_url}
