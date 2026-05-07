@@ -333,6 +333,14 @@ export async function cascadeAfterTerminal(args: {
           data: ranges,
         },
       });
+      // Bust the Comments cache so subsequent reads on this instance
+      // see the unblocked rows. See tasksDirect.ts for why this caches.
+      try {
+        const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+        invalidateCommentsCache();
+      } catch {
+        /* probe-script callers won't have @/ resolution; safe to skip */
+      }
       // Capture all the fields the post-cascade GT spawn-hook
       // needs — saves the caller a re-read for each unblocked row.
       // `mentions` is the legacy column name that holds assignees as

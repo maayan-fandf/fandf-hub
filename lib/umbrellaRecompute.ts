@@ -183,6 +183,14 @@ export async function recomputeUmbrellaStatus(args: {
         ],
       },
     });
+    // Bust the Comments cache so the umbrella's recomputed status
+    // shows up on the next read. See tasksDirect.ts for why.
+    try {
+      const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+      invalidateCommentsCache();
+    } catch {
+      /* probe-script callers without @/ resolution: safe to skip */
+    }
   } catch (e) {
     return {
       ok: false,

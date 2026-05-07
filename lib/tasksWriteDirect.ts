@@ -1317,6 +1317,14 @@ export async function tasksCreateDirect(
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [row as unknown[]] },
   });
+  // Bust the cross-request Comments-tab cache so this user's own
+  // newly-created task is immediately visible in their next /tasks
+  // render. Other Firebase App Hosting instances still see TTL-bound
+  // staleness (~5s); same-instance reads are fresh.
+  {
+    const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+    invalidateCommentsCache();
+  }
 
   // "Convert comment to task" — Flavor C migration. Re-parent the
   // source comment + every direct reply to the new task id, so the
@@ -1863,6 +1871,15 @@ async function tasksUpdateDirectInner(
     spreadsheetId: commentsSsId,
     requestBody: { valueInputOption: "RAW", data },
   });
+  // Bust the cross-request Comments cache so the user's own update
+  // shows up in their next /tasks render. See tasksDirect.ts for
+  // why this caches in the first place (Sheets API per-minute
+  // quota relief). Same-instance reads are fresh; other instances
+  // see at-most-TTL staleness (~5s).
+  {
+    const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+    invalidateCommentsCache();
+  }
 
   // Re-read the row so the return shape reflects the merged result.
   const reread = await sheets.spreadsheets.values.get({
@@ -2276,6 +2293,9 @@ export async function persistGoogleTasksCell(
       valueInputOption: "RAW",
       requestBody: { values: [[JSON.stringify(googleTasks)]] },
     });
+    // Bust the Comments cache — see tasksDirect.ts for the why.
+    const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+    invalidateCommentsCache();
   } catch (e) {
     console.log(
       "[tasksWriteDirect] persistGoogleTasksCell failed:",

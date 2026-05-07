@@ -178,20 +178,61 @@ function rowToTask(
   };
 }
 
-// Per-request memoized read of the Comments tab. Both tasksList and
-// tasksGet (and now the round-siblings lookup on /tasks/[id]) hit
-// this; without dedup, opening a task page burns 2-3 Sheets reads of
-// the same tab. React's cache() collapses concurrent calls within one
-// request to a single shared promise — same pattern as readKeysCached
-// in lib/keys.ts.
+// Two-layer memoization on the Comments tab read:
+//
+//   1. Per-request: React's `cache()` collapses concurrent calls
+//      WITHIN one request to a single shared promise. Same pattern
+//      as readKeysCached in lib/keys.ts. Saves the 2-3 reads a
+//      single page render would otherwise burn (tasksList +
+//      tasksGet + round-siblings).
+//
+//   2. Cross-request: a process-local Map (well, single-slot since
+//      the data is the same regardless of subject) holds the parsed
+//      snapshot for a short TTL. On a burst of concurrent /tasks
+//      loads, only the first one hits Sheets; the rest serve
+//      cached. Staleness is bounded to TTL per Firebase App
+//      Hosting instance — a user's own edits invalidate the cache
+//      explicitly via `invalidateCommentsCache()` from
+//      tasksWriteDirect, so they see their changes instantly.
+//
+// We deliberately avoid `unstable_cache` here — it's the
+// cross-instance staleness trap noted in feedback_unstable_cache_*.
+// Process-local Map mirrors lib/userAvatar.ts.
+//
+// Why this layer was added (2026-05-07): the F&F GCP project's
+// default 300-reads/min/project Sheets quota was tripping during
+// normal /tasks browsing (multiple tabs + Cloud Scheduler poll +
+// background nav prefetches). The cache cuts the per-minute read
+// volume by ~10× on bursty traffic, well within the human-tolerable
+// staleness window.
+
+type CommentsValue = {
+  headers: string[];
+  rows: unknown[][];
+  headerIdx: Map<string, number>;
+};
+
+const COMMENTS_CACHE_TTL_MS = 5_000;
+let _commentsCacheValue: CommentsValue | null = null;
+let _commentsCacheExpiresAt = 0;
+
+/** Bust the in-process Comments-tab cache. Call after any write to
+ *  the Comments sheet (tasksCreateDirect / tasksUpdateDirect /
+ *  cascade / umbrellaRecompute) so the next read pulls fresh data
+ *  on the same instance. Other instances still see TTL-staleness
+ *  for up to ~5s — acceptable for the data shape (a user's own
+ *  edits land instantly because the post-write invalidate runs on
+ *  the SAME instance that handled the write). */
+export function invalidateCommentsCache(): void {
+  _commentsCacheValue = null;
+  _commentsCacheExpiresAt = 0;
+}
+
 const readCommentsTab = cache(
-  async (
-    subjectEmail: string,
-  ): Promise<{
-    headers: string[];
-    rows: unknown[][];
-    headerIdx: Map<string, number>;
-  }> => {
+  async (subjectEmail: string): Promise<CommentsValue> => {
+    if (_commentsCacheValue && Date.now() < _commentsCacheExpiresAt) {
+      return _commentsCacheValue;
+    }
     const sheets = sheetsClient(subjectEmail);
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
@@ -201,17 +242,22 @@ const readCommentsTab = cache(
       dateTimeRenderOption: "FORMATTED_STRING",
     });
     const values = (res.data.values ?? []) as unknown[][];
+    let result: CommentsValue;
     if (!values.length) {
-      return { headers: [], rows: [], headerIdx: new Map() };
+      result = { headers: [], rows: [], headerIdx: new Map() };
+    } else {
+      const headers = (values[0] as unknown[]).map((h) =>
+        String(h ?? "").trim(),
+      );
+      const headerIdx = new Map<string, number>();
+      headers.forEach((h, i) => {
+        if (h) headerIdx.set(h, i);
+      });
+      result = { headers, rows: values.slice(1), headerIdx };
     }
-    const headers = (values[0] as unknown[]).map((h) =>
-      String(h ?? "").trim(),
-    );
-    const headerIdx = new Map<string, number>();
-    headers.forEach((h, i) => {
-      if (h) headerIdx.set(h, i);
-    });
-    return { headers, rows: values.slice(1), headerIdx };
+    _commentsCacheValue = result;
+    _commentsCacheExpiresAt = Date.now() + COMMENTS_CACHE_TTL_MS;
+    return result;
   },
 );
 
