@@ -47,10 +47,24 @@ export class GeminiError extends Error {
 
 // ── Client construction ──────────────────────────────────────────────
 //
-// VertexAI SDK auths via `googleAuthOptions.credentials`. We reuse the
-// SA JSON already loaded for the Workspace tools (TASKS_SA_KEY_JSON)
-// so there's a single secret to manage. The SDK's GoogleAuth handles
-// token refresh internally.
+// Vertex AI auth via Application Default Credentials — picks up the
+// App Hosting runtime SA (`firebase-app-hosting-compute@…`) in
+// production, and either GOOGLE_APPLICATION_CREDENTIALS or
+// `gcloud auth application-default login` in local dev. NO explicit
+// credentials.
+//
+// Why not reuse TASKS_SA_KEY_JSON (the DWD SA we already have a key
+// for): Vertex API calls don't need DWD impersonation — they just
+// need the SA to have `roles/aiplatform.user` on the project. Using
+// the runtime compute SA via ADC keeps Vertex auth orthogonal to the
+// Workspace-tools impersonation machinery in lib/sa.ts. Two clean
+// identities: compute SA → Vertex; TASKS_SA_KEY_JSON SA → Gmail /
+// Drive / Sheets via DWD.
+//
+// Local dev: if you don't want to install gcloud, set
+// GOOGLE_APPLICATION_CREDENTIALS to a JSON file path of any SA that
+// has `aiplatform.user` on the project (the TASKS_SA_KEY_JSON SA
+// works too if you grant it the role + write the JSON to a file).
 
 const PROJECT = "fandf-dashboard";
 // europe-west4 matches the App Hosting backend region (no cross-region
@@ -62,34 +76,13 @@ const LOCATION = process.env.VERTEX_LOCATION || "europe-west4";
 let _vertex: VertexAI | null = null;
 function vertex(): VertexAI {
   if (_vertex) return _vertex;
-  const raw = process.env.TASKS_SA_KEY_JSON;
-  if (!raw) {
-    throw new GeminiError(
-      "TASKS_SA_KEY_JSON not set — required for Vertex AI auth",
-    );
-  }
-  let key: { client_email: string; private_key: string };
-  try {
-    key = JSON.parse(raw);
-  } catch (e) {
-    throw new GeminiError(
-      `TASKS_SA_KEY_JSON is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
-    );
-  }
   _vertex = new VertexAI({
     project: PROJECT,
     location: LOCATION,
-    googleAuthOptions: {
-      credentials: {
-        client_email: key.client_email,
-        private_key: key.private_key,
-      },
-      // cloud-platform is the umbrella scope; Vertex tokens want it.
-      // Narrower scopes (aiplatform.endpointPredictor) work too but
-      // cloud-platform is what the SDK requests by default and matches
-      // every Vertex doc example.
-      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-    },
+    // No googleAuthOptions → ADC. The SDK constructs a GoogleAuth
+    // internally that reads the standard credential chain (metadata
+    // service in prod, GOOGLE_APPLICATION_CREDENTIALS / gcloud ADC
+    // in local dev).
   });
   return _vertex;
 }
