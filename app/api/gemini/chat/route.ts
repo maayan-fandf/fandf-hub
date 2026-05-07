@@ -97,26 +97,16 @@ Tool usage:
   for the thread the user actually cares about — don't fan out to all of
   them. Same with readDoc after searchDrive.
 
-Web search (Google Search grounding):
-- You ALSO have Google Search available as a built-in capability
-  alongside the function tools. Use it for questions about the
-  PUBLIC web — a brand's digital presence, competitors, news,
-  industry trends, "find their landing page", "what's their
-  Instagram following", market research, etc.
-- DO NOT search the web for things the hub already knows: roster,
-  task content, project metrics, internal Comments. Use the hub
-  tools for those — they're authoritative and faster.
-- When you do search, the UI surfaces the queries you ran as chips
-  and renders cited sources as clickable links automatically.
-  Still cite specific URLs inline as '[label](url)' when the user
-  is going to want to click through to one of them.
-- When the user is on a project page and asks for "digital
-  presence" or "competitors", a typical fan-out is:
-    1. getProject(name) — confirm what we know
-    2. Google Search the company name + "official site"
-    3. Google Search "<company> competitors <industry>"
-    4. Synthesize: positioning, channels they're on, comparable
-       brands, gaps you noticed.
+Web search:
+- You currently DO NOT have Google Search available — Vertex's
+  googleSearch tool can't be combined with function calling on
+  Gemini 2.5 Pro right now. Don't promise to "search the web" or
+  "look that up online." If a question genuinely requires the
+  public web (competitor research, a brand's external presence,
+  news), say so plainly: "אין לי כרגע גישה לחיפוש באינטרנט,
+  אבל אני יכול לעזור עם <hub data alternative>."
+- This is wired and will switch back on the moment the API
+  supports the combination — no action needed on your end.
 
 Privacy: only the signed-in user's data. Tools impersonate the user via
 domain-wide delegation, so you can't see anyone else's Gmail/Drive. Keep
@@ -376,11 +366,17 @@ export async function POST(req: Request) {
             system,
             history,
             tools: TOOL_DECLARATIONS,
-            // Always-on Google Search grounding. Vertex's modern
-            // googleSearch tool composes with function calling on
-            // Gemini 2.0+. Cost: ~$0.035/req (free first 1500/day);
-            // the model only searches when it actually needs to.
-            enableSearch: true,
+            // Web search via Vertex's googleSearch tool is currently
+            // INCOMPATIBLE with functionDeclarations on Gemini 2.5
+            // Pro — the API rejects with "Multiple tools are supported
+            // only when they are all search tools" (400). We tested
+            // with the modern shape; same response. Until Vertex
+            // re-enables the combination (or we add a mode toggle in
+            // the UI that flips between "tools" and "search"), keep
+            // search off so the function tools stay live. The
+            // enableSearch wiring + finishReason / sources / chip
+            // handling all stay — just dormant.
+            enableSearch: false,
           })) {
             if ("text" in chunk) {
               textInThisTurn += chunk.text;
