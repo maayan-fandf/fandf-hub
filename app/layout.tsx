@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { auth, signOut } from "@/auth";
+import { auth } from "@/auth";
+import { signOutAction } from "@/lib/signOutAction";
 import CommandPalette from "@/components/CommandPalette";
 import ExternalNavListener from "@/components/ExternalNavListener";
 import KeyboardHelp from "@/components/KeyboardHelp";
@@ -17,13 +18,18 @@ import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import NavTasksBadge from "@/components/NavTasksBadge";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
 import UserSettingsMenu from "@/components/UserSettingsMenu";
+import TopnavUserMenu from "@/components/TopnavUserMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
 import TopProgressBar from "@/components/TopProgressBar";
 import AgendaPanel from "@/components/AgendaPanel";
 import LightboxProvider from "@/components/LightboxProvider";
 import TaskPreviewProvider from "@/components/TaskPreviewProvider";
-import { getMyProjects, type Project } from "@/lib/appsScript";
+import {
+  getMyProjects,
+  tasksPeopleList,
+  type Project,
+} from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
 
 // Runs before React hydrates so data-theme is set before the first paint —
@@ -70,6 +76,11 @@ export default async function RootLayout({
   // Drives the admin section inside the gear menu (inline ניהול).
   let isAdminUser = false;
   let viewAs = "";
+  // Hebrew display name + role for the topnav user-pill. Resolved from
+  // the names_to_emails sheet — empty strings fall back to email-prefix
+  // shortname inside TopnavUserMenu, so the pill always renders.
+  let myHeName = "";
+  let myRole = "";
   if (email) {
     viewAs = await getEffectiveViewAs(email).catch(() => "");
     try {
@@ -84,6 +95,22 @@ export default async function RootLayout({
       isAdminUser = !!data.isAdmin;
     } catch {
       navProjects = [];
+    }
+    // One extra Sheets read to get the Hebrew name + role for the
+    // topnav user pill. Best-effort: failures silently fall back to
+    // the email-prefix label (still renders, just without the role
+    // emoji or Hebrew name). Keyed off `email` (not viewAs) so the
+    // pill shows YOU even when you're acting as someone else — the
+    // ViewAsBanner already covers the "you're impersonating X" cue.
+    try {
+      const peopleRes = await tasksPeopleList();
+      const me = peopleRes.people.find(
+        (p) => (p.email || "").toLowerCase() === email.toLowerCase(),
+      );
+      myHeName = me?.he_name || me?.name || "";
+      myRole = me?.role || "";
+    } catch {
+      // Silent — empty name/role is the rendering fallback.
     }
   }
 
@@ -119,6 +146,13 @@ export default async function RootLayout({
             <Link href="/" className="topnav-brand">
               ✨ Hub
             </Link>
+            {/* DOM order = visual right-to-left order under dir="rtl" with
+                the default flex-direction: row. The list below reads
+                right-to-left as the user sees it on screen:
+                פרויקטים → משימות → קמפיינים → התראות → תיוגים →
+                לקוחות → מ-Google Tasks → דשבורד.
+                NavInboxLink (תיוגים) self-hides when its count is 0,
+                so it appears only when there's something to triage. */}
             {email ? (
               <ProjectsNavMenu projects={navProjects} />
             ) : (
@@ -126,7 +160,6 @@ export default async function RootLayout({
                 📂 פרויקטים
               </Link>
             )}
-            {email && !isClientUser && <NavCampaignsLink />}
             {email && !isClientUser && (
               <ActiveLink
                 href="/tasks"
@@ -136,7 +169,7 @@ export default async function RootLayout({
                 <NavTasksBadge />
               </ActiveLink>
             )}
-            {email && <NavInboxLink isClientUser={isClientUser} />}
+            {email && !isClientUser && <NavCampaignsLink />}
             {email && !isClientUser && (
               <ActiveLink
                 href="/notifications"
@@ -146,8 +179,9 @@ export default async function RootLayout({
                 <NavBellBadge />
               </ActiveLink>
             )}
-            {email && !isClientUser && <NavGmailTasks />}
+            {email && <NavInboxLink isClientUser={isClientUser} />}
             {email && !isClientUser && <NavCustomerEmails />}
+            {email && !isClientUser && <NavGmailTasks />}
             {dashboardUrl && !isClientUser && (
               <a
                 href={dashboardUrl}
@@ -168,19 +202,12 @@ export default async function RootLayout({
                 >
                   ⌘K
                 </span>
-                <span className="topnav-email" title={email} dir="ltr">
-                  {email}
-                </span>
-                <form
-                  action={async () => {
-                    "use server";
-                    await signOut({ redirectTo: "/signin" });
-                  }}
-                >
-                  <button type="submit" className="topnav-signout">
-                    יציאה
-                  </button>
-                </form>
+                <TopnavUserMenu
+                  email={email}
+                  heName={myHeName}
+                  role={myRole}
+                  signOutAction={signOutAction}
+                />
               </div>
             )}
           </div>

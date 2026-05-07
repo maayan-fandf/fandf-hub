@@ -209,8 +209,13 @@ body {
   min-height: 100vh;
   /* Prevent any single element (esp. the topnav before wrap kicks in)
      from pushing the whole page into horizontal-scroll territory, which
-     on mobile would leave huge empty gutters. */
-  overflow-x: hidden;
+     on mobile would leave huge empty gutters.
+     `overflow-x: clip` (not `hidden`) so it doesn't establish a
+     scroll-container / containing block on <body> — `hidden` would
+     break `position: sticky` on .topnav, which is the topnav's whole
+     reason for existing on long-scroll pages. `clip` is supported in
+     all evergreen browsers (Chrome 90+, Firefox 81+, Safari 16+). */
+  overflow-x: clip;
 }
 
 a {
@@ -1613,6 +1618,131 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 
 .topnav-signout:hover {
   color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ── Topnav user pill (TopnavUserMenu) ─────────────────────────────
+   Replaces the older ".topnav-email + .topnav-signout" pair: avatar +
+   Hebrew name + role emoji rendered as a single pill button; click
+   reveals a dropdown with the full identity card and a יציאה button.
+   The .topnav-user wrapper still controls the gap/layout of
+   gear / theme / hint / pill on the inline-end of the nav. */
+.topnav-user-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.topnav-user-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem 0.25rem 0.4rem;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.topnav-user-trigger:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.topnav-user-trigger[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.topnav-user-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topnav-user-role-emoji {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.topnav-user-chev {
+  font-size: 0.65em;
+  opacity: 0.65;
+  margin-inline-start: 0.05rem;
+}
+
+.topnav-user-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  inset-inline-end: 0;
+  min-width: 240px;
+  background: var(--card-bg, var(--topnav-bg));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md, 0 6px 22px rgba(0, 0, 0, 0.18));
+  padding: 0.6rem;
+  z-index: 30; /* above the topnav itself (z:20) */
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.topnav-user-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.25rem 0.25rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.topnav-user-menu-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.topnav-user-menu-name {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.topnav-user-menu-email {
+  color: var(--muted);
+  font-size: 0.8rem;
+  max-width: 18em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topnav-user-menu-role {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.topnav-user-menu-signout {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.topnav-user-menu-signout:hover {
+  color: var(--text);
+  background: var(--accent-soft);
   border-color: var(--accent);
 }
 
@@ -5289,6 +5419,12 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
     max-width: 160px;
     font-size: 0.8rem;
   }
+  /* Tighten the user pill on narrow desktops so the topnav still fits
+     on one row before wrap kicks in. */
+  .topnav-user-name {
+    max-width: 8em;
+    font-size: 0.85rem;
+  }
 }
 
 /* ─── Mobile tightening (narrow viewports) ────────────────────────── */
@@ -5328,6 +5464,17 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   .topnav-signout {
     font-size: 0.76rem;
     padding: 0.25rem 0.6rem;
+  }
+
+  /* Phones: keep the avatar + role emoji visible but drop the name +
+     chev so the pill stays tight. The dropdown still surfaces the
+     full identity once tapped. */
+  .topnav-user-name,
+  .topnav-user-chev {
+    display: none;
+  }
+  .topnav-user-trigger {
+    padding: 0.2rem 0.35rem;
   }
 
   .theme-toggle {
