@@ -27,7 +27,12 @@
 
 import { SchemaType, type FunctionDeclaration } from "@google-cloud/vertexai";
 import { google } from "googleapis";
-import { gmailReadClient, driveClient, getSAClient } from "@/lib/sa";
+import {
+  gmailReadClient,
+  driveClient,
+  getSAClient,
+  sheetsClient,
+} from "@/lib/sa";
 
 export type ToolExecutor = (
   subjectEmail: string,
@@ -457,6 +462,178 @@ const readDocTool: Tool = {
   },
 };
 
+// ── Sheet introspection tools ───────────────────────────────────────
+//
+// Used to dig into the four spreadsheets that hold the hub + dashboard
+// data when the user asks something the structured hub resolvers don't
+// answer ("how many leads did גוהרי have last week?", "show me the
+// archive of two months ago", etc.). Two tools:
+//
+//   - getSheetMetadata(spreadsheetId) — list tabs + headers without
+//     reading rows. Lets the model orient before pulling a big range.
+//   - readSheetTab(spreadsheetId, tab, range?) — read up to ~200 rows
+//     from a tab (or specified A1 range). Output is capped to ~50KB
+//     so even noisy tabs stay tractable in the chat context.
+
+const getSheetMetadataTool: Tool = {
+  declaration: {
+    name: "getSheetMetadata",
+    description:
+      "List every tab in a Google Sheet, with the first-row headers and " +
+      "row/column counts for each tab. Cheap orientation read — call " +
+      "this BEFORE readSheetTab to know which tab + columns to fetch. " +
+      "The four hub/dashboard spreadsheet IDs are listed in the system " +
+      "prompt under DATA SOURCES; you can also pass any other " +
+      "spreadsheet id the user is authorized to read.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        spreadsheetId: {
+          type: SchemaType.STRING,
+          description:
+            "Google Sheets spreadsheet id (the long alphanumeric string " +
+            "in the sheet URL after /d/).",
+        },
+      },
+      required: ["spreadsheetId"],
+    },
+  },
+  execute: async (email, args) => {
+    const spreadsheetId = requireString(args, "spreadsheetId");
+    const sheets = sheetsClient(email);
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields:
+        "properties.title,sheets.properties(sheetId,title,index,gridProperties(rowCount,columnCount))",
+    });
+    const tabs = meta.data.sheets || [];
+    if (tabs.length === 0) {
+      return { ok: true, title: meta.data.properties?.title, tabs: [] };
+    }
+    // Pull headers in one batchGet — single round trip vs. one per tab.
+    const headerRanges = tabs
+      .map((s) => s.properties?.title || "")
+      .filter(Boolean)
+      .map((t) => `'${t.replace(/'/g, "''")}'!1:1`);
+    let headerRows: (string[] | undefined)[] = [];
+    if (headerRanges.length > 0) {
+      try {
+        const headersRes = await sheets.spreadsheets.values.batchGet({
+          spreadsheetId,
+          ranges: headerRanges,
+          valueRenderOption: "UNFORMATTED_VALUE",
+        });
+        headerRows = (headersRes.data.valueRanges || []).map((vr) =>
+          (vr.values?.[0] as string[] | undefined)?.map((h) => String(h ?? "")),
+        );
+      } catch {
+        // Some tabs might be hidden / inaccessible — fall through with
+        // empty headers rather than failing the whole call.
+        headerRows = tabs.map(() => undefined);
+      }
+    }
+    return {
+      ok: true,
+      title: meta.data.properties?.title,
+      tabs: tabs.map((s, i) => ({
+        title: s.properties?.title,
+        index: s.properties?.index,
+        rowCount: s.properties?.gridProperties?.rowCount,
+        columnCount: s.properties?.gridProperties?.columnCount,
+        headers: headerRows[i] || [],
+      })),
+    };
+  },
+};
+
+const readSheetTabTool: Tool = {
+  declaration: {
+    name: "readSheetTab",
+    description:
+      "Read rows from a tab in a Google Sheet. Returns up to 200 rows " +
+      "by default (or the rows in the explicit `range` you pass). " +
+      "Output is capped to ~50KB; if a tab is bigger, narrow the " +
+      "range or filter ahead via getSheetMetadata. Use after " +
+      "getSheetMetadata so you know the tab name + headers.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        spreadsheetId: {
+          type: SchemaType.STRING,
+          description: "Google Sheets spreadsheet id.",
+        },
+        tab: {
+          type: SchemaType.STRING,
+          description:
+            "Tab name as listed by getSheetMetadata (e.g. 'Keys', " +
+            "'ALL CLIENTS', 'Comments').",
+        },
+        range: {
+          type: SchemaType.STRING,
+          description:
+            "Optional A1 range scoped to the tab (e.g. 'A1:F50'). When " +
+            "omitted, reads the first 200 rows × all columns of the tab.",
+        },
+      },
+      required: ["spreadsheetId", "tab"],
+    },
+  },
+  execute: async (email, args) => {
+    const spreadsheetId = requireString(args, "spreadsheetId");
+    const tab = requireString(args, "tab");
+    const localRange = optionalString(args, "range");
+    const sheets = sheetsClient(email);
+    // Sheets API range syntax: '<tab>!<range>'. Quote the tab when it
+    // contains spaces / Hebrew characters — the API accepts either,
+    // but quoting is safer.
+    const quotedTab = `'${tab.replace(/'/g, "''")}'`;
+    const fullRange = localRange
+      ? `${quotedTab}!${localRange}`
+      : `${quotedTab}!A1:ZZ200`;
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: fullRange,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const values = (res.data.values || []) as unknown[][];
+    // Cap output size. Stringify, truncate, return as `rows` array
+    // (with truncation flag) so the model doesn't choke on a giant
+    // payload. 50KB ≈ 12k tokens of value text — plenty for a typical
+    // tab read but small enough not to blow the context.
+    const cap = 50_000;
+    const serialized = JSON.stringify(values);
+    if (serialized.length <= cap) {
+      return {
+        ok: true,
+        spreadsheetId,
+        tab,
+        range: fullRange,
+        rowCount: values.length,
+        truncated: false,
+        rows: values,
+      };
+    }
+    // Binary-search for how many rows fit under the cap.
+    let lo = 0;
+    let hi = values.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi + 1) / 2);
+      if (JSON.stringify(values.slice(0, mid)).length > cap) hi = mid - 1;
+      else lo = mid;
+    }
+    return {
+      ok: true,
+      spreadsheetId,
+      tab,
+      range: fullRange,
+      rowCount: values.length,
+      truncated: true,
+      truncationNote: `output capped at ${cap} bytes — returning first ${lo}/${values.length} rows. Re-call with a narrower range if you need later rows.`,
+      rows: values.slice(0, lo),
+    };
+  },
+};
+
 // ── Catalog ──────────────────────────────────────────────────────────
 
 export const TOOL_CATALOG: Tool[] = [
@@ -467,6 +644,8 @@ export const TOOL_CATALOG: Tool[] = [
   readGmailThreadTool,
   searchDriveTool,
   readDocTool,
+  getSheetMetadataTool,
+  readSheetTabTool,
 ];
 
 export const TOOL_DECLARATIONS = TOOL_CATALOG.map((t) => t.declaration);
