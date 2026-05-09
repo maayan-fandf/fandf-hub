@@ -13,7 +13,12 @@ import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
-import { getSharedDriveName, listFolderFiles, type DriveFile } from "@/lib/driveFolders";
+import {
+  getSharedDriveName,
+  listFolderFiles,
+  listFolderChildren,
+  type DriveFile,
+} from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskCreateForm from "@/components/TaskCreateForm";
@@ -122,12 +127,13 @@ export default async function TaskDetailPage({
     t.is_umbrella ||
     (t.blocks?.length ?? 0) > 0 ||
     (t.blocked_by?.length ?? 0) > 0;
-  // Inline-template preview — list files in the task's Drive folder
-  // so we can detect a `(טיוטה)` Doc/Sheet/Slides and render it as a
-  // read-only iframe at the top of the body. Only fetched when the
-  // task actually has a Drive folder (umbrellas + personal-notes
-  // skipped via the conditional). Errors swallowed → no preview is
-  // rendered; the rest of the page is unaffected.
+  // Inline-template preview — find a brief file in the task's
+  // Drive folder so we can render it as a read-only iframe. Two-step
+  // probe: list the task folder's children → if it has a "בריפים"
+  // sub-folder, list ITS children → look for a Doc/Sheet/Slides
+  // whose name contains the task id. Falls back to root-level
+  // (טיוטה) detection so legacy tasks (created before the brief
+  // restructure) still get a preview.
   const taskFolderFilesPromise: Promise<DriveFile[]> =
     !t.is_umbrella && t.drive_folder_id
       ? listFolderFiles(subjectEmail, t.drive_folder_id).catch(() => [])
@@ -150,22 +156,39 @@ export default async function TaskDetailPage({
         : Promise.resolve([] as WorkTask[]),
       taskFolderFilesPromise,
     ]);
-  // Heuristic template detection: a Doc/Sheet/Slides whose name ends
-  // in "(טיוטה)" — the suffix added by `materializeDraft` at task-
-  // creation time. Survives across renames as long as the suffix is
-  // kept; once the issuer renames the file or fills it in under a
-  // different name, the preview drops out (which is fine — they don't
-  // need the embedded view anymore at that point).
-  const TEMPLATE_NAME_RE = /\(טיוטה\)\s*$/;
   const TEMPLATE_MIMES = new Set([
     "application/vnd.google-apps.document",
     "application/vnd.google-apps.spreadsheet",
     "application/vnd.google-apps.presentation",
   ]);
-  const templateFile =
+  // Step 1: legacy fallback — look for a `(טיוטה)` file at the task
+  // folder root (pre-restructure layout, before adopt-as-brief).
+  let templateFile: DriveFile | null =
     taskFolderFiles.find(
-      (f) => TEMPLATE_NAME_RE.test(f.name) && TEMPLATE_MIMES.has(f.mimeType),
+      (f) => /\(טיוטה\)\s*$/.test(f.name) && TEMPLATE_MIMES.has(f.mimeType),
     ) || null;
+  // Step 2: new layout — look for a בריפים sub-folder + scan its
+  // children for a file whose name contains the task id (canonical
+  // brief naming = "...task.id" suffix).
+  if (!templateFile && !t.is_umbrella && t.drive_folder_id) {
+    const taskFolderSubfolders = await listFolderChildren(
+      subjectEmail,
+      t.drive_folder_id,
+    ).catch(() => []);
+    const briefsFolder = taskFolderSubfolders.find(
+      (c) => c.name === "בריפים",
+    );
+    if (briefsFolder) {
+      const briefs = await listFolderFiles(
+        subjectEmail,
+        briefsFolder.id,
+      ).catch(() => [] as DriveFile[]);
+      templateFile =
+        briefs.find(
+          (f) => f.name.includes(t.id) && TEMPLATE_MIMES.has(f.mimeType),
+        ) || null;
+    }
+  }
   // Derive umbrella children list from the same fetched set.
   const umbrellaChildren = t.is_umbrella
     ? projectTasksForDeps.filter((c) => c.umbrella_id === t.id)

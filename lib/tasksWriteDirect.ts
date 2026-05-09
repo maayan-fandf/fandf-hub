@@ -31,6 +31,10 @@ import {
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { isQuietHours, nextWorkDateIso } from "@/lib/quietHours";
+import {
+  BRIEFS_SUBFOLDER_NAME,
+  buildBriefFileName,
+} from "@/lib/draftFolders";
 import type {
   GTaskKind,
   TasksCreateInput,
@@ -511,19 +515,20 @@ async function adoptDraftFolderForNewTask(
 
     const overrideName = (args.folderNameOverride || "").trim();
     // Default UX: no override + campaign present → adopt INTO the
-    // campaign folder (move the draft folder so its CONTENTS live
-    // under the campaign folder, not as its own sub-folder).
+    // campaign folder (the brief lands in <campaign>/בריפים/).
     if (!overrideName && campaignFolderId) {
-      // Move the draft's contents up one level: copy each file/folder
-      // inside the draft folder into the campaign folder, then delete
-      // the (now empty) draft folder. This matches the createTask-
-      // Folder default which uses the campaign folder directly without
-      // creating a leaf.
-      const moved = await moveContentsAndDeleteDraft(
+      const moved = await adoptDraftAsBrief(
         drive,
         args.draftFolderId,
         campaignFolderId,
         sharedDriveId,
+        {
+          id: args.id,
+          title: args.title,
+          company: args.company,
+          project: args.project,
+          campaign: args.campaign,
+        },
       );
       if (!moved) return null;
       const meta = await drive.files.get({
@@ -575,21 +580,44 @@ async function adoptDraftFolderForNewTask(
   }
 }
 
-/** Moves every immediate child of `srcFolderId` into `destFolderId`
- *  using `drive.files.update` with addParents/removeParents (cheap
- *  metadata move, no copy). Then deletes the now-empty source folder.
- *  Returns false on any per-child failure but tries to keep going so
- *  partial migration still surfaces most edits. */
-async function moveContentsAndDeleteDraft(
+/**
+ * Adopt a draft folder's contents into a task's permanent folder, in
+ * the canonical brief layout:
+ *
+ *   <task folder>/בריפים/<canonical-brief-name>
+ *
+ * For each file currently sitting in the draft folder:
+ *   1. Renamed to the canonical "<co> - <proj> - <camp> - <title> -
+ *      <templateName> - <taskId>" form via `buildBriefFileName`.
+ *   2. Moved into a "בריפים" sub-folder of the destination (created
+ *      if missing).
+ *
+ * Then the (now empty) draft folder is deleted. Returns false on any
+ * per-file failure but keeps going so partial adoption still
+ * surfaces most edits — the user's submit-time intent was "commit
+ * this draft," partial commits are still better than rolling back.
+ *
+ * The "בריפים" subfolder convention keeps adopted briefs from
+ * cluttering the campaign-folder top level, which is shared across
+ * tasks. See feedback memo 2026-05-09.
+ */
+async function adoptDraftAsBrief(
   drive: drive_v3.Drive,
   srcFolderId: string,
   destFolderId: string,
   sharedDriveId: string,
+  task: {
+    id: string;
+    title: string;
+    company: string;
+    project: string;
+    campaign?: string;
+  },
 ): Promise<boolean> {
   try {
     const list = await drive.files.list({
       q: [`'${srcFolderId}' in parents`, "trashed=false"].join(" and "),
-      fields: "files(id, parents)",
+      fields: "files(id, name, parents)",
       pageSize: 200,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
@@ -597,13 +625,32 @@ async function moveContentsAndDeleteDraft(
       driveId: sharedDriveId,
     });
     const items = list.data.files ?? [];
+    if (items.length === 0) {
+      // Empty draft — just delete it and return success.
+      await drive.files.delete({
+        fileId: srcFolderId,
+        supportsAllDrives: true,
+      }).catch(() => {});
+      return true;
+    }
+
+    // Get/create the בריפים sub-folder under the destination.
+    const briefsFolderId = await getOrCreateFolderInSharedDrive(
+      drive,
+      BRIEFS_SUBFOLDER_NAME,
+      destFolderId,
+      sharedDriveId,
+    );
+
     let allOk = true;
     for (const f of items) {
       if (!f.id) continue;
       try {
+        const newName = buildBriefFileName(task, f.name || "");
         await drive.files.update({
           fileId: f.id,
-          addParents: destFolderId,
+          requestBody: { name: newName },
+          addParents: briefsFolderId,
           removeParents: (f.parents || []).join(","),
           fields: "id",
           supportsAllDrives: true,
@@ -611,16 +658,12 @@ async function moveContentsAndDeleteDraft(
       } catch (e) {
         allOk = false;
         console.log(
-          `[tasksWriteDirect.moveContents] failed for ${f.id}:`,
+          `[tasksWriteDirect.adoptDraftAsBrief] failed for ${f.id}:`,
           e instanceof Error ? e.message : String(e),
         );
       }
     }
-    // Delete the (hopefully now-empty) draft folder. If something
-    // failed to move, the folder still has children and Drive's
-    // cascading delete will reap them — that's fine, the user's
-    // intent is "this draft is done", they don't expect the leftovers
-    // to stick around.
+    // Delete the (now-empty) draft folder.
     try {
       await drive.files.delete({
         fileId: srcFolderId,
@@ -628,14 +671,14 @@ async function moveContentsAndDeleteDraft(
       });
     } catch (e) {
       console.log(
-        `[tasksWriteDirect.moveContents] delete(${srcFolderId}) failed:`,
+        `[tasksWriteDirect.adoptDraftAsBrief] delete(${srcFolderId}) failed:`,
         e instanceof Error ? e.message : String(e),
       );
     }
     return allOk;
   } catch (e) {
     console.log(
-      "[tasksWriteDirect.moveContents] list failed:",
+      "[tasksWriteDirect.adoptDraftAsBrief] list failed:",
       e instanceof Error ? e.message : String(e),
     );
     return false;
@@ -1405,11 +1448,18 @@ export async function tasksCreateDirect(
         const sharedDriveId = tasksSharedDriveId();
         if (sharedDriveId) {
           const drive = driveClient(driveFolderOwner());
-          await moveContentsAndDeleteDraft(
+          await adoptDraftAsBrief(
             drive,
             existingDraftFolderId,
             task.drive_folder_id,
             sharedDriveId,
+            {
+              id: task.id,
+              title: task.title,
+              company: task.company,
+              project: task.project,
+              campaign: task.campaign,
+            },
           );
         }
       } catch (e) {

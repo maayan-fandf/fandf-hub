@@ -36,6 +36,51 @@ import {
  *  facing content. */
 export const DRAFTS_ROOT_NAME = "_drafts_";
 
+/** Per-task-folder subfolder where adopted brief files live. Keeps
+ *  campaign folders' top level clean — the briefs are encapsulated
+ *  one click away under "בריפים/". */
+export const BRIEFS_SUBFOLDER_NAME = "בריפים";
+
+/**
+ * Builds the canonical brief filename used after a draft is adopted
+ * into a task folder. Format (chosen 2026-05-09):
+ *
+ *   <company> - <project> - <campaign> - <title> - <templateName> - <taskId>
+ *
+ * Empty fields are dropped so a task without a campaign still gets a
+ * sensible name. Slashes in any field are replaced with dashes so the
+ * result is filename-safe across Drive, Windows, and macOS.
+ *
+ * Pass the file's CURRENT name as `originalName` — it'll be parsed
+ * to recover `templateName` (stripping the trailing "(טיוטה)" suffix
+ * that materializeDraft stamps during the in-form fill phase).
+ */
+export function buildBriefFileName(
+  task: {
+    company: string;
+    project: string;
+    campaign?: string;
+    title: string;
+    id: string;
+  },
+  originalName: string,
+): string {
+  const templateName = String(originalName || "")
+    .replace(/\s*\(טיוטה\)\s*$/, "")
+    .trim();
+  const parts = [
+    task.company,
+    task.project,
+    task.campaign || "",
+    task.title,
+    templateName,
+    task.id,
+  ]
+    .map((s) => String(s || "").trim().replace(/[\\/]/g, "-"))
+    .filter(Boolean);
+  return parts.join(" - ");
+}
+
 export type DraftMaterializationResult = {
   /** The draft folder we created (or reused) under the user's
    *  per-user drafts folder. */
