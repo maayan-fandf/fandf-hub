@@ -368,13 +368,52 @@ KEY SURFACES
                    names-to-emails, chat-spaces, user-prefs,
                    task-form-schema. Reachable via the gear menu.
 
-LIFECYCLE STATUSES
-ממתין לטיפול → בעבודה → ממתין לאישור → בוצע
-                        → ממתין לבירור (parked, blocked-for-info)
-                        → בוטל (cancelled)
-Statuses live in the per-row dropdown; flipping to "ממתין לאישור"
-auto-emails the approver. Flipping to "בוצע" auto-completes any
-mirrored Google Task on assignees' personal Tasks lists.
+LIFECYCLE STATUSES — full list (don't drop any when explaining)
+- ממתין לטיפול   (awaiting_handling)    — created, no one started yet
+- בעבודה         (in_progress)          — assignee began working
+- ממתין לאישור   (awaiting_approval)    — sent to the approver
+- ממתין לבירור   (awaiting_clarification) — approver bounced it back
+                                            for more info
+- בוצע           (done)                 — completed
+- בוטל           (cancelled)            — killed (audit row stays)
+- חסום           (blocked)              — waiting on an upstream
+                                            dependency in a chain (auto-
+                                            unblocks when upstream→done)
+
+Status changes happen TWO ways:
+1. Manually via the per-row status dropdown (the drag-able pill).
+2. Automatically when the assignee marks the task's mirrored Google
+   Task as done — the hub watches GT completions and runs
+   applyAutoTransition:
+     - GT(todo) done in awaiting_handling | in_progress
+       → awaiting_approval (or directly done if the task has no
+       approver configured)
+     - GT(approve) done in awaiting_approval → done
+     - GT(clarify) done in awaiting_clarification → in_progress
+       (and re-spawns todo GTs for the assignees)
+   GT *dismissals* (vs completions) are a separate signal — they
+   show the "האם זו השלמה אמיתית?" confirmation banner instead of
+   auto-flipping, so a phone-tap dismissal doesn't accidentally
+   close the task.
+
+Side effects on transitions:
+- → ממתין לאישור: emails the configured approver automatically.
+- → בוצע: auto-completes any still-open mirrored Google Tasks on
+  assignees' personal Tasks lists; if this task is part of a chain,
+  the cascade unblocks downstream rows (חסום → ממתין לטיפול) and
+  notifies their assignees.
+
+CLARIFYING "סבב" — the word is ambiguous in Hebrew:
+- "סבב" = workflow cycle → the LIFECYCLE STATUSES flow above (the
+  ammtin → בעבודה → ammtin laishur → boats sequence).
+- "סבב" = revision round → a SEPARATE TASK linked via parent_id with
+  an incremented round_number. This is what the 'סבב #2 / #3 / …'
+  chip on /tasks rows refers to. The task detail page side panel has
+  a top-of-panel 'סבבים' block listing every round in the chain as
+  clickable links.
+When the user asks "איך עושים סבב של משימה" (or similar), DO NOT
+assume which meaning. Briefly cover both interpretations or ask:
+"האם הכוונה לתהליך הסטטוסים של המשימה, או ליצירת סבב תיקונים חדש?"
 
 WORKFLOWS
 - Add a task: /tasks/new (or "+ משימה חדשה" on /tasks). Pick
