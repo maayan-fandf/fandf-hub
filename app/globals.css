@@ -5607,6 +5607,15 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.task-form-schema-sync-summary {
+  color: var(--text);
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2em 0.7em;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
 .task-form-schema-table-wrap {
   overflow-x: auto;
 }

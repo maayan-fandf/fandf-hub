@@ -46,6 +46,12 @@ export default function TaskFormSchemaEditor({
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // Drive-sync: status banner shown after a manual "🔄 סנכרן מ-Drive"
+  // click. Cleared automatically after a few seconds OR when the user
+  // makes any other edit, so a stale "added 3 rows" message doesn't
+  // hang around forever.
+  const [syncing, setSyncing] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<string | null>(null);
 
   function update(idx: number, partial: Partial<TaskFormSchemaRow>) {
     setRows((cur) =>
@@ -65,6 +71,67 @@ export default function TaskFormSchemaEditor({
   function removeRow(idx: number) {
     setRows((cur) => cur.filter((_, i) => i !== idx));
     setDirty(true);
+  }
+
+  async function syncFromDrive() {
+    setSyncing(true);
+    setError(null);
+    setSyncSummary(null);
+    try {
+      const res = await fetch("/api/admin/sync-task-form-schema", {
+        method: "POST",
+      });
+      const body = (await res.json()) as
+        | {
+            ok: true;
+            added: number;
+            renamed: number;
+            bound: number;
+            unchanged: number;
+            manualPreserved: number;
+            driveItemsScanned: number;
+            sheetRewritten: boolean;
+            errors: string[];
+          }
+        | { ok: false; error: string };
+      if (!res.ok || !body.ok) {
+        throw new Error("error" in body ? body.error : `HTTP ${res.status}`);
+      }
+      // If the reconciler rewrote the sheet, refresh local state from
+      // the server so the new rows show up without a page reload. We
+      // hit the GET endpoint to avoid duplicating the sheet-read in
+      // the sync route's response shape.
+      if (body.sheetRewritten) {
+        const fresh = await fetch("/api/admin/task-form-schema");
+        const freshBody = (await fresh.json()) as
+          | { ok: true; rows: TaskFormSchemaRow[] }
+          | { ok: false; error: string };
+        if (fresh.ok && freshBody.ok) {
+          setRows(freshBody.rows);
+          setDirty(false);
+        }
+      }
+      const parts: string[] = [];
+      if (body.added) parts.push(`${body.added} שורות חדשות`);
+      if (body.renamed) parts.push(`${body.renamed} עודכנו`);
+      if (body.bound) parts.push(`${body.bound} נקשרו`);
+      if (parts.length === 0) {
+        setSyncSummary(
+          `הסנכרון רץ — אין שינויים (${body.driveItemsScanned} קבצים ב-Drive).`,
+        );
+      } else {
+        setSyncSummary(
+          `סונכרן: ${parts.join(" · ")} (${body.driveItemsScanned} קבצים ב-Drive).`,
+        );
+      }
+      // Auto-clear the banner after ~6s so it doesn't outstay its
+      // welcome on the page.
+      setTimeout(() => setSyncSummary(null), 6000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function save() {
@@ -153,13 +220,31 @@ export default function TaskFormSchemaEditor({
           type="button"
           className="btn-ghost"
           onClick={() => addRow()}
-          disabled={saving}
+          disabled={saving || syncing}
         >
           + שורה
+        </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={syncFromDrive}
+          disabled={saving || syncing || dirty}
+          title={
+            dirty
+              ? "שמור שינויים מקומיים לפני סנכרון מ-Drive"
+              : "סנכרן את הטבלה עם תיקיות ה-תבניות ב-Drive (סכמות משימה)"
+          }
+        >
+          {syncing ? "מסנכרן…" : "🔄 סנכרן מ-Drive"}
         </button>
         {savedAt && !dirty && (
           <span className="task-form-schema-saved" dir="ltr">
             נשמר ב-{new Date(savedAt).toLocaleTimeString("he-IL")}
+          </span>
+        )}
+        {syncSummary && (
+          <span className="task-form-schema-sync-summary">
+            {syncSummary}
           </span>
         )}
       </div>
