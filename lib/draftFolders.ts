@@ -283,3 +283,116 @@ export async function findUserDraftsBucket(args: {
     sharedDriveId,
   );
 }
+
+/**
+ * Reaps draft folders older than `olderThanMs` milliseconds. Walks
+ * `_drafts_/<*>/<*>` and trashes anything whose Drive `modifiedTime`
+ * is past the threshold. Best-effort: per-folder failures are logged
+ * and skipped so one stuck folder doesn't poison the run.
+ *
+ * Returns counts so the cron route can surface a meaningful response.
+ *
+ * Used by /api/cron/cleanup-task-drafts (daily) and the
+ * scripts/cleanup-task-drafts.mjs local-runnable variant.
+ */
+export async function reapOldDraftFolders(args: {
+  subjectEmail: string;
+  olderThanMs: number;
+}): Promise<{
+  bucketsScanned: number;
+  draftsScanned: number;
+  draftsDeleted: number;
+  errors: number;
+}> {
+  const sharedDriveId = getTasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || args.subjectEmail);
+  const cutoffMs = Date.now() - args.olderThanMs;
+
+  const draftsRootId = await findChildFolderByName(
+    drive,
+    sharedDriveId,
+    DRAFTS_ROOT_NAME,
+    sharedDriveId,
+  );
+  if (!draftsRootId) {
+    return { bucketsScanned: 0, draftsScanned: 0, draftsDeleted: 0, errors: 0 };
+  }
+
+  // List per-user buckets (each is `_drafts_/<userEmail>/`).
+  const buckets = await drive.files.list({
+    q: [
+      "mimeType='application/vnd.google-apps.folder'",
+      `'${draftsRootId}' in parents`,
+      "trashed=false",
+    ].join(" and "),
+    fields: "files(id, name)",
+    pageSize: 1000,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "drive",
+    driveId: sharedDriveId,
+  });
+  const bucketList = buckets.data.files ?? [];
+  let draftsScanned = 0;
+  let draftsDeleted = 0;
+  let errors = 0;
+
+  for (const bucket of bucketList) {
+    if (!bucket.id) continue;
+    let pageToken: string | undefined;
+    do {
+      const drafts = await drive.files.list({
+        q: [
+          "mimeType='application/vnd.google-apps.folder'",
+          `'${bucket.id}' in parents`,
+          "trashed=false",
+        ].join(" and "),
+        fields:
+          "nextPageToken, files(id, name, modifiedTime, createdTime)",
+        pageSize: 200,
+        pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: "drive",
+        driveId: sharedDriveId,
+      });
+      const items = drafts.data.files ?? [];
+      for (const f of items) {
+        if (!f.id) continue;
+        draftsScanned++;
+        // Pick the LATER of modifiedTime + createdTime — a freshly-
+        // copied template won't have its modifiedTime touched until
+        // the user starts editing, so createdTime is the more honest
+        // "this was just made" signal for orphan drafts.
+        const modMs = Date.parse(f.modifiedTime || "");
+        const ctMs = Date.parse(f.createdTime || "");
+        const lastTouchedMs = Math.max(
+          Number.isFinite(modMs) ? modMs : 0,
+          Number.isFinite(ctMs) ? ctMs : 0,
+        );
+        if (lastTouchedMs === 0 || lastTouchedMs > cutoffMs) continue;
+        try {
+          await drive.files.delete({
+            fileId: f.id,
+            supportsAllDrives: true,
+          });
+          draftsDeleted++;
+        } catch (e) {
+          errors++;
+          console.warn(
+            `[draftFolders.reap] delete(${f.id}) failed:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+      pageToken = drafts.data.nextPageToken || undefined;
+    } while (pageToken);
+  }
+
+  return {
+    bucketsScanned: bucketList.length,
+    draftsScanned,
+    draftsDeleted,
+    errors,
+  };
+}
