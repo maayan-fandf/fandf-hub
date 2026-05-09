@@ -9214,13 +9214,22 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .task-form-template-iframe {
   width: 100%;
-  height: 480px;
+  /* Fit a full A4 page worth of doc body + Docs/Sheets/Slides toolbar
+     without an inner scrollbar on most laptop viewports. min() caps
+     at 1000px on tall screens so the iframe doesn't grow huge on a
+     4K display, and falls back to the viewport-minus-chrome budget
+     on shorter screens. */
+  height: min(1000px, calc(100vh - 220px));
+  min-height: 520px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
 }
 @media (max-width: 640px) {
-  .task-form-template-iframe { height: 360px; }
+  .task-form-template-iframe {
+    height: min(720px, calc(100vh - 160px));
+    min-height: 380px;
+  }
 }
 
 /* Read-only template preview on /tasks/[id]. Same visual treatment as
@@ -9288,13 +9297,20 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .task-template-preview-iframe {
   width: 100%;
-  height: 520px;
+  /* Same sizing logic as the form's editable iframe — the read-only
+     /preview view has less chrome (no toolbar), so the same height
+     budget shows MORE of the doc content per row. */
+  height: min(1000px, calc(100vh - 220px));
+  min-height: 520px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
 }
 @media (max-width: 640px) {
-  .task-template-preview-iframe { height: 380px; }
+  .task-template-preview-iframe {
+    height: min(720px, calc(100vh - 160px));
+    min-height: 380px;
+  }
   .task-template-preview-name { max-width: 140px; }
 }
 
