@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTaskStatus } from "@/lib/appsScript";
 import PersonCombobox from "./PersonCombobox";
@@ -60,16 +60,45 @@ export default function TasksBulkBar({
   const [assigneeValue, setAssigneeValue] = useState("");
   const [approverValue, setApproverValue] = useState("");
   const [campaignValue, setCampaignValue] = useState("");
+  // Success-toast state — when a bulk action succeeds we keep the
+  // bar open for ~5s with a result banner ("✅ N משימות עודכנו") so
+  // the user sees feedback before rows disappear into a hidden bucket
+  // (cancelled → archive fold being the most confusing case). Auto-
+  // dismiss timer resets if the user dismisses early.
+  type LastResult = {
+    label: string;
+    successCount: number;
+    failCount: number;
+    /** True for the soft-delete action — we add a "show in archive"
+     *  CTA that flips the user's hide_archived pref so the just-
+     *  cancelled rows actually become visible. */
+    isCancellation: boolean;
+  };
+  const [lastResult, setLastResult] = useState<LastResult | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear the timer on unmount so a stale tick doesn't fire after
+  // navigation.
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
 
-  if (selectedIds.size === 0) return null;
+  if (selectedIds.size === 0 && !lastResult) return null;
   const ids = Array.from(selectedIds);
 
   async function applyPatch(
     label: string,
     patch: Record<string, unknown>,
+    opts: { isCancellation?: boolean } = {},
   ): Promise<void> {
     setError(null);
+    setLastResult(null);
     setBusy(label);
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
     try {
       const results = await Promise.allSettled(
         ids.map((id) =>
@@ -92,6 +121,7 @@ export default function TasksBulkBar({
         ),
       );
       const failed = results.filter((r) => r.status === "rejected");
+      const successCount = ids.length - failed.length;
       if (failed.length > 0) {
         const reasons = failed
           .map((r) =>
@@ -106,15 +136,60 @@ export default function TasksBulkBar({
           .join(" · ");
         setError(`נכשלו ${failed.length} מתוך ${ids.length}: ${reasons}`);
       }
-      // Refresh server data so successful changes show up. Clear
-      // selection only after the route has the new data.
+      // Refresh server data so successful changes show up.
       startTransition(() => {
         router.refresh();
-        onClear();
       });
+      // Show the success banner + clear selection. The bar stays
+      // visible (because lastResult is set) so the user sees the
+      // confirmation before it auto-dismisses. Selection clears
+      // immediately so a follow-up action doesn't accidentally
+      // re-affect the same rows.
+      if (successCount > 0) {
+        setLastResult({
+          label,
+          successCount,
+          failCount: failed.length,
+          isCancellation: !!opts.isCancellation,
+        });
+      }
+      onClear();
+      // Auto-dismiss the success banner after 6s. The user can also
+      // dismiss early via the "סגור" button on the banner.
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = setTimeout(() => {
+        setLastResult(null);
+        dismissTimerRef.current = null;
+      }, 6000);
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Click handler for the "הצג בארכיון" CTA shown after a bulk
+   *  cancellation. Flips the user's `hide_archived` pref to false so
+   *  the just-cancelled rows actually become visible in the queue,
+   *  then refreshes server data. Mirrors what TasksArchiveToggle
+   *  does — but pre-targeted to the "show" direction. */
+  async function showArchive() {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    try {
+      await fetch("/api/me/prefs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hide_archived: false }),
+      });
+    } catch {
+      /* refresh anyway — the worst case is the user clicks the
+       * archive toggle manually */
+    }
+    setLastResult(null);
+    startTransition(() => {
+      router.refresh();
+    });
   }
 
   function bulkStatus(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -182,7 +257,70 @@ export default function TasksBulkBar({
     ) {
       return;
     }
-    void applyPatch("ביטול", { status: "cancelled" });
+    void applyPatch("ביטול", { status: "cancelled" }, { isCancellation: true });
+  }
+
+  function dismissResult() {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    setLastResult(null);
+  }
+
+  // Success banner — rendered IN PLACE OF the action controls when
+  // a bulk action just succeeded. Bar stays visible long enough for
+  // the user to register the change and (for cancellations) jump to
+  // the archive view to see the rows that just disappeared.
+  if (lastResult && selectedIds.size === 0) {
+    return (
+      <div
+        className="tasks-bulk-bar tasks-bulk-bar-success"
+        role="region"
+        aria-label="תוצאת הפעולה שזה עתה הסתיימה"
+      >
+        <div
+          className="tasks-bulk-success-message"
+          aria-live="polite"
+        >
+          <span className="tasks-bulk-success-icon" aria-hidden>
+            ✅
+          </span>
+          <span>
+            {lastResult.successCount === 1
+              ? "משימה אחת"
+              : `${lastResult.successCount} משימות`}
+            {" — "}
+            <b>{lastResult.label}</b>
+            {lastResult.failCount > 0 && (
+              <span className="tasks-bulk-success-fail">
+                {" "}
+                ({lastResult.failCount} נכשלו)
+              </span>
+            )}
+          </span>
+        </div>
+        {lastResult.isCancellation && (
+          <button
+            type="button"
+            className="btn-primary btn-sm"
+            onClick={showArchive}
+            disabled={isPending}
+            title="הצג את המשימות שעברו לארכיון"
+          >
+            📦 הצג בארכיון
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn-ghost btn-sm"
+          onClick={dismissResult}
+          disabled={isPending}
+        >
+          סגור
+        </button>
+      </div>
+    );
   }
 
   return (

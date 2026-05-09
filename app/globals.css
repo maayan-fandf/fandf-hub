@@ -13148,6 +13148,42 @@ html[data-theme="dark"] .kanban-error {
   padding-inline-end: 0.5em;
 }
 .tasks-bulk-bar-spacer { flex: 1 1 auto; }
+
+/* Success-state variant — shown briefly (~6s) after a bulk action
+   succeeds so the user gets feedback before the rows disappear into
+   a hidden bucket (cancelled → archive fold being the most confusing
+   case). Tinted-green border + soft fill mark it as "successful
+   completion" rather than "active picker". */
+.tasks-bulk-bar-success {
+  border-color: var(--success, #22c55e);
+  background: var(--surface);
+  /* Layer the green tint via a thin gradient so the bar stays
+     readable in dark mode where a flat green tint would clash. */
+  background-image: linear-gradient(
+    0deg,
+    rgba(34, 197, 94, 0.12),
+    rgba(34, 197, 94, 0.12)
+  );
+  /* Cap content width — without this the toast stretches inset-inline
+     to the full viewport which feels heavy for a 1-line message. */
+  max-width: 740px;
+  margin-inline: auto;
+}
+.tasks-bulk-success-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  flex: 1 1 auto;
+  font-size: 0.95em;
+  color: var(--text);
+}
+.tasks-bulk-success-icon {
+  font-size: 1.15em;
+}
+.tasks-bulk-success-fail {
+  color: var(--muted);
+  font-size: 0.88em;
+}
 .tasks-bulk-action {
   font: inherit;
   padding: 0.35em 0.6em;
