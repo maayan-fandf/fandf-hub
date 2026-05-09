@@ -3,8 +3,24 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import type { AgendaDay, AgendaItem } from "@/lib/agenda";
-import { STATUS_LABELS } from "@/components/TaskStatusCell";
 import { useTaskPreview } from "@/components/TaskPreviewProvider";
+
+/** Local Hebrew labels for status pill text. Mirrors the same map
+ *  TaskStatusCell exports + TaskPreviewProvider inlines — duplicated
+ *  here on purpose so the agenda doesn't depend on importing a
+ *  Record from another "use client" module (the bundle path through
+ *  the agenda's server parent occasionally lost the export and the
+ *  pill rendered "awaiting_handling" instead of the Hebrew). */
+const STATUS_LABELS_HE: Record<string, string> = {
+  draft: "טיוטה",
+  awaiting_handling: "ממתין לטיפול",
+  in_progress: "בעבודה",
+  awaiting_clarification: "ממתין לבירור",
+  awaiting_approval: "ממתין לאישור",
+  done: "בוצע",
+  cancelled: "בוטל",
+  blocked: "חסום",
+};
 
 /**
  * Client-side renderer for the multi-day agenda. Server hands us the
@@ -136,7 +152,7 @@ function AgendaRow({ item }: { item: AgendaItem }) {
         )}
         {item.status && (
           <div className="agenda-panel-row-status">
-            {STATUS_LABELS[item.status] || item.status}
+            {STATUS_LABELS_HE[item.status] || item.status}
           </div>
         )}
       </div>
