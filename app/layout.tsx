@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { auth } from "@/auth";
@@ -55,6 +55,20 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Hub",
   description: "Client & project hub",
+};
+
+/**
+ * Viewport meta tag. `viewportFit: "cover"` is what unlocks the
+ * `env(safe-area-inset-bottom)` value on iOS Safari — without it, the
+ * browser pretends there's no home indicator, and our FAB CSS that
+ * accounts for it (.quick-task-fab, .gemini-fab) has nothing to add.
+ * width=device-width + initial-scale=1 are the same defaults Next.js
+ * uses when no viewport export is present, kept explicit for clarity.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({

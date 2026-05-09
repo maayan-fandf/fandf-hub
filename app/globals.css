@@ -1759,7 +1759,10 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
      places the Gemini FAB just above it with a comfortable gap.
      Both stay on the visual LEFT (inline-end in RTL) so the
      bottom-right corner stays clear for whatever the page wants. */
-  bottom: 5.25rem;
+  /* See .quick-task-fab for the safe-area rationale — same pattern.
+     5.25rem keeps the gap above the QuickTaskFAB; the inset is added
+     on top so both FABs lift together over the iOS home indicator. */
+  bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
   inset-inline-end: 1.6rem;
   z-index: 40;            /* above the topnav (20), below modals (50+) */
   width: 3.25rem;
@@ -2142,7 +2145,9 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
     border-inline-start: none;
   }
   .gemini-fab {
-    bottom: 4.75rem; /* still stacked above the QuickTaskFAB */
+    /* still stacked above the QuickTaskFAB; safe-area inset added so
+       the pair lifts together over the iOS home indicator. */
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
     inset-inline-end: 1rem;
     width: 2.85rem;
     height: 2.85rem;
@@ -5146,7 +5151,14 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
    Sits below the topnav z-index but above page content; persistent. */
 .quick-task-fab {
   position: fixed;
-  bottom: 1.6rem;
+  /* iPhones with the home-indicator gesture bar reserve ~0.85rem at the
+     bottom of the viewport. Without env(safe-area-inset-bottom) the FAB
+     sits ~0.75rem above the indicator — workable but tight. Adding the
+     inset keeps the visual gap consistent across devices: 0 on Android
+     / desktop / older iPhones (env() returns 0) and ~1.6rem + 0.85rem
+     above the home indicator on modern iPhones. Requires
+     viewportFit:"cover" in the layout viewport meta to unlock. */
+  bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
   left: 1.6rem;
   width: 3.4rem;
   height: 3.4rem;
