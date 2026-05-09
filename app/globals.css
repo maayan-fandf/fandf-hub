@@ -7817,12 +7817,13 @@ html[data-theme="dark"] .tasks-campaign-chip {
 }
 .agenda-panel-row {
   list-style: none;
+  position: relative;
 }
 .agenda-panel-row-link {
   display: flex;
   gap: .55em;
   align-items: flex-start;
-  padding: .5em .4em;
+  padding: .5em 2.2em .5em .4em; /* room on the inline-end side for the 👁 btn */
   border-radius: 6px;
   text-decoration: none;
   color: var(--text);
@@ -7830,6 +7831,95 @@ html[data-theme="dark"] .tasks-campaign-chip {
 }
 .agenda-panel-row-link:hover {
   background: var(--surface-soft, rgba(0, 0, 0, .04));
+}
+/* 👁 quick-view button — opens TaskPreviewProvider drawer for the
+   row's task without leaving the page. Sits on the inline-end side,
+   visually muted unless the row is hovered. */
+.agenda-panel-row-preview {
+  position: absolute;
+  inset-inline-end: .25em;
+  top: .35em;
+  width: 1.65em;
+  height: 1.65em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1em;
+  color: var(--muted);
+  opacity: .55;
+  transition: opacity .12s, background .12s, border-color .12s;
+}
+.agenda-panel-row:hover .agenda-panel-row-preview,
+.agenda-panel-row-preview:hover,
+.agenda-panel-row-preview:focus-visible {
+  opacity: 1;
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Day-section structure — replaces the flat single-day list with
+   one section per day in the window. Today's section gets a soft
+   accent border so the eye finds it instantly even in a long
+   scrolled view. */
+.agenda-panel-scroller {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  /* Inherits the panel's scroll — children are sections, no extra
+     overflow here. */
+}
+.agenda-panel-day {
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+  padding: .55em 0 .25em;
+  border-top: 1px dashed var(--border);
+}
+.agenda-panel-day:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.agenda-panel-day.is-today {
+  /* Soft tint + a leading accent bar so today reads as the anchor
+     without dominating the panel. */
+  background: linear-gradient(
+    0deg,
+    rgba(99, 102, 241, .06),
+    rgba(99, 102, 241, .06)
+  );
+  border-radius: 8px;
+  padding: .65em .55em .55em;
+  border-top: none;
+  box-shadow: inset 3px 0 0 0 var(--accent, #6366f1);
+}
+.agenda-panel-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: .55em;
+  font-size: .82em;
+  color: var(--muted);
+  padding: 0 .25em .15em;
+}
+.agenda-panel-day.is-today .agenda-panel-day-head {
+  color: var(--text);
+  font-weight: 600;
+}
+.agenda-panel-day-label {
+  font-weight: 600;
+}
+.agenda-panel-day-date {
+  font-variant-numeric: tabular-nums;
+}
+.agenda-panel-day-empty {
+  font-size: .82em;
+  color: var(--muted);
+  padding: .15em .55em .35em;
+  font-style: italic;
 }
 .agenda-panel-row-dot {
   flex: 0 0 auto;

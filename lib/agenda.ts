@@ -42,6 +42,29 @@ export type AgendaItem = {
   subtitle: string;
   /** Status pill text — only for tasks. Empty for events. */
   status?: WorkTaskStatus;
+  /** Full WorkTask payload — only present for source="task". The
+   *  agenda's row component passes this to TaskPreviewProvider when
+   *  the user clicks the 👁 button so the quick-view drawer doesn't
+   *  need a re-fetch. */
+  task?: WorkTask;
+};
+
+/** A day's worth of agenda items, ready for the panel's day-grouped
+ *  render. `date` is YYYY-MM-DD in Israel-local; `items` are pre-
+ *  sorted (timed first, then all-day, alphabetical within each band). */
+export type AgendaDay = {
+  /** YYYY-MM-DD (Israel-local) — used as the section's anchor id so
+   *  the panel can auto-scroll to today on mount. */
+  date: string;
+  /** Hebrew display label for the day section header — "היום",
+   *  "מחר", "אתמול", or a localized "יום שני 10 במאי" for further
+   *  out. */
+  dayLabel: string;
+  /** Whether this section represents today (the panel scrolls to
+   *  this section on mount). */
+  isToday: boolean;
+  /** Sorted, render-ready items. */
+  items: AgendaItem[];
 };
 
 /**
@@ -130,9 +153,19 @@ const TERMINAL_STATUSES = new Set<WorkTaskStatus>(["done", "cancelled"]);
  * domain-wide delegation (added 2026-05-05). Best-effort: any error
  * returns an empty array so the agenda still renders the task half.
  */
-async function todayCalendarEvents(userEmail: string): Promise<AgendaItem[]> {
+async function calendarEventsInRange(
+  userEmail: string,
+  fromDate: string,
+  toDate: string,
+): Promise<Array<AgendaItem & { _date: string }>> {
   try {
-    const { startIso, endIso } = todayBoundsIsrael();
+    // Israel-local midnight at start of fromDate → end of toDate
+    // (i.e. day after toDate).
+    const startUtc = new Date(`${fromDate}T00:00:00Z`);
+    const startIso = adjustToIsraelMidnight(startUtc);
+    const endBoundary = new Date(`${toDate}T00:00:00Z`);
+    endBoundary.setUTCDate(endBoundary.getUTCDate() + 1);
+    const endIso = adjustToIsraelMidnight(endBoundary);
     const cal = calendarReadonlyClient(userEmail);
     const res = await cal.events.list({
       calendarId: "primary",
@@ -140,13 +173,14 @@ async function todayCalendarEvents(userEmail: string): Promise<AgendaItem[]> {
       timeMax: endIso,
       singleEvents: true, // expand recurring events into individual instances
       orderBy: "startTime",
-      maxResults: 50,
+      maxResults: 250,
     });
     const events = res.data.items ?? [];
-    return events.map((e): AgendaItem => {
+    return events.map((e): AgendaItem & { _date: string } => {
       // start.dateTime when the event has a specific time; start.date
       // (YYYY-MM-DD only) for all-day events.
       const startDt = e.start?.dateTime || "";
+      const startDate = e.start?.date || "";
       const time = startDt
         ? new Intl.DateTimeFormat("en-GB", {
             timeZone: "Asia/Jerusalem",
@@ -155,6 +189,16 @@ async function todayCalendarEvents(userEmail: string): Promise<AgendaItem[]> {
             hour12: false,
           }).format(new Date(startDt))
         : "";
+      // Bucket date — for timed events use the Israel-local date of
+      // the start instant; for all-day events use the supplied date.
+      const dayKey = startDt
+        ? new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Jerusalem",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date(startDt))
+        : startDate || "";
       // Subtitle: location, or organizer when present, else empty.
       const subtitle = e.location
         ? String(e.location)
@@ -169,6 +213,7 @@ async function todayCalendarEvents(userEmail: string): Promise<AgendaItem[]> {
         toneClass: "agenda-tone-event",
         href: e.htmlLink || "https://calendar.google.com/",
         subtitle,
+        _date: dayKey,
       };
     });
   } catch (err) {
@@ -181,22 +226,23 @@ async function todayCalendarEvents(userEmail: string): Promise<AgendaItem[]> {
 }
 
 /**
- * Pull today's tasks for `userEmail` — uses the existing
- * `relevant_to_me` filter on `tasksListDirect`, which OR's across
- * (author | approver | assignee). Project-manager-only tasks come
- * through too via the broader `involved_with` route — but we keep
- * the agenda focused on the smaller set so it doesn't bloat with
- * tasks the user only needs to know about peripherally.
+ * Pull tasks for `userEmail` whose `requested_date` falls in the
+ * inclusive [fromDate, toDate] range (YYYY-MM-DD strings). Same
+ * `relevant_to_me` scope as the legacy single-day variant: OR
+ * across (author | approver | assignee).
  *
  * Terminal statuses (done/cancelled) get filtered client-side since
  * tasksListDirect doesn't expose an excludeResolved flag.
  */
-async function todayTasksForUser(userEmail: string): Promise<WorkTask[]> {
-  const today = todayIsraelDate();
+async function tasksForUserInDateRange(
+  userEmail: string,
+  fromDate: string,
+  toDate: string,
+): Promise<WorkTask[]> {
   const res = await tasksListDirect(userEmail, {
     relevant_to_me: userEmail,
-    requested_date_from: today,
-    requested_date_to: today,
+    requested_date_from: fromDate,
+    requested_date_to: toDate,
   });
   return res.tasks.filter((t) => !TERMINAL_STATUSES.has(t.status));
 }
@@ -214,39 +260,52 @@ function statusToneClass(s: WorkTaskStatus): string {
 }
 
 /**
- * Public entry point for the panel. Returns a sorted, render-ready
- * agenda for `userEmail`'s today — tasks + Google Calendar events,
- * merged. Empty array on any failure (the panel renders an "אין
- * משימות להיום" empty state — better than a red error in the chrome
- * of every page).
+ * Public entry point for the panel. Returns the agenda grouped by
+ * day for the window [today − daysBefore, today + daysAfter]. The
+ * panel renders each AgendaDay as its own section with a header,
+ * lets the user scroll across days, and auto-scrolls to today on
+ * mount.
+ *
+ * Always returns one entry per day in the window (even days with no
+ * items) so the section anchors exist for the auto-scroll target +
+ * visual day-by-day rhythm.
  */
-export async function getAgendaForUser(
+export async function getAgendaForUserDays(
   userEmail: string,
-): Promise<AgendaItem[]> {
+  opts: { daysBefore?: number; daysAfter?: number } = {},
+): Promise<AgendaDay[]> {
   if (!userEmail) return [];
-  // Run task + calendar fetches in parallel — independent reads. The
-  // calendar half is wrapped in its own try/catch so a calendar error
-  // doesn't kill the task half (e.g., DWD scope issue would degrade
-  // gracefully to tasks-only).
+  const daysBefore = Math.max(0, Math.floor(opts.daysBefore ?? 1));
+  const daysAfter = Math.max(0, Math.floor(opts.daysAfter ?? 6));
+  const today = todayIsraelDate();
+  // Build the YYYY-MM-DD date keys for each day in the window.
+  const dates = buildDateRange(today, daysBefore, daysAfter);
+  const fromDate = dates[0];
+  const toDate = dates[dates.length - 1];
+
   let tasks: WorkTask[] = [];
-  let events: AgendaItem[] = [];
+  let events: Array<AgendaItem & { _date: string }> = [];
   try {
     [tasks, events] = await Promise.all([
-      todayTasksForUser(userEmail),
-      todayCalendarEvents(userEmail),
+      tasksForUserInDateRange(userEmail, fromDate, toDate),
+      calendarEventsInRange(userEmail, fromDate, toDate),
     ]);
   } catch (e) {
     console.warn(
-      "[agenda] getAgendaForUser failed:",
+      "[agenda] getAgendaForUserDays failed:",
       e instanceof Error ? e.message : String(e),
     );
-    return [];
+    return dates.map((d) => emptyDay(d, today));
   }
 
-  const taskItems: AgendaItem[] = tasks.map((t) => {
+  // Bucket tasks by their requested_date's YYYY-MM-DD prefix.
+  const taskItemsByDate = new Map<string, AgendaItem[]>();
+  for (const t of tasks) {
+    const dayKey = (t.requested_date || "").slice(0, 10);
+    if (!dayKey) continue;
     const time = timeOfDay(t.requested_date);
     const subtitle = [t.company, t.project].filter(Boolean).join(" · ");
-    return {
+    const item: AgendaItem = {
       id: `task:${t.id}`,
       source: "task",
       title: t.title || "(ללא כותרת)",
@@ -255,21 +314,109 @@ export async function getAgendaForUser(
       href: `/tasks/${encodeURIComponent(t.id)}`,
       subtitle,
       status: t.status,
+      task: t,
+    };
+    const list = taskItemsByDate.get(dayKey) ?? [];
+    list.push(item);
+    taskItemsByDate.set(dayKey, list);
+  }
+
+  // Bucket events similarly. _date was already computed by the
+  // calendar fetch above.
+  const eventItemsByDate = new Map<string, AgendaItem[]>();
+  for (const e of events) {
+    if (!e._date) continue;
+    const list = eventItemsByDate.get(e._date) ?? [];
+    // Strip the helper field before pushing — keep the public shape.
+    const { _date: _strip, ...item } = e;
+    void _strip;
+    list.push(item);
+    eventItemsByDate.set(e._date, list);
+  }
+
+  return dates.map((d): AgendaDay => {
+    const items = [
+      ...(taskItemsByDate.get(d) ?? []),
+      ...(eventItemsByDate.get(d) ?? []),
+    ];
+    items.sort((a, b) => {
+      const aTimed = !!a.time;
+      const bTimed = !!b.time;
+      if (aTimed !== bTimed) return aTimed ? -1 : 1;
+      if (aTimed && bTimed) return a.time.localeCompare(b.time);
+      return a.title.localeCompare(b.title, "he");
+    });
+    return {
+      date: d,
+      dayLabel: formatDayLabel(d, today),
+      isToday: d === today,
+      items,
     };
   });
+}
 
-  const items: AgendaItem[] = [...taskItems, ...events];
-
-  // Time-sorted: items with a time come first (chronological); items
-  // without a time follow as "כל היום". Within each band, ties break
-  // alphabetically by title for stable order.
-  items.sort((a, b) => {
-    const aTimed = !!a.time;
-    const bTimed = !!b.time;
-    if (aTimed !== bTimed) return aTimed ? -1 : 1;
-    if (aTimed && bTimed) return a.time.localeCompare(b.time);
-    return a.title.localeCompare(b.title, "he");
+/**
+ * Legacy single-day variant — still exported so existing call sites
+ * (if any) keep working. New code should prefer getAgendaForUserDays.
+ */
+export async function getAgendaForUser(
+  userEmail: string,
+): Promise<AgendaItem[]> {
+  const days = await getAgendaForUserDays(userEmail, {
+    daysBefore: 0,
+    daysAfter: 0,
   });
+  return days[0]?.items ?? [];
+}
 
-  return items;
+function buildDateRange(
+  todayKey: string,
+  daysBefore: number,
+  daysAfter: number,
+): string[] {
+  const out: string[] = [];
+  const base = new Date(`${todayKey}T00:00:00Z`);
+  for (let i = -daysBefore; i <= daysAfter; i++) {
+    const d = new Date(base.getTime());
+    d.setUTCDate(d.getUTCDate() + i);
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    out.push(fmt.format(d));
+  }
+  return out;
+}
+
+function emptyDay(date: string, todayKey: string): AgendaDay {
+  return {
+    date,
+    dayLabel: formatDayLabel(date, todayKey),
+    isToday: date === todayKey,
+    items: [],
+  };
+}
+
+/** Hebrew display label for a day section. "אתמול" / "היום" / "מחר"
+ *  for ±1; otherwise localized weekday + day + month. */
+function formatDayLabel(date: string, todayKey: string): string {
+  const today = new Date(`${todayKey}T00:00:00Z`);
+  const target = new Date(`${date}T00:00:00Z`);
+  const dayDelta = Math.round(
+    (target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  if (dayDelta === 0) return "היום";
+  if (dayDelta === 1) return "מחר";
+  if (dayDelta === -1) return "אתמול";
+  if (dayDelta === 2) return "מחרתיים";
+  if (dayDelta === -2) return "שלשום";
+  const fmt = new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return fmt.format(target);
 }
