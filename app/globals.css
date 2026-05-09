@@ -8020,17 +8020,25 @@ html[data-theme="dark"] .task-files-panel[data-drag-over="1"] {
 .tasks-table th.icons,
 .tasks-table td.icons { width: 1%; white-space: nowrap; }
 .tasks-row-icons {
-  display: inline-flex; gap: .15em;
+  /* 3-column grid so 4-5 icons wrap into 2 rows instead of stretching
+     into one wide strip. A 2-row layout buys the vertical room to
+     scale each icon up — larger emojis are easier to scan than a long
+     thin strip of tiny ones. The column count was picked to keep most
+     rows at exactly 2 rows (📖 ✏️ Drive | path 💬) without the bottom
+     row going lonely. */
+  display: inline-grid;
+  grid-template-columns: repeat(3, auto);
+  gap: .25em;
 }
 .tasks-row-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1.7em; height: 1.7em;
+  width: 2em; height: 2em;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   text-decoration: none;
-  font-size: .9em;
+  font-size: 1.1em;
   transition: background .12s, border-color .12s;
 }
 .tasks-row-icon:hover {
@@ -10072,13 +10080,12 @@ html[data-theme="dark"] .tasks-dept-chip {
   padding: .15em .25em 0;
 }
 
-/* Per-row copy-local-path button on the /tasks queue. Sized down to
-   match the 2em × 2em icon strip so the row width doesn't grow and
-   force a horizontal scroll. */
+/* Per-row copy-local-path button on the /tasks queue. Matches the
+   2em × 2em grid cells used by the other action icons. */
 .tasks-row-icons .copy-local-path-wrap { display: inline-flex; }
 .tasks-row-icons .copy-local-path-btn {
-  width: 1.7em;
-  height: 1.7em;
+  width: 2em;
+  height: 2em;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -10087,7 +10094,7 @@ html[data-theme="dark"] .tasks-dept-chip {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  font-size: .9em;
+  font-size: 1.1em;
   line-height: 1;
 }
 .tasks-row-icons .copy-local-path-btn:hover {
