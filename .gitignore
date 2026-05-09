@@ -10,3 +10,6 @@ build/
 .vercel
 next-env.d.ts
 *.tsbuildinfo
+# Claude Code local config (may contain Bash-permission allowlists with
+# inline API tokens — must NEVER be committed).
+.claude/
