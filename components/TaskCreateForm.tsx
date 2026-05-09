@@ -1080,11 +1080,22 @@ export default function TaskCreateForm({
         <label>
           פרויקט
           <select
-            required
+            // `required` is for CREATE only — every new task must be
+            // bound to a real project. EDIT mode for pseudo-projects
+            // (`__personal__`) deliberately starts with an empty
+            // value so the user can promote-or-keep, and the server
+            // accepts an empty project on update by retaining the
+            // existing pseudo. Browser-required would block the save
+            // before the form's onSubmit even runs.
+            required={!isEditing}
             value={project}
             onChange={(e) => onProjectChange(e.target.value)}
           >
-            <option value="">בחר פרויקט…</option>
+            <option value="">
+              {isEditing && editingTask?.project.startsWith("__")
+                ? "השאר אישי או בחר פרויקט…"
+                : "בחר פרויקט…"}
+            </option>
             {companyProjects.map((p) => (
               <option key={p.name} value={p.name}>
                 {p.name}

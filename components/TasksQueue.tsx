@@ -1595,18 +1595,22 @@ function TaskRow({
           >
             📖
           </Link>
-          {/* Edit shortcut — jumps straight to /tasks/[id]?edit=1 so a
-              quick fix doesn't need the open-then-find-the-edit-button
-              two-click dance. Same edit surface (TaskCreateForm in
-              update mode); the regular ✏️ ערוך button on the task page
-              still works for users who navigate via 📖 first. */}
-          <Link
-            href={`/tasks/${encodeURIComponent(task.id)}?edit=1`}
-            className="tasks-row-icon"
-            title="ערוך משימה"
-          >
-            ✏️
-          </Link>
+          {/* Edit shortcut — author-only. Server enforces the same
+              gate (lib/tasksWriteDirect.ts), so a non-author seeing
+              the pencil would just hit a save error. Admins still see
+              the edit affordance via the task detail page header even
+              when this icon is hidden in the queue. */}
+          {task.author_email &&
+            userEmail &&
+            task.author_email.toLowerCase() === userEmail.toLowerCase() && (
+              <Link
+                href={`/tasks/${encodeURIComponent(task.id)}?edit=1`}
+                className="tasks-row-icon"
+                title="ערוך משימה"
+              >
+                ✏️
+              </Link>
+            )}
           {task.drive_folder_url && (
             <a
               href={task.drive_folder_url}

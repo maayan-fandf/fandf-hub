@@ -344,14 +344,24 @@ export default async function TaskDetailPage({
               title="העתק נתיב מקומי — Drive Desktop"
             />
           )}
-          {!editing && (
-            <Link
-              href={`/tasks/${encodeURIComponent(t.id)}?edit=1`}
-              className="btn-ghost btn-sm"
-            >
-              ✏️ ערוך
-            </Link>
-          )}
+          {!editing && (() => {
+            // Author-only edit affordance — server enforces the same
+            // gate at lib/tasksWriteDirect.ts so a non-author hitting
+            // ?edit=1 directly would just get a save error. Hiding the
+            // button removes the surprise. Admins always see it.
+            const me = subjectEmail.toLowerCase().trim();
+            const author = (t.author_email || "").toLowerCase().trim();
+            const canEdit = !!accessRes?.isAdmin || (author && author === me);
+            if (!canEdit) return null;
+            return (
+              <Link
+                href={`/tasks/${encodeURIComponent(t.id)}?edit=1`}
+                className="btn-ghost btn-sm"
+              >
+                ✏️ ערוך
+              </Link>
+            );
+          })()}
           {/* Edit surface is now the same TaskCreateForm component used
               on /tasks/new — when given an `editingTask` prop it switches
               to update semantics (POST /api/worktasks/update with a

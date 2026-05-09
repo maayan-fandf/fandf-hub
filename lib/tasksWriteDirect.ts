@@ -1822,6 +1822,56 @@ async function tasksUpdateDirectInner(
   const isAdmin = ADMIN_EMAILS.has(subjectEmail.toLowerCase().trim());
   if (!isAdmin) await assertProjectAccess(subjectEmail, project);
 
+  // Author-only gate for the editable surface — only the task's
+  // author (or admins) can change descriptive fields like title /
+  // description / assignees / dates etc. Status changes + notes are
+  // explicitly NOT in this set, so:
+  //   - Assignees can still flip status to בעבודה / בוצע
+  //   - Approver can still אישור / דחייה
+  //   - Auto-transitions (GT completion → status change) keep working
+  //   - Bulk-cancel from the queue still works for any participant
+  // Anyone outside the author + admins gets "comment-only" access on
+  // tasks they didn't author. Per user request 2026-05-09.
+  const AUTHOR_GATED_FIELDS = new Set([
+    "title",
+    "description",
+    "departments",
+    "kind",
+    "priority",
+    "approver_email",
+    "project_manager_email",
+    "assignees",
+    "requested_date",
+    "campaign",
+    "brief",
+    "project",
+    "company",
+    "drive_folder_id",
+    "drive_folder_url",
+    "drive_folder_name",
+    "blocks",
+    "blocked_by",
+    "umbrella_id",
+    "is_umbrella",
+    "round_number",
+    "revision_of",
+    "parent_id",
+    "sub_status",
+  ]);
+  const patchKeys = Object.keys(patch || {});
+  const hasGatedField = patchKeys.some((k) => AUTHOR_GATED_FIELDS.has(k));
+  if (hasGatedField && !isAdmin) {
+    const authorEmail = String(cell("author_email") ?? "")
+      .toLowerCase()
+      .trim();
+    const me = subjectEmail.toLowerCase().trim();
+    if (authorEmail && authorEmail !== me) {
+      throw new Error(
+        "רק יוצר המשימה יכול לערוך את שדות המשימה. ניתן להגיב או לעדכן סטטוס.",
+      );
+    }
+  }
+
   // Project-change semantics — fires when patch.project is set AND
   // differs from the row's current project. The top-of-function access
   // check only validated the OLD project, so we re-validate against the
