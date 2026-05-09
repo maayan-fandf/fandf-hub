@@ -38,6 +38,34 @@ function driveFolderUrl(id: string): string {
   return `https://drive.google.com/drive/folders/${id}`;
 }
 
+/** Public alias of the internal `findFolder`. New external callers
+ *  (lib/taskTemplates.ts, lib/draftFolders.ts) reuse this primitive
+ *  rather than duplicating the q-string + driveId boilerplate. */
+export async function findChildFolderByName(
+  drive: drive_v3.Drive,
+  parentId: string,
+  name: string,
+  sharedDriveId: string,
+): Promise<string | null> {
+  return findFolder(drive, parentId, name, sharedDriveId);
+}
+
+/** Public alias of the internal `getOrCreate`. */
+export async function getOrCreateChildFolder(
+  drive: drive_v3.Drive,
+  parentId: string,
+  name: string,
+  sharedDriveId: string,
+): Promise<string> {
+  return getOrCreate(drive, parentId, name, sharedDriveId);
+}
+
+/** Exposes the Shared Drive id so callers building their own queries
+ *  don't need to duplicate the env-var read + null check. */
+export function getTasksSharedDriveId(): string {
+  return tasksSharedDriveId();
+}
+
 async function findFolder(
   drive: drive_v3.Drive,
   parentId: string,
