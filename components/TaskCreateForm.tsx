@@ -1220,81 +1220,35 @@ export default function TaskCreateForm({
         </label>
       )}
 
-      {/* Kind / priority / date are per-task concerns — in chain mode
-          they'd apply to the umbrella, which has no own work. Hide
-          them; each child step inherits chain-level departments and
-          gets its own assignees via the step picker below. */}
+      {/* Kind picker only — priority + date moved below the Drive
+          section so the natural reading order is "what is it (kind)
+          → which template → where will the files live → when does
+          it need to ship + how urgent." Chain mode hides this entire
+          surface (each chain step has its own kind via the template). */}
       {!chainMode && (
-        <div className="task-form-row">
-          <label>
-            סוג
-            <select
-              name="kind"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-            >
-              {/* When editing a task whose stored `kind` isn't in the
-                  schema-derived kindOptions list, surface it as an
-                  extra option so it stays selectable instead of
-                  silently downgrading on save. */}
-              {isEditing &&
-                editingTask!.kind &&
-                !kindOptions.some((k) => k.val === editingTask!.kind) && (
-                  <option value={editingTask!.kind}>{editingTask!.kind}</option>
-                )}
-              {kindOptions.map((k) => (
-                <option key={k.val} value={k.val}>
-                  {k.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            דחיפות
-            <select
-              name="priority"
-              defaultValue={
-                isEditing ? String(editingTask!.priority || 2) : "2"
-              }
-            >
-              <option value="1">1 — גבוהה</option>
-              <option value="2">2 — רגילה</option>
-              <option value="3">3 — נמוכה</option>
-            </select>
-          </label>
-
-          <label className="task-form-date-time">
-            תאריך מבוקש
-            <div className="date-time-inputs">
-              <DatePicker
-                name="requested_date"
-                defaultValue={
-                  isEditing
-                    ? (editingTask!.requested_date || "").match(
-                        /^\d{4}-\d{2}-\d{2}/,
-                      )?.[0]
-                    : undefined
-                }
-              />
-              {/* Native <input type="time"> replaced with the M3
-                  input-mode picker. Hidden mirror keeps the form's
-                  `requested_time` submission identical so the
-                  surrounding submit handler doesn't change. */}
-              <TimePicker
-                name="requested_time"
-                ariaLabel="שעה (אופציונלי)"
-                defaultValue={
-                  isEditing
-                    ? (editingTask!.requested_date || "").match(
-                        /[T\s](\d{2}:\d{2})/,
-                      )?.[1]
-                    : undefined
-                }
-              />
-            </div>
-          </label>
-        </div>
+        <label>
+          סוג
+          <select
+            name="kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+          >
+            {/* When editing a task whose stored `kind` isn't in the
+                schema-derived kindOptions list, surface it as an
+                extra option so it stays selectable instead of
+                silently downgrading on save. */}
+            {isEditing &&
+              editingTask!.kind &&
+              !kindOptions.some((k) => k.val === editingTask!.kind) && (
+                <option value={editingTask!.kind}>{editingTask!.kind}</option>
+              )}
+            {kindOptions.map((k) => (
+              <option key={k.val} value={k.val}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {/* Inline template picker — only renders when the resolved kind
@@ -1436,6 +1390,60 @@ export default function TaskCreateForm({
               />
             )}
         </>
+      )}
+
+      {/* Priority + requested date — moved here from the kind row so
+          the form's reading order is task definition (above) →
+          scheduling (here). Two columns instead of three since kind
+          is no longer in this row. Hidden in chain mode (the umbrella
+          has no own scheduling). */}
+      {!chainMode && (
+        <div className="task-form-row task-form-row-2col">
+          <label>
+            דחיפות
+            <select
+              name="priority"
+              defaultValue={
+                isEditing ? String(editingTask!.priority || 2) : "2"
+              }
+            >
+              <option value="1">1 — גבוהה</option>
+              <option value="2">2 — רגילה</option>
+              <option value="3">3 — נמוכה</option>
+            </select>
+          </label>
+
+          <label className="task-form-date-time">
+            תאריך מבוקש
+            <div className="date-time-inputs">
+              <DatePicker
+                name="requested_date"
+                defaultValue={
+                  isEditing
+                    ? (editingTask!.requested_date || "").match(
+                        /^\d{4}-\d{2}-\d{2}/,
+                      )?.[0]
+                    : undefined
+                }
+              />
+              {/* Native <input type="time"> replaced with the M3
+                  input-mode picker. Hidden mirror keeps the form's
+                  `requested_time` submission identical so the
+                  surrounding submit handler doesn't change. */}
+              <TimePicker
+                name="requested_time"
+                ariaLabel="שעה (אופציונלי)"
+                defaultValue={
+                  isEditing
+                    ? (editingTask!.requested_date || "").match(
+                        /[T\s](\d{2}:\d{2})/,
+                      )?.[1]
+                    : undefined
+                }
+              />
+            </div>
+          </label>
+        </div>
       )}
 
       {/* Step picker for chain mode — each row is a sequential step

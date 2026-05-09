@@ -9143,6 +9143,15 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   grid-template-columns: 1fr 1fr 1fr;
   gap: 1em;
 }
+/* Variant — 2-column layout used by the priority + date row after
+   kind moved out. Plain `task-form-row` would leave a third empty
+   cell; this collapses to two even columns. */
+.task-form-row.task-form-row-2col {
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 640px) {
+  .task-form-row.task-form-row-2col { grid-template-columns: 1fr; }
+}
 .task-form-actions {
   display: flex; justify-content: flex-end; gap: .6em;
   margin-top: .5em;
