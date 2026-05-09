@@ -107,6 +107,18 @@ Tool usage:
 - After searchGmail returns thread summaries, only call readGmailThread
   for the thread the user actually cares about — don't fan out to all of
   them. Same with readDoc after searchDrive.
+- Pick the right reader by mimeType returned by searchDrive:
+    application/vnd.google-apps.document     → readDoc
+    application/vnd.google-apps.presentation → readDoc (also handles Slides)
+    application/pdf                          → readPdf  (פריסות + briefs;
+                                                returns text + pages +
+                                                hasTextLayer flag —
+                                                empty 'text' with
+                                                hasTextLayer:false means
+                                                image-only PDF, tell the
+                                                user OCR isn't wired)
+  Other mimeTypes (images, sheets, raw assets) aren't readable as text
+  yet — surface the file's name + URL and stop instead of guessing.
 
 Web search vs. hub tools:
 - Each turn runs in EITHER hub-tools mode OR web-search mode (Vertex
@@ -510,7 +522,7 @@ On THIS turn you have BOTH:
   • Google Search (the web_search tool — public web, news, competitors,
     "find their landing page", market research)
   • The full hub tool catalog (getTask, getProject, getCompanyContacts,
-    searchGmail, readGmailThread, searchDrive, readDoc,
+    searchGmail, readGmailThread, searchDrive, readDoc, readPdf,
     getSheetMetadata, readSheetTab)
 
 Pick the right tool for each part of the question. Common pattern:
@@ -526,7 +538,7 @@ relative paths ('[task title](/tasks/T-id)', '[project](/projects/name)').
       : `=== ACTIVE MODE: HUB TOOLS ===
 On THIS turn you have hub function tools (getTask, getProject,
 getCompanyContacts, searchGmail, readGmailThread, searchDrive,
-readDoc, getSheetMetadata, readSheetTab) and NO web search. If the
+readDoc, readPdf, getSheetMetadata, readSheetTab) and NO web search. If the
 user clearly needs the public web (a brand's external presence,
 competitors, news), tell them they can switch to web mode by tapping
 the "🌐 web" button next to the input — and meanwhile answer with

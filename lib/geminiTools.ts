@@ -469,16 +469,19 @@ const readDocTool: Tool = {
   declaration: {
     name: "readDoc",
     description:
-      "Read the plain-text content of a Google Doc. Pass the file id " +
-      "from searchDrive (the doc must have mimeType " +
-      "'application/vnd.google-apps.document'). Returns up to ~30KB of " +
-      "text — long docs are truncated.",
+      "Read the plain-text content of a Google Doc OR Google Slides " +
+      "deck. Pass the file id from searchDrive — works for mimeType " +
+      "'application/vnd.google-apps.document' (Docs) and " +
+      "'application/vnd.google-apps.presentation' (Slides). For raw " +
+      "PDF files (פריסות, PDF exports from Figma, etc.) use readPdf " +
+      "instead. Returns up to ~30KB of text — long docs are truncated.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         documentId: {
           type: SchemaType.STRING,
-          description: "Drive file id of a Google Doc.",
+          description:
+            "Drive file id of a Google Doc or Google Slides file.",
         },
       },
       required: ["documentId"],
@@ -488,7 +491,9 @@ const readDocTool: Tool = {
     const documentId = requireString(args, "documentId");
     // Use Drive's `files.export` to get text/plain — avoids needing
     // the docs.readonly scope (we already have /auth/drive in DWD).
-    // Returns a string body in res.data when alt=media.
+    // Works for both Docs and Slides; Drive picks the right exporter
+    // based on the source mimeType. Returns a string body in res.data
+    // when alt=media.
     const drive = driveClient(email);
     const res = await drive.files.export(
       { fileId: documentId, mimeType: "text/plain" },
@@ -501,6 +506,116 @@ const readDocTool: Tool = {
       documentId,
       truncated: text.length > cap,
       text: text.length > cap ? text.slice(0, cap) + "\n…" : text,
+    };
+  },
+};
+
+// PDF text-layer extraction. Designed for the project pages' פריסה
+// preview (Drive PDF exports from Figma / Photoshop / Illustrator that
+// retain a selectable text layer). When the PDF is image-only / scanned
+// (no text layer), returns ok:true with an empty `text` and a hint —
+// callers should treat that as "we'd need OCR" rather than retrying.
+//
+// Pulls bytes via files.get(alt:'media'); pdf-parse runs entirely in
+// the Next.js server process (Buffer-based, no headless browser).
+const readPdfTool: Tool = {
+  declaration: {
+    name: "readPdf",
+    description:
+      "Read the text-layer content of a raw PDF file on Drive. Use this " +
+      "for פריסה files (landing-page mockups exported as PDF), client " +
+      "briefs uploaded as PDF, and any other application/pdf entry " +
+      "from searchDrive. Returns up to ~30KB of extracted text + a " +
+      "page count + a `hasTextLayer` flag. When `hasTextLayer` is " +
+      "false the PDF is image-only / scanned and the text field will " +
+      "be empty — don't retry, surface that fact and tell the user " +
+      "OCR isn't wired yet. For Google Docs / Slides use readDoc " +
+      "instead (this tool only handles raw PDFs).",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        fileId: {
+          type: SchemaType.STRING,
+          description:
+            "Drive file id of a PDF file (mimeType 'application/pdf').",
+        },
+      },
+      required: ["fileId"],
+    },
+  },
+  execute: async (email, args) => {
+    const fileId = requireString(args, "fileId");
+    const drive = driveClient(email);
+    // Fetch metadata first so we can refuse non-PDFs cleanly + surface
+    // a useful error to the model instead of letting pdf-parse choke
+    // on whatever bytes Drive returned.
+    const meta = await drive.files.get({
+      fileId,
+      fields: "id, name, mimeType, size, webViewLink",
+    });
+    const mimeType = String(meta.data.mimeType || "");
+    if (mimeType !== "application/pdf") {
+      return {
+        ok: false,
+        error:
+          `file ${fileId} has mimeType '${mimeType}', not 'application/pdf'. ` +
+          `Use readDoc for Google Docs / Slides.`,
+        name: meta.data.name || "",
+      };
+    }
+    // Download bytes. arraybuffer + Buffer keeps pdf-parse happy.
+    const dl = await drive.files.get(
+      { fileId, alt: "media" },
+      { responseType: "arraybuffer" },
+    );
+    const buf = Buffer.from(dl.data as ArrayBuffer);
+    // Lazy-load pdf-parse so non-PDF chat turns don't pay its module-
+    // resolve cost. v2 of the package exposes a PDFParse class (was a
+    // default function in v1) — call `getText()` and stitch pages.
+    const { PDFParse } = await import("pdf-parse");
+    let textResult: { text: string; pages?: { text: string }[] };
+    let pages = 0;
+    try {
+      const parser = new PDFParse({
+        data: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
+      });
+      const info = await parser.getInfo();
+      pages = Number(info.total ?? info.pages?.length ?? 0);
+      textResult = (await parser.getText()) as {
+        text: string;
+        pages?: { text: string }[];
+      };
+      await parser.destroy();
+    } catch (e) {
+      return {
+        ok: false,
+        error: `pdf-parse failed: ${e instanceof Error ? e.message : String(e)}`,
+        name: meta.data.name || "",
+      };
+    }
+    const text = String(textResult.text || "").trim();
+    const cap = 30_000;
+    const truncated = text.length > cap;
+    const hasTextLayer = text.length > 0;
+    return {
+      ok: true,
+      fileId,
+      name: meta.data.name || "",
+      pages,
+      hasTextLayer,
+      truncated,
+      text: hasTextLayer
+        ? truncated
+          ? text.slice(0, cap) + "\n…"
+          : text
+        : "",
+      ...(hasTextLayer
+        ? {}
+        : {
+            note:
+              "PDF has no extractable text layer (image-only / scanned). " +
+              "OCR isn't wired into this tool yet — surface that fact to the user.",
+          }),
     };
   },
 };
@@ -892,6 +1007,7 @@ export const TOOL_CATALOG: Tool[] = [
   readGmailThreadTool,
   searchDriveTool,
   readDocTool,
+  readPdfTool,
   getSheetMetadataTool,
   readSheetTabTool,
   searchSheetRowsTool,
