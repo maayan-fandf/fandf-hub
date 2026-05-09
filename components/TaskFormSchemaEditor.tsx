@@ -77,6 +77,7 @@ export default function TaskFormSchemaEditor({
         .map((r) => ({
           department: r.department.trim(),
           kind: r.kind.trim(),
+          templateDocId: (r.templateDocId ?? "").trim(),
         }))
         .filter((r) => r.department && r.kind);
       const res = await fetch("/api/admin/task-form-schema", {
@@ -207,6 +208,7 @@ export default function TaskFormSchemaEditor({
                     <tr>
                       <th>מחלקה</th>
                       <th>סוג</th>
+                      <th>תבנית</th>
                       <th aria-label="פעולות" />
                     </tr>
                   </thead>
@@ -228,10 +230,16 @@ export default function TaskFormSchemaEditor({
                           <input
                             type="text"
                             value={r.kind}
-                            onChange={(e) =>
-                              update(i, { kind: e.target.value })
-                            }
+                            onChange={(e) => update(i, { kind: e.target.value })}
                             placeholder="לדוג': קריאייטיב פרסומי"
+                          />
+                        </td>
+                        <td>
+                          <TemplateCell
+                            value={r.templateDocId ?? ""}
+                            onChange={(v) =>
+                              update(i, { templateDocId: v })
+                            }
                           />
                         </td>
                         <td>
@@ -263,4 +271,86 @@ export default function TaskFormSchemaEditor({
       </datalist>
     </div>
   );
+}
+
+/**
+ * Per-row "template doc" cell. The cell shows one of two states:
+ *
+ *   1. **Bound:** a doc id is set. We render an "📄 פתח" link to the
+ *      Drive file (so admins can verify the binding) and a small ✕
+ *      button to clear it.
+ *   2. **Unbound:** no doc id. We render a small text input that
+ *      accepts either a Drive file id (alphanumeric+dash, ≥20 chars)
+ *      OR a full Drive URL — the server-side `sanitizeTemplateDocId`
+ *      extracts the id either way, but we do the same client-side so
+ *      the bound state shows up immediately on paste.
+ *
+ * v0 deliberately uses paste-link instead of a Google Drive Picker.
+ * The Picker requires the gapi.iframes JS + an OAuth client id and
+ * adds ~150KB on first interaction; not worth it for an admin tool
+ * that gets used by ~3 people. Future: swap to a Picker if the
+ * paste-link UX gets friction.
+ */
+function TemplateCell({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  if (value) {
+    return (
+      <div className="task-form-schema-template-bound">
+        <a
+          href={`https://drive.google.com/file/d/${value}/view`}
+          target="_blank"
+          rel="noreferrer"
+          className="task-form-schema-template-link"
+          title={value}
+        >
+          📄 פתח
+        </a>
+        <button
+          type="button"
+          className="task-form-schema-template-clear"
+          onClick={() => onChange("")}
+          aria-label="נקה תבנית"
+          title="נתק תבנית"
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+  return (
+    <input
+      type="text"
+      className="task-form-schema-template-input"
+      placeholder="הדבק קישור או מזהה תבנית"
+      onPaste={(e) => {
+        // Resolve URL → id immediately so the cell flips to bound
+        // state without waiting for blur. We also still let the
+        // change event run (the server normalizes too).
+        const text = e.clipboardData.getData("text").trim();
+        const id = extractDocId(text);
+        if (id) {
+          e.preventDefault();
+          onChange(id);
+        }
+      }}
+      onBlur={(e) => {
+        const id = extractDocId(e.target.value.trim());
+        if (id !== value) onChange(id);
+      }}
+    />
+  );
+}
+
+/** Mirrors the server's `sanitizeTemplateDocId`. Either input form
+ *  resolves to the bare doc id when valid, '' otherwise. */
+function extractDocId(input: string): string {
+  if (!input) return "";
+  if (/^[\w-]{20,}$/.test(input)) return input;
+  const m = input.match(/[?&/](?:id=|d\/)([\w-]{20,})/);
+  return m?.[1] ?? "";
 }

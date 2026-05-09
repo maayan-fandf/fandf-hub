@@ -5739,6 +5739,62 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   border: 1px solid var(--border);
 }
 
+/* Template-cell affordance — paste-link input when unbound,
+   📄 link + ✕ clear when bound. Sized to match the .35em-padding
+   inputs in the same row. */
+.task-form-schema-template-input {
+  width: 100%;
+  padding: 0.35em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 0.35em;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.task-form-schema-template-input:focus {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: -1px;
+  color: var(--text);
+}
+.task-form-schema-template-bound {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+.task-form-schema-template-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.3em 0.65em;
+  border: 1px solid var(--border);
+  border-radius: 0.35em;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.task-form-schema-template-link:hover {
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  border-color: var(--accent, #6366f1);
+}
+.task-form-schema-template-clear {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.35em;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  width: 1.6em;
+  height: 1.6em;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.task-form-schema-template-clear:hover {
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  color: var(--text);
+}
+
 .admin-editor {
   display: flex;
   flex-direction: column;
