@@ -8,22 +8,24 @@ import { materializeDraft } from "@/lib/draftFolders";
  * POST /api/worktasks/draft-template
  *
  * Materializes a per-user draft folder under `_drafts_/<userEmail>/`
- * and copies the template doc bound to (department, kind) into it.
+ * and copies a chosen template file into it.
  *
- * Called from /tasks/new whenever the issuer picks a (dept, kind)
- * pair that has a configured template (either explicit via the
- * TaskFormSchema sheet's "תבנית" column, or by folder convention via
- * `<shared>/סכמות משימה/<dept>/<kind>`).
- *
- * Returns `{ noTemplate: true }` when no template exists for the
- * pair — in that case the caller renders the form normally.
+ * The new-task form calls /api/worktasks/template-options first to
+ * get the picker list, then POSTs here with the file the issuer
+ * selected. The selected file gets copied (preserving mime type +
+ * formatting) into a freshly-created draft folder so the issuer can
+ * fill it inline before submitting. On task submit, the draft folder
+ * is re-parented into the task's permanent Drive folder.
  *
  * Feature-flagged behind `ENABLE_TASK_TEMPLATES`. When the flag is
  * off the endpoint returns `{ noTemplate: true }` regardless of
- * schema state, so we can ship the route ahead of the form-side
- * wiring without users seeing half-built UI.
+ * input, so the form-side picker never gets a draft.
  *
- * Body: `{ department: string; kind: string; contextLabel?: string }`
+ * Body: `{ department, kind, templateFileId, contextLabel? }`.
+ *   - templateFileId: the file the issuer picked from the template-
+ *     options response. Must live inside the resolved kind folder
+ *     (server validates to prevent abuse — a hostile request can't
+ *     point at an arbitrary Drive file).
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +33,7 @@ export const dynamic = "force-dynamic";
 type DraftTemplateRequest = {
   department?: string;
   kind?: string;
+  templateFileId?: string;
   contextLabel?: string;
 };
 
@@ -59,40 +62,58 @@ export async function POST(req: Request) {
   }
   const department = String(body.department || "").trim();
   const kind = String(body.kind || "").trim();
-  if (!department || !kind) {
+  const templateFileId = String(body.templateFileId || "").trim();
+  if (!department || !kind || !templateFileId) {
     return NextResponse.json(
-      { ok: false, error: "department and kind are required" },
+      {
+        ok: false,
+        error: "department, kind, and templateFileId are required",
+      },
       { status: 400 },
     );
   }
 
-  // Resolve the template ref. Schema fetch can fail (sheet missing,
-  // permission glitch, etc.) — pass null to the resolver in that case
-  // so the folder-convention path still runs.
+  // Resolve the kind folder so we can validate the picked file is
+  // actually one of its children. Without this guard, a hostile
+  // request could ask us to copy any file the SA can read.
   const schema = await getTaskFormSchema(userEmail).catch(() => null);
   const tpl = await resolveTemplate(userEmail, department, kind, schema);
   if (!tpl) {
     return NextResponse.json({ ok: true, noTemplate: true });
+  }
+  const picked = tpl.files.find((f) => f.id === templateFileId);
+  if (!picked) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "templateFileId is not in the resolved kind folder for this (department, kind)",
+      },
+      { status: 400 },
+    );
   }
 
   try {
     const draft = await materializeDraft({
       subjectEmail: userEmail,
       userEmail,
-      templateDocId: tpl.docId,
-      templateName: tpl.docName,
+      templateDocId: picked.id,
+      templateName: picked.name,
       contextLabel: String(body.contextLabel || `${department} / ${kind}`),
     });
     return NextResponse.json({
       ok: true,
       noTemplate: false,
       ...draft,
-      template: { docId: tpl.docId, source: tpl.source },
+      template: {
+        docId: picked.id,
+        docName: picked.name,
+        source: tpl.source,
+      },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[/api/worktasks/draft-template] materialize failed:", msg);
-    // Form falls back to no-template flow on a 500 here.
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

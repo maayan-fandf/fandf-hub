@@ -492,17 +492,17 @@ export default function TaskCreateForm({
   }, [kindOptions, kind, isEditing]);
 
   // ── Inline template draft ────────────────────────────────────────
-  // When the issuer picks a (department, kind) pair that has a
-  // configured template, we materialize a copy of that template in a
-  // per-user drafts folder and embed the copy as an editable iframe
-  // below. On submit, the draft folder gets re-parented into the
-  // task's permanent Drive folder. On (dept, kind) change or unmount,
-  // any existing draft is cancelled.
+  // Two-step picker model: (dept, kind) selection populates a list of
+  // template files (one per file inside the resolved kind folder).
+  // The issuer then picks WHICH template to use — which triggers a
+  // materialize-draft call that copies the picked file into a fresh
+  // per-user draft folder. The form embeds the draft copy inline so
+  // the issuer can fill it before submitting; on submit the draft
+  // folder is re-parented into the task's permanent Drive folder.
   //
-  // Resolution uses the FIRST selected department only — the schema
-  // is per-(dept, kind), so multi-dept tasks resolve to the primary.
   // Skipped entirely in edit mode (the draft is a creation-time
   // affordance; existing tasks already have their folder).
+  type TemplateOption = { id: string; name: string; mimeType: string };
   type DraftRef = {
     draftFolderId: string;
     copyDocId: string;
@@ -510,6 +510,9 @@ export default function TaskCreateForm({
     copyDocName: string;
     copyDocMimeType: string;
   };
+  const [templateOptions, setTemplateOptions] = useState<TemplateOption[]>([]);
+  const [pickedTemplateFileId, setPickedTemplateFileId] = useState<string>("");
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [draft, setDraft] = useState<DraftRef | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
   // Title is read inside the materialize effect ONLY for the context
@@ -522,44 +525,92 @@ export default function TaskCreateForm({
     titleRef.current = title;
   }, [title]);
 
+  function cancelExistingDraft() {
+    const previous = draftRef.current;
+    if (!previous) return;
+    void fetch("/api/worktasks/draft-cancel", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftFolderId: previous.draftFolderId }),
+    }).catch(() => {
+      /* GC cron will handle orphans */
+    });
+    draftRef.current = null;
+    setDraft(null);
+  }
+
+  // Effect A — (dept, kind) change → fetch the template-options list
+  // for the picker. Resets any picked file + cancels any existing
+  // draft when the underlying (dept, kind) changes.
   const primaryDept = departments[0] || "";
   useEffect(() => {
-    if (isEditing) return;
+    if (isEditing) {
+      setTemplateOptions([]);
+      setPickedTemplateFileId("");
+      return;
+    }
+    cancelExistingDraft();
+    setPickedTemplateFileId("");
     if (!primaryDept || !kind) {
-      // No (dept, kind) — cancel any existing draft.
-      if (draftRef.current) {
-        const id = draftRef.current.draftFolderId;
-        draftRef.current = null;
-        setDraft(null);
-        void fetch("/api/worktasks/draft-cancel", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ draftFolderId: id }),
-        }).catch(() => {
-          /* GC cron will handle orphans */
-        });
+      setTemplateOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setOptionsLoading(true);
+      try {
+        const r = await fetch(
+          `/api/worktasks/template-options?department=${encodeURIComponent(
+            primaryDept,
+          )}&kind=${encodeURIComponent(kind)}`,
+        );
+        const data = (await r.json()) as
+          | {
+              ok: true;
+              noTemplate: false;
+              folderId: string;
+              folderName: string;
+              files: TemplateOption[];
+            }
+          | { ok: true; noTemplate: true }
+          | { ok: false; error: string };
+        if (cancelled) return;
+        if (
+          "ok" in data &&
+          data.ok &&
+          !("noTemplate" in data && data.noTemplate)
+        ) {
+          const success = data as Extract<
+            typeof data,
+            { ok: true; noTemplate: false }
+          >;
+          setTemplateOptions(success.files || []);
+        } else {
+          setTemplateOptions([]);
+        }
+      } catch {
+        if (!cancelled) setTemplateOptions([]);
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
       }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing, primaryDept, kind]);
+
+  // Effect B — pickedTemplateFileId change → materialize the draft.
+  // Cancels any previously-materialized draft so a re-pick doesn't
+  // leave orphans behind.
+  useEffect(() => {
+    if (isEditing) return;
+    cancelExistingDraft();
+    if (!pickedTemplateFileId || !primaryDept || !kind) {
       return;
     }
     let cancelled = false;
     (async () => {
       setDraftLoading(true);
-      // Cancel any previous draft first — fire-and-forget so the
-      // materialize call doesn't wait on the cancel response.
-      const previous = draftRef.current;
-      if (previous) {
-        void fetch("/api/worktasks/draft-cancel", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            draftFolderId: previous.draftFolderId,
-          }),
-        }).catch(() => {
-          /* GC cron will handle orphans */
-        });
-        draftRef.current = null;
-        setDraft(null);
-      }
       try {
         const r = await fetch("/api/worktasks/draft-template", {
           method: "POST",
@@ -567,6 +618,7 @@ export default function TaskCreateForm({
           body: JSON.stringify({
             department: primaryDept,
             kind,
+            templateFileId: pickedTemplateFileId,
             contextLabel: titleRef.current.slice(0, 60),
           }),
         });
@@ -583,7 +635,11 @@ export default function TaskCreateForm({
           | { ok: true; noTemplate: true }
           | { ok: false; error: string };
         if (cancelled) return;
-        if ("ok" in data && data.ok && !("noTemplate" in data && data.noTemplate)) {
+        if (
+          "ok" in data &&
+          data.ok &&
+          !("noTemplate" in data && data.noTemplate)
+        ) {
           const success = data as Extract<
             typeof data,
             { ok: true; noTemplate: false }
@@ -609,11 +665,9 @@ export default function TaskCreateForm({
     return () => {
       cancelled = true;
     };
-    // titleRef is intentionally NOT a dep — we want its current value
-    // when the effect fires but typing in the title shouldn't re-
-    // materialize the draft.
+    // titleRef intentionally not a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditing, primaryDept, kind]);
+  }, [isEditing, pickedTemplateFileId, primaryDept, kind]);
 
   // Best-effort cleanup on unmount + page unload. The GC cron handles
   // anything that slips through. sendBeacon is preferred because the
@@ -1117,51 +1171,6 @@ export default function TaskCreateForm({
         />
       </label>
 
-      {/* Inline template — when (department, kind) has a configured
-          template, the issuer fills it directly inside the form via
-          an embedded Google Doc/Sheet iframe. The doc is a per-user
-          draft copy made by /api/worktasks/draft-template; on submit
-          the draft folder is re-parented into the task's permanent
-          Drive folder. The block hides itself when no template is
-          bound or while a previous draft is being torn down. */}
-      {!isEditing && !chainMode && (draft || draftLoading) && (
-        <div className="task-form-template">
-          <div className="task-form-template-head">
-            <span className="task-form-template-chip">
-              📄 תבנית — מלא את השדות לפני השליחה
-            </span>
-            {draft && (
-              <a
-                href={draft.copyDocUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="task-form-template-newtab"
-                title="פתח בכרטיסייה חדשה (לעריכה במלוא הגודל)"
-              >
-                ↗ פתח בכרטיסייה חדשה
-              </a>
-            )}
-          </div>
-          {draftLoading && !draft && (
-            <div className="task-form-template-loading">
-              טוען תבנית…
-            </div>
-          )}
-          {draft && (
-            <iframe
-              key={draft.copyDocId}
-              src={embeddedEditUrlFor(
-                draft.copyDocId,
-                draft.copyDocMimeType,
-              )}
-              className="task-form-template-iframe"
-              title={draft.copyDocName}
-              loading="lazy"
-            />
-          )}
-        </div>
-      )}
-
       <label>
         תיאור
         <textarea
@@ -1173,66 +1182,6 @@ export default function TaskCreateForm({
           }
         />
       </label>
-
-      {/* Drive folder picker hidden in chain mode — umbrella has no
-          folder; each child gets its own via the standard create
-          path when the chain orchestrator iterates them. */}
-      {!chainMode && (
-        <>
-          <DriveFolderPicker
-            company={company}
-            project={project}
-            campaign={campaign}
-            defaultNewName={suggestedFolderName}
-            value={folderSelection}
-            onChange={handleFolderChange}
-            onCampaignChange={setCampaign}
-            disabled={!project}
-          />
-          {/* Test-drive sibling — Google's official Drive Picker SDK,
-              mounted alongside the custom picker so we can compare both
-              before committing to one. Stays disabled when the access
-              token or API key isn't configured (graceful no-op). When
-              the user picks a folder it populates the SAME state the
-              inline picker does, so the rest of the create flow doesn't
-              care which one was used. */}
-          <DrivePickerButton
-            accessToken={driveAccessToken}
-            apiKey={drivePickerApiKey}
-            parentFolderId={pickerParentFolderId ?? undefined}
-            disabled={!project}
-            onPick={(picked) => {
-              handleFolderChange({
-                mode: "existing",
-                folderId: picked.id,
-                folderName: picked.name,
-              });
-            }}
-          />
-          {/* Files panel — same component as /tasks/[id], in
-              "preview" mode (taskId="" disables tile reorder since
-              there's no row to persist file_order to yet). Drag-drop
-              upload from desktop still works; files land in the
-              currently selected folder via SA. Once the user submits
-              and the task exists, the live-task page picks up where
-              this leaves off. Hidden until the user has actually
-              picked an existing folder — `mode: "new"` means the
-              folder doesn't exist in Drive yet so there's nothing to
-              upload INTO. */}
-          {folderSelection.mode === "existing" &&
-            !!folderSelection.folderId && (
-              <TaskFilesPanel
-                taskId=""
-                folderId={folderSelection.folderId}
-                company={company}
-                project={project}
-                campaign={campaign}
-                taskTitle={title}
-                fileOrder=""
-              />
-            )}
-        </>
-      )}
 
       {/* Chain-level departments are obsolete in chain mode — each
           step has its own department binding (driven by the template),
@@ -1346,6 +1295,147 @@ export default function TaskCreateForm({
             </div>
           </label>
         </div>
+      )}
+
+      {/* Inline template picker — only renders when the resolved kind
+          folder has at least one file inside. Picking a file
+          materializes a per-user draft copy via /api/worktasks/draft-
+          template, which gets embedded as an editable iframe below.
+          On submit, the draft folder gets re-parented into the
+          task's permanent Drive folder so the issuer's edits are
+          preserved. The block hides itself when (dept, kind) has no
+          template binding OR the kind folder is empty. */}
+      {!isEditing &&
+        !chainMode &&
+        primaryDept &&
+        kind &&
+        (templateOptions.length > 0 || optionsLoading) && (
+          <label className="task-form-template-pick">
+            תבנית{" "}
+            <span className="task-form-label-hint">
+              (אופציונלי — בחר תבנית למילוי לפני שליחה)
+            </span>
+            <select
+              value={pickedTemplateFileId}
+              onChange={(e) => setPickedTemplateFileId(e.target.value)}
+              disabled={optionsLoading || draftLoading}
+            >
+              <option value="">
+                {optionsLoading
+                  ? "טוען רשימת תבניות…"
+                  : "— ללא תבנית —"}
+              </option>
+              {templateOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+      {/* Inline iframe — embedded copy of the picked template. The
+          editor lives inside the form so the issuer fills it in
+          place; on submit the draft folder is re-parented into the
+          task's permanent Drive folder. The block hides itself when
+          no template was picked or while the materialize call is in
+          flight. */}
+      {!isEditing && !chainMode && (draft || draftLoading) && (
+        <div className="task-form-template">
+          <div className="task-form-template-head">
+            <span className="task-form-template-chip">
+              📄 תבנית — מלא את השדות לפני השליחה
+            </span>
+            {draft && (
+              <a
+                href={draft.copyDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="task-form-template-newtab"
+                title="פתח בכרטיסייה חדשה (לעריכה במלוא הגודל)"
+              >
+                ↗ פתח בכרטיסייה חדשה
+              </a>
+            )}
+          </div>
+          {draftLoading && !draft && (
+            <div className="task-form-template-loading">
+              טוען תבנית…
+            </div>
+          )}
+          {draft && (
+            <iframe
+              key={draft.copyDocId}
+              src={embeddedEditUrlFor(
+                draft.copyDocId,
+                draft.copyDocMimeType,
+              )}
+              className="task-form-template-iframe"
+              title={draft.copyDocName}
+              loading="lazy"
+            />
+          )}
+        </div>
+      )}
+
+      {/* Drive folder picker hidden in chain mode — umbrella has no
+          folder; each child gets its own via the standard create
+          path when the chain orchestrator iterates them. */}
+      {!chainMode && (
+        <>
+          <DriveFolderPicker
+            company={company}
+            project={project}
+            campaign={campaign}
+            defaultNewName={suggestedFolderName}
+            value={folderSelection}
+            onChange={handleFolderChange}
+            onCampaignChange={setCampaign}
+            disabled={!project}
+          />
+          {/* Test-drive sibling — Google's official Drive Picker SDK,
+              mounted alongside the custom picker so we can compare both
+              before committing to one. Stays disabled when the access
+              token or API key isn't configured (graceful no-op). When
+              the user picks a folder it populates the SAME state the
+              inline picker does, so the rest of the create flow doesn't
+              care which one was used. */}
+          <DrivePickerButton
+            accessToken={driveAccessToken}
+            apiKey={drivePickerApiKey}
+            parentFolderId={pickerParentFolderId ?? undefined}
+            disabled={!project}
+            onPick={(picked) => {
+              handleFolderChange({
+                mode: "existing",
+                folderId: picked.id,
+                folderName: picked.name,
+              });
+            }}
+          />
+          {/* Files panel — same component as /tasks/[id], in
+              "preview" mode (taskId="" disables tile reorder since
+              there's no row to persist file_order to yet). Drag-drop
+              upload from desktop still works; files land in the
+              currently selected folder via SA. Once the user submits
+              and the task exists, the live-task page picks up where
+              this leaves off. Hidden until the user has actually
+              picked an existing folder — `mode: "new"` means the
+              folder doesn't exist in Drive yet so there's nothing to
+              upload INTO. */}
+          {folderSelection.mode === "existing" &&
+            !!folderSelection.folderId && (
+              <TaskFilesPanel
+                taskId=""
+                folderId={folderSelection.folderId}
+                company={company}
+                project={project}
+                campaign={campaign}
+                taskTitle={title}
+                fileOrder=""
+              />
+            )}
+        </>
       )}
 
       {/* Step picker for chain mode — each row is a sequential step
