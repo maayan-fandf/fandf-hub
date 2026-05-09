@@ -384,23 +384,28 @@ function TemplateCell({
   onChange: (v: string) => void;
 }) {
   if (value) {
+    // The bound id is the kind folder under <shared>/סכמות משימה/.
+    // (Pre-restructure rows might still hold a file id — Drive happens
+    // to handle either when the URL doesn't match the type, just less
+    // gracefully — so the cell stays readable while the reconciler
+    // catches up.)
     return (
       <div className="task-form-schema-template-bound">
         <a
-          href={`https://drive.google.com/file/d/${value}/view`}
+          href={`https://drive.google.com/drive/folders/${value}`}
           target="_blank"
           rel="noreferrer"
           className="task-form-schema-template-link"
           title={value}
         >
-          📄 פתח
+          📁 פתח תיקייה
         </a>
         <button
           type="button"
           className="task-form-schema-template-clear"
           onClick={() => onChange("")}
           aria-label="נקה תבנית"
-          title="נתק תבנית"
+          title="נתק תיקיית תבניות"
         >
           ✕
         </button>
@@ -411,7 +416,7 @@ function TemplateCell({
     <input
       type="text"
       className="task-form-schema-template-input"
-      placeholder="הדבק קישור או מזהה תבנית"
+      placeholder="הדבק קישור לתיקיית תבניות"
       onPaste={(e) => {
         // Resolve URL → id immediately so the cell flips to bound
         // state without waiting for blur. We also still let the
@@ -432,10 +437,12 @@ function TemplateCell({
 }
 
 /** Mirrors the server's `sanitizeTemplateDocId`. Either input form
- *  resolves to the bare doc id when valid, '' otherwise. */
+ *  resolves to the bare Drive id when valid, '' otherwise. Accepts
+ *  folder URLs (`/drive/folders/<id>`), file URLs (`/file/d/<id>/`),
+ *  doc URLs (`/document/d/<id>/`), and bare ids. */
 function extractDocId(input: string): string {
   if (!input) return "";
   if (/^[\w-]{20,}$/.test(input)) return input;
-  const m = input.match(/[?&/](?:id=|d\/)([\w-]{20,})/);
+  const m = input.match(/(?:[?&]id=|\/d\/|\/folders\/)([\w-]{20,})/);
   return m?.[1] ?? "";
 }

@@ -90,17 +90,20 @@ export async function POST(req: Request) {
   }
 }
 
-/** Accept either a bare Drive file id or any of the common Drive URL
- *  shapes ("https://docs.google.com/document/d/<id>/edit",
- *  "https://drive.google.com/file/d/<id>/view", etc.) and return just
- *  the id portion. Anything else → ''. */
+/** Accept either a bare Drive id or any of the common Drive URL
+ *  shapes — folder URLs ("/drive/folders/<id>"), file URLs
+ *  ("/file/d/<id>/view"), doc URLs ("/document/d/<id>/edit"), etc.
+ *  Returns just the id portion. Anything else → ''.
+ *
+ *  The new (post-2026-05-09) template model stores FOLDER ids in the
+ *  template_doc_id column — admins paste the kind folder URL — so
+ *  we must accept the `/folders/<id>` shape too. */
 function sanitizeTemplateDocId(input: unknown): string {
   const s = String(input ?? "").trim();
   if (!s) return "";
-  // Drive file ids are typically [\w-]{20,} (alphanumeric + - + _).
-  // If the input looks like one already, accept as-is.
+  // Drive ids are [\w-]{20,} (alphanumeric + - + _). Bare-id input.
   if (/^[\w-]{20,}$/.test(s)) return s;
-  // Otherwise try to extract from a URL.
-  const m = s.match(/[?&/](?:id=|d\/)([\w-]{20,})/);
+  // URL — match against folder + file + doc shapes.
+  const m = s.match(/(?:[?&]id=|\/d\/|\/folders\/)([\w-]{20,})/);
   return m?.[1] ?? "";
 }
