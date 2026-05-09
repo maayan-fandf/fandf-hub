@@ -1,9 +1,23 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { AgendaDay, AgendaItem } from "@/lib/agenda";
 import { useTaskPreview } from "@/components/TaskPreviewProvider";
+
+/**
+ * Client-side renderer for the agenda. Server hands us a window of
+ * days (~yesterday through next week); we display ONE active day at
+ * a time and let the user step through with prev/next/Today buttons.
+ *
+ * Same UX as Google Calendar's mini-panel: the header shows the
+ * currently-displayed day; arrows step ±1, "Today" jumps back.
+ *
+ * Each TASK row carries a 👁 quick-view button that opens the shared
+ * TaskPreviewProvider drawer. The button stops the parent <Link>
+ * from navigating so the user stays on whatever page hosts the
+ * panel.
+ */
 
 /** Local Hebrew labels for status pill text. Mirrors the same map
  *  TaskStatusCell exports + TaskPreviewProvider inlines — duplicated
@@ -22,73 +36,102 @@ const STATUS_LABELS_HE: Record<string, string> = {
   blocked: "חסום",
 };
 
-/**
- * Client-side renderer for the multi-day agenda. Server hands us the
- * full window (yesterday → today → next 6 days), we render it as
- * day-headed sections and auto-scroll today into view on mount.
- *
- * Each TASK row carries a 👁 quick-view button that opens the shared
- * TaskPreviewProvider drawer. The button stops the parent <Link>
- * from navigating so the user stays on whatever page hosts the
- * panel.
- */
-
 type Props = {
   days: AgendaDay[];
 };
 
 export default function AgendaPanelBody({ days }: Props) {
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll to today's section on first mount. The server window
-  // includes 1 day before today + today + days after, so today is
-  // typically the second section — without this, the panel would open
-  // to "אתמול" at the top and the user would have to scroll past
-  // yesterday to see today.
-  useEffect(() => {
-    const root = scrollerRef.current;
-    if (!root) return;
-    const todayEl = root.querySelector<HTMLElement>(
-      '[data-agenda-day-today="1"]',
-    );
-    if (todayEl) {
-      // Use scrollTop rather than scrollIntoView so the panel's parent
-      // doesn't also scroll (avoids the page jumping when the panel
-      // is below the fold).
-      root.scrollTop = todayEl.offsetTop - root.offsetTop;
-    }
-  }, []);
-
-  return (
-    <div className="agenda-panel-scroller" ref={scrollerRef}>
-      {days.map((day) => (
-        <DaySection key={day.date} day={day} />
-      ))}
-    </div>
+  const todayIdx = useMemo(
+    () => Math.max(0, days.findIndex((d) => d.isToday)),
+    [days],
   );
-}
+  const [activeIdx, setActiveIdx] = useState<number>(todayIdx);
+  // Clamp into the available range — users can navigate inside the
+  // prefetched window. When they hit an edge the corresponding arrow
+  // disables. (Out-of-window navigation = future enhancement; for now
+  // the window is wide enough — yesterday + today + 6 ahead.)
+  const safeIdx = Math.min(Math.max(activeIdx, 0), days.length - 1);
+  const day = days[safeIdx];
 
-function DaySection({ day }: { day: AgendaDay }) {
+  if (!day) {
+    return (
+      <div className="agenda-panel-empty">
+        אין נתוני סדר יום זמינים.
+      </div>
+    );
+  }
+
+  const canPrev = safeIdx > 0;
+  const canNext = safeIdx < days.length - 1;
+
   return (
-    <section
-      className={`agenda-panel-day${
-        day.isToday ? " is-today" : ""
-      }`}
-      data-agenda-day-today={day.isToday ? "1" : undefined}
-      data-agenda-date={day.date}
-    >
-      <header className="agenda-panel-day-head">
-        <span className="agenda-panel-day-label">{day.dayLabel}</span>
-        <span className="agenda-panel-day-date" dir="ltr">
+    <div className="agenda-panel-content">
+      {/* Day-switcher header — Today | ◂ ▸ pattern, mirrors Google
+          Calendar's mini-panel. The label below shows the currently-
+          displayed day so the user knows where they are. */}
+      <div className="agenda-panel-nav" role="toolbar" aria-label="ניווט בין ימים">
+        <button
+          type="button"
+          className="agenda-panel-nav-today"
+          onClick={() => setActiveIdx(todayIdx)}
+          disabled={safeIdx === todayIdx}
+          title="חזור להיום"
+        >
+          היום
+        </button>
+        <div className="agenda-panel-nav-arrows">
+          {/* In RTL the visual prev/next swap, but logical
+              "previous day" = older = lower index. Use chevron arrows
+              that DON'T flip with direction so they remain
+              chronologically intuitive. */}
+          <button
+            type="button"
+            className="agenda-panel-nav-arrow"
+            onClick={() => setActiveIdx((i) => Math.max(0, i - 1))}
+            disabled={!canPrev}
+            title="יום קודם"
+            aria-label="יום קודם"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="agenda-panel-nav-arrow"
+            onClick={() =>
+              setActiveIdx((i) => Math.min(days.length - 1, i + 1))
+            }
+            disabled={!canNext}
+            title="יום הבא"
+            aria-label="יום הבא"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+      <div
+        className={`agenda-panel-day-banner${
+          day.isToday ? " is-today" : ""
+        }`}
+      >
+        <span className="agenda-panel-day-banner-label">{day.dayLabel}</span>
+        <span className="agenda-panel-day-banner-date" dir="ltr">
           {formatShortDate(day.date)}
         </span>
-      </header>
+      </div>
+
       {day.items.length === 0 ? (
-        <div className="agenda-panel-day-empty">—</div>
+        <div className="agenda-panel-empty">
+          {day.isToday ? "אין משימות להיום ✨" : "אין פריטים ביום זה."}
+          {day.isToday && (
+            <div className="agenda-panel-empty-hint">
+              זמן חופשי לחשוב, ליזום, או לסגור משימות מהמלאי שלך.
+            </div>
+          )}
+        </div>
       ) : (
         <DayList items={day.items} />
       )}
-    </section>
+    </div>
   );
 }
 
@@ -120,9 +163,6 @@ function DayList({ items }: { items: AgendaItem[] }) {
 function AgendaRow({ item }: { item: AgendaItem }) {
   const preview = useTaskPreview();
   const isEvent = item.source === "event";
-  // Whether the row offers a 👁 quick-view button — only for tasks
-  // that we have the full payload for (events open in a new tab and
-  // their data lives in Calendar; no preview to render).
   const canPreview = !isEvent && !!item.task;
 
   const inner = (
@@ -196,8 +236,6 @@ function AgendaRow({ item }: { item: AgendaItem }) {
 }
 
 function formatShortDate(yyyymmdd: string): string {
-  // "2026-05-09" → "9.5" — short label that fits in the day-section
-  // header next to the Hebrew label (e.g. "יום שני · 9.5").
   const m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return yyyymmdd;
   return `${parseInt(m[3], 10)}.${parseInt(m[2], 10)}`;
