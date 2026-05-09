@@ -468,6 +468,179 @@ export default function TaskCreateForm({
     return kinds.map((k) => ({ val: k, label: k }));
   }, [formSchema, departments]);
 
+  // Controlled kind state — was previously uncontrolled (read via
+  // FormData on submit), but the inline-template feature needs to
+  // react to (dept, kind) changes mid-form. Initialized from the
+  // editing task's kind in edit mode, otherwise from the first
+  // available option.
+  const [kind, setKind] = useState<string>(() =>
+    isEditing
+      ? editingTask!.kind || "other"
+      : kindOptions[0]?.val ?? "ad_creative",
+  );
+  // When departments change, kindOptions may shrink. If the current
+  // kind is no longer in the list, snap to the first option (matches
+  // the prior `key={...}`-driven select remount behavior). Skip in
+  // edit mode so an existing task's kind is preserved verbatim even
+  // when not in the schema-derived list.
+  useEffect(() => {
+    if (isEditing) return;
+    if (kindOptions.length === 0) return;
+    if (!kindOptions.some((k) => k.val === kind)) {
+      setKind(kindOptions[0].val);
+    }
+  }, [kindOptions, kind, isEditing]);
+
+  // ── Inline template draft ────────────────────────────────────────
+  // When the issuer picks a (department, kind) pair that has a
+  // configured template, we materialize a copy of that template in a
+  // per-user drafts folder and embed the copy as an editable iframe
+  // below. On submit, the draft folder gets re-parented into the
+  // task's permanent Drive folder. On (dept, kind) change or unmount,
+  // any existing draft is cancelled.
+  //
+  // Resolution uses the FIRST selected department only — the schema
+  // is per-(dept, kind), so multi-dept tasks resolve to the primary.
+  // Skipped entirely in edit mode (the draft is a creation-time
+  // affordance; existing tasks already have their folder).
+  type DraftRef = {
+    draftFolderId: string;
+    copyDocId: string;
+    copyDocUrl: string;
+    copyDocName: string;
+    copyDocMimeType: string;
+  };
+  const [draft, setDraft] = useState<DraftRef | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  // Title is read inside the materialize effect ONLY for the context
+  // label baked into the draft folder name. We don't want title to be
+  // a re-trigger dep (every keystroke would otherwise re-materialize),
+  // so we route it through a ref.
+  const draftRef = useRef<DraftRef | null>(null);
+  const titleRef = useRef(title);
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+
+  const primaryDept = departments[0] || "";
+  useEffect(() => {
+    if (isEditing) return;
+    if (!primaryDept || !kind) {
+      // No (dept, kind) — cancel any existing draft.
+      if (draftRef.current) {
+        const id = draftRef.current.draftFolderId;
+        draftRef.current = null;
+        setDraft(null);
+        void fetch("/api/worktasks/draft-cancel", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ draftFolderId: id }),
+        }).catch(() => {
+          /* GC cron will handle orphans */
+        });
+      }
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setDraftLoading(true);
+      // Cancel any previous draft first — fire-and-forget so the
+      // materialize call doesn't wait on the cancel response.
+      const previous = draftRef.current;
+      if (previous) {
+        void fetch("/api/worktasks/draft-cancel", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            draftFolderId: previous.draftFolderId,
+          }),
+        }).catch(() => {
+          /* GC cron will handle orphans */
+        });
+        draftRef.current = null;
+        setDraft(null);
+      }
+      try {
+        const r = await fetch("/api/worktasks/draft-template", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            department: primaryDept,
+            kind,
+            contextLabel: titleRef.current.slice(0, 60),
+          }),
+        });
+        const data = (await r.json()) as
+          | {
+              ok: true;
+              noTemplate: false;
+              draftFolderId: string;
+              copyDocId: string;
+              copyDocUrl: string;
+              copyDocName: string;
+              copyDocMimeType: string;
+            }
+          | { ok: true; noTemplate: true }
+          | { ok: false; error: string };
+        if (cancelled) return;
+        if ("ok" in data && data.ok && !("noTemplate" in data && data.noTemplate)) {
+          const success = data as Extract<
+            typeof data,
+            { ok: true; noTemplate: false }
+          >;
+          const ref: DraftRef = {
+            draftFolderId: success.draftFolderId,
+            copyDocId: success.copyDocId,
+            copyDocUrl: success.copyDocUrl,
+            copyDocName: success.copyDocName,
+            copyDocMimeType: success.copyDocMimeType || "",
+          };
+          draftRef.current = ref;
+          setDraft(ref);
+        } else {
+          setDraft(null);
+        }
+      } catch {
+        if (!cancelled) setDraft(null);
+      } finally {
+        if (!cancelled) setDraftLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // titleRef is intentionally NOT a dep — we want its current value
+    // when the effect fires but typing in the title shouldn't re-
+    // materialize the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing, primaryDept, kind]);
+
+  // Best-effort cleanup on unmount + page unload. The GC cron handles
+  // anything that slips through. sendBeacon is preferred because the
+  // browser will queue it independently of fetch(), surviving the
+  // tab close.
+  useEffect(() => {
+    function cancelOnUnload() {
+      const ref = draftRef.current;
+      if (!ref) return;
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        const blob = new Blob(
+          [JSON.stringify({ draftFolderId: ref.draftFolderId })],
+          { type: "application/json" },
+        );
+        navigator.sendBeacon("/api/worktasks/draft-cancel", blob);
+      }
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", cancelOnUnload);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("beforeunload", cancelOnUnload);
+      }
+    };
+  }, []);
+
   // Worker chips (and the assignee combobox secondary list) narrow to
   // people whose role matches one of the selected departments. Empty
   // selection = show everyone, keeping the existing behavior.
@@ -762,6 +935,21 @@ export default function TaskCreateForm({
       const name = folderSelection.name.trim();
       if (name) payload.drive_folder_name = name;
     }
+    // Inline-template path: when the user filled a draft template,
+    // hand the server the draftFolderId so it can re-parent that
+    // folder into the campaign hierarchy instead of creating a new
+    // (empty) task folder. Stash the ref locally so we can restore
+    // it on POST failure (otherwise the beforeunload cleanup loses
+    // its handle to the orphan).
+    let restoreDraftOnFailure: DraftRef | null = null;
+    if (draftRef.current) {
+      payload.existing_draft_folder_id = draftRef.current.draftFolderId;
+      restoreDraftOnFailure = draftRef.current;
+      // Null out for the POST window so a beforeunload that fires
+      // mid-flight doesn't try to cancel the folder we're committing
+      // to permanent storage.
+      draftRef.current = null;
+    }
 
     try {
       const res = await fetch("/api/worktasks/create", {
@@ -799,6 +987,11 @@ export default function TaskCreateForm({
       }
       router.push(`/tasks/${encodeURIComponent(data.task.id)}`);
     } catch (e) {
+      // Restore the draft ref on failure so a subsequent (dept, kind)
+      // change OR a beforeunload event can still clean up the folder.
+      if (restoreDraftOnFailure) {
+        draftRef.current = restoreDraftOnFailure;
+      }
       setError(e instanceof Error ? e.message : String(e));
       setSaving(false);
     }
@@ -924,6 +1117,51 @@ export default function TaskCreateForm({
         />
       </label>
 
+      {/* Inline template — when (department, kind) has a configured
+          template, the issuer fills it directly inside the form via
+          an embedded Google Doc/Sheet iframe. The doc is a per-user
+          draft copy made by /api/worktasks/draft-template; on submit
+          the draft folder is re-parented into the task's permanent
+          Drive folder. The block hides itself when no template is
+          bound or while a previous draft is being torn down. */}
+      {!isEditing && !chainMode && (draft || draftLoading) && (
+        <div className="task-form-template">
+          <div className="task-form-template-head">
+            <span className="task-form-template-chip">
+              📄 תבנית — מלא את השדות לפני השליחה
+            </span>
+            {draft && (
+              <a
+                href={draft.copyDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="task-form-template-newtab"
+                title="פתח בכרטיסייה חדשה (לעריכה במלוא הגודל)"
+              >
+                ↗ פתח בכרטיסייה חדשה
+              </a>
+            )}
+          </div>
+          {draftLoading && !draft && (
+            <div className="task-form-template-loading">
+              טוען תבנית…
+            </div>
+          )}
+          {draft && (
+            <iframe
+              key={draft.copyDocId}
+              src={embeddedEditUrlFor(
+                draft.copyDocId,
+                draft.copyDocMimeType,
+              )}
+              className="task-form-template-iframe"
+              title={draft.copyDocName}
+              loading="lazy"
+            />
+          )}
+        </div>
+      )}
+
       <label>
         תיאור
         <textarea
@@ -1043,15 +1281,8 @@ export default function TaskCreateForm({
             סוג
             <select
               name="kind"
-              defaultValue={
-                isEditing
-                  ? editingTask!.kind || "other"
-                  : kindOptions[0]?.val ?? "ad_creative"
-              }
-              key={
-                (isEditing ? editingTask!.kind || "" : "") +
-                "|" + kindOptions.map((k) => k.val).join("|")
-              }
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
             >
               {/* When editing a task whose stored `kind` isn't in the
                   schema-derived kindOptions list, surface it as an
@@ -1490,4 +1721,22 @@ export default function TaskCreateForm({
       </div>
     </form>
   );
+}
+
+/** Build the correct embedded edit URL for a Drive doc based on its
+ *  Google mime type. Docs / Sheets / Slides each live at a different
+ *  `docs.google.com/...` path; non-Google file types (PDFs, raw
+ *  uploads) don't have an embeddable editor — fall back to Drive's
+ *  generic preview, which renders them read-only. */
+function embeddedEditUrlFor(docId: string, mimeType: string): string {
+  switch (mimeType) {
+    case "application/vnd.google-apps.document":
+      return `https://docs.google.com/document/d/${docId}/edit?embedded=true&rm=demo`;
+    case "application/vnd.google-apps.spreadsheet":
+      return `https://docs.google.com/spreadsheets/d/${docId}/edit?embedded=true&rm=demo`;
+    case "application/vnd.google-apps.presentation":
+      return `https://docs.google.com/presentation/d/${docId}/edit?embedded=true&rm=demo`;
+    default:
+      return `https://drive.google.com/file/d/${docId}/preview`;
+  }
 }

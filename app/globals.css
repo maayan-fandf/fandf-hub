@@ -9063,6 +9063,72 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   margin-top: .5em;
 }
 
+/* Inline-template block — embedded Google Doc/Sheet/Slides under the
+   description field on /tasks/new. Visible only when (department,
+   kind) has a configured template + the per-user draft was
+   materialized successfully. The iframe is sized to feel like a
+   "second textarea" — full row width, generous height — so the user
+   recognizes it as the primary fill-in surface. */
+.task-form-template {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  padding: 0.65em;
+}
+.task-form-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+.task-form-template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 0.86em;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25em 0.75em;
+}
+.task-form-template-newtab {
+  font-size: 0.85em;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.25em 0.55em;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.task-form-template-newtab:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+.task-form-template-loading {
+  font-size: 0.88em;
+  color: var(--muted);
+  font-style: italic;
+  padding: 1em;
+  text-align: center;
+}
+.task-form-template-iframe {
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+@media (max-width: 640px) {
+  .task-form-template-iframe { height: 360px; }
+}
+
 /* Detail view */
 .task-detail-crumbs {
   font-size: .82em; color: var(--muted); margin-bottom: .3em;

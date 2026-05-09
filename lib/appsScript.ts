@@ -1083,6 +1083,14 @@ export type TasksCreateInput = {
    *  folder is created (i.e. when `drive_folder_id` is absent).
    *  Ignored if `drive_folder_id` is set. Direct-SA write path only. */
   drive_folder_name?: string;
+  /** When set, the task's Drive folder is "adopted" from the per-user
+   *  drafts hierarchy (created by /api/worktasks/draft-template) —
+   *  the draft folder is moved + renamed into the campaign hierarchy
+   *  instead of creating a fresh empty folder. Used by the inline-
+   *  template flow on /tasks/new so the user's edits to the embedded
+   *  template are preserved. Direct-SA write path only; ignored when
+   *  `drive_folder_id` is also set. */
+  existing_draft_folder_id?: string;
   /** When set, after the task row is appended the server migrates the
    *  source comment thread under the new task: the root comment row
    *  re-parents to the task id, and every reply (parent_id = source)

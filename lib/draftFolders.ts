@@ -49,6 +49,9 @@ export type DraftMaterializationResult = {
   copyDocUrl: string;
   /** Display name of the copy (typically `"<template> (טיוטה)"`). */
   copyDocName: string;
+  /** Drive mime type of the copy — Google Docs / Sheets / Slides each
+   *  have a different `docs.google.com/...` URL path for embedding. */
+  copyDocMimeType: string;
 };
 
 function draftFolderUrl(id: string): string {
@@ -131,6 +134,7 @@ export async function materializeDraft(args: {
       copyRes.data.webViewLink ||
       `https://drive.google.com/file/d/${copyDocId}/view`,
     copyDocName: copyRes.data.name || copyName,
+    copyDocMimeType: copyRes.data.mimeType || "",
   };
 }
 

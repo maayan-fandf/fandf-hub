@@ -439,6 +439,209 @@ export async function createTaskFolder(
   }
 }
 
+/**
+ * Adopts a per-user draft folder (created earlier by
+ * /api/worktasks/draft-template) as a new task's permanent Drive
+ * folder. The draft already has the user's edited template inside;
+ * we walk the campaign hierarchy, then re-parent + rename the draft
+ * folder into the standard task-folder slot so all edits are
+ * preserved.
+ *
+ * Returns null on any failure — caller falls back to creating a
+ * fresh empty folder via `createTaskFolder` (and the daily GC
+ * eventually reaps the orphan draft).
+ *
+ * Mirrors the campaign-hierarchy walk inside `createTaskFolder` so
+ * the resulting folder lands at the same place a freshly-created
+ * one would. The leaf-name decision also mirrors createTaskFolder:
+ * default UX is the campaign folder itself when a campaign exists
+ * and no override is set, otherwise a `<id> — <title>` leaf.
+ */
+async function adoptDraftFolderForNewTask(
+  subjectEmail: string,
+  args: {
+    draftFolderId: string;
+    id: string;
+    title: string;
+    company: string;
+    project: string;
+    campaign?: string;
+    folderNameOverride?: string;
+  },
+): Promise<{ folderId: string; folderUrl: string } | null> {
+  try {
+    const sharedDriveId = tasksSharedDriveId();
+    if (!sharedDriveId) {
+      console.log(
+        "[tasksWriteDirect.adoptDraft] TASKS_SHARED_DRIVE_ID not set",
+      );
+      return null;
+    }
+    const owner = driveFolderOwner();
+    const drive = driveClient(owner);
+
+    // Walk to the campaign-folder destination, creating intermediate
+    // folders as needed. Same logic shape as createTaskFolder.
+    let parent = sharedDriveId;
+    if (args.company) {
+      parent = await getOrCreateFolderInSharedDrive(
+        drive,
+        args.company,
+        parent,
+        sharedDriveId,
+      );
+    }
+    parent = await getOrCreateFolderInSharedDrive(
+      drive,
+      args.project || "(no-project)",
+      parent,
+      sharedDriveId,
+    );
+    const campaign = (args.campaign || "").trim();
+    let campaignFolderId = "";
+    if (campaign) {
+      parent = await getOrCreateFolderInSharedDrive(
+        drive,
+        campaign,
+        parent,
+        sharedDriveId,
+      );
+      campaignFolderId = parent;
+    }
+
+    const overrideName = (args.folderNameOverride || "").trim();
+    // Default UX: no override + campaign present → adopt INTO the
+    // campaign folder (move the draft folder so its CONTENTS live
+    // under the campaign folder, not as its own sub-folder).
+    if (!overrideName && campaignFolderId) {
+      // Move the draft's contents up one level: copy each file/folder
+      // inside the draft folder into the campaign folder, then delete
+      // the (now empty) draft folder. This matches the createTask-
+      // Folder default which uses the campaign folder directly without
+      // creating a leaf.
+      const moved = await moveContentsAndDeleteDraft(
+        drive,
+        args.draftFolderId,
+        campaignFolderId,
+        sharedDriveId,
+      );
+      if (!moved) return null;
+      const meta = await drive.files.get({
+        fileId: campaignFolderId,
+        fields: "id, webViewLink",
+        supportsAllDrives: true,
+      });
+      return {
+        folderId: campaignFolderId,
+        folderUrl:
+          meta.data.webViewLink ||
+          `https://drive.google.com/drive/folders/${campaignFolderId}`,
+      };
+    }
+
+    // Otherwise: rename the draft folder + re-parent it directly. The
+    // user's edits inside the doc(s) are preserved — Drive treats this
+    // as a metadata change, not a copy.
+    const leafName = overrideName
+      ? overrideName.replace(/[\\/]/g, "-").slice(0, 120)
+      : args.id +
+        (args.title
+          ? " — " + args.title.slice(0, 60).replace(/[\\/]/g, "-")
+          : "");
+    // Read current parents so we can replace them atomically.
+    const currentMeta = await drive.files.get({
+      fileId: args.draftFolderId,
+      fields: "id, parents",
+      supportsAllDrives: true,
+    });
+    const currentParents = (currentMeta.data.parents || []).join(",");
+    const updated = await drive.files.update({
+      fileId: args.draftFolderId,
+      requestBody: { name: leafName },
+      addParents: parent,
+      removeParents: currentParents || undefined,
+      fields: "id, webViewLink",
+      supportsAllDrives: true,
+    });
+    return {
+      folderId: updated.data.id || args.draftFolderId,
+      folderUrl:
+        updated.data.webViewLink ||
+        `https://drive.google.com/drive/folders/${args.draftFolderId}`,
+    };
+  } catch (e) {
+    console.log("[tasksWriteDirect.adoptDraft] failed:", e);
+    return null;
+  }
+}
+
+/** Moves every immediate child of `srcFolderId` into `destFolderId`
+ *  using `drive.files.update` with addParents/removeParents (cheap
+ *  metadata move, no copy). Then deletes the now-empty source folder.
+ *  Returns false on any per-child failure but tries to keep going so
+ *  partial migration still surfaces most edits. */
+async function moveContentsAndDeleteDraft(
+  drive: drive_v3.Drive,
+  srcFolderId: string,
+  destFolderId: string,
+  sharedDriveId: string,
+): Promise<boolean> {
+  try {
+    const list = await drive.files.list({
+      q: [`'${srcFolderId}' in parents`, "trashed=false"].join(" and "),
+      fields: "files(id, parents)",
+      pageSize: 200,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      corpora: "drive",
+      driveId: sharedDriveId,
+    });
+    const items = list.data.files ?? [];
+    let allOk = true;
+    for (const f of items) {
+      if (!f.id) continue;
+      try {
+        await drive.files.update({
+          fileId: f.id,
+          addParents: destFolderId,
+          removeParents: (f.parents || []).join(","),
+          fields: "id",
+          supportsAllDrives: true,
+        });
+      } catch (e) {
+        allOk = false;
+        console.log(
+          `[tasksWriteDirect.moveContents] failed for ${f.id}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
+    // Delete the (hopefully now-empty) draft folder. If something
+    // failed to move, the folder still has children and Drive's
+    // cascading delete will reap them — that's fine, the user's
+    // intent is "this draft is done", they don't expect the leftovers
+    // to stick around.
+    try {
+      await drive.files.delete({
+        fileId: srcFolderId,
+        supportsAllDrives: true,
+      });
+    } catch (e) {
+      console.log(
+        `[tasksWriteDirect.moveContents] delete(${srcFolderId}) failed:`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+    return allOk;
+  } catch (e) {
+    console.log(
+      "[tasksWriteDirect.moveContents] list failed:",
+      e instanceof Error ? e.message : String(e),
+    );
+    return false;
+  }
+}
+
 /** HTTP codes worth retrying — quota / transient infrastructure. Anything
  *  else (404 deleted-by-user, 401 auth, 400 bad request) is permanent. */
 const TRANSIENT_TASKS_CODES = new Set([429, 500, 502, 503, 504]);
@@ -1169,6 +1372,9 @@ export async function tasksCreateDirect(
   //   - Otherwise create a new folder. `drive_folder_name` overrides the
   //     auto-generated `<task-id> — <title>` leaf name.
   const pinnedFolderId = String(payload.drive_folder_id || "").trim();
+  const existingDraftFolderId = String(
+    payload.existing_draft_folder_id || "",
+  ).trim();
   if (task.is_umbrella) {
     // No-op — umbrella has no Drive folder.
   } else if (isPseudoProject(task.project)) {
@@ -1176,6 +1382,16 @@ export async function tasksCreateDirect(
     // nest under, so we deliberately skip Drive folder creation. Users
     // can attach files later via the Drive picker if they care.
   } else if (pinnedFolderId) {
+    if (existingDraftFolderId) {
+      // The user picked a specific folder AND filled a template draft.
+      // Honoring the pinned folder wins — adoption would override their
+      // explicit choice. The draft folder gets reaped by the daily GC
+      // since we won't reference it again.
+      console.log(
+        "[tasksWriteDirect] both pinned folder + draft folder set; using pinned, draft will be GC'd:",
+        { pinnedFolderId, existingDraftFolderId, taskId: task.id },
+      );
+    }
     try {
       const { getFolderRef } = await import("@/lib/driveFolders");
       const ref = await getFolderRef(subjectEmail, pinnedFolderId);
@@ -1186,6 +1402,41 @@ export async function tasksCreateDirect(
         "[tasksWriteDirect] Pinned folder lookup failed, continuing with empty Drive fields:",
         e,
       );
+    }
+  } else if (existingDraftFolderId) {
+    // Inline-template adopt path. The user filled a draft template
+    // inside the new-task form; we re-parent + rename the draft
+    // folder into the proper campaign hierarchy so the user's edits
+    // are preserved verbatim. Falls back to the regular createTask-
+    // Folder path on any failure (the draft folder gets GC'd).
+    const adopted = await adoptDraftFolderForNewTask(subjectEmail, {
+      draftFolderId: existingDraftFolderId,
+      id: task.id,
+      title: task.title,
+      company: task.company,
+      project: task.project,
+      campaign: task.campaign,
+      folderNameOverride: String(payload.drive_folder_name || "").trim(),
+    });
+    if (adopted) {
+      task.drive_folder_id = adopted.folderId;
+      task.drive_folder_url = adopted.folderUrl;
+    } else {
+      console.log(
+        "[tasksWriteDirect] adoptDraftFolder failed, falling back to createTaskFolder",
+      );
+      const folder = await createTaskFolder({
+        id: task.id,
+        title: task.title,
+        company: task.company,
+        project: task.project,
+        campaign: task.campaign,
+        folderNameOverride: String(payload.drive_folder_name || "").trim(),
+      });
+      if (folder) {
+        task.drive_folder_id = folder.folderId;
+        task.drive_folder_url = folder.folderUrl;
+      }
     }
   } else {
     const folder = await createTaskFolder({
