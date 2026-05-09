@@ -12948,6 +12948,7 @@ html[data-theme="dark"] .tasks-row-umbrella > td {
    this?" */
 .tasks-table-wrap[data-hide-col="company"] .col-company,
 .tasks-table-wrap[data-hide-col="project"] .col-project,
+.tasks-table-wrap[data-hide-col="brief"] .col-brief,
 .tasks-table-wrap[data-hide-col="department"] .col-department,
 .tasks-table-wrap[data-hide-col="assignees"] .col-assignees {
   display: none;

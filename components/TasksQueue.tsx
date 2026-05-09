@@ -69,6 +69,7 @@ function humanizeBucketKey(
   const SENTINELS: Record<string, string> = {
     __no_company__: "ללא חברה",
     __no_project__: "ללא פרויקט",
+    __no_campaign__: "ללא בריף",
     __no_department__: "ללא מחלקה",
     __no_assignee__: "ללא משויך",
     __standalone__: "ללא מטריה",
@@ -298,6 +299,7 @@ function hideColumnByAxis(axis: string): string | undefined {
   switch (axis) {
     case "company":    return "company";
     case "project":    return "project";
+    case "campaign":   return "brief";
     case "department": return "department";
     case "assignee":   return "assignees";
     default:           return undefined;
@@ -490,6 +492,7 @@ export default function TasksQueue({
       switch (groupBy) {
         case "company":    return [t.company || "__no_company__"];
         case "project":    return [t.project || "__no_project__"];
+        case "campaign":   return [t.campaign || "__no_campaign__"];
         case "department": return t.departments && t.departments.length > 0 ? t.departments : ["__no_department__"];
         case "assignee":   return t.assignees && t.assignees.length > 0 ? t.assignees : ["__no_assignee__"];
         case "umbrella":
@@ -1050,7 +1053,7 @@ function SortableTableSection({
             just "פרויקט" 2026-05-05 for consistency with the rest of
             the column labels in this row. */}
         {!compact && <th className="col-project">פרויקט</th>}
-        <th>בריף</th>
+        <th className="col-brief">בריף</th>
         {/* סוג משימה — task kind. Stored on `task.kind` either as a
             schema-driven Hebrew label (newer rows) or a legacy enum
             key (ad_creative, landing_page, …). `kindLabel` normalizes
@@ -1419,7 +1422,7 @@ function TaskRow({
           פעולות. Matches the headers in the `head` block above; any
           reorder there has to be mirrored here. Cells use the same
           inner content as before; only the sequence changed. */}
-      <td className="tasks-brief-cell">
+      <td className="tasks-brief-cell col-brief">
         {task.campaign ? (
           task.campaign
         ) : (

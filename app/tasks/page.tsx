@@ -808,6 +808,7 @@ function TasksFilterBar({
           <option value="">סטטוס (ברירת מחדל)</option>
           <option value="company">חברה</option>
           <option value="project">פרויקט</option>
+          <option value="campaign">בריף</option>
           <option value="assignee">עובד מבצע</option>
           <option value="department">מחלקה</option>
           <option value="umbrella">מטריה (קבץ ילדים תחת משימת-על)</option>
