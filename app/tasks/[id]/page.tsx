@@ -495,13 +495,35 @@ export default async function TaskDetailPage({
             </SideBlock>
           )}
 
-          <SideBlock title="שיוך">
+          {/* Schedule — when-this-task-is dates. Pulled out of פרטים
+              (where created/updated lived) and the page header (where
+              requested_date appeared as an inline chip) so the three
+              dates read as a single block instead of being scattered
+              across the page. The header chip stays for at-a-glance
+              context — this side block is for the careful read. */}
+          <SideBlock title="לוח זמנים">
+            <KV
+              label="תאריך מבוקש"
+              value={
+                t.requested_date
+                  ? t.requested_date.slice(0, 16).replace("T", " ")
+                  : "—"
+              }
+            />
+            <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
+            <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
+          </SideBlock>
+
+          {/* Meta — everything else. Merges the previous "שיוך"
+              (company/project/campaign) and "פרטים" (kind/departments/
+              round/id) blocks into a single bucket since both were
+              just task metadata; the dates moving to לוח זמנים lets
+              this block stay short enough that the merge reads cleaner
+              than the previous two-block split. */}
+          <SideBlock title="מטא">
             <KV label="חברה" value={displayProjectOrCompany(t.company) || "—"} />
             <KV label="פרויקט" value={displayProjectOrCompany(t.project)} />
             <KV label="בריף" value={t.campaign || "—"} />
-          </SideBlock>
-
-          <SideBlock title="פרטים">
             <KV label="סוג" value={t.kind} />
             <KV label="מחלקות" value={(t.departments || []).join(", ") || "—"} />
             {/* For single-round tasks, RoundRow shows the simple
@@ -511,8 +533,6 @@ export default async function TaskDetailPage({
             {roundChain.length <= 1 && (
               <RoundRow task={t} chain={roundChain} />
             )}
-            <KV label="נוצר" value={t.created_at.slice(0, 16).replace("T", " ")} />
-            <KV label="עודכן" value={t.updated_at.slice(0, 16).replace("T", " ")} />
             <IdCopyRow id={t.id} />
           </SideBlock>
         </aside>
