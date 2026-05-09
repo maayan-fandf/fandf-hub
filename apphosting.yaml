@@ -148,6 +148,20 @@ env:
       - BUILD
       - RUNTIME
 
+  # Inline-template feature on /tasks/new — when "1", picking a
+  # (department, kind) shows a picker of files inside the matching
+  # סכמות משימה/<Dept>/<Kind>/ folder; selecting one materializes a
+  # per-user draft copy and embeds it as an editable iframe; on
+  # submit, the draft folder is re-parented into the task's permanent
+  # Drive folder. When "" or missing, /api/worktasks/template-options
+  # and /api/worktasks/draft-template return {noTemplate: true} so
+  # the picker never renders. See lib/taskTemplates.ts.
+  - variable: ENABLE_TASK_TEMPLATES
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # The email the hub impersonates for Drive folder creation (SA with
   # DWD creates folders in this user's Drive). Default matches the
   # Apps Script behavior (Script was deployed as maayan). Change if
