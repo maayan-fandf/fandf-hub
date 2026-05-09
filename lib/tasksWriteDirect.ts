@@ -1382,16 +1382,6 @@ export async function tasksCreateDirect(
     // nest under, so we deliberately skip Drive folder creation. Users
     // can attach files later via the Drive picker if they care.
   } else if (pinnedFolderId) {
-    if (existingDraftFolderId) {
-      // The user picked a specific folder AND filled a template draft.
-      // Honoring the pinned folder wins — adoption would override their
-      // explicit choice. The draft folder gets reaped by the daily GC
-      // since we won't reference it again.
-      console.log(
-        "[tasksWriteDirect] both pinned folder + draft folder set; using pinned, draft will be GC'd:",
-        { pinnedFolderId, existingDraftFolderId, taskId: task.id },
-      );
-    }
     try {
       const { getFolderRef } = await import("@/lib/driveFolders");
       const ref = await getFolderRef(subjectEmail, pinnedFolderId);
@@ -1402,6 +1392,32 @@ export async function tasksCreateDirect(
         "[tasksWriteDirect] Pinned folder lookup failed, continuing with empty Drive fields:",
         e,
       );
+    }
+    // If a template draft was materialized, move its contents into
+    // the pinned folder (which is typically the auto-selected campaign
+    // folder, but can be any folder the user picked) and delete the
+    // empty draft. Without this, the draft sits orphaned in
+    // _drafts_/<userEmail>/ and the user's edits to the template
+    // never reach the task. Falls back to logging on failure — the
+    // daily GC reaps any orphan that survives.
+    if (existingDraftFolderId && task.drive_folder_id) {
+      try {
+        const sharedDriveId = tasksSharedDriveId();
+        if (sharedDriveId) {
+          const drive = driveClient(driveFolderOwner());
+          await moveContentsAndDeleteDraft(
+            drive,
+            existingDraftFolderId,
+            task.drive_folder_id,
+            sharedDriveId,
+          );
+        }
+      } catch (e) {
+        console.log(
+          "[tasksWriteDirect] template move into pinned folder failed:",
+          e instanceof Error ? e.message : String(e),
+        );
+      }
     }
   } else if (existingDraftFolderId) {
     // Inline-template adopt path. The user filled a draft template
