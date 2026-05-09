@@ -5661,6 +5661,84 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   color: var(--muted);
 }
 
+/* Per-department <details> grouping. Each department's kinds collapse
+   into their own block so the editor stays scannable as the schema
+   grows. The summary doubles as both the heading and the "+ הוסף סוג"
+   action surface. Mirrors the .chain-template-card pattern from the
+   chain-templates editor. */
+.task-form-schema-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.task-form-schema-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.task-form-schema-group > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.55em 0.9em;
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  font-weight: 600;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.task-form-schema-group > summary::-webkit-details-marker { display: none; }
+.task-form-schema-group > summary::before {
+  content: "▸";
+  font-size: 0.78em;
+  color: var(--muted);
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.task-form-schema-group[open] > summary {
+  border-bottom-color: var(--border);
+}
+.task-form-schema-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+.task-form-schema-group > summary:hover {
+  background: var(--surface-alt, var(--surface));
+}
+.task-form-schema-group-name {
+  color: var(--text);
+}
+.task-form-schema-group-count {
+  font-size: 0.78em;
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--bg);
+  padding: 0.1em 0.55em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.task-form-schema-group-spacer { flex: 1; }
+.task-form-schema-group .task-form-schema-table {
+  margin: 0;
+}
+.task-form-schema-empty-block {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  text-align: center;
+  padding: 2em 1em;
+  font-size: 0.9rem;
+}
+.task-form-schema-empty-block code {
+  background: var(--surface-alt, var(--surface));
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+  border: 1px solid var(--border);
+}
+
 .admin-editor {
   display: flex;
   flex-direction: column;

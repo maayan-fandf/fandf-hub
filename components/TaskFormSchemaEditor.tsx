@@ -13,6 +13,15 @@ import type { TaskFormSchemaRow } from "@/lib/taskFormSchema";
  *
  * Local edits are dirty until saved; the page intentionally doesn't
  * autosave on every keystroke (Hebrew typing makes that noisy).
+ *
+ * Layout: rows are visually grouped into per-department <details>
+ * sections so the editor scales as more departments accrue. Each
+ * group has its own "+ הוסף סוג" inline button. Rows with an empty
+ * department land in a trailing "ללא מחלקה" group so a freshly-added
+ * blank row is always findable. Editing a row's department in-place
+ * makes it jump to the matching group on the next render — that
+ * matches the actual data semantics ("dept is a property of the
+ * row") so the visible structure stays honest.
  */
 export default function TaskFormSchemaEditor({
   initialRows,
@@ -91,11 +100,40 @@ export default function TaskFormSchemaEditor({
     }
   }
 
-  // Distinct departments for the "add row under this department"
-  // shortcut buttons.
-  const distinctDepts = Array.from(
-    new Set(rows.map((r) => r.department).filter(Boolean)),
-  );
+  // Group rows by department for the collapsible per-dept sections.
+  // Each entry remembers the row's absolute index in `rows` so the
+  // update / removeRow callbacks keep working unchanged.
+  const grouped: Array<{
+    dept: string;
+    rows: Array<{ row: TaskFormSchemaRow; idx: number }>;
+  }> = (() => {
+    const map = new Map<
+      string,
+      Array<{ row: TaskFormSchemaRow; idx: number }>
+    >();
+    rows.forEach((row, idx) => {
+      const key = row.department.trim() || "__none__";
+      const list = map.get(key) ?? [];
+      list.push({ row, idx });
+      map.set(key, list);
+    });
+    return Array.from(map.entries())
+      .sort(([a], [b]) => {
+        // Push the "no department" bucket to the end so it doesn't
+        // dominate the top of the list when the user adds blank rows.
+        if (a === "__none__") return 1;
+        if (b === "__none__") return -1;
+        return a.localeCompare(b, "he");
+      })
+      .map(([key, list]) => ({
+        dept: key === "__none__" ? "" : key,
+        rows: list,
+      }));
+  })();
+
+  // Distinct departments for the datalist — same source as the
+  // grouping above, minus the "no dept" sentinel.
+  const distinctDepts = grouped.map((g) => g.dept).filter(Boolean);
 
   return (
     <div className="task-form-schema-editor">
@@ -125,85 +163,104 @@ export default function TaskFormSchemaEditor({
         )}
       </div>
 
-      <div className="task-form-schema-table-wrap themed-scrollbar">
-        <table className="task-form-schema-table">
-          <thead>
-            <tr>
-              <th>מחלקה</th>
-              <th>סוג</th>
-              <th aria-label="פעולות" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td>
-                  <input
-                    type="text"
-                    value={r.department}
-                    onChange={(e) =>
-                      update(i, { department: e.target.value })
-                    }
-                    placeholder="לדוג': קריאייטיב"
-                    list="task-form-schema-departments"
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    value={r.kind}
-                    onChange={(e) => update(i, { kind: e.target.value })}
-                    placeholder="לדוג': קריאייטיב פרסומי"
-                  />
-                </td>
-                <td>
+      {rows.length === 0 ? (
+        <div className="task-form-schema-empty-block">
+          אין שורות עדיין. לחץ על &quot;+ שורה&quot; כדי להתחיל, או ערוך
+          ישירות את לשונית <code>TaskFormSchema</code> ב-Google Sheets.
+        </div>
+      ) : (
+        <div className="task-form-schema-groups">
+          {grouped.map(({ dept, rows: groupRows }) => (
+            <details
+              key={dept || "__none__"}
+              className="task-form-schema-group"
+              open
+            >
+              <summary>
+                <span className="task-form-schema-group-name">
+                  {dept || "ללא מחלקה"}
+                </span>
+                <span className="task-form-schema-group-count">
+                  {groupRows.length}{" "}
+                  {groupRows.length === 1 ? "סוג" : "סוגים"}
+                </span>
+                <span className="task-form-schema-group-spacer" />
+                {dept && (
                   <button
                     type="button"
                     className="btn-ghost btn-sm"
-                    onClick={() => removeRow(i)}
+                    onClick={(e) => {
+                      // Don't toggle the <details> open/closed state.
+                      e.preventDefault();
+                      addRow({ department: dept });
+                    }}
                     disabled={saving}
-                    aria-label="מחק שורה"
-                    title="מחק"
+                    title={`הוסף סוג ל-${dept}`}
                   >
-                    🗑
+                    + הוסף סוג
                   </button>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={3} className="task-form-schema-empty">
-                  אין שורות עדיין. לחץ על &quot;+ שורה&quot; כדי להתחיל, או
-                  ערוך ישירות את לשונית <code>TaskFormSchema</code> ב-Google
-                  Sheets.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <datalist id="task-form-schema-departments">
-          {distinctDepts.map((d) => (
-            <option key={d} value={d} />
-          ))}
-        </datalist>
-      </div>
-
-      {distinctDepts.length > 0 && (
-        <div className="task-form-schema-quick-add">
-          <span>הוסף שורה תחת:</span>
-          {distinctDepts.map((d) => (
-            <button
-              key={d}
-              type="button"
-              className="btn-ghost btn-sm"
-              onClick={() => addRow({ department: d })}
-              disabled={saving}
-            >
-              + {d}
-            </button>
+                )}
+              </summary>
+              <div className="task-form-schema-table-wrap themed-scrollbar">
+                <table className="task-form-schema-table">
+                  <thead>
+                    <tr>
+                      <th>מחלקה</th>
+                      <th>סוג</th>
+                      <th aria-label="פעולות" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupRows.map(({ row: r, idx: i }) => (
+                      <tr key={i}>
+                        <td>
+                          <input
+                            type="text"
+                            value={r.department}
+                            onChange={(e) =>
+                              update(i, { department: e.target.value })
+                            }
+                            placeholder="לדוג': קריאייטיב"
+                            list="task-form-schema-departments"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={r.kind}
+                            onChange={(e) =>
+                              update(i, { kind: e.target.value })
+                            }
+                            placeholder="לדוג': קריאייטיב פרסומי"
+                          />
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-ghost btn-sm"
+                            onClick={() => removeRow(i)}
+                            disabled={saving}
+                            aria-label="מחק שורה"
+                            title="מחק"
+                          >
+                            🗑
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           ))}
         </div>
       )}
+
+      <datalist id="task-form-schema-departments">
+        {distinctDepts.map((d) => (
+          <option key={d} value={d} />
+        ))}
+      </datalist>
     </div>
   );
 }
