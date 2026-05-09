@@ -279,7 +279,14 @@ export default function TaskFilesPanel({
       <header className="task-files-panel-head">
         <div className="task-files-breadcrumb">
           <span aria-hidden>📁</span>
-          {[company, project, campaign, taskTitle]
+          {/* Breadcrumb describes the on-disk Drive PATH — company →
+              project → campaign — and stops there. The task title was
+              previously included as a leaf, but the actual folder is
+              usually the campaign root (no per-task leaf), so the
+              title showed as a non-existent folder and read like an
+              error/page-header anomaly. The task title lives at the
+              top of the page; no need to repeat it here. */}
+          {[company, project, campaign]
             .filter(Boolean)
             .map((s, i, arr) => (
               <span key={i}>

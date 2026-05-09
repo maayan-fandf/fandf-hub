@@ -89,9 +89,14 @@ export default async function TasksPage({
   // Clients have no business on /tasks — bounce them to the home grid.
   // Mirrors the layout's nav-link gating + the project page's section
   // gating so there's no surface a client can land on accidentally.
+  // We also hoist `isAdmin` to page scope so the queue's row-level
+  // edit-pencil affordance can render for admins on tasks they didn't
+  // author.
+  let isAdmin = false;
   if (me) {
     try {
       const access = await getMyProjects();
+      isAdmin = !!access.isAdmin;
       const isClientUser =
         !!access.isClient &&
         !access.isAdmin &&
@@ -415,6 +420,7 @@ export default async function TasksPage({
           people={people}
           driveName={driveName}
           userEmail={me}
+          isAdmin={isAdmin}
           companyToProjects={companyToProjects}
           sort={effectiveSort}
           sortOrder={effectiveSortOrder}

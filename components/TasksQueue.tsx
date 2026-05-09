@@ -209,6 +209,13 @@ type Props = {
    */
   userEmail?: string;
   /**
+   * Whether the current user is an admin. Threads through to row
+   * components so admin users see the edit-pencil affordance on
+   * tasks they didn't author (matching the server-side gate that
+   * lets admins edit any task). Default false — non-admin behavior.
+   */
+  isAdmin?: boolean;
+  /**
    * Company → project names map. Powers the hover-reveal dropdown on
    * each row's company cell — hovering "Gindy" lists every project
    * under Gindy with a link to each. Same map TasksFilterCompanyProject
@@ -372,6 +379,7 @@ export default function TasksQueue({
   people = [],
   driveName = "",
   userEmail = "",
+  isAdmin = false,
   companyToProjects = {},
   sort = "rank",
   sortOrder,
@@ -703,6 +711,7 @@ export default function TasksQueue({
                   people={people}
                   driveName={driveName}
                   userEmail={userEmail}
+                  isAdmin={isAdmin}
                   companyToProjects={companyToProjects}
                   sort={sort}
                   sortOrder={effectiveOrder}
@@ -727,6 +736,7 @@ export default function TasksQueue({
                     people={people}
                     driveName={driveName}
                     userEmail={userEmail}
+                    isAdmin={isAdmin}
                     companyToProjects={companyToProjects}
                     sort={sort}
                     sortOrder={effectiveOrder}
@@ -968,6 +978,7 @@ function SortableTableSection({
   people,
   driveName,
   userEmail,
+  isAdmin,
   companyToProjects,
   sort,
   sortOrder,
@@ -983,6 +994,7 @@ function SortableTableSection({
   people: TasksPerson[];
   driveName: string;
   userEmail: string;
+  isAdmin: boolean;
   companyToProjects: Record<string, string[]>;
   sort: TasksSortKey;
   sortOrder: TasksSortOrder;
@@ -1096,6 +1108,7 @@ function SortableTableSection({
       people={people}
       driveName={driveName}
       userEmail={userEmail}
+      isAdmin={isAdmin}
       companyToProjects={companyToProjects}
       dragEnabled={dragEnabled}
       selectedIds={selectedIds}
@@ -1198,6 +1211,7 @@ function BucketBody({
   people,
   driveName,
   userEmail,
+  isAdmin = false,
   companyToProjects,
   dragEnabled = true,
   selectedIds,
@@ -1208,6 +1222,7 @@ function BucketBody({
   people: TasksPerson[];
   driveName: string;
   userEmail: string;
+  isAdmin?: boolean;
   companyToProjects: Record<string, string[]>;
   dragEnabled?: boolean;
   selectedIds: Set<string>;
@@ -1225,6 +1240,7 @@ function BucketBody({
           people={people}
           driveName={driveName}
           userEmail={userEmail}
+          isAdmin={isAdmin}
           companyProjects={
             t.company ? companyToProjects[t.company] || [] : []
           }
@@ -1245,6 +1261,7 @@ function TaskRow({
   people = [],
   driveName = "",
   userEmail = "",
+  isAdmin = false,
   companyProjects = [],
   dragEnabled = true,
   selected = false,
@@ -1255,6 +1272,7 @@ function TaskRow({
   people?: TasksPerson[];
   driveName?: string;
   userEmail?: string;
+  isAdmin?: boolean;
   /** Sibling projects under this row's company. When non-empty, the
    *  company cell renders a hover-revealed dropdown listing each
    *  with a deep-link to its project page. */
@@ -1595,22 +1613,22 @@ function TaskRow({
           >
             📖
           </Link>
-          {/* Edit shortcut — author-only. Server enforces the same
-              gate (lib/tasksWriteDirect.ts), so a non-author seeing
-              the pencil would just hit a save error. Admins still see
-              the edit affordance via the task detail page header even
-              when this icon is hidden in the queue. */}
-          {task.author_email &&
-            userEmail &&
-            task.author_email.toLowerCase() === userEmail.toLowerCase() && (
-              <Link
-                href={`/tasks/${encodeURIComponent(task.id)}?edit=1`}
-                className="tasks-row-icon"
-                title="ערוך משימה"
-              >
-                ✏️
-              </Link>
-            )}
+          {/* Edit shortcut — author-only OR admin. Mirrors the
+              server-side gate in lib/tasksWriteDirect.ts so a user
+              who can't actually save isn't shown the affordance. */}
+          {(isAdmin ||
+            (task.author_email &&
+              userEmail &&
+              task.author_email.toLowerCase() ===
+                userEmail.toLowerCase())) && (
+            <Link
+              href={`/tasks/${encodeURIComponent(task.id)}?edit=1`}
+              className="tasks-row-icon"
+              title="ערוך משימה"
+            >
+              ✏️
+            </Link>
+          )}
           {task.drive_folder_url && (
             <a
               href={task.drive_folder_url}

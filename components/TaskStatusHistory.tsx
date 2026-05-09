@@ -57,7 +57,13 @@ export default function TaskStatusHistory({ history, people }: Props) {
         {visible.map((h, i) => (
           <li
             key={`${h.at}-${i}`}
-            className={`task-status-history-item tasks-status-${h.to}`}
+            // Note: we intentionally do NOT add `tasks-status-${h.to}`
+            // here — that class is the shared status-pill color which
+            // paints a light bg + dark text. On a list row it reads as
+            // a glaring tan band on dark mode. The status info is
+            // already carried by the colored dot (see the dot's
+            // `tasks-status-dot-${h.to}` class below).
+            className="task-status-history-item"
           >
             <span
               className={`task-status-history-dot tasks-status-dot-${h.to}`}
