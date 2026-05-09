@@ -13,7 +13,7 @@ import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import type { WorkTask, TasksPerson } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
-import { getSharedDriveName } from "@/lib/driveFolders";
+import { getSharedDriveName, listFolderFiles, type DriveFile } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TaskStatusCell from "@/components/TaskStatusCell";
 import TaskCreateForm from "@/components/TaskCreateForm";
@@ -34,6 +34,7 @@ import GoogleAdsIcon from "@/components/GoogleAdsIcon";
 import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
+import TaskTemplatePreview from "@/components/TaskTemplatePreview";
 import { linkifyParagraphs } from "@/lib/linkify";
 
 export const dynamic = "force-dynamic";
@@ -121,22 +122,50 @@ export default async function TaskDetailPage({
     t.is_umbrella ||
     (t.blocks?.length ?? 0) > 0 ||
     (t.blocked_by?.length ?? 0) > 0;
-  const [roundChain, driveName, adLinks, projectTasksForDeps] = await Promise.all([
-    t.round_number > 1 || t.parent_id
-      ? fetchRoundChain(t).catch(() => [])
-      : Promise.resolve([]),
-    subjectEmail
-      ? getSharedDriveName(subjectEmail).catch(() => "")
-      : Promise.resolve(""),
-    showAdLinks && t.project
-      ? getProjectAdLinks(t.project).catch(() => null)
-      : Promise.resolve(null),
-    needsProjectFetch
-      ? tasksList({ project: t.project, include_umbrellas: true })
-          .then((r) => r.tasks ?? [])
-          .catch(() => [] as WorkTask[])
-      : Promise.resolve([] as WorkTask[]),
+  // Inline-template preview — list files in the task's Drive folder
+  // so we can detect a `(טיוטה)` Doc/Sheet/Slides and render it as a
+  // read-only iframe at the top of the body. Only fetched when the
+  // task actually has a Drive folder (umbrellas + personal-notes
+  // skipped via the conditional). Errors swallowed → no preview is
+  // rendered; the rest of the page is unaffected.
+  const taskFolderFilesPromise: Promise<DriveFile[]> =
+    !t.is_umbrella && t.drive_folder_id
+      ? listFolderFiles(subjectEmail, t.drive_folder_id).catch(() => [])
+      : Promise.resolve([]);
+  const [roundChain, driveName, adLinks, projectTasksForDeps, taskFolderFiles] =
+    await Promise.all([
+      t.round_number > 1 || t.parent_id
+        ? fetchRoundChain(t).catch(() => [])
+        : Promise.resolve([]),
+      subjectEmail
+        ? getSharedDriveName(subjectEmail).catch(() => "")
+        : Promise.resolve(""),
+      showAdLinks && t.project
+        ? getProjectAdLinks(t.project).catch(() => null)
+        : Promise.resolve(null),
+      needsProjectFetch
+        ? tasksList({ project: t.project, include_umbrellas: true })
+            .then((r) => r.tasks ?? [])
+            .catch(() => [] as WorkTask[])
+        : Promise.resolve([] as WorkTask[]),
+      taskFolderFilesPromise,
+    ]);
+  // Heuristic template detection: a Doc/Sheet/Slides whose name ends
+  // in "(טיוטה)" — the suffix added by `materializeDraft` at task-
+  // creation time. Survives across renames as long as the suffix is
+  // kept; once the issuer renames the file or fills it in under a
+  // different name, the preview drops out (which is fine — they don't
+  // need the embedded view anymore at that point).
+  const TEMPLATE_NAME_RE = /\(טיוטה\)\s*$/;
+  const TEMPLATE_MIMES = new Set([
+    "application/vnd.google-apps.document",
+    "application/vnd.google-apps.spreadsheet",
+    "application/vnd.google-apps.presentation",
   ]);
+  const templateFile =
+    taskFolderFiles.find(
+      (f) => TEMPLATE_NAME_RE.test(f.name) && TEMPLATE_MIMES.has(f.mimeType),
+    ) || null;
   // Derive umbrella children list from the same fetched set.
   const umbrellaChildren = t.is_umbrella
     ? projectTasksForDeps.filter((c) => c.umbrella_id === t.id)
@@ -358,6 +387,20 @@ export default async function TaskDetailPage({
             <div className="task-detail-body">
               {linkifyParagraphs(t.description)}
             </div>
+          )}
+
+          {/* Inline template preview — read-only iframe of the
+              filled-in template that lives in the task's Drive
+              folder. Detected by `(טיוטה)` suffix on the file name +
+              Google Doc/Sheet/Slides mime. Renders nothing when no
+              such file exists, so non-template tasks are unaffected. */}
+          {templateFile && (
+            <TaskTemplatePreview
+              fileId={templateFile.id}
+              fileName={templateFile.name}
+              mimeType={templateFile.mimeType}
+              editUrl={templateFile.webViewLink}
+            />
           )}
 
           {/* Sticky in-page tab strip — anchor-jumps to the three
