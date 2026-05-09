@@ -14,7 +14,8 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
+import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
+import { useTaskPreview } from "@/components/TaskPreviewProvider";
 
 type Props = {
   tasks: WorkTask[];
@@ -31,6 +32,10 @@ type Props = {
    *  on active work first. Per-cell `(N עברו)` chip lets the user
    *  un-dim that cell on demand. */
   hideArchived?: boolean;
+  /** People list for resolving emails to display names inside the
+   *  quick-preview drawer that opens from the per-event 👁 button.
+   *  Optional — when missing, the drawer falls back to email prefixes. */
+  people?: TasksPerson[];
 };
 
 /** Hebrew weekday labels — Sunday-first to match Israeli calendars. */
@@ -94,6 +99,7 @@ export default function TasksCalendar({
   initialMonth,
   searchParams,
   hideArchived = false,
+  people = [],
 }: Props) {
   const [activeDay, setActiveDay] = useState<string>("");
   // Per-cell un-dim: when hideArchived is on, terminal-state events
@@ -329,7 +335,7 @@ export default function TasksCalendar({
                     <ul className="tasks-calendar-events">
                       {visible.map((t) => (
                         <li key={t.id}>
-                          <DraggableEvent task={t} />
+                          <DraggableEvent task={t} people={people} />
                         </li>
                       ))}
                       {overflow > 0 && (
@@ -369,7 +375,7 @@ export default function TasksCalendar({
                       <ul className="tasks-calendar-overflow-list">
                         {dayTasks.slice(MAX_PER_CELL).map((t) => (
                           <li key={t.id}>
-                            <DraggableEvent task={t} hideFlag />
+                            <DraggableEvent task={t} hideFlag people={people} />
                           </li>
                         ))}
                       </ul>
@@ -381,7 +387,7 @@ export default function TasksCalendar({
           ))}
         </div>
 
-        <UndatedPanel undated={undated} />
+        <UndatedPanel undated={undated} people={people} />
 
         {tasks.length === 0 && (
           <div className="empty">
@@ -443,21 +449,27 @@ function DroppableDayCell({
 function DraggableEvent({
   task,
   hideFlag = false,
+  people = [],
 }: {
   task: WorkTask;
   hideFlag?: boolean;
+  people?: TasksPerson[];
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: task.id });
+  const preview = useTaskPreview();
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.45 : undefined,
     cursor: "grab",
   };
   return (
-    <Link
+    // Wrapper is a <div> so we can host both the navigation Link and
+    // the preview button as siblings (button-inside-anchor is invalid
+    // HTML). The wrapper still owns the drag-handle ref + listeners
+    // so the chip drags from anywhere on its surface.
+    <div
       ref={setNodeRef}
-      href={`/tasks/${encodeURIComponent(task.id)}`}
       style={style}
       className={`tasks-calendar-event tasks-calendar-event-${task.status}`}
       title={`${task.project} · ${task.title}${
@@ -465,18 +477,42 @@ function DraggableEvent({
       }${" · גרור ליום אחר כדי לדחות"}`}
       {...attributes}
       {...listeners}
-      // Stop propagation so the underlying gridcell's click doesn't
-      // double-handle. dnd-kit's listeners already swallow the event
-      // when a drag starts, so this only matters for plain clicks.
-      onClick={(e) => e.stopPropagation()}
     >
-      {task.priority === 1 && !hideFlag && (
-        <span aria-hidden className="tasks-calendar-event-flag">
-          🔥
-        </span>
-      )}
-      <span className="tasks-calendar-event-title">{task.title}</span>
-    </Link>
+      <Link
+        href={`/tasks/${encodeURIComponent(task.id)}`}
+        className="tasks-calendar-event-link"
+        // Stop propagation so the underlying gridcell's click doesn't
+        // double-handle. dnd-kit's listeners already swallow the
+        // event when a drag starts, so this only matters for plain
+        // clicks.
+        onClick={(e) => e.stopPropagation()}
+      >
+        {task.priority === 1 && !hideFlag && (
+          <span aria-hidden className="tasks-calendar-event-flag">
+            🔥
+          </span>
+        )}
+        <span className="tasks-calendar-event-title">{task.title}</span>
+      </Link>
+      {/* Quick-preview eye — sits on the trailing edge of the chip,
+          revealed on chip hover (desktop) and visible on touch. Same
+          stopPropagation trick as the kanban + queue patterns so the
+          drag listeners don't intercept the press. */}
+      <button
+        type="button"
+        className="tasks-calendar-event-preview"
+        title="תצוגה מקדימה — תיאור מלא ופרטים, ללא מעבר עמוד"
+        aria-label="תצוגה מקדימה"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          preview.open(task, people);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        👁
+      </button>
+    </div>
   );
 }
 
@@ -484,7 +520,13 @@ function DraggableEvent({
  *  scheduled task here clears its requested_date. The chips inside
  *  are themselves draggable so a user can re-schedule a previously
  *  un-dated task by pulling it to a day. */
-function UndatedPanel({ undated }: { undated: WorkTask[] }) {
+function UndatedPanel({
+  undated,
+  people = [],
+}: {
+  undated: WorkTask[];
+  people?: TasksPerson[];
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: "undated" });
   if (undated.length === 0) {
     // Render an empty zone too so users discover the "drop here to
@@ -516,7 +558,7 @@ function UndatedPanel({ undated }: { undated: WorkTask[] }) {
       <ul className="tasks-calendar-undated-list">
         {undated.map((t) => (
           <li key={t.id}>
-            <DraggableEvent task={t} />
+            <DraggableEvent task={t} people={people} />
           </li>
         ))}
       </ul>

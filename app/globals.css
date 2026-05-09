@@ -11787,6 +11787,32 @@ html[data-theme="dark"] .kanban-column-count {
   text-decoration: underline;
 }
 
+/* Per-card 👁 quick-preview button. Mirrors `.tasks-title-preview-btn`
+   on the queue: muted by default, brightens on card hover or focus. */
+.kanban-card-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95em;
+  padding: 0.1em 0.3em;
+  border-radius: 6px;
+  opacity: 0.35;
+  color: var(--muted);
+  flex: 0 0 auto;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.kanban-card:hover .kanban-card-preview-btn,
+.kanban-card-preview-btn:focus-visible {
+  opacity: 1;
+}
+.kanban-card-preview-btn:hover {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.06));
+  opacity: 1;
+}
+
 .kanban-card-project {
   font-size: .75rem;
   color: var(--muted);
@@ -12307,6 +12333,46 @@ html[data-theme="dark"] .tasks-umbrella-toggle.is-showing {
   white-space: nowrap;
 }
 .tasks-calendar-event-flag { flex: 0 0 auto; }
+/* The chip wrapper is now a <div> hosting a Link + a preview button as
+   siblings (button-inside-anchor is invalid HTML). The Link below
+   takes the same row layout the chip had previously, the button sits
+   on the trailing edge revealed on chip hover. */
+.tasks-calendar-event-link {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+}
+.tasks-calendar-event-preview {
+  background: transparent;
+  border: 0;
+  padding: 0 0.2em;
+  cursor: pointer;
+  font-size: 0.95em;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.tasks-calendar-event:hover .tasks-calendar-event-preview,
+.tasks-calendar-event-preview:focus-visible {
+  opacity: 1;
+}
+.tasks-calendar-event-preview:hover {
+  background: var(--surface, rgba(0, 0, 0, 0.06));
+  opacity: 1;
+}
+/* Touch devices: no :hover, so reveal at moderate opacity by default
+   so the affordance is discoverable without requiring a hover state. */
+@media (hover: none) {
+  .tasks-calendar-event-preview { opacity: 0.65; }
+}
 
 /* Per-status accent borders — match the same palette used for the
    tasks-bucket / kanban-column borders so the calendar feels of-a-

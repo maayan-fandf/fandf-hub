@@ -27,6 +27,7 @@ import {
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
 import { STATUS_LABELS, STATUS_EMOJIS } from "@/components/TaskStatusCell";
 import Avatar from "@/components/Avatar";
+import { useTaskPreview } from "@/components/TaskPreviewProvider";
 import { fireConfetti, firePulse } from "@/lib/confetti";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { displayProjectOrCompany } from "@/lib/personalLabel";
@@ -437,6 +438,7 @@ function KanbanCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
+  const preview = useTaskPreview();
 
   // While the original card is being dragged, hide it from its column so
   // only the DragOverlay clone is visible. Otherwise the user sees two
@@ -536,6 +538,24 @@ function KanbanCard({
         >
           {task.title || "(ללא כותרת)"}
         </Link>
+        {/* Quick-preview eye — same affordance as the queue view's
+            👁 button. Mirrors the overall pattern: stopPropagation on
+            both the click AND pointerdown so dnd-kit's drag listeners
+            on the card body don't intercept the press. */}
+        <button
+          type="button"
+          className="kanban-card-preview-btn"
+          title="תצוגה מקדימה — תיאור מלא ופרטים, ללא מעבר עמוד"
+          aria-label="תצוגה מקדימה"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            preview.open(task, Array.from(peopleByEmail.values()));
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          👁
+        </button>
       </div>
       {(task.company || task.project) && (
         <div className="kanban-card-project">

@@ -430,6 +430,7 @@ export default async function TasksPage({
           initialMonth={sp.month}
           searchParams={sp as Record<string, string | undefined>}
           hideArchived={hideArchived}
+          people={people}
         />
       )}
     </main>
