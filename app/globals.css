@@ -5748,6 +5748,82 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   border: 1px solid var(--border);
 }
 
+/* Viewer kind-row layout — replaced the table-driven editor with a
+   simple flex list when the page became a Drive-folder listing. */
+.task-form-schema-kinds {
+  display: flex;
+  flex-direction: column;
+}
+.task-form-schema-kind-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.45em 0.9em;
+  border-bottom: 1px solid var(--border);
+}
+.task-form-schema-kind-row:last-child {
+  border-bottom: none;
+}
+.task-form-schema-kind-name {
+  flex: 1 1 auto;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.task-form-schema-kind-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.3em 0.7em;
+  border: 1px solid var(--border);
+  border-radius: 0.4em;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.task-form-schema-kind-link:hover {
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  border-color: var(--accent, #6366f1);
+}
+.task-form-schema-kind-empty {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+/* Inline "+ הוסף סוג / הוסף מחלקה" form — appears beneath a dept
+   group when the corresponding button is clicked, OR above the list
+   for the dept-add case. */
+.task-form-schema-inline-add {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.55em 0.9em;
+  background: var(--surface-soft, var(--surface-alt, var(--surface)));
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.task-form-schema-inline-add > span {
+  font-size: 0.86rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+.task-form-schema-inline-add input[type="text"] {
+  flex: 1 1 12em;
+  min-width: 8em;
+  padding: 0.35em 0.55em;
+  border: 1px solid var(--border);
+  border-radius: 0.35em;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.task-form-schema-inline-add input[type="text"]:focus {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: -1px;
+}
+
 /* Template-cell affordance — paste-link input when unbound,
    📄 link + ✕ clear when bound. Sized to match the .35em-padding
    inputs in the same row. */

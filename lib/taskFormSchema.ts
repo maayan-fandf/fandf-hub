@@ -1,58 +1,60 @@
 /**
  * Task-form schema — controls the מחלקות + nested סוג options on
- * /tasks/new. Source of truth: the "TaskFormSchema" tab on the
- * Comments spreadsheet (SHEET_ID_COMMENTS), with three columns:
+ * /tasks/new. Source of truth: the Drive folder hierarchy at
  *
- *   מחלקה | סוג | תבנית
+ *   <Tasks Shared Drive>/סכמות משימה/<Dept>/<Kind>/
  *
- * Each row pairs one department with one of its kinds, plus an
- * optional Google Doc template ID (the "תבנית" column). When set,
- * the new-task form will auto-copy that template into the task's
- * Drive folder when an issuer picks the matching (dept, kind). When
- * blank, the form falls back to discovery via Drive folder convention
- * (סכמות משימה / <Dept> / <Kind>) — see lib/taskTemplates.ts.
+ * Each kind folder = one (department, kind) pair. Files inside the
+ * kind folder are the templates the new-task form's picker offers.
  *
- * The תבנית column is optional and back-compatible — old 2-column
- * sheets continue to work, with templateDocId defaulting to ''.
+ * Why Drive (and not a sheet)? Both kinds AND templates already live
+ * in Drive. Maintaining a parallel sheet copy meant we needed a
+ * sync — and any sync introduces drift bugs. With Drive as the
+ * single source of truth, adding a kind = creating a folder, deleting
+ * a kind = deleting a folder; no reconciler needed.
  *
- * The tab is created + seeded by scripts/seed-task-form-schema.mjs;
- * after that, admins edit it via the sheet directly OR via the
- * /admin/task-form-schema page (Phase 3c).
+ * The legacy `TaskFormSchema` tab on SHEET_ID_COMMENTS is left in
+ * place but unused. Future cleanup can drop the tab.
  *
- * Caching: 5 min in-process, mirrors lib/userPrefs.ts. Admin edits
- * via the editor invalidate via the same write path.
+ * Caching: 5 min in-process to keep page-load latency low. Admin
+ * mutations (creating folders via /api/admin/task-form-folder)
+ * invalidate the cache. Server components also rely on Next's
+ * per-request `cache()` for further dedup within a single render.
  */
 
-import { sheetsClient } from "@/lib/sa";
+import { driveClient, driveFolderOwner } from "@/lib/sa";
+import {
+  findChildFolderByName,
+  getTasksSharedDriveId,
+} from "@/lib/driveFolders";
+import { TEMPLATES_ROOT_NAME } from "@/lib/taskTemplates";
 
-const TAB = "TaskFormSchema";
-
+/** Legacy field name retained for backwards compat with anything that
+ *  destructures TaskFormSchemaRow. After the 2026-05-09 restructure
+ *  the value is the kind FOLDER id (was a single file id pre-split).
+ *  Use `kindFolderId` going forward. */
 export type TaskFormSchemaRow = {
   department: string;
   kind: string;
-  /** Optional — Google Drive file id of a Doc/Sheet template that the
-   *  new-task form should copy into the task folder when an issuer
-   *  picks this (department, kind) pair. Empty string means "no
-   *  explicit binding"; the form will fall back to folder-name
-   *  discovery via lib/taskTemplates.ts. */
+  /** @deprecated alias for kindFolderId — kept until call sites migrate. */
   templateDocId?: string;
+  kindFolderId?: string;
 };
 
 export type TaskFormSchema = {
-  /** Distinct departments in sheet order (after de-dup). */
+  /** Distinct departments in folder order. */
   departments: string[];
   /** All distinct kinds across the schema (used as a fallback when
    *  no department is selected, or as the union when multiple are). */
   allKinds: string[];
-  /** kind values per department, preserving sheet order. */
+  /** kind values per department, preserving folder order. */
   kindsByDepartment: Record<string, string[]>;
-  /** templateDocId per (department, kind). Only populated for rows
-   *  that have a non-empty value in the תבנית column. The new-task
-   *  form looks up `templatesByDeptAndKind[dept]?.[kind]` and falls
-   *  back to folder-name discovery if missing. */
+  /** Kind folder id per (department, kind). Used by lib/taskTemplates.ts
+   *  to list the picker files inside the kind folder. */
   templatesByDeptAndKind: Record<string, Record<string, string>>;
-  /** True when the sheet is empty / missing. UI falls back to a
-   *  hardcoded shape in that case so the form still works. */
+  /** True when the Drive root has no department folders yet. UI
+   *  falls back to a hardcoded shape in that case so the form still
+   *  renders something. */
   isEmpty: boolean;
 };
 
@@ -62,14 +64,6 @@ const CACHE: { value: TaskFormSchema | null; expiresAt: number } = {
 };
 const TTL_MS = 5 * 60 * 1000;
 
-function envOrThrow(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-/** Empty schema returned when the sheet is missing / empty. The form
- *  uses its own legacy KINDS list in that case. */
 function emptySchema(): TaskFormSchema {
   return {
     departments: [],
@@ -80,8 +74,10 @@ function emptySchema(): TaskFormSchema {
   };
 }
 
-/** Read the schema. Reads the whole tab (it's tiny — at most a few
- *  hundred rows even when generously seeded) and indexes it. */
+/**
+ * Walks the templates folder tree once and indexes the result. Cached
+ * 5 min in-process.
+ */
 export async function getTaskFormSchema(
   subjectEmail: string,
 ): Promise<TaskFormSchema> {
@@ -91,48 +87,10 @@ export async function getTaskFormSchema(
 
   let schema: TaskFormSchema = emptySchema();
   try {
-    const sheets = sheetsClient(subjectEmail);
-    const ssId = envOrThrow("SHEET_ID_COMMENTS");
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: ssId,
-      range: TAB,
-      valueRenderOption: "UNFORMATTED_VALUE",
-    });
-    const values = (res.data.values ?? []) as unknown[][];
-    if (values.length < 2) {
-      schema = emptySchema();
-    } else {
-      const headers = (values[0] as unknown[]).map((h) =>
-        String(h ?? "").trim(),
-      );
-      const iDept = headers.findIndex(
-        (h) => h === "מחלקה" || h.toLowerCase() === "department",
-      );
-      const iKind = headers.findIndex(
-        (h) => h === "סוג" || h.toLowerCase() === "kind",
-      );
-      const iTemplate = headers.findIndex(
-        (h) => h === "תבנית" || h.toLowerCase() === "template_doc_id",
-      );
-      if (iDept >= 0 && iKind >= 0) {
-        const rows: TaskFormSchemaRow[] = [];
-        for (let r = 1; r < values.length; r++) {
-          const dept = String(values[r][iDept] ?? "").trim();
-          const kind = String(values[r][iKind] ?? "").trim();
-          if (!dept || !kind) continue;
-          const templateDocId =
-            iTemplate >= 0
-              ? String(values[r][iTemplate] ?? "").trim()
-              : "";
-          rows.push({ department: dept, kind, templateDocId });
-        }
-        schema = indexRows(rows);
-      }
-    }
+    schema = await readSchemaFromDrive(subjectEmail);
   } catch (e) {
-    // Tab missing or read failed — fall through to empty.
     console.log(
-      "[taskFormSchema] read failed, returning empty:",
+      "[taskFormSchema] Drive read failed, returning empty:",
       e instanceof Error ? e.message : String(e),
     );
   }
@@ -147,121 +105,104 @@ export function invalidateTaskFormSchema(): void {
   CACHE.expiresAt = 0;
 }
 
-/** Read every row as-is (preserving order, including duplicates).
- *  Used by the admin editor to render the table. */
-export async function listTaskFormSchemaRows(
+async function readSchemaFromDrive(
   subjectEmail: string,
-): Promise<TaskFormSchemaRow[]> {
-  try {
-    const sheets = sheetsClient(subjectEmail);
-    const ssId = envOrThrow("SHEET_ID_COMMENTS");
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: ssId,
-      range: TAB,
-      valueRenderOption: "UNFORMATTED_VALUE",
-    });
-    const values = (res.data.values ?? []) as unknown[][];
-    if (values.length < 2) return [];
-    const headers = (values[0] as unknown[]).map((h) => String(h ?? "").trim());
-    const iDept = headers.findIndex(
-      (h) => h === "מחלקה" || h.toLowerCase() === "department",
-    );
-    const iKind = headers.findIndex(
-      (h) => h === "סוג" || h.toLowerCase() === "kind",
-    );
-    const iTemplate = headers.findIndex(
-      (h) => h === "תבנית" || h.toLowerCase() === "template_doc_id",
-    );
-    if (iDept < 0 || iKind < 0) return [];
-    const rows: TaskFormSchemaRow[] = [];
-    for (let r = 1; r < values.length; r++) {
-      const dept = String(values[r][iDept] ?? "").trim();
-      const kind = String(values[r][iKind] ?? "").trim();
-      if (!dept || !kind) continue;
-      const templateDocId =
-        iTemplate >= 0 ? String(values[r][iTemplate] ?? "").trim() : "";
-      rows.push({ department: dept, kind, templateDocId });
-    }
-    return rows;
-  } catch (e) {
-    console.log(
-      "[taskFormSchema] listRows failed:",
-      e instanceof Error ? e.message : String(e),
-    );
-    return [];
+): Promise<TaskFormSchema> {
+  const sharedDriveId = getTasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+
+  const rootId = await findChildFolderByName(
+    drive,
+    sharedDriveId,
+    TEMPLATES_ROOT_NAME,
+    sharedDriveId,
+  );
+  if (!rootId) {
+    return emptySchema();
   }
-}
 
-/** Replace the entire schema with a fresh set of rows. Wipes the
- *  data area below the header and writes the new rows. Single-shot
- *  semantics — admin editor sends the full table on every save. */
-export async function replaceTaskFormSchema(
-  subjectEmail: string,
-  rows: TaskFormSchemaRow[],
-): Promise<void> {
-  const sheets = sheetsClient(subjectEmail);
-  const ssId = envOrThrow("SHEET_ID_COMMENTS");
-  // Clear data rows (rows 2+) across all 3 columns. The C column was
-  // added in 2026-05 for the תבנית binding — clearing it here means
-  // existing 2-column sheets that pick up an admin save will gain the
-  // new header at row 1 and start round-tripping the value cleanly.
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: ssId,
-    range: `${TAB}!A2:C`,
+  // List department subfolders.
+  const deptRes = await drive.files.list({
+    q: [
+      "mimeType='application/vnd.google-apps.folder'",
+      `'${rootId}' in parents`,
+      "trashed=false",
+    ].join(" and "),
+    fields: "files(id, name)",
+    pageSize: 500,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: "drive",
+    driveId: sharedDriveId,
   });
-  // Re-write headers + new rows in one update so a slow round-trip
-  // doesn't briefly leave the sheet headerless.
-  const data: (string | number | boolean)[][] = [
-    ["מחלקה", "סוג", "תבנית"],
-    ...rows.map(
-      (r) =>
-        [
-          r.department,
-          r.kind,
-          r.templateDocId ?? "",
-        ] as (string | number | boolean)[],
-    ),
-  ];
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: ssId,
-    range: `${TAB}!A1:C${data.length}`,
-    valueInputOption: "RAW",
-    requestBody: { values: data },
-  });
-  invalidateTaskFormSchema();
-}
+  const depts = (deptRes.data.files ?? []).filter(
+    (f) => !!f.id && !!f.name,
+  );
+  if (depts.length === 0) {
+    return emptySchema();
+  }
 
-function indexRows(rows: TaskFormSchemaRow[]): TaskFormSchema {
+  // For each dept, list its kind subfolders. Run in parallel — small
+  // dept count keeps this cheap.
   const departments: string[] = [];
-  const allKinds: string[] = [];
+  const allKindsSet = new Set<string>();
   const kindsByDepartment: Record<string, string[]> = {};
   const templatesByDeptAndKind: Record<string, Record<string, string>> = {};
-  const seenDept = new Set<string>();
-  const seenKind = new Set<string>();
-  for (const r of rows) {
-    if (!seenDept.has(r.department)) {
-      seenDept.add(r.department);
-      departments.push(r.department);
-    }
-    if (!seenKind.has(r.kind)) {
-      seenKind.add(r.kind);
-      allKinds.push(r.kind);
-    }
-    const list = kindsByDepartment[r.department] ?? [];
-    if (!list.includes(r.kind)) list.push(r.kind);
-    kindsByDepartment[r.department] = list;
-    const tpl = (r.templateDocId ?? "").trim();
-    if (tpl) {
-      const inner = templatesByDeptAndKind[r.department] ?? {};
-      inner[r.kind] = tpl;
-      templatesByDeptAndKind[r.department] = inner;
-    }
-  }
+
+  await Promise.all(
+    depts.map(async (deptFolder) => {
+      const dept = deptFolder.name as string;
+      try {
+        const kindsRes = await drive.files.list({
+          q: [
+            "mimeType='application/vnd.google-apps.folder'",
+            `'${deptFolder.id}' in parents`,
+            "trashed=false",
+          ].join(" and "),
+          fields: "files(id, name)",
+          pageSize: 1000,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          corpora: "drive",
+          driveId: sharedDriveId,
+        });
+        const kindFolders = (kindsRes.data.files ?? []).filter(
+          (f) => !!f.id && !!f.name,
+        );
+        const kindNames: string[] = [];
+        const inner: Record<string, string> = {};
+        for (const f of kindFolders) {
+          const name = f.name as string;
+          kindNames.push(name);
+          allKindsSet.add(name);
+          inner[name] = f.id as string;
+        }
+        kindsByDepartment[dept] = kindNames;
+        templatesByDeptAndKind[dept] = inner;
+        departments.push(dept);
+      } catch (e) {
+        // Per-dept failure shouldn't poison the whole schema. Surface
+        // the dept folder anyway with no kinds so admin can see it.
+        console.warn(
+          `[taskFormSchema] list kinds for ${dept} failed:`,
+          e instanceof Error ? e.message : String(e),
+        );
+        departments.push(dept);
+        kindsByDepartment[dept] = [];
+        templatesByDeptAndKind[dept] = {};
+      }
+    }),
+  );
+
+  // Stable display order: locale-sort departments. Kinds keep their
+  // Drive-listing order within each dept (no second sort).
+  departments.sort((a, b) => a.localeCompare(b, "he"));
+
   return {
     departments,
-    allKinds,
+    allKinds: Array.from(allKindsSet),
     kindsByDepartment,
     templatesByDeptAndKind,
-    isEmpty: rows.length === 0,
+    isEmpty: departments.length === 0,
   };
 }

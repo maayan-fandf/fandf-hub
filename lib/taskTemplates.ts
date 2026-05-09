@@ -189,6 +189,104 @@ async function findKindFolder(
   }
 }
 
+/**
+ * Ensures `<shared>/סכמות משימה/` exists, creating it if missing.
+ * Returns the folder id. Used by the admin "+ הוסף מחלקה / + הוסף
+ * סוג" flow.
+ */
+export async function ensureTemplatesRoot(
+  subjectEmail: string,
+): Promise<string> {
+  const sharedDriveId = getTasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  const existing = await findChildFolderByName(
+    drive,
+    sharedDriveId,
+    TEMPLATES_ROOT_NAME,
+    sharedDriveId,
+  );
+  if (existing) return existing;
+  const created = await drive.files.create({
+    requestBody: {
+      name: TEMPLATES_ROOT_NAME,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [sharedDriveId],
+    },
+    fields: "id",
+    supportsAllDrives: true,
+  });
+  if (!created.data.id) throw new Error("ensureTemplatesRoot: no id returned");
+  return created.data.id;
+}
+
+/**
+ * Ensures `<shared>/סכמות משימה/<dept>/` exists. Idempotent: returns
+ * the existing folder id when present.
+ */
+export async function ensureDeptFolder(
+  subjectEmail: string,
+  dept: string,
+): Promise<string> {
+  const trimmed = dept.trim();
+  if (!trimmed) throw new Error("ensureDeptFolder: empty dept name");
+  const sharedDriveId = getTasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  const rootId = await ensureTemplatesRoot(subjectEmail);
+  const existing = await findChildFolderByName(
+    drive,
+    rootId,
+    trimmed,
+    sharedDriveId,
+  );
+  if (existing) return existing;
+  const created = await drive.files.create({
+    requestBody: {
+      name: trimmed,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [rootId],
+    },
+    fields: "id",
+    supportsAllDrives: true,
+  });
+  if (!created.data.id) throw new Error("ensureDeptFolder: no id returned");
+  return created.data.id;
+}
+
+/**
+ * Ensures `<shared>/סכמות משימה/<dept>/<kind>/` exists. The dept
+ * folder is created en route if missing. Idempotent: returns the
+ * existing kind folder id when present.
+ */
+export async function ensureKindFolder(
+  subjectEmail: string,
+  dept: string,
+  kind: string,
+): Promise<string> {
+  const trimmedKind = kind.trim();
+  if (!trimmedKind) throw new Error("ensureKindFolder: empty kind name");
+  const sharedDriveId = getTasksSharedDriveId();
+  const drive = driveClient(driveFolderOwner() || subjectEmail);
+  const deptFolderId = await ensureDeptFolder(subjectEmail, dept);
+  const existing = await findChildFolderByName(
+    drive,
+    deptFolderId,
+    trimmedKind,
+    sharedDriveId,
+  );
+  if (existing) return existing;
+  const created = await drive.files.create({
+    requestBody: {
+      name: trimmedKind,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [deptFolderId],
+    },
+    fields: "id",
+    supportsAllDrives: true,
+  });
+  if (!created.data.id) throw new Error("ensureKindFolder: no id returned");
+  return created.data.id;
+}
+
 /** Lists non-folder children of a folder on the Tasks Shared Drive.
  *  Used as the source for the new-task form's template picker. */
 export async function listFilesInFolder(

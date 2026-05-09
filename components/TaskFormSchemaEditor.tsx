@@ -1,207 +1,102 @@
 "use client";
 
 import { useState } from "react";
-import type { TaskFormSchemaRow } from "@/lib/taskFormSchema";
+import { useRouter } from "next/navigation";
+import type { TaskFormSchema } from "@/lib/taskFormSchema";
 
 /**
- * Two-column editor for TaskFormSchema (מחלקה | סוג). Single-shot
- * save model — every Save button click POSTs the entire table to
- * /api/admin/task-form-schema, which clears the data area and
- * rewrites it. Simpler than a row-level CRUD for an admin tool with
- * one user editing at a time, and the sheet ↔ UI alignment stays
- * trivially correct.
+ * Read-only viewer for the task-form schema, sourced directly from
+ * Drive (`<shared>/סכמות משימה/<Dept>/<Kind>/`). Two write actions
+ * for admins:
  *
- * Local edits are dirty until saved; the page intentionally doesn't
- * autosave on every keystroke (Hebrew typing makes that noisy).
+ *   1. **+ הוסף מחלקה** — creates a new dept folder under סכמות משימה.
+ *   2. **+ הוסף סוג** — creates a new kind folder under a chosen dept.
  *
- * Layout: rows are visually grouped into per-department <details>
- * sections so the editor scales as more departments accrue. Each
- * group has its own "+ הוסף סוג" inline button. Rows with an empty
- * department land in a trailing "ללא מחלקה" group so a freshly-added
- * blank row is always findable. Editing a row's department in-place
- * makes it jump to the matching group on the next render — that
- * matches the actual data semantics ("dept is a property of the
- * row") so the visible structure stays honest.
+ * Renames + deletes are deliberately NOT in this UI — admins manage
+ * those via Drive's own UI (right-click → rename / delete on the
+ * folder), where they can also see the templates inside each kind
+ * folder. The hub viewer keeps focus on adding new options to the
+ * form's dropdowns.
+ *
+ * Display kept as <details> blocks per dept so the layout matches
+ * what admins are used to from the previous sheet-backed editor.
+ *
+ * NOTE: the file is named `TaskFormSchemaEditor.tsx` (not Viewer) for
+ * git-history continuity with the previous sheet-based editor.
  */
-export default function TaskFormSchemaEditor({
-  initialRows,
-}: {
-  initialRows: TaskFormSchemaRow[];
-}) {
-  // Sort initial rows by department for visual grouping; preserve
-  // the original order WITHIN each department so admin curation of
-  // kind order is honored.
-  const [rows, setRows] = useState<TaskFormSchemaRow[]>(() => {
-    const byDept = new Map<string, TaskFormSchemaRow[]>();
-    for (const r of initialRows) {
-      const list = byDept.get(r.department) ?? [];
-      list.push(r);
-      byDept.set(r.department, list);
-    }
-    return Array.from(byDept.entries())
-      .sort(([a], [b]) => a.localeCompare(b, "he"))
-      .flatMap(([, list]) => list);
-  });
-  const [saving, setSaving] = useState(false);
+
+type Props = {
+  schema: TaskFormSchema;
+};
+
+const TEMPLATES_ROOT_NAME = "סכמות משימה";
+
+export default function TaskFormSchemaViewer({ schema }: Props) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
-  // Drive-sync: status banner shown after a manual "🔄 סנכרן מ-Drive"
-  // click. Cleared automatically after a few seconds OR when the user
-  // makes any other edit, so a stale "added 3 rows" message doesn't
-  // hang around forever.
-  const [syncing, setSyncing] = useState(false);
-  const [syncSummary, setSyncSummary] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  /** When set to a dept name, the inline "add kind" form is shown
+   *  beneath that dept. When "__new_dept__", the inline "add dept"
+   *  form is shown above the list. */
+  const [adding, setAdding] = useState<string | null>(null);
+  const [pendingName, setPendingName] = useState("");
 
-  function update(idx: number, partial: Partial<TaskFormSchemaRow>) {
-    setRows((cur) =>
-      cur.map((r, i) => (i === idx ? { ...r, ...partial } : r)),
-    );
-    setDirty(true);
-  }
-
-  function addRow(template?: Partial<TaskFormSchemaRow>) {
-    setRows((cur) => [
-      ...cur,
-      { department: template?.department ?? "", kind: template?.kind ?? "" },
-    ]);
-    setDirty(true);
-  }
-
-  function removeRow(idx: number) {
-    setRows((cur) => cur.filter((_, i) => i !== idx));
-    setDirty(true);
-  }
-
-  async function syncFromDrive() {
-    setSyncing(true);
+  async function refresh() {
+    setRefreshing(true);
     setError(null);
-    setSyncSummary(null);
     try {
-      const res = await fetch("/api/admin/sync-task-form-schema", {
-        method: "POST",
-      });
-      const body = (await res.json()) as
-        | {
-            ok: true;
-            added: number;
-            renamed: number;
-            bound: number;
-            unchanged: number;
-            manualPreserved: number;
-            driveItemsScanned: number;
-            sheetRewritten: boolean;
-            errors: string[];
-          }
-        | { ok: false; error: string };
-      if (!res.ok || !body.ok) {
-        throw new Error("error" in body ? body.error : `HTTP ${res.status}`);
-      }
-      // If the reconciler rewrote the sheet, refresh local state from
-      // the server so the new rows show up without a page reload. We
-      // hit the GET endpoint to avoid duplicating the sheet-read in
-      // the sync route's response shape.
-      if (body.sheetRewritten) {
-        const fresh = await fetch("/api/admin/task-form-schema");
-        const freshBody = (await fresh.json()) as
-          | { ok: true; rows: TaskFormSchemaRow[] }
-          | { ok: false; error: string };
-        if (fresh.ok && freshBody.ok) {
-          setRows(freshBody.rows);
-          setDirty(false);
-        }
-      }
-      const parts: string[] = [];
-      if (body.added) parts.push(`${body.added} שורות חדשות`);
-      if (body.renamed) parts.push(`${body.renamed} עודכנו`);
-      if (body.bound) parts.push(`${body.bound} נקשרו`);
-      if (parts.length === 0) {
-        setSyncSummary(
-          `הסנכרון רץ — אין שינויים (${body.driveItemsScanned} קבצים ב-Drive).`,
-        );
-      } else {
-        setSyncSummary(
-          `סונכרן: ${parts.join(" · ")} (${body.driveItemsScanned} קבצים ב-Drive).`,
-        );
-      }
-      // Auto-clear the banner after ~6s so it doesn't outstay its
-      // welcome on the page.
-      setTimeout(() => setSyncSummary(null), 6000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // The folder-create endpoint invalidates the in-process cache;
+      // here we want a no-op invalidation purely to bust the cache,
+      // then a router.refresh() to re-render with fresh data. Calling
+      // POST without a `dept` returns 400 (bad request) which we
+      // treat as success for the cache-bust side effect — but it's
+      // cleaner to add a dedicated invalidate endpoint. For v1 we
+      // just refresh; cache TTL is 5 min so the worst case is a
+      // brief delay before new Drive folders show up.
+      router.refresh();
     } finally {
-      setSyncing(false);
+      setRefreshing(false);
     }
   }
 
-  async function save() {
-    setSaving(true);
+  async function createFolder(dept: string, kind?: string) {
+    setBusy(true);
     setError(null);
     try {
-      // Strip blanks before sending — saves a server round-trip on
-      // empty rows the user added but didn't fill in.
-      const cleaned = rows
-        .map((r) => ({
-          department: r.department.trim(),
-          kind: r.kind.trim(),
-          templateDocId: (r.templateDocId ?? "").trim(),
-        }))
-        .filter((r) => r.department && r.kind);
-      const res = await fetch("/api/admin/task-form-schema", {
+      const res = await fetch("/api/admin/task-form-folder", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rows: cleaned }),
+        body: JSON.stringify({ dept, kind: kind || undefined }),
       });
-      const body = (await res.json()) as
-        | { ok: true; rows: TaskFormSchemaRow[] }
+      const data = (await res.json()) as
+        | { ok: true; folderId: string; dept: string; kind: string | null }
         | { ok: false; error: string };
-      if (!res.ok || !body.ok) {
-        throw new Error("error" in body ? body.error : `HTTP ${res.status}`);
+      if (!res.ok || !data.ok) {
+        throw new Error("error" in data ? data.error : `HTTP ${res.status}`);
       }
-      setRows(body.rows);
-      setSavedAt(new Date().toISOString());
-      setDirty(false);
+      setAdding(null);
+      setPendingName("");
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  // Group rows by department for the collapsible per-dept sections.
-  // Each entry remembers the row's absolute index in `rows` so the
-  // update / removeRow callbacks keep working unchanged.
-  const grouped: Array<{
-    dept: string;
-    rows: Array<{ row: TaskFormSchemaRow; idx: number }>;
-  }> = (() => {
-    const map = new Map<
-      string,
-      Array<{ row: TaskFormSchemaRow; idx: number }>
-    >();
-    rows.forEach((row, idx) => {
-      const key = row.department.trim() || "__none__";
-      const list = map.get(key) ?? [];
-      list.push({ row, idx });
-      map.set(key, list);
-    });
-    return Array.from(map.entries())
-      .sort(([a], [b]) => {
-        // Push the "no department" bucket to the end so it doesn't
-        // dominate the top of the list when the user adds blank rows.
-        if (a === "__none__") return 1;
-        if (b === "__none__") return -1;
-        return a.localeCompare(b, "he");
-      })
-      .map(([key, list]) => ({
-        dept: key === "__none__" ? "" : key,
-        rows: list,
-      }));
-  })();
-
-  // Distinct departments for the datalist — same source as the
-  // grouping above, minus the "no dept" sentinel.
-  const distinctDepts = grouped.map((g) => g.dept).filter(Boolean);
+  function startAddDept() {
+    setAdding("__new_dept__");
+    setPendingName("");
+  }
+  function startAddKind(dept: string) {
+    setAdding(dept);
+    setPendingName("");
+  }
+  function cancelAdd() {
+    setAdding(null);
+    setPendingName("");
+  }
 
   return (
     <div className="task-form-schema-editor">
@@ -210,239 +105,149 @@ export default function TaskFormSchemaEditor({
       <div className="task-form-schema-toolbar">
         <button
           type="button"
-          className="btn-primary"
-          onClick={save}
-          disabled={saving || !dirty}
+          className="btn-ghost"
+          onClick={startAddDept}
+          disabled={busy}
         >
-          {saving ? "שומר…" : dirty ? "שמור שינויים" : "אין שינויים"}
+          + הוסף מחלקה
         </button>
         <button
           type="button"
           className="btn-ghost"
-          onClick={() => addRow()}
-          disabled={saving || syncing}
+          onClick={refresh}
+          disabled={refreshing || busy}
+          title="טען מחדש את התיקיות מ-Drive"
         >
-          + שורה
+          {refreshing ? "טוען…" : "🔄 רענן"}
         </button>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={syncFromDrive}
-          disabled={saving || syncing || dirty}
-          title={
-            dirty
-              ? "שמור שינויים מקומיים לפני סנכרון מ-Drive"
-              : "סנכרן את הטבלה עם תיקיות ה-תבניות ב-Drive (סכמות משימה)"
-          }
-        >
-          {syncing ? "מסנכרן…" : "🔄 סנכרן מ-Drive"}
-        </button>
-        {savedAt && !dirty && (
-          <span className="task-form-schema-saved" dir="ltr">
-            נשמר ב-{new Date(savedAt).toLocaleTimeString("he-IL")}
-          </span>
-        )}
-        {syncSummary && (
-          <span className="task-form-schema-sync-summary">
-            {syncSummary}
-          </span>
-        )}
       </div>
 
-      {rows.length === 0 ? (
+      {adding === "__new_dept__" && (
+        <div className="task-form-schema-inline-add">
+          <span>שם מחלקה חדשה:</span>
+          <input
+            type="text"
+            value={pendingName}
+            onChange={(e) => setPendingName(e.target.value)}
+            placeholder="לדוג': Designer"
+            autoFocus
+          />
+          <button
+            type="button"
+            className="btn-primary btn-sm"
+            disabled={busy || !pendingName.trim()}
+            onClick={() => createFolder(pendingName.trim())}
+          >
+            {busy ? "יוצר…" : "צור תיקייה"}
+          </button>
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={cancelAdd}
+            disabled={busy}
+          >
+            ביטול
+          </button>
+        </div>
+      )}
+
+      {schema.departments.length === 0 ? (
         <div className="task-form-schema-empty-block">
-          אין שורות עדיין. לחץ על &quot;+ שורה&quot; כדי להתחיל, או ערוך
-          ישירות את לשונית <code>TaskFormSchema</code> ב-Google Sheets.
+          אין מחלקות עדיין. לחץ על &quot;+ הוסף מחלקה&quot; כדי להתחיל, או
+          צור תיקייה ישירות תחת <code>{TEMPLATES_ROOT_NAME}/</code> ב-Drive.
         </div>
       ) : (
         <div className="task-form-schema-groups">
-          {grouped.map(({ dept, rows: groupRows }) => (
-            <details
-              key={dept || "__none__"}
-              className="task-form-schema-group"
-              open
-            >
-              <summary>
-                <span className="task-form-schema-group-name">
-                  {dept || "ללא מחלקה"}
-                </span>
-                <span className="task-form-schema-group-count">
-                  {groupRows.length}{" "}
-                  {groupRows.length === 1 ? "סוג" : "סוגים"}
-                </span>
-                <span className="task-form-schema-group-spacer" />
-                {dept && (
+          {schema.departments.map((dept) => {
+            const kinds = schema.kindsByDepartment[dept] ?? [];
+            const folders = schema.templatesByDeptAndKind[dept] ?? {};
+            return (
+              <details
+                key={dept}
+                className="task-form-schema-group"
+                open
+              >
+                <summary>
+                  <span className="task-form-schema-group-name">{dept}</span>
+                  <span className="task-form-schema-group-count">
+                    {kinds.length}{" "}
+                    {kinds.length === 1 ? "סוג" : "סוגים"}
+                  </span>
+                  <span className="task-form-schema-group-spacer" />
                   <button
                     type="button"
                     className="btn-ghost btn-sm"
                     onClick={(e) => {
-                      // Don't toggle the <details> open/closed state.
                       e.preventDefault();
-                      addRow({ department: dept });
+                      startAddKind(dept);
                     }}
-                    disabled={saving}
+                    disabled={busy}
                     title={`הוסף סוג ל-${dept}`}
                   >
                     + הוסף סוג
                   </button>
-                )}
-              </summary>
-              <div className="task-form-schema-table-wrap themed-scrollbar">
-                <table className="task-form-schema-table">
-                  <thead>
-                    <tr>
-                      <th>מחלקה</th>
-                      <th>סוג</th>
-                      <th>תבנית</th>
-                      <th aria-label="פעולות" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupRows.map(({ row: r, idx: i }) => (
-                      <tr key={i}>
-                        <td>
-                          <input
-                            type="text"
-                            value={r.department}
-                            onChange={(e) =>
-                              update(i, { department: e.target.value })
-                            }
-                            placeholder="לדוג': קריאייטיב"
-                            list="task-form-schema-departments"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={r.kind}
-                            onChange={(e) => update(i, { kind: e.target.value })}
-                            placeholder="לדוג': קריאייטיב פרסומי"
-                          />
-                        </td>
-                        <td>
-                          <TemplateCell
-                            value={r.templateDocId ?? ""}
-                            onChange={(v) =>
-                              update(i, { templateDocId: v })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn-ghost btn-sm"
-                            onClick={() => removeRow(i)}
-                            disabled={saving}
-                            aria-label="מחק שורה"
-                            title="מחק"
+                </summary>
+                <div className="task-form-schema-kinds">
+                  {kinds.map((kind) => {
+                    const kindFolderId = folders[kind] || "";
+                    return (
+                      <div className="task-form-schema-kind-row" key={kind}>
+                        <span className="task-form-schema-kind-name">
+                          {kind}
+                        </span>
+                        {kindFolderId && (
+                          <a
+                            href={`https://drive.google.com/drive/folders/${kindFolderId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="task-form-schema-kind-link"
+                            title={kindFolderId}
                           >
-                            🗑
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          ))}
+                            📁 פתח תיקייה
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {kinds.length === 0 && (
+                    <div className="task-form-schema-kind-row task-form-schema-kind-empty">
+                      <span>אין סוגים בתיקייה הזו עדיין.</span>
+                    </div>
+                  )}
+                  {adding === dept && (
+                    <div className="task-form-schema-inline-add">
+                      <span>שם סוג חדש:</span>
+                      <input
+                        type="text"
+                        value={pendingName}
+                        onChange={(e) => setPendingName(e.target.value)}
+                        placeholder="לדוג': קריאייטיב פרסומי"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className="btn-primary btn-sm"
+                        disabled={busy || !pendingName.trim()}
+                        onClick={() => createFolder(dept, pendingName.trim())}
+                      >
+                        {busy ? "יוצר…" : "צור תיקייה"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm"
+                        onClick={cancelAdd}
+                        disabled={busy}
+                      >
+                        ביטול
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </details>
+            );
+          })}
         </div>
       )}
-
-      <datalist id="task-form-schema-departments">
-        {distinctDepts.map((d) => (
-          <option key={d} value={d} />
-        ))}
-      </datalist>
     </div>
   );
-}
-
-/**
- * Per-row "template doc" cell. The cell shows one of two states:
- *
- *   1. **Bound:** a doc id is set. We render an "📄 פתח" link to the
- *      Drive file (so admins can verify the binding) and a small ✕
- *      button to clear it.
- *   2. **Unbound:** no doc id. We render a small text input that
- *      accepts either a Drive file id (alphanumeric+dash, ≥20 chars)
- *      OR a full Drive URL — the server-side `sanitizeTemplateDocId`
- *      extracts the id either way, but we do the same client-side so
- *      the bound state shows up immediately on paste.
- *
- * v0 deliberately uses paste-link instead of a Google Drive Picker.
- * The Picker requires the gapi.iframes JS + an OAuth client id and
- * adds ~150KB on first interaction; not worth it for an admin tool
- * that gets used by ~3 people. Future: swap to a Picker if the
- * paste-link UX gets friction.
- */
-function TemplateCell({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  if (value) {
-    // The bound id is the kind folder under <shared>/סכמות משימה/.
-    // (Pre-restructure rows might still hold a file id — Drive happens
-    // to handle either when the URL doesn't match the type, just less
-    // gracefully — so the cell stays readable while the reconciler
-    // catches up.)
-    return (
-      <div className="task-form-schema-template-bound">
-        <a
-          href={`https://drive.google.com/drive/folders/${value}`}
-          target="_blank"
-          rel="noreferrer"
-          className="task-form-schema-template-link"
-          title={value}
-        >
-          📁 פתח תיקייה
-        </a>
-        <button
-          type="button"
-          className="task-form-schema-template-clear"
-          onClick={() => onChange("")}
-          aria-label="נקה תבנית"
-          title="נתק תיקיית תבניות"
-        >
-          ✕
-        </button>
-      </div>
-    );
-  }
-  return (
-    <input
-      type="text"
-      className="task-form-schema-template-input"
-      placeholder="הדבק קישור לתיקיית תבניות"
-      onPaste={(e) => {
-        // Resolve URL → id immediately so the cell flips to bound
-        // state without waiting for blur. We also still let the
-        // change event run (the server normalizes too).
-        const text = e.clipboardData.getData("text").trim();
-        const id = extractDocId(text);
-        if (id) {
-          e.preventDefault();
-          onChange(id);
-        }
-      }}
-      onBlur={(e) => {
-        const id = extractDocId(e.target.value.trim());
-        if (id !== value) onChange(id);
-      }}
-    />
-  );
-}
-
-/** Mirrors the server's `sanitizeTemplateDocId`. Either input form
- *  resolves to the bare Drive id when valid, '' otherwise. Accepts
- *  folder URLs (`/drive/folders/<id>`), file URLs (`/file/d/<id>/`),
- *  doc URLs (`/document/d/<id>/`), and bare ids. */
-function extractDocId(input: string): string {
-  if (!input) return "";
-  if (/^[\w-]{20,}$/.test(input)) return input;
-  const m = input.match(/(?:[?&]id=|\/d\/|\/folders\/)([\w-]{20,})/);
-  return m?.[1] ?? "";
 }

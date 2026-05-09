@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(npx clasp *)",
+      "Bash(clasp push *)",
+      "Bash(clasp deployments *)",
+      "Bash(clasp deploy *)",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=ping&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il\")",
+      "Bash(curl -s \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=ping&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il\")",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=myProjects&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il\")",
+      "Bash(gh auth *)",
+      "Bash(git push:*)",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=search&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il&q=%D7%91%D7%95%D7%93%D7%A7&limit=3\")",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=projectAssignees&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il&project=%D7%9E%D7%95%D7%94%D7%9C%D7%99%D7%91%D7%A8\")",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=projectAssignees&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il&project=%D7%9C%D7%95%D7%A8%D7%99%D7%90\")",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=projectAssignees&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=maayan@fandf.co.il&project=%D7%92%D7%99%D7%A0%D7%95%D7%AA\")",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=projectAssignees&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=raheli0304@gmail.com&project=%D7%92%D7%99%D7%A0%D7%95%D7%AA\")",
+      "Bash(curl -s -L \"https://script.google.com/macros/s/AKfycbzWF_rXfqnRtvCC9QDKvHNNqAERxSnpoSqpqCvbZEalTuND3diSu9FL0WbQcr9dYy4HUA/exec?api=1&action=myProjects&token=5526ada10d90a84e08342ca6a65a6ce228b0b0826e23a124a8abaab8cb9d661b&user=fux@fandf.co.il\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__find",
+      "mcp__Claude_in_Chrome__tabs_create_mcp"
+    ]
+  }
+}

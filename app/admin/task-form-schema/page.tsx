@@ -1,11 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  getMyProjects,
-  currentUserEmail,
-} from "@/lib/appsScript";
-import { listTaskFormSchemaRows } from "@/lib/taskFormSchema";
-import TaskFormSchemaEditor from "@/components/TaskFormSchemaEditor";
+import { getMyProjects, currentUserEmail } from "@/lib/appsScript";
+import { getTaskFormSchema } from "@/lib/taskFormSchema";
+import TaskFormSchemaViewer from "@/components/TaskFormSchemaEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +17,13 @@ export default async function TaskFormSchemaAdminPage() {
   if (!isAdmin) redirect("/");
 
   const adminEmail = await currentUserEmail();
-  const initialRows = await listTaskFormSchemaRows(adminEmail).catch(() => []);
+  const schema = await getTaskFormSchema(adminEmail).catch(() => ({
+    departments: [] as string[],
+    allKinds: [] as string[],
+    kindsByDepartment: {} as Record<string, string[]>,
+    templatesByDeptAndKind: {} as Record<string, Record<string, string>>,
+    isEmpty: true,
+  }));
 
   return (
     <main className="container">
@@ -32,15 +35,15 @@ export default async function TaskFormSchemaAdminPage() {
           </h1>
           <div className="subtitle">
             <Link href="/admin">→ ניהול</Link> · שולט על המחלקות והסוגים
-            הזמינים בטופס &quot;משימה חדשה&quot;. כל סוג משויך למחלקה — בעת
-            יצירת משימה, לאחר בחירת מחלקה הסוגים מסוננים אוטומטית. שינויים
-            כאן או ישירות ב-Google Sheets (לשונית <code>TaskFormSchema</code>)
-            נכנסים לתוקף תוך כ-5 דקות.
+            הזמינים בטופס &quot;משימה חדשה&quot;. כל סוג הוא תיקייה ב-Drive
+            תחת <code>סכמות משימה/&lt;מחלקה&gt;/&lt;סוג&gt;/</code>. כשמוסיפים
+            תיקייה כאן (או ישירות ב-Drive), היא נכנסת לתוקף תוך כ-5 דקות
+            (ניתן לרענן ידנית).
           </div>
         </div>
       </header>
 
-      <TaskFormSchemaEditor initialRows={initialRows} />
+      <TaskFormSchemaViewer schema={schema} />
     </main>
   );
 }
