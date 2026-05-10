@@ -7,6 +7,7 @@ import {
 } from "@/lib/driveFolders";
 import PrisotThumb from "./PrisotThumb";
 import SendForApprovalButton from "./SendForApprovalButton";
+import GoogleDriveIcon from "./GoogleDriveIcon";
 
 /**
  * Server component — fetches and renders the latest Google Sheet from
@@ -124,14 +125,29 @@ export default async function LatestPrisotCard({
             </span>
           )}
         </h2>
-        <a
-          className="section-link"
-          href={latest.webViewLink}
-          target="_blank"
-          rel="noreferrer"
-        >
-          פתח בכרטיסייה חדשה ↗
-        </a>
+        <div className="section-head-actions prisot-head-actions">
+          {latest.folderUrl && (
+            <a
+              className="prisot-folder-link"
+              href={latest.folderUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="פתח את תיקיית הפריסות ב-Drive"
+              aria-label="פתח את תיקיית הפריסות ב-Drive"
+            >
+              <GoogleDriveIcon size="1.05em" />
+              <span>תיקייה</span>
+            </a>
+          )}
+          <a
+            className="section-link"
+            href={latest.webViewLink}
+            target="_blank"
+            rel="noreferrer"
+          >
+            פתח בכרטיסייה חדשה ↗
+          </a>
+        </div>
       </div>
       <Link
         href={latest.webViewLink}

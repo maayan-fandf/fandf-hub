@@ -292,6 +292,10 @@ export type LatestPrisot = {
   /** ISO timestamp of when the file was locked/approved (the
    *  contentRestriction's restrictionTime). Empty when not approved. */
   approvedTime: string;
+  /** URL of the parent `פריסות` folder so the card can render a
+   *  "open the folder in Drive" affordance — useful when the user
+   *  wants to see prior spreads or upload a new one. */
+  folderUrl: string;
 };
 
 /** Mime types we surface from a פריסות folder — sheets + the common
@@ -516,6 +520,10 @@ async function findLatestPrisotInner(
         `isLocked=${isLocked} reason=${restriction?.reason || ""}`,
     );
   }
+  // Drive's stable folder URL pattern — no extra API call needed.
+  // We could fetch the folder's webViewLink via files.get, but the
+  // canonical /drive/folders/<id> URL is what Drive itself uses.
+  const folderUrl = `https://drive.google.com/drive/folders/${prisotFolderId}`;
   return {
     id: best.id,
     name: best.name || "(ללא שם)",
@@ -530,6 +538,7 @@ async function findLatestPrisotInner(
     approvalState,
     approved: approvalState === "approved",
     approvedTime,
+    folderUrl,
   };
 }
 
