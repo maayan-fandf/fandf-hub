@@ -724,9 +724,20 @@ export async function uploadChatAttachment(
     );
   }
 
-  const data = (await r.json().catch(() => ({}))) as {
-    attachmentDataRef?: { resourceName?: string };
-  };
+  // Read response as text first so we can dump it on errors AND
+  // safely fall back when the body isn't JSON (some Google paths
+  // return a plain "OK" or empty body for accepted multipart bodies
+  // that the API treats as "media-only" — different from the
+  // metadata+media multipart we want).
+  const responseText = await r.text().catch(() => "");
+  let data: { attachmentDataRef?: { resourceName?: string } } = {};
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    // Not JSON — leave data as {}; the empty-attachmentDataRef
+    // branch below surfaces the raw text in the thrown error so
+    // we can see what Google actually returned.
+  }
   const ref = data.attachmentDataRef?.resourceName ?? "";
   if (!ref) {
     console.error("[uploadChatAttachment] no attachmentDataRef in response", {
@@ -735,10 +746,17 @@ export async function uploadChatAttachment(
       mimeType,
       bytes: bytes.length,
       responseStatus: r.status,
-      responseDataKeys: data ? Object.keys(data) : null,
-      responseDataSample: JSON.stringify(data).slice(0, 400),
+      responseDataKeys: Object.keys(data),
+      responseTextSample: responseText.slice(0, 400),
     });
-    throw new Error("Chat upload returned no attachmentDataRef");
+    // Bubble a slice of the actual response body up to the client
+    // chip so the user (and future debugging without log access)
+    // can SEE what Google sent back. The default "no
+    // attachmentDataRef" message is opaque on its own.
+    const sample = responseText.slice(0, 200) || "<empty body>";
+    throw new Error(
+      `Chat upload returned no attachmentDataRef (status=${r.status}, body: ${sample})`,
+    );
   }
   return { resourceName: ref };
 }
