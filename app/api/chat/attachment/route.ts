@@ -53,8 +53,14 @@ export async function GET(req: Request) {
   try {
     const chat = chatClient(email);
     /* eslint-disable @typescript-eslint/no-explicit-any */
+    // `alt: "media"` is REQUIRED — without it Chat returns 400
+    // INVALID_ARGUMENT: "Invalid value for query parameter 'alt'.
+    // It must be set to \"media\"." The SDK's responseType:"stream"
+    // hint doesn't translate into this query param automatically
+    // for this endpoint, so we set it explicitly on the params.
+    // Confirmed via the diagnostic-error response 2026-05-11.
     const res = await (chat.media as any).download(
-      { resourceName },
+      { resourceName, alt: "media" },
       { responseType: "stream" },
     );
     /* eslint-enable @typescript-eslint/no-explicit-any */
