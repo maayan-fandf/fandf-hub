@@ -83,21 +83,38 @@ export default function HomeFilterBar() {
         </span>
         <span>{hideEnded ? "הצג שהסתיימו" : "הסתר שהסתיימו"}</span>
       </button>
-      <button
-        type="button"
-        className={`home-filter-pill home-filter-pill--button${showMine ? " is-active" : ""}`}
-        onClick={() => setShowMine((v) => !v)}
-        title={
-          showMine
-            ? "מציג רק פרויקטים עם משימות פתוחות או תיוגים שלי"
-            : "הצג את כל הפרויקטים, גם אלה שאין לי בהם משימות / תיוגים פתוחים"
-        }
+      {/* Segmented "scope" control — visual twin of the /tasks page's
+          TasksScopeToggle so the gesture feels the same across surfaces.
+          Buttons (not Links) because the toggle is client-only state:
+          flips data-show-mine on <html>; CSS does the hide. */}
+      <div
+        className="tasks-scope-toggle"
+        role="tablist"
+        aria-label="היקף הרשת"
       >
-        <span className="home-filter-pill-icon" aria-hidden>
-          🙋
-        </span>
-        <span>{showMine ? "רק את שלי" : "הצג את כולם"}</span>
-      </button>
+        <button
+          type="button"
+          className={`tasks-scope-toggle-btn${showMine ? " is-active" : ""}`}
+          onClick={() => setShowMine(true)}
+          aria-selected={showMine}
+          role="tab"
+          title="מציג רק פרויקטים עם משימות פתוחות או תיוגים שלי"
+        >
+          <span aria-hidden>🎯</span>
+          רק שלי
+        </button>
+        <button
+          type="button"
+          className={`tasks-scope-toggle-btn${!showMine ? " is-active" : ""}`}
+          onClick={() => setShowMine(false)}
+          aria-selected={!showMine}
+          role="tab"
+          title="הצג את כל הפרויקטים, גם אלה שאין לי בהם משימות / תיוגים פתוחים"
+        >
+          <span aria-hidden>🌐</span>
+          הכל
+        </button>
+      </div>
     </div>
   );
 }

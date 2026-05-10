@@ -104,7 +104,6 @@ export default async function HomePage() {
     }
   }
   const byProject = counts?.byProject ?? {};
-  const totals = counts?.total ?? { openTasks: 0, openMentions: 0 };
 
   // Company-level aggregates. Sum per-project counts for each company
   // group so we can render a "6 tasks + 2 mentions" summary on the
@@ -215,21 +214,6 @@ export default async function HomePage() {
         </div>
       )}
 
-      {counts && (
-        <div className="stats-grid home-stats">
-          <StatTile
-            variant="tasks"
-            label="📋 משימות פתוחות"
-            value={totals.openTasks}
-          />
-          <StatTile
-            variant="mentions"
-            label="🏷️ תיוגים שלי"
-            value={totals.openMentions}
-          />
-        </div>
-      )}
-
       {grouped.length > 0 && (
         <div className="company-groups">
           {grouped.map((g) => {
@@ -322,23 +306,6 @@ export default async function HomePage() {
 }
 
 /* ─── Subcomponents ──────────────────────────────────────────────── */
-
-function StatTile({
-  variant,
-  label,
-  value,
-}: {
-  variant: "tasks" | "mentions";
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className={`stat-tile stat-tile-${variant}`}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
 
 /**
  * Alert-severity pills — shown at both company and project levels when
