@@ -118,9 +118,11 @@ export async function GET(req: Request) {
   const tokenResp = await auth2?.getAccessToken?.();
   const token = tokenResp?.token || "";
 
+  // No ?supportsAllDrives — the /approvals endpoint rejects it. See
+  // matching note in lib/driveFolders.ts → fetchApprovalState.
   const apiUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
     fileId,
-  )}/approvals?supportsAllDrives=true`;
+  )}/approvals`;
   let httpStatus = 0;
   let apiBody: unknown = null;
   try {

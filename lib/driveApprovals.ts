@@ -131,12 +131,14 @@ export async function createDriveApproval({
 
   const dueTime = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
   // Path uses the `:start` action suffix per the documented guide.
-  // supportsAllDrives kept on the query string so files in Shared
-  // Drives don't 404.
+  // Do NOT add ?supportsAllDrives=true — the /approvals sub-resource
+  // rejects it with 400 (param is only valid on /files, /files.list,
+  // etc.). Verified 2026-05-10 via the
+  // /api/admin/debug/drive-approvals diagnostic.
   const url =
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
       cleanFileId,
-    )}/approvals:start?supportsAllDrives=true`;
+    )}/approvals:start`;
   const body = {
     reviewerEmails: approverList,
     message: (message || "").trim() || "פריסה לאישור",

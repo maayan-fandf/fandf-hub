@@ -362,9 +362,14 @@ async function fetchApprovalState(
     const tokenResp = await auth2?.getAccessToken?.();
     const token = tokenResp?.token;
     if (!token) return "none";
+    // NOTE: do NOT add ?supportsAllDrives=true here — that param is
+    // valid on /files, /files.list, /files.copy, etc. but the
+    // /approvals sub-resource explicitly rejects it with 400
+    // "Unknown name supportsAllDrives". Confirmed via the
+    // /api/admin/debug/drive-approvals diagnostic on 2026-05-10.
     const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
       fileId,
-    )}/approvals?supportsAllDrives=true`;
+    )}/approvals`;
     const r = await fetch(url, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
