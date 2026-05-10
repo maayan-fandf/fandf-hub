@@ -143,7 +143,18 @@ export default async function RootLayout({
       : dashboardBase;
 
   return (
-    <html lang="he" dir="rtl">
+    <html
+      lang="he"
+      dir="rtl"
+      // SSR defaults for the home filter bar: hide-ended ON, show-mine
+      // ON. HomeFilterBar's useEffect overrides these from
+      // localStorage on mount; the SSR values keep the filter applied
+      // on first paint instead of flashing the unfiltered grid for a
+      // beat. Other pages don't render rows with [data-mine] /
+      // [data-ended] so the attributes are inert there.
+      data-hide-ended="1"
+      data-show-mine="1"
+    >
       <head>
         <script
           // Safe: string is static, no user input interpolated.

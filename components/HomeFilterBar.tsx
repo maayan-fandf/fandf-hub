@@ -20,12 +20,16 @@ const SHOW_MINE_KEY = "hub_show_mine";
 // filter together. Both toggles here are UI-local: they don't refetch
 // data, just hide rows via CSS data attributes.
 //
-// Defaults: hide-ended ON, show-mine OFF. Explicit choices persist in
-// localStorage. `mounted` gates the first DOM write to avoid hydration
-// mismatch on the <html> data-attributes.
+// Defaults: hide-ended ON, show-mine ON. The home page is a personal
+// dashboard — the immediate value is "what's on my plate," not "the
+// firm's full portfolio" — so the natural default is the narrowed
+// view. Users who want the full grid flip to הכל once and the choice
+// persists. Explicit choices persist in localStorage. `mounted` gates
+// the first DOM write to avoid hydration mismatch on the <html>
+// data-attributes.
 export default function HomeFilterBar() {
   const [hideEnded, setHideEnded] = useState(true);
-  const [showMine, setShowMine] = useState(false);
+  const [showMine, setShowMine] = useState(true);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
@@ -33,7 +37,10 @@ export default function HomeFilterBar() {
       const v = localStorage.getItem(HIDE_ENDED_KEY);
       if (v === "0") setHideEnded(false);
       const m = localStorage.getItem(SHOW_MINE_KEY);
-      if (m === "1") setShowMine(true);
+      // Only flip OFF the default when the user has explicitly opted
+      // out — any other value (including missing) keeps the narrowed
+      // default in place.
+      if (m === "0") setShowMine(false);
     } catch {
       /* private mode — keep defaults */
     }
