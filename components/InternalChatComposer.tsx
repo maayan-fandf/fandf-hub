@@ -13,9 +13,13 @@ type Attachment = {
   /** localPreviewUrl: object URL for inline thumbnail rendering before
    *  the upload completes. Revoked when the chip is removed. */
   localPreviewUrl: string;
-  /** resourceName: returned by /api/chat/upload once the upload lands.
-   *  Empty string while still uploading. Sent on submit. */
+  /** resourceName: legacy ref form returned by older /api/chat/upload
+   *  responses. Empty when the upload returned attachmentUploadToken
+   *  instead. */
   resourceName: string;
+  /** attachmentUploadToken: current ref form. Empty when the upload
+   *  returned resourceName. Submit sends whichever is populated. */
+  attachmentUploadToken: string;
   name: string;
   mimeType: string;
   isImage: boolean;
@@ -29,6 +33,7 @@ type UploadResponse =
   | {
       ok: true;
       resourceName: string;
+      attachmentUploadToken: string;
       name: string;
       mimeType: string;
       isImage: boolean;
@@ -239,6 +244,7 @@ export default function InternalChatComposer({
       {
         localPreviewUrl,
         resourceName: "",
+        attachmentUploadToken: "",
         name: file.name || "file",
         mimeType: file.type || "application/octet-stream",
         isImage,
@@ -273,6 +279,7 @@ export default function InternalChatComposer({
           next[idx] = {
             ...next[idx],
             resourceName: data.resourceName,
+            attachmentUploadToken: data.attachmentUploadToken,
             uploading: false,
           };
         }
@@ -428,8 +435,11 @@ export default function InternalChatComposer({
       .map(([email, name]) => ({ email, name }));
 
     // Snapshot what we're sending so we can restore on error.
+    // Include both ref forms — the post route picks whichever is
+    // populated when constructing the Chat API attachmentDataRef.
     const sendingAttachments = readyAttachments.map((a) => ({
       resourceName: a.resourceName,
+      attachmentUploadToken: a.attachmentUploadToken,
     }));
     const restoreAttachments = readyAttachments;
 

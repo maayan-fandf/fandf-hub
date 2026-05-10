@@ -45,7 +45,10 @@ export async function POST(req: Request) {
     text?: string;
     threadName?: string;
     mentions?: { email: string; name: string }[];
-    attachments?: { resourceName: string }[];
+    attachments?: {
+      resourceName?: string;
+      attachmentUploadToken?: string;
+    }[];
   };
   try {
     body = (await req.json()) as typeof body;
@@ -72,14 +75,28 @@ export async function POST(req: Request) {
         )
         .slice(0, 30) // sanity cap — Chat's annotation limit is way higher
     : [];
+  // Accept either ref form per attachment — modern uploads return
+  // attachmentUploadToken, legacy ones returned resourceName. The
+  // post path picks whichever is populated when constructing the
+  // Chat API attachmentDataRef. Discard chips with neither field.
   const attachments = Array.isArray(body.attachments)
     ? body.attachments
         .filter(
           (a) =>
             a &&
-            typeof a.resourceName === "string" &&
-            a.resourceName.length > 0,
+            ((typeof a.resourceName === "string" &&
+              a.resourceName.length > 0) ||
+              (typeof a.attachmentUploadToken === "string" &&
+                a.attachmentUploadToken.length > 0)),
         )
+        .map((a) => ({
+          resourceName:
+            typeof a.resourceName === "string" ? a.resourceName : "",
+          attachmentUploadToken:
+            typeof a.attachmentUploadToken === "string"
+              ? a.attachmentUploadToken
+              : "",
+        }))
         .slice(0, 10)
     : [];
   if (!project) {

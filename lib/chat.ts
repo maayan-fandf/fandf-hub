@@ -579,11 +579,25 @@ export type ChatMentionInput = {
   name: string;
 };
 
-/** Reference to an already-uploaded Chat attachment. `resourceName`
- *  is what Chat returns from media.upload and accepts on
- *  messages.create as `attachment[].attachmentDataRef.resourceName`. */
+/** Reference to an already-uploaded Chat attachment. Google's API
+ *  evolved through two response shapes:
+ *
+ *    - Older: media.upload returned `attachmentDataRef.resourceName`
+ *      and messages.create accepted the same shape on
+ *      `attachment[].attachmentDataRef.resourceName`.
+ *    - Current: media.upload returns
+ *      `attachmentDataRef.attachmentUploadToken` instead, and
+ *      messages.create takes the same field name on the create call.
+ *
+ *  Both fields are documented in Schema$AttachmentDataRef. We support
+ *  either — whichever Google fills in on the upload response is the
+ *  one we send back on the post. Reported by maayan 2026-05-10:
+ *  uploads were failing with "no attachmentDataRef" because the
+ *  response only contained attachmentUploadToken, but the parser
+ *  only looked for resourceName. */
 export type ChatAttachmentRef = {
-  resourceName: string;
+  resourceName?: string;
+  attachmentUploadToken?: string;
 };
 
 /**
@@ -725,12 +739,14 @@ export async function uploadChatAttachment(
   }
 
   // Read response as text first so we can dump it on errors AND
-  // safely fall back when the body isn't JSON (some Google paths
-  // return a plain "OK" or empty body for accepted multipart bodies
-  // that the API treats as "media-only" — different from the
-  // metadata+media multipart we want).
+  // safely fall back when the body isn't JSON.
   const responseText = await r.text().catch(() => "");
-  let data: { attachmentDataRef?: { resourceName?: string } } = {};
+  let data: {
+    attachmentDataRef?: {
+      resourceName?: string;
+      attachmentUploadToken?: string;
+    };
+  } = {};
   try {
     data = JSON.parse(responseText);
   } catch {
@@ -738,8 +754,14 @@ export async function uploadChatAttachment(
     // branch below surfaces the raw text in the thrown error so
     // we can see what Google actually returned.
   }
-  const ref = data.attachmentDataRef?.resourceName ?? "";
-  if (!ref) {
+  // Accept EITHER ref form. Modern Chat uploads return
+  // attachmentUploadToken (opaque temp ref consumed when posting
+  // the message); older paths returned a stable resourceName.
+  // Whichever field Google populated is what we send back.
+  const adr = data.attachmentDataRef || {};
+  const resourceName = adr.resourceName || "";
+  const attachmentUploadToken = adr.attachmentUploadToken || "";
+  if (!resourceName && !attachmentUploadToken) {
     console.error("[uploadChatAttachment] no attachmentDataRef in response", {
       spaceId,
       fileName,
@@ -749,16 +771,12 @@ export async function uploadChatAttachment(
       responseDataKeys: Object.keys(data),
       responseTextSample: responseText.slice(0, 400),
     });
-    // Bubble a slice of the actual response body up to the client
-    // chip so the user (and future debugging without log access)
-    // can SEE what Google sent back. The default "no
-    // attachmentDataRef" message is opaque on its own.
     const sample = responseText.slice(0, 200) || "<empty body>";
     throw new Error(
       `Chat upload returned no attachmentDataRef (status=${r.status}, body: ${sample})`,
     );
   }
-  return { resourceName: ref };
+  return { resourceName, attachmentUploadToken };
 }
 
 export async function postMessage(
@@ -793,7 +811,15 @@ export async function postMessage(
     }
     if (hasAttachments) {
       requestBody.attachment = options.attachments!.map((a) => ({
-        attachmentDataRef: { resourceName: a.resourceName },
+        // Send whichever ref form the upload returned. Modern
+        // uploads populate attachmentUploadToken; older ones used
+        // resourceName. Posting with the wrong field for the wrong
+        // type would either silently drop the attachment or 400 —
+        // attaching only the populated key is the only correct
+        // behavior for a polymorphic ref.
+        attachmentDataRef: a.attachmentUploadToken
+          ? { attachmentUploadToken: a.attachmentUploadToken }
+          : { resourceName: a.resourceName },
       }));
     }
     if (options.mentions && options.mentions.length > 0) {
