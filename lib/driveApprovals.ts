@@ -49,7 +49,18 @@
 import { driveClient, driveFolderOwner } from "@/lib/sa";
 
 export type CreateApprovalResult =
-  | { ok: true; approvalId: string }
+  | {
+      ok: true;
+      approvalId: string;
+      /** Per-email outcome of the pre-share step. Drive Approvals
+       *  doesn't grant access on :start, so we share each reviewer
+       *  as reader BEFORE kicking off the approval. Failures here
+       *  don't block the approval (Drive still emails) but mean the
+       *  recipient may hit "Request access" when they click the
+       *  link. Surfaced to the UI so the user can manually share or
+       *  pick different reviewers. */
+      shareFailures: { email: string; reason: string }[];
+    }
   | { ok: false; error: string; status?: number };
 
 /** Default approval window — 14 days. Long enough to cover a
@@ -97,35 +108,58 @@ export async function createDriveApproval({
   const token = tokenResp?.token;
   if (!token) return { ok: false, error: "auth token unavailable" };
 
-  // Pre-grant readers — Drive Approvals needs the approver to have
-  // access to the file. Without this, the create call typically
-  // returns 400 with "approver does not have access". Best-effort:
-  // 409 ALREADY_EXISTS is fine (already a member); other failures
-  // are logged but don't block the create — Drive may still send
-  // the email with a "request access" link.
+  // Pre-grant readers — Drive Approvals does NOT grant access at
+  // :start time. Reviewers who lack a permission on the file land on
+  // "Request access" when they click the email link. Without this
+  // step the approval workflow is effectively useless for any
+  // recipient outside the file's existing ACL.
+  //
+  // sendNotificationEmail:true is intentional — for external
+  // recipients (non-Workspace-domain emails) Drive treats the share
+  // as a "visitor" permission and the notification email carries
+  // the PIN verification link the recipient needs to actually open
+  // the file. With sendNotificationEmail:false the permission
+  // exists in a half-state and Drive's UI shows "Request access"
+  // until they verify, which they can't do without the PIN email.
+  // Yes, this means recipients get TWO emails (share notification +
+  // approval-start email), but the share email is the one that
+  // unlocks access. Worth the noise.
+  //
+  // Per-email failures are tracked and surfaced to the UI so the
+  // user knows which recipients couldn't be auto-shared and need
+  // manual handling. 409 ALREADY_EXISTS = already a member = fine.
+  // Everything else is a real failure (org policy blocks external
+  // sharing, file isn't in a shareable location, malformed email,
+  // etc.) and the user should see it.
+  const shareFailures: { email: string; reason: string }[] = [];
   for (const email of approverList) {
     try {
       await drive.permissions.create({
         fileId: cleanFileId,
-        sendNotificationEmail: false,
+        sendNotificationEmail: true,
+        emailMessage:
+          (message || "").trim() ||
+          "פריסה לאישור — קישור יישלח גם דרך זרימת האישור של Drive.",
         supportsAllDrives: true,
-        requestBody: { type: "user", role: "reader", emailAddress: email },
+        requestBody: {
+          type: "user",
+          role: "reader",
+          emailAddress: email,
+        },
       });
     } catch (e) {
       const code =
         (e as { code?: number }).code ??
         (e as { response?: { status?: number } }).response?.status;
-      if (code === 409 || code === 400) {
-        // Already a member, OR the user couldn't be granted (e.g. they
-        // already have higher role). Either way the create call below
-        // is what matters; press on.
+      if (code === 409) {
+        // Already a member with sufficient access — no-op.
         continue;
       }
+      const reason = e instanceof Error ? e.message : String(e);
       console.warn(
-        `[createDriveApproval] permissions.create failed for ${email} on ${cleanFileId}: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
+        `[createDriveApproval] permissions.create failed for ${email} on ${cleanFileId} (${code}): ${reason}`,
       );
+      shareFailures.push({ email, reason });
     }
   }
 
@@ -181,7 +215,11 @@ export async function createDriveApproval({
       approvalId?: string;
       id?: string;
     };
-    return { ok: true, approvalId: data.approvalId || data.id || "" };
+    return {
+      ok: true,
+      approvalId: data.approvalId || data.id || "",
+      shareFailures,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(

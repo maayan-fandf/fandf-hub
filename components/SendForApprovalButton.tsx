@@ -41,6 +41,14 @@ export default function SendForApprovalButton({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Per-email share failures returned by /api/drive/approvals/create
+  // when permissions.create couldn't grant the recipient access.
+  // The approval was created successfully (Drive sent its emails),
+  // but those recipients will hit "Request access" — the user needs
+  // to share manually or pick different reviewers next time.
+  const [shareFailures, setShareFailures] = useState<
+    { email: string; reason: string }[]
+  >([]);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize selected when the dialog opens — pre-check every
@@ -52,6 +60,7 @@ export default function SendForApprovalButton({
     setMessage("");
     setError(null);
     setSuccess(false);
+    setShareFailures([]);
   }, [open, suggestedClients]);
 
   // Esc + click-outside to close, but don't close while submitting
@@ -113,6 +122,7 @@ export default function SendForApprovalButton({
         ok?: boolean;
         error?: string;
         status?: number;
+        shareFailures?: { email: string; reason: string }[];
       };
       if (!res.ok || !data.ok) {
         // Friendly hint for the most-common failure modes — keeps the
@@ -131,14 +141,17 @@ export default function SendForApprovalButton({
         return;
       }
       setSuccess(true);
+      setShareFailures(data.shareFailures ?? []);
       setSubmitting(false);
-      // Small delay so the success affordance is visible, then close
-      // and refresh — the badge re-fetches via fetchApprovalState and
-      // should flip to "⏳ נשלח לאישור" within one render.
-      setTimeout(() => {
-        setOpen(false);
-        router.refresh();
-      }, 1200);
+      // Auto-close + refresh ONLY when every recipient was shared
+      // cleanly — when there are share failures, keep the dialog open
+      // so the user sees which recipients need manual handling.
+      if (!data.shareFailures || data.shareFailures.length === 0) {
+        setTimeout(() => {
+          setOpen(false);
+          router.refresh();
+        }, 1200);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSubmitting(false);
@@ -275,9 +288,31 @@ export default function SendForApprovalButton({
               rows={3}
             />
             {error && <div className="error send-approval-error">{error}</div>}
-            {success && (
+            {success && shareFailures.length === 0 && (
               <div className="send-approval-success">
-                ✓ נשלח. הנמענים יקבלו אימייל מ-Drive עם בקשת אישור.
+                ✓ נשלח. הנמענים יקבלו אימייל מ-Drive עם בקשת אישור
+                והרשאת צפייה בקובץ.
+              </div>
+            )}
+            {success && shareFailures.length > 0 && (
+              <div className="send-approval-warning">
+                <div>
+                  ⚠️ הבקשה נשלחה, אבל לא הצלחנו להעניק הרשאת צפייה
+                  לכל הנמענים. הם עלולים לראות "בקשת גישה" כשייכנסו
+                  לקובץ. שתף ידנית מתוך Drive או בחר נמענים אחרים:
+                </div>
+                <ul className="send-approval-fail-list">
+                  {shareFailures.map((f) => (
+                    <li key={f.email}>
+                      <b dir="ltr">{f.email}</b>
+                      {f.reason && (
+                        <span className="send-approval-fail-reason">
+                          {" "}— {f.reason}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             <div className="send-approval-actions">
