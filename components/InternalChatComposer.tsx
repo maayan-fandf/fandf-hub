@@ -279,6 +279,12 @@ export default function InternalChatComposer({
         return next;
       });
     } catch (e) {
+      // Surface full error to DevTools so the next "is not a function"
+      // mystery doesn't require hovering a chip to read the truncated
+      // tooltip. The chip itself shows the message; this gives stack
+      // traces for client-side throws and full server errors for the
+      // re-thrown Error from the !res.ok branch.
+      console.error("[chat upload] failed for", file.name, e);
       setAttachments((prev) => {
         const next = [...prev];
         const idx = next.findIndex(
@@ -548,7 +554,7 @@ export default function InternalChatComposer({
               )}
               {a.error && (
                 <span className="chat-composer-attachment-error" title={a.error}>
-                  {a.error.length > 80 ? a.error.slice(0, 77) + "…" : a.error}
+                  {a.error.length > 200 ? a.error.slice(0, 197) + "…" : a.error}
                 </span>
               )}
               <button
