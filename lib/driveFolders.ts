@@ -298,12 +298,16 @@ export type LatestPrisot = {
   folderUrl: string;
 };
 
-/** Mime types we surface from a פריסות folder — sheets + the common
- *  image formats. Anything else (PDFs, Docs, raw bytes) is ignored
- *  because the renderer doesn't have a meaningful display path for them
- *  and the user only puts spreads/images in this folder by convention. */
+/** Mime types we surface from a פריסות folder — sheets, common
+ *  image formats, and PDFs. PDFs are a common deliverable format
+ *  for media plans (a spread exported from a Sheet, or a standalone
+ *  PDF the agency built); they render via PrisotThumb when picked
+ *  as latest. Anything else (Docs, raw bytes, video) is ignored
+ *  because the renderer doesn't have a meaningful display path for
+ *  them and the user only puts spreads in this folder by convention. */
 const PRISOT_MIMES = [
   "application/vnd.google-apps.spreadsheet",
+  "application/pdf",
   "image/jpeg",
   "image/png",
   "image/gif",
@@ -421,12 +425,22 @@ async function findLatestPrisotInner(
   project: string,
   source: "project" | "general",
 ): Promise<LatestPrisot | null> {
-  if (!company.trim() || !project.trim()) return null;
+  if (!company.trim() || !project.trim()) {
+    console.log(
+      `[findLatestPrisot] missing co/proj: co=${company} proj=${project}`,
+    );
+    return null;
+  }
   const { folderId: projectFolderId } = await findProjectFolderUrlCached(
     company,
     project,
   );
-  if (!projectFolderId) return null;
+  if (!projectFolderId) {
+    console.log(
+      `[findLatestPrisot] no Drive folder for ${company} / ${project} (source=${source})`,
+    );
+    return null;
+  }
   const sharedDriveId = tasksSharedDriveId();
   const drive = driveClient(driveFolderOwner() || subjectEmail);
   const prisotFolderId = await findFolder(
@@ -435,7 +449,13 @@ async function findLatestPrisotInner(
     "פריסות",
     sharedDriveId,
   );
-  if (!prisotFolderId) return null;
+  if (!prisotFolderId) {
+    console.log(
+      `[findLatestPrisot] no פריסות subfolder under ${company} / ${project} ` +
+        `(parent folder id=${projectFolderId}, source=${source})`,
+    );
+    return null;
+  }
   const mimeQ = "(" + PRISOT_MIMES.map((m) => `mimeType='${m}'`).join(" or ") + ")";
   const res = await drive.files.list({
     q: [
@@ -445,17 +465,7 @@ async function findLatestPrisotInner(
     ].join(" and "),
     fields:
       "files(id, name, mimeType, modifiedTime, webViewLink, thumbnailLink, " +
-      "contentRestrictions(readOnly, reason, restrictionTime), " +
-      // capabilities tells us at a glance whether THIS file supports
-      // the approval workflow at all — Drive surfaces canApprove /
-      // canRequestApproval per file based on (a) workspace plan,
-      // (b) file mimeType, (c) file location (Shared Drive vs My
-      // Drive), (d) viewer's role. When `canRequestApproval=false`
-      // for our impersonated identity, the GET /approvals call
-      // typically returns 200 with empty approvals[] regardless of
-      // the file's actual state in the UI. Logged below for
-      // diagnosis when the badge ends up "none".
-      "capabilities(canApprove, canRequestApproval))",
+      "contentRestrictions(readOnly, reason, restrictionTime))",
     orderBy: "modifiedTime desc",
     // We need to find the file with the latest date-IN-NAME, not the
     // latest modifiedTime — pull a small page and rank client-side.
@@ -466,7 +476,14 @@ async function findLatestPrisotInner(
     driveId: sharedDriveId,
   });
   const items = res.data.files ?? [];
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    console.log(
+      `[findLatestPrisot] פריסות exists but no supported files for ` +
+        `${company} / ${project} (folder id=${prisotFolderId}, source=${source}). ` +
+        `Supported mimeTypes: ${PRISOT_MIMES.join(", ")}`,
+    );
+    return null;
+  }
   // Rank: prefer the file with the latest date-in-name. Files without
   // a parseable date in their name fall through to modifiedTime order
   // (the API already returned them sorted that way). When everything
@@ -504,19 +521,16 @@ async function findLatestPrisotInner(
   else if (apiState === "pending") approvalState = "pending";
   else approvalState = "none";
   // Diagnostic log when the badge resolves to "none" — captures the
-  // file mimeType + capabilities so we can tell from App Hosting
-  // logs whether the issue is "this file type doesn't support
-  // approvals" (image, etc.), "this workspace plan doesn't expose
-  // the API" (caps both false), or "the file genuinely has no
-  // pending approval" (caps say it could but the API has nothing).
-  // Reported by maayan on /projects/כללי?company=גיא ודורון.
+  // file mimeType so we can tell from App Hosting logs whether the
+  // issue is "this file type doesn't support approvals" (image,
+  // etc.), or the file genuinely has no pending approval. The
+  // earlier capabilities-based diagnostic was reverted because
+  // Drive File.capabilities doesn't expose canApprove /
+  // canRequestApproval — adding those to the fields list 400'd the
+  // whole files.list call, hiding every prisot card across the hub.
   if (approvalState === "none") {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const caps = (best as any).capabilities || {};
-    /* eslint-enable @typescript-eslint/no-explicit-any */
     console.log(
       `[approvalState=none] fileId=${best.id} mime=${best.mimeType} ` +
-        `canRequestApproval=${caps.canRequestApproval} canApprove=${caps.canApprove} ` +
         `isLocked=${isLocked} reason=${restriction?.reason || ""}`,
     );
   }
