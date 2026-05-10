@@ -492,25 +492,113 @@ async function findLatestPrisotInner(
 }
 
 /**
- * Reads the first tab of a Google Sheet and returns its values as
- * formatted strings (currency formatting, percentages, dates etc. are
- * applied — same string the user sees in Sheets). Used by
- * LatestPrisotCard to render the spread inline as an HTML table
- * instead of just the low-res thumbnail.
+ * Reads the first tab of a Google Sheet AND its per-cell formatting
+ * (background, foreground, bold, alignment, …), merge ranges, column
+ * widths, and frozen-row count, so LatestPrisotCard can render an
+ * HTML table that visually approximates the Google Sheets view —
+ * not a stripped-down monochrome grid. Used by the project overview's
+ * "פריסה אחרונה" card.
  *
  * Bounded to A1:T50 (20 columns × 50 rows) to keep payloads reasonable.
- * Trailing all-empty rows + columns are trimmed before return.
+ * Trailing all-empty rows + columns are trimmed before return — but
+ * trim is now value-aware (a cell with formatting but no text counts
+ * as empty for trim purposes; styled blank cells in the middle of
+ * the grid are preserved).
  */
+export type PrisotCellFormat = {
+  /** CSS rgb() string for background; undefined when default white. */
+  bg?: string;
+  /** CSS rgb() string for foreground; undefined when default black. */
+  fg?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Font size in pt (Sheets' native unit). Undefined = default. */
+  fontSize?: number;
+  align?: "left" | "center" | "right";
+  /** True when wrapStrategy=WRAP. Default (CLIP/OVERFLOW) keeps nowrap. */
+  wrap?: boolean;
+};
+
+export type PrisotMerge = {
+  /** Inclusive start row (0-indexed within the trimmed rows array). */
+  r1: number;
+  /** Inclusive start column. */
+  c1: number;
+  /** Exclusive end row (so rowSpan = r2 - r1). */
+  r2: number;
+  /** Exclusive end column. */
+  c2: number;
+};
+
 export type PrisotData = {
   /** Title of the tab read (typically the first tab — Sheets' default). */
   sheetTitle: string;
   /** Range that was actually read, e.g. "Sheet1!A1:T50". */
   range: string;
-  /** 2-D array of cell display strings (post-trim). Rows may be ragged
-   *  if the sheet has trailing-empty cells on some rows but not others;
-   *  the renderer should pad to the longest row's column count. */
+  /** 2-D array of cell display strings (post-trim). All rows are padded
+   *  to the same column count so the renderer can index without bounds
+   *  checks. */
   rows: string[][];
+  /** Per-cell format, same shape as `rows`. `null` = no format / default. */
+  formats: (PrisotCellFormat | null)[][];
+  /** Pixel widths per column (post-trim, same length as a row). Empty
+   *  array when the API didn't return columnMetadata. */
+  colWidths: number[];
+  /** Merged ranges, post-trim. Top-left cell renders with rowSpan/colSpan;
+   *  the rest are skipped. */
+  merges: PrisotMerge[];
+  /** Frozen-row count from the sheet's gridProperties. The renderer can
+   *  apply a sticky-header treatment to the first N rows. */
+  frozenRows: number;
 };
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type RgbColor = { red?: number; green?: number; blue?: number };
+
+function rgbToCss(rgb?: RgbColor): string | undefined {
+  if (!rgb) return undefined;
+  const r = Math.round((rgb.red ?? 0) * 255);
+  const g = Math.round((rgb.green ?? 0) * 255);
+  const b = Math.round((rgb.blue ?? 0) * 255);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** Returns true when the color is so close to white we should treat it
+ *  as "no override" (let the theme variable handle background — important
+ *  for dark-mode legibility). */
+function isWhiteIsh(rgb?: RgbColor): boolean {
+  if (!rgb) return true;
+  return (rgb.red ?? 0) >= 0.99 && (rgb.green ?? 0) >= 0.99 && (rgb.blue ?? 0) >= 0.99;
+}
+
+/** Returns true when the color is so close to black we should treat it
+ *  as "no override" (let the theme variable handle text color). */
+function isBlackIsh(rgb?: RgbColor): boolean {
+  if (!rgb) return true;
+  return (rgb.red ?? 0) <= 0.02 && (rgb.green ?? 0) <= 0.02 && (rgb.blue ?? 0) <= 0.02;
+}
+
+function extractCellFormat(cell: any): PrisotCellFormat | null {
+  const ef = cell?.effectiveFormat;
+  if (!ef) return null;
+  const out: PrisotCellFormat = {};
+  const bg = ef.backgroundColorStyle?.rgbColor || ef.backgroundColor;
+  if (bg && !isWhiteIsh(bg)) out.bg = rgbToCss(bg);
+  const tf = ef.textFormat || {};
+  const fg = tf.foregroundColorStyle?.rgbColor || tf.foregroundColor;
+  if (fg && !isBlackIsh(fg)) out.fg = rgbToCss(fg);
+  if (tf.bold) out.bold = true;
+  if (tf.italic) out.italic = true;
+  if (tf.underline) out.underline = true;
+  if (typeof tf.fontSize === "number" && tf.fontSize > 0) out.fontSize = tf.fontSize;
+  const ha = String(ef.horizontalAlignment || "").toUpperCase();
+  if (ha === "LEFT" || ha === "CENTER" || ha === "RIGHT") {
+    out.align = ha.toLowerCase() as "left" | "center" | "right";
+  }
+  if (String(ef.wrapStrategy || "").toUpperCase() === "WRAP") out.wrap = true;
+  return Object.keys(out).length === 0 ? null : out;
+}
 
 export async function readPrisotData(
   subjectEmail: string,
@@ -519,13 +607,12 @@ export async function readPrisotData(
   if (!fileId) return null;
   try {
     const sheets = sheetsClient(driveFolderOwner() || subjectEmail);
-    // Resolve the first tab's title — needed for the values.get range.
+    // Resolve the first non-hidden GRID tab. We need its title for the
+    // ranges arg below.
     const meta = await sheets.spreadsheets.get({
       spreadsheetId: fileId,
       fields: "sheets(properties(title,index,sheetType,hidden))",
     });
-    // Take the first non-hidden, non-OBJECT sheet (charts as their
-    // own "sheet" slot are sheetType=OBJECT).
     const tab = (meta.data.sheets || []).find((s) => {
       const p = s.properties || {};
       return !p.hidden && (p.sheetType || "GRID") === "GRID";
@@ -538,21 +625,92 @@ export async function readPrisotData(
       return null;
     }
     const range = `${sheetTitle}!A1:T50`;
-    const res = await sheets.spreadsheets.values.get({
+    // Single round-trip: includeGridData=true with a bounded range
+    // returns formattedValue + effectiveFormat + merges + grid metadata
+    // for just that window. Field selection keeps the payload small.
+    const full: any = await sheets.spreadsheets.get({
       spreadsheetId: fileId,
-      range,
-      valueRenderOption: "FORMATTED_VALUE",
-      majorDimension: "ROWS",
+      ranges: [range],
+      includeGridData: true,
+      fields: [
+        "sheets.properties(title,index,sheetType,hidden,gridProperties(frozenRowCount))",
+        "sheets.merges(startRowIndex,endRowIndex,startColumnIndex,endColumnIndex)",
+        "sheets.data(startRow,startColumn,rowMetadata.pixelSize,columnMetadata.pixelSize",
+        "rowData.values(formattedValue,effectiveFormat(backgroundColor,backgroundColorStyle.rgbColor",
+        "horizontalAlignment,wrapStrategy,textFormat(bold,italic,underline,fontSize,foregroundColor,foregroundColorStyle.rgbColor))))",
+      ].join(","),
     });
-    const raw = (res.data.values as unknown as string[][] | undefined) ?? [];
-    const rows = trimEmpty(raw);
-    if (rows.length === 0) {
+    const sheet = (full.data.sheets || []).find((s: any) => {
+      const p = s.properties || {};
+      return !p.hidden && (p.sheetType || "GRID") === "GRID";
+    });
+    if (!sheet) return null;
+    const grid = sheet.data?.[0];
+    if (!grid) return null;
+    const rowData: any[] = grid.rowData || [];
+    const colMeta: any[] = grid.columnMetadata || [];
+    const frozenRows: number =
+      sheet.properties?.gridProperties?.frozenRowCount || 0;
+
+    // Extract values + formats into parallel 2-D arrays.
+    const rawRows: string[][] = [];
+    const rawFormats: (PrisotCellFormat | null)[][] = [];
+    for (const r of rowData) {
+      const cells: any[] = r?.values || [];
+      const valRow: string[] = [];
+      const fmtRow: (PrisotCellFormat | null)[] = [];
+      for (const c of cells) {
+        valRow.push(String(c?.formattedValue ?? ""));
+        fmtRow.push(extractCellFormat(c));
+      }
+      rawRows.push(valRow);
+      rawFormats.push(fmtRow);
+    }
+    if (rawRows.length === 0) {
       console.warn(
         `[readPrisotData] empty values for fileId=${fileId} range=${range}`,
       );
       return null;
     }
-    return { sheetTitle, range, rows };
+
+    // Trim trailing empty rows + columns — trim is value-aware (a cell
+    // with only formatting and no text doesn't count as content).
+    const { rows, formats, lastCol } = trimEmptyWithFormats(rawRows, rawFormats);
+    if (rows.length === 0) return null;
+
+    // Column widths — slice + clamp to the trimmed width. Sheets sometimes
+    // omits columnMetadata entries beyond the explicitly-sized columns,
+    // so missing entries fall back to a sensible default.
+    const colWidths: number[] = [];
+    for (let c = 0; c <= lastCol; c++) {
+      const px = Number(colMeta[c]?.pixelSize);
+      colWidths.push(Number.isFinite(px) && px > 0 ? px : 100);
+    }
+
+    // Merges — clamp to the trim window so the indices line up with
+    // the post-trim rows array. Merges that fall entirely outside the
+    // trim window are dropped.
+    const merges: PrisotMerge[] = [];
+    const sheetMerges: any[] = sheet.merges || [];
+    const trimRows = rows.length;
+    const trimCols = lastCol + 1;
+    for (const m of sheetMerges) {
+      const r1 = Math.max(0, m.startRowIndex || 0);
+      const c1 = Math.max(0, m.startColumnIndex || 0);
+      const r2 = Math.min(trimRows, m.endRowIndex || 0);
+      const c2 = Math.min(trimCols, m.endColumnIndex || 0);
+      if (r2 > r1 && c2 > c1) merges.push({ r1, c1, r2, c2 });
+    }
+
+    return {
+      sheetTitle,
+      range,
+      rows,
+      formats,
+      colWidths,
+      merges,
+      frozenRows,
+    };
   } catch (e) {
     // Surface the failure mode (403 access denied, 404 deleted, etc.)
     // so the broken-on-some-projects case is diagnosable from logs.
@@ -567,20 +725,29 @@ export async function readPrisotData(
     return null;
   }
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
-/** Trim trailing all-empty rows and trailing all-empty columns so the
- *  rendered table doesn't show a sea of blank cells. */
-function trimEmpty(rows: string[][]): string[][] {
-  // Strip trailing empty rows.
+/** Trim trailing all-empty rows and trailing all-empty columns. "Empty"
+ *  means the cell has no formattedValue text — we ignore formatting
+ *  alone, since hundreds of unformatted blank cells at the bottom of
+ *  every Sheet would otherwise survive trim and bloat the table. */
+function trimEmptyWithFormats(
+  rows: string[][],
+  formats: (PrisotCellFormat | null)[][],
+): {
+  rows: string[][];
+  formats: (PrisotCellFormat | null)[][];
+  lastCol: number;
+} {
   let lastNonEmpty = -1;
   for (let i = 0; i < rows.length; i++) {
     if ((rows[i] || []).some((c) => String(c ?? "").trim() !== "")) {
       lastNonEmpty = i;
     }
   }
-  if (lastNonEmpty < 0) return [];
+  if (lastNonEmpty < 0) return { rows: [], formats: [], lastCol: -1 };
   const trimmedRows = rows.slice(0, lastNonEmpty + 1);
-  // Find rightmost non-empty column across all rows.
+  const trimmedFormats = formats.slice(0, lastNonEmpty + 1);
   let lastCol = -1;
   for (const row of trimmedRows) {
     for (let c = (row?.length ?? 0) - 1; c > lastCol; c--) {
@@ -590,12 +757,18 @@ function trimEmpty(rows: string[][]): string[][] {
       }
     }
   }
-  if (lastCol < 0) return [];
-  return trimmedRows.map((row) => {
+  if (lastCol < 0) return { rows: [], formats: [], lastCol: -1 };
+  const outRows = trimmedRows.map((row) => {
     const out = (row || []).slice(0, lastCol + 1);
     while (out.length < lastCol + 1) out.push("");
     return out;
   });
+  const outFormats = trimmedFormats.map((row) => {
+    const out = (row || []).slice(0, lastCol + 1);
+    while (out.length < lastCol + 1) out.push(null);
+    return out;
+  });
+  return { rows: outRows, formats: outFormats, lastCol };
 }
 
 /** Backwards-compat wrapper for any external callers that imported the

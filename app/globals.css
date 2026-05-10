@@ -4964,8 +4964,14 @@ html[data-theme="dark"] .quick-note-saved {
   max-height: 700px;
 }
 .prisot-data-table {
-  width: 100%;
+  /* Size to the sum of explicit column widths from <colgroup>; the
+     scrolling container handles overflow. `table-layout: fixed` makes
+     cells honor the col widths instead of auto-stretching to fit
+     content. min-width fills the card when the sheet is narrower. */
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
 }
@@ -4973,23 +4979,25 @@ html[data-theme="dark"] .quick-note-saved {
   border: 1px solid var(--border);
   padding: 0.4rem 0.65rem;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Cells inherit color from the table by default; cells with explicit
+     formatting override color/background via inline `style`. We
+     intentionally do NOT set a default background here — the parent
+     `.prisot-data` provides the surface — so dark mode reads cleanly
+     when the spreadsheet has white backgrounds (which we elide). */
   color: var(--ink);
-  background: var(--surface);
 }
 .prisot-data-header td {
+  /* Default frozen-row chrome — applied when the cell has no explicit
+     background. Cells with a formatted background override this via
+     inline style. */
   background: var(--surface-hi, #f3f4f6);
   font-weight: 600;
   color: var(--ink);
   position: sticky;
   top: 0;
   z-index: 1;
-}
-/* Empty cell — render a thin rule so the user can tell it's a column,
-   not collapsed whitespace. */
-.prisot-data-table td:empty::before {
-  content: "—";
-  color: var(--muted);
-  opacity: 0.4;
 }
 .prisot-tab-name {
   font-size: 0.78rem;
