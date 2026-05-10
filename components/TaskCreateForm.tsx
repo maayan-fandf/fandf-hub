@@ -770,8 +770,23 @@ export default function TaskCreateForm({
       // __personal__); we only want those side effects when the value
       // really changed. Same gate as the legacy TaskEditPanel had.
       const projectTrimmed = project.trim();
-      if (projectTrimmed && projectTrimmed !== editingTask.project) {
+      const companyTrimmed = company.trim();
+      const projectChanging =
+        !!projectTrimmed && projectTrimmed !== editingTask.project;
+      const companyChanging =
+        !!companyTrimmed && companyTrimmed !== (editingTask.company || "");
+      if (projectChanging) {
         patch.project = projectTrimmed;
+      }
+      // Include `company` whenever it was changed OR whenever the
+      // project is changing — the server's resolveCompany() looks up
+      // the new project in Keys and returns the FIRST matching row,
+      // which is wrong for non-unique project names like `כללי` (one
+      // row per company by design). Sending the form's explicit
+      // company short-circuits that resolver. Server's SIMPLE_DIRECT
+      // diff check makes this a no-op when the value hasn't changed.
+      if (companyTrimmed && (companyChanging || projectChanging)) {
+        patch.company = companyTrimmed;
       }
       // Drive folder — only include when the user picked a different
       // existing folder. "new" mode isn't supported from the edit path
