@@ -83,8 +83,15 @@ export async function GET(req: Request) {
     console.warn(
       `[chat/attachment] download failed (${code}) for ${resourceName.slice(0, 60)}: ${msg}`,
     );
-    return new NextResponse(`Chat attachment fetch failed (${code || 500})`, {
-      status: code || 500,
-    });
+    // Surface the actual error message in the response body so we
+    // can diagnose without log access — content-type=text/plain so
+    // it doesn't try to render as an image.
+    return new NextResponse(
+      `Chat attachment fetch failed (${code || 500}): ${msg.slice(0, 400)}`,
+      {
+        status: code || 500,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      },
+    );
   }
 }
