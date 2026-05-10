@@ -242,12 +242,24 @@ export default async function HomePage() {
               g.projects.every((p) =>
                 isProjectEndedByIso(endIsoByProject.get(p.name)),
               );
+            // "מה שלי" filter — a project is "mine" when the viewer has at
+            // least one open task or open mention on it (per byProject
+            // counts). Stamped onto each <li> via data-mine="0|1"; the
+            // company group's data-any-mine collapses to "0" only when
+            // every one of its projects is non-mine, mirroring the
+            // hide-ended group rule. Toggle in HomeFilterBar flips
+            // <html data-show-mine> and CSS hides the "0" rows/groups.
+            const anyMine = g.projects.some((p) => {
+              const pc = byProject[p.name];
+              return (pc?.openTasks ?? 0) > 0 || (pc?.openMentions ?? 0) > 0;
+            });
             return (
               <details
                 key={g.company || "__ungrouped"}
                 className="company-group"
                 data-co={slot}
                 data-all-ended={allEnded ? "1" : "0"}
+                data-any-mine={anyMine ? "1" : "0"}
               >
                 <summary className="company-group-summary">
                   <span className="company-group-name">
@@ -278,10 +290,14 @@ export default async function HomePage() {
                     const ended = isProjectEndedByIso(
                       endIsoByProject.get(p.name),
                     );
+                    const isMine =
+                      (pc?.openTasks ?? 0) > 0 ||
+                      (pc?.openMentions ?? 0) > 0;
                     return (
                       <li
                         key={p.name}
                         data-ended={ended ? "1" : "0"}
+                        data-mine={isMine ? "1" : "0"}
                         data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
                       >
                         <Link href={projectHref(p.name, p.company)}>

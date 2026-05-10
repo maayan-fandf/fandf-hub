@@ -591,6 +591,19 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
   display: none;
 }
 
+/* "רק את שלי" CSS: the toggle writes data-show-mine="1" on <html>.
+   Mirrors the hide-ended pattern — non-mine project rows hide, and
+   companies whose every project is non-mine collapse out of the grid.
+   "Mine" is computed server-side as "viewer has open tasks or open
+   mentions on this project" and stamped onto data-mine / data-any-mine
+   so the toggle stays a CSS-only flip with no re-render. */
+html[data-show-mine="1"] .project-list > li[data-mine="0"] {
+  display: none;
+}
+html[data-show-mine="1"] .company-group[data-any-mine="0"] {
+  display: none;
+}
+
 /* "General / כללי" project rows — one per company that has stray work
    not tied to a specific campaign. We sink them to the bottom of the
    per-company list (sort done in app/page.tsx + ProjectsNavMenu.tsx)

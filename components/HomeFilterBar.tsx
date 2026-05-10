@@ -3,26 +3,38 @@
 import { useEffect, useRef, useState } from "react";
 
 const HIDE_ENDED_KEY = "hub_hide_ended";
+const SHOW_MINE_KEY = "hub_show_mine";
 
-// Filter bar for the home page — currently just the hide-ended toggle.
+// Filter bar for the home page — two pills:
+//   1. הצג / הסתר שהסתיימו  — hides project rows past their end-date
+//   2. הצג את כולם / רק את שלי — narrows the grid to projects where
+//      the user has an open task or an open mention. "Mine" is computed
+//      server-side from the byProject counts and stamped onto each
+//      project row via data-mine="0|1" + each company group via
+//      data-any-mine="0|1"; the toggle here flips data-show-mine on
+//      <html> so the existing CSS-only hide pattern handles the rest.
+//
 // Per-person scoping moved to the gear-menu "view as" pref so a single
 // control drives the home grid, top-nav projects list, and /tasks default
-// filter together. The hide-ended toggle is independent (UI-local: it
-// hides past-end project rows via a CSS data attribute).
+// filter together. Both toggles here are UI-local: they don't refetch
+// data, just hide rows via CSS data attributes.
 //
-// Default ON; explicit opt-out persists in localStorage. `mounted` gates
-// the first DOM write to avoid hydration mismatch on the <html> data-
-// attribute.
+// Defaults: hide-ended ON, show-mine OFF. Explicit choices persist in
+// localStorage. `mounted` gates the first DOM write to avoid hydration
+// mismatch on the <html> data-attributes.
 export default function HomeFilterBar() {
   const [hideEnded, setHideEnded] = useState(true);
+  const [showMine, setShowMine] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
     try {
       const v = localStorage.getItem(HIDE_ENDED_KEY);
       if (v === "0") setHideEnded(false);
+      const m = localStorage.getItem(SHOW_MINE_KEY);
+      if (m === "1") setShowMine(true);
     } catch {
-      /* private mode — keep default */
+      /* private mode — keep defaults */
     }
   }, []);
   useEffect(() => {
@@ -34,15 +46,25 @@ export default function HomeFilterBar() {
       /* ignore */
     }
   }, [hideEnded, mounted]);
-  // Apply the default data-attribute immediately on first mount, even if
-  // the stored value matches the default — so CSS takes effect on first
+  useEffect(() => {
+    if (!mounted) return;
+    document.documentElement.dataset.showMine = showMine ? "1" : "0";
+    try {
+      localStorage.setItem(SHOW_MINE_KEY, showMine ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [showMine, mounted]);
+  // Apply default data-attributes immediately on first mount, even if
+  // the stored values match defaults — so CSS takes effect on first
   // hydration.
   const appliedInit = useRef(false);
   useEffect(() => {
     if (!mounted || appliedInit.current) return;
     appliedInit.current = true;
     document.documentElement.dataset.hideEnded = hideEnded ? "1" : "0";
-  }, [mounted, hideEnded]);
+    document.documentElement.dataset.showMine = showMine ? "1" : "0";
+  }, [mounted, hideEnded, showMine]);
 
   return (
     <div className="home-filter-bar">
@@ -60,6 +82,21 @@ export default function HomeFilterBar() {
           🕑
         </span>
         <span>{hideEnded ? "הצג שהסתיימו" : "הסתר שהסתיימו"}</span>
+      </button>
+      <button
+        type="button"
+        className={`home-filter-pill home-filter-pill--button${showMine ? " is-active" : ""}`}
+        onClick={() => setShowMine((v) => !v)}
+        title={
+          showMine
+            ? "מציג רק פרויקטים עם משימות פתוחות או תיוגים שלי"
+            : "הצג את כל הפרויקטים, גם אלה שאין לי בהם משימות / תיוגים פתוחים"
+        }
+      >
+        <span className="home-filter-pill-icon" aria-hidden>
+          🙋
+        </span>
+        <span>{showMine ? "רק את שלי" : "הצג את כולם"}</span>
       </button>
     </div>
   );
