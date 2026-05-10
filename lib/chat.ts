@@ -679,7 +679,13 @@ export async function uploadChatAttachment(
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": `multipart/related; boundary=${boundary}`,
-        "content-length": String(body.length),
+        // Don't set content-length manually — Node's fetch
+        // (undici) computes it from the body bytes itself, and a
+        // mismatch between our value and the actual transfer
+        // encoding can make the upstream gateway return 503 instead
+        // of a cleaner 400. Suspected contributor to maayan's
+        // 'all logs are 503 from today' report; eliminating the
+        // header rules it out.
       },
       body,
       cache: "no-store",
