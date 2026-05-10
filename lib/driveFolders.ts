@@ -441,7 +441,17 @@ async function findLatestPrisotInner(
     ].join(" and "),
     fields:
       "files(id, name, mimeType, modifiedTime, webViewLink, thumbnailLink, " +
-      "contentRestrictions(readOnly, reason, restrictionTime))",
+      "contentRestrictions(readOnly, reason, restrictionTime), " +
+      // capabilities tells us at a glance whether THIS file supports
+      // the approval workflow at all — Drive surfaces canApprove /
+      // canRequestApproval per file based on (a) workspace plan,
+      // (b) file mimeType, (c) file location (Shared Drive vs My
+      // Drive), (d) viewer's role. When `canRequestApproval=false`
+      // for our impersonated identity, the GET /approvals call
+      // typically returns 200 with empty approvals[] regardless of
+      // the file's actual state in the UI. Logged below for
+      // diagnosis when the badge ends up "none".
+      "capabilities(canApprove, canRequestApproval))",
     orderBy: "modifiedTime desc",
     // We need to find the file with the latest date-IN-NAME, not the
     // latest modifiedTime — pull a small page and rank client-side.
@@ -489,6 +499,23 @@ async function findLatestPrisotInner(
   if (apiState === "approved" || isLocked) approvalState = "approved";
   else if (apiState === "pending") approvalState = "pending";
   else approvalState = "none";
+  // Diagnostic log when the badge resolves to "none" — captures the
+  // file mimeType + capabilities so we can tell from App Hosting
+  // logs whether the issue is "this file type doesn't support
+  // approvals" (image, etc.), "this workspace plan doesn't expose
+  // the API" (caps both false), or "the file genuinely has no
+  // pending approval" (caps say it could but the API has nothing).
+  // Reported by maayan on /projects/כללי?company=גיא ודורון.
+  if (approvalState === "none") {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const caps = (best as any).capabilities || {};
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    console.log(
+      `[approvalState=none] fileId=${best.id} mime=${best.mimeType} ` +
+        `canRequestApproval=${caps.canRequestApproval} canApprove=${caps.canApprove} ` +
+        `isLocked=${isLocked} reason=${restriction?.reason || ""}`,
+    );
+  }
   return {
     id: best.id,
     name: best.name || "(ללא שם)",
