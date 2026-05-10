@@ -3,40 +3,33 @@
 import { useEffect, useRef, useState } from "react";
 
 const HIDE_ENDED_KEY = "hub_hide_ended";
-// `_v2` because the original default was OFF and the previous code
-// wrote `0` to localStorage on every render — leaving every existing
-// user with a sticky `hub_show_mine: 0` that overrode the new
-// default-ON behavior. Bumping the key resets everyone to the new
-// default; users who had explicitly clicked "הכל" can re-click once
-// and that choice persists going forward.
-const SHOW_MINE_KEY = "hub_show_mine_v2";
+// `_v3` — third revision. Earlier keys accumulated pollution because
+// the storage write fired on every state change, so any transient
+// `false` during hydration / re-render persisted forever. v3 only
+// writes when the user actively flips to non-default (הכל / הצג
+// שהסתיימו), and clears the key when they flip back to default.
+// Absence of a value MEANS "use default" — which means future
+// transient renders can't write spurious "0" entries.
+const SHOW_MINE_KEY = "hub_show_mine_v3";
 
 // Filter bar for the home page — two controls:
 //   1. הצג / הסתר שהסתיימו  — hides project rows past their end-date
+//      Default: hide ended.
 //   2. רק שלי / הכל — narrows the grid to projects where the user is
-//      on the roster (the same "involved at" semantic the /tasks page
-//      uses). Membership is computed server-side via
-//      scopeProjectsToPerson and stamped onto each project row via
-//      data-mine="0|1" + each company group via data-any-mine="0|1".
-//      The toggle here flips data-show-mine on <html> so the existing
-//      CSS-only hide pattern handles the rest.
+//      on the roster (same "involved at" semantic as /tasks).
+//      Default: רק שלי (narrowed).
 //
-// Per-person scoping moved to the gear-menu "view as" pref so a single
-// control drives the home grid, top-nav projects list, and /tasks default
-// filter together. Both toggles here are UI-local: they don't refetch
-// data, just hide rows via CSS data attributes.
-//
-// Defaults: hide-ended ON, show-mine ON. The home page is a personal
-// dashboard — the immediate value is "what's on my plate," not "the
-// firm's full portfolio" — so the natural default is the narrowed
-// view. Users who want the full grid flip to הכל once and the choice
-// persists. Explicit choices persist in localStorage. `mounted` gates
-// the first DOM write to avoid hydration mismatch on the <html>
-// data-attributes.
+// Storage discipline: localStorage is written ONLY when the user
+// actively opts away from a default, and CLEARED when they opt back.
+// This means the absence of a value is always interpretable as
+// "default applies", which makes the defaults immune to mid-render
+// state flips writing spurious values.
 export default function HomeFilterBar() {
   const [hideEnded, setHideEnded] = useState(true);
   const [showMine, setShowMine] = useState(true);
   const [mounted, setMounted] = useState(false);
+
+  // First-mount read: hydrate state from localStorage exactly once.
   useEffect(() => {
     setMounted(true);
     try {
@@ -44,31 +37,22 @@ export default function HomeFilterBar() {
       if (v === "0") setHideEnded(false);
       const m = localStorage.getItem(SHOW_MINE_KEY);
       // Only flip OFF the default when the user has explicitly opted
-      // out — any other value (including missing) keeps the narrowed
-      // default in place.
+      // out — any other value (including missing) keeps the default.
       if (m === "0") setShowMine(false);
     } catch {
       /* private mode — keep defaults */
     }
   }, []);
+
+  // Reflect state to the <html> data-attributes so the CSS hide rules
+  // pick it up. No localStorage write here — writes happen in the
+  // explicit click handlers below.
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.dataset.hideEnded = hideEnded ? "1" : "0";
-    try {
-      localStorage.setItem(HIDE_ENDED_KEY, hideEnded ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [hideEnded, mounted]);
-  useEffect(() => {
-    if (!mounted) return;
     document.documentElement.dataset.showMine = showMine ? "1" : "0";
-    try {
-      localStorage.setItem(SHOW_MINE_KEY, showMine ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [showMine, mounted]);
+  }, [hideEnded, showMine, mounted]);
+
   // Apply default data-attributes immediately on first mount, even if
   // the stored values match defaults — so CSS takes effect on first
   // hydration.
@@ -80,12 +64,37 @@ export default function HomeFilterBar() {
     document.documentElement.dataset.showMine = showMine ? "1" : "0";
   }, [mounted, hideEnded, showMine]);
 
+  // Click handlers — single source of truth for localStorage writes.
+  // Each handler writes ONLY when moving to the non-default state and
+  // CLEARS the key when moving back to default. That way no stale
+  // value can persist past a deliberate user action.
+  function toggleHideEnded() {
+    const next = !hideEnded;
+    setHideEnded(next);
+    try {
+      if (next) localStorage.removeItem(HIDE_ENDED_KEY);
+      else localStorage.setItem(HIDE_ENDED_KEY, "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function setMine(active: boolean) {
+    setShowMine(active);
+    try {
+      if (active) localStorage.removeItem(SHOW_MINE_KEY);
+      else localStorage.setItem(SHOW_MINE_KEY, "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="home-filter-bar">
       <button
         type="button"
         className={`home-filter-pill home-filter-pill--button${hideEnded ? " is-active" : ""}`}
-        onClick={() => setHideEnded((v) => !v)}
+        onClick={toggleHideEnded}
         title={
           hideEnded
             ? "מציג רק פרויקטים פעילים (הסתיימו לפני יותר מ-5 ימים מוסתרים)"
@@ -109,7 +118,7 @@ export default function HomeFilterBar() {
         <button
           type="button"
           className={`tasks-scope-toggle-btn${showMine ? " is-active" : ""}`}
-          onClick={() => setShowMine(true)}
+          onClick={() => setMine(true)}
           aria-selected={showMine}
           role="tab"
           title="הראה רק פרויקטים שאני ברשימת הצוות שלהם"
@@ -120,7 +129,7 @@ export default function HomeFilterBar() {
         <button
           type="button"
           className={`tasks-scope-toggle-btn${!showMine ? " is-active" : ""}`}
-          onClick={() => setShowMine(false)}
+          onClick={() => setMine(false)}
           aria-selected={!showMine}
           role="tab"
           title="הצג את כל הפרויקטים שיש לי גישה אליהם, גם אם איני בצוות"
