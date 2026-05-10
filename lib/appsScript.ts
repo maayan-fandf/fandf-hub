@@ -532,6 +532,11 @@ export function setTaskDue(args: {
 export type Assignee = {
   email: string;
   name: string;
+  /** Hebrew display name from the names_to_emails sheet's `he name`
+   *  column. Optional — populated by the hub-side enrichment in
+   *  /api/projects/assignees. UIs prefer this over `name` for chips
+   *  and the @-mention picker; missing → fall back to `name`. */
+  he_name?: string;
   /** 'admin' | 'manager' | 'account' | 'client' — freeform string from Keys */
   role: string;
 };

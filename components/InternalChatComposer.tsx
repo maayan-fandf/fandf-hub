@@ -129,6 +129,18 @@ export default function InternalChatComposer({
     })();
   }, [picker.queryStart, project, assignees, loadingAssignees]);
 
+  // Display label preference: he_name (Hebrew) > name (English) >
+  // email-prefix. Single helper so the picker, insert step, and
+  // mention-tracking map stay aligned. The Hebrew name also flows
+  // INTO the @-token so the message text reads naturally in Hebrew
+  // ("@מעיין"), and the server resolves the actual user mention via
+  // the email→gaia lookup in /api/chat/post.
+  const labelOf = (a: Assignee): string => {
+    const he = (a.he_name || "").trim();
+    if (he) return he;
+    return (a.name || a.email.split("@")[0] || "").trim();
+  };
+
   const results = useMemo(() => {
     if (picker.queryStart < 0 || !assignees) return [] as Assignee[];
     const q = picker.query.toLowerCase();
@@ -137,6 +149,7 @@ export default function InternalChatComposer({
         (a) =>
           !q ||
           a.name.toLowerCase().includes(q) ||
+          (a.he_name || "").toLowerCase().includes(q) ||
           a.email.toLowerCase().includes(q),
       )
       .slice(0, 8);
@@ -180,12 +193,18 @@ export default function InternalChatComposer({
     const cursor = ta.selectionEnd;
     const before = value.slice(0, picker.queryStart);
     const after = value.slice(cursor);
-    const insert = "@" + r.name + " ";
+    // Use the Hebrew label for the @-token so the message reads as
+    // the team addresses each other. The mention map keys by email;
+    // the value is the SAME label inserted into the text so the
+    // server-side scan in /api/chat/post can find each token and
+    // resolve to a USER_MENTION annotation.
+    const label = labelOf(r);
+    const insert = "@" + label + " ";
     const newValue = before + insert + after;
     setValue(newValue);
     setPickedMentions((prev) => {
       const next = new Map(prev);
-      next.set(r.email, r.name);
+      next.set(r.email, label);
       return next;
     });
     closePicker();
@@ -607,8 +626,8 @@ export default function InternalChatComposer({
                 setPicker((p) => ({ ...p, index: i }))
               }
             >
-              <Avatar name={r.email} title={r.name} size={22} />
-              <span className="mention-item-name">{r.name}</span>
+              <Avatar name={r.email} title={r.he_name || r.name} size={22} />
+              <span className="mention-item-name">{labelOf(r)}</span>
               <RoleChip role={r.role} />
             </div>
           ))}
