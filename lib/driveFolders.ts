@@ -367,9 +367,18 @@ async function fetchApprovalState(
     // /approvals sub-resource explicitly rejects it with 400
     // "Unknown name supportsAllDrives". Confirmed via the
     // /api/admin/debug/drive-approvals diagnostic on 2026-05-10.
+    //
+    // ?fields= IS required — without it, Drive returns a
+    // partial-response stub like {kind, items:[{kind}]} with no
+    // actual status/timestamps. Every cell in the approval object
+    // (status, createTime, etc.) has to be enumerated. The default
+    // shape is intentionally lean to save bytes when callers don't
+    // need the full payload.
+    const fields =
+      "items(approvalId,status,createTime,modifyTime,completeTime,reviewerResponses(reviewer/emailAddress,response))";
     const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
       fileId,
-    )}/approvals`;
+    )}/approvals?fields=${encodeURIComponent(fields)}`;
     const r = await fetch(url, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
