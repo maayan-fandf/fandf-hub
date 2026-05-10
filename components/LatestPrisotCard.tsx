@@ -8,6 +8,8 @@ import {
 import PrisotThumb from "./PrisotThumb";
 import SendForApprovalButton from "./SendForApprovalButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
+import { personDisplayName } from "@/lib/personDisplay";
+import type { TasksPerson } from "@/lib/appsScript";
 
 /**
  * Server component — fetches and renders the latest Google Sheet from
@@ -31,6 +33,7 @@ export default async function LatestPrisotCard({
   company,
   project,
   clientEmails = [],
+  people = [],
 }: {
   subjectEmail: string;
   company: string;
@@ -40,6 +43,11 @@ export default async function LatestPrisotCard({
    *  no active approval. Empty array → button still renders but the
    *  user has to type the approver email manually. */
   clientEmails?: string[];
+  /** People roster — used to resolve reviewer email addresses on the
+   *  approval chip ("✓ אושר ע״י <Hebrew name>"). Falls back to email
+   *  local-part when the person isn't in the roster (typical for
+   *  external client reviewers like Marketing1@s-sarfati.co.il). */
+  people?: TasksPerson[];
 }) {
   const latest = await pickLatestPrisotForCompanyOrProject(
     subjectEmail,
@@ -81,26 +89,110 @@ export default async function LatestPrisotCard({
               flow on the file. "none" = no badge — the absence of any
               badge naturally reads as "not yet approved" without making
               a state claim. */}
-          {latest.approvalState === "approved" && (
-            <span
-              className="prisot-approved-badge"
-              title={
-                latest.approvedTime
-                  ? `הפריסה אושרה / ננעלה ב־${formatRelativeHe(latest.approvedTime)}`
-                  : "הפריסה מסומנת כגרסה מאושרת"
-              }
-            >
-              ✓ מאושר
-            </span>
-          )}
-          {latest.approvalState === "pending" && (
-            <span
-              className="prisot-unapproved-badge"
-              title="קיים תהליך אישור פעיל על הפריסה (Drive Approvals API → IN_PROGRESS)"
-            >
-              ⏳ נשלח לאישור
-            </span>
-          )}
+          {latest.approvalState === "approved" && (() => {
+            // Find reviewer who actually approved (vs. NO_RESPONSE
+            // siblings on multi-approver flows). When the approval
+            // came from a manual lock there are no API reviewers —
+            // skip the chip in that case.
+            const approver = (latest.approvalReviewers || []).find(
+              (r) => r.response === "APPROVED",
+            );
+            const approverName = approver
+              ? personDisplayName(approver.email, people)
+              : "";
+            return (
+              <>
+                <span
+                  className="prisot-approved-badge"
+                  title={
+                    latest.approvedTime
+                      ? `הפריסה אושרה / ננעלה ב־${formatRelativeHe(latest.approvedTime)}`
+                      : "הפריסה מסומנת כגרסה מאושרת"
+                  }
+                >
+                  ✓ מאושר
+                </span>
+                {approverName && (
+                  <span
+                    className="prisot-reviewer-chip prisot-reviewer-chip-approved"
+                    title={`אושר ע״י ${approver?.email}`}
+                  >
+                    ע״י {approverName}
+                  </span>
+                )}
+              </>
+            );
+          })()}
+          {latest.approvalState === "pending" && (() => {
+            // Pending = at least one reviewer hasn't responded.
+            // Chip lists the still-pending reviewers (NO_RESPONSE),
+            // capped at 2 to keep the head row tidy with a "+N"
+            // overflow.
+            const stillPending = (latest.approvalReviewers || []).filter(
+              (r) => r.response === "NO_RESPONSE",
+            );
+            const names = stillPending.map((r) =>
+              personDisplayName(r.email, people),
+            );
+            const head = names.slice(0, 2).join(", ");
+            const overflow = names.length > 2 ? ` +${names.length - 2}` : "";
+            const chipText = head + overflow;
+            return (
+              <>
+                <span
+                  className="prisot-unapproved-badge"
+                  title="קיים תהליך אישור פעיל על הפריסה (Drive Approvals API → IN_PROGRESS)"
+                >
+                  ⏳ נשלח לאישור
+                </span>
+                {chipText && (
+                  <span
+                    className="prisot-reviewer-chip prisot-reviewer-chip-pending"
+                    title={
+                      "ממתינים: " +
+                      stillPending.map((r) => r.email).join(", ")
+                    }
+                  >
+                    ממתין מ{chipText}
+                  </span>
+                )}
+              </>
+            );
+          })()}
+          {latest.approvalState === "declined" && (() => {
+            // First reviewer with DECLINED response. Drive's flow
+            // marks the whole approval as declined when any
+            // reviewer rejects, so we only need the first one.
+            const decliner = (latest.approvalReviewers || []).find(
+              (r) => r.response === "DECLINED",
+            );
+            const declinerName = decliner
+              ? personDisplayName(decliner.email, people)
+              : "";
+            return (
+              <>
+                <span
+                  className="prisot-declined-badge"
+                  title="הפריסה נדחתה ע״י אחד הנמענים — יש לתקן ולשלוח שוב"
+                >
+                  ❌ נדחה
+                </span>
+                {declinerName && (
+                  <span
+                    className="prisot-reviewer-chip prisot-reviewer-chip-declined"
+                    title={`נדחה ע״י ${decliner?.email}`}
+                  >
+                    ע״י {declinerName}
+                  </span>
+                )}
+                <SendForApprovalButton
+                  fileId={latest.id}
+                  fileName={latest.name}
+                  suggestedClients={clientEmails}
+                />
+              </>
+            );
+          })()}
           {latest.approvalState === "none" && (
             <>
               <span

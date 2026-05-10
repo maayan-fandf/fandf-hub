@@ -5274,6 +5274,52 @@ html[data-theme="dark"] .send-approval-warning {
 .prisot-not-approved-badge {
   background: linear-gradient(135deg, #6b7280, #9ca3af);
 }
+/* Declined — red gradient. The decliner's name renders in a
+   sibling reviewer chip; this badge just signals the state. */
+.prisot-declined-badge {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+}
+
+/* Reviewer-name chip — small label that follows a state badge with
+   the approver/decliner/pending name(s). Visually subordinate to the
+   primary state badge: lighter background + colored text matching
+   the state, so the head reads as "[state] ע״י [person]" at a
+   glance. */
+.prisot-reviewer-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  vertical-align: middle;
+}
+.prisot-reviewer-chip-approved {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+.prisot-reviewer-chip-pending {
+  background: rgba(217, 119, 6, 0.14);
+  color: #92400e;
+}
+.prisot-reviewer-chip-declined {
+  background: rgba(220, 38, 38, 0.14);
+  color: #991b1b;
+}
+html[data-theme="dark"] .prisot-reviewer-chip-approved {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+}
+html[data-theme="dark"] .prisot-reviewer-chip-pending {
+  background: rgba(217, 119, 6, 0.22);
+  color: #fbbf24;
+}
+html[data-theme="dark"] .prisot-reviewer-chip-declined {
+  background: rgba(220, 38, 38, 0.22);
+  color: #fca5a5;
+}
 @media (max-width: 640px) {
   .prisot-thumb,
   .prisot-thumb img {

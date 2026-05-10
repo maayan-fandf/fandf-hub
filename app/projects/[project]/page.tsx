@@ -535,6 +535,7 @@ export default async function ProjectOverviewPage({
             company={companyForDashboard}
             project={projectName}
             clientEmails={projectClientEmails}
+            people={peopleData?.ok ? peopleData.people : []}
           />
         </Suspense>
       )}

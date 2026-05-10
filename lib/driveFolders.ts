@@ -280,12 +280,19 @@ export type LatestPrisot = {
    *  פריסות, "general" = the company's כללי project served as the
    *  fallback. Renders as a small badge in the UI. */
   source: "project" | "general";
-  /** Three-state approval signal. "approved" = file went through the
+  /** Four-state approval signal. "approved" = file went through the
    *  Drive Approvals API and received APPROVED, OR the file is manually
    *  locked via contentRestrictions (Sheets' "Approved version" UI).
-   *  "pending" = an Approvals API flow is IN_PROGRESS. "none" = no
-   *  active approval flow + not locked. */
-  approvalState: "approved" | "pending" | "none";
+   *  "pending" = an Approvals API flow is IN_PROGRESS. "declined" = a
+   *  reviewer rejected. "none" = no active approval flow + not
+   *  locked. */
+  approvalState: "approved" | "pending" | "declined" | "none";
+  /** Latest approval's reviewer roster — surfaced so the card can
+   *  render an "approved by X" / "rejected by Y" / "pending from Z"
+   *  chip with the recipient's display name. Empty array when the
+   *  approval state was determined by manual contentRestrictions
+   *  lock (no API approval to attribute). */
+  approvalReviewers: ApprovalReviewer[];
   /** True for backwards-compat with old call sites. Equivalent to
    *  approvalState === "approved". */
   approved: boolean;
@@ -350,18 +357,28 @@ function extractDateFromName(name: string): string {
  * → "none". The `data.approvals || data.items` fallback below makes
  * the parse robust to either shape in case Google ever flips back.
  */
-type ApprovalState = "approved" | "pending" | "none";
+type ApprovalState = "approved" | "pending" | "declined" | "none";
+
+/** Per-reviewer record threaded out of the Approvals API. The card
+ *  renders display names for the approver/decliner / pending list
+ *  chip — `personDisplayName` resolves emails to Hebrew names from
+ *  the page-level people roster. */
+export type ApprovalReviewer = {
+  email: string;
+  response: "APPROVED" | "DECLINED" | "NO_RESPONSE" | string;
+};
+
 async function fetchApprovalState(
   drive: drive_v3.Drive,
   fileId: string,
-): Promise<ApprovalState> {
+): Promise<{ state: ApprovalState; reviewers: ApprovalReviewer[] }> {
   try {
     const auth2 = drive.context._options.auth as
       | { getAccessToken: () => Promise<{ token?: string | null }> }
       | undefined;
     const tokenResp = await auth2?.getAccessToken?.();
     const token = tokenResp?.token;
-    if (!token) return "none";
+    if (!token) return { state: "none", reviewers: [] };
     // NOTE: do NOT add ?supportsAllDrives=true here — that param is
     // valid on /files, /files.list, /files.copy, etc. but the
     // /approvals sub-resource explicitly rejects it with 400
@@ -398,7 +415,7 @@ async function fetchApprovalState(
           240,
         )}`,
       );
-      return "none";
+      return { state: "none", reviewers: [] };
     }
     type ApprovalItem = {
       approvalId?: string;
@@ -409,6 +426,10 @@ async function fetchApprovalState(
       completeTime?: string;
       requestTime?: string;
       completionTime?: string;
+      reviewerResponses?: Array<{
+        reviewer?: { emailAddress?: string };
+        response?: string;
+      }>;
     };
     const data = (await r.json().catch(() => ({}))) as {
       items?: ApprovalItem[];
@@ -421,7 +442,7 @@ async function fetchApprovalState(
       console.log(
         `[fetchApprovalState] empty items[] for fileId=${fileId}`,
       );
-      return "none";
+      return { state: "none", reviewers: [] };
     }
     // Look at the LATEST approval only — sequence
     //   [APPROVED, IN_PROGRESS]
@@ -435,24 +456,42 @@ async function fetchApprovalState(
     );
     const latest = sorted[0];
     const status = String(latest?.status || "").toUpperCase();
+    // Reviewers — keep the raw email + per-reviewer response so the
+    // UI can pick the right name to chip (the approver, the decliner,
+    // or the still-pending list, depending on overall status).
+    const reviewers: ApprovalReviewer[] = (latest?.reviewerResponses || [])
+      .map((r) => ({
+        email: String(r?.reviewer?.emailAddress || "").trim(),
+        response: String(r?.response || "NO_RESPONSE").toUpperCase() as
+          | "APPROVED"
+          | "DECLINED"
+          | "NO_RESPONSE",
+      }))
+      .filter((r) => r.email);
     console.log(
       `[fetchApprovalState] fileId=${fileId} count=${list.length} ` +
         `latestStatus=${status}`,
     );
-    if (status === "APPROVED") return "approved";
-    if (status === "IN_PROGRESS") return "pending";
-    // CANCELED / DECLINED / unknown — file is not in an active flow,
-    // no badge. (Google's enum uses "CANCELED" with one L; we match
-    // the explicit positive states above and let everything else fall
-    // through to "none" — same effect, more forgiving to enum drift.)
-    return "none";
+    if (status === "APPROVED") return { state: "approved", reviewers };
+    if (status === "IN_PROGRESS") return { state: "pending", reviewers };
+    // DECLINED — at least one reviewer rejected. Surfaced separately
+    // so the UI can show "❌ נדחה ע״י <name>" with the decliner's
+    // name. Note Google's enum uses "DECLINED" (vs CANCELED for the
+    // requester-cancelled variant — that one falls through to "none"
+    // since cancellation usually means "I'm reworking the file").
+    if (status === "DECLINED") return { state: "declined", reviewers };
+    // CANCELED / unknown — file is not in an active flow, no badge.
+    // (Google's enum uses "CANCELED" with one L; we match the explicit
+    // positive states above and let everything else fall through to
+    // "none" — same effect, more forgiving to enum drift.)
+    return { state: "none", reviewers };
   } catch (e) {
     console.warn(
       `[fetchApprovalState] failed for fileId=${fileId}: ${
         e instanceof Error ? e.message : String(e)
       }`,
     );
-    return "none";
+    return { state: "none", reviewers: [] };
   }
 }
 
@@ -549,14 +588,18 @@ async function findLatestPrisotInner(
   const restriction = best.contentRestrictions?.[0];
   const isLocked = !!restriction?.readOnly;
   const approvedTime = restriction?.restrictionTime || "";
-  const apiState = await fetchApprovalState(drive, best.id);
-  // Resolve the three-state badge. `approved` wins; `pending` second;
-  // `none` last. Manual locks count as approved since users mark
-  // files locked specifically to declare them final.
+  const apiInfo = await fetchApprovalState(drive, best.id);
+  // Resolve the four-state badge. `approved` wins (manual lock +
+  // explicit API approve both count); `pending` next; `declined`
+  // when a reviewer rejected; `none` last. Manual locks count as
+  // approved since users mark files locked specifically to declare
+  // them final.
   let approvalState: ApprovalState;
-  if (apiState === "approved" || isLocked) approvalState = "approved";
-  else if (apiState === "pending") approvalState = "pending";
+  if (apiInfo.state === "approved" || isLocked) approvalState = "approved";
+  else if (apiInfo.state === "pending") approvalState = "pending";
+  else if (apiInfo.state === "declined") approvalState = "declined";
   else approvalState = "none";
+  const approvalReviewers = apiInfo.reviewers;
   // Diagnostic log when the badge resolves to "none" — captures the
   // file mimeType so we can tell from App Hosting logs whether the
   // issue is "this file type doesn't support approvals" (image,
@@ -587,6 +630,7 @@ async function findLatestPrisotInner(
     dateInName: extractDateFromName(best.name || ""),
     source,
     approvalState,
+    approvalReviewers,
     approved: approvalState === "approved",
     approvedTime,
     folderUrl,
