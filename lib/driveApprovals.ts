@@ -109,57 +109,90 @@ export async function createDriveApproval({
   if (!token) return { ok: false, error: "auth token unavailable" };
 
   // Pre-grant readers — Drive Approvals does NOT grant access at
-  // :start time. Reviewers who lack a permission on the file land on
-  // "Request access" when they click the email link. Without this
-  // step the approval workflow is effectively useless for any
-  // recipient outside the file's existing ACL.
+  // :start time, so recipients without a permission on the file
+  // land on "Request access" when they click the email link.
   //
-  // sendNotificationEmail:true is intentional — for external
-  // recipients (non-Workspace-domain emails) Drive treats the share
-  // as a "visitor" permission and the notification email carries
-  // the PIN verification link the recipient needs to actually open
-  // the file. With sendNotificationEmail:false the permission
-  // exists in a half-state and Drive's UI shows "Request access"
-  // until they verify, which they can't do without the PIN email.
-  // Yes, this means recipients get TWO emails (share notification +
-  // approval-start email), but the share email is the one that
-  // unlocks access. Worth the noise.
+  // We use a SINGLE "anyone with the link" permission instead of
+  // per-recipient user shares for one specific reason: the Drive
+  // visitor-verification PIN flow. When you grant `type: user` with
+  // an external (non-Workspace) email, Drive treats the recipient
+  // as a "visitor" and forces them to verify identity via a 6-digit
+  // code emailed separately before they can open the file. For
+  // media-plan approvals where the recipient is a client that just
+  // wants to glance at the file and reply, that's needless friction
+  // — reported by maayan on /projects/לוריא after the Marketing1
+  // recipient got a verification code.
   //
-  // Per-email failures are tracked and surfaced to the UI so the
-  // user knows which recipients couldn't be auto-shared and need
-  // manual handling. 409 ALREADY_EXISTS = already a member = fine.
-  // Everything else is a real failure (org policy blocks external
-  // sharing, file isn't in a shareable location, malformed email,
-  // etc.) and the user should see it.
+  // anyone-with-link reader access:
+  //   - No PIN. No verification email. One click on the approval
+  //     email opens the file directly.
+  //   - Google-account holders still see Approve/Decline buttons
+  //     in Drive UI as expected.
+  //   - Non-Google-account recipients view the file and reply by
+  //     email; an internal user marks the file approved manually
+  //     when ready.
+  //
+  // Trade-off: anyone with the URL can view the file. The 32-char
+  // file ID is un-guessable in practice and we only ever surface
+  // the URL through the recipient's email — same exposure surface
+  // as a per-recipient share. We accept this for media-plan
+  // approvals; sensitive work should keep using Drive's UI directly.
+  //
+  // Falls back to per-recipient user shares if the org has
+  // anyone-with-link disabled (the create call returns 403 with a
+  // policy-violation error). Per-email failures are tracked and
+  // surfaced to the UI so the user knows what to do.
   const shareFailures: { email: string; reason: string }[] = [];
-  for (const email of approverList) {
-    try {
-      await drive.permissions.create({
-        fileId: cleanFileId,
-        sendNotificationEmail: true,
-        emailMessage:
-          (message || "").trim() ||
-          "פריסה לאישור — קישור יישלח גם דרך זרימת האישור של Drive.",
-        supportsAllDrives: true,
-        requestBody: {
-          type: "user",
-          role: "reader",
-          emailAddress: email,
-        },
-      });
-    } catch (e) {
-      const code =
-        (e as { code?: number }).code ??
-        (e as { response?: { status?: number } }).response?.status;
-      if (code === 409) {
-        // Already a member with sufficient access — no-op.
-        continue;
+  let usedFallback = false;
+  try {
+    await drive.permissions.create({
+      fileId: cleanFileId,
+      sendNotificationEmail: false,
+      supportsAllDrives: true,
+      requestBody: { type: "anyone", role: "reader" },
+    });
+  } catch (e) {
+    const code =
+      (e as { code?: number }).code ??
+      (e as { response?: { status?: number } }).response?.status;
+    const reason = e instanceof Error ? e.message : String(e);
+    console.warn(
+      `[createDriveApproval] anyone-with-link share failed (${code}): ${reason} — falling back to per-recipient user shares with PIN flow`,
+    );
+    usedFallback = true;
+  }
+  // Fallback path: org policy forbids anyone-with-link sharing, so
+  // we issue per-recipient user shares. This is the older, PIN-
+  // gated flow — recipients on non-Workspace domains will hit a
+  // verification code email. Accept the friction since the alternative
+  // is "Request access" for everyone.
+  if (usedFallback) {
+    for (const email of approverList) {
+      try {
+        await drive.permissions.create({
+          fileId: cleanFileId,
+          sendNotificationEmail: true,
+          emailMessage:
+            (message || "").trim() ||
+            "פריסה לאישור — קישור יישלח גם דרך זרימת האישור של Drive.",
+          supportsAllDrives: true,
+          requestBody: {
+            type: "user",
+            role: "reader",
+            emailAddress: email,
+          },
+        });
+      } catch (e) {
+        const code =
+          (e as { code?: number }).code ??
+          (e as { response?: { status?: number } }).response?.status;
+        if (code === 409) continue;
+        const reason = e instanceof Error ? e.message : String(e);
+        console.warn(
+          `[createDriveApproval] permissions.create failed for ${email} on ${cleanFileId} (${code}): ${reason}`,
+        );
+        shareFailures.push({ email, reason });
       }
-      const reason = e instanceof Error ? e.message : String(e);
-      console.warn(
-        `[createDriveApproval] permissions.create failed for ${email} on ${cleanFileId} (${code}): ${reason}`,
-      );
-      shareFailures.push({ email, reason });
     }
   }
 
