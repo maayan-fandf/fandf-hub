@@ -75,12 +75,22 @@ export type ChatAttachment = {
   /** MIME type — used to decide image vs link rendering. */
   contentType: string;
   /** Preview-quality URL Chat exposes for display purposes. Loads
-   *  in a browser signed into the same Workspace account; falls back
-   *  to the lh3 thumbnail when blank. */
+   *  ONLY in a browser signed into the same Workspace account that
+   *  has access to the Chat space — fails when loaded from
+   *  hub.fandf.co.il's origin because the browser doesn't send
+   *  googleusercontent cookies cross-origin. Kept as a last-resort
+   *  reference; UI surfaces should prefer the hub proxy instead. */
   thumbnailUri: string;
   /** Drive file ID when the attachment is Drive-backed. We use it
    *  to construct an lh3 thumbnail URL when thumbnailUri is empty. */
   driveFileId: string;
+  /** Resource name from `attachmentDataRef.resourceName` — the
+   *  identifier the Chat media.download API uses to fetch raw bytes.
+   *  Threaded through to the hub-side proxy at /api/chat/attachment
+   *  so images render reliably regardless of the viewer's Workspace
+   *  session state. Empty when Chat didn't surface it on the message
+   *  (some legacy attachments). */
+  downloadResourceName: string;
   /** Convenience flag — true when contentType starts with "image/". */
   isImage: boolean;
 };
@@ -466,6 +476,7 @@ async function listRecentMessagesUncached(
           contentType,
           thumbnailUri: a.thumbnailUri ?? "",
           driveFileId: a.driveDataRef?.driveFileId ?? "",
+          downloadResourceName: a.attachmentDataRef?.resourceName ?? "",
           isImage: contentType.startsWith("image/"),
         };
       });

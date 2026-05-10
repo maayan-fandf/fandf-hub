@@ -296,11 +296,21 @@ function renderMessage(
         {m.attachments.length > 0 && (
           <div className="chat-message-attachments">
             {m.attachments.map((a, i) => {
+              // Prefer the hub-side proxy when the attachment has a
+              // download resourceName — that's the only URL form that
+              // reliably loads at hub origin (thumbnailUri / lh3 only
+              // work inside an authenticated Google session and break
+              // when embedded on hub.fandf.co.il). lh3 stays as
+              // back-compat for legacy Drive-backed attachments where
+              // attachmentDataRef.resourceName isn't surfaced.
+              const proxyUrl = a.downloadResourceName
+                ? `/api/chat/attachment?r=${encodeURIComponent(a.downloadResourceName)}`
+                : "";
               const imgUrl =
-                a.thumbnailUri ||
+                proxyUrl ||
                 (a.driveFileId
                   ? `https://lh3.googleusercontent.com/d/${a.driveFileId}=w800`
-                  : "");
+                  : a.thumbnailUri);
               return a.isImage && imgUrl ? (
                 <a
                   key={i}
