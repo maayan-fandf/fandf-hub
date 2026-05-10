@@ -30,7 +30,10 @@ import { classifyRoleText, type UserRole } from "@/lib/userRoleHelpers";
 
 export type { UserRole } from "@/lib/userRoleHelpers";
 
-const ROLE_CACHE = new Map<string, { role: UserRole; expiresAt: number }>();
+const ROLE_CACHE = new Map<
+  string,
+  { role: UserRole; roleText: string; expiresAt: number }
+>();
 const TTL_MS = 5 * 60 * 1000;
 
 function envOrThrow(name: string): string {
@@ -155,28 +158,46 @@ async function inferRoleFromKeys(
   return "unknown";
 }
 
-export async function getUserRole(subjectEmail: string): Promise<UserRole> {
+/**
+ * Internal: returns BOTH the classified role and the raw role text for
+ * a user, with a single cache lookup. The raw text is needed for
+ * predicates that need to distinguish sub-roles within a family — e.g.
+ * `canSeeCampaigns` wants media buyers (currently classified as
+ * "creative") in, but designers (also "creative") out, which can only
+ * be determined from the raw text.
+ */
+async function lookupRoleAndText(
+  subjectEmail: string,
+): Promise<{ role: UserRole; roleText: string }> {
   const lc = subjectEmail.toLowerCase().trim();
-  if (!lc) return "unknown";
+  if (!lc) return { role: "unknown", roleText: "" };
 
   const cached = ROLE_CACHE.get(lc);
-  if (cached && cached.expiresAt > Date.now()) return cached.role;
+  if (cached && cached.expiresAt > Date.now()) {
+    return { role: cached.role, roleText: cached.roleText };
+  }
 
   // Admins are baked-in; skip the sheet reads.
   if (HUB_ADMIN_EMAILS.has(lc)) {
-    ROLE_CACHE.set(lc, { role: "admin", expiresAt: Date.now() + TTL_MS });
-    return "admin";
+    ROLE_CACHE.set(lc, {
+      role: "admin",
+      roleText: "",
+      expiresAt: Date.now() + TTL_MS,
+    });
+    return { role: "admin", roleText: "" };
   }
 
   let role: UserRole = "unknown";
+  let roleText = "";
   try {
-    const { names, roleText } = await lookupNamesAndRole(subjectEmail);
+    const lookup = await lookupNamesAndRole(subjectEmail);
+    roleText = lookup.roleText;
     // Prefer the explicit Role text when it classifies cleanly.
     const fromText = classifyRoleText(roleText);
     if (fromText !== "unknown") {
       role = fromText;
-    } else if (names.length) {
-      role = await inferRoleFromKeys(subjectEmail, names);
+    } else if (lookup.names.length) {
+      role = await inferRoleFromKeys(subjectEmail, lookup.names);
     }
   } catch (e) {
     console.log(
@@ -185,6 +206,36 @@ export async function getUserRole(subjectEmail: string): Promise<UserRole> {
     );
   }
 
-  ROLE_CACHE.set(lc, { role, expiresAt: Date.now() + TTL_MS });
+  ROLE_CACHE.set(lc, { role, roleText, expiresAt: Date.now() + TTL_MS });
+  return { role, roleText };
+}
+
+export async function getUserRole(subjectEmail: string): Promise<UserRole> {
+  const { role } = await lookupRoleAndText(subjectEmail);
   return role;
+}
+
+/**
+ * Predicate for the top-nav קמפיינים link + the /morning page +
+ * /api/morning/count badge. True when the user is one of:
+ *
+ *   - admin (HUB_ADMIN_EMAILS)
+ *   - manager (campaign / account / project / client managers — the
+ *     "manager" role family covers all of those)
+ *   - media — has role text matching /media|מדיה/, even though
+ *     classifyRoleText lumps them into "creative". The classified
+ *     family alone can't distinguish media buyers (do care about
+ *     campaign performance) from designers / copywriters (don't),
+ *     so this predicate looks at the raw text in addition to the
+ *     classified role.
+ *
+ * Designers, copywriters, illustrators, and other non-media creatives
+ * see neither the link nor the badge. The /morning page itself shows
+ * a "not for your role" empty state if they navigate directly.
+ */
+export async function canSeeCampaigns(subjectEmail: string): Promise<boolean> {
+  const { role, roleText } = await lookupRoleAndText(subjectEmail);
+  if (role === "admin" || role === "manager") return true;
+  if (/\bmedia\b|מדיה/i.test(roleText)) return true;
+  return false;
 }

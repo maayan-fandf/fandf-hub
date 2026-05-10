@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getMorningFeed } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
+import { canSeeCampaigns } from "@/lib/userRole";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,8 +20,10 @@ export const dynamic = "force-dynamic";
  * fetches only on mount + on tab focus (no polling interval), which
  * combined with the server cache keeps Apps Script load bounded.
  *
- * Internal-only — clients without admin/internal flag get a zero
- * count (the page itself is gated server-side; no point polling).
+ * Role-gated — admins / managers / media roles only get real counts;
+ * everyone else (designers, copywriters, clients) gets zero so the
+ * badge stays hidden. The /morning page enforces the same gate
+ * server-side; this just keeps the badge consistent.
  */
 export async function GET() {
   const session = await auth();
@@ -34,6 +37,14 @@ export async function GET() {
     // morning page itself.
     const viewAs = await getEffectiveViewAs(sessionEmail).catch(() => "");
     const overrideEmail = viewAs && viewAs !== sessionEmail ? viewAs : undefined;
+    // Role gate — fast-fail before the morning fetch when the user
+    // can't see campaigns. canSeeCampaigns is cached for 5 min per
+    // email so this stays a one-time hit per session.
+    const eligibleEmail = overrideEmail || sessionEmail;
+    const eligible = await canSeeCampaigns(eligibleEmail).catch(() => false);
+    if (!eligible) {
+      return NextResponse.json({ counts: zero() });
+    }
     const feed = await getMorningFeed({ scope: "mine", overrideEmail });
     if (!feed.isAdmin && !feed.isInternal) {
       return NextResponse.json({ counts: zero() });

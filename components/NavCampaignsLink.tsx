@@ -4,9 +4,14 @@ import ActiveLink from "./ActiveLink";
 import { useEffect, useState } from "react";
 
 /**
- * "📢 קמפיינים" topnav link — internal-only (admin or @fandf.co.il).
- * Replaces the old "☀️ בוקר" wording; the underlying /morning route
- * is unchanged so existing bookmarks + internal links keep working.
+ * "📢 קמפיינים" topnav link — visible to admins, managers, and media
+ * roles only. Designers / copywriters / illustrators / other internal
+ * staff don't see the link. Gate is delivered by /api/me's
+ * `canSeeCampaigns` field, which is computed server-side via
+ * `canSeeCampaigns()` in lib/userRole.ts so the predicate stays in
+ * one place. Replaces the old "☀️ בוקר" wording; the underlying
+ * /morning route is unchanged so existing bookmarks + internal links
+ * keep working.
  *
  * Badge shows the count of projects with open alerts (severe + warn
  * + info) so internal staff see at-a-glance how many need attention
@@ -46,20 +51,22 @@ export default function NavCampaignsLink() {
     let cancelled = false;
     async function fetchOnce() {
       try {
-        // Internal/admin gate — keep the same source as the legacy
-        // NavMorningLink (one /api/me round-trip on mount). The count
-        // endpoint also enforces this server-side, so the badge stays
-        // 0 for non-internal users even if `show` somehow flips true.
+        // Role-based gate — admins / managers / media roles only.
+        // /api/me computes canSeeCampaigns server-side and returns the
+        // boolean directly. The count endpoint enforces the same gate,
+        // so the badge stays 0 for non-eligible users even if `show`
+        // somehow flips true.
         const meRes = await fetch("/api/me", { cache: "no-store" });
         if (cancelled || !meRes.ok) return;
         const meData = (await meRes.json()) as {
           isAdmin?: boolean;
           isInternal?: boolean;
+          canSeeCampaigns?: boolean;
         };
         if (cancelled) return;
-        const isInternal = !!(meData.isAdmin || meData.isInternal);
-        setShow(isInternal);
-        if (!isInternal) return;
+        const eligible = !!meData.canSeeCampaigns;
+        setShow(eligible);
+        if (!eligible) return;
 
         const countRes = await fetch("/api/morning/count", {
           cache: "no-store",

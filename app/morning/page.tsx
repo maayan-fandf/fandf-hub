@@ -11,6 +11,7 @@ import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
+import { canSeeCampaigns } from "@/lib/userRole";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 import GoogleAdsIcon from "@/components/GoogleAdsIcon";
@@ -39,6 +40,14 @@ export default async function MorningPage({
   const me = await currentUserEmail().catch(() => "");
   const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
+
+  // Role gate — admins / managers / media only. Designers, copywriters,
+  // and other non-media internal staff (plus clients) get a "not for
+  // your role" empty state instead of the campaign feed. Computed
+  // against the impersonated identity so view-as previews match.
+  const roleEligible = await canSeeCampaigns(overrideEmail || me).catch(
+    () => false,
+  );
 
   const [feedRes, projectsRes, peopleRes] = await Promise.allSettled([
     getMorningFeed({ scope, overrideEmail }),
@@ -109,7 +118,7 @@ export default async function MorningPage({
             </span>
             קמפיינים
           </h1>
-          {data && (
+          {data && roleEligible && (
             <div className="subtitle">
               התראות זמינות לאורך כל היום · טיפלת? סמן ✓ והן ישוקטו עד למחר
               <br />
@@ -142,7 +151,7 @@ export default async function MorningPage({
         </div>
       )}
 
-      {data && (
+      {data && roleEligible && (
         <div className="morning-filter-bar">
           <SeverityChip
             label="הכל"
@@ -181,7 +190,14 @@ export default async function MorningPage({
         </div>
       )}
 
-      {data && (data.isAdmin || data.isInternal) && visible.length === 0 && (
+      {data && (data.isAdmin || data.isInternal) && !roleEligible && (
+        <div className="empty">
+          <span className="emoji" aria-hidden>🔒</span>
+          עמוד הקמפיינים זמין לאדמינים, מנהלים וצוות המדיה בלבד.
+        </div>
+      )}
+
+      {data && (data.isAdmin || data.isInternal) && roleEligible && visible.length === 0 && (
         <div className="empty">
           <span className="emoji" aria-hidden>
             🌿
@@ -194,7 +210,7 @@ export default async function MorningPage({
         </div>
       )}
 
-      {alertProjects.length > 0 && (
+      {roleEligible && alertProjects.length > 0 && (
         <ul className="morning-list">
           {alertProjects.map((p) => (
             <ProjectCard key={p.name} p={p} showAdLinks={showAdLinks} />
@@ -202,7 +218,7 @@ export default async function MorningPage({
         </ul>
       )}
 
-      {clearProjects.length > 0 && severityFilter !== "clear" && (
+      {roleEligible && clearProjects.length > 0 && severityFilter !== "clear" && (
         <details className="morning-clear">
           <summary>
             ✅ {clearProjects.length} פרויקטים ללא התראות (לחץ להצגה)
