@@ -334,8 +334,21 @@ function extractDateFromName(name: string): string {
  *                (silently fails so workspace tenants without the
  *                Approvals feature don't 4xx-spam every page render)
  *
- * The endpoint is `GET /drive/v3/files/{fileId}/approvals`. Same Drive
- * scope our existing reads use — no extra OAuth scope needed.
+ * Endpoint: `GET /drive/v3/files/{fileId}/approvals`. Same Drive scope
+ * our existing reads use — no extra OAuth scope needed.
+ *
+ * Response shape per the official guides
+ * (https://developers.google.com/workspace/drive/api/guides/approvals):
+ *   { items: [{ approvalId, status, createTime, modifyTime,
+ *               completeTime, reviewerResponses[] }] }
+ *
+ * Earlier code parsed `data.approvals[]` with `requestTime` /
+ * `completionTime` — those were wrong (likely cribbed from a
+ * different Google API surface), and the parse mismatch is exactly
+ * why the badge stayed "לא מאושר" for files that genuinely had
+ * IN_PROGRESS approvals: `data.approvals` was undefined → empty list
+ * → "none". The `data.approvals || data.items` fallback below makes
+ * the parse robust to either shape in case Google ever flips back.
  */
 type ApprovalState = "approved" | "pending" | "none";
 async function fetchApprovalState(
@@ -373,35 +386,45 @@ async function fetchApprovalState(
       );
       return "none";
     }
-    const data = (await r.json().catch(() => ({}))) as {
-      approvals?: Array<{
-        id?: string;
-        status?: string;
-        requestTime?: string;
-        completionTime?: string;
-      }>;
+    type ApprovalItem = {
+      approvalId?: string;
+      id?: string;
+      status?: string;
+      createTime?: string;
+      modifyTime?: string;
+      completeTime?: string;
+      requestTime?: string;
+      completionTime?: string;
     };
-    const approvals = data.approvals || [];
-    if (approvals.length === 0) {
-      // Empty 200 means the file has no approvals at all — log so
-      // the "user says it's pending but hub shows לא מאושר" case
-      // can be diagnosed from logs (vs the 403 case above).
+    const data = (await r.json().catch(() => ({}))) as {
+      items?: ApprovalItem[];
+      approvals?: ApprovalItem[];
+    };
+    // The documented shape uses `items`; tolerate legacy `approvals`
+    // in case Google's response varies by API version.
+    const list: ApprovalItem[] = data.items || data.approvals || [];
+    if (list.length === 0) {
       console.log(
-        `[fetchApprovalState] empty approvals[] for fileId=${fileId}`,
+        `[fetchApprovalState] empty items[] for fileId=${fileId}`,
       );
       return "none";
     }
     // Look at the LATEST approval only — sequence
     //   [APPROVED, IN_PROGRESS]
     // means a previously-approved file had a new review round started
-    // and should read as "pending", not "approved". Sort by requestTime
-    // desc; fall through to whatever the API order was when timestamps
-    // are missing.
-    const sorted = [...approvals].sort((a, b) =>
-      String(b.requestTime || "").localeCompare(String(a.requestTime || "")),
+    // and should read as "pending", not "approved". Sort by createTime
+    // desc; fall back to modifyTime/requestTime when missing.
+    const stamp = (a: ApprovalItem) =>
+      a.createTime || a.modifyTime || a.requestTime || "";
+    const sorted = [...list].sort((a, b) =>
+      String(stamp(b)).localeCompare(String(stamp(a))),
     );
     const latest = sorted[0];
     const status = String(latest?.status || "").toUpperCase();
+    console.log(
+      `[fetchApprovalState] fileId=${fileId} count=${list.length} ` +
+        `latestStatus=${status}`,
+    );
     if (status === "APPROVED") return "approved";
     if (status === "IN_PROGRESS") return "pending";
     // CANCELED / DECLINED / unknown — file is not in an active flow,

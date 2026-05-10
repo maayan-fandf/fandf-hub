@@ -9,26 +9,35 @@
  * directly with the SA's Bearer token — same pattern as
  * `fetchApprovalState` in lib/driveFolders.ts.
  *
- * Endpoint: POST /drive/v3/files/{fileId}/approvals?supportsAllDrives=true
+ * Endpoint per the official guides
+ * (https://developers.google.com/workspace/drive/api/guides/approvals):
  *
- * Request body (best-effort — Google doesn't formally publish the
- * v3 schema for this endpoint, so the shape comes from the public
- * Drive UI behavior):
+ *   POST /drive/v3/files/{fileId}/approvals:start
+ *
+ * Request body shape (per the guides page — earlier code used an
+ * approvers/requestMessage/expirationTime shape that was wrong and
+ * just 400'd silently):
+ *
  *   {
- *     approvers: [{emailAddress: "..."}],
- *     requestMessage: "...",
- *     expirationTime: <ISO timestamp>
+ *     reviewerEmails: ["alice@example.com", "bob@example.com"],
+ *     dueTime: "<RFC 3339 timestamp>",
+ *     lockFile: true,                 // recommended for media plans —
+ *                                     // freezes the file once sent so
+ *                                     // reviewers see exactly what's
+ *                                     // up for approval
+ *     message: "..."
  *   }
  *
  * Failure modes:
  *   - 403 — workspace plan doesn't include Approvals, or the
  *           impersonated user lacks edit access
  *   - 404 — file not found via this credential
- *   - 400 — malformed request (typically: approvers without
- *           Drive access to the file)
+ *   - 400 — malformed request (typically: reviewers without Drive
+ *           access to the file, or the file type doesn't support
+ *           approvals)
  *   - any other — surfaced verbatim to the UI for diagnosis
  *
- * The caller is responsible for ensuring approvers have at least
+ * The caller is responsible for ensuring reviewers have at least
  * read access to the file BEFORE calling this. Today the project
  * overview's "תיקיה משותפת" auto-share flow grants client emails
  * read on the project's shared folder (via ensureProjectSharedFolder),
@@ -120,15 +129,23 @@ export async function createDriveApproval({
     }
   }
 
-  const expirationTime = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
+  const dueTime = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
+  // Path uses the `:start` action suffix per the documented guide.
+  // supportsAllDrives kept on the query string so files in Shared
+  // Drives don't 404.
   const url =
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
       cleanFileId,
-    )}/approvals?supportsAllDrives=true`;
+    )}/approvals:start?supportsAllDrives=true`;
   const body = {
-    approvers: approverList.map((e) => ({ emailAddress: e })),
-    requestMessage: (message || "").trim() || "פריסה לאישור",
-    expirationTime,
+    reviewerEmails: approverList,
+    message: (message || "").trim() || "פריסה לאישור",
+    dueTime,
+    // lockFile=true freezes the file while approval is in flight so
+    // reviewers vote on exactly what was sent. Matches what Drive's
+    // own UI does by default. Users can still cancel the approval
+    // from Drive to unlock if they need to revise.
+    lockFile: true,
   };
 
   try {
@@ -158,8 +175,11 @@ export async function createDriveApproval({
         status: r.status,
       };
     }
-    const data = (await r.json().catch(() => ({}))) as { id?: string };
-    return { ok: true, approvalId: data.id || "" };
+    const data = (await r.json().catch(() => ({}))) as {
+      approvalId?: string;
+      id?: string;
+    };
+    return { ok: true, approvalId: data.approvalId || data.id || "" };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(
