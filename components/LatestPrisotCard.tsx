@@ -6,6 +6,7 @@ import {
   type PrisotData,
 } from "@/lib/driveFolders";
 import PrisotThumb from "./PrisotThumb";
+import SendForApprovalButton from "./SendForApprovalButton";
 
 /**
  * Server component — fetches and renders the latest Google Sheet from
@@ -28,10 +29,16 @@ export default async function LatestPrisotCard({
   subjectEmail,
   company,
   project,
+  clientEmails = [],
 }: {
   subjectEmail: string;
   company: string;
   project: string;
+  /** Client emails from the project's Keys row (col E), pre-suggested
+   *  in the SendForApprovalButton dialog when the latest פריסה has
+   *  no active approval. Empty array → button still renders but the
+   *  user has to type the approver email manually. */
+  clientEmails?: string[];
 }) {
   const latest = await pickLatestPrisotForCompanyOrProject(
     subjectEmail,
@@ -94,12 +101,19 @@ export default async function LatestPrisotCard({
             </span>
           )}
           {latest.approvalState === "none" && (
-            <span
-              className="prisot-not-approved-badge"
-              title="הפריסה לא נשלחה לאישור ולא נעולה"
-            >
-              ⛔ לא מאושר
-            </span>
+            <>
+              <span
+                className="prisot-not-approved-badge"
+                title="הפריסה לא נשלחה לאישור ולא נעולה"
+              >
+                ⛔ לא מאושר
+              </span>
+              <SendForApprovalButton
+                fileId={latest.id}
+                fileName={latest.name}
+                suggestedClients={clientEmails}
+              />
+            </>
           )}
           {latest.source === "general" && (
             <span

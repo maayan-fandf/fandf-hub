@@ -351,11 +351,18 @@ async function fetchApprovalState(
     // 404 = file not found OR Approvals API not enabled for this file.
     // 403 = Approvals not enabled for the workspace. Both → "none".
     if (!r.ok) {
-      if (r.status !== 404 && r.status !== 403) {
-        console.warn(
-          `[fetchApprovalState] unexpected ${r.status} for fileId=${fileId}`,
-        );
-      }
+      // Log every non-2xx — including 403/404 — so we can tell from
+      // App Hosting logs whether the badge says "לא מאושר" because
+      // the API is unavailable for this workspace tier vs because
+      // the file genuinely has no pending approval. Body is capped
+      // so a runaway HTML error page doesn't bloat the log.
+      const errBody = await r.text().catch(() => "");
+      console.warn(
+        `[fetchApprovalState] ${r.status} for fileId=${fileId}: ${errBody.slice(
+          0,
+          240,
+        )}`,
+      );
       return "none";
     }
     const data = (await r.json().catch(() => ({}))) as {
@@ -367,7 +374,15 @@ async function fetchApprovalState(
       }>;
     };
     const approvals = data.approvals || [];
-    if (approvals.length === 0) return "none";
+    if (approvals.length === 0) {
+      // Empty 200 means the file has no approvals at all — log so
+      // the "user says it's pending but hub shows לא מאושר" case
+      // can be diagnosed from logs (vs the 403 case above).
+      console.log(
+        `[fetchApprovalState] empty approvals[] for fileId=${fileId}`,
+      );
+      return "none";
+    }
     // Look at the LATEST approval only — sequence
     //   [APPROVED, IN_PROGRESS]
     // means a previously-approved file had a new review round started

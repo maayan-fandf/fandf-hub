@@ -534,6 +534,7 @@ export default async function ProjectOverviewPage({
             subjectEmail={userEmail}
             company={companyForDashboard}
             project={projectName}
+            clientEmails={projectClientEmails}
           />
         </Suspense>
       )}
