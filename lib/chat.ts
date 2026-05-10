@@ -849,6 +849,19 @@ export async function postMessage(
         requestBody.annotations = annotations;
       }
     }
+    // Diagnostic: log the attachment portion of the request body so we
+    // can confirm Chat is receiving the attachmentUploadToken correctly.
+    // Reported by maayan 2026-05-11: 'message sends but photos aren't
+    // attached'. If logs show `attachment: [...]` going out but the
+    // returned message has no `attachment[]` field, the token form is
+    // wrong; if attachment[] is absent from BOTH directions, something
+    // upstream of postMessage is dropping it.
+    if (hasAttachments) {
+      console.log(
+        "[chat] postMessage sending attachment[]:",
+        JSON.stringify(requestBody.attachment).slice(0, 400),
+      );
+    }
     const res = await chat.spaces.messages.create({
       parent: `spaces/${spaceId}`,
       requestBody,
@@ -856,6 +869,15 @@ export async function postMessage(
         ? "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
         : undefined,
     });
+    if (hasAttachments) {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const returned = (res.data as any).attachment;
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      console.log(
+        "[chat] postMessage response attachment[]:",
+        returned ? JSON.stringify(returned).slice(0, 400) : "(absent)",
+      );
+    }
     return res.data.name ?? "";
   } catch (e) {
     console.log("[chat] postMessage failed:", e);
