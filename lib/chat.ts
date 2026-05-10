@@ -17,7 +17,6 @@
  * second column.
  */
 
-import { Readable } from "node:stream";
 import { chatClient, directoryClient } from "@/lib/sa";
 
 export type ChatMessage = {
@@ -606,41 +605,99 @@ export async function uploadChatAttachment(
   mimeType: string,
   bytes: Buffer,
 ): Promise<ChatAttachmentRef> {
-  const chat = chatClient(subjectEmail);
-  // Wrap the Buffer in a Readable stream — current googleapis
-  // versions call `body.pipe()` internally during multipart-upload
-  // construction, which fails with "b.body.pipe is not a function"
-  // when handed a raw Buffer. Reported by maayan 2026-05-10 with
-  // a screenshot of that exact error in the chat composer.
+  // Bypass googleapis' media.upload helper entirely — caught between
+  // two of its bugs:
+  //   1. `body: Buffer` → "b.body.pipe is not a function" (current
+  //      versions call body.pipe() unconditionally; Buffer doesn't
+  //      have .pipe())
+  //   2. `body: Readable.from(bytes)` → upload succeeds but
+  //      `res.data.attachmentDataRef` is missing
   //
-  // Past history (see git log): we went Readable → Buffer because
-  // a stretch of googleapis versions stopped populating
-  // `attachmentDataRef` on Readable bodies. That regression seems
-  // resolved upstream — Readable round-trips cleanly now. If the
-  // attachmentDataRef-missing failure ever recurs we'll need a more
-  // surgical workaround, but until then Readable is the correct
-  // shape per the library's typed signature.
-  const res = await chat.media.upload({
-    parent: `spaces/${spaceId}`,
-    requestBody: { filename: fileName },
-    media: {
-      mimeType,
-      body: Readable.from(bytes),
+  // Both reported by maayan 2026-05-10 (consecutive screenshots).
+  // Doing the multipart/related POST manually with fetch sidesteps
+  // both — same wire format the SDK builds, just without the
+  // multipart construction code path that's broken for our shape.
+  //
+  // We still go through chatClient() to get a DWD-impersonated
+  // access token, so identity + scopes match what the SDK would
+  // have used.
+  const chat = chatClient(subjectEmail);
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const auth2 = (chat.context as any)._options?.auth as
+    | { getAccessToken: () => Promise<{ token?: string | null }> }
+    | undefined;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  const tokenResp = await auth2?.getAccessToken?.();
+  const token = tokenResp?.token || "";
+  if (!token) {
+    throw new Error("Chat upload: missing impersonation token");
+  }
+
+  // Build the multipart/related body. Boundary just has to be a
+  // string that doesn't appear in either part — random hex is safe.
+  const boundary =
+    "----hub-fandf-chat-upload-" +
+    Math.random().toString(16).slice(2);
+  const metadata = JSON.stringify({ filename: fileName });
+  const enc = new TextEncoder();
+  const partA = enc.encode(
+    `--${boundary}\r\n` +
+      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      `${metadata}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Type: ${mimeType}\r\n\r\n`,
+  );
+  const partB = enc.encode(`\r\n--${boundary}--\r\n`);
+  // Concatenate as a single Buffer — fetch handles Buffer bodies
+  // natively (no .pipe() shenanigans).
+  const body = Buffer.concat([partA, bytes, partB]);
+
+  const url =
+    `https://chat.googleapis.com/upload/v1/spaces/${encodeURIComponent(
+      spaceId,
+    )}/attachments?uploadType=multipart`;
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": `multipart/related; boundary=${boundary}`,
+      "content-length": String(body.length),
     },
+    body,
+    cache: "no-store",
   });
-  const ref = res.data.attachmentDataRef?.resourceName ?? "";
+
+  if (!r.ok) {
+    const errBody = await r.text().catch(() => "");
+    console.error("[uploadChatAttachment] upload failed", {
+      spaceId,
+      fileName,
+      mimeType,
+      bytes: bytes.length,
+      status: r.status,
+      response: errBody.slice(0, 400),
+    });
+    throw new Error(
+      `Chat upload failed (${r.status}): ${
+        errBody.slice(0, 200) || r.statusText || "unknown"
+      }`,
+    );
+  }
+
+  const data = (await r.json().catch(() => ({}))) as {
+    attachmentDataRef?: { resourceName?: string };
+  };
+  const ref = data.attachmentDataRef?.resourceName ?? "";
   if (!ref) {
-    // Surface enough of the response on the server log so we can
-    // trace this if it ever recurs. The user gets a generic message
-    // since `res.data` may contain stuff we don't want surfaced.
     console.error("[uploadChatAttachment] no attachmentDataRef in response", {
       spaceId,
       fileName,
       mimeType,
       bytes: bytes.length,
-      responseStatus: res.status,
-      responseDataKeys: res.data ? Object.keys(res.data) : null,
-      responseDataSample: JSON.stringify(res.data).slice(0, 400),
+      responseStatus: r.status,
+      responseDataKeys: data ? Object.keys(data) : null,
+      responseDataSample: JSON.stringify(data).slice(0, 400),
     });
     throw new Error("Chat upload returned no attachmentDataRef");
   }
