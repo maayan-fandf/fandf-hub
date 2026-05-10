@@ -640,12 +640,17 @@ export async function uploadChatAttachment(
     Math.random().toString(16).slice(2);
   const metadata = JSON.stringify({ filename: fileName });
   const enc = new TextEncoder();
+  // Explicit Content-Transfer-Encoding: binary on the binary part —
+  // some Google upload endpoints have rejected multipart payloads
+  // without it (treating the bytes as text and choking on null bytes).
+  // Cheap to include; matches what the official SDK emits internally.
   const partA = enc.encode(
     `--${boundary}\r\n` +
       `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
       `${metadata}\r\n` +
       `--${boundary}\r\n` +
-      `Content-Type: ${mimeType}\r\n\r\n`,
+      `Content-Type: ${mimeType}\r\n` +
+      `Content-Transfer-Encoding: binary\r\n\r\n`,
   );
   const partB = enc.encode(`\r\n--${boundary}--\r\n`);
   // Concatenate as a single Buffer — fetch handles Buffer bodies
@@ -657,30 +662,51 @@ export async function uploadChatAttachment(
       spaceId,
     )}/attachments?uploadType=multipart`;
 
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": `multipart/related; boundary=${boundary}`,
-      "content-length": String(body.length),
-    },
-    body,
-    cache: "no-store",
-  });
+  // Retry transient failures (5xx + 429 + 408) with exponential
+  // backoff. Google's APIs intermittently 503 under load and
+  // recommend retry-with-backoff for those. Three attempts total
+  // (initial + 2 retries) with 250ms, 750ms waits — total wall
+  // time tops out at ~3s on full-failure, fast on first-attempt
+  // success. Reported by maayan 2026-05-10: chat upload returned
+  // 503 Service Unavailable on first try.
+  const MAX_ATTEMPTS = 3;
+  const RETRY_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+  let r: Response | null = null;
+  let lastErrBody = "";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    r = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": `multipart/related; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      body,
+      cache: "no-store",
+    });
+    if (r.ok) break;
+    lastErrBody = await r.text().catch(() => "");
+    if (!RETRY_STATUS.has(r.status) || attempt === MAX_ATTEMPTS) break;
+    const wait = 250 * Math.pow(3, attempt - 1); // 250, 750
+    console.warn(
+      `[uploadChatAttachment] ${r.status} on attempt ${attempt}/${MAX_ATTEMPTS} — retrying in ${wait}ms`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
 
-  if (!r.ok) {
-    const errBody = await r.text().catch(() => "");
+  if (!r || !r.ok) {
+    const status = r?.status ?? 0;
     console.error("[uploadChatAttachment] upload failed", {
       spaceId,
       fileName,
       mimeType,
       bytes: bytes.length,
-      status: r.status,
-      response: errBody.slice(0, 400),
+      status,
+      response: lastErrBody.slice(0, 400),
     });
     throw new Error(
-      `Chat upload failed (${r.status}): ${
-        errBody.slice(0, 200) || r.statusText || "unknown"
+      `Chat upload failed (${status}): ${
+        lastErrBody.slice(0, 200) || r?.statusText || "unknown"
       }`,
     );
   }
