@@ -607,20 +607,25 @@ export async function uploadChatAttachment(
   bytes: Buffer,
 ): Promise<ChatAttachmentRef> {
   const chat = chatClient(subjectEmail);
-  // Pass the Buffer directly. `Readable.from(bytes)` worked for a
-  // stretch but stopped returning `attachmentDataRef` in some
-  // googleapis library versions — the request succeeds but `res.data`
-  // comes back without the field, and our caller throws "Chat upload
-  // returned no attachmentDataRef". Buffer is well-supported by the
-  // multipart-related code path in googleapis (which used to be the
-  // documented form anyway), and matches the Drive media.upload
-  // pattern we use elsewhere in the project.
+  // Wrap the Buffer in a Readable stream — current googleapis
+  // versions call `body.pipe()` internally during multipart-upload
+  // construction, which fails with "b.body.pipe is not a function"
+  // when handed a raw Buffer. Reported by maayan 2026-05-10 with
+  // a screenshot of that exact error in the chat composer.
+  //
+  // Past history (see git log): we went Readable → Buffer because
+  // a stretch of googleapis versions stopped populating
+  // `attachmentDataRef` on Readable bodies. That regression seems
+  // resolved upstream — Readable round-trips cleanly now. If the
+  // attachmentDataRef-missing failure ever recurs we'll need a more
+  // surgical workaround, but until then Readable is the correct
+  // shape per the library's typed signature.
   const res = await chat.media.upload({
     parent: `spaces/${spaceId}`,
     requestBody: { filename: fileName },
     media: {
       mimeType,
-      body: bytes,
+      body: Readable.from(bytes),
     },
   });
   const ref = res.data.attachmentDataRef?.resourceName ?? "";
