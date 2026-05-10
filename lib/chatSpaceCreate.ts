@@ -231,10 +231,16 @@ export async function createChatSpaceForProject(
   // and skips needing the `chat.memberships` DWD scope entirely —
   // anyone at @fandf.co.il finds and joins the space themselves.
   //
-  // externalUserAllowed stays true so external clients (col E) can
-  // still be invited later if the org policy changes; the audience
-  // setting controls *internal* discoverability, the externalUser
-  // flag controls *external* membership.
+  // externalUserAllowed MUST be false here: the Chat API rejects any
+  // space that allows external users AND has accessSettings —
+  //   "Cannot set the space access settings for a space that allows
+  //    external users."
+  // The two flags are mutually exclusive in the API model. We pick
+  // accessSettings (org-wide discoverability) because hub chat spaces
+  // are internal-only by design — external clients are reached via
+  // the customer-emails / Gmail flow (lib/customerEmails.ts), not
+  // this space. inviteProjectRoster() below also filters strictly to
+  // @fandf.co.il, confirming the same design intent.
   let spaceName = "";
   let spaceUri = "";
   try {
@@ -243,7 +249,7 @@ export async function createChatSpaceForProject(
       requestBody: {
         spaceType: "SPACE",
         displayName,
-        externalUserAllowed: true,
+        externalUserAllowed: false,
         accessSettings: {
           accessState: "DISCOVERABLE",
           audience: "audiences/default",
