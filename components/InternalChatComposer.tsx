@@ -409,8 +409,15 @@ export default function InternalChatComposer({
 
   function submit() {
     const text = value.trim();
+    // "Ready" = upload finished with EITHER ref form populated. Modern
+    // Chat uploads return attachmentUploadToken; older ones returned
+    // resourceName. Previously this filter only checked resourceName,
+    // which left every modern-flow chip stuck as "not ready" (chip
+    // visible, send button disabled). Verified via browser-side test
+    // 2026-05-11 — the upload API returned a token, but the composer
+    // never noticed.
     const readyAttachments = attachments.filter(
-      (a) => a.resourceName && !a.error,
+      (a) => (a.resourceName || a.attachmentUploadToken) && !a.error,
     );
     const stillUploading = attachments.some((a) => a.uploading);
     if (stillUploading) {
@@ -613,7 +620,10 @@ export default function InternalChatComposer({
           onClick={submit}
           disabled={
             isPending ||
-            (count === 0 && attachments.filter((a) => a.resourceName).length === 0) ||
+            (count === 0 &&
+              attachments.filter(
+                (a) => a.resourceName || a.attachmentUploadToken,
+              ).length === 0) ||
             over ||
             attachments.some((a) => a.uploading)
           }
