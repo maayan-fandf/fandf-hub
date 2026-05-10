@@ -5,14 +5,15 @@ import { useEffect, useRef, useState } from "react";
 const HIDE_ENDED_KEY = "hub_hide_ended";
 const SHOW_MINE_KEY = "hub_show_mine";
 
-// Filter bar for the home page — two pills:
+// Filter bar for the home page — two controls:
 //   1. הצג / הסתר שהסתיימו  — hides project rows past their end-date
-//   2. הצג את כולם / רק את שלי — narrows the grid to projects where
-//      the user has an open task or an open mention. "Mine" is computed
-//      server-side from the byProject counts and stamped onto each
-//      project row via data-mine="0|1" + each company group via
-//      data-any-mine="0|1"; the toggle here flips data-show-mine on
-//      <html> so the existing CSS-only hide pattern handles the rest.
+//   2. רק שלי / הכל — narrows the grid to projects where the user is
+//      on the roster (the same "involved at" semantic the /tasks page
+//      uses). Membership is computed server-side via
+//      scopeProjectsToPerson and stamped onto each project row via
+//      data-mine="0|1" + each company group via data-any-mine="0|1".
+//      The toggle here flips data-show-mine on <html> so the existing
+//      CSS-only hide pattern handles the rest.
 //
 // Per-person scoping moved to the gear-menu "view as" pref so a single
 // control drives the home grid, top-nav projects list, and /tasks default
@@ -98,7 +99,7 @@ export default function HomeFilterBar() {
           onClick={() => setShowMine(true)}
           aria-selected={showMine}
           role="tab"
-          title="מציג רק פרויקטים עם משימות פתוחות או תיוגים שלי"
+          title="הראה רק פרויקטים שאני ברשימת הצוות שלהם"
         >
           <span aria-hidden>🎯</span>
           רק שלי
@@ -109,7 +110,7 @@ export default function HomeFilterBar() {
           onClick={() => setShowMine(false)}
           aria-selected={!showMine}
           role="tab"
-          title="הצג את כל הפרויקטים, גם אלה שאין לי בהם משימות / תיוגים פתוחים"
+          title="הצג את כל הפרויקטים שיש לי גישה אליהם, גם אם איני בצוות"
         >
           <span aria-hidden>🌐</span>
           הכל

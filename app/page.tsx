@@ -86,15 +86,25 @@ export default async function HomePage() {
     redirect("/unauthorized");
   }
 
-  // Per-person scoping is driven by the gear-menu "view as" pref above
-  // (passed into getMyProjects). For @fandf.co.il staff the API returns
-  // ALL internal projects via the blanket-access pass — narrow that to
-  // "projects where this person is actually on the roster" so the home
-  // grid stays a personal dashboard, not the access list.
-  const visibleProjects = data
-    ? scopeProjectsToPerson(data.projects, data.person, data.isClient)
-    : [];
-  const grouped = data ? groupByCompany(visibleProjects) : [];
+  // Render the full access list — "הכל" mode in the filter bar shows
+  // everything the API granted (blanket-access internal pool for staff;
+  // owned-only for clients). The "רק שלי" toggle narrows to roster
+  // membership client-side via CSS + data attributes; we precompute the
+  // membership set here so the data-mine stamp lines up with the
+  // existing scopeProjectsToPerson behavior (which also re-attaches each
+  // represented company's כללי project + falls back to the full list
+  // when the filter would otherwise be empty for admins).
+  const allProjects = data?.projects ?? [];
+  const grouped = data ? groupByCompany(allProjects) : [];
+  const mineKeys = data
+    ? new Set(
+        scopeProjectsToPerson(
+          data.projects,
+          data.person,
+          data.isClient,
+        ).map((p) => `${p.company}|${p.name}`),
+      )
+    : new Set<string>();
 
   // endIso map from the morning feed — powers the hide-ended filter.
   const endIsoByProject = new Map<string, string>();
@@ -226,17 +236,17 @@ export default async function HomePage() {
               g.projects.every((p) =>
                 isProjectEndedByIso(endIsoByProject.get(p.name)),
               );
-            // "מה שלי" filter — a project is "mine" when the viewer has at
-            // least one open task or open mention on it (per byProject
-            // counts). Stamped onto each <li> via data-mine="0|1"; the
-            // company group's data-any-mine collapses to "0" only when
-            // every one of its projects is non-mine, mirroring the
-            // hide-ended group rule. Toggle in HomeFilterBar flips
+            // "רק שלי" filter — a project is "mine" when the viewer is
+            // on its roster (matches the /tasks-page semantic of "you
+            // are involved in this work"). Membership is precomputed
+            // server-side via scopeProjectsToPerson (which also handles
+            // the company-כללי re-attachment + admin empty-fallback);
+            // we stamp data-mine on each <li> + data-any-mine on each
+            // <details>. The toggle in HomeFilterBar flips
             // <html data-show-mine> and CSS hides the "0" rows/groups.
-            const anyMine = g.projects.some((p) => {
-              const pc = byProject[p.name];
-              return (pc?.openTasks ?? 0) > 0 || (pc?.openMentions ?? 0) > 0;
-            });
+            const anyMine = g.projects.some((p) =>
+              mineKeys.has(`${p.company}|${p.name}`),
+            );
             return (
               <details
                 key={g.company || "__ungrouped"}
@@ -274,9 +284,7 @@ export default async function HomePage() {
                     const ended = isProjectEndedByIso(
                       endIsoByProject.get(p.name),
                     );
-                    const isMine =
-                      (pc?.openTasks ?? 0) > 0 ||
-                      (pc?.openMentions ?? 0) > 0;
+                    const isMine = mineKeys.has(`${p.company}|${p.name}`);
                     return (
                       <li
                         key={p.name}
