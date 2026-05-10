@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 
 const HIDE_ENDED_KEY = "hub_hide_ended";
-const SHOW_MINE_KEY = "hub_show_mine";
+// `_v2` because the original default was OFF and the previous code
+// wrote `0` to localStorage on every render — leaving every existing
+// user with a sticky `hub_show_mine: 0` that overrode the new
+// default-ON behavior. Bumping the key resets everyone to the new
+// default; users who had explicitly clicked "הכל" can re-click once
+// and that choice persists going forward.
+const SHOW_MINE_KEY = "hub_show_mine_v2";
 
 // Filter bar for the home page — two controls:
 //   1. הצג / הסתר שהסתיימו  — hides project rows past their end-date
