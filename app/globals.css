@@ -591,17 +591,37 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
   display: none;
 }
 
-/* "רק את שלי" CSS: the toggle writes data-show-mine="1" on <html>.
+/* "רק שלי" CSS: the toggle writes data-show-mine="1" on <html>.
    Mirrors the hide-ended pattern — non-mine project rows hide, and
    companies whose every project is non-mine collapse out of the grid.
-   "Mine" is computed server-side as "viewer has open tasks or open
-   mentions on this project" and stamped onto data-mine / data-any-mine
-   so the toggle stays a CSS-only flip with no re-render. */
+   "Mine" is computed server-side as roster membership (same as the
+   /tasks 'involved at' semantic) and stamped onto data-mine /
+   data-any-mine so the toggle stays a CSS-only flip with no re-render. */
 html[data-show-mine="1"] .project-list > li[data-mine="0"] {
   display: none;
 }
 html[data-show-mine="1"] .company-group[data-any-mine="0"] {
   display: none;
+}
+
+/* When the /tasks-style segmented "scope" toggle sits inside the home
+   filter bar (HomeFilterBar), scale it up to match the home-filter-pill
+   so the row reads as one coherent control group. Same height
+   (2.2rem), same font weight + size, same border treatment. The
+   global .tasks-scope-toggle rule on /tasks itself is unaffected — the
+   override is scoped to .home-filter-bar so both surfaces keep their
+   respective chrome conventions. */
+.home-filter-bar .tasks-scope-toggle {
+  height: 2.2rem;
+  padding: 3px;
+  font-size: 0.88rem;
+  box-sizing: border-box;
+}
+.home-filter-bar .tasks-scope-toggle-btn {
+  padding-block: 0;
+  padding-inline: 0.85rem;
+  height: 100%;
+  font-weight: 600;
 }
 
 /* "General / כללי" project rows — one per company that has stray work
