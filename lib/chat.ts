@@ -657,10 +657,17 @@ export async function uploadChatAttachment(
   // natively (no .pipe() shenanigans).
   const body = Buffer.concat([partA, bytes, partB]);
 
+  // The action verb `:upload` at the end is REQUIRED — without it
+  // the URL routes to a different gateway path that returns 503
+  // Service Unavailable instead of cleanly 404'ing. Confirmed by
+  // reading node_modules/googleapis/build/src/apis/chat/v1.js where
+  // the SDK builds the same URL: rootUrl + '/upload/v1/{+parent}/
+  // attachments:upload'. Reported by maayan 2026-05-10 — every 503
+  // log entry today was from this missing suffix.
   const url =
     `https://chat.googleapis.com/upload/v1/spaces/${encodeURIComponent(
       spaceId,
-    )}/attachments?uploadType=multipart`;
+    )}/attachments:upload?uploadType=multipart`;
 
   // Retry transient failures (5xx + 429 + 408) with exponential
   // backoff. Google's APIs intermittently 503 under load and
