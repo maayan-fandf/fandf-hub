@@ -55,25 +55,36 @@ import type { CrmFunnel } from "@/lib/crmData";
 import type { AllClientsRow } from "@/lib/allClients";
 
 /**
- * Generate hub-side CRM alerts. Caller pre-fetches both inputs so the
+ * Generate hub-side CRM alerts. Caller pre-fetches all inputs so the
  * function stays synchronous + side-effect-free (mirrors the existing
  * compute pattern in the dashboard's morning-feed builder).
  *
- *   funnel       per-person CRM workbook funnel — used for stale-leads
- *                only. Pass `null` when the project has no Keys.CRM
- *                mapping; the stale-leads branch is skipped.
- *   allClients   "current" rowType rows for this project from ALL
- *                CLIENTS — used for source-converts-poorly +
- *                meeting-noshow-spike. Empty array → those branches
- *                skip cleanly.
- *   projectSlug  Stable identifier for alert dismissal keys.
+ *   funnel         per-person CRM workbook funnel, month-filtered to
+ *                  the cohort the user is viewing — used for
+ *                  stale-leads (which itself walks project-wide data
+ *                  inside the funnel anyway). Pass `null` when the
+ *                  project has no Keys.CRM mapping.
+ *   funnelAllTime  same funnel but `noFilter: true` — used by
+ *                  creative-mismatch for the dominant-objection
+ *                  signal. Objection patterns are slow-moving channel
+ *                  characteristics; restricting to a single month
+ *                  shrinks the sample to single digits and the alert
+ *                  silently never fires. When null, falls back to
+ *                  whatever `funnel` carries.
+ *   allClients     "current" rowType rows for this project from ALL
+ *                  CLIENTS — used for source-converts-poorly +
+ *                  meeting-noshow-spike + creative-mismatch's
+ *                  channel-side leads/scheduled thresholds. Empty
+ *                  array → those branches skip cleanly.
+ *   projectSlug    Stable identifier for alert dismissal keys.
  */
 export function computeCrmAlerts(args: {
   funnel: CrmFunnel | null;
+  funnelAllTime?: CrmFunnel | null;
   allClients: AllClientsRow[];
   projectSlug: string;
 }): MorningSignal[] {
-  const { funnel, allClients, projectSlug } = args;
+  const { funnel, funnelAllTime, allClients, projectSlug } = args;
   const out: MorningSignal[] = [];
 
   // ── meeting-noshow-spike ────────────────────────────────────────
@@ -134,13 +145,20 @@ export function computeCrmAlerts(args: {
   // `canonicalChannel` collapses both sides to a small set of stable
   // keys (facebook, google, yad2, ...) and the per-canonical
   // objection counts are summed across all matching CRM sources.
-  if (funnel) {
+  // Prefer the all-time funnel for objection dominance — restricting
+  // to a single month's CRM rows shrinks the per-channel objection
+  // sample to single digits for most projects, well below the
+  // signal-vs-noise threshold. The channel's objection profile is a
+  // slow-moving characteristic; computing it over all available data
+  // gives the alert a stable input.
+  const objectionFunnel = funnelAllTime || funnel;
+  if (objectionFunnel) {
     // Build {canonicalChannel → {objection → totalCount}} from the
     // CRM funnel's full objection × source matrix. Sources that don't
     // canonicalize to a paid-media key (e.g. "פניה טלפונית", "אתר
     // חברה") are dropped — those have no creative to review.
     const objectionsByCanonical = new Map<string, Map<string, number>>();
-    for (const [objection, srcMap] of Object.entries(funnel.sourceMatrices.objectionBySource)) {
+    for (const [objection, srcMap] of Object.entries(objectionFunnel.sourceMatrices.objectionBySource)) {
       for (const [source, count] of Object.entries(srcMap)) {
         const can = canonicalChannel(source);
         if (!can) continue;

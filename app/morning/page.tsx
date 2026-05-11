@@ -99,14 +99,23 @@ export default async function MorningPage({
     rawProjects.map(async (p) => {
       if (!p.company) return p;
       const subjectEmail = driveFolderOwner();
-      const [funnel, allClients] = await Promise.all([
+      // Three parallel fetches per project: month-filtered funnel
+      // (CRM card on the project page reads the same), all-time
+      // funnel (creative-mismatch's objection dominance — see
+      // crmAlerts.ts for the rationale), and ALL CLIENTS current
+      // rows. All underlying Sheets reads are two-layer cached, so
+      // the per-project work is in-memory filtering.
+      const [funnel, funnelAllTime, allClients] = await Promise.all([
         getCrmFunnelForProject({ company: p.company, project: p.name })
+          .catch(() => null),
+        getCrmFunnelForProject({ company: p.company, project: p.name, noFilter: true })
           .catch(() => null),
         getAllClientsCurrentForProject({ subjectEmail, project: p.name, projectSlug: p.slug })
           .catch(() => []),
       ]);
       const crmSignals = computeCrmAlerts({
         funnel,
+        funnelAllTime,
         allClients,
         projectSlug: p.slug || p.name,
       });

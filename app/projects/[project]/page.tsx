@@ -660,15 +660,23 @@ async function ProjectAlertsSection({
   company: string;
   monthOverride: string;
 }) {
-  // Parallel fetch — Apps-Script-backed dashboard alerts AND the two
-  // hub-side inputs to computeCrmAlerts (the per-person funnel for
-  // stale-leads + ALL CLIENTS current rows for source-converts-poorly
-  // and meeting-noshow-spike). All three go into the same
-  // MorningSignal[] list.
-  const [alertsData, crmFunnel, allClientsRows] = await Promise.all([
+  // Parallel fetch — Apps-Script-backed dashboard alerts AND the
+  // hub-side inputs to computeCrmAlerts. The CRM funnel is fetched
+  // twice: month-filtered for the cohort-specific signals
+  // (stale-leads relies on funnel.staleLeads which is project-wide
+  // either way, but the filtered call is what the CRM card on this
+  // page also reads), and all-time for creative-mismatch's objection
+  // dominance check (one month of CRM rows is too sparse — channel
+  // objection profiles are slow-moving characteristics computed over
+  // a wider window). Both rely on the same cached raw Sheets read.
+  const [alertsData, crmFunnel, crmFunnelAllTime, allClientsRows] = await Promise.all([
     getMorningFeed({ project: projectName }).catch(() => null),
     company
       ? getCrmFunnelForProject({ company, project: projectName, monthFilter: monthOverride })
+          .catch(() => null)
+      : Promise.resolve(null),
+    company
+      ? getCrmFunnelForProject({ company, project: projectName, noFilter: true })
           .catch(() => null)
       : Promise.resolve(null),
     getAllClientsCurrentForProject({
@@ -680,6 +688,7 @@ async function ProjectAlertsSection({
   const dashboardSignals = dashboardProject?.signals ?? [];
   const crmSignals = computeCrmAlerts({
     funnel: crmFunnel,
+    funnelAllTime: crmFunnelAllTime,
     allClients: allClientsRows,
     projectSlug: dashboardProject?.slug || projectName,
   });
