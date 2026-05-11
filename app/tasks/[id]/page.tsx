@@ -456,6 +456,7 @@ export default async function TaskDetailPage({
             <h3>היסטוריית סטטוסים</h3>
             <TaskStatusHistory
               history={t.status_history || []}
+              descriptionHistory={t.description_history || []}
               people={peopleRes?.people ?? []}
             />
           </section>

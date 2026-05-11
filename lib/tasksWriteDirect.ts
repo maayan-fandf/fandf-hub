@@ -1388,6 +1388,7 @@ export async function tasksCreateDirect(
     calendar_event_ids: {},
     google_tasks: [],
     status_history: [{ at: now, by: subjectEmail, from: "", to: status, note: "created" }],
+    description_history: [],
     edited_at: "",
     campaign: String(payload.campaign || "").trim(),
     // Dependencies + chains. Phase 1 added the schema; phase 3 wires
@@ -1600,6 +1601,7 @@ export async function tasksCreateDirect(
     chat_task_name: "",
     calendar_event_ids: JSON.stringify(task.calendar_event_ids),
     status_history: JSON.stringify(task.status_history),
+    description_history: JSON.stringify(task.description_history ?? []),
     updated_at: task.updated_at,
     campaign: task.campaign || "",
     rank: newTaskRank,
@@ -2004,8 +2006,36 @@ async function tasksUpdateDirectInner(
     }
   }
 
+  // Capture a snapshot of the OLD body (and title, if it also
+  // changed in the same save) before overwriting it, so the task
+  // detail page's history section can surface previous versions.
+  // The snapshot is intentionally lazy: we only push an entry when
+  // the body actually differs — bare title-only edits don't pollute
+  // description_history. Skipping the very-first edit (old=="" →
+  // new=X) avoids a noise entry for tasks created with no body.
   if ("description" in patch && patch.description !== cell("body")) {
+    const oldBody = String(cell("body") ?? "");
     changes.body = patch.description;
+    if (oldBody) {
+      const histRaw = String(cell("description_history") ?? "[]");
+      let descHist: WorkTask["description_history"];
+      try {
+        const parsed = JSON.parse(histRaw);
+        descHist = Array.isArray(parsed) ? (parsed as WorkTask["description_history"]) : [];
+      } catch {
+        descHist = [];
+      }
+      const oldTitleVal = String(cell("title") ?? "");
+      const titleChanged =
+        "title" in patch && typeof patch.title === "string" && patch.title !== oldTitleVal;
+      descHist.push({
+        at: now,
+        by: subjectEmail,
+        body: oldBody,
+        ...(titleChanged ? { title: oldTitleVal } : {}),
+      });
+      changes.description_history = JSON.stringify(descHist);
+    }
   }
 
   // Track if assignees changed so the after-write block can email
@@ -2808,6 +2838,10 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     calendar_event_ids: parseJsonField("calendar_event_ids", false) as Record<string, string>,
     google_tasks: normalizeGTaskCell(cell("google_tasks")),
     status_history: parseJsonField("status_history", true) as WorkTask["status_history"],
+    description_history: parseJsonField(
+      "description_history",
+      true,
+    ) as WorkTask["description_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),
     rank: Number.isFinite(parsedRank) ? parsedRank : fallbackRank,

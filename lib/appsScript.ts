@@ -808,6 +808,18 @@ export type WorkTaskStatusHistoryEntry = {
   note?: string;
 };
 
+/** One captured snapshot of a task's previous body/title, written
+ *  immediately before the edit that replaced it. The `body` is the
+ *  value that USED TO be in the task — not the new value — so the
+ *  history reads as "this is what was there before this point in time."
+ *  `title` is included when the title was changed in the same save. */
+export type WorkTaskDescriptionHistoryEntry = {
+  at: string;
+  by: string;
+  body: string;
+  title?: string;
+};
+
 /** Kind of personal Google Task spawned for a hub task — drives the
  *  poller's status-transition logic when the GT is marked complete. */
 export type GTaskKind = "todo" | "approve" | "clarify";
@@ -868,6 +880,11 @@ export type WorkTask = {
    *  by email); the readers normalize both shapes to this array. */
   google_tasks: GTaskRef[];
   status_history: WorkTaskStatusHistoryEntry[];
+  /** Snapshots of the previous body/title taken at each save where
+   *  the description (and/or title) changed. Newest entry at the end.
+   *  Empty when the task has never been edited (or the sheet column
+   *  doesn't exist yet — graceful absence, same pattern as file_order). */
+  description_history: WorkTaskDescriptionHistoryEntry[];
   edited_at: string;
   /** Number of comment rows parented to this task (row_kind='' AND
    *  parent_id=task.id). Populated by the direct-SA reader in a single

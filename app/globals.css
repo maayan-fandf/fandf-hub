@@ -11325,6 +11325,57 @@ html[data-theme="dark"] .tasks-dept-chip {
   color: var(--text);
   border-color: var(--text);
 }
+/* Description-edit timeline entry — distinct from status entries so
+   the eye reads "this row is about content, not workflow." The dot
+   carries the ✏️ glyph instead of a flat color so it's instantly
+   recognizable; the previous-body reveal underneath uses an inset
+   quote-style border so the old text reads as past-tense context. */
+.task-status-history-dot-desc {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .68em;
+  line-height: 1;
+}
+.task-status-history-desc-toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  color: var(--accent, #2563eb);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.task-status-history-desc-toggle:hover {
+  color: var(--text);
+}
+.task-status-history-desc-prev {
+  margin-top: .55em;
+  padding: .6em .85em;
+  border-inline-start: 3px solid var(--border);
+  background: var(--surface-soft);
+  border-radius: 6px;
+  font-size: .94em;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.task-status-history-desc-prev-title {
+  margin-bottom: .45em;
+  font-weight: 500;
+}
+.task-status-history-desc-prev-label {
+  color: var(--muted);
+  font-weight: 600;
+  margin-inline-end: .2em;
+}
+.task-status-history-desc-prev-body {
+  /* Inherit pre-wrap from container so paragraph breaks survive. */
+}
 
 .task-detail-comments {
   margin-top: 2em;

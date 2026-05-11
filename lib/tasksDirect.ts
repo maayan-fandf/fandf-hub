@@ -43,6 +43,8 @@ const JSON_ARRAY_FIELDS = new Set([
   // unparseable, same as departments / status_history.
   "blocks",
   "blocked_by",
+  // Description-edit snapshots — see WorkTaskDescriptionHistoryEntry.
+  "description_history",
 ]);
 const JSON_OBJECT_FIELDS = new Set(["calendar_event_ids", "google_tasks"]);
 
@@ -140,6 +142,10 @@ function rowToTask(
     ) as Record<string, string>,
     google_tasks: parseGoogleTasksCell(cell("google_tasks")),
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
+    description_history: parseJsonCell(
+      cell("description_history"),
+      true,
+    ) as WorkTask["description_history"],
     edited_at: String(cell("edited_at") ?? ""),
     campaign: String(cell("campaign") ?? ""),
     // CSV of file IDs — TaskFilesPanel's manual order. Empty when the
