@@ -242,7 +242,6 @@ export const BMBY_STATUS_FUNNEL_ORDER = [
   "אינטרנט",
   "טלפון",
   "בטיפול",
-  "שיחת מכירה",
   "אין מענה 1",
   "אין מענה 2",
   "אין מענה 3",
@@ -252,6 +251,10 @@ export const BMBY_STATUS_FUNNEL_ORDER = [
   "פגישה 2",
   "פגישה 3",
   "פגישה התקיימה",
+  // שיחת מכירה sits late in the funnel — confirmed by Maayan
+  // 2026-05-12: it's the closing/conversion conversation that happens
+  // after meetings and right before the lead enters purchase.
+  "שיחת מכירה",
   "ברכישה",
   "חוזה",
   // off-funnel side states — visually trail the linear funnel
