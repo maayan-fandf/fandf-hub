@@ -1,4 +1,5 @@
 import { getCrmFunnelForProject, type CrmFunnel } from "@/lib/crmData";
+import CrmSourcePieSection from "./CrmSourcePieSection";
 
 /**
  * Server component — renders the project's CRM funnel as a card on the
@@ -145,6 +146,11 @@ export default async function CrmFunnelCard({
           color: v.color,
           isOther: v.isOther,
         }));
+        // Bar lengths should reflect absolute objection counts, not all
+        // be uniform. funnel.objectionsBySource is already sorted desc by
+        // total in the lib, so the first row has the max and we use it
+        // as the 100%-bar baseline; lesser objections render shorter.
+        const maxRowTotal = funnel.objectionsBySource[0]?.total || 1;
         return (
           <div className="crm-block">
             <div className="crm-block-title">התנגדויות לפי מקור הגעה</div>
@@ -154,7 +160,10 @@ export default async function CrmFunnelCard({
                   <span className="crm-matrix-label" title={row.objection}>
                     {row.objection}
                   </span>
-                  <span className="crm-matrix-bar">
+                  <span
+                    className="crm-matrix-bar"
+                    style={{ width: `${(row.total / maxRowTotal) * 100}%` }}
+                  >
                     {row.sources.map((s) => {
                       const w = (s.count / row.total) * 100;
                       if (w < 0.5) return null;
@@ -198,6 +207,15 @@ export default async function CrmFunnelCard({
           </div>
         );
       })()}
+
+      {/* Per-source pie (transposed view of the same matrix). Pickable
+          via chip row so only one pie shows at a time — projects with
+          5-8 sources would otherwise fill the screen with redundant
+          donuts. Client component because the chip-picker has local
+          UI state. */}
+      {funnel.sourceBreakdown.length > 0 && (
+        <CrmSourcePieSection breakdown={funnel.sourceBreakdown} />
+      )}
 
       {/* Sellers — BMBY-only. One-line summary form: "Top 5: X(120), Y(80), …" */}
       {funnel.topSellers.length > 0 && (

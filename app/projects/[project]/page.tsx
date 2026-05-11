@@ -541,23 +541,6 @@ export default async function ProjectOverviewPage({
         </Suspense>
       )}
 
-      {/* CRM funnel — per-lead status & meetings pulled from the
-          external "Consolidated" workbook (BMBY + Sehel). Internal-only
-          (mirrors LatestPrisotCard gate; clients shouldn't see seller-
-          level breakdowns of objections etc). Renders null when the
-          project's Keys row has no `CRM` mapping or the source tab has
-          no matching rows — Suspense lets the slow Sheets read happen
-          off the critical path. */}
-      {!isClientUser && (
-        <Suspense fallback={null}>
-          <CrmFunnelCard
-            company={companyForDashboard}
-            project={projectName}
-            monthFilter={monthOverride}
-          />
-        </Suspense>
-      )}
-
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
           heading is enough. */}
@@ -585,6 +568,23 @@ export default async function ProjectOverviewPage({
             expectedEmail={userEmail}
           />
         </section>
+      )}
+
+      {/* CRM funnel — per-lead status & meetings pulled from the
+          external "Consolidated" workbook (BMBY + Sehel). Sits below the
+          dashboard iframe because it answers "what happened AFTER the
+          lead came in" while the dashboard above shows "how leads got
+          here". Internal-only (mirrors LatestPrisotCard gate).
+          Renders null when the project's Keys row has no `CRM` mapping
+          or the source tab has no matching rows. */}
+      {!isClientUser && (
+        <Suspense fallback={null}>
+          <CrmFunnelCard
+            company={companyForDashboard}
+            project={projectName}
+            monthFilter={monthOverride}
+          />
+        </Suspense>
       )}
 
       {/* Landing-page behavior insights — Clarity API + Claude-generated

@@ -76,6 +76,17 @@ export type CrmFunnel = {
     total: number;
     sources: { source: string; count: number; isOther?: boolean }[];
   }[];
+  /** Transpose of the above for the pie-per-source picker section: for
+   *  each top-N source (by total leads where an objection was captured),
+   *  the breakdown of which objections those leads ran into. `total` is
+   *  the total leads from that source that had any objection text;
+   *  `topObjections` rolls beyond-top-N counts into an "אחר" bucket so
+   *  the pie always closes to 100%. */
+  sourceBreakdown: {
+    source: string;
+    total: number;
+    topObjections: { label: string; count: number; isOther?: boolean }[];
+  }[];
   /** Earliest and latest dates seen in the matched rows (formatted
    *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
    *  is more than a few days behind today, the upstream pipeline has
@@ -248,6 +259,7 @@ async function computeBmbyFunnel(
     topSellers: topN(bySeller, 5),
     topSources: topN(bySource, 5),
     objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
+    sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
     dateRange: { from: minDate, to: maxDate },
     monthFilter,
   };
@@ -340,9 +352,46 @@ async function computeSehelFunnel(
     topSellers: [], // Sehel doesn't carry a salesperson column we trust
     topSources: topN(bySource, 5),
     objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
+    sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
     dateRange: { from: minDate, to: maxDate },
     monthFilter,
   };
+}
+
+/**
+ * Transpose the objection×source matrix into per-source pies. For each
+ * source (sorted by total objection-attributed leads), gathers its top-6
+ * objections + an "אחר" rest bucket so the pie closes to 100%.
+ */
+function buildSourceBreakdown(
+  matrix: Map<string, Map<string, number>>,
+): CrmFunnel["sourceBreakdown"] {
+  const TOP_SOURCES = 8;
+  const TOP_OBJECTIONS_PER_SOURCE = 6;
+  // Flip the nested map: source → (objection → count).
+  const flipped = new Map<string, Map<string, number>>();
+  for (const [objection, sources] of matrix) {
+    for (const [source, count] of sources) {
+      let m = flipped.get(source);
+      if (!m) { m = new Map<string, number>(); flipped.set(source, m); }
+      m.set(objection, (m.get(objection) || 0) + count);
+    }
+  }
+  // Total objection-attributed leads per source.
+  const sources = [...flipped.entries()].map(([source, objMap]) => {
+    const total = [...objMap.values()].reduce((a, b) => a + b, 0);
+    return { source, objMap, total };
+  });
+  sources.sort((a, b) => b.total - a.total);
+  return sources.slice(0, TOP_SOURCES).map(({ source, objMap, total }) => {
+    const sorted = [...objMap.entries()].sort((a, b) => b[1] - a[1]);
+    const head = sorted.slice(0, TOP_OBJECTIONS_PER_SOURCE);
+    const tail = sorted.slice(TOP_OBJECTIONS_PER_SOURCE).reduce((n, [, c]) => n + c, 0);
+    const topObjections: { label: string; count: number; isOther?: boolean }[] =
+      head.map(([label, count]) => ({ label, count }));
+    if (tail > 0) topObjections.push({ label: "אחר", count: tail, isOther: true });
+    return { source, total, topObjections };
+  });
 }
 
 /**
