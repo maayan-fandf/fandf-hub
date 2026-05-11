@@ -16,6 +16,7 @@ import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePic
 import LatestPrisotCard from "@/components/LatestPrisotCard";
 import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
+import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
@@ -365,6 +366,11 @@ export default async function ProjectOverviewPage({
   return (
     <main className="container">
       <header className="page-header">
+        {/* Tiny client-side scroll watcher: toggles `is-scrolled` on
+            this header once the user scrolls past ~80px. CSS handles
+            the shrink (h1 font-size + subtitle hide + tighter padding)
+            on desktop. No-op on mobile (sticky disabled there). */}
+        <PageHeaderShrinkObserver />
         <div>
           <h1>
             <span className="emoji" aria-hidden>🏢</span>
@@ -388,6 +394,17 @@ export default async function ProjectOverviewPage({
             >
               + משימה חדשה
             </Link>
+          )}
+          {/* Month-override picker — promoted from the iframe section
+              header to here so it acts as a page-level filter (it
+              gates the dashboard iframe + CRM funnel card + Clarity
+              section all at once). Hidden for client users to keep
+              the chrome minimal — they don't have month-toggle
+              workflows on the iframe today. */}
+          {!isClientUser && dashboardEmbedUrl && (
+            <Suspense fallback={null}>
+              <DashboardMonthOverrideSlot current={monthOverride} />
+            </Suspense>
           )}
           {/* "+ הודעה ללקוח" used to live here next to "+ משימה חדשה",
               but with the channel split it only ever writes to the
@@ -549,16 +566,20 @@ export default async function ProjectOverviewPage({
           <div className="section-head">
             <h2>📊 מטריקות</h2>
             <div className="section-head-actions">
-              <Suspense fallback={null}>
-                <DashboardMonthOverrideSlot current={monthOverride} />
-              </Suspense>
+              {/* Month picker moved to the page header — it now gates
+                  the iframe, CRM funnel, and Clarity sections together,
+                  so it lives at the page level. This section header
+                  retains only the open-in-new-tab affordance, icon-only
+                  with a tooltip to save horizontal space. */}
               <a
-                className="section-link"
+                className="section-link section-link-icon"
                 href={dashboardOpenUrl}
                 target="_blank"
                 rel="noreferrer"
+                title="פתח את הדשבורד בכרטיסייה חדשה"
+                aria-label="פתח את הדשבורד בכרטיסייה חדשה"
               >
-                פתח בכרטיסייה חדשה ↗
+                ↗
               </a>
             </div>
           </div>
@@ -591,12 +612,18 @@ export default async function ProjectOverviewPage({
           Hebrew narrative. Internal-only (mirrors the LatestPrisotCard
           gate). Renders null on any failure so the page silently
           degrades; Suspense keeps the API chain off the critical
-          render path. */}
+          render path. `monthFilter` is threaded through so the section
+          can self-hide when the user has rewound the page to a past
+          month — Clarity's API only returns the trailing 3 days
+          (numOfDays=3 hardcoded in lib/clarity.ts), so we can't
+          honestly show "April 2026 Clarity data" — hiding the section
+          is the truthful UX. */}
       {!isClientUser && (
         <Suspense fallback={null}>
           <ClarityInsightsSection
             subjectEmail={userEmail}
             project={projectName}
+            monthFilter={monthOverride}
           />
         </Suspense>
       )}

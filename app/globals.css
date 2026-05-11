@@ -244,6 +244,10 @@ a:hover {
   margin-bottom: 1.5rem;
   flex-wrap: wrap;
   gap: 1rem;
+  /* Smooth shrink animation when `.is-scrolled` is added by
+     PageHeaderShrinkObserver. CSS-only — the observer just toggles
+     the class. Mobile gets no transition because it's not sticky. */
+  transition: padding 200ms ease;
 }
 
 .page-header h1 {
@@ -254,16 +258,66 @@ a:hover {
   align-items: center;
   gap: 0.55rem;
   letter-spacing: -0.01em;
+  /* Match the header's transition so the title shrink and the padding
+     shrink land in the same beat. */
+  transition: font-size 200ms ease;
 }
 
 .page-header h1 .emoji {
   font-size: 1.25em;
   line-height: 1;
+  transition: font-size 200ms ease;
 }
 
 .page-header .subtitle {
   color: var(--muted);
   font-size: 0.9rem;
+  transition: opacity 200ms ease, max-height 200ms ease;
+}
+
+/* Desktop-only sticky behavior. On mobile (≤768px) the header scrolls
+   away normally — too little vertical room to make sticky pay off,
+   and the header would consume disproportionate viewport. The topnav
+   sits at top:0 with z-index 20 (height ≈ 3rem), so we anchor below
+   it and run a lower z-index so any popovers from the topnav still
+   render above. */
+@media (min-width: 769px) {
+  .page-header {
+    position: sticky;
+    top: 3rem; /* matches the topnav's measured height — 0.75rem top
+                  pad + 0.75rem bottom pad + ~1.5rem content */
+    z-index: 10;
+    /* Solid background so content scrolling underneath doesn't bleed
+       through. Use var(--bg) which both light and dark themes set
+       to their surface. */
+    background: var(--bg);
+    padding: 0.6rem 0;
+    margin-bottom: 1rem;
+  }
+  /* Shrunk state — applied by PageHeaderShrinkObserver once
+     window.scrollY > 80. Trims height aggressively so the user can
+     still see the row of action chips (+ משימה חדשה, picker, Drive,
+     etc.) even after scrolling deep into the dashboard. */
+  .page-header.is-scrolled {
+    padding: 0.3rem 0;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 4px 12px -8px rgba(0, 0, 0, 0.15);
+  }
+  .page-header.is-scrolled h1 {
+    font-size: 1.05rem;
+  }
+  .page-header.is-scrolled h1 .emoji {
+    font-size: 1em;
+  }
+  .page-header.is-scrolled .subtitle {
+    /* Hide the "← כל הפרויקטים" breadcrumb when scrolled — the user is
+       focused on the project, breadcrumb is one-click away via topnav.
+       Collapse via max-height + opacity for a smooth tuck. */
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
 }
 
 .header-actions {
@@ -3581,6 +3635,26 @@ html[data-theme="dark"] .chip.chip-mention {
 a.section-link:hover {
   color: var(--accent);
   text-decoration: none;
+}
+
+/* Icon-only variant — used by the metrics section's "open in new tab"
+   arrow after we moved the month picker into the page header. Hover
+   tooltip carries the full label so the icon is still discoverable. */
+a.section-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  text-decoration: none;
+}
+a.section-link-icon:hover {
+  background: var(--surface-hi, var(--surface));
+  border-color: var(--accent);
 }
 
 /* Right-aligned cluster of section-head controls (picker + open-in-new-tab

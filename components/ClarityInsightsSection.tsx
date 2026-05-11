@@ -8,14 +8,48 @@ import { summarizeClarityForProject } from "@/lib/clarityInsights";
  * the page rendering.
  *
  * Internal-only — gated to !isClientUser at the call site (page.tsx).
+ *
+ * On `monthFilter`: the Clarity Data Export API only returns the
+ * trailing 3 days (lib/clarity.ts has `numOfDays: "3"` hardcoded; the
+ * endpoint doesn't accept a date-range param either). So when the page
+ * is rewound to a past month via `?monthOverride=YYYY-MM`, we can't
+ * honestly show Clarity data — the API would return today's numbers
+ * labeled as the past month, which is misleading. We hide the section
+ * entirely in that case. When the filter is empty OR equals the
+ * current calendar month, we render normally (trailing 3 days is a
+ * subset of the current month and labels itself as such in the
+ * section heading).
  */
+function currentMonthIL(): string {
+  // Asia/Jerusalem-anchored YYYY-MM, matches lib/crmData.currentMonthIL
+  // and the rest of the codebase's date math.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  return y && m ? `${y}-${m}` : "";
+}
+
 export default async function ClarityInsightsSection({
   subjectEmail,
   project,
+  monthFilter,
 }: {
   subjectEmail: string;
   project: string;
+  /** "YYYY-MM" — when set to a past month, the section self-hides
+   *  because Clarity has no historical data. Empty or current-month
+   *  → render normally. */
+  monthFilter?: string;
 }) {
+  // Self-hide when filtered to a past month — see fn-level comment.
+  const filter = (monthFilter || "").trim();
+  if (filter && /^\d{4}-\d{2}$/.test(filter) && filter !== currentMonthIL()) {
+    return null;
+  }
   const data = await summarizeClarityForProject({
     subjectEmail,
     project,
