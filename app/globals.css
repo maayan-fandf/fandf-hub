@@ -5625,11 +5625,16 @@ html[data-theme="dark"] .crm-source-search-btn.has-terms {
 .crm-source-search-popover {
   position: absolute;
   top: calc(100% + 6px);
-  /* Anchor near the button's visual start (right edge in RTL) so the
-     popover opens leftward into the row's free space. translateX
-     compensates for the offset; works in both LTR and RTL because
-     it's pure pixels. */
-  inset-inline-end: 0;
+  /* Anchor the popover's start edge (visually RIGHT in RTL, LEFT in
+     LTR) to the wrap's start edge, then let the popover's width
+     extend in the inline direction (LEFT in RTL, RIGHT in LTR). In
+     this section's RTL context the wrap sits near the page's RIGHT
+     edge, so extending LEFT keeps the popover within the section and
+     doesn't push it off the viewport. Previous `inset-inline-end: 0`
+     anchored the END side instead and pushed the popover RIGHT off
+     the page in RTL — visible as the placeholder's first character
+     ("ח") being clipped because the input's right edge was off-screen. */
+  inset-inline-start: 0;
   z-index: 40;
   width: 320px;
   max-width: 90vw;
