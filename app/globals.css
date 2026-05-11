@@ -5573,6 +5573,196 @@ html[data-theme="dark"] .crm-trend-grid line {
   opacity: 0.5;
   margin: 0 0.15rem;
 }
+/* Substring filter — sits between ניקוי and the · separator. The
+   wrapper is a positioning context for the popover. The button reads
+   like a chip but with a small magnifier glyph; an active-terms count
+   badge appears when at least one substring is set. */
+.crm-source-search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.crm-source-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.55rem;
+  font: inherit;
+  font-size: 0.82em;
+  color: inherit;
+  background: var(--surface-hi, #f3f4f6);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.crm-source-search-btn:hover,
+.crm-source-search-btn.is-open {
+  border-color: var(--accent, #6366f1);
+}
+.crm-source-search-btn.has-terms {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+html[data-theme="dark"] .crm-source-search-btn.has-terms {
+  background: rgba(99, 102, 241, 0.22);
+}
+.crm-source-search-btn-label {
+  /* Hide on the smallest screens — magnifier alone reads cleanly. */
+}
+@media (max-width: 480px) {
+  .crm-source-search-btn-label { display: none; }
+}
+.crm-source-search-btn-count {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.crm-source-search-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* Anchor near the button's visual start (right edge in RTL) so the
+     popover opens leftward into the row's free space. translateX
+     compensates for the offset; works in both LTR and RTL because
+     it's pure pixels. */
+  inset-inline-end: 0;
+  z-index: 40;
+  width: 320px;
+  max-width: 90vw;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem;
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.25);
+  text-align: start;
+  font-size: 0.88em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+html[data-theme="dark"] .crm-source-search-popover {
+  background: #2a2a52;
+  box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.6);
+}
+.crm-source-search-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  background: var(--surface-hi, #f3f4f6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+.crm-source-search-input:focus {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 1px;
+}
+.crm-source-search-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+.crm-source-search-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.9em;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent, #6366f1);
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.crm-source-search-term:hover {
+  background: rgba(99, 102, 241, 0.22);
+}
+.crm-source-search-clear {
+  font: inherit;
+  font-size: 0.85em;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+  margin-inline-start: auto;
+}
+.crm-source-search-clear:hover {
+  color: var(--accent, #6366f1);
+}
+.crm-source-search-add {
+  font: inherit;
+  font-size: 0.9em;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px dashed rgba(99, 102, 241, 0.45);
+  color: var(--accent, #6366f1);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  text-align: start;
+}
+.crm-source-search-add:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+.crm-source-search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.crm-source-search-empty {
+  color: var(--muted);
+  font-size: 0.9em;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+.crm-source-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  font-size: 0.9em;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: start;
+  color: inherit;
+}
+.crm-source-search-row:hover {
+  background: var(--surface-hi, #f3f4f6);
+}
+html[data-theme="dark"] .crm-source-search-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.crm-source-search-row.is-active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.45);
+  color: var(--accent, #6366f1);
+}
+.crm-source-search-row-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-source-search-row-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+}
 .crm-source-chip {
   display: inline-flex;
   align-items: center;

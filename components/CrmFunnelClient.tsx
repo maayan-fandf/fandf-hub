@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
@@ -44,6 +44,73 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   // and render a separate tooltip as a sibling of the pie.
   const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 
+  // Substring-match source filter — supplements the exact-match chip
+  // filter for capturing multi-channel rows. Example: when the CRM
+  // records a lead's `מקור הגעה` as "facebook, yad2", that's its own
+  // distinct source bucket and clicking the "facebook" chip won't
+  // include it. Adding "facebook" as a substring term here matches
+  // any source whose text contains "facebook" — clean single-action
+  // way to grab all multi-channel-attributed leads. Combines with
+  // chips via AND: a source must pass both to contribute.
+  const [substringTerms, setSubstringTerms] = useState<Set<string>>(() => new Set());
+  const [searchPopoverOpen, setSearchPopoverOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const searchPopoverRef = useRef<HTMLDivElement | null>(null);
+  // Close the search popover on outside click — same UX as the
+  // dashboard's chart-side multi-selects.
+  useEffect(() => {
+    if (!searchPopoverOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as Node | null;
+      if (!t || !searchPopoverRef.current) return;
+      if (!searchPopoverRef.current.contains(t)) setSearchPopoverOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [searchPopoverOpen]);
+
+  const addSubstringTerm = (term: string) => {
+    const t = term.trim();
+    if (!t) return;
+    setSubstringTerms((prev) => {
+      const next = new Set(prev);
+      next.add(t);
+      return next;
+    });
+    setSearchInput("");
+  };
+  const removeSubstringTerm = (term: string) => {
+    setSubstringTerms((prev) => {
+      const next = new Set(prev);
+      next.delete(term);
+      return next;
+    });
+  };
+  const clearSubstringTerms = () => setSubstringTerms(new Set());
+
+  // Combined source predicate — every aggregation uses this so the
+  // chip filter AND the substring filter narrow the data consistently.
+  // When no substring terms are set, falls through to chip-only
+  // behavior (the original semantics).
+  const sourcePasses = useMemo(() => {
+    const termsLc = [...substringTerms].map((t) => t.toLowerCase());
+    return (source: string): boolean => {
+      if (!selected.has(source)) return false;
+      if (termsLc.length === 0) return true;
+      const lc = source.toLowerCase();
+      return termsLc.some((t) => lc.includes(t));
+    };
+  }, [selected, substringTerms]);
+
+  // For the popover's source list: filter sm.allSources by what's
+  // typed in the search input (substring match, case-insensitive).
+  // Always shows the full list when the input is empty.
+  const searchListSources = useMemo(() => {
+    const q = searchInput.trim().toLowerCase();
+    if (!q) return sm.allSources;
+    return sm.allSources.filter((s) => s.toLowerCase().includes(q));
+  }, [sm.allSources, searchInput]);
+
   const toggle = (source: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -75,7 +142,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     let count = 0;
     const sorted: { source: string; count: number }[] = [];
     for (const [source, c] of Object.entries(map)) {
-      if (!selected.has(source)) continue;
+      if (!sourcePasses(source)) continue;
       count += c;
       sorted.push({ source, count: c });
     }
@@ -100,7 +167,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     const breakdown = (m: Record<string, number>) => {
       const rows: { source: string; count: number }[] = [];
       for (const [s, c] of Object.entries(m)) {
-        if (!selected.has(s) || c === 0) continue;
+        if (!sourcePasses(s) || c === 0) continue;
         rows.push({ source: s, count: c });
       }
       rows.sort((a, b) => b.count - a.count);
@@ -128,7 +195,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         meetings: meetingsBreakdown,
       },
     };
-  }, [selected, sm]);
+  }, [sourcePasses, sm]);
 
   // ── Per-objection source breakdown for pie-legend hover popovers ──
   // Mirrors the KPI breakdowns shape — for each objection currently
@@ -138,14 +205,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     for (const [objection, srcMap] of Object.entries(sm.objectionBySource)) {
       const rows: { source: string; count: number }[] = [];
       for (const [source, c] of Object.entries(srcMap)) {
-        if (!selected.has(source) || c === 0) continue;
+        if (!sourcePasses(source) || c === 0) continue;
         rows.push({ source, count: c });
       }
       rows.sort((a, b) => b.count - a.count);
       if (rows.length > 0) out.set(objection, rows);
     }
     return out;
-  }, [selected, sm]);
+  }, [sourcePasses, sm]);
 
   // ── Status funnel rows (filtered + top-N + funnel-ordered) ────────
   const statusRows = useMemo(() => {
@@ -176,7 +243,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       cumulative: cumulative[i],
       widthPct: (cumulative[i] / maxCum) * 100,
     }));
-  }, [selected, sm]);
+  }, [sourcePasses, sm]);
 
   // ── Objections × source rows (filtered + top-N) ───────────────────
   const objectionRows = useMemo(() => {
@@ -193,7 +260,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       ...row,
       widthPct: (row.total / maxTotal) * 100,
     }));
-  }, [selected, sm]);
+  }, [sourcePasses, sm]);
 
   // ── Objection pie (aggregate across selected sources × objection) ─
   const pieData = useMemo(() => {
@@ -201,7 +268,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     let grandTotal = 0;
     for (const [objection, srcMap] of Object.entries(sm.objectionBySource)) {
       for (const [source, c] of Object.entries(srcMap)) {
-        if (!selected.has(source)) continue;
+        if (!sourcePasses(source)) continue;
         byObj.set(objection, (byObj.get(objection) || 0) + c);
         grandTotal += c;
       }
@@ -213,15 +280,15 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       head.map(([label, count], i) => ({ label, count, color: PALETTE[i % PALETTE.length] }));
     if (tail > 0) slices.push({ label: "אחר", count: tail, isOther: true, color: "#d1d5db" });
     return { slices, total: grandTotal };
-  }, [selected, sm]);
+  }, [sourcePasses, sm]);
 
-  // ── Trendline daily series — filter dailyTimeSeries by chip ───────
+  // ── Trendline daily series — filter dailyTimeSeries by chip + substring ─
   const trendDaily = useMemo(() => {
     return funnel.dailyTimeSeries.map((day) => ({
       date: day.date,
-      bySource: day.bySource.filter((s) => selected.has(s.source)),
+      bySource: day.bySource.filter((s) => sourcePasses(s.source)),
     }));
-  }, [selected, funnel.dailyTimeSeries]);
+  }, [sourcePasses, funnel.dailyTimeSeries]);
 
   const noneSelected = selected.size === 0;
 
@@ -307,6 +374,126 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           >
             ניקוי
           </button>
+          {/* Substring filter — a separate filter level from the
+              chip selection, for catching multi-channel rows where
+              the source field is a composite like "facebook, yad2".
+              Click → popover with a search input + a list of all
+              sources (filterable) + the active-terms pills inside.
+              Visually placed between ניקוי and the · separator;
+              effectively pinned at the start of the chip row in
+              RTL order. */}
+          <div className="crm-source-search-wrap" ref={searchPopoverRef}>
+            <button
+              type="button"
+              className={
+                "crm-source-search-btn" +
+                (substringTerms.size > 0 ? " has-terms" : "") +
+                (searchPopoverOpen ? " is-open" : "")
+              }
+              onClick={() => setSearchPopoverOpen((v) => !v)}
+              aria-haspopup="dialog"
+              aria-expanded={searchPopoverOpen}
+              title="חיפוש לפי טקסט במקור — תופס מקורות מרובי-ערוצים"
+            >
+              <span aria-hidden="true">🔍</span>
+              <span className="crm-source-search-btn-label">חיפוש</span>
+              {substringTerms.size > 0 ? (
+                <span className="crm-source-search-btn-count">{substringTerms.size}</span>
+              ) : null}
+            </button>
+            {searchPopoverOpen && (
+              <div className="crm-source-search-popover" role="dialog">
+                <input
+                  type="text"
+                  className="crm-source-search-input"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="חפש או הקלד טקסט לסינון…"
+                  // Pressing Enter on a non-empty input adds it as a
+                  // substring term — fast path when the typed text
+                  // doesn't match any existing source exactly (e.g.
+                  // "facebook" when only "facebook, yad2" composites
+                  // exist in the data).
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && searchInput.trim()) {
+                      e.preventDefault();
+                      addSubstringTerm(searchInput);
+                    }
+                  }}
+                  autoFocus
+                />
+                {substringTerms.size > 0 && (
+                  <div className="crm-source-search-terms">
+                    {[...substringTerms].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className="crm-source-search-term"
+                        onClick={() => removeSubstringTerm(t)}
+                        title="הסר מסנן"
+                      >
+                        <span>{t}</span>
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="crm-source-search-clear"
+                      onClick={clearSubstringTerms}
+                      title="נקה את כל המסננים"
+                    >
+                      נקה
+                    </button>
+                  </div>
+                )}
+                {searchInput.trim() && (
+                  <button
+                    type="button"
+                    className="crm-source-search-add"
+                    onClick={() => addSubstringTerm(searchInput)}
+                  >
+                    + הוסף &quot;{searchInput.trim()}&quot; כמסנן טקסט
+                  </button>
+                )}
+                <ul className="crm-source-search-list">
+                  {searchListSources.length === 0 ? (
+                    <li className="crm-source-search-empty">אין התאמות.</li>
+                  ) : (
+                    searchListSources.map((source) => {
+                      const icon = channelIcon(source);
+                      const total = sm.leadsBySource[source] || 0;
+                      const isTerm = substringTerms.has(source);
+                      return (
+                        <li key={source}>
+                          <button
+                            type="button"
+                            className={
+                              "crm-source-search-row" +
+                              (isTerm ? " is-active" : "")
+                            }
+                            onClick={() =>
+                              isTerm
+                                ? removeSubstringTerm(source)
+                                : addSubstringTerm(source)
+                            }
+                          >
+                            <span
+                              className="crm-source-chip-color"
+                              style={{ background: palette.get(source) }}
+                              aria-hidden="true"
+                            />
+                            {icon ? <span aria-hidden="true">{icon}</span> : null}
+                            <span className="crm-source-search-row-name">{source}</span>
+                            <span className="crm-source-search-row-count">{total}</span>
+                          </button>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
           <span className="crm-source-chips-sep" aria-hidden="true">·</span>
           {sm.allSources.map((source) => {
             const isActive = selected.has(source);
