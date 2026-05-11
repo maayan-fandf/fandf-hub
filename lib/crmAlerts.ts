@@ -1,0 +1,102 @@
+/**
+ * CRM-funnel-aware alert generator. Reads the per-project CrmFunnel
+ * (lib/crmData.ts) and emits MorningSignal entries that the project
+ * page's alerts section can merge alongside the Apps-Script-backed
+ * dashboard signals (getMorningFeed).
+ *
+ * Why these live here, not in Apps Script: the consolidated CRM data
+ * (BMBY + Sehel) lives in a workbook the dashboard's Apps Script
+ * doesn't read. Re-wiring the dashboard to read it would duplicate the
+ * CRM library; running these alerts on the hub side reuses the
+ * existing crmData.ts code path with zero extra IO (the funnel is
+ * already cached for the page's CRM card).
+ *
+ * Signals emitted so far:
+ *
+ *   meeting-noshow-spike    when (scheduled − held) / scheduled ≥ 30%.
+ *                           Surfaces the gap between "we got commitment"
+ *                           and "they actually showed up." Either the
+ *                           client's scheduling discipline broke, or
+ *                           the salespeople are over-promising.
+ *
+ *   source-converts-poorly  when a source produces ≥10 leads in the
+ *                           filtered cohort but zero scheduled meetings.
+ *                           Signals dead-weight channel spend — pull
+ *                           budget or change targeting.
+ *
+ * Caveat: hub-side signals don't have a snooze/dismissal flow today
+ * (the dashboard's dismissal sheet wouldn't recognize the keys). For
+ * v1 they re-fire each request. Acceptable since they're cohort-based
+ * and slow-moving — daily inspection is the natural cadence.
+ */
+
+import type { MorningSignal } from "@/lib/appsScript";
+import type { CrmFunnel } from "@/lib/crmData";
+
+/**
+ * Generate hub-side alerts from a project's CrmFunnel snapshot. Returns
+ * an empty array when no funnel data is available (project lacks a
+ * Keys.CRM mapping, or the filtered cohort is empty).
+ *
+ * `projectSlug` should be a stable identifier — used in the alert key
+ * so dismissal infrastructure (when we add it later) can match across
+ * re-renders. The page already has this; threading it in keeps the
+ * mapping explicit.
+ */
+export function computeCrmAlerts(args: {
+  funnel: CrmFunnel | null;
+  projectSlug: string;
+}): MorningSignal[] {
+  const { funnel, projectSlug } = args;
+  if (!funnel) return [];
+  const out: MorningSignal[] = [];
+
+  // ── meeting-noshow-spike ────────────────────────────────────────
+  // Gap between scheduled (תואמה פגישה) and held (פגישות). If a sizable
+  // fraction of scheduled meetings aren't converting to held, surface
+  // it. Need a meaningful base (≥5 scheduled) to avoid noise on tiny
+  // numbers — one cancellation out of 3 isn't actionable.
+  if (funnel.scheduledMeetings >= 5) {
+    const gap = funnel.scheduledMeetings - funnel.meetings;
+    const gapRatio = gap / funnel.scheduledMeetings;
+    if (gapRatio >= 0.30) {
+      const gapPct = (gapRatio * 100).toFixed(0);
+      out.push({
+        kind: "meeting-noshow-spike",
+        severity: gapRatio >= 0.50 ? "severe" : "warn",
+        title: "פער פגישות גבוה — תיאומים שלא התקיימו",
+        detail:
+          `${funnel.scheduledMeetings} תיאומים · ${funnel.meetings} פגישות התקיימו · ` +
+          `פער ${gap} (${gapPct}%). בדוק ביטולים / no-shows מול הלקוח או צוות המכירות.`,
+        key: `${projectSlug}|meeting-noshow-spike|${funnel.platform}|${funnel.monthFilter || "all"}`,
+      });
+    }
+  }
+
+  // ── source-converts-poorly ──────────────────────────────────────
+  // Walks the kpiSourceBreakdowns map: any source with ≥10 leads in
+  // the cohort AND zero scheduled-meeting contribution is producing
+  // dead-weight volume. Skip the "אחר" aggregation bucket — that's a
+  // tail aggregate, not an addressable channel.
+  const scheduledBySource = new Map(
+    funnel.kpiSourceBreakdowns.scheduledMeetings.map((s) => [s.source, s.count]),
+  );
+  for (const ld of funnel.kpiSourceBreakdowns.leads) {
+    if (ld.isOther) continue;
+    if (ld.count < 10) continue;
+    const schedCount = scheduledBySource.get(ld.source) || 0;
+    if (schedCount > 0) continue;
+    out.push({
+      kind: "source-converts-poorly",
+      severity: ld.count >= 30 ? "severe" : "warn",
+      title: `${ld.source} — לידים בלי תיאומים`,
+      detail:
+        `${ld.count} לידים מהמקור הזה · 0 תיאומי פגישה. ` +
+        `סביר שזה קהל לא מתאים — שקול להוריד תקציב או לשנות מיקוד.`,
+      channel: ld.source,
+      key: `${projectSlug}|source-converts-poorly|${ld.source}|${funnel.monthFilter || "all"}`,
+    });
+  }
+
+  return out;
+}

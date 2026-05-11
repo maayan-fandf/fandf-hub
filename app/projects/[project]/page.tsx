@@ -17,6 +17,8 @@ import LatestPrisotCard from "@/components/LatestPrisotCard";
 import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
+import { getCrmFunnelForProject } from "@/lib/crmData";
+import { computeCrmAlerts } from "@/lib/crmAlerts";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
@@ -535,7 +537,11 @@ export default async function ProjectOverviewPage({
           תיוגים / הערות sections above from rendering. The section
           materializes when ready; nothing visible while it's pending. */}
       <Suspense fallback={null}>
-        <ProjectAlertsSection projectName={projectName} />
+        <ProjectAlertsSection
+          projectName={projectName}
+          company={companyForDashboard}
+          monthOverride={monthOverride}
+        />
       </Suspense>
 
       {/* Latest פריסה (spread / deployment sheet) — the most-recently-
@@ -643,27 +649,45 @@ export default async function ProjectOverviewPage({
  * visible if the project has no current signals — keeps the layout
  * shift to a minimum.
  */
-async function ProjectAlertsSection({ projectName }: { projectName: string }) {
-  const alertsData = await getMorningFeed({ project: projectName }).catch(
-    () => null,
-  );
-  const projectAlerts: MorningProject | null = alertsData?.projects[0] ?? null;
-  if (!projectAlerts || projectAlerts.signals.length === 0) return null;
+async function ProjectAlertsSection({
+  projectName,
+  company,
+  monthOverride,
+}: {
+  projectName: string;
+  company: string;
+  monthOverride: string;
+}) {
+  // Parallel fetch — Apps-Script-backed dashboard alerts AND hub-side
+  // CRM-funnel alerts. Both go into the same MorningSignal[] list.
+  const [alertsData, crmFunnel] = await Promise.all([
+    getMorningFeed({ project: projectName }).catch(() => null),
+    company
+      ? getCrmFunnelForProject({ company, project: projectName, monthFilter: monthOverride })
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const dashboardProject: MorningProject | null = alertsData?.projects[0] ?? null;
+  const dashboardSignals = dashboardProject?.signals ?? [];
+  const crmSignals = computeCrmAlerts({
+    funnel: crmFunnel,
+    projectSlug: dashboardProject?.slug || projectName,
+  });
+  const allSignals = [...dashboardSignals, ...crmSignals];
+  if (allSignals.length === 0) return null;
   return (
     <section className="project-section">
       <div className="section-head">
         <h2>
           🔔 התראות
-          <span className="section-count">
-            {projectAlerts.signals.length}
-          </span>
+          <span className="section-count">{allSignals.length}</span>
         </h2>
         <Link className="section-link" href="/morning">
           כל ההתראות ←
         </Link>
       </div>
       <ul className="morning-signal-list">
-        {projectAlerts.signals.map((s, i) => (
+        {allSignals.map((s, i) => (
           <MorningSignalRow key={i} signal={s} />
         ))}
       </ul>

@@ -633,7 +633,11 @@ export type MorningSignalKind =
   | "pixel-overcount"
   | "project-budget"
   | "deadline"
-  | "paused-budget";
+  | "paused-budget"
+  // CRM-funnel-aware signals — generated hub-side from
+  // lib/crmAlerts.ts using the project's CRM data (not Apps Script).
+  | "meeting-noshow-spike"
+  | "source-converts-poorly";
 
 export type MorningSeverity = "severe" | "warn" | "info";
 
