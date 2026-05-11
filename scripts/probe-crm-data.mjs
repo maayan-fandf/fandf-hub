@@ -25,7 +25,7 @@ function jwt(scopes, subject = "maayan@fandf.co.il") {
 }
 
 const SHEET_ID_KEYS = env("SHEET_ID_MAIN");
-const SHEET_ID_CRM = "1YOL2RryfXlHPvg0iT5TsLCxkm7L-iTMrAEBWh5Q4Qpc";
+const SHEET_ID_CRM = process.env.CRM_SHEET_ID || "1tYtnB1Ve8RcsZ9_PpRuZyE0jlhD6r-Q35yLO5_7FhEQ";
 
 // Use the write scope — the .readonly variant isn't in DWD authorization
 // for this SA; .../auth/spreadsheets is a superset and works for reads.
@@ -64,24 +64,25 @@ const platCounts = {};
 for (const k of keysIndex) platCounts[k.platform || "(blank)"] = (platCounts[k.platform || "(blank)"] || 0) + 1;
 console.log("Platform distribution in Keys:", platCounts);
 
-// ── Read BMBY tab ──────────────────────────────────────────────────────
-console.log("\nReading BMBY tab (this is the big one)...");
+// ── Read BMBY tab (new workbook uses "מאגר במבי") ──────────────────────
+console.log("\nReading מאגר במבי tab (this is the big one)...");
 const bmbyRes = await sheets.spreadsheets.values.get({
   spreadsheetId: SHEET_ID_CRM,
-  range: "BMBY!A1:AK10000",
+  range: "מאגר במבי!A:AA",
   valueRenderOption: "UNFORMATTED_VALUE",
 });
 const bmbyRows = bmbyRes.data.values || [];
 const bh = (bmbyRows[0] || []).map((h) => String(h ?? "").trim());
 const bColEntry = bh.indexOf("תאריך כניסה");
 const bColStatus = bh.indexOf("סטאטוס");
-const bColSeller = bh.indexOf("איש מכירות");
 const bColSource = bh.indexOf("מקור הגעה");
 const bColProject = bh.indexOf("פרויקט");
 const bColCompany = bh.indexOf("שם החברה");
 const bColObjection = bh.indexOf("התנגדויות");
-const bColMeeting = bh.indexOf("is_meeting");
-console.log(`BMBY rows: ${bmbyRows.length - 1} (after header). Header positions: entry=${bColEntry} status=${bColStatus} seller=${bColSeller} source=${bColSource} project=${bColProject} company=${bColCompany} objection=${bColObjection} meeting=${bColMeeting}`);
+console.log(`BMBY rows: ${bmbyRows.length - 1} (after header). Header positions: entry=${bColEntry} status=${bColStatus} source=${bColSource} project=${bColProject} company=${bColCompany} objection=${bColObjection}`);
+// is_meeting + איש מכירות dropped in the 2026-05-12 schema migration —
+// meetings are now derived from סטאטוס.includes("פגישה") (verified
+// 100% equivalent to the legacy boolean via probe-ismeeting-redundancy).
 
 // Quick distribution of BMBY.פרויקט values
 const bmbyProjectCounts = new Map();
@@ -99,12 +100,11 @@ console.log("Top 10 BMBY פרויקט values by row count:");
 const topB = [...bmbyProjectCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10);
 for (const [n, c] of topB) console.log(`  ${c.toString().padStart(5)}  ${n}`);
 
-// ── Read Sehel tab ─────────────────────────────────────────────────────
-console.log("\nReading Sehel tab...");
+// ── Read Sehel tab (new workbook uses "מאגר שכל", header in row 1) ────
+console.log("\nReading מאגר שכל tab...");
 const sehelRes = await sheets.spreadsheets.values.get({
   spreadsheetId: SHEET_ID_CRM,
-  // Sehel row 1 is a merged banner; the real header is row 2.
-  range: "Sehel!A2:T1500",
+  range: "מאגר שכל!A:T",
   valueRenderOption: "UNFORMATTED_VALUE",
 });
 const sehelRows = sehelRes.data.values || [];
@@ -152,12 +152,14 @@ for (const k of keysIndex) {
       const proj = norm(row[bColProject]);
       if (proj !== target) continue;
       matchedRows++;
-      const isMeeting = String(row[bColMeeting] ?? "").trim();
-      if (isMeeting === "1" || isMeeting.toLowerCase() === "true") meetings++;
+      // Derive meetings from סטאטוס containing "פגישה" — verified
+      // equivalent to the legacy is_meeting flag (see
+      // probe-ismeeting-redundancy.mjs).
+      const sta = String(row[bColStatus] ?? "").trim();
+      if (sta.includes("פגישה")) meetings++;
       const obj = norm(row[bColObjection]); if (obj) objections.set(obj, (objections.get(obj)||0)+1);
-      const sel = norm(row[bColSeller]);   if (sel) sellers.set(sel, (sellers.get(sel)||0)+1);
-      const src = norm(row[bColSource]);   if (src) sources.set(src, (sources.get(src)||0)+1);
-      const sta = norm(row[bColStatus]);   if (sta) statuses.set(sta, (statuses.get(sta)||0)+1);
+      const src = norm(row[bColSource]);    if (src) sources.set(src, (sources.get(src)||0)+1);
+      const staN = norm(sta);               if (staN) statuses.set(staN, (statuses.get(staN)||0)+1);
     }
   } else if (k.platform === "sehel") {
     for (let r = 1; r < sehelRows.length; r++) {

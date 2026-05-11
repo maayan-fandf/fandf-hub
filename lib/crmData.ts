@@ -34,8 +34,16 @@ import { sheetsClient } from "@/lib/sa";
 import { driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 
+// Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
+// previous "Consolidated" sheet (1YOL2Rry…) to the now-canonical
+// "ארכיון מחולל דוחות" workbook (1tYtnB1V…) — same upstream pipeline,
+// new container + restructured tabs (more rows, fewer columns, Hebrew
+// tab names: "מאגר במבי" / "מאגר שכל"). Schema notes:
+//   - BMBY: dropped `is_meeting` (derive from סטאטוס startsWith "פגישה")
+//     and `איש מכירות` (no seller list anymore — empty array on output).
+//   - Sehel: lost the merged-banner row 1 — header is now row 1.
 const CRM_SHEET_ID =
-  process.env.CRM_SHEET_ID || "1YOL2RryfXlHPvg0iT5TsLCxkm7L-iTMrAEBWh5Q4Qpc";
+  process.env.CRM_SHEET_ID || "1tYtnB1Ve8RcsZ9_PpRuZyE0jlhD6r-Q35yLO5_7FhEQ";
 const CACHE_TTL_SECONDS = 5 * 60;
 
 export type CrmPlatform = "bmby" | "sehel";
@@ -121,16 +129,19 @@ async function fetchTabFromSheet(
   return { headers, rows: values.slice(1) };
 }
 
-// BMBY: header row is row 1, data starts at row 2.
+// BMBY: header row is row 1, data starts at row 2. Open-ended row
+// bound — the new "מאגר במבי" tab held ~50K rows on the 2026-05-12
+// migration probe and grows; A:AA covers all 27 cols.
 const fetchBmbyCrossRequest = unstable_cache(
-  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "BMBY!A1:AK10000"),
+  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "מאגר במבי!A:AA"),
   ["crm-bmby"],
   { revalidate: CACHE_TTL_SECONDS, tags: ["crm-data"] },
 );
-// Sehel: row 1 is a merged banner; the real header is row 2. We pull
-// from A2 so the consumer sees a normal headers+rows shape.
+// Sehel: header is row 1 (the old workbook had a merged banner above
+// it — the new "מאגר שכל" tab dropped that). Open-ended; ~29K rows at
+// migration, A:T covers all 20 named cols.
 const fetchSehelCrossRequest = unstable_cache(
-  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "Sehel!A2:T1500"),
+  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "מאגר שכל!A:T"),
   ["crm-sehel"],
   { revalidate: CACHE_TTL_SECONDS, tags: ["crm-data"] },
 );
@@ -201,12 +212,20 @@ async function computeBmbyFunnel(
   if (!rows.length) return null;
   const iEntry = headers.indexOf("תאריך כניסה");
   const iStatus = headers.indexOf("סטאטוס");
-  const iSeller = headers.indexOf("איש מכירות");
   const iSource = headers.indexOf("מקור הגעה");
   const iProject = headers.indexOf("פרויקט");
   const iObjection = headers.indexOf("התנגדויות");
-  const iMeeting = headers.indexOf("is_meeting");
   const iContactDate = headers.indexOf("תאריך קשר");
+  // `is_meeting` (the boolean column the old workbook carried) was dropped
+  // in the 2026-05-12 schema migration. Verified via
+  // scripts/probe-ismeeting-redundancy.mjs that the legacy flag was 100%
+  // derivable from `סטאטוס.includes("פגישה")` (706 of 706 meeting rows
+  // matched against the old data; zero false negatives). The same status
+  // taxonomy is present in the new workbook — re-verified during the
+  // migration probe — so the in-code derivation matches what `is_meeting`
+  // would have told us, exactly. `איש מכירות` was also dropped in the same
+  // schema change; topSellers returns [] for BMBY now (UI already
+  // handles empty cleanly).
   if (iProject < 0) return null;
 
   const target = norm(crmAccount);
@@ -215,7 +234,6 @@ async function computeBmbyFunnel(
   let contacted = 0;
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
-  const bySeller = new Map<string, number>();
   const bySource = new Map<string, number>();
   // For each objection, a map of source → count. We materialize this only
   // for rows where BOTH an objection AND a source are present (otherwise
@@ -235,20 +253,20 @@ async function computeBmbyFunnel(
       if (!d.startsWith(monthFilter)) continue;
     }
     leads++;
-    // is_meeting is "0"/"1" stringly typed in the source — be generous.
-    const m = String(arr[iMeeting] ?? "").trim();
-    if (m === "1" || m.toLowerCase() === "true") meetings++;
+    // Derive `is_meeting` from סטאטוס containing "פגישה" — catches all
+    // six observed meeting statuses (פגישה 1/2/3, פגישה התקיימה,
+    // נקבעה פגישה, פגישה בוטלה). includes() not startsWith() so we
+    // don't miss the "נקבעה פגישה" variant.
+    const st = String(arr[iStatus] ?? "").trim();
+    if (st.includes("פגישה")) meetings++;
     // "Contacted" proxy: row has a non-empty תאריך קשר. The CRM populates
     // this the first time a salesperson logs an outreach attempt, so it's
     // a reasonable "did anyone try?" signal short of pulling the full
     // activity log.
     if (iContactDate >= 0 && String(arr[iContactDate] ?? "").trim()) contacted++;
-    const st = String(arr[iStatus] ?? "").trim();
     if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
     const obj = String(arr[iObjection] ?? "").trim();
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
-    const sel = String(arr[iSeller] ?? "").trim();
-    if (sel) bySeller.set(sel, (bySeller.get(sel) || 0) + 1);
     const src = normSource(arr[iSource]);
     if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
     if (obj && src) {
@@ -273,7 +291,9 @@ async function computeBmbyFunnel(
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     byStatus: topN(byStatus, 8),
     topObjections: topN(byObjection, 5),
-    topSellers: topN(bySeller, 5),
+    // איש מכירות column dropped in the 2026-05-12 schema migration —
+    // no seller breakdown anymore; UI already handles empty cleanly.
+    topSellers: [],
     topSources: topN(bySource, 5),
     objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
     sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
