@@ -149,7 +149,23 @@ export default function SendForApprovalButton({
     setError(null);
     setInvalidEmails(new Set());
     try {
-      const approvers = [...selected];
+      // Auto-promote any pending email in the "הוסף כתובת אימייל" input.
+      // Common pattern is to type an address and click שלח without
+      // remembering to click הוסף first. Folding the trailing value into
+      // the recipient set on submit removes the dead-end where the user
+      // clicks send, gets "יש לבחור לפחות נמען אחד", and stares at the
+      // email they thought was the recipient.
+      const pending = extraEmail.toLowerCase().trim();
+      let finalSelected = selected;
+      if (pending.includes("@") && !selected.has(pending)) {
+        finalSelected = new Set(selected).add(pending);
+        // Reflect the promotion in component state so the user sees
+        // the chip materialize if a downstream error opens this dialog
+        // again (and so re-submits don't double-add).
+        setSelected(finalSelected);
+        setExtraEmail("");
+      }
+      const approvers = [...finalSelected];
       if (approvers.length === 0) {
         setError("יש לבחור לפחות נמען אחד");
         setSubmitting(false);
