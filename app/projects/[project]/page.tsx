@@ -19,6 +19,8 @@ import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
+import { getAllClientsCurrentForProject, type AllClientsRow } from "@/lib/allClients";
+import { driveFolderOwner } from "@/lib/sa";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
@@ -658,19 +660,27 @@ async function ProjectAlertsSection({
   company: string;
   monthOverride: string;
 }) {
-  // Parallel fetch — Apps-Script-backed dashboard alerts AND hub-side
-  // CRM-funnel alerts. Both go into the same MorningSignal[] list.
-  const [alertsData, crmFunnel] = await Promise.all([
+  // Parallel fetch — Apps-Script-backed dashboard alerts AND the two
+  // hub-side inputs to computeCrmAlerts (the per-person funnel for
+  // stale-leads + ALL CLIENTS current rows for source-converts-poorly
+  // and meeting-noshow-spike). All three go into the same
+  // MorningSignal[] list.
+  const [alertsData, crmFunnel, allClientsRows] = await Promise.all([
     getMorningFeed({ project: projectName }).catch(() => null),
     company
       ? getCrmFunnelForProject({ company, project: projectName, monthFilter: monthOverride })
           .catch(() => null)
       : Promise.resolve(null),
+    getAllClientsCurrentForProject({
+      subjectEmail: driveFolderOwner(),
+      project: projectName,
+    }).catch(() => [] as AllClientsRow[]),
   ]);
   const dashboardProject: MorningProject | null = alertsData?.projects[0] ?? null;
   const dashboardSignals = dashboardProject?.signals ?? [];
   const crmSignals = computeCrmAlerts({
     funnel: crmFunnel,
+    allClients: allClientsRows,
     projectSlug: dashboardProject?.slug || projectName,
   });
   const allSignals = [...dashboardSignals, ...crmSignals];

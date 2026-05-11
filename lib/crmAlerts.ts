@@ -1,71 +1,76 @@
 /**
- * CRM-funnel-aware alert generator. Reads the per-project CrmFunnel
- * (lib/crmData.ts) and emits MorningSignal entries that the project
- * page's alerts section can merge alongside the Apps-Script-backed
- * dashboard signals (getMorningFeed).
+ * CRM-funnel-aware alert generator. Emits MorningSignal entries that
+ * the project page's alerts section merges alongside the Apps-Script-
+ * backed dashboard signals (getMorningFeed).
  *
- * Why these live here, not in Apps Script: the consolidated CRM data
- * (BMBY + Sehel) lives in a workbook the dashboard's Apps Script
- * doesn't read. Re-wiring the dashboard to read it would duplicate the
- * CRM library; running these alerts on the hub side reuses the
- * existing crmData.ts code path with zero extra IO (the funnel is
- * already cached for the page's CRM card).
+ * Signals emitted:
  *
- * Signals emitted so far:
+ *   meeting-noshow-spike    Project totals from ALL CLIENTS: when
+ *                           (scheduled − held) / scheduled ≥ 30%,
+ *                           surface the gap between "we got
+ *                           commitment" and "they actually showed up."
+ *                           Sources from ALL CLIENTS rather than the
+ *                           per-person CRM workbook because the
+ *                           workbook is a per-person view; ALL CLIENTS
+ *                           aggregates status per project at the
+ *                           channel level.
  *
- *   meeting-noshow-spike    when (scheduled − held) / scheduled ≥ 30%.
- *                           Surfaces the gap between "we got commitment"
- *                           and "they actually showed up." Either the
- *                           client's scheduling discipline broke, or
- *                           the salespeople are over-promising.
- *
- *   source-converts-poorly  when a source produces ≥10 leads in the
- *                           filtered cohort but zero scheduled meetings.
+ *   source-converts-poorly  Per-channel from ALL CLIENTS: when a
+ *                           channel produces ≥10 leads in the project
+ *                           window but zero scheduled meetings.
  *                           Signals dead-weight channel spend — pull
- *                           budget or change targeting.
+ *                           budget or change targeting. Same data
+ *                           source rationale as meeting-noshow-spike.
  *
- *   stale-leads             when ≥5 leads have been sitting in an
- *                           early-funnel stage (pre-נקבעה פגישה for
- *                           BMBY, pre-לקראת פגישה for Sehel) for more
- *                           than 14 days. Surfaces sales-team
- *                           follow-up gaps that the cost-per-result
- *                           signals would never catch.
+ *   stale-leads             From the per-person CRM funnel: when ≥5
+ *                           leads have been sitting in an early-funnel
+ *                           stage (pre-נקבעה פגישה for BMBY,
+ *                           pre-לקראת פגישה for Sehel) for more than
+ *                           14 days. This one legitimately needs the
+ *                           per-person view because staleness is a
+ *                           per-lead property — ALL CLIENTS doesn't
+ *                           expose per-lead status timing.
  *
- * Caveat: hub-side signals don't have a snooze/dismissal flow today
- * (the dashboard's dismissal sheet wouldn't recognize the keys). For
- * v1 they re-fire each request. Acceptable since they're cohort-based
- * and slow-moving — daily inspection is the natural cadence.
+ * Caveat: hub-side signals don't have a snooze/dismissal flow today.
+ * For v1 they re-fire each request. Acceptable since they're slow-
+ * moving — daily inspection is the natural cadence.
  */
 
 import type { MorningSignal } from "@/lib/appsScript";
 import type { CrmFunnel } from "@/lib/crmData";
+import type { AllClientsRow } from "@/lib/allClients";
 
 /**
- * Generate hub-side alerts from a project's CrmFunnel snapshot. Returns
- * an empty array when no funnel data is available (project lacks a
- * Keys.CRM mapping, or the filtered cohort is empty).
+ * Generate hub-side CRM alerts. Caller pre-fetches both inputs so the
+ * function stays synchronous + side-effect-free (mirrors the existing
+ * compute pattern in the dashboard's morning-feed builder).
  *
- * `projectSlug` should be a stable identifier — used in the alert key
- * so dismissal infrastructure (when we add it later) can match across
- * re-renders. The page already has this; threading it in keeps the
- * mapping explicit.
+ *   funnel       per-person CRM workbook funnel — used for stale-leads
+ *                only. Pass `null` when the project has no Keys.CRM
+ *                mapping; the stale-leads branch is skipped.
+ *   allClients   "current" rowType rows for this project from ALL
+ *                CLIENTS — used for source-converts-poorly +
+ *                meeting-noshow-spike. Empty array → those branches
+ *                skip cleanly.
+ *   projectSlug  Stable identifier for alert dismissal keys.
  */
 export function computeCrmAlerts(args: {
   funnel: CrmFunnel | null;
+  allClients: AllClientsRow[];
   projectSlug: string;
 }): MorningSignal[] {
-  const { funnel, projectSlug } = args;
-  if (!funnel) return [];
+  const { funnel, allClients, projectSlug } = args;
   const out: MorningSignal[] = [];
 
   // ── meeting-noshow-spike ────────────────────────────────────────
-  // Gap between scheduled (תואמה פגישה) and held (פגישות). If a sizable
-  // fraction of scheduled meetings aren't converting to held, surface
-  // it. Need a meaningful base (≥5 scheduled) to avoid noise on tiny
-  // numbers — one cancellation out of 3 isn't actionable.
-  if (funnel.scheduledMeetings >= 5) {
-    const gap = funnel.scheduledMeetings - funnel.meetings;
-    const gapRatio = gap / funnel.scheduledMeetings;
+  // Sum scheduled + meetings across the project's current channel
+  // rows. Need a meaningful base (≥5 scheduled) to avoid noise on
+  // tiny numbers — one cancellation out of 3 isn't actionable.
+  const totalScheduled = allClients.reduce((n, r) => n + r.scheduled, 0);
+  const totalMeetings = allClients.reduce((n, r) => n + r.meetings, 0);
+  if (totalScheduled >= 5) {
+    const gap = totalScheduled - totalMeetings;
+    const gapRatio = gap / totalScheduled;
     if (gapRatio >= 0.30) {
       const gapPct = (gapRatio * 100).toFixed(0);
       out.push({
@@ -73,39 +78,31 @@ export function computeCrmAlerts(args: {
         severity: gapRatio >= 0.50 ? "severe" : "warn",
         title: "פער פגישות גבוה — תיאומים שלא התקיימו",
         detail:
-          `${funnel.scheduledMeetings} תיאומים · ${funnel.meetings} פגישות התקיימו · ` +
+          `${totalScheduled} תיאומים · ${totalMeetings} פגישות התקיימו · ` +
           `פער ${gap} (${gapPct}%). בדוק ביטולים / no-shows מול הלקוח או צוות המכירות.`,
-        key: `${projectSlug}|meeting-noshow-spike|${funnel.platform}|${funnel.monthFilter || "all"}`,
+        key: `${projectSlug}|meeting-noshow-spike`,
       });
     }
   }
 
   // ── source-converts-poorly ──────────────────────────────────────
-  // TODO (Maayan 2026-05-11): redirect this to read from the ALL
-  // CLIENTS sheet instead. The CRM workbook used here is a per-person
-  // view; ALL CLIENTS aggregates status-per-media-source at the
-  // project level and is more reliable for alert thresholds. Tracked
-  // as a spawned task. Until that lands, keeping the per-person
-  // approximation so the alert continues to fire.
-  //
-  // Walks the raw leadsBySource map: any source with ≥10 leads in the
-  // cohort AND zero scheduled-meeting contribution is producing dead-
-  // weight volume. Raw (untruncated) — no "אחר" rollup to skip.
-  const leadsBySource = funnel.sourceMatrices.leadsBySource;
-  const scheduledBySource = funnel.sourceMatrices.scheduledMeetingsBySource;
-  for (const [source, leadCount] of Object.entries(leadsBySource)) {
-    if (leadCount < 10) continue;
-    const schedCount = scheduledBySource[source] || 0;
-    if (schedCount > 0) continue;
+  // Per-channel walk of ALL CLIENTS' current rows. Any channel with
+  // ≥10 leads AND zero scheduled meetings is producing dead-weight
+  // volume. ALL CLIENTS rows are already pre-aggregated per channel,
+  // so this is a flat scan — no rollup needed.
+  for (const row of allClients) {
+    if (row.leads < 10) continue;
+    if (row.scheduled > 0) continue;
+    if (!row.channel) continue;
     out.push({
       kind: "source-converts-poorly",
-      severity: leadCount >= 30 ? "severe" : "warn",
-      title: `${source} — לידים בלי תיאומים`,
+      severity: row.leads >= 30 ? "severe" : "warn",
+      title: `${row.channel} — לידים בלי תיאומים`,
       detail:
-        `${leadCount} לידים מהמקור הזה · 0 תיאומי פגישה. ` +
+        `${row.leads} לידים מהמקור הזה · 0 תיאומי פגישה. ` +
         `סביר שזה קהל לא מתאים — שקול להוריד תקציב או לשנות מיקוד.`,
-      channel: source,
-      key: `${projectSlug}|source-converts-poorly|${source}|${funnel.monthFilter || "all"}`,
+      channel: row.channel,
+      key: `${projectSlug}|source-converts-poorly|${row.channel}`,
     });
   }
 
@@ -116,7 +113,7 @@ export function computeCrmAlerts(args: {
   // regardless of which month the user is currently viewing). Fire
   // when ≥5 leads qualify; severity climbs with the worst case
   // (`oldestDays`) AND the total count, whichever is more dramatic.
-  if (funnel.staleLeads && funnel.staleLeads.count >= 5) {
+  if (funnel && funnel.staleLeads && funnel.staleLeads.count >= 5) {
     const { count, oldestDays, byStage } = funnel.staleLeads;
     const severity =
       count >= 15 || oldestDays >= 30

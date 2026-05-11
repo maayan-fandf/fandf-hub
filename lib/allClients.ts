@@ -1,0 +1,255 @@
+import { cache } from "react";
+import { unstable_cache, revalidateTag } from "next/cache";
+import { sheetsClient } from "@/lib/sa";
+
+/**
+ * Two-layer cached read of the `ALL CLIENTS` tab from the main
+ * spreadsheet. Same caching shape as `lib/keys.ts` — 5-min
+ * unstable_cache + per-request `cache()` dedup. ALL CLIENTS is the
+ * canonical project-level aggregator: each row is one (project,
+ * channel, row-type) tuple with leads / scheduled / meetings / spend
+ * pre-summed. Produced upstream via QUERY() over several source
+ * sheets, edited by humans on a weekly cadence.
+ *
+ * Why this lives here, not in crmData.ts: the CRM workbook
+ * (`מאגר במבי` / `מאגר שכל`) is a per-person view that's less
+ * reliable at aggregating status per media-source. ALL CLIENTS already
+ * does the channel-level aggregation, so anywhere the hub needs
+ * "channel × project × outcome" totals should read from here.
+ *
+ * Today only `lib/crmAlerts.ts` reads through this module; the project
+ * page's own metrics come from the Apps Script iframe that reads ALL
+ * CLIENTS server-side. As more hub-side surfaces want channel-level
+ * project metrics (without re-aggregating from the per-person CRM
+ * tables), this is the canonical entry point.
+ */
+
+const ALL_CLIENTS_CACHE_TAG = "allClients";
+const ALL_CLIENTS_CACHE_TTL_SECONDS = 300; // 5 min
+
+function envOrThrow(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+const HEADER_NORMALIZE =
+  /[​-‏‪-‮⁠­﻿\uD800-\uDFFF]/g;
+
+/** One row from ALL CLIENTS, normalized + typed. */
+export type AllClientsRow = {
+  /** "current" (full-window aggregation) or "חודשי" (monthly row).
+   *  Most callers want "current" only. */
+  rowType: string;
+  /** Hebrew project name as it appears in the sheet. May be blank
+   *  post-XLOOKUP-removal (2026-05-01); use `projectSlug` as the join
+   *  key for downstream lookups. */
+  project: string;
+  /** Project slug (`מזהה מע"פ` column). The canonical, machine-stable
+   *  identifier for the project — survives the XLOOKUP migration. */
+  projectSlug: string;
+  /** Media channel name (`מזהה BMBY` column), e.g. "facebook",
+   *  "google-search", "yad2". Forward-filled from prior rows in the
+   *  same (project, row-type) group because the upstream QUERY() drops
+   *  the value on continuation rows from merged BMBY cells. */
+  channel: string;
+  /** Spend in NIS over the row's date window. */
+  spend: number;
+  /** Approved monthly budget (NIS). */
+  budget: number;
+  /** Total leads recorded against this (project, channel) in the
+   *  window. Source: `לידים CRM` column. */
+  leads: number;
+  /** Total meeting tie-ups (תיאום וביטול — includes cancellations).
+   *  This is the "scheduled" half of meeting-noshow-spike alerts. */
+  scheduled: number;
+  /** Meetings that actually took place (ביצוע פגישות). The "held"
+   *  side of the noshow gap. */
+  meetings: number;
+  /** Window start (ISO date), formatted from the sheet's date column.
+   *  Empty when the cell isn't a valid date. */
+  startIso: string;
+  /** Window end (ISO date). */
+  endIso: string;
+};
+
+type RawTable = { headers: string[]; rows: unknown[][] };
+
+async function fetchAllClientsFromSheet(
+  subjectEmail: string,
+): Promise<RawTable> {
+  const sheets = sheetsClient(subjectEmail);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: envOrThrow("SHEET_ID_MAIN"),
+    range: "ALL CLIENTS",
+    valueRenderOption: "UNFORMATTED_VALUE",
+    // Dates come through as Sheets serial numbers; convert in
+    // dateOnlyFromSerial below.
+    dateTimeRenderOption: "SERIAL_NUMBER",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (!values.length) return { headers: [], rows: [] };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "")
+      .replace(HEADER_NORMALIZE, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+  return { headers, rows: values.slice(1) };
+}
+
+const fetchAllClientsCrossRequest = unstable_cache(
+  fetchAllClientsFromSheet,
+  ["readAllClients"],
+  { revalidate: ALL_CLIENTS_CACHE_TTL_SECONDS, tags: [ALL_CLIENTS_CACHE_TAG] },
+);
+
+const readAllClientsCached = cache(
+  (subjectEmail: string) => fetchAllClientsCrossRequest(subjectEmail),
+);
+
+/**
+ * Read every ALL CLIENTS row, normalized + typed. Forward-fills the
+ * channel column within each (project, row-type) group because the
+ * upstream QUERY() drops the BMBY value on continuation rows from
+ * merged-cell sources (e.g. google-search spanning multiple
+ * sub-campaigns). Same logic the Apps Script dashboard runs at
+ * `Code.js#L1486`.
+ */
+async function readAllClientsRows(
+  subjectEmail: string,
+): Promise<AllClientsRow[]> {
+  const { headers, rows } = await readAllClientsCached(subjectEmail);
+  if (!rows.length) return [];
+
+  const col = (name: string) => headers.indexOf(name);
+  const iStart = col("התחלה");
+  const iEnd = col("סיום");
+  const iChannel = col("מזהה BMBY");
+  const iProjId = col("מזהה מע\"פ");
+  const iBudget = col("תקציב חודשי מאושר");
+  const iSpend = col("עלות");
+  const iLeads = col("לידים CRM");
+  const iScheduled = col("תיאום וביטול");
+  const iMeetings = col("ביצוע פגישות");
+  const iRowType = col("סוג שורה");
+  const iProject = col("פרוייקט");
+
+  const num = (v: unknown): number => {
+    if (v === "" || v == null) return 0;
+    const s = typeof v === "number" ? v : Number(String(v).replace(/[₪,\s%]/g, ""));
+    return Number.isFinite(s) ? Number(s) : 0;
+  };
+
+  // Forward-fill channel within (project, row-type) groups — same as
+  // the dashboard. Operates on a clone so the cached raw rows stay
+  // pristine for other callers.
+  const filled = rows.map((r) => [...r]);
+  let lastProj = "", lastRt = "", lastCh = "";
+  for (const row of filled) {
+    const proj = String(row[iProject] ?? "").trim() || String(row[iProjId] ?? "").trim();
+    const rt = String(row[iRowType] ?? "").trim();
+    const ch = String(row[iChannel] ?? "").trim();
+    if (proj !== lastProj || rt !== lastRt) {
+      lastProj = proj; lastRt = rt; lastCh = ch;
+    } else if (!ch && lastCh) {
+      row[iChannel] = lastCh;
+    } else if (ch) {
+      lastCh = ch;
+    }
+  }
+
+  return filled.map((row) => ({
+    rowType: String(row[iRowType] ?? "").trim(),
+    project: String(row[iProject] ?? "").trim(),
+    projectSlug: String(row[iProjId] ?? "").trim(),
+    channel: String(row[iChannel] ?? "").trim(),
+    spend: num(row[iSpend]),
+    budget: num(row[iBudget]),
+    leads: num(row[iLeads]),
+    scheduled: num(row[iScheduled]),
+    meetings: num(row[iMeetings]),
+    startIso: dateOnlyFromSerial(row[iStart]),
+    endIso: dateOnlyFromSerial(row[iEnd]),
+  }));
+}
+
+/**
+ * Return the project's "current" rows (one per active channel) for the
+ * passed project — matches against either the Hebrew project name OR
+ * the slug, case-insensitive. Monthly (חודשי) rows are excluded
+ * because alerts should fire against the live window, not historical
+ * months. Empty array when no match.
+ *
+ * Duplicate channel rows (sub-campaigns that share a channel name —
+ * e.g. Brand*GS + generic*GS both under google-search) are
+ * consolidated by summing their numeric fields. Same logic the
+ * dashboard runs at `Code.js#L1729`. Downstream callers see one row
+ * per unique (project, channel) pair.
+ */
+export const getAllClientsCurrentForProject = cache(
+  async (args: {
+    subjectEmail: string;
+    project: string;
+    projectSlug?: string;
+  }): Promise<AllClientsRow[]> => {
+    const rows = await readAllClientsRows(args.subjectEmail);
+    const targetProject = args.project.toLowerCase().trim();
+    const targetSlug = (args.projectSlug || "").toLowerCase().trim();
+    const matched = rows.filter((r) => {
+      if (r.rowType !== "current") return false;
+      const proj = r.project.toLowerCase();
+      const slug = r.projectSlug.toLowerCase();
+      return (proj && proj === targetProject) || (slug && (slug === targetProject || slug === targetSlug));
+    });
+    // Consolidate by channel — sum numeric fields, keep the first
+    // non-empty start/end dates seen. Channels lower-cased for the
+    // dedup key so "Facebook" and "facebook" merge, but the display
+    // channel keeps the first-seen casing.
+    const byChannel = new Map<string, AllClientsRow>();
+    const order: string[] = [];
+    for (const r of matched) {
+      const key = r.channel.toLowerCase();
+      const existing = byChannel.get(key);
+      if (!existing) {
+        byChannel.set(key, { ...r });
+        order.push(key);
+      } else {
+        existing.spend += r.spend;
+        existing.budget += r.budget;
+        existing.leads += r.leads;
+        existing.scheduled += r.scheduled;
+        existing.meetings += r.meetings;
+        if (!existing.startIso && r.startIso) existing.startIso = r.startIso;
+        if (r.endIso && r.endIso > existing.endIso) existing.endIso = r.endIso;
+      }
+    }
+    return order.map((k) => byChannel.get(k)!);
+  },
+);
+
+/**
+ * Sheets stores dates as serials when valueRenderOption is
+ * UNFORMATTED_VALUE + dateTimeRenderOption is SERIAL_NUMBER. Convert
+ * to YYYY-MM-DD; return empty string for non-numeric or out-of-range
+ * values. The 25000-80000 plausibility band rules out integers that
+ * are accidentally falling through (lead counts, etc.).
+ */
+function dateOnlyFromSerial(v: unknown): string {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "";
+  if (v <= 25000 || v >= 80000) return "";
+  const ms = (v - 25569) * 86400 * 1000;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Force the next read to bypass the cross-request cache. Call after
+ * the ALL CLIENTS tab is mutated upstream. No hub-side path mutates
+ * the tab today, but exposed so the admin endpoint can wire it in if
+ * we ever add one.
+ */
+export function invalidateAllClientsCache(): void {
+  revalidateTag(ALL_CLIENTS_CACHE_TAG);
+}
