@@ -53,9 +53,9 @@ export default async function CrmFunnelCard({
           {funnel.monthFilter ? (
             <span
               className="crm-filter-chip"
-              title="מסונן לחודש שנבחר במטריקות (משויך לבחירה למעלה)"
+              title="חודש הסינון — מסונכרן עם בורר החודשים של המטריקות למעלה"
             >
-              מסונן: {funnel.monthFilter}
+              חודש: {funnel.monthFilter}
             </span>
           ) : null}
           <span className="crm-date-range" title="טווח התאריכים של הנתונים בקבוצה המסוננת">

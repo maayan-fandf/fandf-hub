@@ -429,6 +429,24 @@ function buildObjectionsBySource(
 /* ── Public entry ──────────────────────────────────────────────────── */
 
 /**
+ * Returns the current calendar month in YYYY-MM, anchored to
+ * Asia/Jerusalem to match the rest of the codebase (agenda, quietHours,
+ * etc. all do the same so cross-references stay consistent). The
+ * dashboard iframe's "live" mode defaults to current month too; this
+ * function is what makes the CRM card mirror that default automatically.
+ */
+function currentMonthIL(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  return y && m ? `${y}-${m}` : "";
+}
+
+/**
  * Resolve and compute the CRM funnel for one project. Returns `null`
  * when:
  *   - Keys row for (company, project) has no `CRM` value (project
@@ -436,12 +454,14 @@ function buildObjectionsBySource(
  *   - Keys row has no `CRM platform` value (e.g. צור יצחק — flagged
  *     but not active, the user will set it when the project starts)
  *   - the source tab has zero rows matching that CRM account (or the
- *     monthFilter is set and no rows fall in that month)
+ *     effective month filter has zero rows)
  *
  * `monthFilter`, when provided as "YYYY-MM", restricts rows to that
- * calendar month against BMBY's תאריך כניסה or Sehel's תאריך רישום —
- * keeps the CRM data consistent with the dashboard's monthOverride
- * selection so users compare apples to apples.
+ * calendar month against BMBY's תאריך כניסה or Sehel's תאריך רישום.
+ * When omitted, defaults to the **current Asia/Jerusalem calendar
+ * month** so the CRM numbers match the dashboard's default view
+ * (which renders current-month in "live" mode). Pass an explicit ""
+ * via the `noFilter` escape hatch if you ever need all-time data.
  *
  * Caller wraps in <Suspense fallback={null}>; null return collapses
  * the card cleanly.
@@ -449,14 +469,24 @@ function buildObjectionsBySource(
 export async function getCrmFunnelForProject(args: {
   company: string;
   project: string;
-  /** "YYYY-MM" — defaults to "" (no filter, show all available rows). */
+  /** "YYYY-MM". Empty/undefined → defaults to the current calendar
+   *  month in Asia/Jerusalem (matches the dashboard's default view). */
   monthFilter?: string;
+  /** Explicit escape hatch: set true to disable the month filter and
+   *  return all available rows (~60 days). Use for admin/debug
+   *  surfaces; not exposed in the UI. */
+  noFilter?: boolean;
 }): Promise<CrmFunnel | null> {
   const company = args.company.trim();
   const project = args.project.trim();
-  const monthFilter = (args.monthFilter || "").trim();
+  const rawMonthFilter = (args.monthFilter || "").trim();
   // Validate format defensively — caller may pass URL search-param string.
-  const validMonthFilter = /^\d{4}-\d{2}$/.test(monthFilter) ? monthFilter : "";
+  const explicitMonth = /^\d{4}-\d{2}$/.test(rawMonthFilter) ? rawMonthFilter : "";
+  // Default behavior: if no explicit month was passed AND noFilter
+  // wasn't requested, fall back to current calendar month.
+  const validMonthFilter = args.noFilter
+    ? ""
+    : (explicitMonth || currentMonthIL());
   if (!company || !project) return null;
 
   // Read Keys to find this project's CRM mapping. readKeysCached is
