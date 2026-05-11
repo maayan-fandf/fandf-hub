@@ -49,6 +49,12 @@ export default function SendForApprovalButton({
   const [shareFailures, setShareFailures] = useState<
     { email: string; reason: string }[]
   >([]);
+  // Approvers whose emails have no Google account (Drive Approvals
+  // requires Google identity per reviewer — visitor/PIN flow doesn't
+  // apply). When non-empty, the dialog highlights those chips and shows
+  // the actionable "create a Google account for your existing email"
+  // hint instead of the generic error string.
+  const [invalidEmails, setInvalidEmails] = useState<Set<string>>(new Set());
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize selected when the dialog opens — pre-check every
@@ -61,6 +67,7 @@ export default function SendForApprovalButton({
     setError(null);
     setSuccess(false);
     setShareFailures([]);
+    setInvalidEmails(new Set());
   }, [open, suggestedClients]);
 
   // Esc + click-outside to close, but don't close while submitting
@@ -106,6 +113,7 @@ export default function SendForApprovalButton({
   async function onSubmit() {
     setSubmitting(true);
     setError(null);
+    setInvalidEmails(new Set());
     try {
       const approvers = [...selected];
       if (approvers.length === 0) {
@@ -123,11 +131,22 @@ export default function SendForApprovalButton({
         error?: string;
         status?: number;
         shareFailures?: { email: string; reason: string }[];
+        invalidEmails?: string[];
       };
       if (!res.ok || !data.ok) {
-        // Friendly hint for the most-common failure modes — keeps the
-        // raw error available for diagnosis but doesn't dump
-        // a JSON wall onto the user.
+        // When the server identified specific emails as "no Google
+        // account", surface the actionable Hebrew message directly
+        // (no generic prefix) AND mark the chips so the user can see
+        // exactly which to fix or replace. Otherwise fall back to the
+        // status-based hints.
+        if (Array.isArray(data.invalidEmails) && data.invalidEmails.length > 0) {
+          setInvalidEmails(
+            new Set(data.invalidEmails.map((e) => e.toLowerCase().trim())),
+          );
+          setError(data.error || "");
+          setSubmitting(false);
+          return;
+        }
         const status = data.status ?? res.status;
         let hint = "";
         if (status === 403) {
@@ -203,9 +222,15 @@ export default function SendForApprovalButton({
                   {suggestedClients.map((email) => {
                     const norm = email.toLowerCase().trim();
                     const checked = selected.has(norm);
+                    const isInvalid = invalidEmails.has(norm);
                     return (
                       <li key={norm}>
-                        <label className="send-approval-row">
+                        <label
+                          className={
+                            "send-approval-row" +
+                            (isInvalid ? " send-approval-row-invalid" : "")
+                          }
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
@@ -213,6 +238,14 @@ export default function SendForApprovalButton({
                             disabled={submitting}
                           />
                           <span dir="ltr">{email}</span>
+                          {isInvalid ? (
+                            <span
+                              className="send-approval-invalid-badge"
+                              title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
+                            >
+                              ⚠ אין חשבון Google
+                            </span>
+                          ) : null}
                         </label>
                       </li>
                     );
@@ -237,19 +270,35 @@ export default function SendForApprovalButton({
                     נמענים נוספים
                   </div>
                   <ul className="send-approval-list">
-                    {extras.map((email) => (
-                      <li key={email}>
-                        <label className="send-approval-row">
-                          <input
-                            type="checkbox"
-                            checked
-                            onChange={() => toggleEmail(email)}
-                            disabled={submitting}
-                          />
-                          <span dir="ltr">{email}</span>
-                        </label>
-                      </li>
-                    ))}
+                    {extras.map((email) => {
+                      const isInvalid = invalidEmails.has(email);
+                      return (
+                        <li key={email}>
+                          <label
+                            className={
+                              "send-approval-row" +
+                              (isInvalid ? " send-approval-row-invalid" : "")
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              checked
+                              onChange={() => toggleEmail(email)}
+                              disabled={submitting}
+                            />
+                            <span dir="ltr">{email}</span>
+                            {isInvalid ? (
+                              <span
+                                className="send-approval-invalid-badge"
+                                title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
+                              >
+                                ⚠ אין חשבון Google
+                              </span>
+                            ) : null}
+                          </label>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               );

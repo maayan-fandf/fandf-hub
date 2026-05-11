@@ -72,6 +72,8 @@ export async function POST(req: Request) {
   if (!result.ok) {
     // Pass the Drive error status through so the UI can branch on
     // 403 (workspace plan) vs 400 (bad request) vs 5xx (transient).
+    // `invalidEmails` (when present) flows through unchanged so the
+    // dialog can highlight which approver chips are the problem.
     return NextResponse.json(result, { status: result.status || 500 });
   }
   return NextResponse.json(result);

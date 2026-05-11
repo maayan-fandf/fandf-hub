@@ -61,7 +61,19 @@ export type CreateApprovalResult =
        *  pick different reviewers. */
       shareFailures: { email: string; reason: string }[];
     }
-  | { ok: false; error: string; status?: number };
+  | {
+      ok: false;
+      error: string;
+      status?: number;
+      /** Approvers whose emails aren't associated with a Google account.
+       *  Drive Approvals API rejects the whole call if ANY reviewer lacks
+       *  a Google identity (regular file sharing's PIN-flow workaround
+       *  doesn't apply to the approval workflow). When this is non-empty,
+       *  the UI renders a tailored, actionable Hebrew message instead of
+       *  the cryptic "One or more reviewer email addresses are invalid"
+       *  the API returns. */
+      invalidEmails?: string[];
+    };
 
 /** Default approval window — 14 days. Long enough to cover a
  *  weekend + a holiday, short enough that stale requests time out
@@ -194,6 +206,76 @@ export async function createDriveApproval({
         shareFailures.push({ email, reason });
       }
     }
+  }
+
+  // Pre-validate each approver against the Google-account requirement.
+  // Drive Approvals API rejects the whole `:start` call if ANY reviewer
+  // lacks a Google identity (regular file sharing has a visitor/PIN
+  // workaround, but Approvals doesn't — verified 2026-05-12 with
+  // tanya_b@shikunbinui.com which has no Google account: regular
+  // permissions.create with sendNotificationEmail:false returned a
+  // detailed "no Google account associated" error, while approvals:start
+  // just returned the opaque "reviewerEmailAddresses invalid").
+  //
+  // Probe via permissions.create({ sendNotificationEmail: false,
+  // type: 'user' }). For Google-accounted emails it succeeds (incidentally
+  // adding a per-user reader permission — harmless duplicate of the
+  // anyone-with-link grant above). For non-Google emails it returns 400
+  // with a message containing "no Google account". 409 = already a
+  // member = treat as success. Other errors don't block the approval
+  // (they go into shareFailures alongside the existing flow's).
+  const invalidEmails: string[] = [];
+  for (const email of approverList) {
+    try {
+      await drive.permissions.create({
+        fileId: cleanFileId,
+        sendNotificationEmail: false,
+        supportsAllDrives: true,
+        requestBody: { type: "user", role: "reader", emailAddress: email },
+      });
+    } catch (e) {
+      const code =
+        (e as { code?: number }).code ??
+        (e as { response?: { status?: number } }).response?.status;
+      const reason = e instanceof Error ? e.message : String(e);
+      if (code === 409 || /already.*exist/i.test(reason)) continue;
+      if (
+        code === 400 &&
+        /no Google account/i.test(reason)
+      ) {
+        invalidEmails.push(email);
+        continue;
+      }
+      // Anything else: log and capture, but don't block. Most likely a
+      // workspace-policy rejection that the user can debug from the
+      // share-failures display.
+      console.warn(
+        `[createDriveApproval] probe permissions.create failed for ${email} on ${cleanFileId} (${code}): ${reason}`,
+      );
+      shareFailures.push({ email, reason });
+    }
+  }
+  if (invalidEmails.length > 0) {
+    const list = invalidEmails.join(", ");
+    // Hebrew, actionable, explains the WHY plus the fix. The UI ALSO
+    // gets the invalidEmails array on the response so it can highlight
+    // individual chips, but this message stands alone for users who
+    // just read the error text.
+    const msg =
+      invalidEmails.length === 1
+        ? `הכתובת ${list} אינה משויכת לחשבון Google, ולכן Drive Approvals לא מקבל אותה כמאשר. ` +
+          `הפתרון הקל ביותר: בקש מהנמען ליצור חשבון Google חינמי דרך accounts.google.com/SignUp — ` +
+          `בלחיצה על "Use my current email address instead". האימייל עצמו לא משתנה — רק נוצרת זהות Google ` +
+          `שמאפשרת לו ללחוץ "אשר/דחה" בקובץ. לאחר מכן שלח שוב לאישור.`
+        : `הכתובות הבאות אינן משויכות לחשבון Google: ${list}. Drive Approvals דורש זהות Google מכל מאשר. ` +
+          `הפתרון: כל אחד מהנמענים צריך ליצור חשבון Google חינמי דרך accounts.google.com/SignUp ` +
+          `עם הכתובת הקיימת שלו (אופציית "Use my current email address instead") — האימייל לא משתנה.`;
+    return {
+      ok: false,
+      error: msg,
+      status: 400,
+      invalidEmails,
+    };
   }
 
   const dueTime = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();

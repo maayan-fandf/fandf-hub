@@ -5585,6 +5585,32 @@ html[data-theme="dark"] .quick-note-saved {
   margin: 0;
   flex-shrink: 0;
 }
+/* When the server flagged this email as not having a Google account,
+   the row gets an amber border + a small badge so the user can spot
+   exactly which addresses are blocking the approval. Pairs with the
+   actionable error message rendered in .send-approval-error below. */
+.send-approval-row-invalid {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 0.32rem 0.55rem; /* re-tighten for border */
+}
+.send-approval-row-invalid:hover {
+  background: rgba(245, 158, 11, 0.16);
+}
+.send-approval-invalid-badge {
+  margin-inline-start: auto;
+  font-size: 0.74em;
+  font-weight: 600;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.22);
+  border-radius: 999px;
+  padding: 0.08rem 0.55rem;
+  white-space: nowrap;
+}
+html[data-theme="dark"] .send-approval-invalid-badge {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.28);
+}
 .send-approval-add {
   display: flex;
   gap: 0.45rem;
@@ -5600,8 +5626,12 @@ html[data-theme="dark"] .quick-note-saved {
 }
 .send-approval-error {
   font-size: 0.85rem;
-  padding: 0.5rem 0.65rem;
+  padding: 0.55rem 0.7rem;
   border-radius: 0.4rem;
+  line-height: 1.55;
+  /* Long actionable Hebrew text wraps naturally; keep enough line height
+     so two-sentence error messages stay readable. */
+  word-break: break-word;
 }
 .send-approval-success {
   font-size: 0.88rem;
