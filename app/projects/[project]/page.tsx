@@ -199,7 +199,13 @@ export default async function ProjectOverviewPage({
     !!scopedPerson &&
     !!projectMeta &&
     !isPersonOnProject(projectMeta, scopedPerson);
-  const companyForDashboard = projectMeta?.company ?? "";
+  // Prefer projectMeta.company, but fall back to the URL's ?company= when
+  // projectMeta is null (e.g. an admin viewing a project that isn't in
+  // their personal roster). Without this fallback, the dashboard iframe
+  // URL would have no company param at all and the כללי-mode pivot in
+  // the Apps Script side wouldn't trigger.
+  const companyForDashboard =
+    projectMeta?.company ?? (companyScope || "");
   const chatSpaceUrl = projectMeta?.chatSpaceUrl ?? "";
   const userEmail = projectsData?.email ?? "";
 
@@ -257,6 +263,14 @@ export default async function ProjectOverviewPage({
     typeof sp.monthOverride === "string" && /^\d{4}-\d{2}$/.test(sp.monthOverride)
       ? sp.monthOverride
       : "";
+  // `כללי` (catch-all project) has no campaign-ID slug in Keys, so a
+  // regular `project=כללי` filter hits 0 ALL CLIENTS rows and the iframe
+  // renders empty. The Apps Script side (doGet / _iframeHandle_ /
+  // _hubApiHandle_) recognises the `project=כללי` + `company=X` combo as
+  // a pivot trigger: drop the project filter, use company-portfolio mode
+  // instead. We keep project=כללי in the URL so the trigger fires — the
+  // pivot happens server-side, not here.
+  const isKullitProject = projectName === "כללי";
   // `authuser` hints Google to load the iframe under *this* account if the
   // browser is signed into multiple Google accounts. If it's signed into the
   // wrong one (or none), Google will redirect to its sign-in flow with our
@@ -326,8 +340,17 @@ export default async function ProjectOverviewPage({
       })
     : "";
   // External-client proxy URL — append monthOverride as a query param so the
-  // proxy route can forward it upstream to renderDashboardHtml.
-  const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}${monthOverride ? `?monthOverride=${encodeURIComponent(monthOverride)}` : ""}`;
+  // proxy route can forward it upstream to renderDashboardHtml. For כללי
+  // the proxy route also needs to see the `company` param so its upstream
+  // call to renderDashboardHtml carries it through to the Apps Script
+  // company-mode pivot.
+  const proxyEmbedParams = new URLSearchParams();
+  if (monthOverride) proxyEmbedParams.set("monthOverride", monthOverride);
+  if (isKullitProject && companyForDashboard) {
+    proxyEmbedParams.set("company", companyForDashboard);
+  }
+  const proxyEmbedQs = proxyEmbedParams.toString();
+  const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}${proxyEmbedQs ? `?${proxyEmbedQs}` : ""}`;
   const dashboardEmbedUrl = isInternalUser ? legacyEmbedUrl : proxyEmbedUrl;
   // "Open in new tab" link next to the metrics section. Internal users get
   // the raw USER_ACCESSING /exec URL (preserves interactivity); external

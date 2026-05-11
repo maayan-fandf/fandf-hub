@@ -53,8 +53,14 @@ export async function GET(
   // monthOverride forwarded from the iframe `src` query string. Format
   // "YYYY-MM" — anything else is silently dropped so a malformed param
   // can't poison the upstream call.
-  const monthOverrideRaw = new URL(req.url).searchParams.get("monthOverride") || "";
+  const incomingParams = new URL(req.url).searchParams;
+  const monthOverrideRaw = incomingParams.get("monthOverride") || "";
   const monthOverride = /^\d{4}-\d{2}$/.test(monthOverrideRaw) ? monthOverrideRaw : "";
+  // `company` is only forwarded by the hub for כללי-project URLs — the
+  // Apps Script side uses (project=כללי + company=X) to pivot to company-
+  // portfolio mode (every project under X instead of the empty "כללי"
+  // single-project result). For regular projects this stays empty.
+  const incomingCompany = String(incomingParams.get("company") || "").trim();
 
   const url = new URL(base);
   url.searchParams.set("api", "1");
@@ -62,6 +68,7 @@ export async function GET(
   url.searchParams.set("token", token);
   url.searchParams.set("user", email);
   url.searchParams.set("project", project);
+  if (incomingCompany) url.searchParams.set("company", incomingCompany);
   if (monthOverride) url.searchParams.set("monthOverride", monthOverride);
 
   // Cold-render on the Apps Script side can take 15–30s (sheet reads +
