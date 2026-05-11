@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
+import { channelIcon } from "@/lib/channelIcon";
 
 /**
  * Wrapper client component that owns the source-selection state shared
@@ -147,9 +148,12 @@ export default function CrmSourceAnalysis({
 
   return (
     <>
-      {/* Per-source pie + chip picker */}
-      <div className="crm-block">
-        <div className="crm-block-title">פיי לפי מקור הגעה</div>
+      {/* Chip selector — its own card. Controls both the pie and the
+          trendline below; the channel emoji on each chip mirrors the
+          shared legend under the status/objections grid so the source
+          identity reads consistently across the whole section. */}
+      <div className="crm-block crm-source-chips-block">
+        <div className="crm-block-title">פילוח לפי מקור הגעה</div>
         <div className="crm-source-chips" role="group" aria-label="בחירת מקורות">
           <button
             type="button"
@@ -172,6 +176,7 @@ export default function CrmSourceAnalysis({
           <span className="crm-source-chips-sep" aria-hidden="true">·</span>
           {breakdown.map((b) => {
             const isActive = selected.has(b.source);
+            const icon = channelIcon(b.source);
             return (
               <button
                 key={b.source}
@@ -183,18 +188,24 @@ export default function CrmSourceAnalysis({
                 onClick={() => toggle(b.source)}
                 title={`${b.source} — ${b.total} לידים עם התנגדות`}
               >
+                {icon ? (
+                  <span className="crm-source-chip-icon" aria-hidden="true">{icon}</span>
+                ) : null}
                 <span className="crm-source-chip-name">{b.source}</span>
                 <span className="crm-source-chip-count">{b.total}</span>
               </button>
             );
           })}
         </div>
+      </div>
 
-        {/* 35/65 split — pie+legend in the narrow cell, trendline in the
-            wide cell. Both surfaces are driven by the same chip selection
-            above, so co-locating them lets the user scan the distribution
-            (pie) and the over-time view (trendline) without scrolling. */}
-        <div className="crm-source-analysis-grid">
+      {/* 35/65 split — pie+legend (objection distribution for the chip
+          selection) in the narrow cell, trendline in the wide cell. Each
+          is its own card so the eye reads them as paired but distinct
+          views of the same chip filter above. */}
+      <div className="crm-source-analysis-grid">
+        <div className="crm-block crm-pie-block">
+          <div className="crm-block-title">התפלגות התנגדויות</div>
           <div className="crm-pie-row">
             <div
               className={
@@ -250,13 +261,13 @@ export default function CrmSourceAnalysis({
               )}
             </ul>
           </div>
-
-          {/* Trendline — sums over the same selected-source set. */}
-          <CrmFunnelTrendline
-            dailyTimeSeries={dailyTimeSeries}
-            selectedSources={selected}
-          />
         </div>
+
+        {/* Trendline — sums over the same selected-source set. */}
+        <CrmFunnelTrendline
+          dailyTimeSeries={dailyTimeSeries}
+          selectedSources={selected}
+        />
       </div>
     </>
   );

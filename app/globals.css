@@ -4977,6 +4977,30 @@ html[data-theme="dark"] .quick-note-saved {
   padding: 1rem 1.1rem 1.2rem;
   margin-bottom: 1.5rem;
 }
+/* Inset cards — every inner block gets its own subtle border + bg so the
+   funnel / objections / chips / pie / trendline read as separate areas
+   instead of merging into the section background. The KPI row stays
+   chrome-less (tiles are already their own cards). */
+.project-section-crm .crm-block {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 0.95rem 0.95rem;
+  margin-top: 1.1rem;
+}
+html[data-theme="dark"] .project-section-crm .crm-block {
+  background: rgba(255, 255, 255, 0.025);
+}
+html:not([data-theme="dark"]) .project-section-crm .crm-block {
+  background: rgba(0, 0, 0, 0.018);
+}
+/* The grid wrappers don't need their own bg — only their inner blocks
+   do. Reset the .crm-block default margin-top for blocks sitting inside
+   a grid cell since the grid `gap` already spaces them. */
+.crm-objection-grid > .crm-block,
+.crm-source-analysis-grid > .crm-block {
+  margin-top: 0;
+}
 .crm-platform-badge {
   display: inline-block;
   margin-inline-start: 0.45rem;
@@ -5192,8 +5216,9 @@ html[data-theme="dark"] .crm-stacked-seg-rest {
      with a shared source→color legend underneath, so neither side needs
      extra room over the other. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.4rem;
+  gap: 1.2rem;
   align-items: start;
+  margin-top: 1.1rem;
 }
 .crm-objection-grid > .crm-block {
   margin-top: 0; /* the wrapper takes the spacing now */
@@ -5536,6 +5561,14 @@ html[data-theme="dark"] .crm-trend-grid line {
   box-shadow: 0 1px 6px rgba(99, 102, 241, 0.4);
   opacity: 1;
 }
+.crm-source-chip-icon {
+  /* Channel emoji — mirrors the shared-legend dot below the status/
+     objections grid so the same source reads the same way in both
+     places. Small bump in font-size so the glyph matches the chip
+     label height visually. */
+  font-size: 1em;
+  line-height: 1;
+}
 .crm-source-chip-name {
   max-width: 22ch;
   overflow: hidden;
@@ -5553,25 +5586,22 @@ html[data-theme="dark"] .crm-trend-grid line {
   gap: 0.8rem;
   align-items: center;
 }
-/* Side-by-side pie + trendline. The pie's own column (.crm-pie-row)
-   lives inside the narrow 35% cell on the visual right, the trendline
-   fills the wider 65% cell on the visual left. Chips above stay full
-   width above this grid.
-   The trendline's own .crm-trend-block adds margin-top:1rem when used
-   standalone — neutralized inside the grid so it lines up with the
-   pie-row's top edge. */
+/* Side-by-side pie + trendline. The pie sits in the narrow 35% cell on
+   the visual right, the trendline fills the wider 65% cell on the
+   visual left. Both are their own cards (.crm-block) so they read as
+   paired-but-distinct views driven by the chip selector above. */
 .crm-source-analysis-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.35fr) minmax(0, 0.65fr);
   gap: 1.2rem;
-  align-items: start;
-  margin-top: 0.6rem;
+  align-items: stretch;
+  margin-top: 1.1rem;
 }
 .crm-source-analysis-grid > .crm-trend-block { margin-top: 0; }
 @media (max-width: 900px) {
   .crm-source-analysis-grid {
     grid-template-columns: 1fr;
-    gap: 0.6rem;
+    gap: 0.8rem;
   }
 }
 .crm-pie {
