@@ -5600,27 +5600,11 @@ html[data-theme="dark"] .crm-trend-grid line {
 .crm-source-search-btn.is-open {
   border-color: var(--accent, #6366f1);
 }
-.crm-source-search-btn.has-terms {
-  background: rgba(99, 102, 241, 0.12);
-  border-color: rgba(99, 102, 241, 0.45);
-}
-html[data-theme="dark"] .crm-source-search-btn.has-terms {
-  background: rgba(99, 102, 241, 0.22);
-}
 .crm-source-search-btn-label {
   /* Hide on the smallest screens — magnifier alone reads cleanly. */
 }
 @media (max-width: 480px) {
   .crm-source-search-btn-label { display: none; }
-}
-.crm-source-search-btn-count {
-  background: var(--accent, #6366f1);
-  color: #fff;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  font-size: 0.85em;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
 }
 .crm-source-search-popover {
   position: absolute;
@@ -5665,55 +5649,6 @@ html[data-theme="dark"] .crm-source-search-popover {
 .crm-source-search-input:focus {
   outline: 2px solid var(--accent, #6366f1);
   outline-offset: 1px;
-}
-.crm-source-search-terms {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  align-items: center;
-}
-.crm-source-search-term {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.5rem;
-  font: inherit;
-  font-size: 0.9em;
-  background: rgba(99, 102, 241, 0.12);
-  color: var(--accent, #6366f1);
-  border: 1px solid rgba(99, 102, 241, 0.45);
-  border-radius: 999px;
-  cursor: pointer;
-}
-.crm-source-search-term:hover {
-  background: rgba(99, 102, 241, 0.22);
-}
-.crm-source-search-clear {
-  font: inherit;
-  font-size: 0.85em;
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0.15rem 0.3rem;
-  margin-inline-start: auto;
-}
-.crm-source-search-clear:hover {
-  color: var(--accent, #6366f1);
-}
-.crm-source-search-add {
-  font: inherit;
-  font-size: 0.9em;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px dashed rgba(99, 102, 241, 0.45);
-  color: var(--accent, #6366f1);
-  border-radius: 6px;
-  padding: 0.35rem 0.5rem;
-  cursor: pointer;
-  text-align: start;
-}
-.crm-source-search-add:hover {
-  background: rgba(99, 102, 241, 0.18);
 }
 .crm-source-search-list {
   list-style: none;

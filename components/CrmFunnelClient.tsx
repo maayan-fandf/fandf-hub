@@ -44,15 +44,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   // and render a separate tooltip as a sibling of the pie.
   const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 
-  // Substring-match source filter — supplements the exact-match chip
-  // filter for capturing multi-channel rows. Example: when the CRM
-  // records a lead's `מקור הגעה` as "facebook, yad2", that's its own
-  // distinct source bucket and clicking the "facebook" chip won't
-  // include it. Adding "facebook" as a substring term here matches
-  // any source whose text contains "facebook" — clean single-action
-  // way to grab all multi-channel-attributed leads. Combines with
-  // chips via AND: a source must pass both to contribute.
-  const [substringTerms, setSubstringTerms] = useState<Set<string>>(() => new Set());
+  // Search-driven multi-select popover — an alternate UI for managing
+  // the same `selected` set the chip row controls. Useful for grabbing
+  // multi-channel composite sources (e.g. "facebook, yad2") in one
+  // action: type "face" → list filters to face-containing sources →
+  // "סמן את כל ההתאמות" → all those source names enter `selected`.
+  // No separate substring-terms state — the popover and the chip row
+  // share the same selection so the filter is always one source of
+  // truth.
   const [searchPopoverOpen, setSearchPopoverOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const searchPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -69,35 +68,23 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [searchPopoverOpen]);
 
-  // `clearSearch` controls whether the typed search text resets after
-  // the term is added. Keyboard paths (Enter, + הוסף) clear so the
-  // user can type a fresh term; row-click paths preserve the search
-  // so the filtered list stays in place for multi-select.
-  const addSubstringTerm = (term: string, opts?: { clearSearch?: boolean }) => {
-    const t = term.trim();
-    if (!t) return;
-    setSubstringTerms((prev) => {
-      const next = new Set(prev);
-      next.add(t);
-      return next;
-    });
-    if (opts?.clearSearch) setSearchInput("");
-  };
-  const removeSubstringTerm = (term: string) => {
-    setSubstringTerms((prev) => {
-      const next = new Set(prev);
-      next.delete(term);
-      return next;
-    });
-  };
-  const clearSubstringTerms = () => setSubstringTerms(new Set());
-  /** Toggle every currently-visible (i.e. search-filtered) source's
+  // For the popover's source list: filter sm.allSources by what's
+  // typed in the search input (substring match, case-insensitive).
+  // Always shows the full list when the input is empty.
+  const searchListSources = useMemo(() => {
+    const q = searchInput.trim().toLowerCase();
+    if (!q) return sm.allSources;
+    return sm.allSources.filter((s) => s.toLowerCase().includes(q));
+  }, [sm.allSources, searchInput]);
+
+  /** Toggle every currently-visible (search-filtered) source's chip
    *  selection state. If ALL visible sources are already selected,
    *  this acts as "unselect all visible"; otherwise it adds the
    *  unselected ones. Lets the user grab a typed-filter result set
-   *  in one click without going through each row. */
+   *  in one click without clicking each row individually — the
+   *  "multi-channel composite" use case. */
   const toggleAllVisible = () => {
-    setSubstringTerms((prev) => {
+    setSelected((prev) => {
       const next = new Set(prev);
       const visible = searchListSources;
       const allSelected = visible.every((s) => next.has(s));
@@ -109,29 +96,6 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       return next;
     });
   };
-
-  // Combined source predicate — every aggregation uses this so the
-  // chip filter AND the substring filter narrow the data consistently.
-  // When no substring terms are set, falls through to chip-only
-  // behavior (the original semantics).
-  const sourcePasses = useMemo(() => {
-    const termsLc = [...substringTerms].map((t) => t.toLowerCase());
-    return (source: string): boolean => {
-      if (!selected.has(source)) return false;
-      if (termsLc.length === 0) return true;
-      const lc = source.toLowerCase();
-      return termsLc.some((t) => lc.includes(t));
-    };
-  }, [selected, substringTerms]);
-
-  // For the popover's source list: filter sm.allSources by what's
-  // typed in the search input (substring match, case-insensitive).
-  // Always shows the full list when the input is empty.
-  const searchListSources = useMemo(() => {
-    const q = searchInput.trim().toLowerCase();
-    if (!q) return sm.allSources;
-    return sm.allSources.filter((s) => s.toLowerCase().includes(q));
-  }, [sm.allSources, searchInput]);
 
   const toggle = (source: string) => {
     setSelected((prev) => {
@@ -164,7 +128,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     let count = 0;
     const sorted: { source: string; count: number }[] = [];
     for (const [source, c] of Object.entries(map)) {
-      if (!sourcePasses(source)) continue;
+      if (!selected.has(source)) continue;
       count += c;
       sorted.push({ source, count: c });
     }
@@ -189,7 +153,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     const breakdown = (m: Record<string, number>) => {
       const rows: { source: string; count: number }[] = [];
       for (const [s, c] of Object.entries(m)) {
-        if (!sourcePasses(s) || c === 0) continue;
+        if (!selected.has(s) || c === 0) continue;
         rows.push({ source: s, count: c });
       }
       rows.sort((a, b) => b.count - a.count);
@@ -217,7 +181,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         meetings: meetingsBreakdown,
       },
     };
-  }, [sourcePasses, sm]);
+  }, [selected, sm]);
 
   // ── Per-objection source breakdown for pie-legend hover popovers ──
   // Mirrors the KPI breakdowns shape — for each objection currently
@@ -227,14 +191,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     for (const [objection, srcMap] of Object.entries(sm.objectionBySource)) {
       const rows: { source: string; count: number }[] = [];
       for (const [source, c] of Object.entries(srcMap)) {
-        if (!sourcePasses(source) || c === 0) continue;
+        if (!selected.has(source) || c === 0) continue;
         rows.push({ source, count: c });
       }
       rows.sort((a, b) => b.count - a.count);
       if (rows.length > 0) out.set(objection, rows);
     }
     return out;
-  }, [sourcePasses, sm]);
+  }, [selected, sm]);
 
   // ── Status funnel rows (filtered + top-N + funnel-ordered) ────────
   const statusRows = useMemo(() => {
@@ -265,7 +229,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       cumulative: cumulative[i],
       widthPct: (cumulative[i] / maxCum) * 100,
     }));
-  }, [sourcePasses, sm]);
+  }, [selected, sm]);
 
   // ── Objections × source rows (filtered + top-N) ───────────────────
   const objectionRows = useMemo(() => {
@@ -282,7 +246,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       ...row,
       widthPct: (row.total / maxTotal) * 100,
     }));
-  }, [sourcePasses, sm]);
+  }, [selected, sm]);
 
   // ── Objection pie (aggregate across selected sources × objection) ─
   const pieData = useMemo(() => {
@@ -290,7 +254,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     let grandTotal = 0;
     for (const [objection, srcMap] of Object.entries(sm.objectionBySource)) {
       for (const [source, c] of Object.entries(srcMap)) {
-        if (!sourcePasses(source)) continue;
+        if (!selected.has(source)) continue;
         byObj.set(objection, (byObj.get(objection) || 0) + c);
         grandTotal += c;
       }
@@ -302,15 +266,15 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       head.map(([label, count], i) => ({ label, count, color: PALETTE[i % PALETTE.length] }));
     if (tail > 0) slices.push({ label: "אחר", count: tail, isOther: true, color: "#d1d5db" });
     return { slices, total: grandTotal };
-  }, [sourcePasses, sm]);
+  }, [selected, sm]);
 
   // ── Trendline daily series — filter dailyTimeSeries by chip + substring ─
   const trendDaily = useMemo(() => {
     return funnel.dailyTimeSeries.map((day) => ({
       date: day.date,
-      bySource: day.bySource.filter((s) => sourcePasses(s.source)),
+      bySource: day.bySource.filter((s) => selected.has(s.source)),
     }));
-  }, [sourcePasses, funnel.dailyTimeSeries]);
+  }, [selected, funnel.dailyTimeSeries]);
 
   const noneSelected = selected.size === 0;
 
@@ -396,32 +360,27 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           >
             ניקוי
           </button>
-          {/* Substring filter — a separate filter level from the
-              chip selection, for catching multi-channel rows where
-              the source field is a composite like "facebook, yad2".
-              Click → popover with a search input + a list of all
-              sources (filterable) + the active-terms pills inside.
-              Visually placed between ניקוי and the · separator;
-              effectively pinned at the start of the chip row in
-              RTL order. */}
+          {/* Searchable multi-select — an alternate UI for the chip
+              row's `selected` set. Useful for catching composite
+              sources like "facebook, yad2" without scrolling the
+              chip strip: type "face" → list filters → "סמן הכל" →
+              every face-containing source is now in `selected`. The
+              chip row and this popover share state, so the data
+              filter has one source of truth. */}
           <div className="crm-source-search-wrap" ref={searchPopoverRef}>
             <button
               type="button"
               className={
                 "crm-source-search-btn" +
-                (substringTerms.size > 0 ? " has-terms" : "") +
                 (searchPopoverOpen ? " is-open" : "")
               }
               onClick={() => setSearchPopoverOpen((v) => !v)}
               aria-haspopup="dialog"
               aria-expanded={searchPopoverOpen}
-              title="חיפוש לפי טקסט במקור — תופס מקורות מרובי-ערוצים"
+              title="חיפוש לפי טקסט במקור — תופס גם מקורות מרובי-ערוצים"
             >
               <span aria-hidden="true">🔍</span>
               <span className="crm-source-search-btn-label">חיפוש</span>
-              {substringTerms.size > 0 ? (
-                <span className="crm-source-search-btn-count">{substringTerms.size}</span>
-              ) : null}
             </button>
             {searchPopoverOpen && (
               <div className="crm-source-search-popover" role="dialog">
@@ -430,56 +389,22 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                   className="crm-source-search-input"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="חפש או הקלד טקסט לסינון…"
-                  // Pressing Enter on a non-empty input adds it as a
-                  // substring term — fast path when the typed text
-                  // doesn't match any existing source exactly (e.g.
-                  // "facebook" when only "facebook, yad2" composites
-                  // exist in the data).
+                  placeholder="חפש מקור…"
+                  // Enter on a non-empty input acts as "סמן את כל
+                  // ההתאמות" — keyboard equivalent of the button
+                  // below. Lets the user type + Enter to grab every
+                  // composite source in one motion.
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && searchInput.trim()) {
+                    if (e.key === "Enter" && searchInput.trim() && searchListSources.length > 0) {
                       e.preventDefault();
-                      addSubstringTerm(searchInput, { clearSearch: true });
+                      toggleAllVisible();
                     }
                   }}
                   autoFocus
                 />
-                {substringTerms.size > 0 && (
-                  <div className="crm-source-search-terms">
-                    {[...substringTerms].map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        className="crm-source-search-term"
-                        onClick={() => removeSubstringTerm(t)}
-                        title="הסר מסנן"
-                      >
-                        <span>{t}</span>
-                        <span aria-hidden="true">×</span>
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="crm-source-search-clear"
-                      onClick={clearSubstringTerms}
-                      title="נקה את כל המסננים"
-                    >
-                      נקה
-                    </button>
-                  </div>
-                )}
-                {searchInput.trim() && (
-                  <button
-                    type="button"
-                    className="crm-source-search-add"
-                    onClick={() => addSubstringTerm(searchInput, { clearSearch: true })}
-                  >
-                    + הוסף &quot;{searchInput.trim()}&quot; כמסנן טקסט
-                  </button>
-                )}
                 {searchListSources.length > 0 && (() => {
                   const allVisibleSelected = searchListSources.every((s) =>
-                    substringTerms.has(s),
+                    selected.has(s),
                   );
                   return (
                     <button
@@ -505,40 +430,36 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                     searchListSources.map((source) => {
                       const icon = channelIcon(source);
                       const total = sm.leadsBySource[source] || 0;
-                      const isTerm = substringTerms.has(source);
+                      const isChecked = selected.has(source);
                       return (
                         <li key={source}>
                           <button
                             type="button"
                             role="option"
-                            aria-selected={isTerm}
+                            aria-selected={isChecked}
                             className={
                               "crm-source-search-row" +
-                              (isTerm ? " is-active" : "")
+                              (isChecked ? " is-active" : "")
                             }
-                            // Row click does NOT clear the search input
-                            // — keeps the typed filter in place so the
-                            // user can multi-select within the same
-                            // filtered list without losing context.
-                            onClick={() =>
-                              isTerm
-                                ? removeSubstringTerm(source)
-                                : addSubstringTerm(source)
-                            }
+                            // Row click toggles the same `selected`
+                            // set the chip row controls. Does NOT
+                            // clear the search input — keeps the
+                            // filtered list in place so the user can
+                            // multi-select within the same query.
+                            onClick={() => toggle(source)}
                           >
-                            {/* Checkbox visual — makes multi-select
-                                obvious; the row is technically still
-                                a button so keyboard activation +
-                                screen-reader semantics work via
-                                role="option" + aria-selected. */}
+                            {/* Checkbox visual — multi-select state
+                                of the chip filter. role="option" +
+                                aria-selected gives screen readers
+                                proper multi-select listbox semantics. */}
                             <span
                               className={
                                 "crm-source-search-check" +
-                                (isTerm ? " is-checked" : "")
+                                (isChecked ? " is-checked" : "")
                               }
                               aria-hidden="true"
                             >
-                              {isTerm ? "✓" : ""}
+                              {isChecked ? "✓" : ""}
                             </span>
                             <span
                               className="crm-source-chip-color"
