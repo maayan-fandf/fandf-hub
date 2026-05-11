@@ -638,6 +638,7 @@ export type MorningSignalKind =
   // lib/crmAlerts.ts using the project's CRM data (not Apps Script).
   | "meeting-noshow-spike"
   | "source-converts-poorly"
+  | "creative-mismatch"
   | "stale-leads";
 
 export type MorningSeverity = "severe" | "warn" | "info";

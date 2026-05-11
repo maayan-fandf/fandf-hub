@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
+import { readKeysCached } from "@/lib/keys";
 
 /**
  * Two-layer cached read of the `ALL CLIENTS` tab from the main
@@ -176,16 +177,20 @@ async function readAllClientsRows(
 
 /**
  * Return the project's "current" rows (one per active channel) for the
- * passed project — matches against either the Hebrew project name OR
- * the slug, case-insensitive. Monthly (חודשי) rows are excluded
- * because alerts should fire against the live window, not historical
- * months. Empty array when no match.
+ * passed project. The match works against both the Hebrew project name
+ * AND the slug because ALL CLIENTS' `פרוייקט` column was blanked
+ * post-XLOOKUP-removal (2026-05-01) for many rows — they only carry a
+ * slug. When the caller passes only the Hebrew name, this function
+ * looks up the slug in Keys (via `lib/keys.ts`, which is cached) so
+ * the slug-only ALL CLIENTS rows still match.
+ *
+ * Monthly (חודשי) rows are excluded because alerts should fire against
+ * the live window, not historical months. Empty array when no match.
  *
  * Duplicate channel rows (sub-campaigns that share a channel name —
  * e.g. Brand*GS + generic*GS both under google-search) are
  * consolidated by summing their numeric fields. Same logic the
- * dashboard runs at `Code.js#L1729`. Downstream callers see one row
- * per unique (project, channel) pair.
+ * dashboard runs at `Code.js#L1729`.
  */
 export const getAllClientsCurrentForProject = cache(
   async (args: {
@@ -193,14 +198,24 @@ export const getAllClientsCurrentForProject = cache(
     project: string;
     projectSlug?: string;
   }): Promise<AllClientsRow[]> => {
-    const rows = await readAllClientsRows(args.subjectEmail);
+    const [rows, slugFromKeys] = await Promise.all([
+      readAllClientsRows(args.subjectEmail),
+      args.projectSlug
+        ? Promise.resolve(args.projectSlug)
+        : resolveSlugFromKeys(args.subjectEmail, args.project),
+    ]);
     const targetProject = args.project.toLowerCase().trim();
-    const targetSlug = (args.projectSlug || "").toLowerCase().trim();
+    const targetSlug = (args.projectSlug || slugFromKeys || "").toLowerCase().trim();
     const matched = rows.filter((r) => {
       if (r.rowType !== "current") return false;
       const proj = r.project.toLowerCase();
       const slug = r.projectSlug.toLowerCase();
-      return (proj && proj === targetProject) || (slug && (slug === targetProject || slug === targetSlug));
+      if (proj && proj === targetProject) return true;
+      if (targetSlug && slug && slug === targetSlug) return true;
+      // Last-resort: caller passed a slug-looking string as `project`
+      // (no Hebrew name available). Match by slug equality too.
+      if (slug && slug === targetProject) return true;
+      return false;
     });
     // Consolidate by channel — sum numeric fields, keep the first
     // non-empty start/end dates seen. Channels lower-cased for the
@@ -227,6 +242,33 @@ export const getAllClientsCurrentForProject = cache(
     return order.map((k) => byChannel.get(k)!);
   },
 );
+
+/**
+ * Find the slug (Keys' `campaign ID` column) for a project, looked up
+ * by Hebrew name. Empty string when no Keys row matches — caller
+ * falls back to matching ALL CLIENTS by whatever the project string
+ * happens to be. Keys is two-layer-cached so this is ~free.
+ */
+async function resolveSlugFromKeys(
+  subjectEmail: string,
+  projectHebrewName: string,
+): Promise<string> {
+  if (!projectHebrewName) return "";
+  const { headers, rows } = await readKeysCached(subjectEmail);
+  const iProj = headers.indexOf("פרוייקט");
+  // Slug column is `campaign ID` per the dashboard convention
+  // (`_keysSlugColIndex_` in Code.js).
+  const iSlug = headers.indexOf("campaign ID");
+  if (iProj < 0 || iSlug < 0) return "";
+  const target = projectHebrewName.toLowerCase().trim();
+  for (const r of rows) {
+    const proj = String((r as unknown[])[iProj] ?? "").toLowerCase().trim();
+    if (proj === target) {
+      return String((r as unknown[])[iSlug] ?? "").trim();
+    }
+  }
+  return "";
+}
 
 /**
  * Sheets stores dates as serials when valueRenderOption is
