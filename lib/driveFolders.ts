@@ -11,8 +11,8 @@
  * The picker scopes listings and creates to a campaign subtree.
  */
 
+import { cache } from "react";
 import type { drive_v3 } from "googleapis";
-import { unstable_cache } from "next/cache";
 import { driveClient, driveFolderOwner, sheetsClient } from "@/lib/sa";
 
 export type FolderRef = {
@@ -168,24 +168,27 @@ export async function findCampaignFolderId(
 }
 
 /**
- * Cached project-level folder URL lookup for the project-overview header
- * "Drive" button. Wraps `findCampaignFolderId` with an empty `campaign`
- * (i.e. resolves to the `<company>/<project>` folder) and caches the
- * result by `(company, project)` for 1h.
+ * Per-request memoized project-level folder URL lookup for the project-
+ * overview header "Drive" button. Wraps `findCampaignFolderId` with an
+ * empty `campaign` (i.e. resolves to the `<company>/<project>` folder).
  *
- * The folder hierarchy almost never moves — companies/projects are
- * named once and their Drive folders persist. The previous direct
- * call did 2 sequential Drive API round-trips on every page load
- * (~400–1000ms uncached). With this wrapper, only the first hit per
- * hour pays that cost; subsequent hits are O(1).
+ * Why React's `cache()` instead of `unstable_cache`: a project page
+ * render calls this function multiple times (header Drive button +
+ * LatestPrisotCard project lookup + LatestPrisotCard general fallback).
+ * `cache()` dedupes those into a single Drive round-trip per request
+ * without paying the cross-request staleness cost.
  *
- * Drive folder IDs are global across users (shared-drive members
- * see the same hierarchy), so the cache key intentionally omits
- * `subjectEmail`. If a user lacks permission, the underlying call
- * returns `{ folderId: null, viewUrl: null }` — caller falls back
- * to the search URL, which works for everyone.
+ * Previously this used `unstable_cache` with a 1h TTL — but per
+ * feedback_unstable_cache_multi_instance.md, `revalidateTag`
+ * propagation across Firebase App Hosting instances is lossy, so newly-
+ * created project folders stayed invisible for up to an hour after
+ * being created (the first hit to a not-yet-existing project cached
+ * `null` and the invalidation didn't reach every instance). Per-request
+ * `cache()` sacrifices the cross-request savings but ensures new
+ * projects show their Drive contents immediately, which is what users
+ * actually care about.
  */
-const findProjectFolderUrlInner = unstable_cache(
+const findProjectFolderUrlInner = cache(
   async (
     company: string,
     project: string,
@@ -196,8 +199,6 @@ const findProjectFolderUrlInner = unstable_cache(
       campaign: "",
     });
   },
-  ["project-folder-url"],
-  { revalidate: 60 * 60, tags: ["drive-folders"] },
 );
 
 export async function findProjectFolderUrlCached(
