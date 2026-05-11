@@ -5183,6 +5183,27 @@ html[data-theme="dark"] .crm-stacked-seg-rest {
   );
 }
 
+/* Two-column wrapper for the objection pair: top-objections list on
+   one side, objections×source matrix on the other. Same data, two
+   lenses, scanned together. Collapses to single-column on narrow
+   viewports so each block can still breathe. */
+.crm-objection-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 1.4rem;
+  align-items: start;
+}
+.crm-objection-grid > .crm-block {
+  margin-top: 0; /* the wrapper takes the spacing now */
+  min-width: 0;  /* lets inner overflow ellipsis work in the narrower cell */
+}
+@media (max-width: 900px) {
+  .crm-objection-grid {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+}
+
 /* ── Vertical funnel chart (FunnelChart in CrmFunnelCard) ──────────
    Replaces the old horizontal stacked bar for the status section.
    Each stage is a centered horizontal bar whose width is the

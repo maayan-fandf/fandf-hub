@@ -118,8 +118,14 @@ export default async function CrmFunnelCard({
         </div>
       )}
 
-      {/* Top objections — null-safe; many rows in source data have no
-          objection text, so showing a small N here is normal. */}
+      {/* Objection pair — top-objections list + objections×source
+          matrix. Same data, two views: the list reads "what objections
+          are biggest", the matrix reads "and where do they come from".
+          Side-by-side on desktop so the user can scan both lenses at
+          once instead of scrolling between them; stacks on narrow
+          viewports. */}
+      {(funnel.topObjections.length > 0 || funnel.objectionsBySource.length > 0) && (
+      <div className="crm-objection-grid">
       {funnel.topObjections.length > 0 && (
         <div className="crm-block">
           <div className="crm-block-title">התנגדויות מובילות</div>
@@ -233,6 +239,8 @@ export default async function CrmFunnelCard({
           </div>
         );
       })()}
+      </div>
+      )}
 
       {/* Per-source pie + over-time trendline. The two surfaces share
           a single source-selection state (chips above) — picking a
