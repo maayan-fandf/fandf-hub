@@ -1,0 +1,353 @@
+/**
+ * CRM-funnel data for the project overview page.
+ *
+ * Data source: the external "Consolidated" workbook (env CRM_SHEET_ID,
+ * default 1YOL2Rry…), which aggregates per-lead data from the two CRMs
+ * F&F's clients use — BMBY and Sehel. Updated by an upstream pipeline
+ * (currently daily; the workbook owner controls the cadence). The hub
+ * is a read-only consumer.
+ *
+ * Join model: Keys (the dashboard's canonical project registry) carries
+ * two columns — `CRM` (the account name in the external CRM, e.g.
+ * "אפרידר גינות רחובות") and `CRM platform` ("bmby" or "sehel"). Each
+ * project resolves to AT MOST one (platform, account) pair; CRM rows
+ * whose `פרויקט` doesn't match any Keys.CRM are ignored (orphan
+ * projects upstream that haven't been onboarded yet — Maayan's call).
+ *
+ * Caching layers, matching lib/keys.ts:
+ *   1. `unstable_cache` cross-request, 5 min TTL — avoids hammering
+ *      Sheets quota when many users hit project pages near-simultaneously.
+ *      The CRM workbook only updates daily so 5 min stale is fine.
+ *   2. React `cache()` per-request dedup — multiple components on the
+ *      same page can call into this without paying for the read twice.
+ *
+ * NB: The 5-min cross-request cache is acceptable here despite the App
+ * Hosting tag-propagation issue (feedback_unstable_cache_multi_instance)
+ * because CRM data is steady-state — once a project is set up its rows
+ * exist continuously, and "stale by 5 min" never means "blank for a
+ * day." Contrast with findProjectFolderUrl which we had to drop the
+ * cross-request layer on because new projects routinely cache `null`.
+ */
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
+import { sheetsClient } from "@/lib/sa";
+import { driveFolderOwner } from "@/lib/sa";
+import { readKeysCached } from "@/lib/keys";
+
+const CRM_SHEET_ID =
+  process.env.CRM_SHEET_ID || "1YOL2RryfXlHPvg0iT5TsLCxkm7L-iTMrAEBWh5Q4Qpc";
+const CACHE_TTL_SECONDS = 5 * 60;
+
+export type CrmPlatform = "bmby" | "sehel";
+
+export type CrmFunnel = {
+  platform: CrmPlatform;
+  /** Keys.CRM value used as the join key (the canonical account name
+   *  on the external CRM side — surfaced for the badge so users can
+   *  tell why a particular cohort was selected). */
+  crmAccount: string;
+  leads: number;
+  contacted: number;
+  meetings: number;
+  /** meetings / leads as a 0-100 number (UI formats with %). null when
+   *  leads === 0 so the card can show "—" instead of dividing by zero. */
+  meetingRatePct: number | null;
+  /** Top-N status buckets, sorted by count desc. UI displays as a
+   *  horizontal stacked bar. */
+  byStatus: { label: string; count: number }[];
+  /** Top-5 objections by count. Many rows have no objection text — those
+   *  are excluded from this list (they show up in `leads` but not here). */
+  topObjections: { label: string; count: number }[];
+  /** Top-5 salespeople by lead count. BMBY only — Sehel doesn't carry
+   *  a salesperson column. Empty for sehel. */
+  topSellers: { label: string; count: number }[];
+  /** Top-5 source values (BMBY `מקור הגעה`, Sehel `מקור הגעה`). Useful
+   *  for spot-checking which ad / channel string the CRM is logging. */
+  topSources: { label: string; count: number }[];
+  /** Earliest and latest dates seen in the matched rows (formatted
+   *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
+   *  is more than a few days behind today, the upstream pipeline has
+   *  paused. */
+  dateRange: { from: string; to: string };
+};
+
+/* ── Sheets reads, cached ──────────────────────────────────────────── */
+
+type RawTab = { headers: string[]; rows: unknown[][] };
+
+async function fetchTabFromSheet(
+  subjectEmail: string,
+  range: string,
+): Promise<RawTab> {
+  const sheets = sheetsClient(subjectEmail);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: CRM_SHEET_ID,
+    range,
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (!values.length) return { headers: [], rows: [] };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "").replace(/\s+/g, " ").trim(),
+  );
+  return { headers, rows: values.slice(1) };
+}
+
+// BMBY: header row is row 1, data starts at row 2.
+const fetchBmbyCrossRequest = unstable_cache(
+  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "BMBY!A1:AK10000"),
+  ["crm-bmby"],
+  { revalidate: CACHE_TTL_SECONDS, tags: ["crm-data"] },
+);
+// Sehel: row 1 is a merged banner; the real header is row 2. We pull
+// from A2 so the consumer sees a normal headers+rows shape.
+const fetchSehelCrossRequest = unstable_cache(
+  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "Sehel!A2:T1500"),
+  ["crm-sehel"],
+  { revalidate: CACHE_TTL_SECONDS, tags: ["crm-data"] },
+);
+
+const readBmby = cache((subjectEmail: string) => fetchBmbyCrossRequest(subjectEmail));
+const readSehel = cache((subjectEmail: string) => fetchSehelCrossRequest(subjectEmail));
+
+/* ── Utility ────────────────────────────────────────────────────────── */
+
+function norm(s: unknown): string {
+  return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function topN<T extends { count: number }>(map: Map<string, number>, n: number): { label: string; count: number }[] {
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([label, count]) => ({ label, count }));
+}
+
+function dateOnly(value: unknown): string {
+  // Source data can be either "YYYY-MM-DD" (BMBY entry date), "dd-mm-yyyy hh:mm"
+  // (Sehel registration), or a sheets serial number when the cell is
+  // typed as date but UNFORMATTED_VALUE returns the underlying number.
+  // We just need a comparable string for min/max display — normalize
+  // to ISO YYYY-MM-DD when possible, fall back to as-is.
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  // ISO already
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  // dd-mm-yyyy
+  const m = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  // sheets serial (days since 1899-12-30). Convert to YYYY-MM-DD.
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 25000 && n < 80000) {
+    const ms = (n - 25569) * 86400 * 1000;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+  return raw.slice(0, 10);
+}
+
+/* ── BMBY funnel ───────────────────────────────────────────────────── */
+
+async function computeBmbyFunnel(
+  subjectEmail: string,
+  crmAccount: string,
+): Promise<CrmFunnel | null> {
+  const { headers, rows } = await readBmby(subjectEmail);
+  if (!rows.length) return null;
+  const iEntry = headers.indexOf("תאריך כניסה");
+  const iStatus = headers.indexOf("סטאטוס");
+  const iSeller = headers.indexOf("איש מכירות");
+  const iSource = headers.indexOf("מקור הגעה");
+  const iProject = headers.indexOf("פרויקט");
+  const iObjection = headers.indexOf("התנגדויות");
+  const iMeeting = headers.indexOf("is_meeting");
+  const iContactDate = headers.indexOf("תאריך קשר");
+  if (iProject < 0) return null;
+
+  const target = norm(crmAccount);
+  let leads = 0;
+  let meetings = 0;
+  let contacted = 0;
+  const byStatus = new Map<string, number>();
+  const byObjection = new Map<string, number>();
+  const bySeller = new Map<string, number>();
+  const bySource = new Map<string, number>();
+  let minDate = "";
+  let maxDate = "";
+
+  for (const row of rows) {
+    const arr = row as unknown[];
+    const proj = norm(arr[iProject]);
+    if (proj !== target) continue;
+    leads++;
+    // is_meeting is "0"/"1" stringly typed in the source — be generous.
+    const m = String(arr[iMeeting] ?? "").trim();
+    if (m === "1" || m.toLowerCase() === "true") meetings++;
+    // "Contacted" proxy: row has a non-empty תאריך קשר. The CRM populates
+    // this the first time a salesperson logs an outreach attempt, so it's
+    // a reasonable "did anyone try?" signal short of pulling the full
+    // activity log.
+    if (iContactDate >= 0 && String(arr[iContactDate] ?? "").trim()) contacted++;
+    const st = String(arr[iStatus] ?? "").trim();
+    if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
+    const obj = String(arr[iObjection] ?? "").trim();
+    if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
+    const sel = String(arr[iSeller] ?? "").trim();
+    if (sel) bySeller.set(sel, (bySeller.get(sel) || 0) + 1);
+    const src = String(arr[iSource] ?? "").trim();
+    if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
+    const d = dateOnly(arr[iEntry]);
+    if (d) {
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+  }
+
+  if (leads === 0) return null;
+  return {
+    platform: "bmby",
+    crmAccount,
+    leads,
+    contacted,
+    meetings,
+    meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
+    byStatus: topN(byStatus, 8),
+    topObjections: topN(byObjection, 5),
+    topSellers: topN(bySeller, 5),
+    topSources: topN(bySource, 5),
+    dateRange: { from: minDate, to: maxDate },
+  };
+}
+
+/* ── Sehel funnel ──────────────────────────────────────────────────── */
+
+async function computeSehelFunnel(
+  subjectEmail: string,
+  crmAccount: string,
+): Promise<CrmFunnel | null> {
+  const { headers, rows } = await readSehel(subjectEmail);
+  if (!rows.length) return null;
+  const iStage = headers.indexOf("שלב טיפול");
+  const iMeetingDate = headers.indexOf("תאריך פגישה אחרונה");
+  const iProject = headers.indexOf("פרויקט");
+  const iObjection = headers.indexOf("התנגדויות");
+  const iSource = headers.indexOf("מקור הגעה");
+  const iRegDate = headers.indexOf("תאריך רישום");
+  const iUpdate = headers.indexOf("עדכון אחרון");
+  if (iProject < 0) return null;
+
+  // Sehel rows are formatted "<project name> <salesperson>" — a prefix
+  // match on Keys.CRM picks up all the seller-suffixed variants in one
+  // pass. Exact-match would only catch the no-suffix rows (32/1000 in
+  // the probe). The prefix is the project name, the rest is the seller.
+  const targetPrefix = norm(crmAccount);
+  let leads = 0;
+  let meetings = 0;
+  let contacted = 0;
+  const byStatus = new Map<string, number>();
+  const byObjection = new Map<string, number>();
+  const bySource = new Map<string, number>();
+  let minDate = "";
+  let maxDate = "";
+
+  for (const row of rows) {
+    const arr = row as unknown[];
+    const proj = norm(arr[iProject]);
+    if (!proj.startsWith(targetPrefix)) continue;
+    // Defensive: require either exact match OR a word boundary after the
+    // prefix (so "אורנבך 11" doesn't accidentally match "אורנבך 111").
+    if (proj !== targetPrefix && proj[targetPrefix.length] !== " ") continue;
+    leads++;
+    // Sehel has no boolean is_meeting; "any non-empty meeting date" is
+    // our proxy. False negatives possible if a meeting happened but the
+    // salesperson didn't log it — same shortcut the source dashboard uses.
+    if (iMeetingDate >= 0 && String(arr[iMeetingDate] ?? "").trim()) meetings++;
+    // "Contacted" proxy for Sehel: any update timestamp ≠ registration
+    // timestamp implies someone touched the row.
+    const reg = String(arr[iRegDate] ?? "").trim();
+    const upd = iUpdate >= 0 ? String(arr[iUpdate] ?? "").trim() : "";
+    if (upd && upd !== reg) contacted++;
+    const st = String(arr[iStage] ?? "").trim();
+    if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
+    const obj = String(arr[iObjection] ?? "").trim();
+    if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
+    const src = String(arr[iSource] ?? "").trim();
+    if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
+    const d = dateOnly(arr[iRegDate]);
+    if (d) {
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+  }
+
+  if (leads === 0) return null;
+  return {
+    platform: "sehel",
+    crmAccount,
+    leads,
+    contacted,
+    meetings,
+    meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
+    byStatus: topN(byStatus, 8),
+    topObjections: topN(byObjection, 5),
+    topSellers: [], // Sehel doesn't carry a salesperson column we trust
+    topSources: topN(bySource, 5),
+    dateRange: { from: minDate, to: maxDate },
+  };
+}
+
+/* ── Public entry ──────────────────────────────────────────────────── */
+
+/**
+ * Resolve and compute the CRM funnel for one project. Returns `null`
+ * when:
+ *   - Keys row for (company, project) has no `CRM` value (project
+ *     isn't onboarded with a CRM mapping — e.g. כללי, ben-shemen-lod)
+ *   - Keys row has no `CRM platform` value (e.g. צור יצחק — flagged
+ *     but not active, the user will set it when the project starts)
+ *   - the source tab has zero rows matching that CRM account
+ *
+ * Caller wraps in <Suspense fallback={null}>; null return collapses
+ * the card cleanly.
+ */
+export async function getCrmFunnelForProject(args: {
+  company: string;
+  project: string;
+}): Promise<CrmFunnel | null> {
+  const company = args.company.trim();
+  const project = args.project.trim();
+  if (!company || !project) return null;
+
+  // Read Keys to find this project's CRM mapping. readKeysCached is
+  // cross-request-cached + per-request-deduped, so this is ~free on a
+  // warm path.
+  const { headers, rows } = await readKeysCached(driveFolderOwner());
+  const iProj = headers.indexOf("פרוייקט");
+  const iCo = headers.indexOf("חברה");
+  const iCrm = headers.indexOf("CRM");
+  const iPlatform = headers.indexOf("CRM platform");
+  if (iProj < 0 || iCrm < 0 || iPlatform < 0) return null;
+
+  // Match (project, company) — the same disambiguation pattern other
+  // multi-row-name surfaces use. כללי is the obvious case but any
+  // future name collision is handled the same way.
+  let crmAccount = "";
+  let platform = "";
+  for (const r of rows) {
+    const rp = String((r as unknown[])[iProj] ?? "").trim();
+    const rc = iCo >= 0 ? String((r as unknown[])[iCo] ?? "").trim() : "";
+    if (rp !== project) continue;
+    if (rc && company && rc !== company) continue;
+    crmAccount = String((r as unknown[])[iCrm] ?? "").trim();
+    platform = String((r as unknown[])[iPlatform] ?? "").trim().toLowerCase();
+    break;
+  }
+  if (!crmAccount || (platform !== "bmby" && platform !== "sehel")) {
+    return null;
+  }
+
+  if (platform === "bmby") {
+    return computeBmbyFunnel(driveFolderOwner(), crmAccount);
+  }
+  return computeSehelFunnel(driveFolderOwner(), crmAccount);
+}

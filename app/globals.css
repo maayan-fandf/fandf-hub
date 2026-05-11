@@ -4891,6 +4891,194 @@ html[data-theme="dark"] .quick-note-saved {
   text-align: center;
 }
 
+/* CRM-funnel card on the project overview page. Renders per-lead
+   metrics joined from the external Consolidated workbook (BMBY/Sehel)
+   via Keys.CRM. Compact — KPI row + stacked status bar + objections
+   list. Sits between the platform-leads section and the metrics
+   iframe so it reads as "what happened AFTER the lead came in." */
+.project-section-crm {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem 1.2rem;
+  margin-bottom: 1.5rem;
+}
+.crm-platform-badge {
+  display: inline-block;
+  margin-inline-start: 0.45rem;
+  padding: 0.06rem 0.45rem;
+  font-size: 0.65em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-hi, #f3f4f6);
+  vertical-align: 0.18em;
+}
+.crm-date-range {
+  font-size: 0.78em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.crm-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+  margin: 0.7rem 0 0.9rem;
+}
+.crm-kpi-tile {
+  background: var(--surface-hi, #f9fafb);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.7rem;
+  text-align: start;
+}
+.crm-kpi-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong, inherit);
+}
+.crm-kpi-label {
+  font-size: 0.82em;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+.crm-kpi-sub {
+  font-size: 0.72em;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+.crm-block {
+  margin-top: 0.9rem;
+}
+.crm-block-title {
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.crm-block-inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+.crm-block-inline .crm-block-title { margin-bottom: 0; }
+.crm-inline-list {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+.crm-inline-item {
+  font-variant-numeric: tabular-nums;
+}
+.crm-stacked-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-hi, #f3f4f6);
+  border: 1px solid var(--border);
+}
+.crm-stacked-seg {
+  display: block;
+  height: 100%;
+}
+.crm-stacked-seg-rest {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--surface-hi, #e5e7eb),
+    var(--surface-hi, #e5e7eb) 4px,
+    var(--surface, #f3f4f6) 4px,
+    var(--surface, #f3f4f6) 8px
+  );
+}
+.crm-stacked-legend {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.25rem 0.7rem;
+  font-size: 0.85em;
+}
+.crm-stacked-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.crm-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.crm-legend-dot-rest {
+  background: repeating-linear-gradient(
+    45deg,
+    #d1d5db,
+    #d1d5db 2px,
+    #f3f4f6 2px,
+    #f3f4f6 4px
+  );
+}
+.crm-legend-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-legend-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.crm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.crm-list-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.88em;
+}
+.crm-list-bar-track {
+  position: relative;
+  height: 8px;
+  background: var(--surface-hi, #f3f4f6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.crm-list-bar {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  border-radius: 4px;
+}
+.crm-list-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-list-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .crm-kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .crm-list-row { grid-template-columns: 80px 1fr auto; }
+}
+
 /* Latest פריסה card on the project overview page — a large readable
    thumbnail + name + modified-time tile that links to the most-recently-
    updated sheet inside `<project>/פריסות/` (or the company's כללי

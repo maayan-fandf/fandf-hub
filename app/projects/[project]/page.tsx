@@ -14,6 +14,7 @@ import {
 } from "@/lib/appsScript";
 import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePicker";
 import LatestPrisotCard from "@/components/LatestPrisotCard";
+import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
@@ -536,6 +537,22 @@ export default async function ProjectOverviewPage({
             project={projectName}
             clientEmails={projectClientEmails}
             people={peopleData?.ok ? peopleData.people : []}
+          />
+        </Suspense>
+      )}
+
+      {/* CRM funnel — per-lead status & meetings pulled from the
+          external "Consolidated" workbook (BMBY + Sehel). Internal-only
+          (mirrors LatestPrisotCard gate; clients shouldn't see seller-
+          level breakdowns of objections etc). Renders null when the
+          project's Keys row has no `CRM` mapping or the source tab has
+          no matching rows — Suspense lets the slow Sheets read happen
+          off the critical path. */}
+      {!isClientUser && (
+        <Suspense fallback={null}>
+          <CrmFunnelCard
+            company={companyForDashboard}
+            project={projectName}
           />
         </Suspense>
       )}
