@@ -415,9 +415,47 @@ function dateOnly(value: unknown): string {
   const n = Number(raw);
   if (Number.isFinite(n) && n > 25000 && n < 80000) {
     const ms = (n - 25569) * 86400 * 1000;
-    return new Date(ms).toISOString().slice(0, 10);
+    const iso = new Date(ms).toISOString().slice(0, 10);
+    // Defensive: the Sehel aggregate's CRM workbook had a locale bug
+    // where dd-mm-yyyy text was coerced to a serial under en_US
+    // (mm-dd-yyyy) interpretation — so e.g. "11-05-2026" (May 11) ended
+    // up stored as serial 46331 ≈ 2026-11-05 (Nov 5). The locale was
+    // flipped and the source archives are clean text, but rows
+    // converted before the fix stay numeric forever. CRM registration
+    // / update dates can never legitimately be in the future, so when
+    // a serial decodes to a date >1 day past today AND both fields are
+    // ≤12 (so the swap is reversible), assume the swap and un-swap it.
+    if (iso > horizonIso()) {
+      const [y, mm, dd] = iso.split("-");
+      const dN = Number(dd);
+      const mN = Number(mm);
+      if (dN >= 1 && dN <= 12 && mN >= 1 && mN <= 12) {
+        // Swap day/month → returns the date the row was meant to carry.
+        return `${y}-${dd}-${mm}`;
+      }
+    }
+    return iso;
   }
   return raw.slice(0, 10);
+}
+
+/** "today + 1 day" in Asia/Jerusalem, ISO. Used as the future-date
+ *  threshold in the defensive serial swap above. One-day buffer
+ *  absorbs server/UTC offset edge cases at midnight. Memoized per
+ *  process — the value only changes once a day and dateOnly is hot. */
+let _horizonCache = { ms: 0, iso: "" };
+function horizonIso(): string {
+  const nowMs = Date.now();
+  if (nowMs - _horizonCache.ms < 60_000) return _horizonCache.iso;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(nowMs + 86400_000));
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  const d = parts.find((p) => p.type === "day")?.value ?? "";
+  _horizonCache = { ms: nowMs, iso: `${y}-${m}-${d}` };
+  return _horizonCache.iso;
 }
 
 /* ── BMBY funnel ───────────────────────────────────────────────────── */
