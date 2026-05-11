@@ -37,6 +37,12 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(sm.allSources),
   );
+  // Which pie slice is currently hovered — drives the channel-breakdown
+  // tooltip rendered below the pie. The SVG <path> elements can't host
+  // HTML tooltips directly, and the parent `.crm-pie` clips its
+  // children via `overflow: hidden`, so we track hover state in React
+  // and render a separate tooltip as a sibling of the pie.
+  const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 
   const toggle = (source: string) => {
     setSelected((prev) => {
@@ -452,13 +458,43 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                 ) : (
                   <svg viewBox="0 0 100 100" className="crm-pie-svg" role="img" aria-hidden="true">
                     {sliceArcs.map((slice) => (
-                      <path key={slice.label} d={slice.d} fill={slice.fill}>
+                      <path
+                        key={slice.label}
+                        d={slice.d}
+                        fill={slice.fill}
+                        onMouseEnter={() => setHoveredSlice(slice.label)}
+                        onMouseLeave={() => setHoveredSlice(null)}
+                        onFocus={() => setHoveredSlice(slice.label)}
+                        onBlur={() => setHoveredSlice(null)}
+                      >
                         <title>{slice.tooltip}</title>
                       </path>
                     ))}
                   </svg>
                 )}
               </div>
+              {/* Pie-slice hover tooltip — appears below the pie when a
+                  slice is hovered. Mirrors the legend-row tooltip in
+                  content + styling, but rendered as a controlled child
+                  here because <path> elements can't host HTML
+                  tooltips natively. "אחר" slices roll up multiple
+                  objections so a per-channel breakdown isn't
+                  meaningful — skip the tooltip for that slice. */}
+              {(() => {
+                if (!hoveredSlice) return null;
+                const slice = pieData.slices.find((s) => s.label === hoveredSlice);
+                if (!slice || slice.isOther) return null;
+                const breakdown = objectionSourceBreakdowns.get(hoveredSlice);
+                if (!breakdown || breakdown.length === 0) return null;
+                return (
+                  <ChannelMiniPie
+                    data={breakdown}
+                    palette={palette}
+                    metric={hoveredSlice}
+                    visible
+                  />
+                );
+              })()}
               <ul className="crm-pie-legend">
                 {pieData.slices.length === 0 ? (
                   <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
@@ -572,10 +608,17 @@ function ChannelMiniPie({
   data,
   palette,
   metric,
+  visible = false,
 }: {
   data: { source: string; count: number }[];
   palette: Map<string, string>;
   metric: string;
+  /** When true, the tooltip is always visible (used for the SVG-pie-
+   *  slice hover case where the parent can't carry a `*-has-popover`
+   *  CSS class). When false / omitted, visibility is driven by the
+   *  parent's `:hover` via CSS — the default for KPI tiles + legend
+   *  rows. */
+  visible?: boolean;
 }) {
   const total = data.reduce((n, s) => n + s.count, 0);
   if (total === 0) return null;
@@ -596,7 +639,10 @@ function ChannelMiniPie({
     ? { background: `conic-gradient(${stops.join(", ")})` }
     : { background: "#f3f4f6" };
   return (
-    <div className="crm-channel-tooltip" role="tooltip">
+    <div
+      className={"crm-channel-tooltip" + (visible ? " is-visible" : "")}
+      role="tooltip"
+    >
       <div className="crm-channel-tooltip-title">{metric} — לפי מקור הגעה</div>
       <div className="crm-channel-tooltip-body">
         <div className="crm-channel-tooltip-pie" style={pieStyle} />

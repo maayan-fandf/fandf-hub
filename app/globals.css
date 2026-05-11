@@ -5107,7 +5107,8 @@ html[data-theme="dark"] .crm-channel-tooltip {
 .crm-kpi-tile-has-popover:hover .crm-channel-tooltip,
 .crm-kpi-tile-has-popover:focus-within .crm-channel-tooltip,
 .crm-pie-legend-row-has-popover:hover .crm-channel-tooltip,
-.crm-pie-legend-row-has-popover:focus-within .crm-channel-tooltip {
+.crm-pie-legend-row-has-popover:focus-within .crm-channel-tooltip,
+.crm-channel-tooltip.is-visible {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(2px);
@@ -5118,6 +5119,13 @@ html[data-theme="dark"] .crm-channel-tooltip {
   cursor: help;
   position: relative;
 }
+/* When the controlled tooltip is rendered as a sibling of the pie
+   (SVG slice hover), the positioning context is .crm-pie-row. The pie
+   itself has overflow:hidden (round shape clip) so the tooltip has to
+   escape upward into the row. SVG paths get cursor:help so the user
+   knows the slice is interactive. */
+.crm-pie-row { position: relative; }
+.crm-pie-svg path { cursor: help; }
 .crm-channel-tooltip-title {
   font-size: 0.85em;
   font-weight: 600;
