@@ -56,6 +56,18 @@ export type CrmFunnel = {
   crmAccount: string;
   leads: number;
   contacted: number;
+  /** "תואמה פגישה" — leads where a meeting was scheduled at any point
+   *  in the lifecycle, including upcoming meetings AND cancellations
+   *  ("פגישה בוטלה" still counts as scheduled per Maayan's definition).
+   *  Broader than `meetings` — always `scheduledMeetings >= meetings`.
+   *  BMBY: status.includes("פגישה"). Sehel: status.includes("פגישה")
+   *  OR a meeting date is set — best-guess equivalent pending upstream
+   *  clarification. */
+  scheduledMeetings: number;
+  /** "פגישות" — meetings that actually took place (held). Subset of
+   *  scheduledMeetings. BMBY: status matches "פגישה 1/2/3" or "פגישה
+   *  התקיימה". Sehel: status in {אחרי פגישה, פגישה ללא סיכום} —
+   *  the post-meeting stages, best-guess pending upstream answer. */
   meetings: number;
   /** meetings / leads as a 0-100 number (UI formats with %). null when
    *  leads === 0 so the card can show "—" instead of dividing by zero. */
@@ -105,6 +117,7 @@ export type CrmFunnel = {
   kpiSourceBreakdowns: {
     leads: { source: string; count: number; isOther?: boolean }[];
     contacted: { source: string; count: number; isOther?: boolean }[];
+    scheduledMeetings: { source: string; count: number; isOther?: boolean }[];
     meetings: { source: string; count: number; isOther?: boolean }[];
   };
   /** Earliest and latest dates seen in the matched rows (formatted
@@ -261,7 +274,8 @@ async function computeBmbyFunnel(
 
   const target = norm(crmAccount);
   let leads = 0;
-  let meetings = 0;
+  let scheduledMeetings = 0; // תואמה פגישה — broad, includes cancelled
+  let meetings = 0;          // פגישות — narrow, actually-held only
   let contacted = 0;
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
@@ -273,6 +287,7 @@ async function computeBmbyFunnel(
   // but kept separate for clarity at the render site.
   const leadsBySource = new Map<string, number>();
   const contactedBySource = new Map<string, number>();
+  const scheduledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
   // For each objection, a map of source → count. We materialize this only
   // for rows where BOTH an objection AND a source are present (otherwise
@@ -292,13 +307,29 @@ async function computeBmbyFunnel(
       if (!d.startsWith(monthFilter)) continue;
     }
     leads++;
-    // Derive `is_meeting` from סטאטוס containing "פגישה" — catches all
-    // six observed meeting statuses (פגישה 1/2/3, פגישה התקיימה,
-    // נקבעה פגישה, פגישה בוטלה). includes() not startsWith() so we
-    // don't miss the "נקבעה פגישה" variant.
+    // Two meeting metrics (per Maayan, 2026-05-12):
+    //
+    //   תואמה פגישה (scheduled) — any "פגישה" status, including
+    //     "נקבעה פגישה" (set but not yet held) and "פגישה בוטלה"
+    //     (cancelled). Catches everyone who reached the meeting stage
+    //     in their lifecycle. Equivalent to the legacy `is_meeting=1`
+    //     boolean (verified via probe-ismeeting-redundancy.mjs).
+    //
+    //   פגישות (held) — only statuses where a meeting actually took
+    //     place: numbered visits ("פגישה 1/2/3") and the explicit
+    //     "פגישה התקיימה". Excludes the scheduled-only ("נקבעה פגישה")
+    //     and cancelled ("פגישה בוטלה") variants.
+    //
+    // Always scheduledMeetings >= meetings. The diff is exactly the
+    // "no-show + pending" subset, which is small but operationally
+    // meaningful (it's the gap between "we got them to commit" and
+    // "they actually showed up").
     const st = String(arr[iStatus] ?? "").trim();
-    const isMeeting = st.includes("פגישה");
-    if (isMeeting) meetings++;
+    const isScheduledMeeting = st.includes("פגישה");
+    const isHeldMeeting =
+      /^פגישה\s+\d+$/.test(st) || st === "פגישה התקיימה";
+    if (isScheduledMeeting) scheduledMeetings++;
+    if (isHeldMeeting) meetings++;
     // "Contacted" proxy: row has a non-empty תאריך קשר. The CRM populates
     // this the first time a salesperson logs an outreach attempt, so it's
     // a reasonable "did anyone try?" signal short of pulling the full
@@ -313,7 +344,8 @@ async function computeBmbyFunnel(
       bySource.set(src, (bySource.get(src) || 0) + 1);
       leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
       if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
-      if (isMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
+      if (isScheduledMeeting) scheduledMeetingsBySource.set(src, (scheduledMeetingsBySource.get(src) || 0) + 1);
+      if (isHeldMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
     }
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
@@ -333,6 +365,7 @@ async function computeBmbyFunnel(
     crmAccount,
     leads,
     contacted,
+    scheduledMeetings,
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     byStatus: topN(byStatus, 8),
@@ -346,6 +379,7 @@ async function computeBmbyFunnel(
     kpiSourceBreakdowns: {
       leads: topNWithRest(leadsBySource, 5),
       contacted: topNWithRest(contactedBySource, 5),
+      scheduledMeetings: topNWithRest(scheduledMeetingsBySource, 5),
       meetings: topNWithRest(meetingsBySource, 5),
     },
     dateRange: { from: minDate, to: maxDate },
@@ -377,7 +411,8 @@ async function computeSehelFunnel(
   // the probe). The prefix is the project name, the rest is the seller.
   const targetPrefix = norm(crmAccount);
   let leads = 0;
-  let meetings = 0;
+  let scheduledMeetings = 0; // תואמה פגישה
+  let meetings = 0;          // פגישות (held)
   let contacted = 0;
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
@@ -385,6 +420,7 @@ async function computeSehelFunnel(
   // Per-KPI source breakdowns — see the BMBY function for the rationale.
   const leadsBySource = new Map<string, number>();
   const contactedBySource = new Map<string, number>();
+  const scheduledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
   const objectionSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
@@ -404,18 +440,43 @@ async function computeSehelFunnel(
       if (!d.startsWith(monthFilter)) continue;
     }
     leads++;
-    // Sehel has no boolean is_meeting; "any non-empty meeting date" is
-    // our proxy. False negatives possible if a meeting happened but the
-    // salesperson didn't log it — same shortcut the source dashboard uses.
-    const isMeeting = iMeetingDate >= 0 && String(arr[iMeetingDate] ?? "").trim() !== "";
-    if (isMeeting) meetings++;
+    const st = String(arr[iStage] ?? "").trim();
+    // Sehel meeting metrics — best-guess interim pending Maayan's
+    // clarification from upstream (2026-05-12). Sehel's stage taxonomy
+    // observed in the new "מאגר שכל" tab uses "| <stage>" prefixed
+    // values; the meeting-related ones (by frequency on the data
+    // probe) are:
+    //   1,931  "| פגישה ללא סיכום"  — held, awaiting summary
+    //     396  "| אחרי פגישה"        — held, post-meeting
+    //      65  "| לתאם פגישה מחדש"   — re-schedule (scheduled-only)
+    //      52  "| לקראת פגישה"       — leading up to meeting (scheduled-only)
+    //      27  "| פגישות"            — multiple meetings held (held)
+    //
+    // תואמה פגישה (scheduled) — anyone whose stage mentions a meeting,
+    //   in either the singular (פגישה) or plural (פגישות) form, OR
+    //   anyone with a meeting date set on the row (defensive — the
+    //   salesperson might log the date without updating the stage label).
+    //   Hebrew quirk: "פגישות" (plural) doesn't contain "פגישה" as a
+    //   substring (the final ה changes to ות), so we test the shared
+    //   stem `/פגיש/` instead of either word directly.
+    // פגישות (held) — only the three observed post-meeting stages.
+    //   Narrower than the previous shipping logic ("any meeting date
+    //   set"), which actually captured scheduled + held together.
+    const hasMeetingDate =
+      iMeetingDate >= 0 && String(arr[iMeetingDate] ?? "").trim() !== "";
+    const isScheduledMeeting = /פגיש/.test(st) || hasMeetingDate;
+    const isHeldMeeting =
+      st.includes("אחרי פגישה") ||
+      st.includes("פגישה ללא סיכום") ||
+      st.includes("פגישות");
+    if (isScheduledMeeting) scheduledMeetings++;
+    if (isHeldMeeting) meetings++;
     // "Contacted" proxy for Sehel: any update timestamp ≠ registration
     // timestamp implies someone touched the row.
     const reg = String(arr[iRegDate] ?? "").trim();
     const upd = iUpdate >= 0 ? String(arr[iUpdate] ?? "").trim() : "";
     const isContacted = upd !== "" && upd !== reg;
     if (isContacted) contacted++;
-    const st = String(arr[iStage] ?? "").trim();
     if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
     const obj = String(arr[iObjection] ?? "").trim();
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
@@ -424,7 +485,8 @@ async function computeSehelFunnel(
       bySource.set(src, (bySource.get(src) || 0) + 1);
       leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
       if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
-      if (isMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
+      if (isScheduledMeeting) scheduledMeetingsBySource.set(src, (scheduledMeetingsBySource.get(src) || 0) + 1);
+      if (isHeldMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
     }
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
@@ -444,6 +506,7 @@ async function computeSehelFunnel(
     crmAccount,
     leads,
     contacted,
+    scheduledMeetings,
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     byStatus: topN(byStatus, 8),
@@ -455,6 +518,7 @@ async function computeSehelFunnel(
     kpiSourceBreakdowns: {
       leads: topNWithRest(leadsBySource, 5),
       contacted: topNWithRest(contactedBySource, 5),
+      scheduledMeetings: topNWithRest(scheduledMeetingsBySource, 5),
       meetings: topNWithRest(meetingsBySource, 5),
     },
     dateRange: { from: minDate, to: maxDate },

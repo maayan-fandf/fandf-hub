@@ -67,7 +67,9 @@ export default async function CrmFunnelCard({
       {/* KPI tiles. Each (except "יחס פגישה", which is a derived %) gets
           a hover popover showing the source breakdown for that metric
           as a small pie + legend — same conic-gradient renderer as the
-          per-source pie picker below. Pure CSS hover; no JS state. */}
+          per-source pie picker below. Pure CSS hover; no JS state.
+          Funnel order reads right-to-left in RTL: leads → contacted →
+          scheduled (תואמה פגישה) → held (פגישות) → derived rate. */}
       <div className="crm-kpi-row">
         <KpiTile
           label="לידים"
@@ -81,6 +83,13 @@ export default async function CrmFunnelCard({
           sub={pct(funnel.contacted, funnel.leads)}
           sourceBreakdown={funnel.kpiSourceBreakdowns.contacted}
           metricTotal={funnel.contacted}
+        />
+        <KpiTile
+          label="תואמה פגישה"
+          value={fmtInt(funnel.scheduledMeetings)}
+          sub={pct(funnel.scheduledMeetings, funnel.leads)}
+          sourceBreakdown={funnel.kpiSourceBreakdowns.scheduledMeetings}
+          metricTotal={funnel.scheduledMeetings}
         />
         <KpiTile
           label="פגישות"

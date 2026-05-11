@@ -4997,9 +4997,15 @@ html[data-theme="dark"] .quick-note-saved {
 }
 .crm-kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 5 tiles: לידים · נוצר קשר · תואמה פגישה · פגישות · יחס פגישה.
+     On narrower viewports each tile compresses badly at 5 columns —
+     drop to 3 then 2 as the screen gets tighter. */
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.6rem;
   margin: 0.7rem 0 0.9rem;
+}
+@media (max-width: 900px) {
+  .crm-kpi-row { grid-template-columns: repeat(3, 1fr); }
 }
 .crm-kpi-tile {
   /* Hard-coded light tint for light mode — the codebase doesn't define
