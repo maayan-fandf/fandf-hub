@@ -81,27 +81,31 @@ export function computeCrmAlerts(args: {
   }
 
   // ── source-converts-poorly ──────────────────────────────────────
-  // Walks the kpiSourceBreakdowns map: any source with ≥10 leads in
-  // the cohort AND zero scheduled-meeting contribution is producing
-  // dead-weight volume. Skip the "אחר" aggregation bucket — that's a
-  // tail aggregate, not an addressable channel.
-  const scheduledBySource = new Map(
-    funnel.kpiSourceBreakdowns.scheduledMeetings.map((s) => [s.source, s.count]),
-  );
-  for (const ld of funnel.kpiSourceBreakdowns.leads) {
-    if (ld.isOther) continue;
-    if (ld.count < 10) continue;
-    const schedCount = scheduledBySource.get(ld.source) || 0;
+  // TODO (Maayan 2026-05-11): redirect this to read from the ALL
+  // CLIENTS sheet instead. The CRM workbook used here is a per-person
+  // view; ALL CLIENTS aggregates status-per-media-source at the
+  // project level and is more reliable for alert thresholds. Tracked
+  // as a spawned task. Until that lands, keeping the per-person
+  // approximation so the alert continues to fire.
+  //
+  // Walks the raw leadsBySource map: any source with ≥10 leads in the
+  // cohort AND zero scheduled-meeting contribution is producing dead-
+  // weight volume. Raw (untruncated) — no "אחר" rollup to skip.
+  const leadsBySource = funnel.sourceMatrices.leadsBySource;
+  const scheduledBySource = funnel.sourceMatrices.scheduledMeetingsBySource;
+  for (const [source, leadCount] of Object.entries(leadsBySource)) {
+    if (leadCount < 10) continue;
+    const schedCount = scheduledBySource[source] || 0;
     if (schedCount > 0) continue;
     out.push({
       kind: "source-converts-poorly",
-      severity: ld.count >= 30 ? "severe" : "warn",
-      title: `${ld.source} — לידים בלי תיאומים`,
+      severity: leadCount >= 30 ? "severe" : "warn",
+      title: `${source} — לידים בלי תיאומים`,
       detail:
-        `${ld.count} לידים מהמקור הזה · 0 תיאומי פגישה. ` +
+        `${leadCount} לידים מהמקור הזה · 0 תיאומי פגישה. ` +
         `סביר שזה קהל לא מתאים — שקול להוריד תקציב או לשנות מיקוד.`,
-      channel: ld.source,
-      key: `${projectSlug}|source-converts-poorly|${ld.source}|${funnel.monthFilter || "all"}`,
+      channel: source,
+      key: `${projectSlug}|source-converts-poorly|${source}|${funnel.monthFilter || "all"}`,
     });
   }
 

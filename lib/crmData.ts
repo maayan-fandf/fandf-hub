@@ -72,61 +72,44 @@ export type CrmFunnel = {
   /** meetings / leads as a 0-100 number (UI formats with %). null when
    *  leads === 0 so the card can show "—" instead of dividing by zero. */
   meetingRatePct: number | null;
-  /** Top-N status buckets, in funnel order. Each entry carries its own
-   *  source breakdown (top-N + "אחר") so the UI can render each row as
-   *  a stacked bar showing where the leads at that stage came from —
-   *  same shape as `objectionsBySource` so both can share a single
-   *  source→color legend. The flat `count` is kept for callers that
-   *  don't care about source attribution. */
-  byStatus: {
-    label: string;
-    count: number;
-    sources: { source: string; count: number; isOther?: boolean }[];
-  }[];
-  /** Top-5 objections by count. Many rows have no objection text — those
-   *  are excluded from this list (they show up in `leads` but not here). */
-  topObjections: { label: string; count: number }[];
   /** Top-5 salespeople by lead count. BMBY only — Sehel doesn't carry
    *  a salesperson column. Empty for sehel. */
   topSellers: { label: string; count: number }[];
-  /** Top-5 source values (BMBY `מקור הגעה`, Sehel `מקור הגעה`). Useful
-   *  for spot-checking which ad / channel string the CRM is logging. */
-  topSources: { label: string; count: number }[];
-  /** Cross-tab: top-5 objections × top-5 sources within this project.
-   *  For each objection, shows how those leads broke down across
-   *  acquisition sources — so the user can see e.g. "מחיר was 50% טלפון
-   *  and 31% רדיו" rather than just the totals. The `sources` array per
-   *  objection is sorted by count desc; an "other" bucket aggregates
-   *  remaining sources into a single segment so the percentages always
-   *  sum to 100%. Empty when the project has no objection text at all. */
-  objectionsBySource: {
-    objection: string;
-    total: number;
-    sources: { source: string; count: number; isOther?: boolean }[];
-  }[];
-  /** Transpose of the above for the pie-per-source picker section: for
-   *  each top-N source (by total leads where an objection was captured),
-   *  the breakdown of which objections those leads ran into. `total` is
-   *  the total leads from that source that had any objection text;
-   *  `topObjections` rolls beyond-top-N counts into an "אחר" bucket so
-   *  the pie always closes to 100%. */
-  sourceBreakdown: {
-    source: string;
-    total: number;
-    topObjections: { label: string; count: number; isOther?: boolean }[];
-  }[];
-  /** Per-KPI source-distribution pies, rendered as hover tooltips on
-   *  each KPI tile. Same top-N + "אחר" rest-bucket shape as
-   *  `sourceBreakdown` entries so the UI can share the conic-gradient
-   *  renderer. Each entry's `total` = the KPI's headline number, and
-   *  `sources` sums to that total. Empty array when the KPI is 0 or
-   *  has no source attribution (e.g. all matching rows had blank
-   *  `מקור הגעה`). */
-  kpiSourceBreakdowns: {
-    leads: { source: string; count: number; isOther?: boolean }[];
-    contacted: { source: string; count: number; isOther?: boolean }[];
-    scheduledMeetings: { source: string; count: number; isOther?: boolean }[];
-    meetings: { source: string; count: number; isOther?: boolean }[];
+  /** Untruncated source-aware matrices for client-side re-aggregation
+   *  when the section's chip filter narrows the cohort. The CRM card is
+   *  a client component that owns chip state and re-derives every view
+   *  (KPI tiles, status funnel, objections × source matrix, pie,
+   *  trendline) from these on every chip toggle — so the funnel reads
+   *  consistently across all five surfaces under any source mix.
+   *
+   *  Size is naturally bounded: ~20 statuses × ~20 sources, ~50
+   *  objections × ~20 sources. JSON-friendly Record shapes — no Maps
+   *  cross the server/client boundary. */
+  sourceMatrices: {
+    /** All sources observed in the cohort, sorted desc by total leads.
+     *  Drives chip ordering + the section-wide source→color palette. */
+    allSources: string[];
+    /** Canonical funnel order for every status present in the cohort
+     *  (BMBY_STATUS_FUNNEL_ORDER / SEHEL_STATUS_FUNNEL_ORDER intersected
+     *  with observed). Client picks top-N by selected-source count and
+     *  re-sorts the picks by this list so the funnel narrative is
+     *  preserved under any chip selection. */
+    statusFunnelOrder: string[];
+    /** source → lead count. Every counted row contributed once. */
+    leadsBySource: Record<string, number>;
+    /** source → contacted count. Subset of leadsBySource. */
+    contactedBySource: Record<string, number>;
+    /** source → scheduledMeetings (תואמה פגישה) count. */
+    scheduledMeetingsBySource: Record<string, number>;
+    /** source → meetings (held) count. Subset of scheduledMeetingsBySource. */
+    meetingsBySource: Record<string, number>;
+    /** status → (source → count). Drives the chip-filtered status
+     *  funnel: for each row at status S, sum its source columns that
+     *  the chips have selected. */
+    statusBySource: Record<string, Record<string, number>>;
+    /** objection → (source → count). Drives the chip-filtered
+     *  objections matrix + pie. */
+    objectionBySource: Record<string, Record<string, number>>;
   };
   /** Daily time series for the trendline chart under the source pie.
    *  One entry per calendar day in the filtered cohort, with per-source
@@ -234,13 +217,6 @@ function normSource(s: unknown): string {
   return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function topN<T extends { count: number }>(map: Map<string, number>, n: number): { label: string; count: number }[] {
-  return [...map.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
-    .map(([label, count]) => ({ label, count }));
-}
-
 /**
  * Inferred sales-funnel stage order for each platform. Public BMBY/Sehel
  * docs don't expose this taxonomy externally, so the orderings here are
@@ -255,8 +231,9 @@ function topN<T extends { count: number }>(map: Map<string, number>, n: number):
  * states" so the bar reads left-to-right as a coherent progression.
  *
  * Update these arrays if BMBY/Sehel confirm a different order — the
- * `sortByFunnelOrder` helper below uses the array's position as the
- * sort key, unknown stages sort by count desc and append at the end.
+ * funnel chart's status row picks top-N by selected-source count and
+ * re-sorts the picks by the array's position; unknown stages append at
+ * the end via `buildSourceMatrices`.
  */
 export const BMBY_STATUS_FUNNEL_ORDER = [
   "ליד",
@@ -341,19 +318,6 @@ const SEHEL_EARLY_FUNNEL_STAGES = new Set<string>([
 ]);
 const STALE_LEAD_DAYS = 14;
 
-function sortByFunnelOrder(
-  items: { label: string; count: number }[],
-  order: readonly string[],
-): { label: string; count: number }[] {
-  const indexOf = new Map(order.map((s, i) => [s, i]));
-  return [...items].sort((a, b) => {
-    const ia = indexOf.has(a.label) ? (indexOf.get(a.label) as number) : Number.POSITIVE_INFINITY;
-    const ib = indexOf.has(b.label) ? (indexOf.get(b.label) as number) : Number.POSITIVE_INFINITY;
-    if (ia === ib) return b.count - a.count;
-    return ia - ib;
-  });
-}
-
 /**
  * Convert the per-day per-source matrix into the flat, sorted array
  * shape the trendline component consumes. Dates ascending so the chart
@@ -377,25 +341,6 @@ function buildDailyTimeSeries(
       meetings: counts.meetings,
     })),
   }));
-}
-
-/**
- * Top-N entries plus an `אחר` rest bucket aggregating the tail. Used for
- * the KPI-tile hover pies where percentages must sum to 100% of the
- * source map's total. Empty map → empty array (UI hides the popover).
- */
-function topNWithRest(
-  map: Map<string, number>,
-  n: number,
-): { source: string; count: number; isOther?: boolean }[] {
-  if (map.size === 0) return [];
-  const sorted = [...map.entries()].sort((a, b) => b[1] - a[1]);
-  const head = sorted.slice(0, n);
-  const tail = sorted.slice(n).reduce((acc, [, c]) => acc + c, 0);
-  const out: { source: string; count: number; isOther?: boolean }[] =
-    head.map(([source, count]) => ({ source, count }));
-  if (tail > 0) out.push({ source: "אחר", count: tail, isOther: true });
-  return out;
 }
 
 function dateOnly(value: unknown): string {
@@ -667,29 +612,17 @@ async function computeBmbyFunnel(
     scheduledMeetings,
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
-    // Top-8 statuses by count, RE-SORTED into funnel order so the
-    // stacked bar reads as a sales funnel (raw lead → contract) rather
-    // than as count-descending. See BMBY_STATUS_FUNNEL_ORDER for the
-    // canonical ordering. Each row is enriched with its per-source
-    // breakdown so the funnel chart can render the source mix at each
-    // stage instead of solid palette colors.
-    byStatus: buildByStatus(
-      sortByFunnelOrder(topN(byStatus, 8), BMBY_STATUS_FUNNEL_ORDER),
-      statusSourceMatrix,
-    ),
-    topObjections: topN(byObjection, 5),
     // איש מכירות column dropped in the 2026-05-12 schema migration —
     // no seller breakdown anymore; UI already handles empty cleanly.
     topSellers: [],
-    topSources: topN(bySource, 5),
-    objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
-    sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
-    kpiSourceBreakdowns: {
-      leads: topNWithRest(leadsBySource, 5),
-      contacted: topNWithRest(contactedBySource, 5),
-      scheduledMeetings: topNWithRest(scheduledMeetingsBySource, 5),
-      meetings: topNWithRest(meetingsBySource, 5),
-    },
+    sourceMatrices: buildSourceMatrices({
+      allSourcesMap: bySource,
+      statusObserved: byStatus,
+      funnelOrder: BMBY_STATUS_FUNNEL_ORDER,
+      leadsBySource, contactedBySource,
+      scheduledMeetingsBySource, meetingsBySource,
+      statusSourceMatrix, objectionSourceMatrix,
+    }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
     dateRange: { from: minDate, to: maxDate },
     staleLeads: {
@@ -893,22 +826,15 @@ async function computeSehelFunnel(
     scheduledMeetings,
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
-    // Funnel-order sort — see the BMBY return above for rationale.
-    byStatus: buildByStatus(
-      sortByFunnelOrder(topN(byStatus, 8), SEHEL_STATUS_FUNNEL_ORDER),
-      statusSourceMatrix,
-    ),
-    topObjections: topN(byObjection, 5),
     topSellers: [], // Sehel doesn't carry a salesperson column we trust
-    topSources: topN(bySource, 5),
-    objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
-    sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
-    kpiSourceBreakdowns: {
-      leads: topNWithRest(leadsBySource, 5),
-      contacted: topNWithRest(contactedBySource, 5),
-      scheduledMeetings: topNWithRest(scheduledMeetingsBySource, 5),
-      meetings: topNWithRest(meetingsBySource, 5),
-    },
+    sourceMatrices: buildSourceMatrices({
+      allSourcesMap: bySource,
+      statusObserved: byStatus,
+      funnelOrder: SEHEL_STATUS_FUNNEL_ORDER,
+      leadsBySource, contactedBySource,
+      scheduledMeetingsBySource, meetingsBySource,
+      statusSourceMatrix, objectionSourceMatrix,
+    }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
     dateRange: { from: minDate, to: maxDate },
     staleLeads: {
@@ -923,98 +849,49 @@ async function computeSehelFunnel(
 }
 
 /**
- * Transpose the objection×source matrix into per-source pies. For each
- * source (sorted by total objection-attributed leads), gathers its top-6
- * objections + an "אחר" rest bucket so the pie closes to 100%.
+ * Serialize the per-row aggregation Maps into the JSON-friendly
+ * sourceMatrices payload. Everything stays in raw, untruncated form so
+ * the client wrapper can re-aggregate every view against any chip
+ * selection without losing precision. Sorts allSources desc by lead
+ * count so chips render high-volume channels first.
  */
-function buildSourceBreakdown(
-  matrix: Map<string, Map<string, number>>,
-): CrmFunnel["sourceBreakdown"] {
-  const TOP_SOURCES = 8;
-  const TOP_OBJECTIONS_PER_SOURCE = 6;
-  // Flip the nested map: source → (objection → count).
-  const flipped = new Map<string, Map<string, number>>();
-  for (const [objection, sources] of matrix) {
-    for (const [source, count] of sources) {
-      let m = flipped.get(source);
-      if (!m) { m = new Map<string, number>(); flipped.set(source, m); }
-      m.set(objection, (m.get(objection) || 0) + count);
-    }
-  }
-  // Total objection-attributed leads per source.
-  const sources = [...flipped.entries()].map(([source, objMap]) => {
-    const total = [...objMap.values()].reduce((a, b) => a + b, 0);
-    return { source, objMap, total };
-  });
-  sources.sort((a, b) => b.total - a.total);
-  return sources.slice(0, TOP_SOURCES).map(({ source, objMap, total }) => {
-    const sorted = [...objMap.entries()].sort((a, b) => b[1] - a[1]);
-    const head = sorted.slice(0, TOP_OBJECTIONS_PER_SOURCE);
-    const tail = sorted.slice(TOP_OBJECTIONS_PER_SOURCE).reduce((n, [, c]) => n + c, 0);
-    const topObjections: { label: string; count: number; isOther?: boolean }[] =
-      head.map(([label, count]) => ({ label, count }));
-    if (tail > 0) topObjections.push({ label: "אחר", count: tail, isOther: true });
-    return { source, total, topObjections };
-  });
-}
-
-/**
- * Enrich each funnel-stage entry with its top-N source breakdown plus an
- * "אחר" rest bucket. Mirrors `buildObjectionsBySource` so the funnel
- * chart and the objections cross-tab render with the same stacked-bar
- * primitive and share a single source→color legend.
- */
-function buildByStatus(
-  topStatuses: { label: string; count: number }[],
-  matrix: Map<string, Map<string, number>>,
-): CrmFunnel["byStatus"] {
-  const TOP_SOURCES_PER_STATUS = 4;
-  return topStatuses.map(({ label, count }) => {
-    const srcMap = matrix.get(label) || new Map<string, number>();
-    const sorted = [...srcMap.entries()].sort((a, b) => b[1] - a[1]);
-    const head = sorted.slice(0, TOP_SOURCES_PER_STATUS);
-    const tailCount = sorted
-      .slice(TOP_SOURCES_PER_STATUS)
-      .reduce((n, [, c]) => n + c, 0);
-    const sources: { source: string; count: number; isOther?: boolean }[] =
-      head.map(([source, count]) => ({ source, count }));
-    if (tailCount > 0) {
-      sources.push({ source: "אחר", count: tailCount, isOther: true });
-    }
-    return { label, count, sources };
-  });
-}
-
-/**
- * Shape the objection × source cross-tab for display: pick top-5 objections,
- * and for each, project its source counts into "top-N + other" so the bar
- * is human-readable and totals reconcile to the objection's overall count.
- */
-function buildObjectionsBySource(
-  byObjection: Map<string, number>,
-  matrix: Map<string, Map<string, number>>,
-): CrmFunnel["objectionsBySource"] {
-  const TOP_OBJECTIONS = 5;
-  const TOP_SOURCES_PER_OBJECTION = 4;
-  const top = [...byObjection.entries()]
+function buildSourceMatrices(args: {
+  allSourcesMap: Map<string, number>;
+  statusObserved: Map<string, number>;
+  funnelOrder: readonly string[];
+  leadsBySource: Map<string, number>;
+  contactedBySource: Map<string, number>;
+  scheduledMeetingsBySource: Map<string, number>;
+  meetingsBySource: Map<string, number>;
+  statusSourceMatrix: Map<string, Map<string, number>>;
+  objectionSourceMatrix: Map<string, Map<string, number>>;
+}): CrmFunnel["sourceMatrices"] {
+  const toRec = (m: Map<string, number>) => Object.fromEntries(m);
+  const toRec2 = (m: Map<string, Map<string, number>>) =>
+    Object.fromEntries([...m.entries()].map(([k, v]) => [k, Object.fromEntries(v)]));
+  const allSources = [...args.allSourcesMap.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, TOP_OBJECTIONS);
-  return top
-    .map(([objection, total]) => {
-      const srcMap = matrix.get(objection) || new Map<string, number>();
-      const sorted = [...srcMap.entries()].sort((a, b) => b[1] - a[1]);
-      const head = sorted.slice(0, TOP_SOURCES_PER_OBJECTION);
-      const tailCount = sorted
-        .slice(TOP_SOURCES_PER_OBJECTION)
-        .reduce((n, [, c]) => n + c, 0);
-      const sources: { source: string; count: number; isOther?: boolean }[] =
-        head.map(([source, count]) => ({ source, count }));
-      if (tailCount > 0) {
-        sources.push({ source: "אחר", count: tailCount, isOther: true });
-      }
-      return { objection, total, sources };
-    })
-    .filter((x) => x.sources.length > 0); // skip objections with no source attribution
+    .map(([s]) => s);
+  // Intersection of the canonical funnel order with statuses seen in
+  // this cohort, then append any observed statuses the canonical order
+  // doesn't know about (sorted by count desc) so they still render.
+  const observed = new Set([...args.statusObserved.keys()]);
+  const ordered = args.funnelOrder.filter((s) => observed.has(s));
+  const seen = new Set(ordered);
+  const tail = [...args.statusObserved.entries()]
+    .filter(([s]) => !seen.has(s))
+    .sort((a, b) => b[1] - a[1])
+    .map(([s]) => s);
+  return {
+    allSources,
+    statusFunnelOrder: [...ordered, ...tail],
+    leadsBySource: toRec(args.leadsBySource),
+    contactedBySource: toRec(args.contactedBySource),
+    scheduledMeetingsBySource: toRec(args.scheduledMeetingsBySource),
+    meetingsBySource: toRec(args.meetingsBySource),
+    statusBySource: toRec2(args.statusSourceMatrix),
+    objectionBySource: toRec2(args.objectionSourceMatrix),
+  };
 }
 
 /* ── Public entry ──────────────────────────────────────────────────── */

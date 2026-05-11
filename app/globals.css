@@ -5062,100 +5062,9 @@ html[data-theme="dark"] .crm-kpi-tile {
 html[data-theme="dark"] .crm-kpi-value {
   color: #ffffff;
 }
-/* Hover popover — small donut + legend showing how the KPI breaks
-   down by `מקור הגעה`. Hidden by default; revealed on tile hover via
-   pure CSS so no client component is needed. Positioned below the
-   tile, anchored to its center; flips to above on the rightmost tile
-   to avoid clipping (handled by :last-child below — RTL means the
-   "rightmost" visually is the FIRST in DOM order, so we leave the
-   default placement; verified visually on desktop). */
-.crm-kpi-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  /* Center horizontally using direction-agnostic transform. `left` +
-     translateX work the same in both LTR and RTL because translateX
-     is in pure screen coordinates. */
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  min-width: 280px;
-  max-width: 360px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.7rem 0.75rem;
-  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.25);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease, transform 120ms ease;
-  /* Don't take vertical space when invisible. */
-  visibility: hidden;
-  text-align: start;
-}
-html[data-theme="dark"] .crm-kpi-popover {
-  background: #2a2a52;
-  border-color: var(--border);
-  box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.6);
-}
-.crm-kpi-tile-has-popover:hover .crm-kpi-popover,
-.crm-kpi-tile-has-popover:focus-within .crm-kpi-popover {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(2px);
-}
-.crm-kpi-tile-has-popover {
-  cursor: help; /* signal that there's hover content */
-}
-.crm-kpi-popover-title {
-  font-size: 0.78em;
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 0.5rem;
-}
-.crm-kpi-popover-body {
-  display: grid;
-  grid-template-columns: 96px 1fr;
-  gap: 0.7rem;
-  align-items: center;
-}
-.crm-kpi-popover-pie {
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
-}
-.crm-kpi-popover-legend {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.8em;
-}
-.crm-kpi-popover-legend li {
-  display: grid;
-  grid-template-columns: 10px 1fr auto;
-  gap: 0.4rem;
-  align-items: center;
-}
-.crm-kpi-popover-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 16ch;
-}
-.crm-kpi-popover-count {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.95em;
-}
-/* On narrow screens, the popover would overflow. Constrain width and
-   let it wrap below the row gracefully. */
-@media (max-width: 640px) {
-  .crm-kpi-popover { min-width: 220px; max-width: 90vw; }
-  .crm-kpi-popover-body { grid-template-columns: 72px 1fr; gap: 0.5rem; }
-  .crm-kpi-popover-pie { width: 72px; height: 72px; }
-}
+/* (KPI hover popovers retired 2026-05-11 — once chips became the
+   section-master filter, the KPI tiles themselves reflect the chip
+   selection, so the per-tile source pies were duplicate context.) */
 
 /* ── Dark mode overrides for CRM card surfaces ──────────────────────
    Same root cause as the KPI tiles above: many CRM elements use
@@ -5560,6 +5469,22 @@ html[data-theme="dark"] .crm-trend-grid line {
   border-color: var(--accent, #6366f1);
   box-shadow: 0 1px 6px rgba(99, 102, 241, 0.4);
   opacity: 1;
+}
+.crm-source-chip-color {
+  /* Color dot — the section's master source→color key. Same color
+     shows on every segment of that source in the status funnel,
+     objections matrix, and pie. Lets the chip serve as the canonical
+     legend for the whole section. */
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.crm-source-chip.is-active .crm-source-chip-color {
+  /* On the dark-accent active state, lift the dot's contrast. */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45);
 }
 .crm-source-chip-icon {
   /* Channel emoji — mirrors the shared-legend dot below the status/
