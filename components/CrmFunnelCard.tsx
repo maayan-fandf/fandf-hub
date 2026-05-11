@@ -1,5 +1,5 @@
 import { getCrmFunnelForProject, type CrmFunnel } from "@/lib/crmData";
-import CrmSourcePieSection from "./CrmSourcePieSection";
+import CrmSourceAnalysis from "./CrmSourceAnalysis";
 
 /**
  * Server component — renders the project's CRM funnel as a card on the
@@ -229,13 +229,16 @@ export default async function CrmFunnelCard({
         );
       })()}
 
-      {/* Per-source pie (transposed view of the same matrix). Pickable
-          via chip row so only one pie shows at a time — projects with
-          5-8 sources would otherwise fill the screen with redundant
-          donuts. Client component because the chip-picker has local
-          UI state. */}
+      {/* Per-source pie + over-time trendline. The two surfaces share
+          a single source-selection state (chips above) — picking a
+          subset of channels narrows both the objection pie AND the
+          three-series line chart below. Client component because the
+          chip picker has local UI state. */}
       {funnel.sourceBreakdown.length > 0 && (
-        <CrmSourcePieSection breakdown={funnel.sourceBreakdown} />
+        <CrmSourceAnalysis
+          breakdown={funnel.sourceBreakdown}
+          dailyTimeSeries={funnel.dailyTimeSeries}
+        />
       )}
 
       {/* Sellers — BMBY-only. One-line summary form: "Top 5: X(120), Y(80), …" */}

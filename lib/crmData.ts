@@ -120,6 +120,22 @@ export type CrmFunnel = {
     scheduledMeetings: { source: string; count: number; isOther?: boolean }[];
     meetings: { source: string; count: number; isOther?: boolean }[];
   };
+  /** Daily time series for the trendline chart under the source pie.
+   *  One entry per calendar day in the filtered cohort, with per-source
+   *  counts of {leads, scheduled, held}. The trendline client component
+   *  sums these on the fly based on which sources are currently picked
+   *  in the chip row (state shared with the pie), so the chart and the
+   *  pie always reflect the same source filter. Empty when the cohort
+   *  has zero rows. Sorted ascending by date. */
+  dailyTimeSeries: {
+    date: string; // YYYY-MM-DD
+    bySource: {
+      source: string;
+      leads: number;
+      scheduledMeetings: number;
+      meetings: number;
+    }[];
+  }[];
   /** Earliest and latest dates seen in the matched rows (formatted
    *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
    *  is more than a few days behind today, the upstream pipeline has
@@ -202,6 +218,31 @@ function topN<T extends { count: number }>(map: Map<string, number>, n: number):
     .sort((a, b) => b[1] - a[1])
     .slice(0, n)
     .map(([label, count]) => ({ label, count }));
+}
+
+/**
+ * Convert the per-day per-source matrix into the flat, sorted array
+ * shape the trendline component consumes. Dates ascending so the chart
+ * walks left-to-right (or right-to-left in RTL; the SVG is direction-
+ * agnostic, but the lib output stays in chronological order so
+ * client-side sorting isn't needed).
+ */
+function buildDailyTimeSeries(
+  matrix: Map<
+    string,
+    Map<string, { leads: number; scheduledMeetings: number; meetings: number }>
+  >,
+): CrmFunnel["dailyTimeSeries"] {
+  const days = [...matrix.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return days.map(([date, perSource]) => ({
+    date,
+    bySource: [...perSource.entries()].map(([source, counts]) => ({
+      source,
+      leads: counts.leads,
+      scheduledMeetings: counts.scheduledMeetings,
+      meetings: counts.meetings,
+    })),
+  }));
 }
 
 /**
@@ -289,6 +330,14 @@ async function computeBmbyFunnel(
   const contactedBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
+  // Daily time series — date → source → { leads, scheduled, meetings }.
+  // Same per-source tracking as the maps above so the trendline can be
+  // filtered client-side by the selected source set without re-reading
+  // the sheet.
+  const dailySourceMatrix = new Map<
+    string,
+    Map<string, { leads: number; scheduledMeetings: number; meetings: number }>
+  >();
   // For each objection, a map of source → count. We materialize this only
   // for rows where BOTH an objection AND a source are present (otherwise
   // the cross-tab adds noise without information).
@@ -353,6 +402,25 @@ async function computeBmbyFunnel(
       m2.set(src, (m2.get(src) || 0) + 1);
     }
     const d = dateOnly(arr[iEntry]);
+    // Daily time series — record this row's contribution to its
+    // (date, source) bucket. Rows without a parseable date or source
+    // can't be plotted, so they're skipped here (still counted in the
+    // overall KPIs above).
+    if (d && src) {
+      let perDay = dailySourceMatrix.get(d);
+      if (!perDay) {
+        perDay = new Map();
+        dailySourceMatrix.set(d, perDay);
+      }
+      let bucket = perDay.get(src);
+      if (!bucket) {
+        bucket = { leads: 0, scheduledMeetings: 0, meetings: 0 };
+        perDay.set(src, bucket);
+      }
+      bucket.leads++;
+      if (isScheduledMeeting) bucket.scheduledMeetings++;
+      if (isHeldMeeting) bucket.meetings++;
+    }
     if (d) {
       if (!minDate || d < minDate) minDate = d;
       if (!maxDate || d > maxDate) maxDate = d;
@@ -382,6 +450,7 @@ async function computeBmbyFunnel(
       scheduledMeetings: topNWithRest(scheduledMeetingsBySource, 5),
       meetings: topNWithRest(meetingsBySource, 5),
     },
+    dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
     dateRange: { from: minDate, to: maxDate },
     monthFilter,
   };
@@ -422,6 +491,10 @@ async function computeSehelFunnel(
   const contactedBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
+  const dailySourceMatrix = new Map<
+    string,
+    Map<string, { leads: number; scheduledMeetings: number; meetings: number }>
+  >();
   const objectionSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
@@ -494,6 +567,23 @@ async function computeSehelFunnel(
       m2.set(src, (m2.get(src) || 0) + 1);
     }
     const d = dateOnly(arr[iRegDate]);
+    // Daily time series — same shape as BMBY. Rows without parseable
+    // date or source are skipped (still counted in KPI totals above).
+    if (d && src) {
+      let perDay = dailySourceMatrix.get(d);
+      if (!perDay) {
+        perDay = new Map();
+        dailySourceMatrix.set(d, perDay);
+      }
+      let bucket = perDay.get(src);
+      if (!bucket) {
+        bucket = { leads: 0, scheduledMeetings: 0, meetings: 0 };
+        perDay.set(src, bucket);
+      }
+      bucket.leads++;
+      if (isScheduledMeeting) bucket.scheduledMeetings++;
+      if (isHeldMeeting) bucket.meetings++;
+    }
     if (d) {
       if (!minDate || d < minDate) minDate = d;
       if (!maxDate || d > maxDate) maxDate = d;
@@ -521,6 +611,7 @@ async function computeSehelFunnel(
       scheduledMeetings: topNWithRest(scheduledMeetingsBySource, 5),
       meetings: topNWithRest(meetingsBySource, 5),
     },
+    dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
     dateRange: { from: minDate, to: maxDate },
     monthFilter,
   };

@@ -5132,6 +5132,117 @@ html[data-theme="dark"] .crm-kpi-popover {
   .crm-kpi-popover-body { grid-template-columns: 72px 1fr; gap: 0.5rem; }
   .crm-kpi-popover-pie { width: 72px; height: 72px; }
 }
+
+/* ── Dark mode overrides for CRM card surfaces ──────────────────────
+   Same root cause as the KPI tiles above: many CRM elements use
+   var(--surface-hi, #f3f4f6) as a background. --surface-hi isn't
+   defined, so the literal light-gray fallback applies in every theme.
+   Light mode looks fine; dark mode renders those surfaces as bright
+   pills/bars against the dark section bg (the source chips in
+   particular show as glowing white). Override each affected surface
+   to a near-surface dark tint so it sits flat against #1a1a2e but
+   still reads as an "elevated" tile. */
+html[data-theme="dark"] .crm-source-chip {
+  background: #2a2a52;
+  border-color: var(--border);
+  color: var(--text);
+}
+html[data-theme="dark"] .crm-source-chip[aria-pressed="false"] {
+  /* The opacity-0.55 dim looks wrong on dark — it bleaches the chip
+     instead of muting it. Use a flat darker bg + muted text instead. */
+  background: #1a1a36;
+  color: var(--muted);
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+html[data-theme="dark"] .crm-stacked-bar,
+html[data-theme="dark"] .crm-matrix-bar,
+html[data-theme="dark"] .crm-list-bar-track {
+  background: #2a2a52;
+  border-color: var(--border);
+}
+html[data-theme="dark"] .crm-pie-empty {
+  background: #2a2a52 !important;
+  border-color: var(--border);
+}
+html[data-theme="dark"] .crm-pie {
+  /* Soft outline so the donut reads against the section bg in dark.
+     Light mode keeps the existing inset shadow which works fine. */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+html[data-theme="dark"] .crm-matrix-seg-rest,
+html[data-theme="dark"] .crm-stacked-seg-rest {
+  /* Hatched "rest" pattern — flip stripes to dark tones in dark mode
+     so the pattern doesn't read as a bright white block. */
+  background: repeating-linear-gradient(
+    45deg,
+    #3a3a5e,
+    #3a3a5e 4px,
+    #2a2a52 4px,
+    #2a2a52 8px
+  );
+}
+
+/* ── Trendline (CrmFunnelTrendline) ────────────────────────────────
+   SVG line chart underneath the per-source pie section. Three series
+   (leads / scheduled / held) on a shared Y-axis, sensitive to the same
+   source-chip selection as the pie above. */
+.crm-trend-block {
+  margin-top: 1rem;
+}
+.crm-trend-svg {
+  width: 100%;
+  height: 220px;
+  display: block;
+}
+.crm-trend-grid line {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+html[data-theme="dark"] .crm-trend-grid line {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+.crm-trend-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.crm-trend-point {
+  cursor: help;
+  transition: r 120ms ease;
+}
+.crm-trend-point:hover {
+  r: 5;
+}
+.crm-trend-legend {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  font-size: 0.82em;
+}
+.crm-trend-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.crm-trend-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.crm-trend-legend-label {
+  color: var(--text);
+}
+.crm-trend-legend-sum {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .crm-kpi-label {
   font-size: 0.82em;
   color: var(--muted);
@@ -5461,6 +5572,26 @@ html[data-theme="dark"] .crm-kpi-popover {
   align-items: center;
   justify-content: center;
   transition: background 200ms ease;
+  overflow: hidden;
+}
+.crm-pie-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.crm-pie-svg path {
+  cursor: help;
+  transition: opacity 120ms ease, transform 120ms ease;
+  transform-origin: 50% 50%;
+}
+.crm-pie-svg path:hover {
+  /* Subtle dim + slight scale on sibling slices to highlight the
+     hovered one. Browsers render the native <title> tooltip after a
+     short hover delay; the visual feedback bridges that gap. */
+  opacity: 1;
+}
+.crm-pie:has(.crm-pie-svg path:hover) .crm-pie-svg path:not(:hover) {
+  opacity: 0.55;
 }
 .crm-pie-empty {
   background: var(--surface-hi, #f3f4f6) !important;
