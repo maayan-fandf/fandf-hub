@@ -5183,6 +5183,64 @@ html[data-theme="dark"] .crm-stacked-seg-rest {
   );
 }
 
+/* ── Vertical funnel chart (FunnelChart in CrmFunnelCard) ──────────
+   Replaces the old horizontal stacked bar for the status section.
+   Each stage is a centered horizontal bar whose width is the
+   cumulative count, so the chart visually narrows from top (early
+   funnel, everyone passed through) to bottom (closing stages,
+   few survive). Padding scales by viewport — funnel rows compress to
+   labels-inside on narrow screens. */
+.crm-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  padding: 0.2rem 0 0.1rem;
+}
+.crm-funnel-row {
+  display: flex;
+  justify-content: center;
+  cursor: help;
+}
+.crm-funnel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 0.7rem;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  /* min-width keeps the smallest stages still readable; without it,
+     a single-digit count at the funnel tail collapses to nothing. */
+  min-width: 96px;
+  max-width: 100%;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+  transition: width 220ms ease, box-shadow 120ms ease;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.crm-funnel-row:hover .crm-funnel-bar {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.crm-funnel-bar-label {
+  /* Slight shadow gives readability when label sits over a saturated
+     palette color. */
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crm-funnel-bar-count {
+  margin-inline-start: 0.6rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+@media (max-width: 640px) {
+  .crm-funnel-bar { font-size: 0.78em; height: 26px; min-width: 80px; }
+}
+
 /* ── Trendline (CrmFunnelTrendline) ────────────────────────────────
    SVG line chart underneath the per-source pie section. Three series
    (leads / scheduled / held) on a shared Y-axis, sensitive to the same

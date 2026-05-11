@@ -104,12 +104,17 @@ export default async function CrmFunnelCard({
         />
       </div>
 
-      {/* Status breakdown — top buckets only. The CRM has dozens of
-          status values; showing more than ~8 turns into noise. */}
+      {/* Status breakdown — vertical funnel chart in stage order.
+          Each row's width is the cumulative count ("leads currently at
+          this stage or beyond"), so the chart naturally narrows from
+          top (ליד / first contact) to bottom (חוזה / final close). The
+          stage order is the canonical BMBY_STATUS_FUNNEL_ORDER /
+          SEHEL_STATUS_FUNNEL_ORDER constant in lib/crmData.ts — edit
+          there to retune the hierarchy. */}
       {funnel.byStatus.length > 0 && (
         <div className="crm-block">
-          <div className="crm-block-title">סטטוסים</div>
-          <StackedBar items={funnel.byStatus} total={funnel.leads} />
+          <div className="crm-block-title">משפך סטטוסים</div>
+          <FunnelChart items={funnel.byStatus} total={funnel.leads} />
         </div>
       )}
 
@@ -368,65 +373,81 @@ function KpiSourcePopover({
   );
 }
 
-function StackedBar({
+/**
+ * Vertical funnel chart — one centered horizontal bar per stage, in
+ * the funnel-order the lib emits. Each bar's width is the CUMULATIVE
+ * count (this stage + all later stages), so the chart naturally
+ * narrows from top (everyone passed through) to bottom (few made it
+ * to close).
+ *
+ * Why cumulative: the current snapshot of `byStatus` shows leads at
+ * each stage RIGHT NOW. To convert that into a funnel-shape, we treat
+ * any lead currently at a later stage as having "reached" every prior
+ * stage — same model the dashboard's pixel/CRM-leads aggregation
+ * already uses. Caveat: early-funnel stages like טלפון / אינטרנט are
+ * partially alternative (a phone lead doesn't pass through "אינטרנט"),
+ * so the top of the funnel is slightly approximate. Past the early
+ * stages it's exact: a lead currently at "פגישה 1" definitely went
+ * through בטיפול / נקבעה פגישה first.
+ *
+ * Each row carries a native <title> tooltip showing both the
+ * cumulative ("X leads at this stage or beyond") and the absolute
+ * snapshot count ("of which Y currently sit at this stage exactly"),
+ * so the user can read either lens.
+ */
+function FunnelChart({
   items,
   total,
 }: {
   items: { label: string; count: number }[];
   total: number;
 }) {
-  // Render as a single horizontal bar split into status-colored segments,
-  // followed by a legend underneath. Visible-segment color is rotated
-  // through a small accent palette so adjacent segments don't blur.
-  const PALETTE = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9", "#8b5cf6", "#ef4444", "#14b8a6"];
-  const sumShown = items.reduce((n, x) => n + x.count, 0);
-  const rest = Math.max(0, total - sumShown);
+  const PALETTE = [
+    "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9",
+    "#8b5cf6", "#ef4444", "#14b8a6",
+  ];
+  // Cumulative from the END: cum[i] = sum of counts from i to end.
+  // First row gets the largest cumulative (matches "everyone passed
+  // through ליד"), narrowing as we descend.
+  const cumulative: number[] = new Array(items.length).fill(0);
+  let acc = 0;
+  for (let i = items.length - 1; i >= 0; i--) {
+    acc += items[i].count;
+    cumulative[i] = acc;
+  }
+  // Reference width — typically the first row's cumulative. If for
+  // some reason that's 0 (empty cohort), fall back to total → 1 to
+  // avoid divide-by-zero on the percentage math below.
+  const maxCum = cumulative[0] || total || 1;
+
   return (
-    <div className="crm-stacked">
-      <div className="crm-stacked-bar">
-        {items.map((it, i) => {
-          const w = (it.count / total) * 100;
-          if (w < 0.5) return null;
-          return (
+    <div className="crm-funnel">
+      {items.map((it, i) => {
+        const cum = cumulative[i];
+        const wPct = (cum / maxCum) * 100;
+        const cumPct = (cum / total * 100).toFixed(1);
+        const tooltip =
+          `${it.label} — ${cum} (${cumPct}% מהלידים הגיעו לשלב הזה או מעבר)\n` +
+          `מתוכם ${it.count} (${pct(it.count, total)}) נמצאים כעת בשלב הזה בדיוק`;
+        return (
+          <div
+            key={it.label}
+            className="crm-funnel-row"
+            title={tooltip}
+          >
             <span
-              key={it.label}
-              className="crm-stacked-seg"
-              style={{ width: `${w}%`, background: PALETTE[i % PALETTE.length] }}
-              title={`${it.label} — ${it.count} (${pct(it.count, total)})`}
-            />
-          );
-        })}
-        {rest > 0 && (
-          <span
-            className="crm-stacked-seg crm-stacked-seg-rest"
-            style={{ width: `${(rest / total) * 100}%` }}
-            title={`אחר — ${rest} (${pct(rest, total)})`}
-          />
-        )}
-      </div>
-      <ul className="crm-stacked-legend">
-        {items.map((it, i) => (
-          <li key={it.label}>
-            <span
-              className="crm-legend-dot"
-              style={{ background: PALETTE[i % PALETTE.length] }}
-            />
-            <span className="crm-legend-label" title={it.label}>{it.label}</span>
-            <span className="crm-legend-count">
-              {it.count} ({pct(it.count, total)})
+              className="crm-funnel-bar"
+              style={{
+                width: `${wPct}%`,
+                background: PALETTE[i % PALETTE.length],
+              }}
+            >
+              <span className="crm-funnel-bar-label">{it.label}</span>
+              <span className="crm-funnel-bar-count">{cum}</span>
             </span>
-          </li>
-        ))}
-        {rest > 0 && (
-          <li>
-            <span className="crm-legend-dot crm-legend-dot-rest" />
-            <span className="crm-legend-label">אחר</span>
-            <span className="crm-legend-count">
-              {rest} ({pct(rest, total)})
-            </span>
-          </li>
-        )}
-      </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
