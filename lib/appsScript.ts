@@ -637,7 +637,8 @@ export type MorningSignalKind =
   // CRM-funnel-aware signals — generated hub-side from
   // lib/crmAlerts.ts using the project's CRM data (not Apps Script).
   | "meeting-noshow-spike"
-  | "source-converts-poorly";
+  | "source-converts-poorly"
+  | "stale-leads";
 
 export type MorningSeverity = "severe" | "warn" | "info";
 

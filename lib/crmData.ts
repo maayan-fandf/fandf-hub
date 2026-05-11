@@ -141,6 +141,19 @@ export type CrmFunnel = {
    *  is more than a few days behind today, the upstream pipeline has
    *  paused. */
   dateRange: { from: string; to: string };
+  /** Stale-leads detection (cross-period, ignores monthFilter): any
+   *  lead sitting in an early-funnel stage for more than 14 days, no
+   *  matter when it entered. Drives the `stale-leads` alert. Sales-team
+   *  follow-up gap surface — the count is the number of leads that
+   *  sat idle past the threshold; `oldestDays` is the most extreme
+   *  case (good for severity grading); `byStage` shows which stages
+   *  the staleness concentrates in. Empty (count=0) when nothing
+   *  qualifies. */
+  staleLeads: {
+    count: number;
+    oldestDays: number;
+    byStage: { stage: string; count: number }[];
+  };
   /** When the caller passed a monthFilter, this is the exact "YYYY-MM"
    *  used to filter rows. Empty string means no filter was applied (all
    *  available data shown). UI uses this to render the filter chip. */
@@ -281,6 +294,45 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
   "| הרשמה",
 ];
 
+/**
+ * Action-required early-funnel stages for the stale-leads detection.
+ *
+ * Deliberately TIGHTER than "everything before נקבעה פגישה" — that
+ * broader interpretation surfaced ~16K rows across the BMBY workbook
+ * (~80% of all leads) because `טלפון` is the steady-state of the
+ * pipeline, not an actionable early stage. The probe on 2026-05-12
+ * confirmed: with the broad set, every project fired a stale-leads
+ * alert in the hundreds. With the tighter set + contact-recency
+ * filter, the same probe surfaced 7 projects with 5-40 each — the
+ * truly fell-through-the-cracks subset.
+ *
+ *   BMBY:  ליד / ליצור קשר / אין מענה N / בטיפול. These are explicit
+ *          "needs a follow-up touch" states. Excludes טלפון
+ *          (in-pipeline default) and אינטרנט (source-state default).
+ *   Sehel: פניה חדשה / נוצר קשר ראשוני / נשלחו חומרים. Excludes
+ *          בקשר (active conversation, similar steady-state role to
+ *          טלפון in BMBY).
+ *
+ * A row also has to clear a contact-recency check below before
+ * counting as stale — both entry AND last contact must be older than
+ * STALE_LEAD_DAYS. Salespeople who touched a lead recently shouldn't
+ * see their workflow flagged.
+ */
+const BMBY_EARLY_FUNNEL_STAGES = new Set<string>([
+  "ליד",
+  "ליצור קשר",
+  "אין מענה 1",
+  "אין מענה 2",
+  "אין מענה 3",
+  "בטיפול",
+]);
+const SEHEL_EARLY_FUNNEL_STAGES = new Set<string>([
+  "| פניה חדשה",
+  "| נוצר קשר ראשוני",
+  "| נשלחו חומרים",
+]);
+const STALE_LEAD_DAYS = 14;
+
 function sortByFunnelOrder(
   items: { label: string; count: number }[],
   order: readonly string[],
@@ -404,6 +456,15 @@ async function computeBmbyFunnel(
   const contactedBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
+  // Stale-leads tracking: runs BEFORE the monthFilter check below so
+  // it sees every row of the project, not just the filtered cohort.
+  // A lead that came in 60 days ago and is STILL in "טלפון" today is
+  // stale regardless of which month the user is currently viewing.
+  let staleCount = 0;
+  let staleOldestDays = 0;
+  const staleByStage = new Map<string, number>();
+  const staleThresholdMs = STALE_LEAD_DAYS * 86400_000;
+  const nowMs = Date.now();
   // Daily time series — date → source → { leads, scheduled, meetings }.
   // Same per-source tracking as the maps above so the trendline can be
   // filtered client-side by the selected source set without re-reading
@@ -423,6 +484,46 @@ async function computeBmbyFunnel(
     const arr = row as unknown[];
     const proj = norm(arr[iProject]);
     if (proj !== target) continue;
+
+    // Stale-leads check — runs against EVERY project row (deliberately
+    // before the monthFilter bail below). A row counts as stale when
+    // ALL of:
+    //   1. status is in the action-required early-funnel set
+    //   2. תאריך כניסה > 14d ago
+    //   3. תאריך קשר is empty OR > 14d ago (no recent touch)
+    // The contact-recency check is critical — without it, the alert
+    // surfaces the entire historical pipeline. Probe on 2026-05-12
+    // showed: filter (3) drops the noise floor from ~16K alerts to a
+    // handful of genuinely-abandoned leads per project.
+    if (iEntry >= 0) {
+      const stRow = String(arr[iStatus] ?? "").trim();
+      if (stRow && BMBY_EARLY_FUNNEL_STAGES.has(stRow)) {
+        const dEntry = dateOnly(arr[iEntry]);
+        if (dEntry) {
+          const entryMs = Date.parse(dEntry + "T00:00:00");
+          if (!Number.isNaN(entryMs) && nowMs - entryMs > staleThresholdMs) {
+            // Contact-recency: use last touch (contact date if set,
+            // otherwise entry date) as the "days since last activity"
+            // anchor. Both must be > threshold for the row to qualify.
+            let lastTouchMs = entryMs;
+            if (iContactDate >= 0) {
+              const dContact = dateOnly(arr[iContactDate]);
+              if (dContact) {
+                const contactMs = Date.parse(dContact + "T00:00:00");
+                if (!Number.isNaN(contactMs)) lastTouchMs = contactMs;
+              }
+            }
+            if (nowMs - lastTouchMs > staleThresholdMs) {
+              staleCount++;
+              staleByStage.set(stRow, (staleByStage.get(stRow) || 0) + 1);
+              const days = Math.floor((nowMs - lastTouchMs) / 86400_000);
+              if (days > staleOldestDays) staleOldestDays = days;
+            }
+          }
+        }
+      }
+    }
+
     // Month filter — apply before everything else so KPIs, status,
     // objections, etc. are all consistent against the same row cohort.
     if (monthFilter && iEntry >= 0) {
@@ -530,6 +631,13 @@ async function computeBmbyFunnel(
     },
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
     dateRange: { from: minDate, to: maxDate },
+    staleLeads: {
+      count: staleCount,
+      oldestDays: staleOldestDays,
+      byStage: [...staleByStage.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([stage, count]) => ({ stage, count })),
+    },
     monthFilter,
   };
 }
@@ -573,6 +681,14 @@ async function computeSehelFunnel(
     string,
     Map<string, { leads: number; scheduledMeetings: number; meetings: number }>
   >();
+  // Stale-leads tracking — see BMBY function for the rationale. Sehel
+  // uses תאריך רישום as the entry date (the field where "first time
+  // CRM saw this lead" is logged) and the "| <stage>" status format.
+  let staleCount = 0;
+  let staleOldestDays = 0;
+  const staleByStage = new Map<string, number>();
+  const staleThresholdMs = STALE_LEAD_DAYS * 86400_000;
+  const nowMs = Date.now();
   const objectionSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
@@ -584,6 +700,37 @@ async function computeSehelFunnel(
     // Defensive: require either exact match OR a word boundary after the
     // prefix (so "אורנבך 11" doesn't accidentally match "אורנבך 111").
     if (proj !== targetPrefix && proj[targetPrefix.length] !== " ") continue;
+
+    // Stale-leads check — same model as BMBY. Sehel doesn't have a
+    // dedicated "תאריך קשר" column; we use עדכון אחרון (last update)
+    // as the contact-recency anchor, since any meaningful touch in
+    // the salesperson UI bumps that timestamp.
+    if (iRegDate >= 0) {
+      const stRow = String(arr[iStage] ?? "").trim();
+      if (stRow && SEHEL_EARLY_FUNNEL_STAGES.has(stRow)) {
+        const dEntry = dateOnly(arr[iRegDate]);
+        if (dEntry) {
+          const entryMs = Date.parse(dEntry + "T00:00:00");
+          if (!Number.isNaN(entryMs) && nowMs - entryMs > staleThresholdMs) {
+            let lastTouchMs = entryMs;
+            if (iUpdate >= 0) {
+              const dUpdate = dateOnly(arr[iUpdate]);
+              if (dUpdate) {
+                const updateMs = Date.parse(dUpdate + "T00:00:00");
+                if (!Number.isNaN(updateMs)) lastTouchMs = updateMs;
+              }
+            }
+            if (nowMs - lastTouchMs > staleThresholdMs) {
+              staleCount++;
+              staleByStage.set(stRow, (staleByStage.get(stRow) || 0) + 1);
+              const days = Math.floor((nowMs - lastTouchMs) / 86400_000);
+              if (days > staleOldestDays) staleOldestDays = days;
+            }
+          }
+        }
+      }
+    }
+
     // Month filter — applied against תאריך רישום, same field we use for
     // the displayed dateRange.
     if (monthFilter && iRegDate >= 0) {
@@ -692,6 +839,13 @@ async function computeSehelFunnel(
     },
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
     dateRange: { from: minDate, to: maxDate },
+    staleLeads: {
+      count: staleCount,
+      oldestDays: staleOldestDays,
+      byStage: [...staleByStage.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([stage, count]) => ({ stage, count })),
+    },
     monthFilter,
   };
 }

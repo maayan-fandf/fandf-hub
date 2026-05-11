@@ -24,6 +24,13 @@
  *                           Signals dead-weight channel spend — pull
  *                           budget or change targeting.
  *
+ *   stale-leads             when ≥5 leads have been sitting in an
+ *                           early-funnel stage (pre-נקבעה פגישה for
+ *                           BMBY, pre-לקראת פגישה for Sehel) for more
+ *                           than 14 days. Surfaces sales-team
+ *                           follow-up gaps that the cost-per-result
+ *                           signals would never catch.
+ *
  * Caveat: hub-side signals don't have a snooze/dismissal flow today
  * (the dashboard's dismissal sheet wouldn't recognize the keys). For
  * v1 they re-fire each request. Acceptable since they're cohort-based
@@ -95,6 +102,36 @@ export function computeCrmAlerts(args: {
         `סביר שזה קהל לא מתאים — שקול להוריד תקציב או לשנות מיקוד.`,
       channel: ld.source,
       key: `${projectSlug}|source-converts-poorly|${ld.source}|${funnel.monthFilter || "all"}`,
+    });
+  }
+
+  // ── stale-leads ─────────────────────────────────────────────────
+  // The CrmFunnel exposes a project-wide stale-leads tally that's
+  // computed against ALL the project's rows, not the filtered cohort
+  // (deliberately — a lead that hasn't moved in 60 days is stale
+  // regardless of which month the user is currently viewing). Fire
+  // when ≥5 leads qualify; severity climbs with the worst case
+  // (`oldestDays`) AND the total count, whichever is more dramatic.
+  if (funnel.staleLeads && funnel.staleLeads.count >= 5) {
+    const { count, oldestDays, byStage } = funnel.staleLeads;
+    const severity =
+      count >= 15 || oldestDays >= 30
+        ? "severe"
+        : "warn";
+    // Build a short stage summary — "טלפון: 8 · בטיפול: 4" — capped to
+    // top 3 stages so the alert detail stays scannable.
+    const stagesPart = byStage
+      .slice(0, 3)
+      .map((s) => `${s.stage}: ${s.count}`)
+      .join(" · ");
+    out.push({
+      kind: "stale-leads",
+      severity,
+      title: `${count} לידים תקועים בשלב מוקדם מעל ${14} ימים`,
+      detail:
+        (stagesPart ? `${stagesPart} · ` : "") +
+        `הוותיק ביותר: ${oldestDays} ימים. שווה לעבור עליהם ולקדם או לדחות.`,
+      key: `${projectSlug}|stale-leads|${funnel.platform}`,
     });
   }
 
