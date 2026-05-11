@@ -5074,9 +5074,98 @@ html[data-theme="dark"] .quick-note-saved {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+/* Filter chip — appears in the section head when the user has rewound
+   the dashboard to a specific month (monthOverride). Without it, the
+   user has no way to tell whether the numbers below cover all 60 days
+   of data or just the selected month. */
+.crm-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  margin-inline-end: 0.5rem;
+  font-size: 0.78em;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent, #6366f1);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+/* Objection × source cross-tab matrix. Each row is one objection, with
+   a horizontal stacked bar showing the source mix. Stable source→color
+   mapping across rows lets a unified legend underneath replace per-row
+   labels (otherwise we'd hit RTL ellipsis hell on Hebrew source names). */
+.crm-matrix {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+}
+.crm-matrix-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 36px;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.86em;
+}
+.crm-matrix-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-matrix-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--surface-hi, #f3f4f6);
+  border: 1px solid var(--border);
+}
+.crm-matrix-seg {
+  display: block;
+  height: 100%;
+}
+.crm-matrix-seg-rest {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--surface-hi, #e5e7eb),
+    var(--surface-hi, #e5e7eb) 4px,
+    var(--surface, #f3f4f6) 4px,
+    var(--surface, #f3f4f6) 8px
+  );
+}
+.crm-matrix-total {
+  text-align: end;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.crm-matrix-legend {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  font-size: 0.78em;
+}
+.crm-matrix-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+}
+.crm-matrix-legend .crm-legend-label {
+  /* Lift the truncation for legend chips — sources often have long
+     descriptive Hebrew strings; ellipsis at ~22ch keeps row count
+     reasonable while still showing enough to identify. */
+  max-width: 22ch;
+}
 @media (max-width: 640px) {
   .crm-kpi-row { grid-template-columns: repeat(2, 1fr); }
   .crm-list-row { grid-template-columns: 80px 1fr auto; }
+  .crm-matrix-row { grid-template-columns: 100px 1fr 32px; }
 }
 
 /* Latest פריסה card on the project overview page — a large readable

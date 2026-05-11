@@ -64,11 +64,27 @@ export type CrmFunnel = {
   /** Top-5 source values (BMBY `מקור הגעה`, Sehel `מקור הגעה`). Useful
    *  for spot-checking which ad / channel string the CRM is logging. */
   topSources: { label: string; count: number }[];
+  /** Cross-tab: top-5 objections × top-5 sources within this project.
+   *  For each objection, shows how those leads broke down across
+   *  acquisition sources — so the user can see e.g. "מחיר was 50% טלפון
+   *  and 31% רדיו" rather than just the totals. The `sources` array per
+   *  objection is sorted by count desc; an "other" bucket aggregates
+   *  remaining sources into a single segment so the percentages always
+   *  sum to 100%. Empty when the project has no objection text at all. */
+  objectionsBySource: {
+    objection: string;
+    total: number;
+    sources: { source: string; count: number; isOther?: boolean }[];
+  }[];
   /** Earliest and latest dates seen in the matched rows (formatted
    *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
    *  is more than a few days behind today, the upstream pipeline has
    *  paused. */
   dateRange: { from: string; to: string };
+  /** When the caller passed a monthFilter, this is the exact "YYYY-MM"
+   *  used to filter rows. Empty string means no filter was applied (all
+   *  available data shown). UI uses this to render the filter chip. */
+  monthFilter: string;
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -151,6 +167,7 @@ function dateOnly(value: unknown): string {
 async function computeBmbyFunnel(
   subjectEmail: string,
   crmAccount: string,
+  monthFilter: string,
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readBmby(subjectEmail);
   if (!rows.length) return null;
@@ -172,6 +189,10 @@ async function computeBmbyFunnel(
   const byObjection = new Map<string, number>();
   const bySeller = new Map<string, number>();
   const bySource = new Map<string, number>();
+  // For each objection, a map of source → count. We materialize this only
+  // for rows where BOTH an objection AND a source are present (otherwise
+  // the cross-tab adds noise without information).
+  const objectionSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
 
@@ -179,6 +200,12 @@ async function computeBmbyFunnel(
     const arr = row as unknown[];
     const proj = norm(arr[iProject]);
     if (proj !== target) continue;
+    // Month filter — apply before everything else so KPIs, status,
+    // objections, etc. are all consistent against the same row cohort.
+    if (monthFilter && iEntry >= 0) {
+      const d = dateOnly(arr[iEntry]);
+      if (!d.startsWith(monthFilter)) continue;
+    }
     leads++;
     // is_meeting is "0"/"1" stringly typed in the source — be generous.
     const m = String(arr[iMeeting] ?? "").trim();
@@ -196,6 +223,11 @@ async function computeBmbyFunnel(
     if (sel) bySeller.set(sel, (bySeller.get(sel) || 0) + 1);
     const src = String(arr[iSource] ?? "").trim();
     if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
+    if (obj && src) {
+      let m2 = objectionSourceMatrix.get(obj);
+      if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
+      m2.set(src, (m2.get(src) || 0) + 1);
+    }
     const d = dateOnly(arr[iEntry]);
     if (d) {
       if (!minDate || d < minDate) minDate = d;
@@ -215,7 +247,9 @@ async function computeBmbyFunnel(
     topObjections: topN(byObjection, 5),
     topSellers: topN(bySeller, 5),
     topSources: topN(bySource, 5),
+    objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
     dateRange: { from: minDate, to: maxDate },
+    monthFilter,
   };
 }
 
@@ -224,6 +258,7 @@ async function computeBmbyFunnel(
 async function computeSehelFunnel(
   subjectEmail: string,
   crmAccount: string,
+  monthFilter: string,
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readSehel(subjectEmail);
   if (!rows.length) return null;
@@ -247,6 +282,7 @@ async function computeSehelFunnel(
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
   const bySource = new Map<string, number>();
+  const objectionSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
 
@@ -257,6 +293,12 @@ async function computeSehelFunnel(
     // Defensive: require either exact match OR a word boundary after the
     // prefix (so "אורנבך 11" doesn't accidentally match "אורנבך 111").
     if (proj !== targetPrefix && proj[targetPrefix.length] !== " ") continue;
+    // Month filter — applied against תאריך רישום, same field we use for
+    // the displayed dateRange.
+    if (monthFilter && iRegDate >= 0) {
+      const d = dateOnly(arr[iRegDate]);
+      if (!d.startsWith(monthFilter)) continue;
+    }
     leads++;
     // Sehel has no boolean is_meeting; "any non-empty meeting date" is
     // our proxy. False negatives possible if a meeting happened but the
@@ -273,6 +315,11 @@ async function computeSehelFunnel(
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
     const src = String(arr[iSource] ?? "").trim();
     if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
+    if (obj && src) {
+      let m2 = objectionSourceMatrix.get(obj);
+      if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
+      m2.set(src, (m2.get(src) || 0) + 1);
+    }
     const d = dateOnly(arr[iRegDate]);
     if (d) {
       if (!minDate || d < minDate) minDate = d;
@@ -292,8 +339,42 @@ async function computeSehelFunnel(
     topObjections: topN(byObjection, 5),
     topSellers: [], // Sehel doesn't carry a salesperson column we trust
     topSources: topN(bySource, 5),
+    objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
     dateRange: { from: minDate, to: maxDate },
+    monthFilter,
   };
+}
+
+/**
+ * Shape the objection × source cross-tab for display: pick top-5 objections,
+ * and for each, project its source counts into "top-N + other" so the bar
+ * is human-readable and totals reconcile to the objection's overall count.
+ */
+function buildObjectionsBySource(
+  byObjection: Map<string, number>,
+  matrix: Map<string, Map<string, number>>,
+): CrmFunnel["objectionsBySource"] {
+  const TOP_OBJECTIONS = 5;
+  const TOP_SOURCES_PER_OBJECTION = 4;
+  const top = [...byObjection.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_OBJECTIONS);
+  return top
+    .map(([objection, total]) => {
+      const srcMap = matrix.get(objection) || new Map<string, number>();
+      const sorted = [...srcMap.entries()].sort((a, b) => b[1] - a[1]);
+      const head = sorted.slice(0, TOP_SOURCES_PER_OBJECTION);
+      const tailCount = sorted
+        .slice(TOP_SOURCES_PER_OBJECTION)
+        .reduce((n, [, c]) => n + c, 0);
+      const sources: { source: string; count: number; isOther?: boolean }[] =
+        head.map(([source, count]) => ({ source, count }));
+      if (tailCount > 0) {
+        sources.push({ source: "אחר", count: tailCount, isOther: true });
+      }
+      return { objection, total, sources };
+    })
+    .filter((x) => x.sources.length > 0); // skip objections with no source attribution
 }
 
 /* ── Public entry ──────────────────────────────────────────────────── */
@@ -305,7 +386,13 @@ async function computeSehelFunnel(
  *     isn't onboarded with a CRM mapping — e.g. כללי, ben-shemen-lod)
  *   - Keys row has no `CRM platform` value (e.g. צור יצחק — flagged
  *     but not active, the user will set it when the project starts)
- *   - the source tab has zero rows matching that CRM account
+ *   - the source tab has zero rows matching that CRM account (or the
+ *     monthFilter is set and no rows fall in that month)
+ *
+ * `monthFilter`, when provided as "YYYY-MM", restricts rows to that
+ * calendar month against BMBY's תאריך כניסה or Sehel's תאריך רישום —
+ * keeps the CRM data consistent with the dashboard's monthOverride
+ * selection so users compare apples to apples.
  *
  * Caller wraps in <Suspense fallback={null}>; null return collapses
  * the card cleanly.
@@ -313,9 +400,14 @@ async function computeSehelFunnel(
 export async function getCrmFunnelForProject(args: {
   company: string;
   project: string;
+  /** "YYYY-MM" — defaults to "" (no filter, show all available rows). */
+  monthFilter?: string;
 }): Promise<CrmFunnel | null> {
   const company = args.company.trim();
   const project = args.project.trim();
+  const monthFilter = (args.monthFilter || "").trim();
+  // Validate format defensively — caller may pass URL search-param string.
+  const validMonthFilter = /^\d{4}-\d{2}$/.test(monthFilter) ? monthFilter : "";
   if (!company || !project) return null;
 
   // Read Keys to find this project's CRM mapping. readKeysCached is
@@ -347,7 +439,7 @@ export async function getCrmFunnelForProject(args: {
   }
 
   if (platform === "bmby") {
-    return computeBmbyFunnel(driveFolderOwner(), crmAccount);
+    return computeBmbyFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
   }
-  return computeSehelFunnel(driveFolderOwner(), crmAccount);
+  return computeSehelFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
 }

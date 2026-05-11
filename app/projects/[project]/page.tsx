@@ -553,6 +553,7 @@ export default async function ProjectOverviewPage({
           <CrmFunnelCard
             company={companyForDashboard}
             project={projectName}
+            monthFilter={monthOverride}
           />
         </Suspense>
       )}

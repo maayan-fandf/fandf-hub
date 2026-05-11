@@ -20,13 +20,20 @@ import { getCrmFunnelForProject, type CrmFunnel } from "@/lib/crmData";
 export default async function CrmFunnelCard({
   company,
   project,
+  monthFilter,
 }: {
   company: string;
   project: string;
+  /** Threaded from the page's `?monthOverride=YYYY-MM` so this card
+   *  matches whatever month the dashboard iframe is rendering. Empty
+   *  means "no filter — show all rows we have." */
+  monthFilter?: string;
 }) {
-  const funnel = await getCrmFunnelForProject({ company, project }).catch(
-    () => null,
-  );
+  const funnel = await getCrmFunnelForProject({
+    company,
+    project,
+    monthFilter,
+  }).catch(() => null);
   if (!funnel || funnel.leads === 0) return null;
 
   return (
@@ -42,7 +49,15 @@ export default async function CrmFunnelCard({
           </span>
         </h2>
         <div className="section-head-actions">
-          <span className="crm-date-range" title="טווח התאריכים של הנתונים מהמקור">
+          {funnel.monthFilter ? (
+            <span
+              className="crm-filter-chip"
+              title="מסונן לחודש שנבחר במטריקות (משויך לבחירה למעלה)"
+            >
+              מסונן: {funnel.monthFilter}
+            </span>
+          ) : null}
+          <span className="crm-date-range" title="טווח התאריכים של הנתונים בקבוצה המסוננת">
             {funnel.dateRange.from} → {funnel.dateRange.to}
           </span>
         </div>
@@ -103,6 +118,86 @@ export default async function CrmFunnelCard({
           </ul>
         </div>
       )}
+
+      {/* Objections × source cross-tab. For each top-5 objection, a
+          horizontal stacked bar shows how those leads broke down across
+          acquisition sources. Lets the user see e.g. "מחיר was 50% טלפון
+          and 31% רדיו" — actionable for source-mix decisions. The
+          source→color mapping is built once across the whole matrix so
+          the same source uses the same color in every row + the legend. */}
+      {funnel.objectionsBySource.length > 0 && (() => {
+        const PALETTE = [
+          "#6366f1","#10b981","#f59e0b","#ec4899","#0ea5e9",
+          "#8b5cf6","#14b8a6","#ef4444","#a3a3a3","#84cc16",
+        ];
+        const seen = new Map<string, { color: string; isOther: boolean }>();
+        for (const row of funnel.objectionsBySource) {
+          for (const s of row.sources) {
+            if (seen.has(s.source)) continue;
+            const color = s.isOther
+              ? "" // styled via CSS .crm-matrix-seg-rest hatched pattern
+              : PALETTE[seen.size % PALETTE.length];
+            seen.set(s.source, { color, isOther: !!s.isOther });
+          }
+        }
+        const legend = [...seen.entries()].map(([source, v]) => ({
+          source,
+          color: v.color,
+          isOther: v.isOther,
+        }));
+        return (
+          <div className="crm-block">
+            <div className="crm-block-title">התנגדויות לפי מקור הגעה</div>
+            <ul className="crm-matrix">
+              {funnel.objectionsBySource.map((row) => (
+                <li key={row.objection} className="crm-matrix-row">
+                  <span className="crm-matrix-label" title={row.objection}>
+                    {row.objection}
+                  </span>
+                  <span className="crm-matrix-bar">
+                    {row.sources.map((s) => {
+                      const w = (s.count / row.total) * 100;
+                      if (w < 0.5) return null;
+                      const meta = seen.get(s.source);
+                      return (
+                        <span
+                          key={s.source}
+                          className={
+                            "crm-matrix-seg" +
+                            (s.isOther ? " crm-matrix-seg-rest" : "")
+                          }
+                          style={
+                            s.isOther
+                              ? { width: `${w}%` }
+                              : { width: `${w}%`, background: meta?.color }
+                          }
+                          title={`${s.source} — ${s.count} (${pct(s.count, row.total)})`}
+                        />
+                      );
+                    })}
+                  </span>
+                  <span className="crm-matrix-total">{row.total}</span>
+                </li>
+              ))}
+            </ul>
+            <ul className="crm-matrix-legend">
+              {legend.map((s) => (
+                <li key={s.source}>
+                  <span
+                    className={
+                      "crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")
+                    }
+                    style={s.isOther ? undefined : { background: s.color }}
+                  />
+                  <span className="crm-legend-label" title={s.source}>
+                    {s.source}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Sellers — BMBY-only. One-line summary form: "Top 5: X(120), Y(80), …" */}
       {funnel.topSellers.length > 0 && (
