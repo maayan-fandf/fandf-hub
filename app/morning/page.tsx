@@ -6,12 +6,18 @@ import {
   tasksPeopleList,
   type MorningFeed,
   type MorningProject,
+  type MorningSignal,
+  type MorningSeverity,
 } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import { canSeeCampaigns } from "@/lib/userRole";
+import { getCrmFunnelForProject } from "@/lib/crmData";
+import { getAllClientsCurrentForProject } from "@/lib/allClients";
+import { computeCrmAlerts } from "@/lib/crmAlerts";
+import { driveFolderOwner } from "@/lib/sa";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 import GoogleAdsIcon from "@/components/GoogleAdsIcon";
@@ -76,7 +82,43 @@ export default async function MorningPage({
   const adLinkSubject = overrideEmail || me;
   const showAdLinks = canViewAdLinks(adLinkSubject, peopleListData);
 
-  const allProjects = data?.projects ?? [];
+  const rawProjects = data?.projects ?? [];
+  // Enrich each project with hub-side CRM alerts (computeCrmAlerts) and
+  // merge them into the project's `signals` array. Without this, the
+  // morning page shows ONLY the Apps-Script-side dashboard alerts and
+  // misses meeting-noshow-spike / source-converts-poorly /
+  // creative-mismatch / stale-leads — which is why the same project on
+  // /projects/[name] shows more alerts than on /morning.
+  //
+  // Cost: per project, two cached reads (CRM workbook + ALL CLIENTS).
+  // All underlying reads are two-layer cached (unstable_cache 5min +
+  // per-request cache()), so on warm cache this is in-memory filter
+  // work; on cold cache the slowest underlying read dominates.
+  // Promise.allSettled so one stuck project doesn't block the page.
+  const enrichedResults = await Promise.allSettled(
+    rawProjects.map(async (p) => {
+      if (!p.company) return p;
+      const subjectEmail = driveFolderOwner();
+      const [funnel, allClients] = await Promise.all([
+        getCrmFunnelForProject({ company: p.company, project: p.name })
+          .catch(() => null),
+        getAllClientsCurrentForProject({ subjectEmail, project: p.name, projectSlug: p.slug })
+          .catch(() => []),
+      ]);
+      const crmSignals = computeCrmAlerts({
+        funnel,
+        allClients,
+        projectSlug: p.slug || p.name,
+      });
+      if (crmSignals.length === 0) return p;
+      const signals: MorningSignal[] = [...p.signals, ...crmSignals];
+      return { ...p, signals, maxSeverity: maxSeverityFromSignals(signals) };
+    }),
+  );
+  const allProjects: MorningProject[] = enrichedResults.map((r, i) =>
+    r.status === "fulfilled" ? r.value : rawProjects[i],
+  );
+
   // Narrow to projects where the scoped person is on the roster. Null set
   // = stale cookie (person no longer on any project), fall back to full
   // feed so the page doesn't go empty — same pattern as app/layout.tsx.
@@ -87,16 +129,16 @@ export default async function MorningPage({
     ? allProjects.filter((p) => scopedSet.has(p.name))
     : allProjects;
 
-  // Recompute severity counts against the scoped set so the chip counts
-  // (above the severity filter bar) match what will actually render.
-  const counts = scopedSet
-    ? {
-        total: projects.length,
-        severe: projects.filter((p) => p.maxSeverity === 3).length,
-        warn: projects.filter((p) => p.maxSeverity === 2).length,
-        clear: projects.filter((p) => p.maxSeverity === 0).length,
-      }
-    : data?.counts ?? { total: 0, severe: 0, warn: 0, clear: 0 };
+  // Recompute severity counts from the final (post-CRM-merge) project
+  // list — both the scoped and unscoped cases need this, since the
+  // Apps-Script-side counts in `data.counts` don't know about the hub-
+  // merged CRM alerts.
+  const counts = {
+    total: projects.length,
+    severe: projects.filter((p) => p.maxSeverity === 3).length,
+    warn: projects.filter((p) => p.maxSeverity === 2).length,
+    clear: projects.filter((p) => p.maxSeverity === 0).length,
+  };
 
   const visible = projects.filter((p) => {
     if (!severityFilter) return true;
@@ -232,6 +274,29 @@ export default async function MorningPage({
       )}
     </main>
   );
+}
+
+/**
+ * Mirror of the Apps-Script-side `SEVERITY_RANK` (`Code.js#L3417`):
+ *   severe → 3, warn → 2, info → 1, clear → 0.
+ * Used to recompute `maxSeverity` after merging hub-side CRM alerts
+ * into a project's signal list so the morning page's chip counts +
+ * card colors reflect the merged severity, not just the original
+ * Apps-Script-computed value.
+ */
+function maxSeverityFromSignals(signals: MorningSignal[]): number {
+  let m = 0;
+  for (const s of signals) {
+    const r = severityRank(s.severity);
+    if (r > m) m = r;
+  }
+  return m;
+}
+function severityRank(s: MorningSeverity): number {
+  if (s === "severe") return 3;
+  if (s === "warn") return 2;
+  if (s === "info") return 1;
+  return 0;
 }
 
 function buildHref(scope: string, severity: string) {
