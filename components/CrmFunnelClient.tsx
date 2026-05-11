@@ -86,23 +86,59 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   // selected these match the project totals minus rows with no source
   // attribution (the lib's sourceMatrices only counts rows with a
   // `מקור הגעה` value).
+  //
+  // Also returns the per-KPI source breakdown (sorted desc) so the
+  // hover popovers on each tile can render a mini-pie + legend
+  // showing which channels contributed.
   const kpis = useMemo(() => {
-    const sum = (m: Record<string, number>) =>
-      Object.entries(m).reduce(
-        (n, [s, c]) => n + (selected.has(s) ? c : 0),
-        0,
-      );
-    const leads = sum(sm.leadsBySource);
-    const contacted = sum(sm.contactedBySource);
-    const scheduled = sum(sm.scheduledMeetingsBySource);
-    const meetings = sum(sm.meetingsBySource);
+    const breakdown = (m: Record<string, number>) => {
+      const rows: { source: string; count: number }[] = [];
+      for (const [s, c] of Object.entries(m)) {
+        if (!selected.has(s) || c === 0) continue;
+        rows.push({ source: s, count: c });
+      }
+      rows.sort((a, b) => b.count - a.count);
+      return rows;
+    };
+    const leadsBreakdown = breakdown(sm.leadsBySource);
+    const contactedBreakdown = breakdown(sm.contactedBySource);
+    const scheduledBreakdown = breakdown(sm.scheduledMeetingsBySource);
+    const meetingsBreakdown = breakdown(sm.meetingsBySource);
+    const sumOf = (rows: { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
+    const leads = sumOf(leadsBreakdown);
+    const contacted = sumOf(contactedBreakdown);
+    const scheduled = sumOf(scheduledBreakdown);
+    const meetings = sumOf(meetingsBreakdown);
     return {
       leads,
       contacted,
       scheduledMeetings: scheduled,
       meetings,
       meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
+      breakdowns: {
+        leads: leadsBreakdown,
+        contacted: contactedBreakdown,
+        scheduledMeetings: scheduledBreakdown,
+        meetings: meetingsBreakdown,
+      },
     };
+  }, [selected, sm]);
+
+  // ── Per-objection source breakdown for pie-legend hover popovers ──
+  // Mirrors the KPI breakdowns shape — for each objection currently
+  // visible in the pie, what's the chip-filtered source mix?
+  const objectionSourceBreakdowns = useMemo(() => {
+    const out = new Map<string, { source: string; count: number }[]>();
+    for (const [objection, srcMap] of Object.entries(sm.objectionBySource)) {
+      const rows: { source: string; count: number }[] = [];
+      for (const [source, c] of Object.entries(srcMap)) {
+        if (!selected.has(source) || c === 0) continue;
+        rows.push({ source, count: c });
+      }
+      rows.sort((a, b) => b.count - a.count);
+      if (rows.length > 0) out.set(objection, rows);
+    }
+    return out;
   }, [selected, sm]);
 
   // ── Status funnel rows (filtered + top-N + funnel-ordered) ────────
@@ -300,11 +336,27 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           selected they match the project totals (modulo rows with no
           source attribution, which sit outside the chip taxonomy). */}
       <div className="crm-kpi-row">
-        <KpiTile label="לידים" value={fmtInt(kpis.leads)} />
-        <KpiTile label="נוצר קשר" value={fmtInt(kpis.contacted)} sub={pct(kpis.contacted, kpis.leads)} />
-        <KpiTile label="תואמה פגישה" value={fmtInt(kpis.scheduledMeetings)} sub={pct(kpis.scheduledMeetings, kpis.leads)} />
-        <KpiTile label="פגישות" value={fmtInt(kpis.meetings)} sub={pct(kpis.meetings, kpis.leads)} />
-        <KpiTile label="יחס פגישה" value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
+        <KpiTile label="לידים"
+          value={fmtInt(kpis.leads)}
+          breakdown={kpis.breakdowns.leads}
+          palette={palette} />
+        <KpiTile label="נוצר קשר"
+          value={fmtInt(kpis.contacted)}
+          sub={pct(kpis.contacted, kpis.leads)}
+          breakdown={kpis.breakdowns.contacted}
+          palette={palette} />
+        <KpiTile label="תואמה פגישה"
+          value={fmtInt(kpis.scheduledMeetings)}
+          sub={pct(kpis.scheduledMeetings, kpis.leads)}
+          breakdown={kpis.breakdowns.scheduledMeetings}
+          palette={palette} />
+        <KpiTile label="פגישות"
+          value={fmtInt(kpis.meetings)}
+          sub={pct(kpis.meetings, kpis.leads)}
+          breakdown={kpis.breakdowns.meetings}
+          palette={palette} />
+        <KpiTile label="יחס פגישה"
+          value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
       </div>
 
       {/* Status funnel + objections × source — 50/50 grid, both stacked
@@ -411,18 +463,40 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                 {pieData.slices.length === 0 ? (
                   <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
                 ) : (
-                  pieData.slices.map((s) => (
-                    <li key={s.label}>
-                      <span
-                        className={"crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")}
-                        style={s.isOther ? undefined : { background: s.color }}
-                      />
-                      <span className="crm-legend-label" title={s.label}>{s.label}</span>
-                      <span className="crm-legend-count">
-                        {s.count} ({((s.count / pieData.total) * 100).toFixed(1)}%)
-                      </span>
-                    </li>
-                  ))
+                  pieData.slices.map((s) => {
+                    // For non-"אחר" slices, look up the per-objection
+                    // source breakdown so the hover popover can show
+                    // which channels contributed to this objection.
+                    // "אחר" rolls multiple objections together so a
+                    // per-source breakdown isn't meaningful; skip the
+                    // popover there.
+                    const breakdown = s.isOther
+                      ? null
+                      : objectionSourceBreakdowns.get(s.label) || null;
+                    const hasPopover = !!breakdown && breakdown.length > 0;
+                    return (
+                      <li
+                        key={s.label}
+                        className={hasPopover ? "crm-pie-legend-row crm-pie-legend-row-has-popover" : "crm-pie-legend-row"}
+                      >
+                        <span
+                          className={"crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")}
+                          style={s.isOther ? undefined : { background: s.color }}
+                        />
+                        <span className="crm-legend-label" title={s.label}>{s.label}</span>
+                        <span className="crm-legend-count">
+                          {s.count} ({((s.count / pieData.total) * 100).toFixed(1)}%)
+                        </span>
+                        {hasPopover ? (
+                          <ChannelMiniPie
+                            data={breakdown!}
+                            palette={palette}
+                            metric={s.label}
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })
                 )}
               </ul>
             </div>
@@ -453,12 +527,100 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   );
 }
 
-function KpiTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function KpiTile({
+  label,
+  value,
+  sub,
+  breakdown,
+  palette,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  /** Per-source breakdown for this metric under the current chip
+   *  selection. When present (and non-empty), the tile gets a hover
+   *  popover with a mini-pie of which channels contributed. */
+  breakdown?: { source: string; count: number }[];
+  palette?: Map<string, string>;
+}) {
+  const hasPopover = !!breakdown && breakdown.length > 0 && !!palette;
   return (
-    <div className="crm-kpi-tile">
+    <div className={"crm-kpi-tile" + (hasPopover ? " crm-kpi-tile-has-popover" : "")}>
       <div className="crm-kpi-value">{value}</div>
       <div className="crm-kpi-label">{label}</div>
       {sub ? <div className="crm-kpi-sub">{sub}</div> : null}
+      {hasPopover ? (
+        <ChannelMiniPie data={breakdown!} palette={palette!} metric={label} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Hover popover — a conic-gradient mini-pie plus a tabular legend
+ * showing how a metric or objection breaks down across the section's
+ * channels under the current chip selection. Pure CSS reveal (parent
+ * carries `*-has-popover`; this component renders unconditionally and
+ * the CSS hides it until hover/focus-within). Shared palette + channel
+ * emojis match the rest of the section.
+ *
+ * `data` is expected to be sorted desc; we don't re-sort here so the
+ * legend order matches whatever the caller chose (top-channel first
+ * for KPIs; for objections, that's also top-channel first).
+ */
+function ChannelMiniPie({
+  data,
+  palette,
+  metric,
+}: {
+  data: { source: string; count: number }[];
+  palette: Map<string, string>;
+  metric: string;
+}) {
+  const total = data.reduce((n, s) => n + s.count, 0);
+  if (total === 0) return null;
+  // Build conic-gradient stops in the legend's natural order so the
+  // pie's colors visually align with the rows below.
+  let cum = 0;
+  const stops: string[] = [];
+  for (const s of data) {
+    if (s.count === 0) continue;
+    const start = (cum / total) * 360;
+    cum += s.count;
+    const end = (cum / total) * 360;
+    if (end - start < 1.8) continue; // < 0.5% — skip invisible slice
+    const fill = palette.get(s.source) || "#cbd5e1";
+    stops.push(`${fill} ${start.toFixed(3)}deg ${end.toFixed(3)}deg`);
+  }
+  const pieStyle = stops.length
+    ? { background: `conic-gradient(${stops.join(", ")})` }
+    : { background: "#f3f4f6" };
+  return (
+    <div className="crm-channel-tooltip" role="tooltip">
+      <div className="crm-channel-tooltip-title">{metric} — לפי מקור הגעה</div>
+      <div className="crm-channel-tooltip-body">
+        <div className="crm-channel-tooltip-pie" style={pieStyle} />
+        <ul className="crm-channel-tooltip-legend">
+          {data.map((s) => {
+            if (s.count === 0) return null;
+            const icon = channelIcon(s.source);
+            const pctText = ((s.count / total) * 100).toFixed(1);
+            return (
+              <li key={s.source}>
+                <span
+                  className="crm-channel-tooltip-dot"
+                  style={{ background: palette.get(s.source) || "#cbd5e1" }}
+                />
+                {icon ? <span className="crm-channel-tooltip-icon" aria-hidden>{icon}</span> : null}
+                <span className="crm-channel-tooltip-name" title={s.source}>{s.source}</span>
+                <span className="crm-channel-tooltip-count">
+                  {s.count} ({pctText}%)
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
