@@ -2456,20 +2456,15 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   font-weight: 500;
 }
 
+/* Stack vertically so the chat + tasks cards span the same width as
+   the alerts / prisot / dashboard sections below them. The previous
+   2-col layout (1fr 1.2fr at ≥1100px) left a vertical gap strip
+   running between the two cards that broke the visual alignment
+   with the full-width cards below — see Maayan's 2026-05-12 report. */
 .project-sections {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 1.25rem;
-}
-
-@media (min-width: 1100px) {
-  /* Two columns now — the previous third (תיוגים שלך) was merged into
-     the discussion column, which carries an inline toggle to switch
-     between "all" and "🏷️ תיוגים שלי". The discussion column gets
-     the wider track since it's the busiest. */
-  .project-sections {
-    grid-template-columns: 1fr 1.2fr;
-  }
 }
 
 /* ── Tasks-channel aggregated feed ──────────────────────────────────
@@ -9359,7 +9354,11 @@ html[data-theme="dark"] .tasks-campaign-chip {
   margin-top: .15em;
 }
 html[data-theme="dark"] .agenda-panel {
-  background: rgba(255, 255, 255, .02);
+  /* In dark mode --surface (#1f1f3a) gives the panel a visible
+     lift off the page background (#0a0a18) so the right-rail reads
+     as a distinct surface. Previous override of rgba(255,255,255,.02)
+     was effectively transparent and made the panel disappear. */
+  background: var(--surface);
 }
 
 /* TaskApprovalConfirmBanner — appears at the top of a task body when
