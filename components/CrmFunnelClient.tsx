@@ -69,7 +69,11 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [searchPopoverOpen]);
 
-  const addSubstringTerm = (term: string) => {
+  // `clearSearch` controls whether the typed search text resets after
+  // the term is added. Keyboard paths (Enter, + הוסף) clear so the
+  // user can type a fresh term; row-click paths preserve the search
+  // so the filtered list stays in place for multi-select.
+  const addSubstringTerm = (term: string, opts?: { clearSearch?: boolean }) => {
     const t = term.trim();
     if (!t) return;
     setSubstringTerms((prev) => {
@@ -77,7 +81,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
       next.add(t);
       return next;
     });
-    setSearchInput("");
+    if (opts?.clearSearch) setSearchInput("");
   };
   const removeSubstringTerm = (term: string) => {
     setSubstringTerms((prev) => {
@@ -87,6 +91,24 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     });
   };
   const clearSubstringTerms = () => setSubstringTerms(new Set());
+  /** Toggle every currently-visible (i.e. search-filtered) source's
+   *  selection state. If ALL visible sources are already selected,
+   *  this acts as "unselect all visible"; otherwise it adds the
+   *  unselected ones. Lets the user grab a typed-filter result set
+   *  in one click without going through each row. */
+  const toggleAllVisible = () => {
+    setSubstringTerms((prev) => {
+      const next = new Set(prev);
+      const visible = searchListSources;
+      const allSelected = visible.every((s) => next.has(s));
+      if (allSelected) {
+        for (const s of visible) next.delete(s);
+      } else {
+        for (const s of visible) next.add(s);
+      }
+      return next;
+    });
+  };
 
   // Combined source predicate — every aggregation uses this so the
   // chip filter AND the substring filter narrow the data consistently.
@@ -417,7 +439,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && searchInput.trim()) {
                       e.preventDefault();
-                      addSubstringTerm(searchInput);
+                      addSubstringTerm(searchInput, { clearSearch: true });
                     }
                   }}
                   autoFocus
@@ -450,12 +472,33 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                   <button
                     type="button"
                     className="crm-source-search-add"
-                    onClick={() => addSubstringTerm(searchInput)}
+                    onClick={() => addSubstringTerm(searchInput, { clearSearch: true })}
                   >
                     + הוסף &quot;{searchInput.trim()}&quot; כמסנן טקסט
                   </button>
                 )}
-                <ul className="crm-source-search-list">
+                {searchListSources.length > 0 && (() => {
+                  const allVisibleSelected = searchListSources.every((s) =>
+                    substringTerms.has(s),
+                  );
+                  return (
+                    <button
+                      type="button"
+                      className="crm-source-search-toggle-all"
+                      onClick={toggleAllVisible}
+                      title={
+                        allVisibleSelected
+                          ? "בטל את הסימון של כל ההתאמות"
+                          : "סמן את כל ההתאמות הנראות"
+                      }
+                    >
+                      {allVisibleSelected
+                        ? `✓ בטל סימון של ${searchListSources.length} ההתאמות`
+                        : `סמן את כל ${searchListSources.length} ההתאמות`}
+                    </button>
+                  );
+                })()}
+                <ul className="crm-source-search-list" role="listbox" aria-multiselectable="true">
                   {searchListSources.length === 0 ? (
                     <li className="crm-source-search-empty">אין התאמות.</li>
                   ) : (
@@ -467,16 +510,36 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                         <li key={source}>
                           <button
                             type="button"
+                            role="option"
+                            aria-selected={isTerm}
                             className={
                               "crm-source-search-row" +
                               (isTerm ? " is-active" : "")
                             }
+                            // Row click does NOT clear the search input
+                            // — keeps the typed filter in place so the
+                            // user can multi-select within the same
+                            // filtered list without losing context.
                             onClick={() =>
                               isTerm
                                 ? removeSubstringTerm(source)
                                 : addSubstringTerm(source)
                             }
                           >
+                            {/* Checkbox visual — makes multi-select
+                                obvious; the row is technically still
+                                a button so keyboard activation +
+                                screen-reader semantics work via
+                                role="option" + aria-selected. */}
+                            <span
+                              className={
+                                "crm-source-search-check" +
+                                (isTerm ? " is-checked" : "")
+                              }
+                              aria-hidden="true"
+                            >
+                              {isTerm ? "✓" : ""}
+                            </span>
                             <span
                               className="crm-source-chip-color"
                               style={{ background: palette.get(source) }}

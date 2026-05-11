@@ -5757,6 +5757,46 @@ html[data-theme="dark"] .crm-source-search-row:hover {
   border-color: rgba(99, 102, 241, 0.45);
   color: var(--accent, #6366f1);
 }
+.crm-source-search-check {
+  /* Checkbox-style indicator — sits before the source color/emoji.
+     Makes multi-select obvious at a glance. Empty box when unchecked,
+     ✓ centered when checked. Same dimensions in both states so the
+     row content doesn't shift on selection. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: transparent;
+  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+.crm-source-search-check.is-checked {
+  background: var(--accent, #6366f1);
+  border-color: var(--accent, #6366f1);
+  color: #ffffff;
+}
+.crm-source-search-toggle-all {
+  font: inherit;
+  font-size: 0.85em;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent, #6366f1);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  text-align: center;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.crm-source-search-toggle-all:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.45);
+}
 .crm-source-search-row-name {
   flex: 1 1 auto;
   overflow: hidden;
