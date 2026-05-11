@@ -95,6 +95,18 @@ export type CrmFunnel = {
     total: number;
     topObjections: { label: string; count: number; isOther?: boolean }[];
   }[];
+  /** Per-KPI source-distribution pies, rendered as hover tooltips on
+   *  each KPI tile. Same top-N + "אחר" rest-bucket shape as
+   *  `sourceBreakdown` entries so the UI can share the conic-gradient
+   *  renderer. Each entry's `total` = the KPI's headline number, and
+   *  `sources` sums to that total. Empty array when the KPI is 0 or
+   *  has no source attribution (e.g. all matching rows had blank
+   *  `מקור הגעה`). */
+  kpiSourceBreakdowns: {
+    leads: { source: string; count: number; isOther?: boolean }[];
+    contacted: { source: string; count: number; isOther?: boolean }[];
+    meetings: { source: string; count: number; isOther?: boolean }[];
+  };
   /** Earliest and latest dates seen in the matched rows (formatted
    *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
    *  is more than a few days behind today, the upstream pipeline has
@@ -179,6 +191,25 @@ function topN<T extends { count: number }>(map: Map<string, number>, n: number):
     .map(([label, count]) => ({ label, count }));
 }
 
+/**
+ * Top-N entries plus an `אחר` rest bucket aggregating the tail. Used for
+ * the KPI-tile hover pies where percentages must sum to 100% of the
+ * source map's total. Empty map → empty array (UI hides the popover).
+ */
+function topNWithRest(
+  map: Map<string, number>,
+  n: number,
+): { source: string; count: number; isOther?: boolean }[] {
+  if (map.size === 0) return [];
+  const sorted = [...map.entries()].sort((a, b) => b[1] - a[1]);
+  const head = sorted.slice(0, n);
+  const tail = sorted.slice(n).reduce((acc, [, c]) => acc + c, 0);
+  const out: { source: string; count: number; isOther?: boolean }[] =
+    head.map(([source, count]) => ({ source, count }));
+  if (tail > 0) out.push({ source: "אחר", count: tail, isOther: true });
+  return out;
+}
+
 function dateOnly(value: unknown): string {
   // Source data can be either "YYYY-MM-DD" (BMBY entry date), "dd-mm-yyyy hh:mm"
   // (Sehel registration), or a sheets serial number when the cell is
@@ -235,6 +266,14 @@ async function computeBmbyFunnel(
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
   const bySource = new Map<string, number>();
+  // Per-KPI source breakdowns for the hover-popover pies on the KPI
+  // tiles. Each Map tracks, for the subset of rows that contributed to
+  // that KPI, which `מקור הגעה` they came from. leadsBySource is
+  // equivalent to the full bySource map (every counted row is a lead),
+  // but kept separate for clarity at the render site.
+  const leadsBySource = new Map<string, number>();
+  const contactedBySource = new Map<string, number>();
+  const meetingsBySource = new Map<string, number>();
   // For each objection, a map of source → count. We materialize this only
   // for rows where BOTH an objection AND a source are present (otherwise
   // the cross-tab adds noise without information).
@@ -258,17 +297,24 @@ async function computeBmbyFunnel(
     // נקבעה פגישה, פגישה בוטלה). includes() not startsWith() so we
     // don't miss the "נקבעה פגישה" variant.
     const st = String(arr[iStatus] ?? "").trim();
-    if (st.includes("פגישה")) meetings++;
+    const isMeeting = st.includes("פגישה");
+    if (isMeeting) meetings++;
     // "Contacted" proxy: row has a non-empty תאריך קשר. The CRM populates
     // this the first time a salesperson logs an outreach attempt, so it's
     // a reasonable "did anyone try?" signal short of pulling the full
     // activity log.
-    if (iContactDate >= 0 && String(arr[iContactDate] ?? "").trim()) contacted++;
+    const isContacted = iContactDate >= 0 && String(arr[iContactDate] ?? "").trim() !== "";
+    if (isContacted) contacted++;
     if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
     const obj = String(arr[iObjection] ?? "").trim();
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
     const src = normSource(arr[iSource]);
-    if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
+    if (src) {
+      bySource.set(src, (bySource.get(src) || 0) + 1);
+      leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
+      if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
+      if (isMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
+    }
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
       if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
@@ -297,6 +343,11 @@ async function computeBmbyFunnel(
     topSources: topN(bySource, 5),
     objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
     sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
+    kpiSourceBreakdowns: {
+      leads: topNWithRest(leadsBySource, 5),
+      contacted: topNWithRest(contactedBySource, 5),
+      meetings: topNWithRest(meetingsBySource, 5),
+    },
     dateRange: { from: minDate, to: maxDate },
     monthFilter,
   };
@@ -331,6 +382,10 @@ async function computeSehelFunnel(
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
   const bySource = new Map<string, number>();
+  // Per-KPI source breakdowns — see the BMBY function for the rationale.
+  const leadsBySource = new Map<string, number>();
+  const contactedBySource = new Map<string, number>();
+  const meetingsBySource = new Map<string, number>();
   const objectionSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
@@ -352,18 +407,25 @@ async function computeSehelFunnel(
     // Sehel has no boolean is_meeting; "any non-empty meeting date" is
     // our proxy. False negatives possible if a meeting happened but the
     // salesperson didn't log it — same shortcut the source dashboard uses.
-    if (iMeetingDate >= 0 && String(arr[iMeetingDate] ?? "").trim()) meetings++;
+    const isMeeting = iMeetingDate >= 0 && String(arr[iMeetingDate] ?? "").trim() !== "";
+    if (isMeeting) meetings++;
     // "Contacted" proxy for Sehel: any update timestamp ≠ registration
     // timestamp implies someone touched the row.
     const reg = String(arr[iRegDate] ?? "").trim();
     const upd = iUpdate >= 0 ? String(arr[iUpdate] ?? "").trim() : "";
-    if (upd && upd !== reg) contacted++;
+    const isContacted = upd !== "" && upd !== reg;
+    if (isContacted) contacted++;
     const st = String(arr[iStage] ?? "").trim();
     if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
     const obj = String(arr[iObjection] ?? "").trim();
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
     const src = normSource(arr[iSource]);
-    if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
+    if (src) {
+      bySource.set(src, (bySource.get(src) || 0) + 1);
+      leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
+      if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
+      if (isMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
+    }
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
       if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
@@ -390,6 +452,11 @@ async function computeSehelFunnel(
     topSources: topN(bySource, 5),
     objectionsBySource: buildObjectionsBySource(byObjection, objectionSourceMatrix),
     sourceBreakdown: buildSourceBreakdown(objectionSourceMatrix),
+    kpiSourceBreakdowns: {
+      leads: topNWithRest(leadsBySource, 5),
+      contacted: topNWithRest(contactedBySource, 5),
+      meetings: topNWithRest(meetingsBySource, 5),
+    },
     dateRange: { from: minDate, to: maxDate },
     monthFilter,
   };

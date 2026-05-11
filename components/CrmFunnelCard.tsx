@@ -64,18 +64,30 @@ export default async function CrmFunnelCard({
         </div>
       </div>
 
-      {/* KPI tiles */}
+      {/* KPI tiles. Each (except "יחס פגישה", which is a derived %) gets
+          a hover popover showing the source breakdown for that metric
+          as a small pie + legend — same conic-gradient renderer as the
+          per-source pie picker below. Pure CSS hover; no JS state. */}
       <div className="crm-kpi-row">
-        <KpiTile label="לידים" value={fmtInt(funnel.leads)} />
+        <KpiTile
+          label="לידים"
+          value={fmtInt(funnel.leads)}
+          sourceBreakdown={funnel.kpiSourceBreakdowns.leads}
+          metricTotal={funnel.leads}
+        />
         <KpiTile
           label="נוצר קשר"
           value={fmtInt(funnel.contacted)}
           sub={pct(funnel.contacted, funnel.leads)}
+          sourceBreakdown={funnel.kpiSourceBreakdowns.contacted}
+          metricTotal={funnel.contacted}
         />
         <KpiTile
           label="פגישות"
           value={fmtInt(funnel.meetings)}
           sub={pct(funnel.meetings, funnel.leads)}
+          sourceBreakdown={funnel.kpiSourceBreakdowns.meetings}
+          metricTotal={funnel.meetings}
         />
         <KpiTile
           label="יחס פגישה"
@@ -239,16 +251,107 @@ function KpiTile({
   label,
   value,
   sub,
+  sourceBreakdown,
+  metricTotal,
 }: {
   label: string;
   value: string;
   sub?: string;
+  /** Top-5 + rest source breakdown for this KPI. Drives the hover
+   *  popover. Omitted → no popover renders. */
+  sourceBreakdown?: { source: string; count: number; isOther?: boolean }[];
+  /** Headline number this tile represents — used as the denominator
+   *  for the pie segments + legend percentages. When 0, the popover
+   *  doesn't render (nothing meaningful to draw). */
+  metricTotal?: number;
 }) {
+  const hasPopover =
+    !!sourceBreakdown &&
+    sourceBreakdown.length > 0 &&
+    !!metricTotal &&
+    metricTotal > 0;
   return (
-    <div className="crm-kpi-tile">
+    <div
+      className={
+        "crm-kpi-tile" + (hasPopover ? " crm-kpi-tile-has-popover" : "")
+      }
+    >
       <div className="crm-kpi-value">{value}</div>
       <div className="crm-kpi-label">{label}</div>
       {sub ? <div className="crm-kpi-sub">{sub}</div> : null}
+      {hasPopover ? (
+        <KpiSourcePopover
+          breakdown={sourceBreakdown!}
+          total={metricTotal!}
+          metric={label}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Hover popover for a KPI tile — small donut + legend of how that
+ * metric breaks down across acquisition sources. Pure CSS reveal (no
+ * client state) via the parent's :hover, so this stays a server
+ * component. Uses the same conic-gradient pie pattern as
+ * CrmSourcePieSection but in a more compact form.
+ */
+function KpiSourcePopover({
+  breakdown,
+  total,
+  metric,
+}: {
+  breakdown: { source: string; count: number; isOther?: boolean }[];
+  total: number;
+  metric: string;
+}) {
+  const PALETTE = [
+    "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9",
+    "#8b5cf6", "#14b8a6", "#ef4444",
+  ];
+  // Walk segments, emit conic-gradient stops.
+  let cum = 0;
+  const stops: string[] = [];
+  breakdown.forEach((s, i) => {
+    const start = (cum / total) * 360;
+    cum += s.count;
+    const end = (cum / total) * 360;
+    if (end - start < 1.8) return; // < 0.5% — skip invisible slice
+    const fill = s.isOther ? "#d1d5db" : PALETTE[i % PALETTE.length];
+    stops.push(`${fill} ${start.toFixed(3)}deg ${end.toFixed(3)}deg`);
+  });
+  const pieStyle = stops.length
+    ? { background: `conic-gradient(${stops.join(", ")})` }
+    : { background: "#f3f4f6" };
+  return (
+    <div className="crm-kpi-popover" role="tooltip">
+      <div className="crm-kpi-popover-title">{metric} — לפי מקור הגעה</div>
+      <div className="crm-kpi-popover-body">
+        <div className="crm-kpi-popover-pie" style={pieStyle} />
+        <ul className="crm-kpi-popover-legend">
+          {breakdown.map((s, i) => (
+            <li key={s.source}>
+              <span
+                className={
+                  "crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")
+                }
+                style={
+                  s.isOther
+                    ? undefined
+                    : { background: PALETTE[i % PALETTE.length] }
+                }
+              />
+              <span className="crm-kpi-popover-label" title={s.source}>
+                {s.source}
+              </span>
+              <span className="crm-kpi-popover-count">
+                {s.count} ({((s.count / total) * 100).toFixed(1)}%)
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
