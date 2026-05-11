@@ -22,12 +22,8 @@
 import { auth } from "@/auth";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getMyProjects } from "@/lib/appsScript";
-import {
-  streamGemini,
-  type GeminiTurn,
-  type GeminiFunctionCall,
-} from "@/lib/gemini";
 import { streamClaudeChat } from "@/lib/claudeChat";
+import { type GeminiTurn } from "@/lib/gemini";
 import { TOOL_DECLARATIONS, getTool } from "@/lib/geminiTools";
 import {
   snapshotToSystemBlock,
@@ -42,16 +38,6 @@ type ClientMessage = { role: "user" | "model"; text: string };
 type Body = {
   messages: ClientMessage[];
   pageContext?: PageContextSnapshot;
-  /** Per-turn toolset switch.
-   *    "tools" (default) → function calling (hub resolvers + Workspace
-   *                        + sheet introspection); NO web search.
-   *    "web"             → Google Search grounding ONLY; no function
-   *                        tools. Use for competitor research / news /
-   *                        public-web questions.
-   *  Vertex doesn't allow combining the two in one request, so the
-   *  client toggles per turn — conversation history rides along
-   *  either way so the model always has full context. */
-  mode?: "tools" | "web";
 };
 
 const SYSTEM_PERSONA = `
@@ -121,19 +107,22 @@ Tool usage:
   yet — surface the file's name + URL and stop instead of guessing.
 
 Web search vs. hub tools:
-- Each turn runs in EITHER hub-tools mode OR web-search mode (Vertex
-  rejects combining the two). The user toggles between them with the
-  "🌐 web" / "🛠️ hub" button next to the input. Look at the
-  ACTIVE MODE block (added per turn at the end of this prompt) to
-  know which one is on right now.
-- In web mode you have Google Search and NO function tools — use it
-  for the public web (competitors, news, market research).
-- In tools mode you have function tools and NO Google Search — use
-  the hub resolvers + Workspace tools + sheet introspection.
-- Conversation history carries between modes, so when the user flips
-  mid-thread you still know what they asked before.
-- If the user is in tools mode but clearly needs the web, suggest
-  the toggle: "כדי לבדוק את זה ברשת, לחץ על 🌐 web ושאל שוב."
+- You ALWAYS have both available: the hub function tools above AND a
+  web_search tool for the public web. There is no toggle — pick the
+  right tool(s) yourself based on the question.
+- For F&F-internal questions (projects, tasks, contacts, Gmail, Drive,
+  sheet metrics, who's working on what), use hub function tools — the
+  hub knows the answer authoritatively. Don't web-search for these.
+- For PUBLIC-web questions (a client's external presence, competitors,
+  market research, news, general knowledge, anything outside F&F's
+  systems), use web_search. Don't pretend the answer is in the hub.
+- Mix freely in a single turn when the question needs both — e.g.
+  getProject('גוהרי') to confirm which company → web_search for
+  their landing page / competitors.
+- If a question is ambiguous (could mean either "tell me what's in our
+  hub" or "tell me what the world says"), default to hub tools first —
+  the user is on an internal hub, that's almost always the intent. If
+  the hub data isn't enough, then web_search.
 
 Privacy: only the signed-in user's data. Tools impersonate the user via
 domain-wide delegation, so you can't see anyone else's Gmail/Drive. Keep
@@ -506,52 +495,18 @@ export async function POST(req: Request) {
   const viewAs = await getEffectiveViewAs(myEmail).catch(() => "");
   const subjectEmail = viewAs || myEmail;
 
-  // Resolve which toolset is active for this turn.
-  const mode: "tools" | "web" = body.mode === "web" ? "web" : "tools";
-
   // Build system prompt. Page context renders as a clearly-delimited
   // block at the end so the model treats it as data, not instructions.
-  // Append a small ACTIVE MODE block so Gemini knows what's available
-  // on this turn (the rest of the persona doesn't change between
-  // modes — only the available tools do).
   const systemParts = [SYSTEM_PERSONA];
-  systemParts.push(
-    mode === "web"
-      ? `=== ACTIVE MODE: WEB ===
-On THIS turn you have BOTH:
-  • Google Search (the web_search tool — public web, news, competitors,
-    "find their landing page", market research)
-  • The full hub tool catalog (getTask, getProject, getCompanyContacts,
-    searchGmail, readGmailThread, searchDrive, readDoc, readPdf,
-    getSheetMetadata, readSheetTab)
-
-Pick the right tool for each part of the question. Common pattern:
-  1. Use hub tools first to disambiguate Hebrew names / find slugs /
-     load context (e.g. getProject('גוהרי') to confirm which company).
-  2. Then web_search with the precise terms.
-  3. Synthesize across both sources.
-
-Cite sources inline as '[label](url)' — the UI surfaces search
-queries + cited URLs automatically. For hub-internal references use
-relative paths ('[task title](/tasks/T-id)', '[project](/projects/name)').
-=== END MODE ===`
-      : `=== ACTIVE MODE: HUB TOOLS ===
-On THIS turn you have hub function tools (getTask, getProject,
-getCompanyContacts, searchGmail, readGmailThread, searchDrive,
-readDoc, readPdf, getSheetMetadata, readSheetTab) and NO web search. If the
-user clearly needs the public web (a brand's external presence,
-competitors, news), tell them they can switch to web mode by tapping
-the "🌐 web" button next to the input — and meanwhile answer with
-whatever hub data IS relevant.
-=== END MODE ===`,
-  );
   if (body.pageContext) {
     systemParts.push(snapshotToSystemBlock(body.pageContext));
   }
   const system = systemParts.join("\n\n");
 
-  // Convert client messages → GeminiTurn[]. Client only sends user +
-  // model text turns; internal tool turns stay server-side.
+  // Convert client messages → GeminiTurn[] (the shared shape that
+  // streamClaudeChat consumes). Only user + model text turns come from
+  // the client; internal tool turns stay server-side inside the
+  // Anthropic wrapper's exec loop.
   const history: GeminiTurn[] = body.messages.map((m) =>
     m.role === "user"
       ? { role: "user" as const, text: m.text }
@@ -564,152 +519,54 @@ whatever hub data IS relevant.
         controller.enqueue(ssePack(event, data));
 
       try {
-        if (mode === "web") {
-          // ── Claude web mode (now: web_search + hub function tools) ─
-          // Anthropic accepts both built-in web_search AND custom
-          // function tools in a single request, so web mode now has
-          // everything hub mode has + Google Search. The internal
-          // tool-execution loop lives inside streamClaudeChat;
-          // this branch just forwards events + executes tools when
-          // asked.
-          let totalInput = 0;
-          let totalOutput = 0;
-          let lastFinishReason = "";
-          for await (const chunk of streamClaudeChat({
-            system,
-            history,
-            tools: TOOL_DECLARATIONS,
-            executeTool: async (name, args) => {
-              const tool = getTool(name);
-              if (!tool) {
-                return { ok: false, error: `unknown tool: ${name}` };
-              }
-              try {
-                const result = await tool.execute(subjectEmail, args);
-                return { ok: true, result };
-              } catch (e) {
-                return {
-                  ok: false,
-                  error: e instanceof Error ? e.message : String(e),
-                };
-              }
-            },
-          })) {
-            if ("text" in chunk) {
-              send("text", { text: chunk.text });
-            } else if ("searchQuery" in chunk) {
-              send("search", { query: chunk.searchQuery });
-            } else if ("toolCall" in chunk) {
-              // Custom tool the assistant wants to call. Surface
-              // the chip immediately for transparency; the actual
-              // execution + result-feed-back happens inside
-              // streamClaudeChat via the executeTool callback above.
-              send("tool", chunk.toolCall);
-            } else {
-              totalInput = chunk.inputTokens;
-              totalOutput = chunk.outputTokens;
-              lastFinishReason = chunk.finishReason;
-              if (chunk.groundingChunks.length > 0) {
-                send("sources", { chunks: chunk.groundingChunks });
-              }
-            }
-          }
-          send("done", {
-            inputTokens: totalInput,
-            outputTokens: totalOutput,
-            finishReason: lastFinishReason,
-          });
-          controller.close();
-          return;
-        }
-
-        // ── Gemini hub-tools mode (default) ──────────────────────
-        // Tool-execution loop. Bound at 8 iterations — generous
-        // enough for "search Gmail then read thread then look up
-        // task" chains without letting a runaway loop burn tokens.
-        const MAX_ITERATIONS = 8;
+        // Single provider: Claude Haiku 4.5 with web_search + the full
+        // hub function-tool catalog in one request. The model decides
+        // per-turn whether to invoke web_search; the user-facing toggle
+        // is gone since web_search is always available and the model is
+        // good enough at picking when it's actually needed (see the
+        // "Web search vs. hub tools" section of SYSTEM_PERSONA).
         let totalInput = 0;
         let totalOutput = 0;
-
-        for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-          let lastFunctionCalls: GeminiFunctionCall[] = [];
-          let lastInputTokens = 0;
-          let lastOutputTokens = 0;
-          let lastFinishReason = "";
-          let textInThisTurn = "";
-
-          for await (const chunk of streamGemini({
-            system,
-            history,
-            tools: TOOL_DECLARATIONS,
-            enableSearch: false,
-          })) {
-            if ("text" in chunk) {
-              textInThisTurn += chunk.text;
-              send("text", { text: chunk.text });
-            } else if ("searchQuery" in chunk) {
-              // Defensive — Gemini wouldn't emit search queries when
-              // enableSearch:false, but keep the case so a future
-              // toggle doesn't drop them silently.
-              send("search", { query: chunk.searchQuery });
-            } else {
-              lastFunctionCalls = chunk.functionCalls;
-              lastInputTokens = chunk.inputTokens;
-              lastOutputTokens = chunk.outputTokens;
-              lastFinishReason = chunk.finishReason;
-              if (chunk.groundingChunks.length > 0) {
-                send("sources", { chunks: chunk.groundingChunks });
-              }
+        let lastFinishReason = "";
+        for await (const chunk of streamClaudeChat({
+          system,
+          history,
+          tools: TOOL_DECLARATIONS,
+          executeTool: async (name, args) => {
+            const tool = getTool(name);
+            if (!tool) {
+              return { ok: false, error: `unknown tool: ${name}` };
+            }
+            try {
+              const result = await tool.execute(subjectEmail, args);
+              return { ok: true, result };
+            } catch (e) {
+              return {
+                ok: false,
+                error: e instanceof Error ? e.message : String(e),
+              };
+            }
+          },
+        })) {
+          if ("text" in chunk) {
+            send("text", { text: chunk.text });
+          } else if ("searchQuery" in chunk) {
+            send("search", { query: chunk.searchQuery });
+          } else if ("toolCall" in chunk) {
+            send("tool", chunk.toolCall);
+          } else {
+            totalInput = chunk.inputTokens;
+            totalOutput = chunk.outputTokens;
+            lastFinishReason = chunk.finishReason;
+            if (chunk.groundingChunks.length > 0) {
+              send("sources", { chunks: chunk.groundingChunks });
             }
           }
-
-          totalInput += lastInputTokens;
-          totalOutput += lastOutputTokens;
-
-          if (lastFunctionCalls.length === 0) {
-            send("done", {
-              inputTokens: totalInput,
-              outputTokens: totalOutput,
-              finishReason: lastFinishReason,
-            });
-            controller.close();
-            return;
-          }
-
-          if (textInThisTurn) {
-            history.push({ role: "model", text: textInThisTurn });
-          }
-          history.push({ role: "model", functionCalls: lastFunctionCalls });
-
-          const results = await Promise.all(
-            lastFunctionCalls.map(async (fc) => {
-              send("tool", { name: fc.name, args: fc.args });
-              const tool = getTool(fc.name);
-              if (!tool) {
-                return {
-                  name: fc.name,
-                  response: { ok: false, error: `unknown tool: ${fc.name}` },
-                };
-              }
-              try {
-                const result = await tool.execute(subjectEmail, fc.args);
-                return { name: fc.name, response: { ok: true, result } };
-              } catch (e) {
-                return {
-                  name: fc.name,
-                  response: {
-                    ok: false,
-                    error: e instanceof Error ? e.message : String(e),
-                  },
-                };
-              }
-            }),
-          );
-          history.push({ role: "function", results });
         }
-
-        send("error", {
-          error: `tool-execution loop exceeded ${MAX_ITERATIONS} iterations`,
+        send("done", {
+          inputTokens: totalInput,
+          outputTokens: totalOutput,
+          finishReason: lastFinishReason,
         });
         controller.close();
       } catch (e) {
