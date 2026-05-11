@@ -64,14 +64,23 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
 
   return (
     <div className="dash-month-picker" dir="rtl">
-      <label htmlFor="dash-month-picker-select">📊 סיכום חודשי:</label>
+      {/* Visual label removed — the picker now lives in the page header
+          next to "+ משימה חדשה" where horizontal real estate is at a
+          premium, and the dropdown's own first-option text + tooltip
+          carry the meaning. We keep a screen-reader-only label for a11y. */}
+      <label
+        htmlFor="dash-month-picker-select"
+        className="sr-only"
+      >
+        סיכום חודשי
+      </label>
       <select
         id="dash-month-picker-select"
         value={current}
         onChange={(e) => onChange(e.target.value)}
         title="צפה בכל הדשבורד עבור חודש בודד"
       >
-        <option value="">📊 פריסה נוכחית</option>
+        <option value="">📅 פריסה נוכחית</option>
         {months.map((mk) => (
           <option key={mk} value={mk}>
             📅 {formatMonthLabel(mk)}
