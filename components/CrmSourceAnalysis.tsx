@@ -190,68 +190,74 @@ export default function CrmSourceAnalysis({
           })}
         </div>
 
-        <div className="crm-pie-row">
-          <div
-            className={
-              "crm-pie" + (noneSelected ? " crm-pie-empty" : "")
-            }
-            aria-label={
-              noneSelected
-                ? "לא נבחר מקור"
-                : `התפלגות התנגדויות עבור ${selected.size} מקורות נבחרים`
-            }
-          >
-            {noneSelected ? (
-              <span className="crm-pie-empty-label">בחר מקור</span>
-            ) : (
-              <svg
-                viewBox="0 0 100 100"
-                className="crm-pie-svg"
-                role="img"
-                aria-hidden="true"
-              >
-                {sliceArcs.map((slice) => (
-                  <path key={slice.label} d={slice.d} fill={slice.fill}>
-                    <title>{slice.tooltip}</title>
-                  </path>
-                ))}
-              </svg>
-            )}
+        {/* 35/65 split — pie+legend in the narrow cell, trendline in the
+            wide cell. Both surfaces are driven by the same chip selection
+            above, so co-locating them lets the user scan the distribution
+            (pie) and the over-time view (trendline) without scrolling. */}
+        <div className="crm-source-analysis-grid">
+          <div className="crm-pie-row">
+            <div
+              className={
+                "crm-pie" + (noneSelected ? " crm-pie-empty" : "")
+              }
+              aria-label={
+                noneSelected
+                  ? "לא נבחר מקור"
+                  : `התפלגות התנגדויות עבור ${selected.size} מקורות נבחרים`
+              }
+            >
+              {noneSelected ? (
+                <span className="crm-pie-empty-label">בחר מקור</span>
+              ) : (
+                <svg
+                  viewBox="0 0 100 100"
+                  className="crm-pie-svg"
+                  role="img"
+                  aria-hidden="true"
+                >
+                  {sliceArcs.map((slice) => (
+                    <path key={slice.label} d={slice.d} fill={slice.fill}>
+                      <title>{slice.tooltip}</title>
+                    </path>
+                  ))}
+                </svg>
+              )}
+            </div>
+            <ul className="crm-pie-legend">
+              {aggregated.slices.length === 0 ? (
+                <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
+              ) : (
+                aggregated.slices.map((s) => (
+                  <li key={s.label}>
+                    <span
+                      className={
+                        "crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")
+                      }
+                      style={
+                        s.isOther
+                          ? undefined
+                          : { background: objectionColor.get(s.label) }
+                      }
+                    />
+                    <span className="crm-legend-label" title={s.label}>
+                      {s.label}
+                    </span>
+                    <span className="crm-legend-count">
+                      {s.count} ({((s.count / aggregated.total) * 100).toFixed(1)}%)
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
           </div>
-          <ul className="crm-pie-legend">
-            {aggregated.slices.length === 0 ? (
-              <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
-            ) : (
-              aggregated.slices.map((s) => (
-                <li key={s.label}>
-                  <span
-                    className={
-                      "crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")
-                    }
-                    style={
-                      s.isOther
-                        ? undefined
-                        : { background: objectionColor.get(s.label) }
-                    }
-                  />
-                  <span className="crm-legend-label" title={s.label}>
-                    {s.label}
-                  </span>
-                  <span className="crm-legend-count">
-                    {s.count} ({((s.count / aggregated.total) * 100).toFixed(1)}%)
-                  </span>
-                </li>
-              ))
-            )}
-          </ul>
+
+          {/* Trendline — sums over the same selected-source set. */}
+          <CrmFunnelTrendline
+            dailyTimeSeries={dailyTimeSeries}
+            selectedSources={selected}
+          />
         </div>
       </div>
-
-      {/* Trendline below — sums over the same selected-source set. */}
-      <CrmFunnelTrendline
-        dailyTimeSeries={dailyTimeSeries}
-        selectedSources={selected}
-      />
     </>
   );
 }

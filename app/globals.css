@@ -5550,8 +5550,29 @@ html[data-theme="dark"] .crm-trend-grid line {
 .crm-pie-row {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 1.2rem;
+  gap: 0.8rem;
   align-items: center;
+}
+/* Side-by-side pie + trendline. The pie's own column (.crm-pie-row)
+   lives inside the narrow 35% cell on the visual right, the trendline
+   fills the wider 65% cell on the visual left. Chips above stay full
+   width above this grid.
+   The trendline's own .crm-trend-block adds margin-top:1rem when used
+   standalone — neutralized inside the grid so it lines up with the
+   pie-row's top edge. */
+.crm-source-analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.35fr) minmax(0, 0.65fr);
+  gap: 1.2rem;
+  align-items: start;
+  margin-top: 0.6rem;
+}
+.crm-source-analysis-grid > .crm-trend-block { margin-top: 0; }
+@media (max-width: 900px) {
+  .crm-source-analysis-grid {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
 }
 .crm-pie {
   width: 180px;
@@ -5611,16 +5632,19 @@ html[data-theme="dark"] .crm-trend-grid line {
   font-size: 0.86em;
 }
 .crm-pie-legend li {
-  display: grid;
-  grid-template-columns: 12px 1fr auto;
+  /* Flex (not grid) — pack dot+label+count together at the row start
+     with consistent gaps, then let any extra row width sit as empty
+     space at the row end. Grid `1fr` on the label column was pushing
+     the count to the opposite edge and leaving a big mid-row gap. */
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 .crm-pie-legend .crm-legend-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 28ch;
+  max-width: 18ch;
 }
 .crm-pie-legend .crm-legend-count {
   color: var(--muted);
