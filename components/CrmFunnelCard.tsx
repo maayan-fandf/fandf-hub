@@ -1,4 +1,5 @@
 import { getCrmFunnelForProject, type CrmFunnel } from "@/lib/crmData";
+import { channelIcon } from "@/lib/channelIcon";
 import CrmSourceAnalysis from "./CrmSourceAnalysis";
 
 /**
@@ -104,143 +105,191 @@ export default async function CrmFunnelCard({
         />
       </div>
 
-      {/* Status breakdown — vertical funnel chart in stage order.
-          Each row's width is the cumulative count ("leads currently at
-          this stage or beyond"), so the chart naturally narrows from
-          top (ליד / first contact) to bottom (חוזה / final close). The
-          stage order is the canonical BMBY_STATUS_FUNNEL_ORDER /
-          SEHEL_STATUS_FUNNEL_ORDER constant in lib/crmData.ts — edit
-          there to retune the hierarchy. */}
-      {funnel.byStatus.length > 0 && (
-        <div className="crm-block">
-          <div className="crm-block-title">משפך סטטוסים</div>
-          <FunnelChart items={funnel.byStatus} total={funnel.leads} />
-        </div>
-      )}
-
-      {/* Objection pair — top-objections list + objections×source
-          matrix. Same data, two views: the list reads "what objections
-          are biggest", the matrix reads "and where do they come from".
-          Side-by-side on desktop so the user can scan both lenses at
-          once instead of scrolling between them; stacks on narrow
-          viewports. */}
-      {(funnel.topObjections.length > 0 || funnel.objectionsBySource.length > 0) && (
-      <div className="crm-objection-grid">
-      {funnel.topObjections.length > 0 && (
-        <div className="crm-block">
-          <div className="crm-block-title">התנגדויות מובילות</div>
-          <ul className="crm-list">
-            {funnel.topObjections.map((o) => (
-              <li key={o.label} className="crm-list-row">
-                <span className="crm-list-bar-track">
-                  <span
-                    className="crm-list-bar"
-                    style={{
-                      width: `${
-                        funnel.topObjections.length > 0
-                          ? Math.max(2, (o.count / funnel.topObjections[0].count) * 100)
-                          : 0
-                      }%`,
-                    }}
-                  />
-                </span>
-                <span className="crm-list-label" title={o.label}>{o.label}</span>
-                <span className="crm-list-count">{o.count}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Objections × source cross-tab. For each top-5 objection, a
-          horizontal stacked bar shows how those leads broke down across
-          acquisition sources. Lets the user see e.g. "מחיר was 50% טלפון
-          and 31% רדיו" — actionable for source-mix decisions. The
-          source→color mapping is built once across the whole matrix so
-          the same source uses the same color in every row + the legend. */}
-      {funnel.objectionsBySource.length > 0 && (() => {
+      {/* Status funnel + objections × source — paired views, each 50%
+          of the row. Both render as horizontal stacked bars showing the
+          source mix per row; a unified legend underneath maps every
+          source to a single color across BOTH blocks so the user can
+          read either side without re-orienting. The redundant
+          "התנגדויות מובילות" list (count + plain bar) was retired in
+          this consolidation — the cross-tab matrix carries the same
+          information plus the source breakdown.
+          The source→color mapping is built ONCE across the union of
+          sources seen in both blocks, ordered by total count desc, so
+          high-volume channels always get the front-of-palette colors. */}
+      {(funnel.byStatus.length > 0 || funnel.objectionsBySource.length > 0) && (() => {
         const PALETTE = [
           "#6366f1","#10b981","#f59e0b","#ec4899","#0ea5e9",
           "#8b5cf6","#14b8a6","#ef4444","#a3a3a3","#84cc16",
         ];
-        const seen = new Map<string, { color: string; isOther: boolean }>();
-        for (const row of funnel.objectionsBySource) {
-          for (const s of row.sources) {
-            if (seen.has(s.source)) continue;
-            const color = s.isOther
-              ? "" // styled via CSS .crm-matrix-seg-rest hatched pattern
-              : PALETTE[seen.size % PALETTE.length];
-            seen.set(s.source, { color, isOther: !!s.isOther });
+        // Union of sources from both blocks → total count → palette
+        // assignment by frequency. "אחר" (isOther) skips palette and
+        // renders via the hatched CSS pattern.
+        const totals = new Map<string, { count: number; isOther: boolean }>();
+        const accumulate = (
+          rows: { sources: { source: string; count: number; isOther?: boolean }[] }[],
+        ) => {
+          for (const row of rows) {
+            for (const s of row.sources) {
+              const cur = totals.get(s.source);
+              const isOther = !!s.isOther;
+              if (cur) {
+                cur.count += s.count;
+                cur.isOther = cur.isOther && isOther;
+              } else {
+                totals.set(s.source, { count: s.count, isOther });
+              }
+            }
           }
+        };
+        accumulate(funnel.byStatus);
+        accumulate(funnel.objectionsBySource);
+        const ordered = [...totals.entries()]
+          .sort((a, b) => {
+            // "אחר" always last so it doesn't burn a palette color.
+            if (a[1].isOther && !b[1].isOther) return 1;
+            if (!a[1].isOther && b[1].isOther) return -1;
+            return b[1].count - a[1].count;
+          });
+        const palette = new Map<string, { color: string; isOther: boolean }>();
+        let pi = 0;
+        for (const [source, { isOther }] of ordered) {
+          palette.set(source, {
+            color: isOther ? "" : PALETTE[pi++ % PALETTE.length],
+            isOther,
+          });
         }
-        const legend = [...seen.entries()].map(([source, v]) => ({
-          source,
-          color: v.color,
-          isOther: v.isOther,
-        }));
-        // Bar lengths should reflect absolute objection counts, not all
-        // be uniform. funnel.objectionsBySource is already sorted desc by
-        // total in the lib, so the first row has the max and we use it
-        // as the 100%-bar baseline; lesser objections render shorter.
-        const maxRowTotal = funnel.objectionsBySource[0]?.total || 1;
+
+        // The funnel chart uses cumulative widths (everyone-passed-here →
+        // narrowing-tail), so the baseline is the first row's cumulative.
+        const cumulative: number[] = new Array(funnel.byStatus.length).fill(0);
+        let acc = 0;
+        for (let i = funnel.byStatus.length - 1; i >= 0; i--) {
+          acc += funnel.byStatus[i].count;
+          cumulative[i] = acc;
+        }
+        const maxCum = cumulative[0] || funnel.leads || 1;
+
+        // Objections-by-source uses absolute totals; first row is max.
+        const maxObjTotal = funnel.objectionsBySource[0]?.total || 1;
+
         return (
-          <div className="crm-block">
-            <div className="crm-block-title">התנגדויות לפי מקור הגעה</div>
-            <ul className="crm-matrix">
-              {funnel.objectionsBySource.map((row) => (
-                <li key={row.objection} className="crm-matrix-row">
-                  <span className="crm-matrix-label" title={row.objection}>
-                    {row.objection}
-                  </span>
-                  <span
-                    className="crm-matrix-bar"
-                    style={{ width: `${(row.total / maxRowTotal) * 100}%` }}
-                  >
-                    {row.sources.map((s) => {
-                      const w = (s.count / row.total) * 100;
-                      if (w < 0.5) return null;
-                      const meta = seen.get(s.source);
+          <>
+            <div className="crm-objection-grid">
+              {funnel.byStatus.length > 0 && (
+                <div className="crm-block">
+                  <div className="crm-block-title">משפך סטטוסים</div>
+                  <ul className="crm-matrix">
+                    {funnel.byStatus.map((row, i) => {
+                      const cum = cumulative[i];
+                      const wPct = (cum / maxCum) * 100;
+                      const cumPct = (cum / funnel.leads * 100).toFixed(1);
+                      const rowTooltip =
+                        `${row.label} — ${cum} (${cumPct}% מהלידים הגיעו לשלב הזה או מעבר)\n` +
+                        `מתוכם ${row.count} (${pct(row.count, funnel.leads)}) נמצאים כעת בשלב הזה בדיוק`;
                       return (
-                        <span
-                          key={s.source}
-                          className={
-                            "crm-matrix-seg" +
-                            (s.isOther ? " crm-matrix-seg-rest" : "")
-                          }
-                          style={
-                            s.isOther
-                              ? { width: `${w}%` }
-                              : { width: `${w}%`, background: meta?.color }
-                          }
-                          title={`${s.source} — ${s.count} (${pct(s.count, row.total)})`}
-                        />
+                        <li key={row.label} className="crm-matrix-row" title={rowTooltip}>
+                          <span className="crm-matrix-label" title={row.label}>
+                            {row.label}
+                          </span>
+                          <span
+                            className="crm-matrix-bar"
+                            style={{ width: `${wPct}%` }}
+                          >
+                            {row.sources.map((s) => {
+                              const w = (s.count / row.count) * 100;
+                              if (w < 0.5) return null;
+                              const meta = palette.get(s.source);
+                              return (
+                                <span
+                                  key={s.source}
+                                  className={
+                                    "crm-matrix-seg" +
+                                    (s.isOther ? " crm-matrix-seg-rest" : "")
+                                  }
+                                  style={
+                                    s.isOther
+                                      ? { width: `${w}%` }
+                                      : { width: `${w}%`, background: meta?.color }
+                                  }
+                                  title={`${channelIcon(s.source)} ${s.source} — ${s.count} (${pct(s.count, row.count)})`.trim()}
+                                />
+                              );
+                            })}
+                          </span>
+                          <span className="crm-matrix-total">{cum}</span>
+                        </li>
                       );
                     })}
-                  </span>
-                  <span className="crm-matrix-total">{row.total}</span>
-                </li>
-              ))}
+                  </ul>
+                </div>
+              )}
+
+              {funnel.objectionsBySource.length > 0 && (
+                <div className="crm-block">
+                  <div className="crm-block-title">התנגדויות לפי מקור הגעה</div>
+                  <ul className="crm-matrix">
+                    {funnel.objectionsBySource.map((row) => (
+                      <li key={row.objection} className="crm-matrix-row">
+                        <span className="crm-matrix-label" title={row.objection}>
+                          {row.objection}
+                        </span>
+                        <span
+                          className="crm-matrix-bar"
+                          style={{ width: `${(row.total / maxObjTotal) * 100}%` }}
+                        >
+                          {row.sources.map((s) => {
+                            const w = (s.count / row.total) * 100;
+                            if (w < 0.5) return null;
+                            const meta = palette.get(s.source);
+                            return (
+                              <span
+                                key={s.source}
+                                className={
+                                  "crm-matrix-seg" +
+                                  (s.isOther ? " crm-matrix-seg-rest" : "")
+                                }
+                                style={
+                                  s.isOther
+                                    ? { width: `${w}%` }
+                                    : { width: `${w}%`, background: meta?.color }
+                                }
+                                title={`${channelIcon(s.source)} ${s.source} — ${s.count} (${pct(s.count, row.total)})`.trim()}
+                              />
+                            );
+                          })}
+                        </span>
+                        <span className="crm-matrix-total">{row.total}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Unified legend — single row of source chips shared by
+                both blocks above. Each chip carries the channel emoji
+                from the dashboard's channelIcon map. */}
+            <ul className="crm-matrix-legend crm-matrix-legend-shared">
+              {[...palette.entries()].map(([source, meta]) => {
+                const icon = meta.isOther ? "" : channelIcon(source);
+                return (
+                  <li key={source}>
+                    <span
+                      className={
+                        "crm-legend-dot" + (meta.isOther ? " crm-legend-dot-rest" : "")
+                      }
+                      style={meta.isOther ? undefined : { background: meta.color }}
+                    />
+                    <span className="crm-legend-label" title={source}>
+                      {icon ? `${icon} ` : ""}{source}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-            <ul className="crm-matrix-legend">
-              {legend.map((s) => (
-                <li key={s.source}>
-                  <span
-                    className={
-                      "crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")
-                    }
-                    style={s.isOther ? undefined : { background: s.color }}
-                  />
-                  <span className="crm-legend-label" title={s.source}>
-                    {s.source}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          </>
         );
       })()}
-      </div>
-      )}
 
       {/* Per-source pie + over-time trendline. The two surfaces share
           a single source-selection state (chips above) — picking a
@@ -377,85 +426,6 @@ function KpiSourcePopover({
           ))}
         </ul>
       </div>
-    </div>
-  );
-}
-
-/**
- * Vertical funnel chart — one centered horizontal bar per stage, in
- * the funnel-order the lib emits. Each bar's width is the CUMULATIVE
- * count (this stage + all later stages), so the chart naturally
- * narrows from top (everyone passed through) to bottom (few made it
- * to close).
- *
- * Why cumulative: the current snapshot of `byStatus` shows leads at
- * each stage RIGHT NOW. To convert that into a funnel-shape, we treat
- * any lead currently at a later stage as having "reached" every prior
- * stage — same model the dashboard's pixel/CRM-leads aggregation
- * already uses. Caveat: early-funnel stages like טלפון / אינטרנט are
- * partially alternative (a phone lead doesn't pass through "אינטרנט"),
- * so the top of the funnel is slightly approximate. Past the early
- * stages it's exact: a lead currently at "פגישה 1" definitely went
- * through בטיפול / נקבעה פגישה first.
- *
- * Each row carries a native <title> tooltip showing both the
- * cumulative ("X leads at this stage or beyond") and the absolute
- * snapshot count ("of which Y currently sit at this stage exactly"),
- * so the user can read either lens.
- */
-function FunnelChart({
-  items,
-  total,
-}: {
-  items: { label: string; count: number }[];
-  total: number;
-}) {
-  const PALETTE = [
-    "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9",
-    "#8b5cf6", "#ef4444", "#14b8a6",
-  ];
-  // Cumulative from the END: cum[i] = sum of counts from i to end.
-  // First row gets the largest cumulative (matches "everyone passed
-  // through ליד"), narrowing as we descend.
-  const cumulative: number[] = new Array(items.length).fill(0);
-  let acc = 0;
-  for (let i = items.length - 1; i >= 0; i--) {
-    acc += items[i].count;
-    cumulative[i] = acc;
-  }
-  // Reference width — typically the first row's cumulative. If for
-  // some reason that's 0 (empty cohort), fall back to total → 1 to
-  // avoid divide-by-zero on the percentage math below.
-  const maxCum = cumulative[0] || total || 1;
-
-  return (
-    <div className="crm-funnel">
-      {items.map((it, i) => {
-        const cum = cumulative[i];
-        const wPct = (cum / maxCum) * 100;
-        const cumPct = (cum / total * 100).toFixed(1);
-        const tooltip =
-          `${it.label} — ${cum} (${cumPct}% מהלידים הגיעו לשלב הזה או מעבר)\n` +
-          `מתוכם ${it.count} (${pct(it.count, total)}) נמצאים כעת בשלב הזה בדיוק`;
-        return (
-          <div
-            key={it.label}
-            className="crm-funnel-row"
-            title={tooltip}
-          >
-            <span
-              className="crm-funnel-bar"
-              style={{
-                width: `${wPct}%`,
-                background: PALETTE[i % PALETTE.length],
-              }}
-            >
-              <span className="crm-funnel-bar-label">{it.label}</span>
-              <span className="crm-funnel-bar-count">{cum}</span>
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }

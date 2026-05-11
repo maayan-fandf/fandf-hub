@@ -5156,8 +5156,7 @@ html[data-theme="dark"] .crm-source-chip[aria-pressed="false"] {
   border-color: rgba(255, 255, 255, 0.06);
 }
 html[data-theme="dark"] .crm-stacked-bar,
-html[data-theme="dark"] .crm-matrix-bar,
-html[data-theme="dark"] .crm-list-bar-track {
+html[data-theme="dark"] .crm-matrix-bar {
   background: #2a2a52;
   border-color: var(--border);
 }
@@ -5189,7 +5188,10 @@ html[data-theme="dark"] .crm-stacked-seg-rest {
    viewports so each block can still breathe. */
 .crm-objection-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  /* 50/50 split — both cells now render the same stacked-bar primitive
+     with a shared source→color legend underneath, so neither side needs
+     extra room over the other. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.4rem;
   align-items: start;
 }
@@ -5197,69 +5199,18 @@ html[data-theme="dark"] .crm-stacked-seg-rest {
   margin-top: 0; /* the wrapper takes the spacing now */
   min-width: 0;  /* lets inner overflow ellipsis work in the narrower cell */
 }
+/* Shared legend below the funnel + objections grid. Wider gap than the
+   per-block legend since this is a single row spanning the full width
+   and we want chips to breathe. */
+.crm-matrix-legend-shared {
+  margin-top: 0.7rem;
+  gap: 0.4rem 1.1rem;
+}
 @media (max-width: 900px) {
   .crm-objection-grid {
     grid-template-columns: 1fr;
     gap: 0.4rem;
   }
-}
-
-/* ── Vertical funnel chart (FunnelChart in CrmFunnelCard) ──────────
-   Replaces the old horizontal stacked bar for the status section.
-   Each stage is a centered horizontal bar whose width is the
-   cumulative count, so the chart visually narrows from top (early
-   funnel, everyone passed through) to bottom (closing stages,
-   few survive). Padding scales by viewport — funnel rows compress to
-   labels-inside on narrow screens. */
-.crm-funnel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.32rem;
-  padding: 0.2rem 0 0.1rem;
-}
-.crm-funnel-row {
-  display: flex;
-  justify-content: center;
-  cursor: help;
-}
-.crm-funnel-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 30px;
-  padding: 0 0.7rem;
-  border-radius: 6px;
-  color: #ffffff;
-  font-size: 0.85em;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  /* min-width keeps the smallest stages still readable; without it,
-     a single-digit count at the funnel tail collapses to nothing. */
-  min-width: 96px;
-  max-width: 100%;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
-  transition: width 220ms ease, box-shadow 120ms ease;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.crm-funnel-row:hover .crm-funnel-bar {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-}
-.crm-funnel-bar-label {
-  /* Slight shadow gives readability when label sits over a saturated
-     palette color. */
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.crm-funnel-bar-count {
-  margin-inline-start: 0.6rem;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.92;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
-}
-@media (max-width: 640px) {
-  .crm-funnel-bar { font-size: 0.78em; height: 26px; min-width: 80px; }
 }
 
 /* ── Trendline (CrmFunnelTrendline) ────────────────────────────────
@@ -5417,43 +5368,6 @@ html[data-theme="dark"] .crm-trend-grid line {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
-}
-.crm-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.crm-list-row {
-  display: grid;
-  grid-template-columns: 120px 1fr auto;
-  align-items: center;
-  gap: 0.6rem;
-  font-size: 0.88em;
-}
-.crm-list-bar-track {
-  position: relative;
-  height: 8px;
-  background: var(--surface-hi, #f3f4f6);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.crm-list-bar {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, #6366f1, #8b5cf6);
-  border-radius: 4px;
-}
-.crm-list-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.crm-list-count {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 /* Filter chip — appears in the section head when the user has rewound
    the dashboard to a specific month (monthOverride). Without it, the
@@ -5716,7 +5630,6 @@ html[data-theme="dark"] .crm-trend-grid line {
 
 @media (max-width: 640px) {
   .crm-kpi-row { grid-template-columns: repeat(2, 1fr); }
-  .crm-list-row { grid-template-columns: 80px 1fr auto; }
   .crm-matrix-row { grid-template-columns: 100px 1fr 32px; }
   .crm-pie-row { grid-template-columns: 1fr; justify-items: center; }
   .crm-pie { width: 160px; height: 160px; }

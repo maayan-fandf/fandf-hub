@@ -72,9 +72,17 @@ export type CrmFunnel = {
   /** meetings / leads as a 0-100 number (UI formats with %). null when
    *  leads === 0 so the card can show "—" instead of dividing by zero. */
   meetingRatePct: number | null;
-  /** Top-N status buckets, sorted by count desc. UI displays as a
-   *  horizontal stacked bar. */
-  byStatus: { label: string; count: number }[];
+  /** Top-N status buckets, in funnel order. Each entry carries its own
+   *  source breakdown (top-N + "אחר") so the UI can render each row as
+   *  a stacked bar showing where the leads at that stage came from —
+   *  same shape as `objectionsBySource` so both can share a single
+   *  source→color legend. The flat `count` is kept for callers that
+   *  don't care about source attribution. */
+  byStatus: {
+    label: string;
+    count: number;
+    sources: { source: string; count: number; isOther?: boolean }[];
+  }[];
   /** Top-5 objections by count. Many rows have no objection text — those
    *  are excluded from this list (they show up in `leads` but not here). */
   topObjections: { label: string; count: number }[];
@@ -477,6 +485,11 @@ async function computeBmbyFunnel(
   // for rows where BOTH an objection AND a source are present (otherwise
   // the cross-tab adds noise without information).
   const objectionSourceMatrix = new Map<string, Map<string, number>>();
+  // For each status, a map of source → count. Parallel to
+  // objectionSourceMatrix but for the funnel-stage breakdown. Lets each
+  // funnel row render the source mix that fed into that stage, sharing
+  // the source→color legend with the objections cross-tab.
+  const statusSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
 
@@ -576,6 +589,11 @@ async function computeBmbyFunnel(
       if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
       m2.set(src, (m2.get(src) || 0) + 1);
     }
+    if (st && src) {
+      let m3 = statusSourceMatrix.get(st);
+      if (!m3) { m3 = new Map<string, number>(); statusSourceMatrix.set(st, m3); }
+      m3.set(src, (m3.get(src) || 0) + 1);
+    }
     const d = dateOnly(arr[iEntry]);
     // Daily time series — record this row's contribution to its
     // (date, source) bucket. Rows without a parseable date or source
@@ -614,8 +632,13 @@ async function computeBmbyFunnel(
     // Top-8 statuses by count, RE-SORTED into funnel order so the
     // stacked bar reads as a sales funnel (raw lead → contract) rather
     // than as count-descending. See BMBY_STATUS_FUNNEL_ORDER for the
-    // canonical ordering.
-    byStatus: sortByFunnelOrder(topN(byStatus, 8), BMBY_STATUS_FUNNEL_ORDER),
+    // canonical ordering. Each row is enriched with its per-source
+    // breakdown so the funnel chart can render the source mix at each
+    // stage instead of solid palette colors.
+    byStatus: buildByStatus(
+      sortByFunnelOrder(topN(byStatus, 8), BMBY_STATUS_FUNNEL_ORDER),
+      statusSourceMatrix,
+    ),
     topObjections: topN(byObjection, 5),
     // איש מכירות column dropped in the 2026-05-12 schema migration —
     // no seller breakdown anymore; UI already handles empty cleanly.
@@ -690,6 +713,9 @@ async function computeSehelFunnel(
   const staleThresholdMs = STALE_LEAD_DAYS * 86400_000;
   const nowMs = Date.now();
   const objectionSourceMatrix = new Map<string, Map<string, number>>();
+  // Status × source — parallel to BMBY's matrix; powers per-stage source
+  // segments in the funnel chart.
+  const statusSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
 
@@ -791,6 +817,11 @@ async function computeSehelFunnel(
       if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
       m2.set(src, (m2.get(src) || 0) + 1);
     }
+    if (st && src) {
+      let m3 = statusSourceMatrix.get(st);
+      if (!m3) { m3 = new Map<string, number>(); statusSourceMatrix.set(st, m3); }
+      m3.set(src, (m3.get(src) || 0) + 1);
+    }
     const d = dateOnly(arr[iRegDate]);
     // Daily time series — same shape as BMBY. Rows without parseable
     // date or source are skipped (still counted in KPI totals above).
@@ -825,7 +856,10 @@ async function computeSehelFunnel(
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     // Funnel-order sort — see the BMBY return above for rationale.
-    byStatus: sortByFunnelOrder(topN(byStatus, 8), SEHEL_STATUS_FUNNEL_ORDER),
+    byStatus: buildByStatus(
+      sortByFunnelOrder(topN(byStatus, 8), SEHEL_STATUS_FUNNEL_ORDER),
+      statusSourceMatrix,
+    ),
     topObjections: topN(byObjection, 5),
     topSellers: [], // Sehel doesn't carry a salesperson column we trust
     topSources: topN(bySource, 5),
@@ -883,6 +917,33 @@ function buildSourceBreakdown(
       head.map(([label, count]) => ({ label, count }));
     if (tail > 0) topObjections.push({ label: "אחר", count: tail, isOther: true });
     return { source, total, topObjections };
+  });
+}
+
+/**
+ * Enrich each funnel-stage entry with its top-N source breakdown plus an
+ * "אחר" rest bucket. Mirrors `buildObjectionsBySource` so the funnel
+ * chart and the objections cross-tab render with the same stacked-bar
+ * primitive and share a single source→color legend.
+ */
+function buildByStatus(
+  topStatuses: { label: string; count: number }[],
+  matrix: Map<string, Map<string, number>>,
+): CrmFunnel["byStatus"] {
+  const TOP_SOURCES_PER_STATUS = 4;
+  return topStatuses.map(({ label, count }) => {
+    const srcMap = matrix.get(label) || new Map<string, number>();
+    const sorted = [...srcMap.entries()].sort((a, b) => b[1] - a[1]);
+    const head = sorted.slice(0, TOP_SOURCES_PER_STATUS);
+    const tailCount = sorted
+      .slice(TOP_SOURCES_PER_STATUS)
+      .reduce((n, [, c]) => n + c, 0);
+    const sources: { source: string; count: number; isOther?: boolean }[] =
+      head.map(([source, count]) => ({ source, count }));
+    if (tailCount > 0) {
+      sources.push({ source: "אחר", count: tailCount, isOther: true });
+    }
+    return { label, count, sources };
   });
 }
 
