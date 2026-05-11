@@ -221,6 +221,77 @@ function topN<T extends { count: number }>(map: Map<string, number>, n: number):
 }
 
 /**
+ * Inferred sales-funnel stage order for each platform. Public BMBY/Sehel
+ * docs don't expose this taxonomy externally, so the orderings here are
+ * a best-guess from the values we observed in the data plus standard
+ * real-estate sales-funnel logic:
+ *
+ *   raw lead → first contact → active conversation → meeting scheduled →
+ *   meeting(s) held → in purchase → contract
+ *
+ * Anything that doesn't fit the linear funnel (cancelled, returned to
+ * pool, disqualified, no-answer) trails the funnel as "off-funnel side
+ * states" so the bar reads left-to-right as a coherent progression.
+ *
+ * Update these arrays if BMBY/Sehel confirm a different order — the
+ * `sortByFunnelOrder` helper below uses the array's position as the
+ * sort key, unknown stages sort by count desc and append at the end.
+ */
+export const BMBY_STATUS_FUNNEL_ORDER = [
+  "ליד",
+  "אינטרנט",
+  "טלפון",
+  "בטיפול",
+  "שיחת מכירה",
+  "אין מענה 1",
+  "אין מענה 2",
+  "אין מענה 3",
+  "ליצור קשר",
+  "נקבעה פגישה",
+  "פגישה 1",
+  "פגישה 2",
+  "פגישה 3",
+  "פגישה התקיימה",
+  "ברכישה",
+  "חוזה",
+  // off-funnel side states — visually trail the linear funnel
+  "פגישה בוטלה",
+  "מאגר",
+  "תעסוקה",
+  "מסחר קטן",
+  "הרשמה",
+  "לא רלוונטי",
+];
+
+export const SEHEL_STATUS_FUNNEL_ORDER = [
+  "| פניה חדשה",
+  "| נוצר קשר ראשוני",
+  "| בקשר",
+  "| נשלחו חומרים",
+  "| לקראת פגישה",
+  "| לתאם פגישה מחדש",
+  "| פגישה ללא סיכום",
+  "| אחרי פגישה",
+  "| פגישות",
+  "| עסקה",
+  // off-funnel side states
+  "| הרשמה",
+];
+
+function sortByFunnelOrder(
+  items: { label: string; count: number }[],
+  order: readonly string[],
+): { label: string; count: number }[] {
+  const indexOf = new Map(order.map((s, i) => [s, i]));
+  return [...items].sort((a, b) => {
+    const ia = indexOf.has(a.label) ? (indexOf.get(a.label) as number) : Number.POSITIVE_INFINITY;
+    const ib = indexOf.has(b.label) ? (indexOf.get(b.label) as number) : Number.POSITIVE_INFINITY;
+    if (ia === ib) return b.count - a.count;
+    return ia - ib;
+  });
+}
+
+/**
  * Convert the per-day per-source matrix into the flat, sorted array
  * shape the trendline component consumes. Dates ascending so the chart
  * walks left-to-right (or right-to-left in RTL; the SVG is direction-
@@ -436,7 +507,11 @@ async function computeBmbyFunnel(
     scheduledMeetings,
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
-    byStatus: topN(byStatus, 8),
+    // Top-8 statuses by count, RE-SORTED into funnel order so the
+    // stacked bar reads as a sales funnel (raw lead → contract) rather
+    // than as count-descending. See BMBY_STATUS_FUNNEL_ORDER for the
+    // canonical ordering.
+    byStatus: sortByFunnelOrder(topN(byStatus, 8), BMBY_STATUS_FUNNEL_ORDER),
     topObjections: topN(byObjection, 5),
     // איש מכירות column dropped in the 2026-05-12 schema migration —
     // no seller breakdown anymore; UI already handles empty cleanly.
@@ -599,7 +674,8 @@ async function computeSehelFunnel(
     scheduledMeetings,
     meetings,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
-    byStatus: topN(byStatus, 8),
+    // Funnel-order sort — see the BMBY return above for rationale.
+    byStatus: sortByFunnelOrder(topN(byStatus, 8), SEHEL_STATUS_FUNNEL_ORDER),
     topObjections: topN(byObjection, 5),
     topSellers: [], // Sehel doesn't carry a salesperson column we trust
     topSources: topN(bySource, 5),
