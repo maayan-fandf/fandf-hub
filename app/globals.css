@@ -5611,6 +5611,38 @@ html[data-theme="dark"] .send-approval-invalid-badge {
   color: #fbbf24;
   background: rgba(245, 158, 11, 0.28);
 }
+/* "📋 העתק הוראות" / "✓ הועתק" inline button — appears on invalid
+   rows. Sits AFTER the invalid badge (badge takes the auto margin),
+   so when the badge is present this button hugs it on the trailing
+   side. Subtle by default; flips to a green confirmation state for
+   ~2s after a successful copy so the user gets unambiguous feedback. */
+.send-approval-copy-btn {
+  font: inherit;
+  font-size: 0.74em;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--accent, #6366f1);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease,
+              border-color 120ms ease;
+}
+.send-approval-copy-btn:hover {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: var(--accent, #6366f1);
+}
+.send-approval-copy-btn.is-copied {
+  color: #166534;
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+html[data-theme="dark"] .send-approval-copy-btn.is-copied {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.22);
+}
 .send-approval-add {
   display: flex;
   gap: 0.45rem;

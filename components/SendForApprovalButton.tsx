@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { googleAccountSetupHebrew } from "@/lib/clientTemplates";
 
 /**
  * "📤 שלח לאישור" affordance shown on the LatestPrisotCard when the
@@ -55,6 +56,11 @@ export default function SendForApprovalButton({
   // the actionable "create a Google account for your existing email"
   // hint instead of the generic error string.
   const [invalidEmails, setInvalidEmails] = useState<Set<string>>(new Set());
+  // After a "copy instructions" click, holds the email whose template
+  // is currently on the clipboard so the button can flip to "✓ הועתק"
+  // for ~2 sec. Single string (not a set) — copying for one recipient
+  // at a time matches the user's mental model and avoids ambiguous UI.
+  const [copiedFor, setCopiedFor] = useState<string>("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize selected when the dialog opens — pre-check every
@@ -68,7 +74,35 @@ export default function SendForApprovalButton({
     setSuccess(false);
     setShareFailures([]);
     setInvalidEmails(new Set());
+    setCopiedFor("");
   }, [open, suggestedClients]);
+
+  // Render the Hebrew instruction template for the given email and put
+  // it on the clipboard. Falls back to a hidden textarea + execCommand
+  // when navigator.clipboard isn't available (older Safari, insecure
+  // contexts). Briefly marks the row so the user sees the action took.
+  async function copyInstructions(email: string) {
+    const tmpl = googleAccountSetupHebrew(email);
+    try {
+      await navigator.clipboard.writeText(tmpl.full);
+    } catch {
+      // Fallback for environments without async clipboard. Uses a
+      // throwaway textarea so we don't affect any visible element.
+      const ta = document.createElement("textarea");
+      ta.value = tmpl.full;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } finally { document.body.removeChild(ta); }
+    }
+    setCopiedFor(email);
+    // Reset after 2 seconds so the button is reusable + no stale
+    // "copied" state lingers if the user moves on.
+    setTimeout(() => {
+      setCopiedFor((prev) => (prev === email ? "" : prev));
+    }, 2000);
+  }
 
   // Esc + click-outside to close, but don't close while submitting
   // (a half-finished POST should resolve before unmount).
@@ -223,6 +257,7 @@ export default function SendForApprovalButton({
                     const norm = email.toLowerCase().trim();
                     const checked = selected.has(norm);
                     const isInvalid = invalidEmails.has(norm);
+                    const wasCopied = copiedFor === norm;
                     return (
                       <li key={norm}>
                         <label
@@ -239,12 +274,31 @@ export default function SendForApprovalButton({
                           />
                           <span dir="ltr">{email}</span>
                           {isInvalid ? (
-                            <span
-                              className="send-approval-invalid-badge"
-                              title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
-                            >
-                              ⚠ אין חשבון Google
-                            </span>
+                            <>
+                              <span
+                                className="send-approval-invalid-badge"
+                                title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
+                              >
+                                ⚠ אין חשבון Google
+                              </span>
+                              <button
+                                type="button"
+                                className={
+                                  "send-approval-copy-btn" +
+                                  (wasCopied ? " is-copied" : "")
+                                }
+                                onClick={(e) => {
+                                  // Stop the click from also toggling
+                                  // the row's checkbox label.
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  copyInstructions(norm);
+                                }}
+                                title="העתק הוראות בעברית להעברה לנמען בצ׳אט / במייל"
+                              >
+                                {wasCopied ? "✓ הועתק" : "📋 העתק הוראות"}
+                              </button>
+                            </>
                           ) : null}
                         </label>
                       </li>
@@ -272,6 +326,7 @@ export default function SendForApprovalButton({
                   <ul className="send-approval-list">
                     {extras.map((email) => {
                       const isInvalid = invalidEmails.has(email);
+                      const wasCopied = copiedFor === email;
                       return (
                         <li key={email}>
                           <label
@@ -288,12 +343,29 @@ export default function SendForApprovalButton({
                             />
                             <span dir="ltr">{email}</span>
                             {isInvalid ? (
-                              <span
-                                className="send-approval-invalid-badge"
-                                title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
-                              >
-                                ⚠ אין חשבון Google
-                              </span>
+                              <>
+                                <span
+                                  className="send-approval-invalid-badge"
+                                  title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
+                                >
+                                  ⚠ אין חשבון Google
+                                </span>
+                                <button
+                                  type="button"
+                                  className={
+                                    "send-approval-copy-btn" +
+                                    (wasCopied ? " is-copied" : "")
+                                  }
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    copyInstructions(email);
+                                  }}
+                                  title="העתק הוראות בעברית להעברה לנמען בצ׳אט / במייל"
+                                >
+                                  {wasCopied ? "✓ הועתק" : "📋 העתק הוראות"}
+                                </button>
+                              </>
                             ) : null}
                           </label>
                         </li>

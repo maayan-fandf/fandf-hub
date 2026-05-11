@@ -4,12 +4,18 @@ Send this to any external client whose email isn't already associated with a Goo
 
 ## How to use
 
+**Option 1 — copy from the hub (fastest):** open the project, click **📤 שלח לאישור** on the latest פריסה card, attempt to send to the client. If their email lacks a Google identity, an amber badge appears next to their row plus a **📋 העתק הוראות** button. Click it → the rendered template (with their email pre-filled) is on your clipboard. Just fill in `[שם]` and paste into Gmail/Chat.
+
+**Option 2 — copy from this file:**
+
 1. Copy the message below into your email client or chat tool.
 2. Replace the placeholders:
    - `[שם]` → the recipient's first name (e.g. `טניה`)
    - `[כתובת המייל]` → their existing work email (e.g. `tanya_b@shikunbinui.com`)
 3. Send.
 4. Once they reply (with either their Gmail address, or confirmation that they've completed option B), update Keys col E `Email Client` for the project to their now-valid email. Re-trigger the approval from the hub.
+
+> **Note on syncing**: the runtime version lives in `lib/clientTemplates.ts` (used by the **📋 העתק הוראות** button). If you edit the body below, **also update the `googleAccountSetupHebrew` function** — there's no build-time sync between the two.
 
 ## Template
 
