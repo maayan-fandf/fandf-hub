@@ -71,7 +71,7 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
         onChange={(e) => onChange(e.target.value)}
         title="צפה בכל הדשבורד עבור חודש בודד"
       >
-        <option value="">📊 כל התקופה</option>
+        <option value="">📊 פריסה נוכחית</option>
         {months.map((mk) => (
           <option key={mk} value={mk}>
             📅 {formatMonthLabel(mk)}
@@ -83,8 +83,8 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
           type="button"
           className="dash-month-picker-clear"
           onClick={() => onChange("")}
-          title="חזור לכל התקופה"
-          aria-label="חזור לכל התקופה"
+          title="חזור לפריסה נוכחית"
+          aria-label="חזור לפריסה נוכחית"
         >
           ✕
         </button>

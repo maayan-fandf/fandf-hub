@@ -1,17 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 /**
- * Per-source pie chart: pick a source from the chip row → see how its
- * leads broke down across objections. Companion to the objections×source
- * matrix above (same matrix, transposed view) — picker prevents N pies
- * from flooding the screen for projects with many sources.
+ * Per-source pie chart with multi-select chips.
  *
- * Renders the pie as a conic-gradient (no SVG, no chart lib) because
- * the data is already pre-bucketed by the server. Same stable
- * objection→color mapping across all sources so switching the picker
- * doesn't re-shuffle the legend.
+ * Each chip toggles its source in/out of the pie. The pie always shows
+ * the AGGREGATE of currently-selected sources — so by default (all
+ * selected) the user sees the project's overall objection mix; deselect
+ * a couple and the pie collapses to just the active subset. "הכל" /
+ * "ניקוי" links at the start of the row let the user select-all /
+ * clear-all without clicking every chip.
+ *
+ * Aggregation is done on the client because:
+ *   1. The lib already pre-buckets per source — no extra Sheets read.
+ *   2. The combinatorial space (2^N sources) is too big to precompute
+ *      server-side, and most selection flips happen within a single
+ *      mental model (deselect noisy "yad2" → see other sources cleaner).
+ *
+ * Stable objection→color mapping is built once across the union of all
+ * sources, so the same objection keeps its color when chips toggle.
  */
 
 type Source = {
@@ -30,96 +38,176 @@ export default function CrmSourcePieSection({
 }: {
   breakdown: Source[];
 }) {
-  // Default: first source (highest total). Empty state shouldn't render
-  // since the parent already gates on `breakdown.length > 0`.
-  const [selected, setSelected] = useState<string>(breakdown[0]?.source ?? "");
-  const active =
-    breakdown.find((b) => b.source === selected) ?? breakdown[0];
-  if (!active) return null;
+  // Default: every source selected → pie shows the overall objection mix.
+  const allSources = useMemo(() => breakdown.map((b) => b.source), [breakdown]);
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(allSources),
+  );
 
-  // Build the stable objection→color map ACROSS all sources, so the same
-  // objection has the same color no matter which source-pie is showing.
-  const objectionColor = new Map<string, string>();
-  for (const b of breakdown) {
-    for (const o of b.topObjections) {
-      if (objectionColor.has(o.label)) continue;
-      if (o.isOther) continue; // hatched, not a palette color
-      objectionColor.set(o.label, PALETTE[objectionColor.size % PALETTE.length]);
+  const toggle = (source: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(source)) next.delete(source);
+      else next.add(source);
+      return next;
+    });
+  };
+  const selectAll = () => setSelected(new Set(allSources));
+  const clearAll = () => setSelected(new Set());
+
+  // Stable objection→color map: walk every source's top-objections in
+  // declared order and assign palette colors in first-seen order. Stays
+  // constant across chip toggles (so the same slice color = same
+  // objection no matter what's selected). "אחר" (isOther) renders via
+  // hatched CSS so it doesn't consume a palette slot.
+  const objectionColor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of breakdown) {
+      for (const o of b.topObjections) {
+        if (o.isOther) continue;
+        if (m.has(o.label)) continue;
+        m.set(o.label, PALETTE[m.size % PALETTE.length]);
+      }
     }
-  }
+    return m;
+  }, [breakdown]);
 
-  // Pie geometry: walk segments, emit `color start end` triples for
-  // conic-gradient. Skip slices < 0.5% — they're invisible anyway and
-  // adding zero-degree stops produces rendering artifacts.
-  let cum = 0;
-  const stops: string[] = [];
-  for (const o of active.topObjections) {
-    const start = (cum / active.total) * 360;
-    cum += o.count;
-    const end = (cum / active.total) * 360;
-    if (end - start < 1.8) continue; // < 0.5% — skip
-    const color = o.isOther ? "url(#crm-pie-hatch)" : objectionColor.get(o.label) || "#cbd5e1";
-    // conic-gradient doesn't accept url() refs — for the "other"
-    // bucket we render a flat neutral color and rely on the legend to
-    // explain. Alternative would be an SVG pie, more code for one
-    // bucket's worth of visual nuance.
-    const fill = o.isOther ? "#d1d5db" : color;
-    stops.push(`${fill} ${start.toFixed(3)}deg ${end.toFixed(3)}deg`);
-  }
-  const pieStyle = stops.length
-    ? { background: `conic-gradient(${stops.join(", ")})` }
-    : { background: "#f3f4f6" };
+  // Aggregate the active sources' objection counts into a single map.
+  // The lib already rolled "tail" objections into "אחר" PER SOURCE, so
+  // multiple sources may each contribute an "אחר" bucket — we sum them
+  // into one rest segment for the rendered pie.
+  const aggregated = useMemo(() => {
+    const byObjection = new Map<string, number>();
+    let otherTotal = 0;
+    let grandTotal = 0;
+    for (const b of breakdown) {
+      if (!selected.has(b.source)) continue;
+      for (const o of b.topObjections) {
+        grandTotal += o.count;
+        if (o.isOther) {
+          otherTotal += o.count;
+        } else {
+          byObjection.set(o.label, (byObjection.get(o.label) || 0) + o.count);
+        }
+      }
+    }
+    // Sort named objections by count desc; "אחר" always trails.
+    const slices: { label: string; count: number; isOther?: boolean }[] =
+      [...byObjection.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => ({ label, count }));
+    if (otherTotal > 0) {
+      slices.push({ label: "אחר", count: otherTotal, isOther: true });
+    }
+    return { slices, total: grandTotal };
+  }, [breakdown, selected]);
+
+  // Pie geometry: walk slices in display order, emit conic-gradient stops.
+  const pieStyle = useMemo(() => {
+    if (aggregated.total === 0) {
+      return { background: "#f3f4f6" };
+    }
+    let cum = 0;
+    const stops: string[] = [];
+    for (const s of aggregated.slices) {
+      const start = (cum / aggregated.total) * 360;
+      cum += s.count;
+      const end = (cum / aggregated.total) * 360;
+      if (end - start < 1.8) continue; // < 0.5% — skip invisible slices
+      const fill = s.isOther ? "#d1d5db" : objectionColor.get(s.label) || "#cbd5e1";
+      stops.push(`${fill} ${start.toFixed(3)}deg ${end.toFixed(3)}deg`);
+    }
+    return stops.length
+      ? { background: `conic-gradient(${stops.join(", ")})` }
+      : { background: "#f3f4f6" };
+  }, [aggregated, objectionColor]);
+
+  const noneSelected = selected.size === 0;
 
   return (
     <div className="crm-block">
       <div className="crm-block-title">פיי לפי מקור הגעה</div>
-      <div className="crm-source-chips" role="tablist">
-        {breakdown.map((b) => (
-          <button
-            key={b.source}
-            type="button"
-            role="tab"
-            aria-selected={b.source === selected}
-            className={
-              "crm-source-chip" +
-              (b.source === selected ? " is-active" : "")
-            }
-            onClick={() => setSelected(b.source)}
-            title={`${b.source} — ${b.total} לידים עם התנגדות`}
-          >
-            <span className="crm-source-chip-name">{b.source}</span>
-            <span className="crm-source-chip-count">{b.total}</span>
-          </button>
-        ))}
+      <div className="crm-source-chips" role="group" aria-label="בחירת מקורות">
+        <button
+          type="button"
+          className="crm-source-link"
+          onClick={selectAll}
+          disabled={selected.size === breakdown.length}
+          title="בחר את כל המקורות"
+        >
+          הכל
+        </button>
+        <button
+          type="button"
+          className="crm-source-link"
+          onClick={clearAll}
+          disabled={selected.size === 0}
+          title="נקה את הבחירה"
+        >
+          ניקוי
+        </button>
+        <span className="crm-source-chips-sep" aria-hidden="true">·</span>
+        {breakdown.map((b) => {
+          const isActive = selected.has(b.source);
+          return (
+            <button
+              key={b.source}
+              type="button"
+              aria-pressed={isActive}
+              className={
+                "crm-source-chip" + (isActive ? " is-active" : "")
+              }
+              onClick={() => toggle(b.source)}
+              title={`${b.source} — ${b.total} לידים עם התנגדות`}
+            >
+              <span className="crm-source-chip-name">{b.source}</span>
+              <span className="crm-source-chip-count">{b.total}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="crm-pie-row">
         <div
-          className="crm-pie"
+          className={
+            "crm-pie" + (noneSelected ? " crm-pie-empty" : "")
+          }
           style={pieStyle}
-          aria-label={`התפלגות התנגדויות עבור מקור ${active.source}`}
-        />
+          aria-label={
+            noneSelected
+              ? "לא נבחר מקור"
+              : `התפלגות התנגדויות עבור ${selected.size} מקורות נבחרים`
+          }
+        >
+          {noneSelected ? (
+            <span className="crm-pie-empty-label">בחר מקור</span>
+          ) : null}
+        </div>
         <ul className="crm-pie-legend">
-          {active.topObjections.map((o) => (
-            <li key={o.label}>
-              <span
-                className={
-                  "crm-legend-dot" + (o.isOther ? " crm-legend-dot-rest" : "")
-                }
-                style={
-                  o.isOther
-                    ? undefined
-                    : { background: objectionColor.get(o.label) }
-                }
-              />
-              <span className="crm-legend-label" title={o.label}>
-                {o.label}
-              </span>
-              <span className="crm-legend-count">
-                {o.count} ({((o.count / active.total) * 100).toFixed(1)}%)
-              </span>
-            </li>
-          ))}
+          {aggregated.slices.length === 0 ? (
+            <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
+          ) : (
+            aggregated.slices.map((s) => (
+              <li key={s.label}>
+                <span
+                  className={
+                    "crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")
+                  }
+                  style={
+                    s.isOther
+                      ? undefined
+                      : { background: objectionColor.get(s.label) }
+                  }
+                />
+                <span className="crm-legend-label" title={s.label}>
+                  {s.label}
+                </span>
+                <span className="crm-legend-count">
+                  {s.count} ({((s.count / aggregated.total) * 100).toFixed(1)}%)
+                </span>
+              </li>
+            ))
+          )}
         </ul>
       </div>
     </div>

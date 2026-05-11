@@ -144,6 +144,23 @@ function norm(s: unknown): string {
   return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+/**
+ * Canonical form for source/`מקור הגעה` strings. The source data has
+ * extensive casing chaos — "facebook" / "Facebook" / "FACEBOOK" co-exist
+ * in BMBY (1418 / 341 / 159 rows respectively), plus similar drift on
+ * "yad2" / "Yad2", "article" / "Article", "google" / "Google",
+ * "minisite" / "Minisite", etc. Lower-casing collapses them so the
+ * funnel doesn't show three "facebook" slices for the same channel.
+ *
+ * Doesn't touch internal punctuation — comma-joined multi-source values
+ * like "facebook, yad2" stay grouped as one composite source because
+ * that's the granularity the CRM itself logs at. (Splitting them into
+ * sub-sources would over-count leads.)
+ */
+function normSource(s: unknown): string {
+  return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function topN<T extends { count: number }>(map: Map<string, number>, n: number): { label: string; count: number }[] {
   return [...map.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -232,7 +249,7 @@ async function computeBmbyFunnel(
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
     const sel = String(arr[iSeller] ?? "").trim();
     if (sel) bySeller.set(sel, (bySeller.get(sel) || 0) + 1);
-    const src = String(arr[iSource] ?? "").trim();
+    const src = normSource(arr[iSource]);
     if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
@@ -325,7 +342,7 @@ async function computeSehelFunnel(
     if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
     const obj = String(arr[iObjection] ?? "").trim();
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
-    const src = String(arr[iSource] ?? "").trim();
+    const src = normSource(arr[iSource]);
     if (src) bySource.set(src, (bySource.get(src) || 0) + 1);
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
