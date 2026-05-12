@@ -464,6 +464,30 @@ export default function TasksQueue({
     }),
   );
 
+  // Umbrellas-mode (?umbrellas=1) is the "chain context" view. When
+  // active, status-grouped buckets cluster each chain's family together:
+  // a chain child is bucketed by ITS UMBRELLA'S status (not its own),
+  // so the umbrella header + every step of the chain land in the same
+  // bucket. The reorder pass in SortableTableSection then sorts the
+  // family with umbrella-first + children in chain order. Outside
+  // umbrellas mode, this is a no-op — children sit in their own status
+  // bucket as before. Maayan reported 2026-05-12: she wants children
+  // indented under their umbrella with non-mine stages greyed out.
+  const showUmbrellas = searchParams?.umbrellas === "1";
+
+  // Build umbrella id → umbrella's status map. Used to rebucket chain
+  // children below. When the umbrella isn't in the current `tasks`
+  // (filtered out by some other axis), children stay in their own
+  // status — best-effort, no spurious cross-bucket moves.
+  const umbrellaStatusById = useMemo(() => {
+    if (!showUmbrellas) return new Map<string, WorkTaskStatus>();
+    const m = new Map<string, WorkTaskStatus>();
+    for (const t of tasks) {
+      if (t.is_umbrella) m.set(t.id, t.status);
+    }
+    return m;
+  }, [tasks, showUmbrellas]);
+
   // Bucketize once. Default behavior (groupBy empty/status) → group
   // by lifecycle status using STATUS_BUCKETS — anything outside the
   // canonical list sinks into `other` (drafts, anomalies). Other
@@ -477,7 +501,18 @@ export default function TasksQueue({
       for (const b of STATUS_BUCKETS) map[b.key] = [];
       const out: WorkTask[] = [];
       for (const t of tasks) {
-        if (map[t.status]) map[t.status].push(t);
+        // In umbrellas mode, route chain children into the umbrella's
+        // bucket so the family stays together. Falls back to own
+        // status when the umbrella isn't loaded OR when its status
+        // isn't a canonical STATUS_BUCKETS key (defensive — avoids
+        // a chain child dropping into `other` just because its
+        // umbrella row has a malformed status cell).
+        let bucketKey: WorkTaskStatus = t.status;
+        if (showUmbrellas && t.umbrella_id) {
+          const us = umbrellaStatusById.get(t.umbrella_id);
+          if (us && map[us]) bucketKey = us;
+        }
+        if (map[bucketKey]) map[bucketKey].push(t);
         else out.push(t);
       }
       return { byStatus: map, other: out, dynamicBuckets: null };
@@ -530,7 +565,7 @@ export default function TasksQueue({
       flat[key] = list;
     }
     return { byStatus: flat, other: [], dynamicBuckets: buckets };
-  }, [tasks, groupBy, people]);
+  }, [tasks, groupBy, people, showUmbrellas, umbrellaStatusById]);
 
   async function onDragEnd(e: DragEndEvent) {
     setError(null);
@@ -723,6 +758,7 @@ export default function TasksQueue({
                   dragEnabled={dragEnabled}
                   selectedIds={selectedIds}
                   onToggleSelected={toggleSelected}
+                  showUmbrellas={showUmbrellas}
                 />
               </div>
             )}
@@ -974,6 +1010,60 @@ export default function TasksQueue({
  *  drag-reorder is enabled only when sorting by rank, since dragging
  *  under a column-driven sort doesn't visibly affect order and just
  *  confuses the user. */
+/** Reorder a bucket's rows so each visible umbrella is immediately
+ *  followed by its visible children in chain order (created_at asc),
+ *  preserving the caller's sort order for top-level (non-family) items.
+ *  Returns a new array; doesn't mutate `sorted`.
+ *
+ *  Algorithm: walk `sorted` once. Skip rows we've already placed. For
+ *  each row, if it's a chain member (umbrella OR child with an
+ *  umbrella_id in this list), emit the whole family at this position.
+ *  Otherwise emit the row alone. This way the family lands at the
+ *  earliest sort position of any of its members — the umbrella drops
+ *  to where the user's sort would put any of its rows. */
+function clusterChainFamilies(sorted: WorkTask[]): WorkTask[] {
+  const umbrellaById = new Map<string, WorkTask>();
+  const childrenByUmbrella = new Map<string, WorkTask[]>();
+  for (const t of sorted) {
+    if (t.is_umbrella) umbrellaById.set(t.id, t);
+  }
+  for (const t of sorted) {
+    if (t.is_umbrella) continue;
+    if (!t.umbrella_id || !umbrellaById.has(t.umbrella_id)) continue;
+    const list = childrenByUmbrella.get(t.umbrella_id) ?? [];
+    list.push(t);
+    childrenByUmbrella.set(t.umbrella_id, list);
+  }
+  // Chain order = created_at ascending — chain create wires steps in
+  // sequence so creation order matches the dependency order. Falls
+  // through cleanly for parallel-children umbrellas too (they have no
+  // edges; order is arbitrary, created_at is a sensible default).
+  for (const list of childrenByUmbrella.values()) {
+    list.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+  const placed = new Set<string>();
+  const out: WorkTask[] = [];
+  for (const t of sorted) {
+    if (placed.has(t.id)) continue;
+    const umbrellaId = t.is_umbrella ? t.id : t.umbrella_id;
+    const umbrella =
+      umbrellaId && umbrellaById.has(umbrellaId) ? umbrellaById.get(umbrellaId)! : null;
+    if (umbrella) {
+      out.push(umbrella);
+      placed.add(umbrella.id);
+      const kids = childrenByUmbrella.get(umbrella.id) || [];
+      for (const k of kids) {
+        out.push(k);
+        placed.add(k.id);
+      }
+    } else {
+      out.push(t);
+      placed.add(t.id);
+    }
+  }
+  return out;
+}
+
 function SortableTableSection({
   rows,
   compact,
@@ -990,6 +1080,7 @@ function SortableTableSection({
   dragEnabled,
   selectedIds,
   onToggleSelected,
+  showUmbrellas = false,
 }: {
   rows: WorkTask[];
   compact: boolean;
@@ -1006,10 +1097,23 @@ function SortableTableSection({
   dragEnabled: boolean;
   selectedIds: Set<string>;
   onToggleSelected: (id: string) => void;
+  /** When true, post-sort cluster rows so each umbrella is immediately
+   *  followed by its children (in chain order = oldest-first). Without
+   *  this, sort by created_at/title/priority would spread family members
+   *  apart inside the bucket. Only meaningful when the parent rebucketed
+   *  chain children into the umbrella's bucket — outside umbrellas
+   *  mode this is a no-op. */
+  showUmbrellas?: boolean;
 }) {
-  const ordered = sortFn
+  const sorted = sortFn
     ? rows.slice().sort(sortFn)
     : rows.slice().sort(compareByRank);
+  // Cluster families when umbrellas mode is active. We iterate the
+  // user's chosen sort order; the FIRST time we encounter a family
+  // member, the umbrella drops in (if visible in this bucket) followed
+  // by its children in chain order (created_at asc — chain creation
+  // sequence). Subsequent family members are skipped (already placed).
+  const ordered = showUmbrellas ? clusterChainFamilies(sorted) : sorted;
   // Header checkbox controls "select all visible in this section".
   // When all rows are already selected, clicking it deselects this
   // section's rows; otherwise it adds them.
@@ -1331,11 +1435,23 @@ function TaskRow({
         : rowKind === "chain-child"
           ? " tasks-row-child tasks-row-chain-child"
           : "";
+  // In umbrellas-mode chain-context view, sibling steps the user
+  // doesn't own (different assignee) come in for the chain context —
+  // grey them out so the eye reads them as "context, not my job."
+  // Umbrella rows aren't muted (they're the header, role-agnostic).
+  // Maayan reported 2026-05-12: chain stages assigned to teammates
+  // should appear in the list but visibly de-emphasized.
+  const isChild = rowKind === "parallel-child" || rowKind === "chain-child";
+  const lcUser = (userEmail || "").toLowerCase();
+  const isMine =
+    !!lcUser &&
+    (task.assignees || []).some((e) => e.toLowerCase() === lcUser);
+  const muteCls = isChild && lcUser && !isMine ? " tasks-row-other-assignee" : "";
   return (
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
       style={rowStyle}
-      className={`${selected ? "is-selected" : ""}${rowKindCls}`.trim() || undefined}
+      className={`${selected ? "is-selected" : ""}${rowKindCls}${muteCls}`.trim() || undefined}
     >
       <td className="bulk-select-cell">
         <input

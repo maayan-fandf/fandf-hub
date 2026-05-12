@@ -14329,6 +14329,22 @@ html[data-theme="dark"] .tasks-row-umbrella > td {
   background: rgba(139, 92, 246, 0.16);
 }
 
+/* Chain-context grey-out — when עטיפות is on, sibling chain steps the
+   user doesn't own come in for context; muting them keeps the eye on
+   "the row that's actually mine" while still showing the chain
+   journey. Wins specificity over .tasks-row-child since both classes
+   live on the same <tr>; the desaturation reads through cell content
+   without hiding it. */
+.tasks-row-other-assignee {
+  opacity: 0.55;
+}
+.tasks-row-other-assignee .tasks-title-link {
+  font-weight: 400;
+}
+.tasks-row-other-assignee:hover {
+  opacity: 0.85;
+}
+
 /* When the queue is grouped by a field that already names each
    bucket (company / project / department / assignee), hide the
    matching column on every row so the same value doesn't repeat

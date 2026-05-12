@@ -584,6 +584,93 @@ export async function tasksListDirect(
     }
     tasks.push(t);
   }
+
+  // ── umbrellas-mode chain context augmentation ────────────────────
+  // When the user toggles the עטיפות chip (`include_umbrellas=true`),
+  // the chain-context view becomes meaningful: they're asking to see
+  // each chain in full. The default relevance filter (relevant_to_me /
+  // assignee=me) hides upstream/downstream stages assigned to teammates,
+  // which is exactly the context the user wants in this mode.
+  //
+  // Strategy: after the main filter pass, find every umbrella id touched
+  // by the result (either the row IS an umbrella, or its umbrella_id
+  // points at one). Then do a second pass adding sibling rows that share
+  // those umbrella ids — bypassing the relevance filters but still
+  // enforcing access + scope (company/project/department/kind/
+  // brief/dates/campaign). Status filter is also relaxed so a "done"
+  // upstream stage appears alongside the user's current "awaiting"
+  // stage — the user expects to see the whole journey in this view.
+  // Maayan reported 2026-05-12: chain context invisible without
+  // flipping between tasks.
+  if (filters.include_umbrellas) {
+    const umbrellaIds = new Set<string>();
+    for (const t of tasks) {
+      if (t.is_umbrella) umbrellaIds.add(t.id);
+      else if (t.umbrella_id) umbrellaIds.add(t.umbrella_id);
+    }
+    if (umbrellaIds.size > 0) {
+      const existing = new Set(tasks.map((t) => t.id));
+      for (const row of rows) {
+        if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
+        const t = rowToTask(row, headerIdx);
+        if (!t.id.trim()) continue;
+        if (existing.has(t.id)) continue;
+        const isUmbrellaOfFamily = t.is_umbrella && umbrellaIds.has(t.id);
+        const isChildOfFamily =
+          !t.is_umbrella && !!t.umbrella_id && umbrellaIds.has(t.umbrella_id);
+        if (!isUmbrellaOfFamily && !isChildOfFamily) continue;
+        // Access gate — same logic as the main loop. Personal-note
+        // pseudo-projects keep their stricter check.
+        if (t.project.startsWith("__")) {
+          const lcUser = subjectEmail.toLowerCase();
+          const isAssignee = (t.assignees || []).some(
+            (e) => e.toLowerCase() === lcUser,
+          );
+          const isAuthor = (t.author_email || "").toLowerCase() === lcUser;
+          if (!isAssignee && !isAuthor) continue;
+        } else if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) {
+          continue;
+        }
+        // Scope/content filters still apply (everything except
+        // relevance: relevant_to_me / assignee / author / approver /
+        // project_manager / involved_with — and status, which we
+        // relax so done/blocked siblings appear).
+        if (filters.company && t.company.trim() !== filters.company.trim()) continue;
+        if (filters.project && t.project.trim() !== filters.project.trim()) continue;
+        if (filters.priority) {
+          const pr = parseInt(filters.priority, 10);
+          if (pr && t.priority !== pr) continue;
+        }
+        if (filters.department) {
+          const f = filters.department.trim();
+          if (!t.departments.some((d) => d.trim() === f)) continue;
+        }
+        if (filters.kind) {
+          const f = filters.kind.trim();
+          if ((t.kind || "").trim() !== f) continue;
+        }
+        if (
+          filters.brief &&
+          !t.brief.toLowerCase().includes(filters.brief.toLowerCase())
+        ) {
+          continue;
+        }
+        if (filters.campaign) {
+          const f = filters.campaign.trim();
+          if ((t.campaign || "").trim() !== f) continue;
+        }
+        if (filters.requested_date_from || filters.requested_date_to) {
+          const d = (t.requested_date || "").slice(0, 10);
+          if (!d) continue;
+          if (filters.requested_date_from && d < filters.requested_date_from) continue;
+          if (filters.requested_date_to && d > filters.requested_date_to) continue;
+        }
+        t.comments_count = commentsCount.get(t.id) ?? 0;
+        tasks.push(t);
+      }
+    }
+  }
+
   tasks.sort((a, b) => b.created_at.localeCompare(a.created_at));
   return { ok: true, tasks, count: tasks.length };
 }
