@@ -2563,20 +2563,36 @@ async function tasksUpdateDirectInner(
           }
           // Phase 7 polish — fire `task_unblocked` (NOT `task_assigned`)
           // so users distinguish "your turn — chain advanced" from
-          // "you've been newly assigned to a task". Body prepends the
-          // upstream task ID so the recipient knows which step just
-          // wrapped (clickable when they expand the notification).
-          // Source actor is "system" because the cascade fires
-          // automatically; the original user's identity is captured
-          // in the hub task's status_history, not the notification.
+          // "you've been newly assigned to a task". Body opens with a
+          // single clear instruction ("המשימה שלך פתוחה — אפשר להתחיל
+          // לעבוד") because the previous copy ("הופעל לאחר סיום
+          // T-xxx") read like a log line and the user (Maayan,
+          // 2026-05-12) couldn't tell from the alert what action to
+          // take. The upstream context goes on a second line with the
+          // PREVIOUS STEP'S TITLE (not its id) so it's actually
+          // meaningful chain context. Source actor is "system"
+          // because the cascade fires automatically; the original
+          // user's identity is captured in the hub task's
+          // status_history, not the notification.
           try {
             const { notifyOnce } = await import("@/lib/notifications");
             const link = taskHubUrl(u.taskForGTSpawn.id);
-            const upstreamHint =
-              u.unblockedBy.length > 0
-                ? `הופעל לאחר סיום ${u.unblockedBy.join(", ")}`
-                : "הופעל אוטומטית";
-            const body = `${upstreamHint}\n\n${buildTaskBody(u.taskForGTSpawn as never)}`;
+            const upstreamTitle = (u.unblockedByTitles || [])[0] || "";
+            const upstreamLine = upstreamTitle
+              ? `(אחרי שלב קודם: ${upstreamTitle})`
+              : "";
+            const lead = "🔓 השלב שלך פתוח — אפשר להתחיל לעבוד.";
+            const ctaHint = `פתח את המשימה כדי לראות את הפרטים ולהתחיל.`;
+            const body = [
+              lead,
+              upstreamLine,
+              "",
+              ctaHint,
+              "",
+              buildTaskBody(u.taskForGTSpawn as never),
+            ]
+              .filter((s) => s !== null)
+              .join("\n");
             for (const to of u.assignees) {
               await notifyOnce({
                 kind: "task_unblocked",

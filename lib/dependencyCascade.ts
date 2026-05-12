@@ -50,6 +50,13 @@ export type CascadeUnblock = {
   title: string;
   /** Upstream blocker IDs that were waiting on the just-completed task */
   unblockedBy: string[];
+  /** Titles of those upstream blockers, in the same order as `unblockedBy`.
+   *  Resolved from the in-memory row index at cascade time so the
+   *  post-cascade notification can show meaningful chain context
+   *  ("הופעל לאחר סיום 'לסיים את הפיגמה'") instead of an opaque task
+   *  ID. Unknown IDs (e.g. archived/deleted upstream) map to the ID
+   *  string itself as a graceful fallback. */
+  unblockedByTitles: string[];
   /** Assignees on the unblocked row — phase 3 GT-sync uses this so
    *  the post-cascade spawn-hook in tasksUpdateDirect can call
    *  createGoogleTasks without re-reading the sheet. Empty array
@@ -364,10 +371,20 @@ export async function cascadeAfterTerminal(args: {
         const n = parseInt(raw, 10);
         return Number.isFinite(n) ? n : 2;
       })();
+      // Resolve upstream titles for the post-cascade notification. The
+      // by-id index already has every row; unknown ids fall back to the
+      // raw id string so the alert still has SOMETHING to point at.
+      const unblockedByTitles = u.unblockedByIds.map((id) => {
+        const ref = byId.get(id);
+        if (!ref) return id;
+        const t = colTitle != null ? String(ref.row[colTitle] ?? "").trim() : "";
+        return t || id;
+      });
       result.unblocked.push({
         taskId: u.candidate.id,
         title: colTitle != null ? String(u.candidate.row[colTitle] ?? "") : "",
         unblockedBy: u.unblockedByIds,
+        unblockedByTitles,
         assignees,
         sheetRowIndex: u.candidate.sheetRowIndex,
         taskForGTSpawn: {

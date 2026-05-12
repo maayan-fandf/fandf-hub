@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTaskStatus } from "@/lib/appsScript";
 import PersonCombobox from "./PersonCombobox";
+import PeopleMultiCombobox from "./PeopleMultiCombobox";
 
 type Props = {
   selectedIds: Set<string>;
@@ -225,10 +226,24 @@ export default function TasksBulkBar({
   }
 
   function bulkAssignee() {
-    const v = assigneeValue.trim();
-    if (!v) return;
-    if (!window.confirm(`להחליף עובד מבצע ל-${v} בכל ${ids.length}?`)) return;
-    void applyPatch(`עובד מבצע → ${v}`, { assignees: [v] });
+    // assigneeValue holds a CSV of emails — PeopleMultiCombobox's store
+    // format. Parse, dedupe (case-insensitive), and apply as the new
+    // assignees array for every selected task. Empty after a single
+    // backspace also counts as "no change requested" — bail.
+    const list = assigneeValue
+      .split(/[,;\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.length === 0) return;
+    const labelList = list.length === 1 ? list[0] : `${list.length} עובדים`;
+    if (
+      !window.confirm(
+        `להחליף את העובדים ל-${labelList} בכל ${ids.length}?`,
+      )
+    ) {
+      return;
+    }
+    void applyPatch(`עובדים → ${labelList}`, { assignees: list });
     setAssigneeValue("");
   }
 
@@ -362,8 +377,8 @@ export default function TasksBulkBar({
       </select>
 
       <div className="tasks-bulk-input-group tasks-bulk-input-group-people">
-        <span className="tasks-bulk-input-label">עובד מבצע</span>
-        <PersonCombobox
+        <span className="tasks-bulk-input-label">עובדים</span>
+        <PeopleMultiCombobox
           value={assigneeValue}
           onChange={setAssigneeValue}
           options={people}

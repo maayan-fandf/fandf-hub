@@ -15,8 +15,16 @@ const KIND_LABELS: Record<string, { emoji: string; label: string }> = {
   task_returned: { emoji: "↩️", label: "משימה הוחזרה" },
   task_done: { emoji: "✅", label: "משימה הושלמה" },
   task_cancelled: { emoji: "🚫", label: "משימה בוטלה" },
+  // Chain-cascade hand-off — previous step finished, this user's step
+  // is now actionable. Distinct from `task_assigned` (brand-new task)
+  // so the chip reads as "your turn" rather than "new work landed."
+  // Without this entry the notifications page rendered the raw
+  // "task_unblocked" string in the chip — Maayan flagged it
+  // 2026-05-12 as "not clear what I should do."
+  task_unblocked: { emoji: "🔓", label: "תורך בשרשרת" },
   comment_reply: { emoji: "💬", label: "תגובה חדשה" },
   mention: { emoji: "🏷️", label: "תויגת" },
+  chat_mention: { emoji: "💬", label: "תויגת ב-Chat" },
 };
 
 export default async function NotificationsPage({
