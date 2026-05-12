@@ -13,6 +13,7 @@
  * friendly error.
  */
 
+import { Readable } from "node:stream";
 import type { drive_v3 } from "googleapis";
 import { sheetsClient, driveClient, driveFolderOwner } from "@/lib/sa";
 
@@ -195,12 +196,19 @@ export async function uploadToTaskFolder(
     },
     media: {
       mimeType,
-      // Pass the Buffer directly. googleapis accepts Buffer | Readable
-      // | string for media.body; the previous `Readable.from(bytes)`
-      // wrap occasionally produced 0-byte uploads (suspected stream
-      // semantics with the underlying HTTP client). Buffer-direct is
-      // simpler and avoids the indirection.
-      body: bytes,
+      // Wrap the Buffer in a Node Readable. The googleapis SDK calls
+      // `body.pipe()` unconditionally inside its media-upload helper, so
+      // passing a Buffer directly throws "b.body.pipe is not a function"
+      // (Buffer has no .pipe). Same bug `lib/chat.ts` worked around;
+      // this surface re-tripped it in commit 9d14b00 when the previous
+      // `Readable.from(bytes)` was swapped to a bare Buffer to try to
+      // fix occasional 0-byte uploads. The 0-byte concern is now caught
+      // belt-and-suspenders by:
+      //   • route.ts (rejects fileEntry.size === 0 at the boundary)
+      //   • the upfront `bytes.length === 0` check above
+      //   • the post-create `size` verification below
+      // so reverting to Readable.from is safe.
+      body: Readable.from(bytes),
     },
     // Include `size` so we can verify the upload actually carried bytes
     // before returning success to the composer.
