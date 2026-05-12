@@ -408,11 +408,14 @@ export async function tasksListDirect(
     campaign?: string;
     requested_date_from?: string;
     requested_date_to?: string;
-    /** OR-filter across author/approver/assignee. When set, a task
-     *  passes if its author_email, approver_email, OR any assignee
-     *  email matches. Used by /tasks default view so a manager who is
-     *  ALSO an assignee on some task sees both sets at once instead
-     *  of having to flip between filters. */
+    /** OR-filter across author/approver/project_manager/assignee. When
+     *  set, a task passes if any of those email fields matches. Used
+     *  by /tasks default view so a manager who is the PM on some
+     *  projects sees those tasks alongside ones they author/approve/
+     *  work on directly. Reported by Maayan 2026-05-12: Itay (Client
+     *  Manager on the מטרו project, listed as `project_manager_email`
+     *  on its tasks but not author/approver/assignee) couldn't see
+     *  the project's tasks in his default queue. */
     relevant_to_me?: string;
     /** Broader OR-filter: author OR approver OR project_manager OR
      *  any assignee OR mentioned-in-any-discussion-comment.
@@ -548,8 +551,9 @@ export async function tasksListDirect(
       const r = filters.relevant_to_me.toLowerCase();
       const isAuthor = t.author_email === r;
       const isApprover = t.approver_email === r;
+      const isPm = t.project_manager_email === r;
       const isAssignee = t.assignees.some((e) => e.toLowerCase() === r);
-      if (!isAuthor && !isApprover && !isAssignee) continue;
+      if (!isAuthor && !isApprover && !isPm && !isAssignee) continue;
     }
     if (involvedWith) {
       const isAuthor = t.author_email === involvedWith;

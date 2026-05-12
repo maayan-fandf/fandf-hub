@@ -479,7 +479,7 @@ function RoleDefaultHint({
     // OR-default: tasks where the user is author OR approver OR
     // assignee. Hint copy is role-agnostic since the filter is.
     text = isViewingAs
-      ? `מציג משימות הקשורות ל-${handle} (יוצר/ת, מאשר/ת או מבצע/ת)`
+      ? `מציג משימות הקשורות ל-${handle} (יוצר/ת, מאשר/ת, מנהל/ת פרויקט או מבצע/ת)`
       : `מציג משימות הקשורות אליך (${handle})`;
   }
   if (!text) return null;
