@@ -2493,11 +2493,14 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 }
 
 @media (min-width: 1100px) {
-  /* Two columns — tasks left, discussion right (in RTL: right + left).
-     Keeps the section content side-by-side at desktop widths instead
-     of letting one of them eat the whole width. */
+  /* Two columns — tasks first in DOM (right in RTL), discussion second
+     (left in RTL). Maayan asked to widen the tasks column 2026-05-12:
+     was 1fr/1.2fr (~45/55, discussion bigger), now 3fr/2fr (60/40 with
+     tasks dominant). Tasks tend to have more horizontal content
+     (status pills, dates, file counts, multiple assignee avatars), so
+     the wider track reads better than splitting the discussion thread. */
   .project-sections {
-    grid-template-columns: 1fr 1.2fr;
+    grid-template-columns: 3fr 2fr;
   }
 }
 
