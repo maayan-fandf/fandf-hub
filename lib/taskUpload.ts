@@ -43,10 +43,29 @@ function envOrThrow(name: string): string {
 
 type TaskFolderInfo = { folderId: string; title: string };
 
+// Per-process cache: taskId → { info, expiresAt }. Drive folder IDs are
+// effectively immutable per task (set at create time, never reassigned)
+// and titles change rarely. Caching the lookup with a 5-min TTL cuts
+// the Sheets API reads on the submission hot path — Maayan hit the
+// 300-reads/min/user quota 2026-05-12 while repeatedly testing the
+// submission modal because each /api/worktasks/upload reread the
+// entire Comments tab from scratch.
+//
+// Single shared map across subjects since the data is the same
+// regardless of viewer (drive_folder_id + title don't depend on who's
+// asking). The 5-min TTL bounds staleness if a title is renamed.
+type CacheEntry = { info: TaskFolderInfo; expiresAt: number };
+const FOLDER_INFO_CACHE = new Map<string, CacheEntry>();
+const FOLDER_INFO_TTL_MS = 5 * 60 * 1000;
+
 async function findTaskFolderInfo(
   subjectEmail: string,
   taskId: string,
 ): Promise<TaskFolderInfo> {
+  const cached = FOLDER_INFO_CACHE.get(taskId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.info;
+  }
   const sheets = sheetsClient(subjectEmail);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
@@ -73,7 +92,12 @@ async function findTaskFolderInfo(
       );
     }
     const title = titleCol >= 0 ? String(values[i][titleCol] ?? "").trim() : "";
-    return { folderId, title };
+    const info: TaskFolderInfo = { folderId, title };
+    FOLDER_INFO_CACHE.set(taskId, {
+      info,
+      expiresAt: Date.now() + FOLDER_INFO_TTL_MS,
+    });
+    return info;
   }
   throw new Error("Task not found: " + taskId);
 }
