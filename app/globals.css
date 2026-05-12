@@ -15364,7 +15364,7 @@ html[data-theme="dark"] .task-preview-status.status-blocked           { color: #
   gap: 0.6rem;
   position: relative;
 }
-.task-approval-banner-awaiting_approval {
+.task-approval-banner-approval {
   background: linear-gradient(
     to bottom,
     rgba(245, 158, 11, 0.10),
@@ -15372,7 +15372,7 @@ html[data-theme="dark"] .task-preview-status.status-blocked           { color: #
   );
   border-color: rgba(245, 158, 11, 0.45);
 }
-.task-approval-banner-awaiting_clarification {
+.task-approval-banner-clarification {
   background: linear-gradient(
     to bottom,
     rgba(139, 92, 246, 0.10),
@@ -15380,18 +15380,37 @@ html[data-theme="dark"] .task-preview-status.status-blocked           { color: #
   );
   border-color: rgba(139, 92, 246, 0.45);
 }
-html[data-theme="dark"] .task-approval-banner-awaiting_approval {
+.task-approval-banner-rejection {
+  /* Rose/red wash signals "you have feedback to address" without
+     looking error-state-y (the same hue is used for high-priority
+     pills elsewhere). Border slightly stronger so the banner reads
+     as more urgent than approval. */
+  background: linear-gradient(
+    to bottom,
+    rgba(244, 63, 94, 0.10),
+    rgba(244, 63, 94, 0.04)
+  );
+  border-color: rgba(244, 63, 94, 0.5);
+}
+html[data-theme="dark"] .task-approval-banner-approval {
   background: linear-gradient(
     to bottom,
     rgba(245, 158, 11, 0.20),
     rgba(245, 158, 11, 0.08)
   );
 }
-html[data-theme="dark"] .task-approval-banner-awaiting_clarification {
+html[data-theme="dark"] .task-approval-banner-clarification {
   background: linear-gradient(
     to bottom,
     rgba(139, 92, 246, 0.22),
     rgba(139, 92, 246, 0.08)
+  );
+}
+html[data-theme="dark"] .task-approval-banner-rejection {
+  background: linear-gradient(
+    to bottom,
+    rgba(244, 63, 94, 0.22),
+    rgba(244, 63, 94, 0.08)
   );
 }
 .task-approval-banner-head {
@@ -15409,21 +15428,29 @@ html[data-theme="dark"] .task-approval-banner-awaiting_clarification {
   border: 1px solid var(--border);
   color: var(--text);
 }
-.task-approval-banner-awaiting_approval .task-approval-banner-chip {
+.task-approval-banner-approval .task-approval-banner-chip {
   background: rgba(245, 158, 11, 0.18);
   border-color: rgba(245, 158, 11, 0.5);
   color: #92400e;
 }
-html[data-theme="dark"] .task-approval-banner-awaiting_approval .task-approval-banner-chip {
+html[data-theme="dark"] .task-approval-banner-approval .task-approval-banner-chip {
   color: #fbbf24;
 }
-.task-approval-banner-awaiting_clarification .task-approval-banner-chip {
+.task-approval-banner-clarification .task-approval-banner-chip {
   background: rgba(139, 92, 246, 0.18);
   border-color: rgba(139, 92, 246, 0.5);
   color: #5b21b6;
 }
-html[data-theme="dark"] .task-approval-banner-awaiting_clarification .task-approval-banner-chip {
+html[data-theme="dark"] .task-approval-banner-clarification .task-approval-banner-chip {
   color: #c4b5fd;
+}
+.task-approval-banner-rejection .task-approval-banner-chip {
+  background: rgba(244, 63, 94, 0.18);
+  border-color: rgba(244, 63, 94, 0.5);
+  color: #9f1239;
+}
+html[data-theme="dark"] .task-approval-banner-rejection .task-approval-banner-chip {
+  color: #fda4af;
 }
 .task-approval-banner-author {
   font-weight: 600;

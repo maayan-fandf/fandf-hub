@@ -14,6 +14,8 @@ const SUBMIT_PREFIX = "🔍 הוגש לאישור";
 const CLARIFY_PREFIX = "❓ ממתין לבירור";
 const REJECT_PREFIX = "🔄 הוחזר לתיקון";
 
+type BannerMode = "approval" | "clarification" | "rejection";
+
 type Props = {
   task: WorkTask;
   /** Latest comments on the task (oldest-first as returned by
@@ -71,11 +73,17 @@ export default function TaskApprovalBanner({
   const router = useRouter();
   const [busy, setBusy] = useState<"approve" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Modal action (reject / clarify) — opens TaskTransitionModal with
-  // the matching target status. Approve doesn't need the modal (it's
-  // just a status flip with no deliverable required).
+  // Modal action target. Each banner mode triggers different targets:
+  //   approval mode:    in_progress (reject) / awaiting_clarification (clarify)
+  //   clarification:    in_progress (answer + back to work)
+  //   rejection:        awaiting_approval (resubmit after fixing)
+  // Approve is the only path that doesn't use the modal — it's a clean
+  // status flip with no deliverable required.
   const [modalTarget, setModalTarget] = useState<
-    "in_progress" | "awaiting_clarification" | null
+    | "in_progress"
+    | "awaiting_clarification"
+    | "awaiting_approval"
+    | null
   >(null);
 
   const lc = myEmail.toLowerCase();
@@ -86,15 +94,43 @@ export default function TaskApprovalBanner({
     !!task.author_email && task.author_email.toLowerCase() === lc;
 
   const status = task.status;
-  if (status !== "awaiting_approval" && status !== "awaiting_clarification") {
-    return null;
-  }
 
-  // Pick the matching prefix for this status, then find the latest
-  // comment whose body opens with it. Comments are oldest-first so we
-  // iterate in reverse to grab the most recent match cheaply.
-  const wantedPrefix =
-    status === "awaiting_approval" ? SUBMIT_PREFIX : CLARIFY_PREFIX;
+  // Decide which banner mode (if any) applies to the current status.
+  // - awaiting_approval        → "approval"     (find latest 🔍 הוגש לאישור)
+  // - awaiting_clarification   → "clarification" (find latest ❓ ממתין לבירור)
+  // - in_progress / awaiting_handling — only show a banner when the
+  //   LATEST status-changing comment is a rejection that has NOT been
+  //   superseded by a fresh submission. This keeps the "fix what was
+  //   rejected" banner visible right after Itay bounces work back, but
+  //   it disappears once Maayan submits again (the new 🔍 comment
+  //   wins). Tasks that landed in in_progress through normal flow
+  //   (assignee picks up new work) see no banner — they're not in a
+  //   rejection-response state.
+  let mode: BannerMode | null = null;
+  let wantedPrefix = "";
+  if (status === "awaiting_approval") {
+    mode = "approval";
+    wantedPrefix = SUBMIT_PREFIX;
+  } else if (status === "awaiting_clarification") {
+    mode = "clarification";
+    wantedPrefix = CLARIFY_PREFIX;
+  } else if (status === "in_progress" || status === "awaiting_handling") {
+    let latestSubmitIdx = -1;
+    let latestRejectIdx = -1;
+    for (let i = 0; i < comments.length; i++) {
+      const body = comments[i].body || "";
+      if (body.startsWith(SUBMIT_PREFIX)) latestSubmitIdx = i;
+      else if (body.startsWith(REJECT_PREFIX)) latestRejectIdx = i;
+    }
+    if (latestRejectIdx >= 0 && latestRejectIdx > latestSubmitIdx) {
+      mode = "rejection";
+      wantedPrefix = REJECT_PREFIX;
+    }
+  }
+  if (!mode) return null;
+
+  // Find the latest comment whose body opens with the chosen prefix.
+  // Comments are oldest-first so iterate in reverse — first hit wins.
   let latest: CommentItem | null = null;
   for (let i = comments.length - 1; i >= 0; i--) {
     const body = comments[i].body || "";
@@ -105,10 +141,19 @@ export default function TaskApprovalBanner({
   }
   if (!latest) return null;
 
+  // Who gets the action buttons inline (vs view-only preview)?
+  //   approval     → the approver (Itay can approve/reject/clarify)
+  //   clarification → the author (Maayan, who can answer)
+  //   rejection    → the assignees + author (whoever owes the resubmit)
+  // Admins always get actions.
+  const lcAssignees = (task.assignees || []).map((e) => e.toLowerCase());
+  const isAssignee = lcAssignees.includes(lc);
   const showActions =
-    status === "awaiting_approval"
+    mode === "approval"
       ? isApprover || isAdmin
-      : isAuthor || isAdmin;
+      : mode === "clarification"
+        ? isAuthor || isAdmin
+        : isAuthor || isAssignee || isAdmin;
 
   const authorDisplay =
     personDisplayName(latest.author_email, people) || latest.author_email;
@@ -146,16 +191,16 @@ export default function TaskApprovalBanner({
   }
 
   const label =
-    status === "awaiting_approval" ? "ממתין לאישורך" : "מחכים לתשובתך";
-  const intro =
-    status === "awaiting_approval"
-      ? "הוגש לאישור — סקור/י את התוכן למטה ובחר/י אישור או החזרה לתיקון"
-      : "בקשת בירור — סקור/י את השאלה למטה וענה/י כדי להמשיך";
+    mode === "approval"
+      ? "ממתין לאישורך"
+      : mode === "clarification"
+        ? "מחכים לתשובתך"
+        : "המשימה הוחזרה לתיקון";
 
   return (
     <>
       <section
-        className={`task-approval-banner task-approval-banner-${status}`}
+        className={`task-approval-banner task-approval-banner-${mode}`}
         aria-label={label}
       >
         <div className="task-approval-banner-head">
@@ -178,7 +223,7 @@ export default function TaskApprovalBanner({
         />
         {showActions && (
           <div className="task-approval-banner-actions">
-            {status === "awaiting_approval" ? (
+            {mode === "approval" && (
               <>
                 <button
                   type="button"
@@ -205,7 +250,8 @@ export default function TaskApprovalBanner({
                   ❓ בקש בירור
                 </button>
               </>
-            ) : (
+            )}
+            {mode === "clarification" && (
               <button
                 type="button"
                 className="btn-primary btn-sm"
@@ -213,6 +259,16 @@ export default function TaskApprovalBanner({
                 disabled={busy !== null}
               >
                 💬 ענה והחזר לעבודה
+              </button>
+            )}
+            {mode === "rejection" && (
+              <button
+                type="button"
+                className="btn-primary btn-sm task-approval-banner-approve"
+                onClick={() => setModalTarget("awaiting_approval")}
+                disabled={busy !== null}
+              >
+                ↗️ הגש שוב לאישור
               </button>
             )}
           </div>
@@ -253,9 +309,3 @@ function formatRelative(iso: string): string {
   return formatDateIso(iso);
 }
 
-// Imported but unused at the top to keep the prefix-table readable;
-// reject prefix only matters when status flips OUT of awaiting_approval
-// — that comment is informational on the assignee's discussion view,
-// not surfaced as a banner. Keep the constant exported-like for
-// callers that may want to filter on it later.
-void REJECT_PREFIX;

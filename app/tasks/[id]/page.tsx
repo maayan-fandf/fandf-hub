@@ -95,23 +95,18 @@ export default async function TaskDetailPage({
 
   const t = res.task;
 
-  // Pre-fetch the task's comments for the approval banner. getTaskComments
-  // is wrapped in React's cache(), so this call is deduped with the
-  // one TaskComments makes for the discussion section — the two surfaces
-  // share a single Sheets read. We only pre-fetch when the task is in
-  // a status that COULD render the banner (awaiting_approval /
-  // awaiting_clarification); skipping it for other statuses keeps the
-  // task page's read budget unchanged for the common case. On error or
-  // when the user can't access the project we silently fall back to an
-  // empty list; the banner renders null in that case and the discussion
-  // section will surface the error itself.
-  const needsBannerData =
-    t.status === "awaiting_approval" || t.status === "awaiting_clarification";
-  const bannerComments = needsBannerData
-    ? await getTaskComments(t.id)
-        .then((d) => d.comments)
-        .catch(() => [])
-    : [];
+  // Pre-fetch the task's comments for the approval banner.
+  // getTaskComments is wrapped in React's cache(), so this call is
+  // deduped with the one TaskComments makes for the discussion section
+  // — the two surfaces share a single Sheets read. The banner itself
+  // decides whether to render based on status + matching comment
+  // prefix, so we can pre-fetch unconditionally without paying a
+  // second read. On error or when the user can't access the project
+  // we silently fall back to an empty list; the banner renders null
+  // in that case and the discussion section surfaces the error itself.
+  const bannerComments = await getTaskComments(t.id)
+    .then((d) => d.comments)
+    .catch(() => []);
   const myEmail = (await currentUserEmail()) || "";
 
   // Round chain: only fetch project tasks when the current task is part
