@@ -1150,11 +1150,17 @@ function renderTaskEmailHtml(opts: {
       `<p style="margin:8px 0 0"><a href="${escapeHtml(opts.driveHref)}">📁 תיקיית קבצים</a></p>`,
     );
   }
+  // RTL stickiness — Gmail strips <html>/<head>, so dir+lang there
+  // are dropped. Apply them on <body> (which survives) and wrap the
+  // content in <div dir="rtl"> for Outlook + Apple Mail. See the
+  // matching note in lib/notifications.ts renderHtmlTemplate.
   return [
     "<!doctype html>",
     '<html lang="he" dir="rtl"><head><meta charset="utf-8"></head>',
-    '<body style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a">',
+    '<body dir="rtl" lang="he" style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a;direction:rtl;text-align:right">',
+    '<div dir="rtl" style="direction:rtl;text-align:right">',
     rows.join("\n"),
+    "</div>",
     "</body></html>",
   ].join("");
 }

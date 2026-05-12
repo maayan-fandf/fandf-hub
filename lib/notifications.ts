@@ -552,11 +552,21 @@ function buildDefaultEmailHtml(opts: {
       )}</a></p>`,
     );
   }
+  // RTL stickiness for Gmail (Maayan reported emails rendering LTR
+  // 2026-05-12): Gmail strips <html> and <head>, so `dir="rtl"` and
+  // `lang="he"` on the root are silently dropped. The <body> attrs
+  // mostly survive (they get inlined into Gmail's wrapper), and an
+  // explicit <div dir="rtl"> around the content is the belt-and-
+  // suspenders move that other clients (Outlook, Apple Mail) also
+  // honor. text-align:right on the wrapper makes the visual
+  // direction obvious even if a client doesn't propagate `dir`.
   return [
     "<!doctype html>",
     '<html lang="he" dir="rtl"><head><meta charset="utf-8"></head>',
-    '<body style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a">',
+    '<body dir="rtl" lang="he" style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a;direction:rtl;text-align:right">',
+    '<div dir="rtl" style="direction:rtl;text-align:right">',
     blocks.join("\n"),
+    "</div>",
     "</body></html>",
   ].join("");
 }
