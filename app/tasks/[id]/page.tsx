@@ -469,7 +469,6 @@ export default async function TaskDetailPage({
             task={t}
             comments={bannerComments}
             myEmail={myEmail}
-            isAdmin={!!accessRes?.isAdmin}
             people={peopleRes?.people ?? []}
           />
 

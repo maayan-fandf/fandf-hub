@@ -23,12 +23,10 @@ type Props = {
    *  clarification-request / rejection so the banner can preview the
    *  content the recipient needs to act on. */
   comments: CommentItem[];
-  /** Current viewer's email. Combined with the task's
-   *  approver_email / author_email to gate the action buttons. */
+  /** Current viewer's email. The banner renders only when this email
+   *  matches the mode's primary recipient (approver / author /
+   *  assignee) so the wrong person doesn't get nagged. */
   myEmail: string;
-  /** Hub admins can act on any task regardless of approver/author
-   *  role. Mirrors the access pattern elsewhere in the app. */
-  isAdmin: boolean;
   /** People roster for resolving comment-author emails to Hebrew
    *  display names. */
   people: TasksPerson[];
@@ -67,7 +65,6 @@ export default function TaskApprovalBanner({
   task,
   comments,
   myEmail,
-  isAdmin,
   people,
 }: Props) {
   const router = useRouter();
@@ -141,19 +138,30 @@ export default function TaskApprovalBanner({
   }
   if (!latest) return null;
 
-  // Who gets the action buttons inline (vs view-only preview)?
-  //   approval     → the approver (Itay can approve/reject/clarify)
-  //   clarification → the author (Maayan, who can answer)
-  //   rejection    → the assignees + author (whoever owes the resubmit)
-  // Admins always get actions.
+  // Banner visibility — show ONLY to the person who can act on it,
+  // not to every viewer. Maayan reported 2026-05-12: after she
+  // reassigned the approver to Itay, she still saw "ממתין לאישורך"
+  // because the banner rendered for everyone (only the buttons were
+  // gated). Hiding for non-actionable viewers prevents the wrong
+  // person thinking the task is waiting on them.
+  //
+  //   approval     → the approver (only Itay should see "ממתין לאישורך")
+  //   clarification → the author (only the person who can answer)
+  //   rejection    → the author + assignees (whoever owes the resubmit)
+  //
+  // No admin shortcut on this surface: an admin who isn't the
+  // approver/author/assignee can still act via the status pill if
+  // they need to. The banner is for the primary recipient, not a
+  // catch-all "admins can see everything" view.
   const lcAssignees = (task.assignees || []).map((e) => e.toLowerCase());
   const isAssignee = lcAssignees.includes(lc);
-  const showActions =
+  const isPrimaryRecipient =
     mode === "approval"
-      ? isApprover || isAdmin
+      ? isApprover
       : mode === "clarification"
-        ? isAuthor || isAdmin
-        : isAuthor || isAssignee || isAdmin;
+        ? isAuthor
+        : isAuthor || isAssignee;
+  if (!isPrimaryRecipient) return null;
 
   const authorDisplay =
     personDisplayName(latest.author_email, people) || latest.author_email;
@@ -221,9 +229,8 @@ export default function TaskApprovalBanner({
           className="task-approval-banner-body"
           people={people}
         />
-        {showActions && (
-          <div className="task-approval-banner-actions">
-            {mode === "approval" && (
+        <div className="task-approval-banner-actions">
+          {mode === "approval" && (
               <>
                 <button
                   type="button"
@@ -271,8 +278,7 @@ export default function TaskApprovalBanner({
                 ↗️ הגש שוב לאישור
               </button>
             )}
-          </div>
-        )}
+        </div>
         {error && <div className="task-approval-banner-error">{error}</div>}
       </section>
       {modalTarget && (
