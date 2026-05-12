@@ -7439,11 +7439,12 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 .project-section-metrics > .section-head {
   position: absolute;
   top: 0.5rem;
-  /* Anchor to the logical-start side (visual right in our RTL layout)
-     using inset-inline-start. Matches the placement of other section
-     titles on the page. */
-  inset-inline-start: 0.8rem;
-  inset-inline-end: auto;
+  /* Anchor to the logical-end side (visual LEFT in our RTL layout).
+     The iframe's own project name + date range live in the top-right
+     corner inside the iframe, so the pill must sit on the opposite
+     corner to avoid covering them. */
+  inset-inline-end: 0.8rem;
+  inset-inline-start: auto;
   margin: 0;
   z-index: 2;
   /* Subtle backdrop so the floating heading reads against either a
