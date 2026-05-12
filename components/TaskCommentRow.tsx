@@ -16,6 +16,11 @@ type Comment = {
   author_name?: string;
   timestamp: string;
   edited_at?: string | null;
+  /** When set, the comment was posted on an upstream chain step and is
+   *  being surfaced here for context. The row renders a "מתוך השלב הקודם"
+   *  label with a deep-link to the source task, and the edit/delete
+   *  affordances are suppressed by the parent. */
+  from_task?: { id: string; title: string };
 };
 
 const MAX = 4000;
@@ -155,8 +160,10 @@ export default function TaskCommentRow({
     authorRole,
   );
 
+  const inherited = !!comment.from_task;
+
   return (
-    <li className="thread-reply">
+    <li className={`thread-reply${inherited ? " thread-reply-inherited" : ""}`}>
       <Avatar
         name={comment.author_email}
         title={authorDisplay}
@@ -164,6 +171,17 @@ export default function TaskCommentRow({
         size={26}
       />
       <div className="thread-reply-body">
+        {inherited && comment.from_task && (
+          <a
+            className="thread-reply-from-task"
+            href={`/tasks/${encodeURIComponent(comment.from_task.id)}`}
+            title="פתח את השלב הקודם בלשונית חדשה"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            ↪ מתוך שלב קודם: {comment.from_task.title}
+          </a>
+        )}
         <div className="thread-reply-head">
           <span className="thread-reply-author" title={authorHover}>
             {authorDisplay}

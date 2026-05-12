@@ -415,6 +415,15 @@ export async function myMentionsDirect(
  * `postReplyForUser_` in Apps Script already handles the write side as-is.
  * This reader filters the Comments sheet to those rows for a given task and
  * enforces project-scoped access via the task's own `project` field.
+ *
+ * Chain-aware: when the task is part of a chain (non-empty `blocked_by`),
+ * we also pull comments from every upstream step in the same chain and
+ * stamp each with its source task (id + title). The UI surfaces these
+ * inline above the current task's own comments so the next-stage handler
+ * has full conversation context. Reported by Maayan 2026-05-12: Naomi
+ * commented on her chain stage, but when the next stage's task opened it
+ * showed an empty thread — context invisible without flipping between
+ * tasks.
  */
 export async function taskCommentsDirect(
   subjectEmail: string,
@@ -432,39 +441,94 @@ export async function taskCommentsDirect(
 
   const rowKindIdx = headerIdx.get("row_kind");
 
-  // First pass — locate the task row so we know its project for the access
-  // check. Tasks live in the same Comments sheet with row_kind='task'.
-  let taskProject = "";
+  // Index task rows once so chain-walk lookups are O(1). Maps task id →
+  // { project, title, blocked_by[] } — enough to find the project for
+  // access, walk upstream, and stamp each inherited comment with its
+  // source title.
+  type TaskMeta = { project: string; title: string; blocked_by: string[] };
+  const taskMeta = new Map<string, TaskMeta>();
   for (const row of rows) {
-    const cell = cellGetter(row, headerIdx);
-    if (String(cell("id") ?? "") !== taskId) continue;
     const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
     if (rk !== "task") continue;
-    taskProject = String(cell("project") ?? "").trim();
-    break;
+    const cell = cellGetter(row, headerIdx);
+    const id = String(cell("id") ?? "");
+    if (!id) continue;
+    let blockedBy: string[] = [];
+    const raw = cell("blocked_by");
+    if (raw && typeof raw === "string" && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          blockedBy = parsed.filter((x): x is string => typeof x === "string");
+        }
+      } catch {
+        /* malformed cell — treat as no upstream */
+      }
+    }
+    taskMeta.set(id, {
+      project: String(cell("project") ?? "").trim(),
+      title: String(cell("title") ?? ""),
+      blocked_by: blockedBy,
+    });
   }
-  if (!taskProject) throw new Error("Task not found: " + taskId);
+
+  const self = taskMeta.get(taskId);
+  if (!self) throw new Error("Task not found: " + taskId);
+  const taskProject = self.project;
 
   if (!scope.isAdmin && !scope.accessibleProjects.has(taskProject)) {
     throw new Error("Access denied to project: " + taskProject);
   }
 
-  // Second pass — collect comment rows (row_kind empty) whose parent is the task.
+  // Walk the chain upstream via blocked_by (transitive closure). Stay
+  // within the same project to avoid surfacing comments across an
+  // accidental cross-project edge. Cap at 10 levels — chain create
+  // already guards against cycles, but be defensive against a future
+  // malformed graph slipping through. BFS so closer upstream steps
+  // appear before deeper ancestors when timestamps tie.
+  const upstreamIds: string[] = [];
+  const visited = new Set<string>([taskId]);
+  let frontier = [...self.blocked_by];
+  let depth = 0;
+  while (frontier.length > 0 && depth < 10) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const meta = taskMeta.get(id);
+      if (!meta) continue;
+      if (meta.project !== taskProject) continue;
+      upstreamIds.push(id);
+      for (const upId of meta.blocked_by) {
+        if (!visited.has(upId)) next.push(upId);
+      }
+    }
+    frontier = next;
+    depth += 1;
+  }
+
+  const acceptedParents = new Set<string>([taskId, ...upstreamIds]);
+
+  // Second pass — collect comment rows (row_kind empty) whose parent is
+  // the task OR one of its upstream chain steps.
   const comments: CommentItem[] = [];
   for (const row of rows) {
     const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
     if (rk === "task") continue;
     const cell = cellGetter(row, headerIdx);
-    if (String(cell("parent_id") ?? "") !== taskId) continue;
+    const parentId = String(cell("parent_id") ?? "");
+    if (!acceptedParents.has(parentId)) continue;
 
     const id = String(cell("id") ?? "");
     const project = String(cell("project") ?? "").trim();
     const mentionsRaw = String(cell("mentions") ?? "");
+    const fromUpstream = parentId !== taskId;
+    const upstreamMeta = fromUpstream ? taskMeta.get(parentId) : undefined;
     comments.push({
       comment_id: id,
       project,
       anchor: String(cell("anchor") ?? ""),
-      parent_id: taskId,
+      parent_id: parentId,
       author_email: String(cell("author_email") ?? ""),
       author_name: String(cell("author_name") ?? ""),
       body: String(cell("body") ?? ""),
@@ -477,10 +541,20 @@ export async function taskCommentsDirect(
       reply_count: 0,
       edited_at: toIsoDate(cell("edited_at")) || undefined,
       deep_link: hubCommentUrl(project, id),
+      ...(upstreamMeta
+        ? {
+            from_task: {
+              id: parentId,
+              title: upstreamMeta.title,
+            },
+          }
+        : {}),
     });
   }
 
   // Oldest-first: task comments read top-to-bottom like a chat log.
+  // Upstream-stage comments interleave by timestamp naturally — they
+  // pre-date the current task's comments, so they sort to the top.
   comments.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   return {

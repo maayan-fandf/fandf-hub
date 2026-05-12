@@ -395,6 +395,36 @@ a:hover {
   border-top: 1px dashed var(--border);
   padding-top: 0.55rem;
 }
+/* Comments inherited from an upstream chain step. Slight muting so the
+   reader can tell at a glance "this is context from a previous stage,
+   not a current-task comment." */
+.thread-reply-inherited {
+  opacity: 0.78;
+}
+.thread-reply-inherited .thread-reply-text {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.025));
+  border-inline-start: 2px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+}
+.thread-reply-from-task {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
+  border-radius: 999px;
+  padding: 0.1em 0.6em;
+  margin-bottom: 0.3rem;
+  text-decoration: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-reply-from-task:hover {
+  color: var(--text);
+  background: var(--accent-soft, rgba(79, 70, 229, 0.1));
+}
 
 .thread-reply-body {
   flex: 1;

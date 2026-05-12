@@ -424,6 +424,13 @@ export type CommentItem = {
   /** ISO timestamp of the last body edit. Empty / undefined when never edited. */
   edited_at?: string;
   deep_link: string;
+  /** When set, this comment was posted on an UPSTREAM chain step and is
+   *  surfaced on a downstream step's thread for context. The pair lets
+   *  the UI render a "מתוך השלב הקודם: <title>" label + link to the
+   *  source task. Absent for comments posted directly on the task being
+   *  viewed. Populated only by `taskCommentsDirect` (chain-walk) — other
+   *  comment readers leave it undefined. */
+  from_task?: { id: string; title: string };
 };
 
 export type ProjectComments = {

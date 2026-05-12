@@ -51,9 +51,17 @@ export default async function TaskComments({ taskId }: Props) {
       {comments.length > 0 && (
         <ul className="task-comments-list">
           {comments.map((c) => {
+            // Inherited comments (from upstream chain steps) are
+            // read-only on the downstream thread — the owner can still
+            // edit/delete by navigating to the original task. This
+            // avoids the surprise of "I deleted my comment here but
+            // it's still on the previous stage."
+            const inherited = !!c.from_task;
             const canEdit =
-              !!myEmail && c.author_email.toLowerCase() === myEmail;
-            const canDelete = canEdit || isAdmin;
+              !inherited &&
+              !!myEmail &&
+              c.author_email.toLowerCase() === myEmail;
+            const canDelete = !inherited && (canEdit || isAdmin);
             return (
               <TaskCommentRow
                 key={c.comment_id}
