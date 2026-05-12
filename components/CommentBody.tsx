@@ -230,11 +230,22 @@ function tokenizeLine(line: string): Part[] {
 function toImagePart(alt: string, url: string): Part | null {
   const id = extractDriveFileId(url);
   if (!id) return null;
+  // Route the inline render through the hub's own Drive-image proxy
+  // (`/api/drive/image/<fileId>`) instead of `lh3.googleusercontent.com`.
+  // The lh3 CDN only serves files the viewer's Google session can see
+  // — pasted-screenshot files end up in the SA's task Drive folder
+  // (not publicly shared), so the cross-origin lh3 request 403'd and
+  // the comment rendered as a broken-image icon next to the alt text.
+  // The proxy reads via DRIVE_FOLDER_OWNER (DWD-scoped SA) and streams
+  // the bytes from the same origin as the hub, so cookies/auth work.
+  // Reported by Maayan 2026-05-12 on /tasks/T-mp2gzfvi-w8wg. The
+  // `viewUrl` (original Drive view link) stays unchanged — it's only
+  // used as the lightbox's "פתח ב-Drive" affordance.
   return {
     kind: "image",
     alt: alt || "image",
     viewUrl: url,
-    embedUrl: `https://lh3.googleusercontent.com/d/${id}=w1600`,
+    embedUrl: `/api/drive/image/${encodeURIComponent(id)}`,
   };
 }
 
