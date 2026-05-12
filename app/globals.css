@@ -7361,12 +7361,17 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 /* ─── Metrics iframe (dashboard embed, inline on project overview) ── */
 .metrics-frame-wrap {
   position: relative;
+  /* Was a card-on-card with its own border + radius + shadow inside
+     .project-section-metrics. Maayan asked 2026-05-12 to let the
+     iframe bleed to the parent section's edges, so the wrap now
+     drops its own chrome — the parent section already owns the
+     border + radius. */
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
   min-height: min(80vh, 720px);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .metrics-iframe {
@@ -7418,7 +7423,22 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 1.1rem 1.25rem;
+  /* Keep vertical padding for the section heading row above the
+     iframe, but drop horizontal padding so the iframe inside reaches
+     the card edges. The section-head + iframe both then live inside
+     a horizontal-zero-padding container; section-head re-adds its
+     own inline padding so its title + buttons stay aligned with
+     other section headers. */
+  padding: 1.1rem 0 0 0;
+  overflow: hidden;
+}
+.project-section-metrics > .section-head {
+  padding-inline: 1.25rem;
+  /* Pull the section-head's bottom margin into the iframe area so
+     the iframe sits flush with both side edges AND directly below
+     the heading row without an extra gap. */
+  margin-bottom: 0;
+  padding-bottom: 0.6rem;
 }
 
 /* ─── Tablet / narrow-desktop tightening ───────────────────────────── */
