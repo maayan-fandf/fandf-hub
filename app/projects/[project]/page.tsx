@@ -594,14 +594,15 @@ export default async function ProjectOverviewPage({
           heading is enough. */}
       {dashboardEmbedUrl && (
         <section className="project-section project-section-metrics">
-          <div className="section-head">
-            <h2>📊 מטריקות</h2>
+          {/* Section head is absolutely positioned over the iframe's
+              top-left corner. The iframe's own header lives directly
+              underneath (project name on the right, גיליון/Facebook/
+              Google chips on the left). Keep this pill icon-only so it
+              doesn't cover the chip on the left — aria-label carries
+              the "מטריקות" semantic for screen readers. */}
+          <div className="section-head" title="📊 מטריקות">
+            <h2 aria-label="מטריקות">📊</h2>
             <div className="section-head-actions">
-              {/* Month picker moved to the page header — it now gates
-                  the iframe, CRM funnel, and Clarity sections together,
-                  so it lives at the page level. This section header
-                  retains only the open-in-new-tab affordance, icon-only
-                  with a tooltip to save horizontal space. */}
               <a
                 className="section-link section-link-icon"
                 href={dashboardOpenUrl}
