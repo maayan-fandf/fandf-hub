@@ -7423,22 +7423,44 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  /* Keep vertical padding for the section heading row above the
-     iframe, but drop horizontal padding so the iframe inside reaches
-     the card edges. The section-head + iframe both then live inside
-     a horizontal-zero-padding container; section-head re-adds its
-     own inline padding so its title + buttons stay aligned with
-     other section headers. */
-  padding: 1.1rem 0 0 0;
+  /* Full-bleed iframe: drop ALL padding from the metrics section so
+     the iframe fills every pixel inside the card border. The section
+     head ("📊 מטריקות" + open-in-new-tab arrow) gets floated as an
+     absolute overlay in the top-right corner via the rules below —
+     it no longer claims any layout space. Maayan asked 2026-05-12
+     to "fill all the way with the iframe", highlighted the
+     remaining margin in yellow. */
+  padding: 0;
   overflow: hidden;
+  /* Need position:relative so the absolutely-positioned section-head
+     anchors to this card and not some ancestor. */
+  position: relative;
 }
 .project-section-metrics > .section-head {
-  padding-inline: 1.25rem;
-  /* Pull the section-head's bottom margin into the iframe area so
-     the iframe sits flush with both side edges AND directly below
-     the heading row without an extra gap. */
-  margin-bottom: 0;
-  padding-bottom: 0.6rem;
+  position: absolute;
+  top: 0.5rem;
+  /* Anchor to the logical-start side (visual right in our RTL layout)
+     using inset-inline-start. Matches the placement of other section
+     titles on the page. */
+  inset-inline-start: 0.8rem;
+  inset-inline-end: auto;
+  margin: 0;
+  z-index: 2;
+  /* Subtle backdrop so the floating heading reads against either a
+     light or dark iframe behind it. */
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(6px);
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.project-section-metrics > .section-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1;
 }
 
 /* ─── Tablet / narrow-desktop tightening ───────────────────────────── */
