@@ -324,11 +324,20 @@ function statusOrder(status: string): number {
 }
 
 /** Build the /tasks href that resets sort to rank, preserving every
- *  other current search param. */
+ *  other current search param. Adds `sort=rank` EXPLICITLY (not just
+ *  stripping the existing sort/order params) so the server-side
+ *  effectiveSort resolves to rank IMMEDIATELY — without this, the
+ *  persisted user pref (`tasks_sort=status` etc.) would beat the
+ *  empty URL and the user would land on a "looks like nothing
+ *  happened" page after a slow refetch. The companion
+ *  `ResetSortButton` below also fires a fire-and-forget pref clear so
+ *  future visits without `?sort=` stay on rank. Maayan reported
+ *  2026-05-12 that hitting "↺ סדר ידני" felt like it took forever to
+ *  load. */
 function buildResetSortHref(
   current: Record<string, string | undefined>,
 ): string {
-  const merged: Record<string, string> = {};
+  const merged: Record<string, string> = { sort: "rank" };
   for (const [k, v] of Object.entries(current)) {
     if (!v) continue;
     if (k === "sort" || k === "order") continue;
@@ -921,6 +930,28 @@ export default function TasksQueue({
                   href={buildResetSortHref(searchParams)}
                   scroll={false}
                   className="tasks-bucket-sort-reset"
+                  onClick={() => {
+                    // Fire-and-forget pref clear so the next /tasks
+                    // visit without ?sort= in the URL stays on rank.
+                    // Without this, the server-side persistedSort
+                    // lookup would silently restore the column sort
+                    // and the user would land back where they started
+                    // after a navigation. Mirrors what the drag-end
+                    // handler does on a successful reorder.
+                    void fetch("/api/me/prefs", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({
+                        tasks_sort: "",
+                        tasks_sort_order: "",
+                      }),
+                      keepalive: true,
+                    }).catch(() => {
+                      /* best-effort — link still navigates with
+                         ?sort=rank so the current view resets
+                         regardless */
+                    });
+                  }}
                   title={
                     "סדר ידני = הסדר שאת/ה קובע/ת ביד על ידי גרירת שורות. " +
                     "בכל פעם שגוררים שורה למיקום חדש המיקום נשמר, וזו ברירת המחדל של הרשימה. " +
