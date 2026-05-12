@@ -432,6 +432,66 @@ export async function markReadByProjectAndKind(
   return { ok: true, updated: updates.length };
 }
 
+/** Mark every unread Notifications row for `forEmail` whose `task_id`
+ *  matches `taskId` as read. Used by the auto-dismiss-on-open flow:
+ *  when the user opens a task's detail page, any pending pings about
+ *  that task (assigned / awaiting_approval / returned / done /
+ *  cancelled / unblocked / comment_reply / mention with task_id set)
+ *  silently clear from the bell + /notifications list. No more "I
+ *  already approved this 20 minutes ago why is it still nagging me?"
+ *  noise.
+ *
+ *  Fire-and-forget — callers should NOT await this in render-blocking
+ *  code paths. Errors are swallowed by the caller (best-effort by
+ *  design; missing a dismissal is a UX nit, not a correctness bug). */
+export async function markReadByTask(
+  forEmail: string,
+  taskId: string,
+): Promise<{ ok: true; updated: number }> {
+  const lc = forEmail.toLowerCase().trim();
+  const tid = taskId.trim();
+  if (!lc || !tid) return { ok: true, updated: 0 };
+  await ensureTab(forEmail);
+  const sheets = sheetsClient(forEmail);
+  const ssId = envOrThrow("SHEET_ID_COMMENTS");
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: ssId,
+    range: TAB,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (values.length < 2) return { ok: true, updated: 0 };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "").trim().toLowerCase(),
+  );
+  const iFor = headers.indexOf("for_email");
+  const iTask = headers.indexOf("task_id");
+  const iRead = headers.indexOf("read_at");
+  if (iFor < 0 || iTask < 0 || iRead < 0) {
+    return { ok: true, updated: 0 };
+  }
+  const now = new Date().toISOString();
+  const updates: { range: string; values: [[string]] }[] = [];
+  for (let i = 1; i < values.length; i++) {
+    const fe = String(values[i][iFor] ?? "").toLowerCase().trim();
+    if (fe !== lc) continue;
+    if (String(values[i][iTask] ?? "").trim() !== tid) continue;
+    if (String(values[i][iRead] ?? "")) continue;
+    const sheetRow = i + 1;
+    const col = columnLetter(iRead + 1);
+    updates.push({
+      range: `${TAB}!${col}${sheetRow}:${col}${sheetRow}`,
+      values: [[now]],
+    });
+  }
+  if (updates.length === 0) return { ok: true, updated: 0 };
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: ssId,
+    requestBody: { valueInputOption: "RAW", data: updates },
+  });
+  return { ok: true, updated: updates.length };
+}
+
 /* ─── Per-kind defaults ──────────────────────────────────────────── */
 
 /** All kinds default to email-on; the user's global email_notifications

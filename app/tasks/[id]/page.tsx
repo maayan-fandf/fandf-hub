@@ -109,6 +109,24 @@ export default async function TaskDetailPage({
     .catch(() => []);
   const myEmail = (await currentUserEmail()) || "";
 
+  // Auto-dismiss bell pings about this task. When the user lands on
+  // the detail page, any unread Notifications row whose task_id is
+  // this task gets silently marked read — no more nagging in the
+  // header bell + /notifications list after they've already acted.
+  // Maayan reported 2026-05-12: post-action notifications stayed
+  // unread and cluttered the inbox even though the task was
+  // already taken care of.
+  //
+  // Fire-and-forget, identical to the markReadByProjectAndKind
+  // pattern the projects page uses for chat_mention. Errors are
+  // swallowed — missing a dismissal is a UX nit, not a correctness
+  // bug. The next bell-badge poll picks up the new read state.
+  if (myEmail) {
+    void import("@/lib/notifications").then((m) =>
+      m.markReadByTask(myEmail, t.id).catch(() => {}),
+    );
+  }
+
   // Round chain: only fetch project tasks when the current task is part
   // of a multi-round chain (round_number > 1 OR has descendants —
   // checking the latter requires the fetch, so we only run it when
