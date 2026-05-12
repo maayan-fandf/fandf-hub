@@ -40,6 +40,14 @@ export default function PersonCombobox({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
+  // Dropdown direction. Default opens DOWN (most callers have plenty of
+  // space below). When the input is near the viewport bottom — e.g. on
+  // the sticky TasksBulkBar at the foot of /tasks — the panel would
+  // overflow off-screen with most rows hidden behind it. We flip to
+  // open UPWARD in that case. Recomputed on every `open` transition so
+  // a scrolled-into-view input gets the right direction without a
+  // resize/scroll listener. Reported by Maayan 2026-05-12.
+  const [flipUp, setFlipUp] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -86,6 +94,22 @@ export default function PersonCombobox({
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  // Pick dropdown direction on open. ~320px matches the panel's
+  // max-height in globals.css; if below has less than that AND above
+  // has more, flip up. Otherwise leave it pointing down (the default
+  // behavior for the vast majority of call sites — task form, project
+  // page filters, etc.).
+  useEffect(() => {
+    if (!open) return;
+    const el = wrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const PANEL_MAX = 320;
+    const below = window.innerHeight - rect.bottom;
+    const above = rect.top;
+    setFlipUp(below < PANEL_MAX && above > below);
   }, [open]);
 
   useEffect(() => {
@@ -141,7 +165,9 @@ export default function PersonCombobox({
   return (
     <div
       ref={wrapRef}
-      className={`combobox${disabled ? " is-disabled" : ""}${open ? " is-open" : ""}`}
+      className={`combobox${disabled ? " is-disabled" : ""}${open ? " is-open" : ""}${
+        open && flipUp ? " is-flipped-up" : ""
+      }`}
     >
       <div className="combobox-input-wrap">
         <input

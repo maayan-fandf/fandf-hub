@@ -48,6 +48,12 @@ export default function PeopleMultiCombobox({
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
+  // Dropdown direction — flip up when there's no room below. Same
+  // logic + reasoning as PersonCombobox; needed here because the
+  // TasksBulkBar's assignee picker uses this multi-select variant
+  // and sits at the bottom of the viewport, where a downward
+  // dropdown overflows off-screen.
+  const [flipUp, setFlipUp] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -105,6 +111,20 @@ export default function PeopleMultiCombobox({
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  // Pick dropdown direction on open. ~320px matches the panel's
+  // max-height in globals.css; below < that AND above > below → flip
+  // up. See PersonCombobox for the originating rationale.
+  useEffect(() => {
+    if (!open) return;
+    const el = wrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const PANEL_MAX = 320;
+    const below = window.innerHeight - rect.bottom;
+    const above = rect.top;
+    setFlipUp(below < PANEL_MAX && above > below);
   }, [open]);
 
   // Reset highlight whenever the candidate list shape changes.
@@ -188,7 +208,9 @@ export default function PeopleMultiCombobox({
   return (
     <div
       ref={wrapRef}
-      className={`combobox${disabled ? " is-disabled" : ""}${open ? " is-open" : ""}`}
+      className={`combobox${disabled ? " is-disabled" : ""}${open ? " is-open" : ""}${
+        open && flipUp ? " is-flipped-up" : ""
+      }`}
     >
       <div className="combobox-input-wrap">
         {/* Pure search input — visually identical to PersonCombobox.

@@ -11895,6 +11895,18 @@ html[data-theme="dark"] .tasks-dept-chip {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+/* Flip the dropdown above the input when the combobox sits near the
+   viewport bottom (e.g. the sticky TasksBulkBar at the foot of /tasks).
+   The component sets `is-flipped-up` on the wrapper when the on-open
+   measurement decides there's not enough room below. Box-shadow is
+   inverted so the elevation still reads as "panel above input" rather
+   than "input above panel." Reported by Maayan 2026-05-12: bulk-bar
+   picker dropped down off-screen, showing only a sliver of names. */
+.combobox.is-flipped-up .combobox-panel {
+  top: auto;
+  bottom: calc(100% + 4px);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, .12);
+}
 .combobox-panel::-webkit-scrollbar { width: 8px; height: 8px; }
 .combobox-panel::-webkit-scrollbar-track { background: transparent; }
 .combobox-panel::-webkit-scrollbar-thumb {
