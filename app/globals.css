@@ -15346,3 +15346,123 @@ html[data-theme="dark"] .task-preview-status.status-blocked           { color: #
   gap: 0.5rem;
   margin-top: 0.2rem;
 }
+
+/* ──────── TaskApprovalBanner — prominent submission preview ────────
+   Surfaces the latest 🔍 הוגש לאישור / ❓ ממתין לבירור comment with
+   inline action buttons. Sits right under the task description so an
+   approver / author opening the task sees "what needs your attention"
+   FIRST, before scrolling into the discussion. Color hue keys off the
+   status — amber for awaiting_approval (the "act now" cue), violet
+   for awaiting_clarification (the "answer me" cue). */
+.task-approval-banner {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin: 0.6rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  position: relative;
+}
+.task-approval-banner-awaiting_approval {
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 158, 11, 0.10),
+    rgba(245, 158, 11, 0.04)
+  );
+  border-color: rgba(245, 158, 11, 0.45);
+}
+.task-approval-banner-awaiting_clarification {
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.10),
+    rgba(139, 92, 246, 0.04)
+  );
+  border-color: rgba(139, 92, 246, 0.45);
+}
+html[data-theme="dark"] .task-approval-banner-awaiting_approval {
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 158, 11, 0.20),
+    rgba(245, 158, 11, 0.08)
+  );
+}
+html[data-theme="dark"] .task-approval-banner-awaiting_clarification {
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.22),
+    rgba(139, 92, 246, 0.08)
+  );
+}
+.task-approval-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  flex-wrap: wrap;
+}
+.task-approval-banner-chip {
+  font-weight: 700;
+  font-size: 0.95em;
+  padding: 0.15em 0.7em;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.task-approval-banner-awaiting_approval .task-approval-banner-chip {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #92400e;
+}
+html[data-theme="dark"] .task-approval-banner-awaiting_approval .task-approval-banner-chip {
+  color: #fbbf24;
+}
+.task-approval-banner-awaiting_clarification .task-approval-banner-chip {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #5b21b6;
+}
+html[data-theme="dark"] .task-approval-banner-awaiting_clarification .task-approval-banner-chip {
+  color: #c4b5fd;
+}
+.task-approval-banner-author {
+  font-weight: 600;
+  color: var(--text);
+}
+.task-approval-banner-time {
+  color: var(--muted);
+  font-size: 0.82em;
+  margin-inline-start: auto;
+}
+.task-approval-banner-body {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  /* Reuse the .comment-body inline-image sizing so pasted screenshots
+     render at a readable preview width inside the banner instead of
+     blowing it out at full natural size. */
+}
+.task-approval-banner-body .comment-body-image {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 6px;
+}
+.task-approval-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.15rem;
+}
+.task-approval-banner-approve {
+  /* Slightly chunkier so "approve" is visually distinct from the two
+     ghost buttons beside it. The approve button is the happy-path
+     CTA — make it look like it. */
+  padding-inline: 1.1em;
+}
+.task-approval-banner-error {
+  color: var(--danger, #b91c1c);
+  font-size: 0.85em;
+  padding: 0.4em 0.6em;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+}

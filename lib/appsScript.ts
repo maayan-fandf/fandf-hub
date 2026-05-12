@@ -11,6 +11,7 @@
 
 import { auth } from "@/auth";
 import { unstable_cache } from "next/cache";
+import { cache } from "react";
 
 type ApiOk<T> = T;
 type ApiError = { error: string; status: number };
@@ -486,8 +487,17 @@ export type TaskComments = {
 /** Comments parented to a task (`parent_id === task.id`, `row_kind=''`).
  *  SA-direct-only: there's no Apps Script action fallback — task comments
  *  are a post-SA-migration feature and the flag is production-on. Flip the
- *  flag off and this throws. */
-export async function getTaskComments(taskId: string): Promise<TaskComments> {
+ *  flag off and this throws.
+ *
+ *  Wrapped in React's `cache()` so multiple call sites within the same
+ *  request (e.g. the task page pre-fetches it for TaskApprovalBanner AND
+ *  TaskComments renders it for the discussion) share one Sheets read.
+ *  Without this, the approver-banner addition would have doubled the
+ *  Comments-tab reads per task page load — bad given the Sheets API
+ *  300/min/user quota Maayan hit 2026-05-12. */
+export const getTaskComments = cache(async function getTaskComments(
+  taskId: string,
+): Promise<TaskComments> {
   const { useSACommentsReads } = await import("@/lib/sa");
   if (!useSACommentsReads()) {
     throw new Error(
@@ -497,7 +507,7 @@ export async function getTaskComments(taskId: string): Promise<TaskComments> {
   const { taskCommentsDirect } = await import("@/lib/commentsDirect");
   const user = await currentUserEmail();
   return taskCommentsDirect(user, taskId);
-}
+});
 
 export type ReassignResult = {
   ok: boolean;
