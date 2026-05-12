@@ -4,6 +4,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 import { fireConfetti, firePulse } from "@/lib/confetti";
+import TaskTransitionModal from "./TaskTransitionModal";
+
+/** Status targets that open the submission modal instead of patching
+ *  the row directly. Mirrors the set in TaskStatusActions.tsx — both
+ *  surfaces must agree so a user clicking the queue pill gets the
+ *  same submission UX as the task-detail פעולות bar. */
+const MODAL_TRANSITIONS: ReadonlySet<WorkTaskStatus> = new Set([
+  "awaiting_approval",
+  "awaiting_clarification",
+]);
 
 // Open lifecycle — every status routes to every other status (minus
 // self). The previous whitelist was forcing the team into a single
@@ -105,6 +115,15 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   // the component from scratch with the new task data.
   const [pendingTo, setPendingTo] = useState<WorkTaskStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Submission modal target — set when the user picks awaiting_approval
+  // / awaiting_clarification from the inline menu. We open the modal
+  // instead of patching directly so the file/link/note submission UX
+  // is consistent with the task-detail פעולות bar. Maayan reported
+  // 2026-05-12 that switching a task to ממתין לאישור from /tasks
+  // didn't pop up the modal.
+  const [modalTarget, setModalTarget] = useState<
+    "awaiting_approval" | "awaiting_clarification" | null
+  >(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -159,6 +178,15 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   const displayLabel = STATUS_LABELS[task.status] || task.status;
 
   async function transition(to: WorkTaskStatus, label: string) {
+    // Approval + clarification go through the submission modal —
+    // captures file/link/explanation and posts a discussion comment
+    // BEFORE flipping the status. The /api/worktasks/update call
+    // moves to the modal's own submit handler.
+    if (MODAL_TRANSITIONS.has(to)) {
+      setOpen(false);
+      setModalTarget(to as "awaiting_approval" | "awaiting_clarification");
+      return;
+    }
     // INSTANT feedback: close menu + flip the pill to the target state
     // before the fetch starts. Server fanout is slow; we'll reconcile
     // when refresh() completes.
@@ -291,6 +319,29 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
           </div>,
           document.body,
         )}
+      {modalTarget && (
+        <TaskTransitionModal
+          taskId={task.id}
+          newStatus={modalTarget}
+          open={!!modalTarget}
+          onClose={() => {
+            const wasApproval = modalTarget === "awaiting_approval";
+            setModalTarget(null);
+            // Match the pulse the inline path fires for awaiting_approval.
+            // We fire on every close (success OR cancel) for simplicity;
+            // the pulse is light enough that an accidental Cancel pulse
+            // isn't disruptive. The modal already calls router.refresh()
+            // on success, which re-renders the row with the new status.
+            if (wasApproval) {
+              const rect = btnRef.current?.getBoundingClientRect();
+              const origin = rect
+                ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+                : undefined;
+              firePulse(origin);
+            }
+          }}
+        />
+      )}
     </>
   );
 }
