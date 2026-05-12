@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 import { fireConfetti, firePulse } from "@/lib/confetti";
-import TaskTransitionModal from "./TaskTransitionModal";
+import TaskTransitionModal, {
+  getModalTransitionKind,
+} from "./TaskTransitionModal";
 
 // Mirror of Apps Script TASKS_ALLOWED_TRANSITIONS — kept in sync so the UI
 // only offers transitions the server will accept. If they diverge the
@@ -53,33 +55,26 @@ const TRANSITIONS: Record<WorkTaskStatus, { to: WorkTaskStatus; label: string; t
   ],
 };
 
-/** Status targets that open the submission modal instead of going
- *  through the plain `window.prompt` → /api/worktasks/update flow.
- *  Approval and clarification both need a deliverable (file / link /
- *  question) attached so the recipient has something to act on. The
- *  modal posts a comment + flips the status in one user action. */
-const MODAL_TRANSITIONS = new Set<WorkTaskStatus>([
-  "awaiting_approval",
-  "awaiting_clarification",
-]);
-
 export default function TaskStatusActions({ task }: { task: WorkTask }) {
   const router = useRouter();
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [modalTarget, setModalTarget] = useState<
-    "awaiting_approval" | "awaiting_clarification" | null
-  >(null);
+  // Modal target — set when the transition needs a deliverable (file
+  // / link / explanation). The shared `getModalTransitionKind` helper
+  // covers submission, clarification, AND the approver-bounce-back
+  // case so all three call sites stay in lockstep.
+  const [modalTarget, setModalTarget] = useState<WorkTaskStatus | null>(null);
 
   const options = TRANSITIONS[task.status] || [];
   if (options.length === 0) return null;
 
   async function transition(to: WorkTaskStatus, label: string) {
-    // Approval + clarification go through the submission modal —
-    // captures the file/link/explanation that motivates the status
-    // change, posts it as a discussion comment, then flips the status.
-    if (MODAL_TRANSITIONS.has(to)) {
-      setModalTarget(to as "awaiting_approval" | "awaiting_clarification");
+    // Transitions that need a deliverable go through the submission
+    // modal. The kind helper handles all three cases — submit (any →
+    // awaiting_approval), clarify (any → awaiting_clarification), and
+    // reject (awaiting_approval → in_progress | awaiting_handling).
+    if (getModalTransitionKind(task.status, to)) {
+      setModalTarget(to);
       return;
     }
     const note = window.prompt(`הערה (אופציונלי) עבור "${label}":`, "");
@@ -136,19 +131,13 @@ export default function TaskStatusActions({ task }: { task: WorkTask }) {
       {modalTarget && (
         <TaskTransitionModal
           taskId={task.id}
+          fromStatus={task.status}
           newStatus={modalTarget}
           open={!!modalTarget}
           onClose={() => {
+            const wasApproval = modalTarget === "awaiting_approval";
             setModalTarget(null);
-            // Light pulse on successful approval submission — same
-            // affordance the previous prompt-only flow had. Fire only
-            // when the modal closes via successful submit (the modal
-            // calls router.refresh() then onClose; a Cancel close
-            // wouldn't have refreshed). We can't easily distinguish
-            // here without extra plumbing, so we fire on every close
-            // — the visual is light enough that an accidental Cancel
-            // pulse isn't disruptive.
-            if (modalTarget === "awaiting_approval") firePulse();
+            if (wasApproval) firePulse();
           }}
         />
       )}

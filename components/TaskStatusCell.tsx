@@ -4,16 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 import { fireConfetti, firePulse } from "@/lib/confetti";
-import TaskTransitionModal from "./TaskTransitionModal";
-
-/** Status targets that open the submission modal instead of patching
- *  the row directly. Mirrors the set in TaskStatusActions.tsx — both
- *  surfaces must agree so a user clicking the queue pill gets the
- *  same submission UX as the task-detail פעולות bar. */
-const MODAL_TRANSITIONS: ReadonlySet<WorkTaskStatus> = new Set([
-  "awaiting_approval",
-  "awaiting_clarification",
-]);
+import TaskTransitionModal, {
+  getModalTransitionKind,
+} from "./TaskTransitionModal";
 
 // Open lifecycle — every status routes to every other status (minus
 // self). The previous whitelist was forcing the team into a single
@@ -115,15 +108,13 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   // the component from scratch with the new task data.
   const [pendingTo, setPendingTo] = useState<WorkTaskStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // Submission modal target — set when the user picks awaiting_approval
-  // / awaiting_clarification from the inline menu. We open the modal
-  // instead of patching directly so the file/link/note submission UX
-  // is consistent with the task-detail פעולות bar. Maayan reported
-  // 2026-05-12 that switching a task to ממתין לאישור from /tasks
-  // didn't pop up the modal.
-  const [modalTarget, setModalTarget] = useState<
-    "awaiting_approval" | "awaiting_clarification" | null
-  >(null);
+  // Submission modal target — set when the user picks a transition
+  // that should pop the modal (any → awaiting_approval, any →
+  // awaiting_clarification, or awaiting_approval → in_progress /
+  // awaiting_handling for the "approver bounces back" flow). The
+  // shared `getModalTransitionKind` helper is the source of truth so
+  // this surface, TaskStatusActions, and TasksKanban can't drift.
+  const [modalTarget, setModalTarget] = useState<WorkTaskStatus | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -178,13 +169,15 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   const displayLabel = STATUS_LABELS[task.status] || task.status;
 
   async function transition(to: WorkTaskStatus, label: string) {
-    // Approval + clarification go through the submission modal —
-    // captures file/link/explanation and posts a discussion comment
-    // BEFORE flipping the status. The /api/worktasks/update call
-    // moves to the modal's own submit handler.
-    if (MODAL_TRANSITIONS.has(to)) {
+    // Transitions that need a deliverable (submission / clarification
+    // request / rejection feedback) go through the modal. The shared
+    // helper picks the kind based on (from, to) — including the
+    // approver-bounce-back case (awaiting_approval → in_progress |
+    // awaiting_handling) which previously flipped silently with no
+    // feedback captured.
+    if (getModalTransitionKind(task.status, to)) {
       setOpen(false);
-      setModalTarget(to as "awaiting_approval" | "awaiting_clarification");
+      setModalTarget(to);
       return;
     }
     // INSTANT feedback: close menu + flip the pill to the target state
@@ -322,6 +315,7 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
       {modalTarget && (
         <TaskTransitionModal
           taskId={task.id}
+          fromStatus={task.status}
           newStatus={modalTarget}
           open={!!modalTarget}
           onClose={() => {

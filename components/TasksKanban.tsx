@@ -31,17 +31,9 @@ import { useTaskPreview } from "@/components/TaskPreviewProvider";
 import { fireConfetti, firePulse } from "@/lib/confetti";
 import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { displayProjectOrCompany } from "@/lib/personalLabel";
-import TaskTransitionModal from "@/components/TaskTransitionModal";
-
-/** Status targets that open the submission modal instead of patching
- *  the row directly. Mirrors the set in TaskStatusCell.tsx +
- *  TaskStatusActions.tsx — all three surfaces must agree so the
- *  submission UX is consistent regardless of where the user changes
- *  the status from (queue pill, detail-page pill, or kanban drag). */
-const MODAL_TRANSITIONS: ReadonlySet<WorkTaskStatus> = new Set([
-  "awaiting_approval",
-  "awaiting_clarification",
-]);
+import TaskTransitionModal, {
+  getModalTransitionKind,
+} from "@/components/TaskTransitionModal";
 
 /** Same classification as the table view's TasksQueue. Pulled inline
  *  so the kanban card can render a matching parent/child visual cue
@@ -123,13 +115,17 @@ export default function TasksKanban({
   }, [initialTasks]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Submission modal target — set when a drag drops into the approval
-  // or clarification column. The modal handles the comment + status
-  // patch + router.refresh() itself; we skip the optimistic local
-  // state update so a cancel leaves the card where it was.
+  // Submission modal target — set when a drag triggers a transition
+  // that needs a deliverable. Covers drops INTO awaiting_approval /
+  // awaiting_clarification AND drops OUT of awaiting_approval into
+  // in_progress / awaiting_handling (approver bouncing work back).
+  // The modal handles the comment + status patch + router.refresh()
+  // itself; we skip the optimistic local state update so a cancel
+  // leaves the card where it was.
   const [modalTarget, setModalTarget] = useState<{
     taskId: string;
-    newStatus: "awaiting_approval" | "awaiting_clarification";
+    fromStatus: WorkTaskStatus;
+    newStatus: WorkTaskStatus;
   } | null>(null);
 
   // 8px activation distance keeps a click on the card link from
@@ -236,18 +232,18 @@ export default function TasksKanban({
     const sameRank = task.rank === newRank;
     if (sameColumn && sameRank) return;
 
-    // Approval + clarification need a submission deliverable (file /
-    // link / note) — open the modal instead of patching directly.
+    // Submission / clarification / rejection transitions all need a
+    // deliverable — open the modal instead of patching directly.
     // Same flow as TaskStatusCell / TaskStatusActions: skip the
     // optimistic state update so a cancelled modal leaves the card
-    // where it was. The modal posts the comment + flips the status
-    // itself, then router.refresh() pulls in the new state.
-    // Reported by Maayan 2026-05-12 — dragging to ממתין לאישור on the
-    // kanban silently bypassed the new submission flow.
-    if (!sameColumn && MODAL_TRANSITIONS.has(targetStatus)) {
+    // where it was. Drops INTO ממתין לאישור / ממתין לבירור AND drops
+    // OUT of ממתין לאישור into in_progress / awaiting_handling all
+    // qualify; the shared helper covers the matrix.
+    if (!sameColumn && getModalTransitionKind(task.status, targetStatus)) {
       setModalTarget({
         taskId: id,
-        newStatus: targetStatus as "awaiting_approval" | "awaiting_clarification",
+        fromStatus: task.status,
+        newStatus: targetStatus,
       });
       return;
     }
@@ -413,18 +409,12 @@ export default function TasksKanban({
     {modalTarget && (
       <TaskTransitionModal
         taskId={modalTarget.taskId}
+        fromStatus={modalTarget.fromStatus}
         newStatus={modalTarget.newStatus}
         open={!!modalTarget}
         onClose={() => {
           const wasApproval = modalTarget?.newStatus === "awaiting_approval";
           setModalTarget(null);
-          // Match the firePulse the inline pill paths fire — anchored
-          // on the page center because by the time the modal closes
-          // the dragged card has already been re-parented in the DOM
-          // (or in the un-applied-optimistic case, never moved). Fires
-          // on both success and cancel for simplicity; the pulse is
-          // light enough that an accidental Cancel pulse isn't
-          // disruptive.
           if (wasApproval) firePulse();
         }}
       />

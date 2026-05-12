@@ -4,7 +4,40 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkTaskStatus } from "@/lib/appsScript";
 
-type SubmissionKind = "approval" | "clarification";
+/** All transitions that should pop the submission modal. Each kind
+ *  shapes the modal's copy and the discussion-comment prefix:
+ *
+ *    submit    — any → awaiting_approval. The assignee attaches the
+ *                deliverable they want the approver to review.
+ *    clarify   — any → awaiting_clarification. The asker (assignee
+ *                from in_progress, or approver from awaiting_approval)
+ *                attaches what's unclear + a question.
+ *    reject    — awaiting_approval → in_progress | awaiting_handling.
+ *                The approver bounces work back with feedback on what
+ *                to fix. Without this, an assignee just saw a "task
+ *                returned" ping with no explanation. */
+export type TransitionKind = "submit" | "clarify" | "reject";
+
+/** Resolve the modal kind for a (from, to) transition, or `null` if
+ *  this transition shouldn't pop the modal. Exported so call sites
+ *  (TaskStatusCell / TasksKanban / TaskStatusActions) share one rule
+ *  for "should the modal open?" and "what kind is it?" instead of
+ *  maintaining parallel Sets that can drift. */
+export function getModalTransitionKind(
+  from: WorkTaskStatus | string,
+  to: WorkTaskStatus | string,
+): TransitionKind | null {
+  if (to === "awaiting_approval") return "submit";
+  if (to === "awaiting_clarification") return "clarify";
+  if (
+    from === "awaiting_approval" &&
+    (to === "in_progress" || to === "awaiting_handling")
+  ) {
+    return "reject";
+  }
+  return null;
+}
+
 type UploadResponse =
   | {
       ok: true;
@@ -21,10 +54,15 @@ const MAX_NOTE = 800;
 
 type Props = {
   taskId: string;
-  /** Target status this transition is flipping to. Drives the modal
-   *  title, button copy, and the prefix the submission comment opens
-   *  with. */
-  newStatus: WorkTaskStatus & ("awaiting_approval" | "awaiting_clarification");
+  /** Current status the task is being moved away from. Required so the
+   *  modal can distinguish "approver rejects" (awaiting_approval →
+   *  in_progress) from "assignee picks up" (awaiting_handling →
+   *  in_progress) — only the former should open this UI. */
+  fromStatus: WorkTaskStatus;
+  /** Target status. Combined with `fromStatus` via
+   *  `getModalTransitionKind` to pick the modal's copy + comment
+   *  prefix. */
+  newStatus: WorkTaskStatus;
   open: boolean;
   onClose: () => void;
 };
@@ -52,6 +90,7 @@ type Props = {
  */
 export default function TaskTransitionModal({
   taskId,
+  fromStatus,
   newStatus,
   open,
   onClose,
@@ -78,16 +117,37 @@ export default function TaskTransitionModal({
 
   if (!open) return null;
 
-  const kind: SubmissionKind =
-    newStatus === "awaiting_approval" ? "approval" : "clarification";
+  const kind = getModalTransitionKind(fromStatus, newStatus);
+  // Defensive: caller is expected to only mount the modal for
+  // transitions that have a kind. If somehow we slip in with a
+  // non-modal pair we render nothing rather than show a confusing
+  // half-configured dialog.
+  if (!kind) return null;
+
   const titleText =
-    kind === "approval" ? "הגשה לאישור" : "מה לא ברור?";
+    kind === "submit"
+      ? "הגשה לאישור"
+      : kind === "clarify"
+        ? "מה לא ברור?"
+        : "החזרה לתיקון";
   const subtitle =
-    kind === "approval"
+    kind === "submit"
       ? "צרף קובץ או קישור לעבודה שאתה מגיש לאישור. הגורם המאשר יקבל התראה ויראה את ההגשה בדיון."
-      : "צרף קובץ או קישור (למשל צילום של החלק הלא ברור) ופרט במה צריך עזרה. הכותב יקבל התראה ויראה את הבקשה בדיון.";
-  const submitLabel = kind === "approval" ? "שלח לאישור" : "בקש בירור";
-  const commentPrefix = kind === "approval" ? "🔍 הוגש לאישור" : "❓ ממתין לבירור";
+      : kind === "clarify"
+        ? "צרף קובץ או קישור (למשל צילום של החלק הלא ברור) ופרט במה צריך עזרה. הכותב יקבל התראה ויראה את הבקשה בדיון."
+        : "פרט/י מה לא אושר ומה צריך לתקן. אפשר לצרף קובץ או קישור עם הערות. המבצע/ת יקבל/ת התראה ויראה/תראה את המשוב בדיון.";
+  const submitLabel =
+    kind === "submit"
+      ? "שלח לאישור"
+      : kind === "clarify"
+        ? "בקש בירור"
+        : "שלח לתיקון";
+  const commentPrefix =
+    kind === "submit"
+      ? "🔍 הוגש לאישור"
+      : kind === "clarify"
+        ? "❓ ממתין לבירור"
+        : "🔄 הוחזר לתיקון";
 
   function pickFile() {
     fileInputRef.current?.click();
@@ -218,7 +278,12 @@ export default function TaskTransitionModal({
       // 3. Flip the status. The patch's `note` field is logged into
       //    status_history; we keep it short and human-readable since
       //    the submission detail lives on the comment we just posted.
-      const shortNote = kind === "approval" ? "הוגש לאישור" : "בקשת בירור";
+      const shortNote =
+        kind === "submit"
+          ? "הוגש לאישור"
+          : kind === "clarify"
+            ? "בקשת בירור"
+            : "החזרה לתיקון";
       const updateRes = await fetch("/api/worktasks/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -327,7 +392,11 @@ export default function TaskTransitionModal({
         </label>
 
         <label className="task-transition-modal-label">
-          {kind === "approval" ? "הערה (אופציונלי)" : "מה לא ברור?"}
+          {kind === "submit"
+            ? "הערה (אופציונלי)"
+            : kind === "clarify"
+              ? "מה לא ברור?"
+              : "מה צריך לתקן?"}
           <textarea
             className="task-transition-modal-note"
             value={note}
@@ -336,9 +405,11 @@ export default function TaskTransitionModal({
             maxLength={MAX_NOTE + 1}
             disabled={busy}
             placeholder={
-              kind === "approval"
+              kind === "submit"
                 ? "הוסף/י הקשר על מה לבדוק…"
-                : "תאר/י את הנקודה שלא ברורה כדי שהכותב יוכל לענות…"
+                : kind === "clarify"
+                  ? "תאר/י את הנקודה שלא ברורה כדי שהכותב יוכל לענות…"
+                  : "פרט/י מה לא אושר ומה צריך לתקן…"
             }
             dir="auto"
           />
