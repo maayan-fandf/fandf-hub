@@ -57,6 +57,13 @@ export async function GET(
         status: 413,
       });
     }
+    // 0-byte files mean a botched upload (clipboard delivered the file
+    // metadata but no bytes — Maayan reported one such case 2026-05-12).
+    // Return 404 so the browser shows the alt text alone instead of a
+    // broken-image icon over empty bytes.
+    if (Number.isFinite(sizeRaw) && sizeRaw === 0) {
+      return new NextResponse("Empty file", { status: 404 });
+    }
     // Stream the actual file content. responseType=arraybuffer lets us
     // hand the bytes straight to NextResponse without a chunked-stream
     // dance — fine for ≤25MB images.

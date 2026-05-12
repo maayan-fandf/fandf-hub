@@ -40,6 +40,21 @@ export async function POST(req: Request) {
       { status: 413 },
     );
   }
+  // Reject 0-byte uploads up-front rather than streaming them down to
+  // Drive (where they'd land as empty image.png files that render as
+  // broken icons in comments). Symptom Maayan hit 2026-05-12: a paste
+  // that registered as an image file in the clipboard but carried no
+  // actual bytes.
+  if (fileEntry.size === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "הקובץ ריק — ייתכן שההדבקה לא הצליחה. נסה/י לצלם או לבחור שוב ולהדביק.",
+      },
+      { status: 400 },
+    );
+  }
 
   const fileName =
     fileEntry instanceof File && fileEntry.name

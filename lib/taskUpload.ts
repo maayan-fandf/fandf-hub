@@ -13,7 +13,6 @@
  * friendly error.
  */
 
-import { Readable } from "node:stream";
 import type { drive_v3 } from "googleapis";
 import { sheetsClient, driveClient, driveFolderOwner } from "@/lib/sa";
 
@@ -144,6 +143,16 @@ export async function uploadToTaskFolder(
   mimeType: string,
   bytes: Buffer,
 ): Promise<UploadResult> {
+  // Defensive upfront check — refuse 0-byte input rather than creating
+  // an empty Drive file that the comment composer will then reference
+  // forever. Maayan reported 2026-05-12 a `image.png` token pointing
+  // at a `size: 0` Drive file (broken-image render); the proximate
+  // cause was the upload path silently accepting an empty paste.
+  if (!bytes || bytes.length === 0) {
+    throw new Error(
+      "הקובץ ריק — ייתכן שההדבקה לא הצליחה. נסה/י להעתיק את הצילום שוב ולהדביק.",
+    );
+  }
   const { folderId: taskFolderId, title: taskTitle } = await findTaskFolderInfo(
     subjectEmail,
     taskId,
@@ -162,13 +171,39 @@ export async function uploadToTaskFolder(
     },
     media: {
       mimeType,
-      body: Readable.from(bytes),
+      // Pass the Buffer directly. googleapis accepts Buffer | Readable
+      // | string for media.body; the previous `Readable.from(bytes)`
+      // wrap occasionally produced 0-byte uploads (suspected stream
+      // semantics with the underlying HTTP client). Buffer-direct is
+      // simpler and avoids the indirection.
+      body: bytes,
     },
-    fields: "id, webViewLink, mimeType",
+    // Include `size` so we can verify the upload actually carried bytes
+    // before returning success to the composer.
+    fields: "id, webViewLink, mimeType, size",
     supportsAllDrives: true,
   });
   const fileId = created.data.id;
   if (!fileId) throw new Error("Drive file create returned no id");
+  const reportedSize = parseInt(String(created.data.size || "0"), 10);
+  if (!Number.isFinite(reportedSize) || reportedSize <= 0) {
+    // Drive accepted the create but ended up with 0 bytes — clean up
+    // the empty file so the composer doesn't insert a token that
+    // permanently renders as a broken image. Best-effort delete; the
+    // thrown error is what reaches the user.
+    try {
+      await drive.files.delete({ fileId, supportsAllDrives: true });
+    } catch (e) {
+      console.warn(
+        `[taskUpload] failed to delete 0-byte upload ${fileId}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    throw new Error(
+      "ההעלאה הסתיימה ללא תוכן (0 בייטים). נסה/י שוב — אם זה חוזר, שמור/י את הקובץ קודם ואז גרור/י אותו לתיבת התגובה.",
+    );
+  }
   return {
     fileId,
     name: fileName,
@@ -176,7 +211,12 @@ export async function uploadToTaskFolder(
     viewUrl:
       created.data.webViewLink ||
       `https://drive.google.com/file/d/${fileId}/view`,
-    embedUrl: `https://lh3.googleusercontent.com/d/${fileId}=w1600`,
+    // Proxy through the hub origin so cross-origin auth issues with
+    // `lh3.googleusercontent.com` (which only serves files the viewer's
+    // Google session can see) can't break inline render. CommentBody
+    // re-derives this from the viewUrl anyway, so this field is purely
+    // for legacy callers that read `embedUrl` directly.
+    embedUrl: `/api/drive/image/${encodeURIComponent(fileId)}`,
   };
 }
 
