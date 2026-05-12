@@ -1,35 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson } from "@/lib/appsScript";
 import { displayNameOf } from "@/lib/personDisplay";
+import Avatar from "./Avatar";
+import RoleChip from "./RoleChip";
 
 type Props = {
   taskId: string;
-  /** The task's project name. Used to fetch the project's roster
-   *  for the @-mention autocomplete. When omitted (e.g. legacy
-   *  caller), the picker is disabled and the user can still type
-   *  raw `@<email>` — server-side parsing already handles that. */
+  /** Task's project name. Currently unused but kept on the props so
+   *  callers don't break; the @-mention picker now sources from the
+   *  hub-wide roster (`people`) rather than the project assignees. */
   project?: string;
-  /** Optional roster passed down from the parent (TaskComments). Used
-   *  ONLY to enrich the @-mention picker rows with Hebrew names —
-   *  /api/projects/assignees returns `email/name/role` (no he_name)
-   *  so picker rows fell back to English-name / email-prefix even
-   *  when names_to_emails had a he_name set. We look up each picker
-   *  row's email in this list and prefer its he_name when found.
-   *  Pure presentational enrichment; mention identity stays the
-   *  email and the picker still shows `email` next to the name. */
+  /** Full roster from `tasksPeopleList` (names_to_emails sheet),
+   *  passed down by TaskComments. Drives the @-mention picker — the
+   *  user can tag anyone on the team, not just the project's
+   *  assignees. */
   people?: TasksPerson[];
-};
-
-type Person = {
-  email: string;
-  name: string;
-  /** Optional Hebrew display name from the names_to_emails sheet's
-   *  `he name` column. Mirrors the field on `TasksPerson`. */
-  he_name?: string;
-  role: string;
 };
 
 const MAX = 4000;
@@ -59,15 +47,14 @@ type MentionState = {
  * the textarea at the cursor. The comment renderer detects these tokens
  * and shows the image inline.
  *
- * Type `@` and the picker drops in below the textarea with the project
- * roster — arrow keys navigate, Enter/Tab inserts `@<email>`, Escape
- * dismisses. Server-side `@<email>` parsing already exists, so users
- * who prefer to type the full email manually still work.
+ * Type `@` and the picker drops in below the textarea with the full
+ * team roster — arrow keys navigate, Enter/Tab inserts `@<email>`,
+ * Escape dismisses. Server-side `@<email>` parsing already exists, so
+ * users who prefer to type the full email manually still work.
  */
 export default function TaskReplyComposer({
   taskId,
-  project,
-  people: heRoster,
+  people: roster,
 }: Props) {
   const router = useRouter();
   const [value, setValue] = useState("");
@@ -76,68 +63,31 @@ export default function TaskReplyComposer({
   const [uploading, setUploading] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Lookup map for he_name enrichment of the picker rows. Built once
-  // per render of the prop list; lookups inside the picker map are
-  // O(1). Local-state `people` (project assignees from
-  // /api/projects/assignees, lazily fetched) carries email/name/role
-  // only — `heRoster` covers the gap by exposing `he_name` per email.
-  const heByEmail = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of heRoster || []) {
-      const email = (p.email || "").toLowerCase();
-      const he = (p.he_name || "").trim();
-      if (email && he) m.set(email, he);
-    }
-    return m;
-  }, [heRoster]);
+  // Whole-team roster — Naomi reported (2026-05-12) that typing @ to
+  // tag Emma surfaced nothing because Emma wasn't on the project's
+  // assignee list. The picker now reads from `tasksPeopleList` (full
+  // names_to_emails sheet) passed down by TaskComments, so anyone on
+  // the team is taggable from any task.
+  const people = useMemo<TasksPerson[]>(() => roster || [], [roster]);
 
-  // @-mention picker state. `people` is loaded lazily on first @
-  // keystroke and cached for the lifetime of the composer.
-  const [people, setPeople] = useState<Person[] | null>(null);
-  const [peopleLoading, setPeopleLoading] = useState(false);
   const [mention, setMention] = useState<MentionState | null>(null);
 
-  // Lazy-load the project roster the first time the user types @.
-  // Falls through silently on failure; the picker just stays empty
-  // and the user can still type a raw email.
-  useEffect(() => {
-    if (!mention || !project || people !== null || peopleLoading) return;
-    setPeopleLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/projects/assignees?project=${encodeURIComponent(project)}`,
-        );
-        const data = (await res.json().catch(() => ({}))) as {
-          assignees?: Person[];
-          error?: string;
-        };
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        setPeople(Array.isArray(data.assignees) ? data.assignees : []);
-      } catch {
-        setPeople([]);
-      } finally {
-        setPeopleLoading(false);
-      }
-    })();
-  }, [mention, project, people, peopleLoading]);
-
   // Filtered list for the picker — case-insensitive substring match
-  // on email + name. Capped at 8 visible so the dropdown never
-  // dominates the page.
-  const filteredPeople = (() => {
-    if (!mention || !people) return [];
+  // on email + name + he_name. Capped at 8 visible so the dropdown
+  // never dominates the page.
+  const filteredPeople = useMemo(() => {
+    if (!mention) return [] as TasksPerson[];
     const f = mention.fragment.toLowerCase();
     const list = !f
       ? people
       : people.filter(
           (p) =>
             p.email.toLowerCase().includes(f) ||
-            p.name.toLowerCase().includes(f) ||
+            (p.name || "").toLowerCase().includes(f) ||
             (p.he_name || "").toLowerCase().includes(f),
         );
     return list.slice(0, 8);
-  })();
+  }, [mention, people]);
 
   function insertAtCursor(text: string) {
     const el = textareaRef.current;
@@ -182,10 +132,6 @@ export default function TaskReplyComposer({
   function onTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const next = e.target.value;
     setValue(next);
-    if (!project) {
-      // Picker disabled — composer still works for raw `@<email>` typed by hand.
-      return;
-    }
     const cursor = e.target.selectionStart ?? next.length;
     const m = detectMention(next, cursor);
     if (m) {
@@ -200,7 +146,6 @@ export default function TaskReplyComposer({
   }
 
   function onSelectionChange() {
-    if (!project) return;
     const el = textareaRef.current;
     if (!el) return;
     const cursor = el.selectionStart ?? 0;
@@ -216,7 +161,7 @@ export default function TaskReplyComposer({
     }
   }
 
-  function pickMention(person: Person) {
+  function pickMention(person: TasksPerson) {
     if (!mention) return;
     const el = textareaRef.current;
     if (!el) return;
@@ -420,12 +365,9 @@ export default function TaskReplyComposer({
           disabled={isPending}
           maxLength={MAX + 1}
         />
-        {mention && project && (
+        {mention && (
           <div className="mention-picker" role="listbox" aria-label="בחר אדם לתיוג">
-            {peopleLoading && people === null && (
-              <div className="mention-picker-status">טוען…</div>
-            )}
-            {!peopleLoading && filteredPeople.length === 0 && (
+            {filteredPeople.length === 0 && (
               <div className="mention-picker-status">אין תוצאות</div>
             )}
             {filteredPeople.map((p, i) => (
@@ -444,19 +386,16 @@ export default function TaskReplyComposer({
                   pickMention(p);
                 }}
               >
-                {/* Hebrew-name override: prefer the he_name passed
-                    down from TaskComments' tasksPeopleList payload.
-                    /api/projects/assignees doesn't return he_name, so
-                    without this the picker fell back to the English
-                    `name` (or email prefix) — Maayan flagged the
-                    mismatch with the rest of the now-Hebrew chrome. */}
+                <Avatar
+                  name={p.email}
+                  title={displayNameOf(p) || p.email}
+                  role={p.role}
+                  size={24}
+                />
                 <span className="mention-picker-name">
-                  {heByEmail.get(p.email.toLowerCase()) || displayNameOf(p)}
+                  {displayNameOf(p) || p.email}
                 </span>
-                <span className="mention-picker-email" dir="ltr">
-                  {p.email}
-                </span>
-                {p.role && <span className="mention-picker-role">{p.role}</span>}
+                {p.role && <RoleChip role={p.role} />}
               </button>
             ))}
           </div>

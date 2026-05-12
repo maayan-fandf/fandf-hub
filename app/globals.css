@@ -13762,8 +13762,8 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
 .mention-picker-row {
   display: flex;
   align-items: center;
-  gap: 0.6em;
-  padding: 0.45em 0.7em;
+  gap: 0.55em;
+  padding: 0.4em 0.6em;
   border: 0;
   background: transparent;
   border-radius: 6px;
@@ -13774,28 +13774,14 @@ html[data-theme="dark"] .kanban-card-priority-chip.low {
 }
 .mention-picker-row.is-active,
 .mention-picker-row:hover {
-  background: rgba(79, 70, 229, 0.08);
+  background: var(--accent-soft, rgba(79, 70, 229, 0.08));
 }
 .mention-picker-name {
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.mention-picker-email {
-  font-size: 0.85em;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 500;
   flex: 1 1 auto;
   min-width: 0;
-}
-.mention-picker-role {
-  font-size: 0.75em;
-  color: var(--muted);
-  background: var(--surface-soft, rgba(0, 0, 0, 0.05));
-  border-radius: 999px;
-  padding: 0.05em 0.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
