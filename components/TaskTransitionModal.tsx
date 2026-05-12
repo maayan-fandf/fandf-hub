@@ -276,14 +276,36 @@ export default function TaskTransitionModal({
       }
 
       // 3. Flip the status. The patch's `note` field is logged into
-      //    status_history; we keep it short and human-readable since
-      //    the submission detail lives on the comment we just posted.
-      const shortNote =
+      //    status_history; we now build a rich one-line summary so the
+      //    timeline reads usefully without the user having to scroll
+      //    to the discussion. Shape:
+      //      <label> · <note snippet> · <attachment hint>
+      //    where each segment is optional and any combination of
+      //    file/url/note feeds in. The full submission detail still
+      //    lives on the comment we just posted — this is just the
+      //    timeline-friendly summary. ~200 chars cap keeps the row
+      //    visually tidy even for long feedback.
+      const label =
         kind === "submit"
           ? "הוגש לאישור"
           : kind === "clarify"
             ? "בקשת בירור"
             : "החזרה לתיקון";
+      const NOTE_SNIPPET_MAX = 140;
+      const snippet = note.trim().slice(0, NOTE_SNIPPET_MAX);
+      const noteEllipsis = note.trim().length > NOTE_SNIPPET_MAX ? "…" : "";
+      const attachmentHint = uploaded
+        ? `קובץ: ${uploaded.name}`
+        : url.trim()
+          ? "קישור מצורף"
+          : "";
+      const shortNote = [
+        label,
+        snippet ? `${snippet}${noteEllipsis}` : "",
+        attachmentHint,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       const updateRes = await fetch("/api/worktasks/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
