@@ -1,0 +1,373 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { WorkTaskStatus } from "@/lib/appsScript";
+
+type SubmissionKind = "approval" | "clarification";
+type UploadResponse =
+  | {
+      ok: true;
+      fileId: string;
+      name: string;
+      mimeType: string;
+      viewUrl: string;
+      embedUrl: string;
+    }
+  | { ok: false; error: string };
+
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_NOTE = 800;
+
+type Props = {
+  taskId: string;
+  /** Target status this transition is flipping to. Drives the modal
+   *  title, button copy, and the prefix the submission comment opens
+   *  with. */
+  newStatus: WorkTaskStatus & ("awaiting_approval" | "awaiting_clarification");
+  open: boolean;
+  onClose: () => void;
+};
+
+/**
+ * Submission modal that pops in when the user transitions a task to
+ * "ממתין לאישור" or "ממתין לבירור". Captures one of:
+ *   - a Drive file (uploaded via /api/worktasks/upload, same path the
+ *     comment composer uses)
+ *   - a URL link (e.g. Figma, external preview)
+ *   - a free-text note (optional alongside either, or by itself)
+ *
+ * On submit:
+ *   1. Posts a comment to the task discussion via /api/comments/reply
+ *      with a header line like "🔍 הוגש לאישור" so the approver / author
+ *      sees the submission in the regular discussion feed.
+ *   2. Flips the task status via /api/worktasks/update — that fires the
+ *      existing task_awaiting_approval / task_returned notification so
+ *      the recipient gets pinged about it.
+ *   3. router.refresh() pulls in both the new comment + the new status.
+ *
+ * Either a file OR a link OR a non-empty note is required — submitting
+ * blank doesn't fit the flow (the recipient would have nothing to act
+ * on). Both file + link are fine if the user wants to attach multiple.
+ */
+export default function TaskTransitionModal({
+  taskId,
+  newStatus,
+  open,
+  onClose,
+}: Props) {
+  const router = useRouter();
+  const [file, setFile] = useState<File | null>(null);
+  const [url, setUrl] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset whenever the modal closes so a second open doesn't carry
+  // over a half-typed previous submission.
+  useEffect(() => {
+    if (!open) {
+      setFile(null);
+      setUrl("");
+      setNote("");
+      setBusy(false);
+      setError(null);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const kind: SubmissionKind =
+    newStatus === "awaiting_approval" ? "approval" : "clarification";
+  const titleText =
+    kind === "approval" ? "הגשה לאישור" : "מה לא ברור?";
+  const subtitle =
+    kind === "approval"
+      ? "צרף קובץ או קישור לעבודה שאתה מגיש לאישור. הגורם המאשר יקבל התראה ויראה את ההגשה בדיון."
+      : "צרף קובץ או קישור (למשל צילום של החלק הלא ברור) ופרט במה צריך עזרה. הכותב יקבל התראה ויראה את הבקשה בדיון.";
+  const submitLabel = kind === "approval" ? "שלח לאישור" : "בקש בירור";
+  const commentPrefix = kind === "approval" ? "🔍 הוגש לאישור" : "❓ ממתין לבירור";
+
+  function pickFile() {
+    fileInputRef.current?.click();
+  }
+
+  function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `הקובץ גדול מדי (${Math.round(f.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    if (f.size === 0) {
+      setError("הקובץ ריק. נסה/י לבחור אחר.");
+      return;
+    }
+    setFile(f);
+    setError(null);
+  }
+
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `הקובץ גדול מדי (${Math.round(f.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    setFile(f);
+    setError(null);
+  }
+
+  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+  }
+
+  async function uploadFile(f: File): Promise<UploadResponse> {
+    const form = new FormData();
+    form.set("taskId", taskId);
+    form.set("file", f, f.name || "attachment");
+    const res = await fetch("/api/worktasks/upload", {
+      method: "POST",
+      body: form,
+    });
+    const data = (await res.json().catch(() => ({}))) as UploadResponse;
+    if (!res.ok || !("ok" in data) || !data.ok) {
+      const msg = ("error" in data && data.error) || `העלאה נכשלה (${res.status})`;
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function buildCommentBody(
+    uploaded: Extract<UploadResponse, { ok: true }> | null,
+  ): string {
+    const lines: string[] = [];
+    const headLine = note.trim()
+      ? `${commentPrefix}: ${note.trim()}`
+      : commentPrefix;
+    lines.push(headLine);
+
+    if (url.trim()) lines.push(url.trim());
+
+    if (uploaded) {
+      const safeName = (uploaded.name || "file").replace(/[\[\]()]/g, "");
+      const mime = (uploaded.mimeType || "").toLowerCase();
+      const isImage =
+        mime.startsWith("image/") ||
+        /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(safeName);
+      lines.push(
+        isImage
+          ? `![${safeName}](${uploaded.viewUrl})`
+          : `[📎 ${safeName}](${uploaded.viewUrl})`,
+      );
+    }
+    return lines.join("\n\n");
+  }
+
+  async function submit() {
+    setError(null);
+    const hasUrl = !!url.trim();
+    const hasFile = !!file;
+    const hasNote = !!note.trim();
+    if (!hasUrl && !hasFile && !hasNote) {
+      setError("צרף/י קובץ, הדבק/י קישור או כתוב/י הסבר.");
+      return;
+    }
+    if (note.length > MAX_NOTE) {
+      setError(`ההסבר ארוך מדי (${note.length}/${MAX_NOTE}).`);
+      return;
+    }
+    setBusy(true);
+    try {
+      // 1. Upload the file first (if any) so the comment we post next
+      //    can already reference the Drive viewUrl. Doing it in this
+      //    order means a transient upload failure aborts the whole
+      //    submission BEFORE we change the task's status — the user can
+      //    correct and retry without leaving the task half-flipped.
+      let uploaded: Extract<UploadResponse, { ok: true }> | null = null;
+      if (file) {
+        const r = await uploadFile(file);
+        if (!("ok" in r) || !r.ok) {
+          throw new Error("upload failed");
+        }
+        uploaded = r;
+      }
+
+      // 2. Post the submission comment. Same /api/comments/reply
+      //    endpoint the discussion composer uses; parentCommentId=taskId
+      //    makes the task row itself the parent.
+      const commentBody = buildCommentBody(uploaded);
+      const commentRes = await fetch("/api/comments/reply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentCommentId: taskId, body: commentBody }),
+      });
+      if (!commentRes.ok) {
+        const data = (await commentRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error || `Comment failed (${commentRes.status})`);
+      }
+
+      // 3. Flip the status. The patch's `note` field is logged into
+      //    status_history; we keep it short and human-readable since
+      //    the submission detail lives on the comment we just posted.
+      const shortNote = kind === "approval" ? "הוגש לאישור" : "בקשת בירור";
+      const updateRes = await fetch("/api/worktasks/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: taskId,
+          patch: { status: newStatus, note: shortNote },
+        }),
+      });
+      const updateData = (await updateRes.json().catch(() => ({}))) as
+        | { ok: true }
+        | { ok: false; error: string };
+      if (!updateRes.ok || !("ok" in updateData) || !updateData.ok) {
+        const msg =
+          "error" in updateData && updateData.error
+            ? updateData.error
+            : `Update failed (${updateRes.status})`;
+        throw new Error(msg);
+      }
+
+      router.refresh();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onBackdropClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === e.currentTarget && !busy) onClose();
+  }
+
+  return (
+    <div
+      className="task-transition-modal-backdrop"
+      onClick={onBackdropClick}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-transition-modal-title"
+    >
+      <div className="task-transition-modal">
+        <header className="task-transition-modal-head">
+          <h2 id="task-transition-modal-title">{titleText}</h2>
+          <button
+            type="button"
+            className="task-transition-modal-close"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="סגור"
+          >
+            ×
+          </button>
+        </header>
+        <p className="task-transition-modal-subtitle">{subtitle}</p>
+
+        <div
+          className="task-transition-modal-dropzone"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="task-transition-modal-fileinput"
+            onChange={onFileChosen}
+          />
+          {file ? (
+            <div className="task-transition-modal-filechip">
+              <span aria-hidden>📎</span>
+              <span className="task-transition-modal-filename" dir="auto">
+                {file.name}
+              </span>
+              <button
+                type="button"
+                className="task-transition-modal-removefile"
+                onClick={() => setFile(null)}
+                disabled={busy}
+                aria-label="הסר קובץ"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="task-transition-modal-pick"
+              onClick={pickFile}
+              disabled={busy}
+            >
+              📎 בחר/י קובץ או גרור/י לכאן
+            </button>
+          )}
+        </div>
+
+        <label className="task-transition-modal-label">
+          או הדבק/י קישור
+          <input
+            type="url"
+            placeholder="https://www.figma.com/... · https://drive.google.com/..."
+            className="task-transition-modal-url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={busy}
+            dir="ltr"
+          />
+        </label>
+
+        <label className="task-transition-modal-label">
+          {kind === "approval" ? "הערה (אופציונלי)" : "מה לא ברור?"}
+          <textarea
+            className="task-transition-modal-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            maxLength={MAX_NOTE + 1}
+            disabled={busy}
+            placeholder={
+              kind === "approval"
+                ? "הוסף/י הקשר על מה לבדוק…"
+                : "תאר/י את הנקודה שלא ברורה כדי שהכותב יוכל לענות…"
+            }
+            dir="auto"
+          />
+          <span className="task-transition-modal-count">
+            {note.length}/{MAX_NOTE}
+          </span>
+        </label>
+
+        {error && <div className="task-transition-modal-error">{error}</div>}
+
+        <footer className="task-transition-modal-foot">
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={onClose}
+            disabled={busy}
+          >
+            ביטול
+          </button>
+          <button
+            type="button"
+            className="btn-primary btn-sm"
+            onClick={submit}
+            disabled={busy}
+          >
+            {busy ? "שולח…" : submitLabel}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}

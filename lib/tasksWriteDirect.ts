@@ -2327,13 +2327,27 @@ async function tasksUpdateDirectInner(
           subjectEmail,
         ),
       );
+    } else if (changes.status === "awaiting_clarification") {
+      // Two scenarios both land here:
+      //   1. Approver bounces work back to be re-explained.
+      //   2. Assignee asks the author for clarification mid-work.
+      // Both audiences are the same (author + assignees minus the
+      // actor) so a single task_returned ping covers both. Previously
+      // this only fired for case (1); case (2) silently dropped the
+      // alert and the author had no idea their input was needed.
+      // Reported by Maayan 2026-05-12 when adding the submission
+      // modal — the modal's nudge to the author depends on this ping.
+      scheduleStatusNotify(fresh.id, () =>
+        notifyTaskAudience("task_returned", fresh, subjectEmail),
+      );
     } else if (
       previousStatus === "awaiting_approval" &&
       (changes.status === "in_progress" ||
-        changes.status === "awaiting_handling" ||
-        changes.status === "awaiting_clarification")
+        changes.status === "awaiting_handling")
     ) {
       // Approver bounced the work back — author + assignees should know.
+      // (The awaiting_clarification arm of this same scenario is
+      // handled by the dedicated branch above.)
       scheduleStatusNotify(fresh.id, () =>
         notifyTaskAudience("task_returned", fresh, subjectEmail),
       );
