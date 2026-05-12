@@ -11281,6 +11281,18 @@ html[data-theme="dark"] .tasks-dept-chip {
   flex-direction: column;
   gap: .15em;
 }
+.task-status-history-direction {
+  display: flex;
+  align-items: center;
+  gap: .35em;
+  color: var(--muted);
+  font-size: .8em;
+  margin-bottom: .35em;
+  opacity: .75;
+}
+.task-status-history-direction-label {
+  font-weight: 500;
+}
 .task-status-history-head {
   display: flex;
   flex-wrap: wrap;

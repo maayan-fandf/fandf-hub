@@ -115,6 +115,20 @@ export default function TaskStatusHistory({
 
   return (
     <div className="task-status-history">
+      {/*
+        Direction indicator: the list is reverse-chronological (newest on
+        top, oldest at the bottom), which isn't obvious at a glance.
+        A small ↑ caption at the top makes the progression direction
+        explicit so readers know "going up = forward in time".
+      */}
+      <div
+        className="task-status-history-direction"
+        title="חדש יותר למעלה · ישן יותר למטה"
+        aria-label="הסטוריית הסטטוס מסודרת מהחדש לישן"
+      >
+        <span aria-hidden>↑</span>
+        <span className="task-status-history-direction-label">חדש יותר</span>
+      </div>
       <ol className="task-status-history-list">
         {visible.map((e, i) =>
           e.kind === "status" ? (
@@ -134,22 +148,31 @@ export default function TaskStatusHistory({
               />
               <div className="task-status-history-content">
                 <div className="task-status-history-head">
-                  <span className="task-status-history-status">
-                    {labelFor(e.to as WorkTaskStatus)}
-                  </span>
+                  {/*
+                    DOM order is FROM → arrow → TO so the RTL flex flow
+                    visually reads (right-to-left) as "FROM ← TO" — i.e.
+                    the OLD state sits on the right where Hebrew readers
+                    look first, the arrow points toward the NEW state on
+                    the left. Previously the order was TO → arrow → FROM
+                    which rendered as "TO ← FROM" — the arrow appeared
+                    to point AT the old state, which felt backward.
+                  */}
                   {e.from && (
                     <>
+                      <span className="task-status-history-from">
+                        {labelFor(e.from as WorkTaskStatus)}
+                      </span>
                       <span
                         className="task-status-history-arrow"
                         aria-hidden
                       >
                         ←
                       </span>
-                      <span className="task-status-history-from">
-                        {labelFor(e.from as WorkTaskStatus)}
-                      </span>
                     </>
                   )}
+                  <span className="task-status-history-status">
+                    {labelFor(e.to as WorkTaskStatus)}
+                  </span>
                 </div>
                 <div className="task-status-history-meta">
                   <time
