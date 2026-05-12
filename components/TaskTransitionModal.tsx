@@ -16,7 +16,7 @@ import type { WorkTaskStatus } from "@/lib/appsScript";
  *                The approver bounces work back with feedback on what
  *                to fix. Without this, an assignee just saw a "task
  *                returned" ping with no explanation. */
-export type TransitionKind = "submit" | "clarify" | "reject";
+export type TransitionKind = "submit" | "clarify" | "reject" | "answer";
 
 /** Resolve the modal kind for a (from, to) transition, or `null` if
  *  this transition shouldn't pop the modal. Exported so call sites
@@ -34,6 +34,13 @@ export function getModalTransitionKind(
     (to === "in_progress" || to === "awaiting_handling")
   ) {
     return "reject";
+  }
+  // Author answering an approver's clarification request — captured by
+  // the 💬 ענה והחזר לעבודה button on the clarification-mode banner. Without
+  // this case the modal returned null and clicking the button silently
+  // did nothing. Reported by Maayan 2026-05-12.
+  if (from === "awaiting_clarification" && to === "in_progress") {
+    return "answer";
   }
   return null;
 }
@@ -129,25 +136,33 @@ export default function TaskTransitionModal({
       ? "הגשה לאישור"
       : kind === "clarify"
         ? "מה לא ברור?"
-        : "החזרה לתיקון";
+        : kind === "reject"
+          ? "החזרה לתיקון"
+          : "מענה לבקשת בירור";
   const subtitle =
     kind === "submit"
       ? "צרף קובץ או קישור לעבודה שאתה מגיש לאישור. הגורם המאשר יקבל התראה ויראה את ההגשה בדיון."
       : kind === "clarify"
         ? "צרף קובץ או קישור (למשל צילום של החלק הלא ברור) ופרט במה צריך עזרה. הכותב יקבל התראה ויראה את הבקשה בדיון."
-        : "פרט/י מה לא אושר ומה צריך לתקן. אפשר לצרף קובץ או קישור עם הערות. המבצע/ת יקבל/ת התראה ויראה/תראה את המשוב בדיון.";
+        : kind === "reject"
+          ? "פרט/י מה לא אושר ומה צריך לתקן. אפשר לצרף קובץ או קישור עם הערות. המבצע/ת יקבל/ת התראה ויראה/תראה את המשוב בדיון."
+          : "כתוב/י את התשובה לבקשת הבירור. אפשר לצרף קובץ או קישור. הגורם המאשר יקבל התראה ויראה את התשובה בדיון, והמשימה תחזור לסטטוס בעבודה.";
   const submitLabel =
     kind === "submit"
       ? "שלח לאישור"
       : kind === "clarify"
         ? "בקש בירור"
-        : "שלח לתיקון";
+        : kind === "reject"
+          ? "שלח לתיקון"
+          : "ענה והחזר לעבודה";
   const commentPrefix =
     kind === "submit"
       ? "🔍 הוגש לאישור"
       : kind === "clarify"
         ? "❓ ממתין לבירור"
-        : "🔄 הוחזר לתיקון";
+        : kind === "reject"
+          ? "🔄 הוחזר לתיקון"
+          : "💬 מענה לבירור";
 
   function pickFile() {
     fileInputRef.current?.click();
@@ -290,7 +305,9 @@ export default function TaskTransitionModal({
           ? "הוגש לאישור"
           : kind === "clarify"
             ? "בקשת בירור"
-            : "החזרה לתיקון";
+            : kind === "reject"
+              ? "החזרה לתיקון"
+              : "מענה לבירור";
       const NOTE_SNIPPET_MAX = 140;
       const snippet = note.trim().slice(0, NOTE_SNIPPET_MAX);
       const noteEllipsis = note.trim().length > NOTE_SNIPPET_MAX ? "…" : "";
@@ -418,7 +435,9 @@ export default function TaskTransitionModal({
             ? "הערה (אופציונלי)"
             : kind === "clarify"
               ? "מה לא ברור?"
-              : "מה צריך לתקן?"}
+              : kind === "reject"
+                ? "מה צריך לתקן?"
+                : "התשובה"}
           <textarea
             className="task-transition-modal-note"
             value={note}
@@ -431,7 +450,9 @@ export default function TaskTransitionModal({
                 ? "הוסף/י הקשר על מה לבדוק…"
                 : kind === "clarify"
                   ? "תאר/י את הנקודה שלא ברורה כדי שהכותב יוכל לענות…"
-                  : "פרט/י מה לא אושר ומה צריך לתקן…"
+                  : kind === "reject"
+                    ? "פרט/י מה לא אושר ומה צריך לתקן…"
+                    : "כתוב/י את התשובה לבקשת הבירור…"
             }
             dir="auto"
           />
