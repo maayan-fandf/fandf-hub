@@ -5907,6 +5907,38 @@ html[data-theme="dark"] .crm-source-search-row:hover {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   font-size: 0.92em;
+  /* Push the count to the row end so the bar can grow into the gap
+     between the label and the count. */
+  margin-inline-start: auto;
+}
+/* Embedded stacked-source bar inside the pie legend rows. Replaces
+   the standalone "התנגדויות לפי מקור הגעה" block — bar width is
+   proportional to that slice's count (set inline), segments inside
+   show the per-source breakdown. Smaller scale than the
+   .crm-matrix-bar above (legend row is denser). */
+.crm-pie-legend .crm-legend-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-hi, #f3f4f6);
+  border: 1px solid var(--border);
+  /* Inline width drives the bar's visible length. flex-shrink:0 keeps
+     it from collapsing when the row's free space is small. */
+  flex: 0 0 auto;
+  min-width: 2%;
+  max-width: 55%;
+  transition: width 200ms ease;
+}
+.crm-pie-legend .crm-legend-bar-seg {
+  display: block;
+  height: 100%;
+}
+/* When the pie+legend block stands alone (trendline moved up to the
+   status-funnel row), drop the 35/65 grid: the legend can now use
+   the full width to host the embedded source-mix bars comfortably. */
+.crm-source-analysis-grid-single {
+  grid-template-columns: 1fr !important;
 }
 
 @media (max-width: 640px) {

@@ -536,9 +536,12 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
       </div>
 
-      {/* Status funnel + objections × source — 50/50 grid, both stacked
-          bars share the source palette set above. */}
-      {(statusRows.length > 0 || objectionRows.length > 0) && (
+      {/* Status funnel + trendline — 50/50 grid. Trendline moved up
+          here 2026-05-12 (was below the pie before). The objections-
+          by-source breakdown that used to live next to the funnel was
+          folded into the pie's legend below, so each legend row now
+          carries the source-mix bar inline. */}
+      {(statusRows.length > 0 || trendDaily.length > 0) && (
         <div className="crm-objection-grid">
           {statusRows.length > 0 && (
             <div className="crm-block">
@@ -576,41 +579,22 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             </div>
           )}
 
-          {objectionRows.length > 0 && (
-            <div className="crm-block">
-              <div className="crm-block-title">התנגדויות לפי מקור הגעה</div>
-              <ul className="crm-matrix">
-                {objectionRows.map((row) => (
-                  <li key={row.objection} className="crm-matrix-row">
-                    <span className="crm-matrix-label" title={row.objection}>{row.objection}</span>
-                    <span className="crm-matrix-bar" style={{ width: `${row.widthPct}%` }}>
-                      {row.sources.map((s) => {
-                        const w = (s.count / row.total) * 100;
-                        if (w < 0.5) return null;
-                        return (
-                          <span
-                            key={s.source}
-                            className={"crm-matrix-seg" + (s.isOther ? " crm-matrix-seg-rest" : "")}
-                            style={s.isOther
-                              ? { width: `${w}%` }
-                              : { width: `${w}%`, background: palette.get(s.source) }}
-                            title={`${channelIcon(s.source)} ${s.source} — ${s.count} (${pct(s.count, row.total)})`.trim()}
-                          />
-                        );
-                      })}
-                    </span>
-                    <span className="crm-matrix-total">{row.total}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {trendDaily.length > 0 && (
+            <CrmFunnelTrendline
+              dailyTimeSeries={trendDaily}
+              selectedSources={selected}
+            />
           )}
         </div>
       )}
 
-      {/* Objection pie + trendline — 35/65 grid, also driven by chips. */}
-      {(pieData.slices.length > 0 || trendDaily.length > 0) && (
-        <div className="crm-source-analysis-grid">
+      {/* Combined objection-pie + per-objection source-mix bars in the
+          legend. The bars were a separate block ("התנגדויות לפי מקור
+          הגעה") until 2026-05-12 — folding them into the legend lets
+          one card carry the "how big is each objection AND which
+          channels drive it" story without doubling the vertical space. */}
+      {pieData.slices.length > 0 && (
+        <div className="crm-source-analysis-grid crm-source-analysis-grid-single">
           <div className="crm-block crm-pie-block">
             <div className="crm-block-title">התפלגות התנגדויות</div>
             <div className="crm-pie-row">
@@ -681,6 +665,24 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                       ? null
                       : objectionSourceBreakdowns.get(s.label) || null;
                     const hasPopover = !!breakdown && breakdown.length > 0;
+                    // Embedded stacked-source bar — the per-objection
+                    // source mix used to live in its own block
+                    // ("התנגדויות לפי מקור הגעה"). Folded into the
+                    // legend row 2026-05-12: bar width is proportional
+                    // to the slice's count relative to the largest
+                    // slice (max), so bigger objections render visibly
+                    // longer bars — matches the old block's relative
+                    // sizing. "אחר" rolls multiple objections, so it
+                    // shows no bar (the source mix wouldn't be
+                    // meaningful for the rollup).
+                    const objTotal = breakdown
+                      ? breakdown.reduce((n, b) => n + b.count, 0)
+                      : 0;
+                    const maxSliceCount = pieData.slices.reduce(
+                      (m, x) => Math.max(m, x.count),
+                      0,
+                    ) || 1;
+                    const barWidthPct = (s.count / maxSliceCount) * 100;
                     return (
                       <li
                         key={s.label}
@@ -691,6 +693,26 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                           style={s.isOther ? undefined : { background: s.color }}
                         />
                         <span className="crm-legend-label" title={s.label}>{s.label}</span>
+                        {breakdown && breakdown.length > 0 && objTotal > 0 ? (
+                          <span
+                            className="crm-legend-bar"
+                            style={{ width: `${barWidthPct}%` }}
+                            aria-hidden
+                          >
+                            {breakdown.map((b) => {
+                              const w = (b.count / objTotal) * 100;
+                              if (w < 0.5) return null;
+                              return (
+                                <span
+                                  key={b.source}
+                                  className="crm-legend-bar-seg"
+                                  style={{ width: `${w}%`, background: palette.get(b.source) }}
+                                  title={`${channelIcon(b.source)} ${b.source} — ${b.count} (${pct(b.count, objTotal)})`.trim()}
+                                />
+                              );
+                            })}
+                          </span>
+                        ) : null}
                         <span className="crm-legend-count">
                           {s.count} ({((s.count / pieData.total) * 100).toFixed(1)}%)
                         </span>
@@ -708,11 +730,6 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
               </ul>
             </div>
           </div>
-
-          <CrmFunnelTrendline
-            dailyTimeSeries={trendDaily}
-            selectedSources={selected}
-          />
         </div>
       )}
 
