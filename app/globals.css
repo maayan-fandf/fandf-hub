@@ -11222,6 +11222,41 @@ html[data-theme="dark"] .tasks-dept-chip {
   margin: 0;
   position: relative;
 }
+/*
+  Progression arrow at the top of the timeline column. Together they
+  form a vertical shaft + upward arrowhead sitting just above the
+  newest (first) dot, signaling "going up = forward in time" with a
+  much stronger visual cue than the small ↑ caption above the list.
+  Aligned with the dot column via inset-inline-end matching the dot's
+  geometry (.47em is the dot's horizontal center; the dot is .95em
+  wide and sits at inset-inline-end: 0).
+*/
+.task-status-history-list::before {
+  /* Vertical shaft from the arrowhead down to the first dot */
+  content: "";
+  position: absolute;
+  inset-inline-end: .42em;
+  top: -1.4em;
+  width: 3px;
+  height: 1.9em;
+  background: var(--accent, #7c3aed);
+  border-radius: 2px;
+  opacity: .78;
+  pointer-events: none;
+}
+.task-status-history-list::after {
+  /* Arrowhead — triangle pointing up at the top of the shaft */
+  content: "";
+  position: absolute;
+  inset-inline-end: 0;
+  top: -1.95em;
+  width: .95em;
+  height: .65em;
+  background: var(--accent, #7c3aed);
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  opacity: .85;
+  pointer-events: none;
+}
 .task-status-history-item {
   position: relative;
   /* RTL: dot sits on the right edge, content fans to the left.
@@ -11275,6 +11310,9 @@ html[data-theme="dark"] .tasks-dept-chip {
 .tasks-status-dot-awaiting_approval     { background: #d97706; }
 .tasks-status-dot-done                  { background: #059669; }
 .tasks-status-dot-cancelled             { background: #9ca3af; }
+/* Per-status text colors (`tasks-status-text-*`) live further down,
+   after `.task-status-history-status`, so source-order lets them win
+   without specificity bumps. Same hex values as the dots above. */
 
 .task-status-history-content {
   display: flex;
@@ -11301,9 +11339,23 @@ html[data-theme="dark"] .tasks-dept-chip {
   font-size: 1em;
 }
 .task-status-history-status {
+  /* `color` is set by the per-status `tasks-status-text-${e.to}` class
+     defined just below — see the palette block. Falls back to
+     var(--text) when the modifier is absent (legacy / unknown statuses). */
   color: var(--text);
   font-weight: 700;
 }
+/* Per-status text colors for the bold "to" label in each history row.
+   Mirrors the dot palette above. Defined HERE (after the generic
+   `.task-status-history-status` rule) so source-order makes them win
+   without bumping specificity or using !important. */
+.tasks-status-text-draft                 { color: #6b7280; }
+.tasks-status-text-awaiting_handling     { color: #475569; }
+.tasks-status-text-in_progress           { color: #2563eb; }
+.tasks-status-text-awaiting_clarification{ color: #dc2626; }
+.tasks-status-text-awaiting_approval     { color: #d97706; }
+.tasks-status-text-done                  { color: #059669; }
+.tasks-status-text-cancelled             { color: #9ca3af; }
 .task-status-history-arrow {
   color: var(--muted);
   font-size: .9em;

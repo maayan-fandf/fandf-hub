@@ -170,7 +170,9 @@ export default function TaskStatusHistory({
                       </span>
                     </>
                   )}
-                  <span className="task-status-history-status">
+                  <span
+                    className={`task-status-history-status tasks-status-text-${e.to}`}
+                  >
                     {labelFor(e.to as WorkTaskStatus)}
                   </span>
                 </div>
