@@ -34,6 +34,7 @@ import { displayProjectOrCompany } from "@/lib/personalLabel";
 import TaskTransitionModal, {
   getModalTransitionKind,
 } from "@/components/TaskTransitionModal";
+import { isRejectionPending } from "@/lib/taskRejectionPending";
 
 /** Same classification as the table view's TasksQueue. Pulled inline
  *  so the kanban card can render a matching parent/child visual cue
@@ -574,6 +575,18 @@ function KanbanCard({
             }
           >
             🔒
+          </span>
+        )}
+        {/* Rejection bullet — mirrors the queue's tasks-substatus-rejected
+            pill so a rejected card on the kanban also reads "this was
+            bounced back" at a glance. Same derivation from
+            status_history; auto-clears on the next status change. */}
+        {isRejectionPending(task) && (
+          <span
+            className="tasks-substatus-pill tasks-substatus-rejected kanban-card-rejected-badge"
+            title="האישור נדחה — המשימה הוחזרה לתיקון"
+          >
+            🔄 הוחזר
           </span>
         )}
         <Link

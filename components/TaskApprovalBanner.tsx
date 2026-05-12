@@ -78,6 +78,7 @@ export default function TaskApprovalBanner({
   // status flip with no deliverable required.
   const [modalTarget, setModalTarget] = useState<
     | "in_progress"
+    | "awaiting_handling"
     | "awaiting_clarification"
     | "awaiting_approval"
     | null
@@ -243,7 +244,7 @@ export default function TaskApprovalBanner({
                 <button
                   type="button"
                   className="btn-ghost btn-sm"
-                  onClick={() => setModalTarget("in_progress")}
+                  onClick={() => setModalTarget("awaiting_handling")}
                   disabled={busy !== null}
                 >
                   🔄 החזר לתיקון

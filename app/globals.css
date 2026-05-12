@@ -9752,6 +9752,20 @@ html[data-theme="dark"] .task-files-panel[data-drag-over="1"] {
   color: var(--text);
   border: 1px solid var(--border);
 }
+/* Rejection variant — rose/red wash matching the rejection-mode
+   TaskApprovalBanner color so a glance at the row makes the
+   "task was bounced back, needs fixing" state obvious. Auto-clears
+   the moment the assignee picks the task back up. */
+.tasks-substatus-rejected {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.5);
+  color: #9f1239;
+  font-weight: 600;
+}
+html[data-theme="dark"] .tasks-substatus-rejected {
+  background: rgba(244, 63, 94, 0.22);
+  color: #fda4af;
+}
 
 /* Row action icons (rightmost queue column, matching Data Plus's
    icon strip for folder / assignees / notes / open). */

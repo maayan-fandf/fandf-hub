@@ -7,6 +7,7 @@ import { fireConfetti, firePulse } from "@/lib/confetti";
 import TaskTransitionModal, {
   getModalTransitionKind,
 } from "./TaskTransitionModal";
+import { isRejectionPending } from "@/lib/taskRejectionPending";
 
 // Open lifecycle — every status routes to every other status (minus
 // self). The previous whitelist was forcing the team into a single
@@ -275,6 +276,23 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
         {!pendingTo && task.sub_status && (
           <span className="tasks-substatus-pill" title="sub_status">
             {task.sub_status}
+          </span>
+        )}
+        {/* Rejection bullet — surfaces when the most recent status
+            change was an approver bouncing the task back. Renders
+            alongside the status pill on the queue, kanban (via the
+            same component) AND task detail page so the rejection
+            state is visible at a glance without opening the task.
+            Derives from status_history; auto-clears the next time
+            the assignee changes status. Maayan reported 2026-05-12:
+            after a rejection she wants to see "הוחזר לתיקון" on the
+            row in ממתין לטיפול without scrolling into the task. */}
+        {!pendingTo && isRejectionPending(task) && (
+          <span
+            className="tasks-substatus-pill tasks-substatus-rejected"
+            title="האישור נדחה — המשימה הוחזרה לתיקון"
+          >
+            🔄 הוחזר לתיקון
           </span>
         )}
       </span>
