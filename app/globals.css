@@ -2456,15 +2456,28 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   font-weight: 500;
 }
 
-/* Stack vertically so the chat + tasks cards span the same width as
-   the alerts / prisot / dashboard sections below them. The previous
-   2-col layout (1fr 1.2fr at ≥1100px) left a vertical gap strip
-   running between the two cards that broke the visual alignment
-   with the full-width cards below — see Maayan's 2026-05-12 report. */
 .project-sections {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 1.25rem;
+}
+
+@media (min-width: 1100px) {
+  /* Two columns — tasks left, discussion right (in RTL: right + left).
+     Keeps the section content side-by-side at desktop widths instead
+     of letting one of them eat the whole width. */
+  .project-sections {
+    grid-template-columns: 1fr 1.2fr;
+  }
+}
+
+/* CSS-grid quirk: grid items default to `min-width: auto` (= content
+   size), so a wide child (long task title, chat message with a long
+   URL, etc.) pushes the column past its declared track width — the
+   tasks section "overflows to the left" out of its column. Force the
+   children to honor the track and contain their own content. */
+.project-sections > .project-section {
+  min-width: 0;
 }
 
 /* ── Tasks-channel aggregated feed ──────────────────────────────────
