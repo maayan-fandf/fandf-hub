@@ -8030,13 +8030,17 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
 }
 .morning-list-compact { gap: .4em; }
 
+/* M3 outlined card — /morning alert list.
+   Lives directly on page background (no column wrapper) so uses the
+   plain `surface` tone, not the higher container. Severity is
+   signalled by the 4px left-edge accent — functional, not theme. */
 .morning-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
   padding: 1.1em 1.25em;
-  box-shadow: 0 1px 3px rgba(15,23,42,.05);
-  border-inline-start: 4px solid var(--border);
+  border-inline-start: 4px solid var(--md-sys-color-outline-variant);
 }
 .morning-card.is-severe { border-inline-start-color: #dc2626; }
 .morning-card.is-warn   { border-inline-start-color: #d97706; }
