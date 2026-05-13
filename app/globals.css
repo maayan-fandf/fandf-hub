@@ -7508,6 +7508,13 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
    (or the sheet's view_as_email default) is active. Sticks to top so
    it stays visible when the user scrolls. Yellow-amber palette so
    it's unmissable without screaming "error". */
+/* M3 banner — informational, persistent, dismissible.
+   Amber palette kept because the "you're impersonating someone else"
+   state needs to be unmissable but non-alarming (M3's tertiary-
+   container is too purple; error-container is too red for a soft
+   alert). Chrome (typography, exit button, border) routes through
+   M3 tokens. Text uses on-surface so it stays readable when amber-soft
+   flips dark. Border-bottom dropped per M3 v3 idiom. */
 .view-as-banner {
   position: sticky;
   top: 0;
@@ -7515,12 +7522,13 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   display: flex;
   align-items: center;
   gap: 0.6em;
-  padding: 0.4em 1rem;
-  background: var(--accent-warn-soft, #fef3c7);
-  color: var(--accent-warn-dark, #92400e);
-  border-bottom: 1px solid var(--accent-warn, #f59e0b);
-  font-size: 0.88rem;
-  font-weight: 500;
+  padding: 0.55em 1rem;
+  background: var(--amber-soft);
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-label-large-weight);
+  letter-spacing: var(--md-sys-typescale-label-large-tracking);
 }
 .view-as-banner-icon {
   font-size: 1em;
@@ -7529,17 +7537,19 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   flex: 1;
 }
 .view-as-banner-exit {
-  background: rgba(146, 64, 14, 0.12);
-  border: 1px solid rgba(146, 64, 14, 0.3);
+  background: transparent;
+  border: 1px solid var(--md-sys-color-outline);
   color: inherit;
-  padding: 0.2em 0.7em;
-  border-radius: 0.3em;
-  font-size: 0.85em;
+  padding: 0.2em 0.85em;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  font-weight: var(--md-sys-typescale-label-medium-weight);
+  letter-spacing: var(--md-sys-typescale-label-medium-tracking);
   cursor: pointer;
-  font-weight: 600;
+  transition: background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 .view-as-banner-exit:hover {
-  background: rgba(146, 64, 14, 0.2);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 }
 .user-prefs-admin-role {
   color: var(--muted);
