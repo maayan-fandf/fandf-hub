@@ -11083,9 +11083,12 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   width: 100%;
 }
 
-/* Lightbox overlay — single instance mounted by LightboxProvider in
-   app/layout.tsx, portaled into <body>. Covers the full viewport
-   with a dimmed backdrop + a centered image up to 92vw × 92vh. */
+/* Lightbox overlay — image viewer portaled into <body> by
+   LightboxProvider. Heavier-than-M3-standard scrim (80% vs 32%) is
+   intentional: a dialog/sheet darkens the underlying page; an image
+   viewer needs to ERASE it so the image is the only thing the eye
+   reads. The action chips stay white-on-scrim regardless of theme
+   because the scrim itself is theme-independent. */
 .lightbox-overlay {
   position: fixed;
   inset: 0;
@@ -11096,11 +11099,10 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   justify-content: center;
   gap: .8em;
   padding: 2vh 2vw;
-  background: rgba(8, 10, 18, .82);
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 80%, transparent);
   backdrop-filter: blur(2px);
   cursor: zoom-out;
-  /* Fade in — keeps the open feeling soft rather than abrupt. */
-  animation: lightbox-fade-in .12s ease-out;
+  animation: lightbox-fade-in var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-emphasized-decelerate);
 }
 @keyframes lightbox-fade-in {
   from { opacity: 0; }
@@ -11110,20 +11112,22 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   max-width: 92vw;
   max-height: 88vh;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-small);
   background: #fff;
-  box-shadow: 0 10px 50px rgba(0,0,0,.5);
+  box-shadow: var(--md-sys-elevation-level3);
   cursor: default;
 }
 .lightbox-caption {
-  color: rgba(255,255,255,.85);
-  font-size: .9em;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  letter-spacing: var(--md-sys-typescale-body-medium-tracking);
   max-width: 92vw;
   text-align: center;
   word-break: break-word;
-  background: rgba(0,0,0,.4);
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
   padding: .35em .8em;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-small);
 }
 .lightbox-actions {
   position: absolute;
@@ -11132,11 +11136,14 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   display: flex;
   gap: .5em;
 }
+/* Action chip — round button-on-scrim. Stays white regardless of theme
+   because it lives on the (theme-independent) dark scrim, not on a
+   themed surface. Picks up M3 level2 elevation for lift off the scrim. */
 .lightbox-action {
   width: 2.4em;
   height: 2.4em;
-  border-radius: 999px;
-  background: rgba(255,255,255,.95);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: rgba(255, 255, 255, 0.95);
   border: none;
   color: #1a1a2e;
   display: inline-flex;
@@ -11145,11 +11152,16 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   cursor: pointer;
   font-size: 1.1em;
   text-decoration: none;
-  transition: background .12s, transform .12s;
+  box-shadow: var(--md-sys-elevation-level2);
+  transition:
+    background-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard),
+    transform        var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-emphasized),
+    box-shadow       var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
 }
 .lightbox-action:hover {
   background: #fff;
   transform: scale(1.08);
+  box-shadow: var(--md-sys-elevation-level3);
 }
 .lightbox-action-close {
   font-weight: 700;
