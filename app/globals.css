@@ -97,6 +97,185 @@
   --error-text:    #991b1b;
   --topnav-bg:     linear-gradient(90deg, #ffffff 0%, #fbfaff 100%);
   --loading-bg:    linear-gradient(135deg, var(--violet-soft), var(--pink-soft));
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * Material Design 3 token foundation (Phase 1 — additive only)
+   *
+   * Source color: #6366F1 (current --indigo). Generated via Google's
+   * @material/material-color-utilities. Existing tokens above are
+   * unchanged; Phase 2 re-skins primitives onto these.
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  /* M3 sys.color — light scheme */
+  --md-sys-color-primary: #494bd6;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #e1e0ff;
+  --md-sys-color-on-primary-container: #07006c;
+  --md-sys-color-secondary: #5d5c72;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #e2e0f9;
+  --md-sys-color-on-secondary-container: #191a2c;
+  --md-sys-color-tertiary: #795369;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #ffd8ec;
+  --md-sys-color-on-tertiary-container: #2e1125;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-background: #fffbff;
+  --md-sys-color-on-background: #1c1b1f;
+  --md-sys-color-surface: #fffbff;
+  --md-sys-color-on-surface: #1c1b1f;
+  --md-sys-color-surface-variant: #e4e1ec;
+  --md-sys-color-on-surface-variant: #46464f;
+  --md-sys-color-outline: #777680;
+  --md-sys-color-outline-variant: #c8c5d0;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #313034;
+  --md-sys-color-inverse-on-surface: #f3eff4;
+  --md-sys-color-inverse-primary: #c0c1ff;
+  --md-sys-color-surface-dim: #dcd9de;
+  --md-sys-color-surface-bright: #fcf8fd;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f6f2f7;
+  --md-sys-color-surface-container: #f0edf1;
+  --md-sys-color-surface-container-high: #eae7ec;
+  --md-sys-color-surface-container-highest: #e5e1e6;
+
+  /* M3 sys.shape */
+  --md-sys-shape-corner-none: 0;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full: 9999px;
+
+  /* M3 sys.elevation — shadow recipes (key + ambient).
+     Surface tint is applied per-component in Phase 2, not here. */
+  --md-sys-elevation-level0: none;
+  --md-sys-elevation-level1: 0 1px 2px 0 rgba(0,0,0,0.30), 0 1px 3px 1px rgba(0,0,0,0.15);
+  --md-sys-elevation-level2: 0 1px 2px 0 rgba(0,0,0,0.30), 0 2px 6px 2px rgba(0,0,0,0.15);
+  --md-sys-elevation-level3: 0 1px 3px 0 rgba(0,0,0,0.30), 0 4px 8px 3px rgba(0,0,0,0.15);
+  --md-sys-elevation-level4: 0 2px 3px 0 rgba(0,0,0,0.30), 0 6px 10px 4px rgba(0,0,0,0.15);
+  --md-sys-elevation-level5: 0 4px 4px 0 rgba(0,0,0,0.30), 0 8px 12px 6px rgba(0,0,0,0.15);
+
+  /* M3 sys.state — overlay tint opacities for state layers */
+  --md-sys-state-hover-opacity: 0.08;
+  --md-sys-state-focus-opacity: 0.10;
+  --md-sys-state-pressed-opacity: 0.10;
+  --md-sys-state-dragged-opacity: 0.16;
+
+  /* M3 sys.motion — easings */
+  --md-sys-motion-easing-linear: cubic-bezier(0, 0, 1, 1);
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --md-sys-motion-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /* M3 sys.motion — durations */
+  --md-sys-motion-duration-short1: 50ms;
+  --md-sys-motion-duration-short2: 100ms;
+  --md-sys-motion-duration-short3: 150ms;
+  --md-sys-motion-duration-short4: 200ms;
+  --md-sys-motion-duration-medium1: 250ms;
+  --md-sys-motion-duration-medium2: 300ms;
+  --md-sys-motion-duration-medium3: 350ms;
+  --md-sys-motion-duration-medium4: 400ms;
+  --md-sys-motion-duration-long1: 450ms;
+  --md-sys-motion-duration-long2: 500ms;
+  --md-sys-motion-duration-long3: 550ms;
+  --md-sys-motion-duration-long4: 600ms;
+  --md-sys-motion-duration-extra-long1: 700ms;
+  --md-sys-motion-duration-extra-long2: 800ms;
+  --md-sys-motion-duration-extra-long3: 900ms;
+  --md-sys-motion-duration-extra-long4: 1000ms;
+
+  /* M3 sys.typescale — font family refs.
+     `plain` = body/label/title; `brand` = display/headline.
+     Both default to the current system stack; Phase 3 swaps in Rubik. */
+  --md-sys-typescale-plain-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --md-sys-typescale-brand-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* M3 sys.typescale — size / line-height / weight / tracking per role */
+  --md-sys-typescale-display-large-size: 3.5625rem;     /* 57px */
+  --md-sys-typescale-display-large-line-height: 4rem;   /* 64px */
+  --md-sys-typescale-display-large-weight: 400;
+  --md-sys-typescale-display-large-tracking: -0.25px;
+
+  --md-sys-typescale-display-medium-size: 2.8125rem;    /* 45px */
+  --md-sys-typescale-display-medium-line-height: 3.25rem;
+  --md-sys-typescale-display-medium-weight: 400;
+  --md-sys-typescale-display-medium-tracking: 0;
+
+  --md-sys-typescale-display-small-size: 2.25rem;       /* 36px */
+  --md-sys-typescale-display-small-line-height: 2.75rem;
+  --md-sys-typescale-display-small-weight: 400;
+  --md-sys-typescale-display-small-tracking: 0;
+
+  --md-sys-typescale-headline-large-size: 2rem;         /* 32px */
+  --md-sys-typescale-headline-large-line-height: 2.5rem;
+  --md-sys-typescale-headline-large-weight: 400;
+  --md-sys-typescale-headline-large-tracking: 0;
+
+  --md-sys-typescale-headline-medium-size: 1.75rem;     /* 28px */
+  --md-sys-typescale-headline-medium-line-height: 2.25rem;
+  --md-sys-typescale-headline-medium-weight: 400;
+  --md-sys-typescale-headline-medium-tracking: 0;
+
+  --md-sys-typescale-headline-small-size: 1.5rem;       /* 24px */
+  --md-sys-typescale-headline-small-line-height: 2rem;
+  --md-sys-typescale-headline-small-weight: 400;
+  --md-sys-typescale-headline-small-tracking: 0;
+
+  --md-sys-typescale-title-large-size: 1.375rem;        /* 22px */
+  --md-sys-typescale-title-large-line-height: 1.75rem;
+  --md-sys-typescale-title-large-weight: 400;
+  --md-sys-typescale-title-large-tracking: 0;
+
+  --md-sys-typescale-title-medium-size: 1rem;           /* 16px */
+  --md-sys-typescale-title-medium-line-height: 1.5rem;
+  --md-sys-typescale-title-medium-weight: 500;
+  --md-sys-typescale-title-medium-tracking: 0.15px;
+
+  --md-sys-typescale-title-small-size: 0.875rem;        /* 14px */
+  --md-sys-typescale-title-small-line-height: 1.25rem;
+  --md-sys-typescale-title-small-weight: 500;
+  --md-sys-typescale-title-small-tracking: 0.1px;
+
+  --md-sys-typescale-body-large-size: 1rem;             /* 16px */
+  --md-sys-typescale-body-large-line-height: 1.5rem;
+  --md-sys-typescale-body-large-weight: 400;
+  --md-sys-typescale-body-large-tracking: 0.5px;
+
+  --md-sys-typescale-body-medium-size: 0.875rem;        /* 14px */
+  --md-sys-typescale-body-medium-line-height: 1.25rem;
+  --md-sys-typescale-body-medium-weight: 400;
+  --md-sys-typescale-body-medium-tracking: 0.25px;
+
+  --md-sys-typescale-body-small-size: 0.75rem;          /* 12px */
+  --md-sys-typescale-body-small-line-height: 1rem;
+  --md-sys-typescale-body-small-weight: 400;
+  --md-sys-typescale-body-small-tracking: 0.4px;
+
+  --md-sys-typescale-label-large-size: 0.875rem;        /* 14px */
+  --md-sys-typescale-label-large-line-height: 1.25rem;
+  --md-sys-typescale-label-large-weight: 500;
+  --md-sys-typescale-label-large-tracking: 0.1px;
+
+  --md-sys-typescale-label-medium-size: 0.75rem;        /* 12px */
+  --md-sys-typescale-label-medium-line-height: 1rem;
+  --md-sys-typescale-label-medium-weight: 500;
+  --md-sys-typescale-label-medium-tracking: 0.5px;
+
+  --md-sys-typescale-label-small-size: 0.6875rem;       /* 11px */
+  --md-sys-typescale-label-small-line-height: 1rem;
+  --md-sys-typescale-label-small-weight: 500;
+  --md-sys-typescale-label-small-tracking: 0.5px;
 }
 
 /* ─── Dark theme overrides ─────────────────────────────────────────
@@ -174,6 +353,42 @@
   --error-text:   #fca5a5;
   --topnav-bg:    linear-gradient(90deg, #181830 0%, #16152c 100%);
   --loading-bg:   linear-gradient(135deg, var(--violet-soft), var(--pink-soft));
+
+  /* M3 sys.color — dark scheme (same source #6366F1) */
+  --md-sys-color-primary: #c0c1ff;
+  --md-sys-color-on-primary: #1000a9;
+  --md-sys-color-primary-container: #2f2ebe;
+  --md-sys-color-on-primary-container: #e1e0ff;
+  --md-sys-color-secondary: #c6c4dd;
+  --md-sys-color-on-secondary: #2e2f42;
+  --md-sys-color-secondary-container: #454559;
+  --md-sys-color-on-secondary-container: #e2e0f9;
+  --md-sys-color-tertiary: #e9b9d3;
+  --md-sys-color-on-tertiary: #46263a;
+  --md-sys-color-tertiary-container: #5f3c51;
+  --md-sys-color-on-tertiary-container: #ffd8ec;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffb4ab;
+  --md-sys-color-background: #1c1b1f;
+  --md-sys-color-on-background: #e5e1e6;
+  --md-sys-color-surface: #1c1b1f;
+  --md-sys-color-on-surface: #e5e1e6;
+  --md-sys-color-surface-variant: #46464f;
+  --md-sys-color-on-surface-variant: #c8c5d0;
+  --md-sys-color-outline: #918f9a;
+  --md-sys-color-outline-variant: #46464f;
+  --md-sys-color-inverse-surface: #e5e1e6;
+  --md-sys-color-inverse-on-surface: #313034;
+  --md-sys-color-inverse-primary: #494bd6;
+  --md-sys-color-surface-dim: #131316;
+  --md-sys-color-surface-bright: #39393c;
+  --md-sys-color-surface-container-lowest: #0e0e11;
+  --md-sys-color-surface-container-low: #1c1b1f;
+  --md-sys-color-surface-container: #201f23;
+  --md-sys-color-surface-container-high: #2a292d;
+  --md-sys-color-surface-container-highest: #353438;
 }
 
 * {
