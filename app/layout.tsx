@@ -1,6 +1,24 @@
 import type { Metadata, Viewport } from "next";
+import { Rubik } from "next/font/google";
 import Link from "next/link";
 import { Suspense } from "react";
+
+/**
+ * Rubik — the M3-aligned Hebrew sans (Roboto family, geometric, RTL-clean).
+ * Self-hosted at build time via next/font (no CDN runtime call, no
+ * FOIT/FOUT). Exposed as a CSS variable so globals.css can plug it into
+ * --md-sys-typescale-plain-font / --md-sys-typescale-brand-font.
+ *
+ * Weights: 400 (body, display), 500 (title, label), 700 (emphasis).
+ * Phase 3 ships these three to keep the bundle lean; 600 can be added
+ * in polish if synth-bold renders poorly anywhere.
+ */
+const rubik = Rubik({
+  subsets: ["latin", "hebrew"],
+  weight: ["400", "500", "700"],
+  display: "swap",
+  variable: "--font-rubik",
+});
 import { auth } from "@/auth";
 import { signOutAction } from "@/lib/signOutAction";
 import CommandPalette from "@/components/CommandPalette";
@@ -154,6 +172,7 @@ export default async function RootLayout({
       // [data-ended] so the attributes are inert there.
       data-hide-ended="1"
       data-show-mine="1"
+      className={rubik.variable}
     >
       <head>
         <script
