@@ -1398,31 +1398,37 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   margin: 0;
 }
 
+/* M3 outlined card on surface-container-high.
+   Sits one tone-step above the .board-column (surface-container) for
+   tonal lift without shadow. Hover transitions to surface-container-highest
+   instead of bumping shadow — M3 prefers tonal elevation for cards. */
 .task-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-inline-start: 4px solid var(--border);
-  border-radius: 10px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-inline-start: 4px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
   padding: 0.75rem 0.9rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: var(--shadow-sm);
+  transition:
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    transform var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 
 .task-card:hover {
-  box-shadow: var(--shadow-md);
+  background: var(--md-sys-color-surface-container-highest);
   transform: translateY(-1px);
 }
 
 .task-card.overdue {
-  background: linear-gradient(180deg, var(--overdue-soft), var(--surface) 40%);
+  background: linear-gradient(180deg, var(--overdue-soft), var(--md-sys-color-surface-container-high) 40%);
   border-inline-start-color: var(--overdue);
 }
 
 .task-card.due-today {
-  background: linear-gradient(180deg, var(--due-today-soft), var(--surface) 40%);
+  background: linear-gradient(180deg, var(--due-today-soft), var(--md-sys-color-surface-container-high) 40%);
   border-inline-start-color: var(--due-today);
 }
 
