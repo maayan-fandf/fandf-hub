@@ -1141,12 +1141,15 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-color: var(--primary, var(--fg));
 }
 
+/* M3 outlined card — generic card primitive.
+   Outlined variant per spec: surface bg, outline-variant border,
+   corner-medium shape, no elevation. */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
   padding: 1rem 1.25rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .project-list {
