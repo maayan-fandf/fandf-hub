@@ -1,11 +1,16 @@
 :root {
-  /* Warmer neutrals so the app feels less clinical. */
+  /* Legacy chrome-neutral tokens. Originally hand-tuned light values;
+     Phase 6 aliases the four chrome-neutrals (--surface-soft, --border,
+     --text, --muted) onto M3 sys.color so the thousands of legacy-token
+     rules in this file pick up M3's tonal scheme automatically.
+     --bg and --surface stay literal — they're the page+card baseline
+     that the M3 surface-container ramp deliberately offsets from. */
   --bg: #f7f5ff;
   --surface: #ffffff;
-  --surface-soft: #faf9ff;
-  --border: #e5e4f5;
-  --text: #1b1940;
-  --muted: #6b6a85;
+  --surface-soft: var(--md-sys-color-surface-container-low);
+  --border: var(--md-sys-color-outline-variant);
+  --text: var(--md-sys-color-on-surface);
+  --muted: var(--md-sys-color-on-surface-variant);
 
   /* Full palette — used by role chips, company hashing, status tints. */
   --violet: #8b5cf6;
@@ -292,10 +297,10 @@
 [data-theme="dark"] {
   --bg: #0a0a18;
   --surface: #1f1f3a;              /* must be BRIGHTER than soft tints */
-  --surface-soft: #16162e;
-  --border: #2e2e52;
-  --text: #f4f3ff;
-  --muted: #a09eC6;
+  /* --surface-soft, --border, --text, --muted intentionally NOT
+     overridden here — they're aliased to M3 sys.color tokens in :root,
+     and M3 sys.color tokens already swap to their dark values via the
+     dark-mode block below. */
 
   /* Soft-tint variants for dark. Deliberately DARKER than --surface so
      a card (at --surface) visibly lifts off a tinted container (open
