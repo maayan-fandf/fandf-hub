@@ -2222,37 +2222,37 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
    Staff-only — mounted by app/layout.tsx behind the same client-user
    gate as the rest of the staff-only nav surface. */
 
+/* M3 small FAB — Gemini chat. 48dp container, corner-medium squircle.
+   Keeps the violet→pink brand gradient as a deliberate AI-brand
+   override (functional cue: "this is the AI surface, not a normal
+   action"); shape, elevation, and motion follow the M3 small-FAB
+   spec. */
 .gemini-fab {
   position: fixed;
-  /* Stack ABOVE the QuickTaskFAB (`+`) instead of next to it. The
-     QuickTaskFAB sits at bottom-left ~25px from each edge with a
-     ~3rem (~48px) diameter; bumping `bottom` to 5.25rem (~84px)
-     places the Gemini FAB just above it with a comfortable gap.
-     Both stay on the visual LEFT (inline-end in RTL) so the
-     bottom-right corner stays clear for whatever the page wants. */
-  /* See .quick-task-fab for the safe-area rationale — same pattern.
-     5.25rem keeps the gap above the QuickTaskFAB; the inset is added
-     on top so both FABs lift together over the iOS home indicator. */
+  /* Stack ABOVE the QuickTaskFAB (`+`). See .quick-task-fab for the
+     safe-area rationale — same env(safe-area-inset-bottom) trick. */
   bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
   inset-inline-end: 1.6rem;
   z-index: 40;            /* above the topnav (20), below modals (50+) */
   width: 3.25rem;
   height: 3.25rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  border-radius: var(--md-sys-shape-corner-medium);
+  border: none;
   background: linear-gradient(135deg, var(--violet, #7c3aed), var(--pink, #ec4899));
   color: white;
   font-size: 1.55rem;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
+  box-shadow: var(--md-sys-elevation-level3);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition:
+    transform  var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-emphasized),
+    box-shadow var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 .gemini-fab:hover {
   transform: scale(1.05);
-  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.45);
+  box-shadow: var(--md-sys-elevation-level4);
 }
 .gemini-fab.is-open {
   transform: rotate(90deg);
@@ -6894,6 +6894,10 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 
 /* Bottom-left floating action button — global "+" for quick-task entry.
    Sits below the topnav z-index but above page content; persistent. */
+/* M3 regular FAB — primary action surface. M3 v3 changed FABs from
+   round (50%) to squircle (corner-large = 16dp). Color is the muted
+   primary-container, not raw primary — the FAB stands out by shape +
+   elevation, not loud color. */
 .quick-task-fab {
   position: fixed;
   /* iPhones with the home-indicator gesture bar reserve ~0.85rem at the
@@ -6905,35 +6909,35 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
      viewportFit:"cover" in the layout viewport meta to unlock. */
   bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
   left: 1.6rem;
-  width: 3.4rem;
-  height: 3.4rem;
-  border-radius: 50%;
+  width: 3.5rem;            /* M3 regular FAB = 56dp */
+  height: 3.5rem;
+  border-radius: var(--md-sys-shape-corner-large);
   border: none;
-  background: var(--accent);
-  color: white;
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
   font-size: 1.8rem;
   font-weight: 300;
   line-height: 1;
   cursor: pointer;
-  box-shadow:
-    0 6px 20px rgba(99, 102, 241, 0.4),
-    0 2px 6px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--md-sys-elevation-level3);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 55;
-  transition: transform 0.12s ease-out, box-shadow 0.15s, filter 0.12s;
+  transition:
+    transform  var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-emphasized),
+    box-shadow var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
   user-select: none;
 }
 .quick-task-fab:hover {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 8%, var(--md-sys-color-primary-container));
   transform: translateY(-2px);
-  box-shadow:
-    0 10px 28px rgba(99, 102, 241, 0.5),
-    0 4px 10px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--md-sys-elevation-level4);
 }
 .quick-task-fab:active {
   transform: translateY(0);
+  background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 10%, var(--md-sys-color-primary-container));
 }
 @media print {
   .quick-task-fab { display: none !important; }
