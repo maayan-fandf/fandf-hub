@@ -5346,16 +5346,17 @@ a.section-link-icon:hover {
    Mounted globally; opens on Ctrl+Shift+N, the "g n" chord, or the
    "📝 הערה אישית חדשה" command-palette action. Saves to the
    __personal__ pseudo-project and lands in /tasks. */
+/* ─── Quick-note modal — M3 basic dialog ───────────────────────── */
 .quick-note-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(17, 24, 39, 0.45);
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
   z-index: 70;
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 8vh 1rem 2rem;
-  animation: quickNoteFade 0.12s ease-out;
+  animation: quickNoteFade var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-emphasized-decelerate);
 }
 @keyframes quickNoteFade {
   from { opacity: 0; }
@@ -5363,13 +5364,14 @@ a.section-link-icon:hover {
 }
 .quick-note-dialog {
   width: min(520px, 100%);
-  background: var(--surface);
-  border-radius: 14px;
-  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
-  padding: 1.2rem 1.3rem 1rem;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  box-shadow: var(--md-sys-elevation-level3);
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.8rem;
 }
 .quick-note-head {
   display: flex;
@@ -5379,54 +5381,54 @@ a.section-link-icon:hover {
 }
 .quick-note-head h2 {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-family: var(--md-sys-typescale-brand-font);
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-headline-small-weight);
+  letter-spacing: var(--md-sys-typescale-headline-small-tracking);
 }
 .quick-note-close {
   background: transparent;
   border: none;
-  color: var(--muted);
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 1rem;
   cursor: pointer;
   padding: 0.2rem 0.5rem;
-  border-radius: 0.4rem;
+  border-radius: var(--md-sys-shape-corner-small);
+  transition: background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 .quick-note-close:hover {
-  background: var(--surface-hi, rgba(0, 0, 0, 0.04));
-  color: var(--ink);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
 }
-.quick-note-title {
-  width: 100%;
-  font-size: 1rem;
-  font-weight: 500;
-  padding: 0.6rem 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: inherit;
-}
-.quick-note-title:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
-}
+/* M3 outlined text-field treatment (compact form, no floating label).
+   Phase 5.4 introduces the pattern here; future input re-skins copy it. */
+.quick-note-title,
 .quick-note-body {
   width: 100%;
-  font-size: 0.92rem;
-  padding: 0.55rem 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--ink);
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--md-sys-shape-corner-small);
+  border: 1px solid var(--md-sys-color-outline);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
   font-family: inherit;
+  font-size: var(--md-sys-typescale-body-large-size);
+  line-height: var(--md-sys-typescale-body-large-line-height);
+  letter-spacing: var(--md-sys-typescale-body-large-tracking);
+  transition: border-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+}
+.quick-note-title { font-weight: 500; }
+.quick-note-body {
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
   resize: vertical;
   min-height: 3.5rem;
 }
+.quick-note-title:focus,
 .quick-note-body:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  border-color: var(--md-sys-color-primary);
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
 }
 .quick-note-row {
   display: flex;
@@ -7162,11 +7164,11 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   .quick-task-fab { display: none !important; }
 }
 
-/* ─── Keyboard help overlay (?) ────────────────────────────────── */
+/* ─── Keyboard help (?) — M3 basic dialog ──────────────────────── */
 .help-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(17, 24, 39, 0.4);
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
   z-index: 60;
   display: flex;
   justify-content: center;
@@ -7176,10 +7178,11 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 
 .help-modal {
   width: min(460px, 100%);
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.3);
-  padding: 1.25rem 1.4rem;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  box-shadow: var(--md-sys-elevation-level3);
+  padding: 1.5rem;
 }
 
 .help-head {
@@ -7191,7 +7194,11 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 
 .help-head h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-family: var(--md-sys-typescale-brand-font);
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-headline-small-weight);
+  letter-spacing: var(--md-sys-typescale-headline-small-tracking);
 }
 
 .help-list {
@@ -7208,7 +7215,9 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   align-items: center;
   gap: 0.8rem;
   padding: 0.3rem 0;
-  font-size: 0.9rem;
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  letter-spacing: var(--md-sys-typescale-body-medium-tracking);
 }
 
 .help-keys {
@@ -7219,17 +7228,17 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 }
 
 .help-keys kbd {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
   padding: 0.1em 0.5em;
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: 0.78rem;
-  color: var(--text);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--md-sys-typescale-label-small-size);
+  color: var(--md-sys-color-on-surface);
 }
 
 .help-desc {
-  color: var(--muted);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 /* ─── RTL tweaks ──────────────────────────────────────────────── */
