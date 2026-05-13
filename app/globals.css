@@ -1290,16 +1290,21 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   flex-shrink: 0;
 }
 
+/* Count-indicator pill (📋 N / 🏷️ N / severity dots).
+   Typography follows M3 label-small via sys.typescale tokens. Weight
+   stays at 700 (vs M3-spec 500) for legibility on the tiny chip —
+   the surrounding pill is barely 11px tall and we need the digits to
+   read clearly on a saturated bg. Shape via sys.shape.corner-full. */
 .pill-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.15em;
   padding: 0.12em 0.55em;
-  border-radius: 999px;
-  font-size: 0.72rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-small-size);
   font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1.5;
+  letter-spacing: var(--md-sys-typescale-label-small-tracking);
+  line-height: var(--md-sys-typescale-label-small-line-height);
 }
 
 .pill-badge-tasks {
