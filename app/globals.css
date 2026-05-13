@@ -13887,26 +13887,34 @@ html[data-theme="dark"] .kanban-column-count {
   border-radius: 8px;
 }
 
+/* M3 outlined card — kanban variant.
+   Same tonal idea as .task-card but corner-small (denser stacking),
+   no resting shadow, tonal hover. The drag-overlay clone DOES get
+   real shadow (elevation level3) — that's exactly the case where M3
+   uses shadow over tone: a temporarily-floating surface. */
 .kanban-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
   padding: .65em .75em;
   display: flex;
   flex-direction: column;
   gap: .35em;
   cursor: grab;
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
-  transition: box-shadow .12s, transform .08s;
+  transition:
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    transform var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard),
+    box-shadow var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
   touch-action: none;
 }
 .kanban-card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  background: var(--md-sys-color-surface-container-highest);
 }
 .kanban-card.is-overlay {
   cursor: grabbing;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  box-shadow: var(--md-sys-elevation-level3);
   transform: rotate(1.5deg);
 }
 .kanban-card.is-dragging {
