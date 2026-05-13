@@ -1141,23 +1141,125 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   .skeleton { animation: none; }
 }
 
+/* ─── M3 button family ─────────────────────────────────────────────
+ * Five variants per M3 v3 spec: filled / tonal / outlined / elevated /
+ * text. All share corner-full (pill) shape, 40dp height, and the
+ * label-large typescale. State layers are color-mixed onto the known
+ * resting bg (proper M3 pattern; no opacity hacks on the container).
+ *
+ * .btn-chat is kept as an alias for .btn-outlined so existing usages
+ * (none today, but the class is referenced in jsdoc comments) keep
+ * working. Prefer .btn-outlined for new code.
+ * ───────────────────────────────────────────────────────────────────── */
+
+.btn-filled,
+.btn-tonal,
+.btn-outlined,
+.btn-elevated,
+.btn-text,
 .btn-chat {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.55rem 1rem;
-  background: var(--surface);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.5rem;          /* M3 standard button = 40dp */
+  padding: 0 1.5rem;       /* 24dp horizontal */
+  border: 1px solid transparent;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-label-large-weight);
+  letter-spacing: var(--md-sys-typescale-label-large-tracking);
+  line-height: 1;
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+  transition:
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    color            var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    border-color     var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    box-shadow       var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
-.btn-chat:hover {
-  background: var(--surface-hover, var(--surface));
-  border-color: var(--primary, var(--fg));
+
+/* Filled — high emphasis: the primary action on a screen */
+.btn-filled { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.btn-filled:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-primary) 8%, var(--md-sys-color-primary));
+  box-shadow: var(--md-sys-elevation-level1);
+}
+.btn-filled:active:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-primary) 10%, var(--md-sys-color-primary));
+}
+
+/* Tonal — medium emphasis, less attention-grabbing than filled */
+.btn-tonal { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.btn-tonal:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
+  box-shadow: var(--md-sys-elevation-level1);
+}
+.btn-tonal:active:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 10%, var(--md-sys-color-secondary-container));
+}
+
+/* Outlined — secondary, low emphasis with visible chrome */
+.btn-outlined,
+.btn-chat { background: transparent; color: var(--md-sys-color-primary); border-color: var(--md-sys-color-outline); }
+.btn-outlined:hover:not(:disabled),
+.btn-chat:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+}
+.btn-outlined:active:not(:disabled),
+.btn-chat:active:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+}
+
+/* Elevated — high emphasis with surface lift, alternative to filled */
+.btn-elevated {
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-level1);
+}
+.btn-elevated:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, var(--md-sys-color-surface-container-low));
+  box-shadow: var(--md-sys-elevation-level2);
+}
+.btn-elevated:active:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, var(--md-sys-color-surface-container-low));
+}
+
+/* Text — lowest emphasis, no container chrome. Tighter horizontal padding. */
+.btn-text { background: transparent; color: var(--md-sys-color-primary); padding: 0 0.75rem; }
+.btn-text:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+}
+.btn-text:active:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+}
+
+/* Shared focus-visible — 2px primary ring at 2px offset, M3 spec */
+.btn-filled:focus-visible,
+.btn-tonal:focus-visible,
+.btn-outlined:focus-visible,
+.btn-elevated:focus-visible,
+.btn-text:focus-visible,
+.btn-chat:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* Shared disabled — M3 spec: 12% on-surface bg, 38% on-surface text, no border/shadow */
+.btn-filled:disabled,
+.btn-tonal:disabled,
+.btn-outlined:disabled,
+.btn-elevated:disabled,
+.btn-text:disabled,
+.btn-chat:disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* M3 outlined card — generic card primitive.
