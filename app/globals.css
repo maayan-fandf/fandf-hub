@@ -739,6 +739,11 @@ a:hover {
   gap: 0.2rem;
 }
 
+/* M3 standard icon-button.
+   Borderless at rest; hover/focus apply an 8% on-surface state-layer
+   overlay (M3 sys.state.hover-opacity). The state layer IS the
+   affordance — no resting border. focus-visible adds a 2px primary
+   focus ring per M3. */
 .card-action {
   display: inline-flex;
   align-items: center;
@@ -747,34 +752,42 @@ a:hover {
   height: 1.9rem;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--md-sys-shape-corner-small);
   background: transparent;
-  color: var(--muted);
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 0.95rem;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s;
+  transition:
+    background-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard),
+    color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard),
+    transform var(--md-sys-motion-duration-short1) var(--md-sys-motion-easing-standard);
 }
 
 .card-action:hover:not(:disabled),
 .card-action:focus-visible {
-  background: var(--accent-soft);
-  border-color: var(--border);
-  color: var(--text);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
   outline: none;
 }
 
+.card-action:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
 .card-action:active:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
   transform: scale(0.95);
 }
 
 .card-action:disabled {
-  opacity: 0.45;
+  opacity: 0.38; /* M3 disabled opacity */
   cursor: not-allowed;
 }
 
-/* Resolved state: the ✓ button fills in with the "done" color so the state
-   is visible at a glance. Toggles back to plain on un-resolve. */
+/* Resolved state: the ✓ button picks up the functional --done color.
+   Kept as-is — semantic state, not theme chrome. */
 .card-action.is-resolved {
   background: var(--done-soft);
   color: var(--done);
@@ -785,13 +798,12 @@ a:hover {
   filter: brightness(1.05);
 }
 
-/* Destructive variant — delete button stays neutral until hover/focus, then
-   turns red. Keeps the card visually calm until the user reaches for it. */
+/* Destructive variant — neutral at rest, turns to M3 error palette on
+   hover/focus. Keeps the row calm until the user reaches for it. */
 .card-action-danger:hover:not(:disabled),
 .card-action-danger:focus-visible {
-  background: var(--overdue-soft);
-  border-color: var(--overdue);
-  color: var(--overdue);
+  background: color-mix(in srgb, var(--md-sys-color-error) 12%, transparent);
+  color: var(--md-sys-color-error);
 }
 
 /* Home-page filter bar: person dropdown + hide-ended toggle. Both are pills
