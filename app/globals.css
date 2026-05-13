@@ -816,29 +816,37 @@ a:hover {
   gap: 0.55rem;
 }
 
-/* Shared pill base — one border, one height, one hover treatment. */
+/* M3 filter chip — shared base for select + button variants.
+   Resting:  surface-container-low + outline-variant border
+   Hover:    8% on-surface state-layer mixed into the base
+   Selected: secondary-container fill, on-secondary-container text,
+             borderless (M3 filter-chip spec). */
 .home-filter-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
   height: 2.2rem;
   padding: 0 0.9rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-weight: 600;
-  font-size: 0.88rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-label-large-weight);
+  letter-spacing: var(--md-sys-typescale-label-large-tracking);
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    border-color    var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    color           var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
   box-sizing: border-box;
 }
 
 .home-filter-pill:hover,
 .home-filter-pill:focus-within {
-  border-color: var(--accent);
-  background: var(--surface-hi, var(--surface));
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-low));
+  color: var(--md-sys-color-on-surface);
 }
 
 .home-filter-pill-icon {
@@ -884,13 +892,12 @@ a:hover {
 }
 
 .home-filter-pill--button.is-active {
-  background: var(--accent-soft, #eef2ff);
-  color: var(--accent-dark, #3730a3);
-  border-color: var(--accent, #6366f1);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border-color: transparent;
 }
 .home-filter-pill--button.is-active:hover {
-  background: var(--accent-soft, #eef2ff);
-  filter: brightness(0.98);
+  background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
 }
 
 /* Hide-ended CSS: the toggle writes data-hide-ended="1" on <html>. When set,
