@@ -1303,6 +1303,53 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   .skeleton { animation: none; }
 }
 
+/* ─── M3 state-layer utility ───────────────────────────────────────
+ * Reusable state-layer pattern for interactive surfaces that don't
+ * already inline a color-mix() hover (the M3 button family, chips,
+ * icon-buttons, and FABs all inline it for color-precision reasons —
+ * the inline form lets each variant pick its own state color cleanly).
+ *
+ * Usage: add .md-state-layer to any interactive element, then set
+ * --md-state-color to the on-* color that should tint on hover. The
+ * ::after overlay sits at full container size, inherits border-radius,
+ * is click-through (pointer-events: none), and modulates opacity per
+ * sys.state.hover/focus/pressed-opacity tokens.
+ *
+ * Example:
+ *   .my-link {
+ *     --md-state-color: var(--md-sys-color-on-surface);
+ *   }
+ *   <button class="my-link md-state-layer">...</button>
+ * ───────────────────────────────────────────────────────────────────── */
+.md-state-layer {
+  position: relative;
+  isolation: isolate;
+}
+.md-state-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-color: var(--md-state-color, currentColor);
+  opacity: 0;
+  transition: opacity var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+}
+.md-state-layer:hover:not(:disabled)::after {
+  opacity: var(--md-sys-state-hover-opacity);
+}
+.md-state-layer:focus-visible::after {
+  opacity: var(--md-sys-state-focus-opacity);
+}
+.md-state-layer:active:not(:disabled)::after {
+  opacity: var(--md-sys-state-pressed-opacity);
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-state-layer::after {
+    transition: none;
+  }
+}
+
 /* ─── M3 button family ─────────────────────────────────────────────
  * Five variants per M3 v3 spec: filled / tonal / outlined / elevated /
  * text. All share corner-full (pill) shape, 40dp height, and the
