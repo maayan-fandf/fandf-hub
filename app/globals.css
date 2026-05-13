@@ -2582,11 +2582,16 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   margin: 0;
 }
 
+/* M3 outlined card — /inbox mention card.
+   Sits on page bg (no wrapping container). 3px left-edge in M3 primary
+   is the functional "unread mention" marker; resolved state overrides
+   it with --done. */
 .mention-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-inline-start: 3px solid var(--accent);
-  border-radius: 10px;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-inline-start: 3px solid var(--md-sys-color-primary);
+  border-radius: var(--md-sys-shape-corner-medium);
   padding: 0.9rem 1.1rem;
 }
 
