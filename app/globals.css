@@ -2004,14 +2004,18 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   margin-left: auto;
 }
 
-/* Top nav */
+/* ─── M3 top app bar ──────────────────────────────────────────────
+ * M3 v3 differentiates the bar from page content by TONE, not by a
+ * bottom border or shadow. surface-container sits one step above the
+ * page background. No box-shadow at rest; if/when scroll-aware lift
+ * becomes useful, swap to surface-container-high via an .is-scrolled
+ * class. */
 .topnav {
-  background: var(--topnav-bg);
-  border-bottom: 1px solid var(--border);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
   position: sticky;
   top: 0;
   z-index: 20;
-  box-shadow: var(--shadow-sm);
 }
 
 .topnav-inner {
@@ -2041,30 +2045,36 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 }
 
 .topnav-link {
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.95rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-label-large-weight);
+  letter-spacing: var(--md-sys-typescale-label-large-tracking);
   padding: 0.35rem 0.7rem;
-  border-radius: 8px;
-  transition: background 0.15s, color 0.15s;
+  border-radius: var(--md-sys-shape-corner-small);
+  transition:
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    color            var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 
 .topnav-link:hover {
-  color: var(--text);
-  background: var(--accent-soft);
+  color: var(--md-sys-color-on-surface);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   text-decoration: none;
 }
 
-/* Active-tab indicator: the nav link for the page you're currently on gets
-   a filled accent-soft background + colored text + a subtle underline
-   accent, so "where am I?" is always answerable at a glance. */
+/* Active-tab indicator — M3 v3 selected nav-item pattern: filled with
+   secondary-container, on-secondary-container text. The subtle bottom
+   indicator (inset shadow) is kept as a hub-specific affordance —
+   reinforces "where am I?" beyond color alone, which the user has
+   relied on for a while. */
 .topnav-link.is-active {
-  color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+  box-shadow: inset 0 -2px 0 var(--md-sys-color-primary);
 }
 .topnav-link.is-active:hover {
-  color: var(--accent);
+  color: var(--md-sys-color-on-secondary-container);
+  background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
 }
 
 .topnav-external {
