@@ -2477,21 +2477,26 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   transform: rotate(90deg);
 }
 
+/* M3 modal side-sheet — Gemini chat drawer.
+   M3 side-sheet spec: surface-container-low fill, level1 elevation
+   (lighter than dialog level3), corner-large on the INNER edge only
+   (the page-facing side; the screen-edge side stays sharp), no
+   border. With dir="rtl" + inset-inline-end:0 the drawer sits at
+   visual left, so the inner edge is its visual right — addressed via
+   logical border-start-start-radius / border-end-start-radius. */
 .gemini-drawer {
   position: fixed;
   top: 0;
   bottom: 0;
-  /* Anchor to visual LEFT in RTL (same side as the FAB stack) so
-     the drawer slides in from the FAB's edge. */
   inset-inline-end: 0;
   width: 26rem;
   max-width: 92vw;
   z-index: 41;
-  background: var(--surface, var(--card-bg, #fff));
-  /* Border on the page-facing edge of the drawer (visual RIGHT in RTL,
-     which is `inline-start`). */
-  border-inline-start: 1px solid var(--border);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  border-start-start-radius: var(--md-sys-shape-corner-large);
+  border-end-start-radius:   var(--md-sys-shape-corner-large);
+  box-shadow: var(--md-sys-elevation-level1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2502,34 +2507,41 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   align-items: center;
   gap: 0.5rem;
   padding: 0.7rem 0.85rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--card-bg, var(--surface));
+  background: var(--md-sys-color-surface-container-low);
 }
 .gemini-drawer-title {
   flex: 1;
-  font-weight: 700;
-  font-size: 0.95rem;
+  font-family: var(--md-sys-typescale-brand-font);
+  font-size: var(--md-sys-typescale-title-medium-size);
+  line-height: var(--md-sys-typescale-title-medium-line-height);
+  font-weight: var(--md-sys-typescale-title-medium-weight);
+  letter-spacing: var(--md-sys-typescale-title-medium-tracking);
+  color: var(--md-sys-color-on-surface);
 }
+/* M3 standard icon-button on the drawer head — borderless, state-layer
+   hover, on-surface-variant icon color shifting to on-surface on tint. */
 .gemini-drawer-clear,
 .gemini-drawer-close {
   background: transparent;
-  border: 1px solid transparent;
-  color: var(--muted);
+  border: none;
+  color: var(--md-sys-color-on-surface-variant);
   font: inherit;
   font-size: 1rem;
   width: 1.85rem;
   height: 1.85rem;
-  border-radius: 8px;
+  border-radius: var(--md-sys-shape-corner-small);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition:
+    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
+    color            var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 .gemini-drawer-clear:hover:not(:disabled),
 .gemini-drawer-close:hover {
-  background: var(--accent-soft);
-  color: var(--text);
-  border-color: var(--border);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
 }
 .gemini-drawer-clear:disabled {
   opacity: 0.4;
@@ -4942,36 +4954,41 @@ a.section-link-icon:hover {
   color: #fff;
 }
 
+/* Inline reply form — compact card surface (NOT a positioned drawer
+   despite the name). Sits below a comment when the user clicks Reply. */
 .reply-drawer {
   margin-top: 0.5rem;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
   padding: 0.6rem 0.7rem;
 }
 
+/* M3 outlined text-field treatment — same pattern as .quick-note-title */
 .reply-textarea {
   width: 100%;
   resize: vertical;
   min-height: 3.25em;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-small);
   padding: 0.5rem 0.6rem;
   font: inherit;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  background: var(--surface);
-  color: var(--text);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  letter-spacing: var(--md-sys-typescale-body-medium-tracking);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  transition: border-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
 }
 
 .reply-textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  border-color: var(--md-sys-color-primary);
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
 }
 
 .reply-drawer-foot {
@@ -15708,19 +15725,19 @@ html[data-theme="dark"] .btn-danger.btn-sm:hover:not(:disabled) {
    the task's title + meta + full description without leaving /tasks.
    Mounted as a portal via `<TaskPreviewProvider>` — same pattern as
    LightboxProvider. Click outside or Esc closes. */
+/* M3 modal side-sheet — task quick-preview drawer.
+   Anchored to the LOGICAL start edge (visual right in RTL). Same M3
+   side-sheet spec as .gemini-drawer but on the opposite side: inner
+   edge here is the panel's inline-end (visual left), so corner-large
+   goes on border-start-end-radius / border-end-end-radius. */
 .task-preview-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
   z-index: 70;
   display: flex;
-  /* `flex-start` puts the panel on the LOGICAL start edge — visual
-     right in RTL, visual left in LTR. Previously used `flex-end`
-     which flipped the panel to the wrong side in RTL (Hebrew users
-     read start-to-end, so the drawer arriving from the right is the
-     natural "open from where you started reading" direction). */
   justify-content: flex-start;
-  animation: task-preview-fade-in .15s ease;
+  animation: task-preview-fade-in var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-emphasized-decelerate);
 }
 @keyframes task-preview-fade-in {
   from { opacity: 0; }
@@ -15730,20 +15747,17 @@ html[data-theme="dark"] .btn-danger.btn-sm:hover:not(:disabled) {
   width: min(440px, 92vw);
   max-width: 100%;
   height: 100%;
-  background: var(--surface);
-  /* Border faces the page content (panel's inline-end edge in
-     LTR — its left edge; in RTL the visual left edge of the panel
-     which is the inline-end too since the panel sits on the right
-     visual side and content is to its left). Same logical
-     property covers both directions. */
-  border-inline-end: 1px solid var(--border);
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  border-start-end-radius: var(--md-sys-shape-corner-large);
+  border-end-end-radius:   var(--md-sys-shape-corner-large);
+  box-shadow: var(--md-sys-elevation-level1);
   padding: 1.25em 1.5em;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1.1em;
-  animation: task-preview-slide-in-ltr .2s ease;
+  animation: task-preview-slide-in-ltr var(--md-sys-motion-duration-medium2) var(--md-sys-motion-easing-emphasized-decelerate);
 }
 /* LTR: panel on the visual left edge → slide IN from off-left. */
 @keyframes task-preview-slide-in-ltr {
