@@ -1349,10 +1349,14 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   gap: 1rem;
 }
 
+/* M3 container surface for kanban/board columns.
+   Default tone: surface-container (one step below .task-card's
+   surface-container-high → cards lift cleanly by tone alone).
+   Company-tinted columns keep --co-soft as override. */
 .board-column {
-  background: var(--co-soft, var(--surface-soft));
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  background: var(--co-soft, var(--md-sys-color-surface-container));
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
   padding: 0.85rem 0.8rem;
   display: flex;
   flex-direction: column;
@@ -1567,9 +1571,9 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   cursor: grabbing;
 }
 .board-column.is-drop-target {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--md-sys-color-primary);
   outline-offset: 4px;
-  border-radius: 10px;
+  border-radius: var(--md-sys-shape-corner-large);
 }
 .task-card.is-busy {
   opacity: 0.55;
