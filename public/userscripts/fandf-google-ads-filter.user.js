@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F&F Google Ads Auto-Filter
 // @namespace    https://hub.fandf.co.il/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Auto-applies the campaign filter when Google Ads opens with a #fandf-filter=<slug> hash in the URL. Triggered by clicking the קצב יומי cell in the F&F dashboard.
 // @author       F&F Brandvertising
 // @match        https://ads.google.com/*
@@ -235,6 +235,15 @@
   function run() {
     const filter = readFilterFromHash();
     if (!filter) return;
+    // Skip when we're not yet on a campaigns-area route. The
+    // /nav/selectaccount account picker preserves the hash across its
+    // redirect, so as long as we DON'T strip it here, the userscript
+    // will fire fresh on the destination (/aw/campaigns?...) once the
+    // user picks an account. Stripping the hash here would lose the
+    // filter before we ever reach the page that can use it.
+    if (!/^\/aw\//.test(location.pathname)) {
+      return;
+    }
     clearHash();
     // The dashboard URL lands at /aw/campaigns?... — Google Ads' SPA
     // takes ~1s to render the campaigns view. Delay before we start
