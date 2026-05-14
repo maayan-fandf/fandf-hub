@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F&F Google Ads Auto-Filter
 // @namespace    https://hub.fandf.co.il/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Auto-applies the campaign filter when Google Ads opens with a #fandf-filter=<slug> hash in the URL. Triggered by clicking the קצב יומי cell in the F&F dashboard.
 // @author       F&F Brandvertising
 // @match        https://ads.google.com/*
@@ -198,56 +198,68 @@
     }, 4500);
   }
 
+  /** Remove any existing "Campaign name *" filter chip before adding
+   *  ours. Google Ads chips AND together — if the user's previous
+   *  session left a "Campaign name contains <old-project>" chip, adding
+   *  ours on top would intersect (match nothing) instead of replacing.
+   *  Other filter types ("Campaign status: Enabled, Paused", "Ad group
+   *  status: ...") are intentional defaults — leave them alone. */
+  function removeStaleCampaignNameChips() {
+    // Filter chips are rendered as buttons / divs with role=button.
+    // The visible text on a chip starts with the filter-type label,
+    // e.g. "Campaign name contains felix-tower" / "Campaign name equals
+    // X". The X (delete) button sits inside the same chip container.
+    const nodes = document.querySelectorAll('[role="button"], button');
+    const removed = [];
+    for (const el of nodes) {
+      const txt = (el.textContent || '').trim();
+      // Match "Campaign name <operator> <value>" — that's the chip's
+      // own text. Skip the bare "Add filter" / "Campaign name" picker
+      // entries (no operator, short text).
+      if (/^Campaign name\s+(contains|equals|starts with|ends with|does not)/i.test(txt)) {
+        // Find the X button inside this chip.
+        const remove = el.querySelector('[aria-label*="emove" i], [aria-label*="elete" i], [aria-label*="clear" i], button:last-child');
+        if (remove && isVisible(remove)) {
+          try { remove.click(); removed.push(txt.slice(0, 50)); } catch (_) {}
+        }
+      }
+    }
+    return removed;
+  }
+
   async function applyFilter(filterValue) {
-    // Step 1: find Google Ads' "Add filter" trigger. The synthetic
-    // Shift+W keyboard event approach (v0.1.0-0.1.1) didn't work — the
-    // Material UI filters out untrusted KeyboardEvents — so we click
-    // the actual DOM element instead.
+    // Step 1: clear any stale Campaign-name filter chip from a
+    // previous session — see removeStaleCampaignNameChips() above.
+    removeStaleCampaignNameChips();
+    // Step 2: find Google Ads' "Add filter" combobox. We DELIBERATELY
+    // do NOT try to set its value programmatically — earlier versions
+    // (v0.1.2) showed that the combobox is a filter-TYPE picker
+    // (Campaign name / Status / Type / …), so typing a campaign-name
+    // string into it just shows "No results". The right Google Ads
+    // flow is: open combobox → user pastes slug → typeahead surfaces
+    // "Campaign name contains <slug>" as a suggestion → user clicks
+    // it. We automate steps 1 + 2; the user does the last paste +
+    // click.
     let trigger;
     try {
       trigger = await pollUntil(findAddFilterTrigger, POLL_TIMEOUT_MS, POLL_INTERVAL_MS);
     } catch (e) {
       showToast(
-        'לא נמצא כפתור "Add filter" — אולי דף לא צפוי. הדבק ידנית: ' + filterValue,
+        'לא נמצא כפתור "Add filter" — הדבק ידנית: ' + filterValue,
         false,
       );
       return;
     }
-    // Step 2: click + focus. Click via .click() (synthetic, but element-
-    // level clicks usually go through React handlers cleanly even when
-    // synthetic keyboard events don't). If the trigger is already an
-    // open combobox, clicking just focuses it.
+    // Step 3: click + focus. .click() goes through React handlers
+    // cleanly even though synthetic keyboard events don't.
     try {
       if (trigger.click) trigger.click();
       if (trigger.focus) trigger.focus();
     } catch (_) {}
-    // Step 3: a short beat for Google Ads to render the now-active input,
-    // then try to pre-fill the slug. The active input might be a
-    // different element than what we clicked (e.g. clicking the button
-    // mounts a popup with its own input that takes focus).
-    await new Promise(function (r) { setTimeout(r, 400); });
-    const input = findActiveTextInput() || (trigger.tagName === 'INPUT' ? trigger : null);
-    if (input) {
-      try {
-        input.focus();
-        setInputValue(input, filterValue);
-        // Toast: filter is half-applied. User presses Enter to confirm
-        // or picks an autocomplete suggestion.
-        showToast(
-          '📋 "' + filterValue + '" הוזן בסינון — לחץ Enter או בחר מהאוטוקומפליט',
-          true,
-        );
-        return;
-      } catch (_) {
-        // Fall through to "panel-open, user pastes" fallback.
-      }
-    }
-    // Fallback: input not auto-fillable. The filter UI IS open from
-    // step 2 — user pastes from clipboard (slug already there from the
-    // dashboard click) + Enter.
+    // Step 4: toast guides the next 2 user actions.
     showToast(
-      '📋 הסינון פתוח — הדבק (Ctrl+V) כדי לסנן ל-"' + filterValue + '"',
-      false,
+      '📋 הסינון פתוח לסלאג "' + filterValue + '" — הדבק (Ctrl+V) ובחר מהצעת האוטוקומפליט',
+      true,
     );
   }
 
