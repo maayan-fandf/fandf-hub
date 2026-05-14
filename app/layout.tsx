@@ -31,6 +31,7 @@ import NavGmailTasks from "@/components/NavGmailTasks";
 import NavCustomerEmails from "@/components/NavCustomerEmails";
 import NavCampaignsLink from "@/components/NavCampaignsLink";
 import NavInboxLink from "@/components/NavInboxLink";
+import SpotlightMention from "@/components/SpotlightMention";
 import ViewAsBanner from "@/components/ViewAsBanner";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import NavTasksBadge from "@/components/NavTasksBadge";
@@ -278,6 +279,13 @@ export default async function RootLayout({
             )}
           </div>
         </nav>
+        {/* Spotlight bar — surfaces the user's single most-recent
+            unresolved mention above all other hub noise. Mounts as a
+            client component (fetches /api/mentions/spotlight on mount
+            + each route change) so the layout shell doesn't pay for
+            an extra Sheets call server-side. Renders nothing when the
+            user has no unresolved tags. */}
+        {email && <SpotlightMention />}
         {email && (
           <ViewAsBanner serverViewAs={viewAs} myEmail={email} />
         )}
