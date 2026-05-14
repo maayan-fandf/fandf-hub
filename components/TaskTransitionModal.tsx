@@ -442,6 +442,16 @@ export default function TaskTransitionModal({
             className="task-transition-modal-note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
+            // Ctrl+Enter / Cmd+Enter submits — mirrors the reply
+            // composer + inline comment editor so the shortcut works
+            // anywhere the user types prose in the hub. Plain Enter
+            // still inserts a newline (this is a multi-line textarea).
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
             rows={3}
             maxLength={MAX_NOTE + 1}
             disabled={busy}
