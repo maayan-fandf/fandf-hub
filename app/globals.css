@@ -709,6 +709,23 @@ a:hover {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+/* Uniform height for every visible chrome element in the page-header
+   action row regardless of border / padding / font-size — keeps the
+   (📁 / Drive / פריסה נוכחית / + משימה חדשה) buttons truly aligned.
+   2rem = 32px = M3 small-button territory. The .dash-month-picker is
+   itself a flex wrapper around a <select>, so we target the select
+   directly (otherwise its inner chrome renders at its own height
+   independent of the wrapper). */
+.header-actions .btn-primary.btn-sm,
+.header-actions .btn-ghost.btn-sm,
+.header-actions .btn-warn.btn-sm,
+.header-actions .copy-local-path-btn,
+.header-actions .dash-month-picker select {
+  height: 2rem;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
 
 /* ─── Inline thread-expansion (ThreadReplies) ─────────────────────────
    The "💬 N" chip on comment / task / mention cards. Clickable — toggles
@@ -3095,6 +3112,9 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 1.25rem;
+  /* Matches .project-section's margin-bottom — the 2-column grid is
+     a single visual section as far as page rhythm is concerned. */
+  margin-bottom: 1.5rem;
 }
 
 @media (min-width: 1100px) {
@@ -4194,6 +4214,12 @@ html[data-theme="dark"] .chip.chip-mention {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.1rem 1.25rem;
+  /* Uniform vertical rhythm between every section on the project page.
+     The 2-column grid container .project-sections has its own
+     margin-bottom (below) since grid layout swallows child margins,
+     but for every other top-level section this rule is the single
+     source of truth for inter-section spacing. */
+  margin-bottom: 1.5rem;
 }
 
 .section-head {
@@ -6566,7 +6592,7 @@ html[data-theme="dark"] .crm-source-search-row:hover {
    project as fallback when more-recently-dated). The whole card is the
    click target. The thumbnail dominates because Sheet content is the
    point — at 220px it was unreadable. */
-.project-section-prisot { margin-bottom: 1.5rem; }
+/* margin-bottom inherited from base .project-section (phase 6 unified) */
 .prisot-card {
   display: flex;
   flex-direction: column;
@@ -6715,18 +6741,9 @@ html[data-theme="dark"] .crm-source-search-row:hover {
    purple/indigo gradient (CTA family) to distinguish "click me" from
    the gray "informational" state badge. */
 .prisot-send-approval-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
   margin-inline-start: 0.4rem;
-  padding: 0.15rem 0.55rem;
   color: #fff;
   border: none;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  vertical-align: middle;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   cursor: pointer;
   transition: filter 0.15s, box-shadow 0.15s;
@@ -6751,15 +6768,9 @@ html[data-theme="dark"] .crm-source-search-row:hover {
   flex-wrap: wrap;
 }
 .prisot-folder-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.7rem;
-  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--ink);
-  font-size: 0.82rem;
   font-weight: 500;
   text-decoration: none;
   transition: border-color 0.15s, background 0.15s;
@@ -6972,20 +6983,44 @@ html[data-theme="dark"] .send-approval-warning {
   color: var(--muted);
   white-space: nowrap;
 }
+/* Every chip + chip-shaped affordance in the .prisot-* section head
+   shares the same geometry so the row reads as a single coherent set
+   of pills regardless of which states are active. State badges keep
+   their gradient backgrounds + white text; the reviewer chip + folder
+   link keep their tinted-bg + colored-text treatment. The shared
+   selector below sets ONLY shape/size, leaving color/bg to each
+   variant's own rule. */
 .prisot-source-badge,
 .prisot-approved-badge,
 .prisot-unapproved-badge,
-.prisot-not-approved-badge {
+.prisot-not-approved-badge,
+.prisot-declined-badge,
+.prisot-reviewer-chip,
+.prisot-send-approval-btn,
+.prisot-folder-link {
   display: inline-flex;
   align-items: center;
-  margin-inline-start: 0.55rem;
-  padding: 0.15rem 0.55rem;
-  color: #fff;
+  gap: 0.3rem;
+  height: 1.7rem;       /* exact, not min — borderless badges and the
+                            bordered folder-link both render at the same
+                            outer height via box-sizing: border-box. */
+  padding: 0 0.65rem;   /* zero vertical padding; the height + flex
+                            centering does the spacing work. */
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   vertical-align: middle;
+  box-sizing: border-box;
+}
+/* Per-variant tweaks layered on top of the shared geometry. */
+.prisot-source-badge,
+.prisot-approved-badge,
+.prisot-unapproved-badge,
+.prisot-not-approved-badge,
+.prisot-declined-badge {
+  margin-inline-start: 0.55rem;
+  color: #fff;
 }
 .prisot-source-badge {
   background: linear-gradient(135deg, #7c3aed, #a855f7);
@@ -7012,20 +7047,12 @@ html[data-theme="dark"] .send-approval-warning {
 }
 
 /* Reviewer-name chip — small label that follows a state badge with
-   the approver/decliner/pending name(s). Visually subordinate to the
-   primary state badge: lighter background + colored text matching
-   the state, so the head reads as "[state] ע״י [person]" at a
-   glance. */
+   the approver/decliner/pending name(s). Geometry comes from the
+   shared chip rule above; this block sets only its specific layout
+   adjustments + lighter weight. */
 .prisot-reviewer-chip {
-  display: inline-flex;
-  align-items: center;
   margin-inline-start: 0.35rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.7rem;
   font-weight: 500;
-  letter-spacing: 0.01em;
-  vertical-align: middle;
 }
 .prisot-reviewer-chip-approved {
   background: rgba(16, 185, 129, 0.14);
@@ -7065,7 +7092,7 @@ html[data-theme="dark"] .prisot-reviewer-chip-declined {
 /* Clarity landing-page insights section — Microsoft Clarity Data Export
    API → KPI grid + Claude-generated Hebrew narrative. Sits below the
    metrics iframe on /projects/[name]. Internal-only. */
-.project-section-clarity { margin-bottom: 1.5rem; }
+/* margin-bottom inherited from base .project-section (phase 6 unified) */
 .clarity-summary-card {
   position: relative;
   display: flex;
@@ -8524,6 +8551,19 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
 .morning-signal-list {
   list-style: none; padding: 0; margin: .5em 0 0;
   display: flex; flex-direction: column; gap: .45em;
+}
+/* On the project page (.project-section direct parent), use a 2-column
+   grid on desktop — alerts are short and the section sits at full
+   container width below the 2-column tasks/discussion grid, so 1-per-
+   row wastes horizontal space. /morning's per-project lists keep the
+   single-column flex behavior because each project card there is
+   already narrow. */
+@media (min-width: 900px) {
+  .project-section > .morning-signal-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55em;
+  }
 }
 .morning-signal {
   display: flex; align-items: center; justify-content: space-between;
