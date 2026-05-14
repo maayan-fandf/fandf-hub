@@ -5,10 +5,12 @@ import {
   tasksPeopleList,
   getMyProjects,
   currentUserEmail,
+  getMyMentions,
   type WorkTask,
   type WorkTaskStatus,
   type TasksPerson,
 } from "@/lib/appsScript";
+import { buildUserStateByTaskId } from "@/lib/taskUserState";
 import { getUserRole, type UserRole } from "@/lib/userRole";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
@@ -151,36 +153,51 @@ export default async function TasksPage({
       ? effectiveMe
       : "";
 
-  const [tasksRes, projectsRes, peopleRes, driveName] = await Promise.all([
-    tasksList({
-      company: sp.company || "",
-      project: sp.project || "",
-      brief: sp.brief || "",
-      status: (sp.status as WorkTaskStatus) || "",
-      priority: sp.priority || "",
-      department: sp.department || "",
-      kind: sp.kind || "",
-      author: effectiveAuthor,
-      approver: effectiveApprover,
-      project_manager: sp.project_manager || "",
-      assignee: effectiveAssignee,
-      campaign: sp.campaign || "",
-      requested_date_from: sp.requested_date_from || "",
-      requested_date_to: sp.requested_date_to || "",
-      relevant_to_me: relevantToMe,
-      involved_with: sp.involved_with || "",
-      include_umbrellas: sp.umbrellas === "1",
-    })
-      .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
-      .catch((e: unknown) => ({
-        tasks: [] as WorkTask[],
-        error: e instanceof Error ? e.message : String(e),
-      })),
-    getMyProjects().catch(() => null),
-    tasksPeopleList().catch(() => null),
-    me ? getSharedDriveName(me).catch(() => "") : Promise.resolve(""),
-  ]);
+  const [tasksRes, projectsRes, peopleRes, driveName, myMentionsRes] =
+    await Promise.all([
+      tasksList({
+        company: sp.company || "",
+        project: sp.project || "",
+        brief: sp.brief || "",
+        status: (sp.status as WorkTaskStatus) || "",
+        priority: sp.priority || "",
+        department: sp.department || "",
+        kind: sp.kind || "",
+        author: effectiveAuthor,
+        approver: effectiveApprover,
+        project_manager: sp.project_manager || "",
+        assignee: effectiveAssignee,
+        campaign: sp.campaign || "",
+        requested_date_from: sp.requested_date_from || "",
+        requested_date_to: sp.requested_date_to || "",
+        relevant_to_me: relevantToMe,
+        involved_with: sp.involved_with || "",
+        include_umbrellas: sp.umbrellas === "1",
+      })
+        .then((r) => ({ tasks: r.tasks ?? [], error: null as string | null }))
+        .catch((e: unknown) => ({
+          tasks: [] as WorkTask[],
+          error: e instanceof Error ? e.message : String(e),
+        })),
+      getMyProjects().catch(() => null),
+      tasksPeopleList().catch(() => null),
+      me ? getSharedDriveName(me).catch(() => "") : Promise.resolve(""),
+      // Per-row "want something from you" state on /tasks needs the
+      // user's unresolved mentions to highlight tagged rows. Cheap
+      // (reuses the same Sheets read as /inbox + the nav badge) and
+      // best-effort — fall back to empty so the list still renders if
+      // the call fails.
+      getMyMentions().catch(() => null),
+    ]);
   const { tasks, error } = tasksRes;
+  // Build the {task_id → userState} map server-side so both the
+  // queue + kanban views render the chips identically without
+  // re-fetching mentions client-side. Empty map = no rows highlighted.
+  const userStateByTaskId = buildUserStateByTaskId(
+    tasks,
+    me,
+    myMentionsRes?.mentions ?? [],
+  );
 
   const allProjects = projectsRes?.projects ?? [];
   const companyOptions = Array.from(
@@ -409,6 +426,7 @@ export default async function TasksPage({
           tasks={tasks}
           people={people}
           hideArchived={hideArchived}
+          userStateByTaskId={userStateByTaskId}
         />
       )}
 
@@ -427,6 +445,7 @@ export default async function TasksPage({
           searchParams={sp as Record<string, string | undefined>}
           hideArchived={hideArchived}
           archiveAfterDays={archiveAfterDays}
+          userStateByTaskId={userStateByTaskId}
         />
       )}
 

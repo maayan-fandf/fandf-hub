@@ -35,6 +35,7 @@ import TaskTransitionModal, {
   getModalTransitionKind,
 } from "@/components/TaskTransitionModal";
 import { isRejectionPending } from "@/lib/taskRejectionPending";
+import { TASK_USER_STATE_LABELS } from "@/lib/taskUserState";
 
 /** Same classification as the table view's TasksQueue. Pulled inline
  *  so the kanban card can render a matching parent/child visual cue
@@ -77,6 +78,10 @@ type Props = {
    * Status-explicit URLs (?status=done) override at the page level
    * by passing hideArchived=false. */
   hideArchived?: boolean;
+  /** Mirror of TasksQueue's prop — see lib/taskUserState. Cards in
+   *  this map get the accent + leading chip ("תויגת" / "ממתין לאישורך"
+   *  / "ממתין לבירורך"). Empty / undefined → no highlights. */
+  userStateByTaskId?: ReadonlyMap<string, "tagged" | "awaiting_approval" | "awaiting_clarification">;
 };
 
 /**
@@ -95,6 +100,7 @@ export default function TasksKanban({
   people = [],
   emptyMessage = "אין משימות תואמות לסינון.",
   hideArchived = false,
+  userStateByTaskId,
 }: Props) {
   // Local archive expansion — when the page-level pref hides
   // archive but the user wants to peek without flipping the global
@@ -364,6 +370,7 @@ export default function TasksKanban({
               column={col}
               tasks={byStatus[col.key] || []}
               peopleByEmail={peopleByEmail}
+              userStateByTaskId={userStateByTaskId}
             />
           );
         })}
@@ -430,10 +437,12 @@ function KanbanColumn({
   column,
   tasks,
   peopleByEmail,
+  userStateByTaskId,
 }: {
   column: ColumnDef;
   tasks: WorkTask[];
   peopleByEmail: Map<string, TasksPerson>;
+  userStateByTaskId?: ReadonlyMap<string, "tagged" | "awaiting_approval" | "awaiting_clarification">;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${column.key}` });
   // Items list for the SortableContext — cards reorder visually within
@@ -463,7 +472,12 @@ function KanbanColumn({
             <div className="kanban-column-empty">אין משימות</div>
           ) : (
             tasks.map((t) => (
-              <KanbanCard key={t.id} task={t} peopleByEmail={peopleByEmail} />
+              <KanbanCard
+                key={t.id}
+                task={t}
+                peopleByEmail={peopleByEmail}
+                userState={userStateByTaskId?.get(t.id) ?? null}
+              />
             ))
           )}
         </SortableContext>
@@ -478,10 +492,12 @@ function KanbanCard({
   task,
   peopleByEmail,
   isOverlay = false,
+  userState = null,
 }: {
   task: WorkTask;
   peopleByEmail: Map<string, TasksPerson>;
   isOverlay?: boolean;
+  userState?: "tagged" | "awaiting_approval" | "awaiting_clarification" | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
@@ -556,6 +572,9 @@ function KanbanCard({
     <article
       ref={setNodeRef}
       style={style}
+      // data-user-state drives the card's tinted background + leading
+      // edge accent + chip (see globals.css → .kanban-card[data-user-state=…]).
+      data-user-state={userState ?? undefined}
       className={`kanban-card kanban-card-edge-${priorityClass}${kindClass}${isOverlay ? " is-overlay" : ""}${isDragging ? " is-dragging" : ""}`}
       {...attributes}
       {...listeners}
@@ -587,6 +606,16 @@ function KanbanCard({
             title="האישור נדחה — המשימה הוחזרה לתיקון"
           >
             🔄 הוחזר
+          </span>
+        )}
+        {/* "Wants something from YOU" chip — same vocabulary as the
+            queue table view. תויגת / ממתין לאישורך / ממתין לבירורך. */}
+        {userState && (
+          <span
+            className={`task-user-state-chip task-user-state-${userState}`}
+            title={TASK_USER_STATE_LABELS[userState]}
+          >
+            {TASK_USER_STATE_LABELS[userState]}
           </span>
         )}
         <Link

@@ -16555,3 +16555,131 @@ html[data-theme="dark"] .task-approval-banner-rejection .task-approval-banner-ch
   background: rgba(239, 68, 68, 0.08);
   border-radius: 6px;
 }
+
+/* ─── "Wants something from you" row/card highlights on /tasks ─────
+   Three states (computed by lib/taskUserState):
+     • awaiting_approval     — amber (matches the in-task approval banner)
+     • awaiting_clarification — purple (matches the clarification banner)
+     • tagged                 — sky/cyan (informational, less urgent)
+
+   Applied as data-user-state on the table <tr> AND the kanban
+   <article.kanban-card>. The chip itself uses .task-user-state-chip
+   + .task-user-state-<state>, shared between list + kanban so the
+   vocabulary reads identically in both views.
+
+   Row accent strategy: soft tinted background + a thick leading edge
+   (inline-start under RTL = visual right side of the row). No layout
+   shift (no border that would re-flow the table) — the edge uses
+   box-shadow inset. */
+
+/* Chip — shared list+kanban */
+.task-user-state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.1em 0.55em;
+  border-radius: var(--md-sys-shape-corner-full, 999px);
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.task-user-state-tagged {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0369a1;
+  border: 1px solid rgba(14, 165, 233, 0.32);
+}
+.task-user-state-awaiting_approval {
+  background: rgba(245, 158, 11, 0.16);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.42);
+}
+.task-user-state-awaiting_clarification {
+  background: rgba(139, 92, 246, 0.16);
+  color: #6d28d9;
+  border: 1px solid rgba(139, 92, 246, 0.42);
+}
+
+/* Row accent — table view. Background + inset leading edge. Hover keeps
+   a slightly stronger tint so the highlighted row stays distinct from
+   the existing zebra/hover styling on the rest of the table. */
+.tasks-table tr[data-user-state="tagged"] {
+  background: rgba(14, 165, 233, 0.07);
+  box-shadow: inset 4px 0 0 0 rgba(14, 165, 233, 0.7);
+}
+.tasks-table tr[data-user-state="awaiting_approval"] {
+  background: rgba(245, 158, 11, 0.09);
+  box-shadow: inset 4px 0 0 0 rgba(245, 158, 11, 0.85);
+}
+.tasks-table tr[data-user-state="awaiting_clarification"] {
+  background: rgba(139, 92, 246, 0.09);
+  box-shadow: inset 4px 0 0 0 rgba(139, 92, 246, 0.8);
+}
+.tasks-table tr[data-user-state="tagged"]:hover {
+  background: rgba(14, 165, 233, 0.12);
+}
+.tasks-table tr[data-user-state="awaiting_approval"]:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+.tasks-table tr[data-user-state="awaiting_clarification"]:hover {
+  background: rgba(139, 92, 246, 0.14);
+}
+
+/* Card accent — kanban view. Mirrors the row strategy: soft fill +
+   inset start-side edge that doesn't collide with the existing
+   priority edge (kanban-card-edge-high / -normal / -low). Priority
+   edge stays on the OUTSIDE border-inline-start; this one rides as a
+   box-shadow inset, so both signals coexist. */
+.kanban-card[data-user-state="tagged"] {
+  background: linear-gradient(
+    to bottom,
+    rgba(14, 165, 233, 0.10),
+    rgba(14, 165, 233, 0.03)
+  );
+  box-shadow: inset 4px 0 0 0 rgba(14, 165, 233, 0.7);
+}
+.kanban-card[data-user-state="awaiting_approval"] {
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 158, 11, 0.12),
+    rgba(245, 158, 11, 0.04)
+  );
+  box-shadow: inset 4px 0 0 0 rgba(245, 158, 11, 0.85);
+}
+.kanban-card[data-user-state="awaiting_clarification"] {
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.12),
+    rgba(139, 92, 246, 0.04)
+  );
+  box-shadow: inset 4px 0 0 0 rgba(139, 92, 246, 0.8);
+}
+
+/* Dark-mode overrides — keep the chips legible against dark surfaces
+   and dial the background tint up slightly so the accent still reads
+   when the rest of the table is on a dark surface. */
+html[data-theme="dark"] .task-user-state-tagged {
+  background: rgba(14, 165, 233, 0.22);
+  color: #7dd3fc;
+  border-color: rgba(14, 165, 233, 0.45);
+}
+html[data-theme="dark"] .task-user-state-awaiting_approval {
+  background: rgba(245, 158, 11, 0.24);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+html[data-theme="dark"] .task-user-state-awaiting_clarification {
+  background: rgba(139, 92, 246, 0.24);
+  color: #c4b5fd;
+  border-color: rgba(139, 92, 246, 0.5);
+}
+html[data-theme="dark"] .tasks-table tr[data-user-state="tagged"] {
+  background: rgba(14, 165, 233, 0.13);
+}
+html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_approval"] {
+  background: rgba(245, 158, 11, 0.16);
+}
+html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"] {
+  background: rgba(139, 92, 246, 0.16);
+}

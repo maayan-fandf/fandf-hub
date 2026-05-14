@@ -51,6 +51,10 @@ import { compareByRank, computeInsertRank } from "@/lib/taskRank";
 import { personDisplayName } from "@/lib/personDisplay";
 import { displayProjectOrCompany } from "@/lib/personalLabel";
 import { kindLabel } from "@/lib/kindLabel";
+import {
+  TASK_USER_STATE_LABELS,
+  type TaskUserState,
+} from "@/lib/taskUserState";
 import Avatar, { avatarHoverText } from "@/components/Avatar";
 import { roleEmoji, roleLabel } from "@/components/RoleChip";
 import { useTaskPreview } from "@/components/TaskPreviewProvider";
@@ -272,6 +276,15 @@ type Props = {
    * department / assignee" but for now the UX is: same axis → rank
    * reorder; different axis → no-op. */
   groupBy?: string;
+  /**
+   * Per-task "wants something from YOU" classification — drives the
+   * row accent + leading chip on /tasks. Only contains entries where
+   * the state is non-null (tagged / awaiting_approval /
+   * awaiting_clarification). Computed server-side by
+   * buildUserStateByTaskId so the queue + kanban views agree. Omit on
+   * surfaces that should never highlight (e.g. project-page mini
+   * queue if we ever decide it's too noisy there). */
+  userStateByTaskId?: ReadonlyMap<string, "tagged" | "awaiting_approval" | "awaiting_clarification">;
 };
 
 /** Default order per sort axis: dates default to descending (newest
@@ -398,6 +411,7 @@ export default function TasksQueue({
   hideArchived = false,
   archiveAfterDays,
   groupBy = "",
+  userStateByTaskId,
 }: Props) {
   // Local task state lets us optimistically reorder rows on drop and
   // revert on server error — same pattern the kanban uses. Initial
@@ -768,6 +782,7 @@ export default function TasksQueue({
                   selectedIds={selectedIds}
                   onToggleSelected={toggleSelected}
                   showUmbrellas={showUmbrellas}
+                  userStateByTaskId={userStateByTaskId}
                 />
               </div>
             )}
@@ -793,6 +808,7 @@ export default function TasksQueue({
                     dragEnabled={dragEnabled}
                     selectedIds={selectedIds}
                     onToggleSelected={toggleSelected}
+                    userStateByTaskId={userStateByTaskId}
                   />
                 </div>
               </details>
@@ -1112,6 +1128,7 @@ function SortableTableSection({
   selectedIds,
   onToggleSelected,
   showUmbrellas = false,
+  userStateByTaskId,
 }: {
   rows: WorkTask[];
   compact: boolean;
@@ -1135,6 +1152,7 @@ function SortableTableSection({
    *  chain children into the umbrella's bucket — outside umbrellas
    *  mode this is a no-op. */
   showUmbrellas?: boolean;
+  userStateByTaskId?: ReadonlyMap<string, "tagged" | "awaiting_approval" | "awaiting_clarification">;
 }) {
   const sorted = sortFn
     ? rows.slice().sort(sortFn)
@@ -1251,6 +1269,7 @@ function SortableTableSection({
       dragEnabled={dragEnabled}
       selectedIds={selectedIds}
       onToggleSelected={onToggleSelected}
+      userStateByTaskId={userStateByTaskId}
     />
   );
   const table = (
@@ -1354,6 +1373,7 @@ function BucketBody({
   dragEnabled = true,
   selectedIds,
   onToggleSelected,
+  userStateByTaskId,
 }: {
   tasks: WorkTask[];
   compact: boolean;
@@ -1365,6 +1385,7 @@ function BucketBody({
   dragEnabled?: boolean;
   selectedIds: Set<string>;
   onToggleSelected: (id: string) => void;
+  userStateByTaskId?: ReadonlyMap<string, "tagged" | "awaiting_approval" | "awaiting_clarification">;
 }) {
   // Caller (SortableTableSection) already sorted into the right order
   // for the active sort axis; we just render in the order received.
@@ -1385,6 +1406,7 @@ function BucketBody({
           dragEnabled={dragEnabled}
           selected={selectedIds.has(t.id)}
           onToggleSelected={onToggleSelected}
+          userState={userStateByTaskId?.get(t.id) ?? null}
         />
       ))}
     </>
@@ -1404,6 +1426,7 @@ function TaskRow({
   dragEnabled = true,
   selected = false,
   onToggleSelected,
+  userState = null,
 }: {
   task: WorkTask;
   compact?: boolean;
@@ -1418,6 +1441,10 @@ function TaskRow({
   dragEnabled?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
+  /** "This row wants action from YOU" classification — drives the
+   *  row accent + leading chip. Null means render unchanged. See
+   *  lib/taskUserState for how this is derived. */
+  userState?: TaskUserState;
 }) {
   // useSortable always runs (rules of hooks), but we ignore its bindings
   // when drag is disabled — i.e. when the queue is sorted by something
@@ -1482,6 +1509,11 @@ function TaskRow({
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
       style={rowStyle}
+      // data-user-state drives the row accent (left/start border tint +
+      // soft background wash) — see the .tasks-table tr[data-user-state]
+      // rules in globals.css. Undefined attr (not just empty) keeps
+      // unstyled rows clean of stray DOM attributes.
+      data-user-state={userState ?? undefined}
       className={`${selected ? "is-selected" : ""}${rowKindCls}${muteCls}`.trim() || undefined}
     >
       <td className="bulk-select-cell">
@@ -1604,6 +1636,18 @@ function TaskRow({
               }
             >
               🔒
+            </span>
+          )}
+          {/* "Wants something from YOU" chip — tagged / approval /
+              clarification. Renders at the start of the title row so
+              the eye reads "what does this row need from me" before
+              "what's the task called". */}
+          {userState && (
+            <span
+              className={`task-user-state-chip task-user-state-${userState}`}
+              title={TASK_USER_STATE_LABELS[userState]}
+            >
+              {TASK_USER_STATE_LABELS[userState]}
             </span>
           )}
           <Link
