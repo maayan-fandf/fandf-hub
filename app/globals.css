@@ -7251,8 +7251,15 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
      viewportFit:"cover" in the layout viewport meta to unlock. */
   bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
   inset-inline-end: 1.6rem;
-  width: 3.5rem;            /* regular FAB = 56dp */
-  height: 3.5rem;
+  /* Size-matched to .gemini-fab (3.25rem) so the two FABs read as
+     a uniform pair on desktop. They were 3.5rem vs 3.25rem; same
+     inset-inline-end pinned the LEFT edges but the wider + FAB
+     extended further visually, breaking the pair alignment Maayan
+     flagged 2026-05-14. M3 calls this "small FAB" (40dp ≈ 2.5rem)
+     vs "regular FAB" (56dp); 3.25rem is between the two and chosen
+     to match the existing gemini-fab footprint. */
+  width: 3.25rem;
+  height: 3.25rem;
   border-radius: 50%;
   border: none;
   /* Full primary purple (matches the "+ משימה חדשה" primary button
@@ -7262,7 +7269,7 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
      "new task" CTA elsewhere in the hub. */
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  font-size: 1.8rem;
+  font-size: 1.55rem;
   font-weight: 300;
   line-height: 1;
   cursor: pointer;
