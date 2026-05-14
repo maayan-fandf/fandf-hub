@@ -51,6 +51,7 @@ import {
   type Project,
 } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
+import { getEndIsoByProject } from "@/lib/projectEnded";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -115,6 +116,12 @@ export default async function RootLayout({
   // shortname inside TopnavUserMenu, so the pill always renders.
   let myHeName = "";
   let myRole = "";
+  // endIso per project, sourced from the morning feed (via a thin
+  // unstable_cache wrapper that stores only the slim `{name → endIso}`
+  // map — see lib/projectEnded.ts for why). Powers the "hide ended
+  // projects" behavior in the topnav dropdown so the same
+  // html[data-hide-ended="1"] toggle controls both home grid + nav.
+  let endIsoByProject: Record<string, string> = {};
   if (email) {
     viewAs = await getEffectiveViewAs(email).catch(() => "");
     try {
@@ -145,6 +152,16 @@ export default async function RootLayout({
       myRole = me?.role || "";
     } catch {
       // Silent — empty name/role is the rendering fallback.
+    }
+    // Cached-per-user via getEndIsoByProject — 60s TTL, stores only
+    // the small slug-keyed map (NOT the full multi-MB morning feed,
+    // which would silently bust Next.js's 2MB unstable_cache ceiling).
+    // Skipped for client users since morning feed is staff-only.
+    if (!isClientUser) {
+      endIsoByProject = await getEndIsoByProject(
+        viewAs || email,
+        viewAs || undefined,
+      ).catch(() => ({}));
     }
   }
 
@@ -200,7 +217,10 @@ export default async function RootLayout({
                 NavInboxLink (תיוגים) self-hides when its count is 0,
                 so it appears only when there's something to triage. */}
             {email ? (
-              <ProjectsNavMenu projects={navProjects} />
+              <ProjectsNavMenu
+                projects={navProjects}
+                endIsoByProject={endIsoByProject}
+              />
             ) : (
               <Link href="/" className="topnav-link">
                 📂 פרויקטים

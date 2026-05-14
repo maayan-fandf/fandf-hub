@@ -16,21 +16,11 @@ import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { companyColorSlot } from "@/lib/colors";
 import { scopeProjectsToPerson } from "@/lib/scope";
 import { projectHref } from "@/lib/projectHref";
+import { isProjectEndedByIso, morningScopeFor } from "@/lib/projectEnded";
 
 type AlertCounts = { severe: number; warn: number; info: number };
 
 export const dynamic = "force-dynamic";
-
-/** True if the project's morning-feed endIso is more than 5 days in the past. */
-function isProjectEndedByIso(endIso: string | undefined): boolean {
-  if (!endIso) return false;
-  const end = new Date(endIso + "T00:00:00");
-  if (isNaN(end.getTime())) return false;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 5);
-  cutoff.setHours(0, 0, 0, 0);
-  return end < cutoff;
-}
 
 export default async function HomePage() {
   // Honor the gear-menu "view as" pref so the home page mirrors the
@@ -44,22 +34,10 @@ export default async function HomePage() {
   const effectiveMe = viewAs || me;
 
   // Decide morning scope cheaply — without waiting for getMyProjects.
-  // Admins (HUB_ADMIN_EMAILS) + @fandf.co.il domain users get scope=all
-  // (they have access to everything); everyone else gets scope=mine.
-  // Matches the previous "isAdmin || isStaff" check closely enough for
-  // the morning feed; the projects call still applies access control
-  // downstream regardless. The win: all three reads now run truly in
-  // parallel, removing the serial 3+s wait.
-  const HUB_ADMIN_EMAILS = new Set([
-    "maayan@fandf.co.il",
-    "nadav@fandf.co.il",
-    "felix@fandf.co.il",
-  ]);
-  const lcEffectiveMe = effectiveMe.toLowerCase().trim();
-  const morningScope: "all" | "mine" =
-    HUB_ADMIN_EMAILS.has(lcEffectiveMe) || lcEffectiveMe.endsWith("@fandf.co.il")
-      ? "all"
-      : "mine";
+  // Shared with app/layout.tsx (top-nav dropdown's hide-ended filter)
+  // via `morningScopeFor` so both call sites hit the same unstable_cache
+  // entry — otherwise the morning feed would fetch twice per request.
+  const morningScope = morningScopeFor(effectiveMe);
 
   const [projectsRes, countsRes, morningRes] = await Promise.allSettled([
     getMyProjects(viewAs || undefined),

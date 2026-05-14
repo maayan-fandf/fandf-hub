@@ -1077,6 +1077,15 @@ html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
   display: none;
 }
 
+/* Same hide-ended treatment applied to the top-nav projects dropdown so
+   the toggle on the home page controls both surfaces consistently. */
+html[data-hide-ended="1"] .projects-nav-projects > li[data-ended="1"] {
+  display: none;
+}
+html[data-hide-ended="1"] .projects-nav-company[data-all-ended="1"] {
+  display: none;
+}
+
 /* "רק שלי" CSS: the toggle writes data-show-mine="1" on <html>.
    Mirrors the hide-ended pattern — non-mine project rows hide, and
    companies whose every project is non-mine collapse out of the grid.
