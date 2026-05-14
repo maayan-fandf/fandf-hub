@@ -1,5 +1,6 @@
 import TaskReplyComposer from "./TaskReplyComposer";
 import TaskCommentRow from "./TaskCommentRow";
+import ScrollToThread from "./ScrollToThread";
 import { getTaskComments, tasksPeopleList } from "@/lib/appsScript";
 
 type Props = {
@@ -37,6 +38,10 @@ export default async function TaskComments({ taskId }: Props) {
 
   return (
     <section className="task-detail-comments">
+      {/* Handles arrivals from mention deep-links (#c=<comment_id>)
+          and the existing #thread-<id> shape — scrolls the target row
+          into view and flashes it. Client component; renders null. */}
+      <ScrollToThread />
       <h3>
         דיון{" "}
         <span className="task-comments-count">

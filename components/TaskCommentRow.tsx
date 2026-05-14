@@ -163,7 +163,14 @@ export default function TaskCommentRow({
   const inherited = !!comment.from_task;
 
   return (
-    <li className={`thread-reply${inherited ? " thread-reply-inherited" : ""}`}>
+    // id matches the deep-link target used by mention notifications —
+    // see hubTaskDiscussionUrl() in lib/commentsDirect.ts. When the URL
+    // arrives with `#c=<comment_id>`, ScrollToThread scrolls + flashes
+    // the matching row so the tagged user lands on the exact comment.
+    <li
+      id={`c-${comment.comment_id}`}
+      className={`thread-reply${inherited ? " thread-reply-inherited" : ""}`}
+    >
       <Avatar
         name={comment.author_email}
         title={authorDisplay}

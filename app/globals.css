@@ -4695,6 +4695,31 @@ a.section-link-icon:hover {
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 
+/* Sibling rule for task discussion comments — triggered when the URL
+   has a `#c=<comment_id>` hash (mention deep-link from התראות / inbox).
+   Wraps the comment row in a primary-tinted glow + soft fill so the
+   tagged user lands on the exact comment instead of scanning the
+   thread. Animation respects prefers-reduced-motion via the global
+   block at the bottom of this file. */
+.thread-reply.is-flashing {
+  animation: thread-reply-flash 2.4s ease-out;
+  border-radius: 10px;
+}
+@keyframes thread-reply-flash {
+  0% {
+    box-shadow: 0 0 0 3px var(--md-sys-color-primary, #4f46e5);
+    background: color-mix(in srgb, var(--md-sys-color-primary, #4f46e5) 10%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary, #4f46e5) 60%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-primary, #4f46e5) 5%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background: transparent;
+  }
+}
+
 /* Timeline filter bar — two rows stacked: kind/status buttons on top,
    search + author-filter on the second line. Search input mimics the
    existing .home-filter-pill treatment so all filter UIs feel the same. */
