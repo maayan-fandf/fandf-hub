@@ -260,14 +260,33 @@ export default function TaskApprovalBanner({
               </>
             )}
             {mode === "clarification" && (
-              <button
-                type="button"
-                className="btn-primary btn-sm"
-                onClick={() => setModalTarget("in_progress")}
-                disabled={busy !== null}
-              >
-                💬 ענה והחזר לעבודה
-              </button>
+              <>
+                {/* Two answer paths for the author when an approver asked
+                    for clarification: send back to the queue (the work
+                    still needs doing) OR send straight back to approval
+                    (the answer also resolves the open question and the
+                    submission is ready to be re-reviewed). Both open the
+                    same "answer" modal — only the status target differs.
+                    Maayan reported 2026-05-14: the single "ענה והחזר
+                    לעבודה" button only covered the queue path; she
+                    needed the resubmit path too. */}
+                <button
+                  type="button"
+                  className="btn-primary btn-sm task-approval-banner-approve"
+                  onClick={() => setModalTarget("awaiting_approval")}
+                  disabled={busy !== null}
+                >
+                  ↗️ ענה והעבר לאישור מחדש
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => setModalTarget("awaiting_handling")}
+                  disabled={busy !== null}
+                >
+                  💬 ענה והחזר לטיפול
+                </button>
+              </>
             )}
             {mode === "rejection" && (
               <button

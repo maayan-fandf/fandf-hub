@@ -27,6 +27,22 @@ export function getModalTransitionKind(
   from: WorkTaskStatus | string,
   to: WorkTaskStatus | string,
 ): TransitionKind | null {
+  // Author answering an approver's clarification request — handled
+  // BEFORE the generic `to === "awaiting_approval"` branch below so
+  // that "ענה והעבר לאישור מחדש" uses the answer copy ("write your
+  // response to the clarification") instead of the submit copy ("add
+  // context on what to check"). All three targets the author might
+  // pick (back to in_progress, back to the queue, or straight to
+  // approval) share the same "answer" semantics — the differentiator
+  // is the status flip, captured by the caller.
+  if (
+    from === "awaiting_clarification" &&
+    (to === "in_progress" ||
+      to === "awaiting_handling" ||
+      to === "awaiting_approval")
+  ) {
+    return "answer";
+  }
   if (to === "awaiting_approval") return "submit";
   if (to === "awaiting_clarification") return "clarify";
   if (
@@ -34,13 +50,6 @@ export function getModalTransitionKind(
     (to === "in_progress" || to === "awaiting_handling")
   ) {
     return "reject";
-  }
-  // Author answering an approver's clarification request — captured by
-  // the 💬 ענה והחזר לעבודה button on the clarification-mode banner. Without
-  // this case the modal returned null and clicking the button silently
-  // did nothing. Reported by Maayan 2026-05-12.
-  if (from === "awaiting_clarification" && to === "in_progress") {
-    return "answer";
   }
   return null;
 }
