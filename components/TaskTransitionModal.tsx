@@ -148,6 +148,24 @@ export default function TaskTransitionModal({
         : kind === "reject"
           ? "החזרה לתיקון"
           : "תשובה לבירור";
+  // Answer-kind subtitle + submit label depend on which target the
+  // author picked from the clarification banner. The three paths land
+  // on different statuses so the copy needs to say WHICH status the
+  // task moves to next — Maayan flagged 2026-05-14 that the static
+  // "תחזור לסטטוס בעבודה" was misleading after we split the banner
+  // into two buttons (awaiting_handling + awaiting_approval).
+  const answerTargetLabel =
+    newStatus === "awaiting_handling"
+      ? "ממתין לטיפול"
+      : newStatus === "awaiting_approval"
+        ? "ממתין לאישור (לבדיקת המאשר מחדש)"
+        : "בעבודה";
+  const answerSubmitLabel =
+    newStatus === "awaiting_handling"
+      ? "ענה והחזר לטיפול"
+      : newStatus === "awaiting_approval"
+        ? "ענה והעבר לאישור מחדש"
+        : "ענה והחזר לעבודה";
   const subtitle =
     kind === "submit"
       ? "צרף קובץ או קישור לעבודה שאתה מגיש לאישור. הגורם המאשר יקבל התראה ויראה את ההגשה בדיון."
@@ -155,7 +173,7 @@ export default function TaskTransitionModal({
         ? "צרף קובץ או קישור (למשל צילום של החלק הלא ברור) ופרט במה צריך עזרה. הכותב יקבל התראה ויראה את הבקשה בדיון."
         : kind === "reject"
           ? "פרט/י מה לא אושר ומה צריך לתקן. אפשר לצרף קובץ או קישור עם הערות. המבצע/ת יקבל/ת התראה ויראה/תראה את המשוב בדיון."
-          : "פרט/י את התשובה לבירור. אפשר לצרף קובץ או קישור. הגורם המאשר יקבל התראה ויראה את התשובה בדיון, והמשימה תחזור לסטטוס בעבודה.";
+          : `פרט/י את התשובה לבירור. אפשר לצרף קובץ או קישור. הגורם המאשר יקבל התראה ויראה את התשובה בדיון, והמשימה תעבור לסטטוס ${answerTargetLabel}.`;
   const submitLabel =
     kind === "submit"
       ? "שלח לאישור"
@@ -163,7 +181,7 @@ export default function TaskTransitionModal({
         ? "בקש בירור"
         : kind === "reject"
           ? "שלח לתיקון"
-          : "ענה והחזר לעבודה";
+          : answerSubmitLabel;
   const commentPrefix =
     kind === "submit"
       ? "🔍 הוגש לאישור"
