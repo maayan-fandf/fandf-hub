@@ -235,7 +235,33 @@ export function computeCrmAlerts(args: {
     });
   }
 
-  return out;
+  // ── dedupe: source-converts-poorly vs creative-mismatch ─────────
+  // Both alerts fire on "leads ≥10, scheduled near-zero". When a channel
+  // ALSO has a dominant objection (creative-mismatch's stricter gate),
+  // both end up in the list — and the user sees two cards about the
+  // same channel saying essentially the same thing. creative-mismatch
+  // is strictly more informative (it names the dominant objection +
+  // points at the specific creative dimension to review), so when both
+  // apply to the same channel we drop the generic one.
+  // Maayan reported 2026-05-14: on /projects/חבר both alerts fired
+  // for facebook (26 leads / 0 meetings / 35% price objection); the
+  // generic "audience mismatch" card was noise next to the richer
+  // creative-mismatch one.
+  const richChannels = new Set<string>();
+  for (const a of out) {
+    if (a.kind === "creative-mismatch" && a.channel) {
+      richChannels.add(a.channel);
+    }
+  }
+  const deduped = out.filter(
+    (a) =>
+      !(
+        a.kind === "source-converts-poorly" &&
+        a.channel &&
+        richChannels.has(a.channel)
+      ),
+  );
+  return deduped;
 }
 
 /**
