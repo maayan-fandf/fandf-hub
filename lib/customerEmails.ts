@@ -169,7 +169,15 @@ export async function listCustomerEmails(
           senderName,
           subject,
           snippet: (data.snippet || "").trim(),
-          gmailLink: `https://mail.google.com/mail/u/0/#inbox/${threadId || id}`,
+          // `?authuser=<email>` routes the browser to the correct Google
+          // account slot even when the user is signed into multiple
+          // accounts. Without it, /mail/u/0/ always lands on the first
+          // signed-in slot — broken for anyone whose Workspace account
+          // is the second/third on this device. Same fix the dashboard
+          // URL uses in app/layout.tsx; without it Maayan reported the
+          // "הגב במייל" button silently failed when her personal Google
+          // account was the default slot in Chrome.
+          gmailLink: `https://mail.google.com/mail/u/0/?authuser=${encodeURIComponent(subjectEmail)}#inbox/${threadId || id}`,
           receivedAt: internalDate,
           company: "",
           isUnread: labelIds.includes("UNREAD"),
