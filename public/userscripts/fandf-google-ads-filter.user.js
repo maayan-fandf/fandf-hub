@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F&F Google Ads Auto-Filter
 // @namespace    https://hub.fandf.co.il/
-// @version      0.1.3
+// @version      0.1.4
 // @description  Auto-applies the campaign filter when Google Ads opens with a #fandf-filter=<slug> hash in the URL. Triggered by clicking the קצב יומי cell in the F&F dashboard.
 // @author       F&F Brandvertising
 // @match        https://ads.google.com/*
@@ -17,38 +17,42 @@
  * 1. Dashboard cell click navigates the user to
  *      https://ads.google.com/aw/campaigns?__c=…#fandf-filter=<slug>
  *    `<slug>` is the project's Keys.campaign-ID (e.g. "felix-q3-2026").
+ *    The dashboard also writes the slug + daily budget into the
+ *    clipboard so the next paste resolves to either of them.
  *
  * 2. This userscript runs on every ads.google.com page load, reads
- *    the hash, and:
- *      a) Dispatches Shift+W on document — Google Ads' built-in
- *         "Show the campaign view filter" shortcut. Filter panel
- *         slides out.
- *      b) Polls the DOM for the filter input that mounts after
- *         the panel opens.
- *      c) Sets the input's value to the slug (via the React-
- *         compatible native setter so onChange fires).
- *      d) Dispatches Enter to apply.
+ *    the hash, strips it (so in-app SPA nav doesn't re-trigger), and:
+ *      a) Removes any stale "Campaign name <op> <value>" chip left
+ *         from a previous session — chips AND together, so leaving
+ *         one in place would intersect with ours to nothing.
+ *      b) Polls for Google Ads' "Add filter" combobox.
+ *      c) Retries a full mouse-event sequence (pointerdown +
+ *         mousedown + mouseup + click + focus) on the combobox until
+ *         the filter-type listbox actually mounts. See "Why retry?"
+ *         on clickUntilPopupOpens for the SPA-timing rationale.
  *
- * 3. The hash is stripped after read so subsequent in-app
- *    navigations don't re-trigger.
+ * 3. The combobox is a filter-TYPE picker, not a campaign-name input
+ *    (v0.1.2 mistake — see project memory note). The user finishes
+ *    the flow with one paste (Ctrl+V) and one click on the surfaced
+ *    "Campaign name contains <slug>" autocomplete suggestion.
  *
  * Graceful degradation
  * ────────────────────────────────────────────────────────────────
- * Each step is best-effort:
- *   - If Shift+W is no-op'd (page not focused) → user sees no panel
- *     open. Fallback toast tells them to paste manually (the slug
- *     is already in the clipboard from the dashboard click).
- *   - If the filter input selector breaks (Google's DOM drifts ~once
- *     a quarter) → the panel still opens via Shift+W, user pastes.
+ *   - If the combobox never mounts within POLL_TIMEOUT_MS → fallback
+ *     toast tells the user to paste manually (slug already in clipboard).
+ *   - If MAX_CLICK_ATTEMPTS clicks fail to open the popup → fallback
+ *     toast asks the user to click "Add filter" themselves, then paste.
  *   - Toast at the bottom of the page confirms outcome either way.
  *
  * Maintenance
  * ────────────────────────────────────────────────────────────────
- * The DOM selectors in `findFilterInput` are the most fragile part.
- * If Google Ads renames the filter input's aria-label or placeholder,
- * update the selector list. Inspect the filter input in DevTools
- * after Shift+W and look for stable attributes (aria-label,
- * role, placeholder text — avoid auto-generated class names).
+ * The DOM selectors in `findAddFilterTrigger` + `isPopupOpen` are the
+ * most fragile part. If Google Ads renames the trigger's aria-label
+ * or moves away from `role="listbox" / role="option"` for the popup,
+ * update them. Inspect in DevTools right after the popup opens for
+ * stable attributes (aria-label, role) — avoid auto-generated class
+ * names. NB: Google Ads has 0 native `<button>` elements; everything
+ * is `[role="button"]` on Material Web Components.
  */
 
 (function () {
@@ -58,6 +62,12 @@
   const POLL_INTERVAL_MS = 250;
   const POLL_TIMEOUT_MS = 15000;
   const INITIAL_DELAY_MS = 1500; // wait for the campaigns view to settle
+  // Retry-click parameters — see "Why retry?" comment on clickUntilPopupOpens
+  // for the rationale (Google Ads' SPA isn't fully interactive at idle+1500ms,
+  // so the first click can silently no-op).
+  const POPUP_WAIT_MS = 700;
+  const CLICK_RETRY_GAP_MS = 600;
+  const MAX_CLICK_ATTEMPTS = 10;
 
   function readFilterFromHash() {
     const h = window.location.hash || '';
@@ -160,6 +170,79 @@
     });
   }
 
+  /** Dispatch a real-mouse-style click sequence on `el`. Google Ads'
+   *  Material Web Components frequently listen on `pointerdown` /
+   *  `mousedown` rather than `click`; calling `.click()` on its own can
+   *  silently no-op for popup triggers. The full pointer+mouse+click
+   *  sequence mimics what a trusted user gesture looks like (apart from
+   *  the `isTrusted` flag, which can't be forged). */
+  function dispatchFullClick(el) {
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const base = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: 0,
+      buttons: 1,
+    };
+    try {
+      el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, base)));
+    } catch (_) {}
+    try { el.dispatchEvent(new MouseEvent('mousedown', base)); } catch (_) {}
+    try {
+      el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, buttons: 0 }, base)));
+    } catch (_) {}
+    try { el.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, base, { buttons: 0 }))); } catch (_) {}
+    try { el.dispatchEvent(new MouseEvent('click', Object.assign({}, base, { buttons: 0 }))); } catch (_) {}
+    try { if (typeof el.click === 'function') el.click(); } catch (_) {}
+    try { if (typeof el.focus === 'function') el.focus(); } catch (_) {}
+  }
+
+  /** True when Google Ads' filter-type dropdown is mounted+visible. The
+   *  combobox opens a listbox containing options like "Campaign name",
+   *  "Status", "Type", etc. We accept either a visible listbox OR a
+   *  visible option as proof the popup opened — Google's DOM varies
+   *  between Material versions in which element gets `role="listbox"`. */
+  function isPopupOpen() {
+    const lb = document.querySelector('[role="listbox"]');
+    if (lb && isVisible(lb)) return true;
+    const opt = document.querySelector('[role="option"]');
+    if (opt && isVisible(opt)) return true;
+    return false;
+  }
+
+  /** Why retry? Tampermonkey fires the userscript at `document-idle +
+   *  INITIAL_DELAY_MS`, but Google Ads' SPA hydrates lazily — the
+   *  combobox is visible in the DOM well before its click handler is
+   *  actually wired up. A single `.click()` at that window often
+   *  silently no-ops (or opens-and-immediately-closes the popup before
+   *  the user can see it). Empirically the same click via DevTools 30s
+   *  later works flawlessly. So we retry the full mouse-event sequence
+   *  with a short wait between attempts until the popup actually
+   *  mounts. */
+  async function clickUntilPopupOpens(trigger, maxAttempts) {
+    for (let i = 0; i < maxAttempts; i++) {
+      dispatchFullClick(trigger);
+      try {
+        await pollUntil(isPopupOpen, POPUP_WAIT_MS, 100);
+        return true;
+      } catch (_) {
+        // popup didn't appear within POPUP_WAIT_MS — wait, then retry.
+        await new Promise(function (r) { setTimeout(r, CLICK_RETRY_GAP_MS); });
+        // Re-resolve the trigger in case Google Ads remounted it.
+        const fresh = findAddFilterTrigger();
+        if (fresh && fresh !== trigger) trigger = fresh;
+      }
+    }
+    return false;
+  }
+
   /** Toast at the bottom-center of the page. Mirrors the F&F
    *  dashboard's dark navy palette so it reads as "same product"
    *  when the user sees both in the same flow. */
@@ -250,12 +333,18 @@
       );
       return;
     }
-    // Step 3: click + focus. .click() goes through React handlers
-    // cleanly even though synthetic keyboard events don't.
-    try {
-      if (trigger.click) trigger.click();
-      if (trigger.focus) trigger.focus();
-    } catch (_) {}
+    // Step 3: open the popup. v0.1.3 fired one `.click()` here and that
+    // silently no-op'd on cold SPA renders — see the "Why retry?" comment
+    // on clickUntilPopupOpens. v0.1.4 retries the full mouse-event
+    // sequence until the listbox actually mounts (or we give up).
+    const opened = await clickUntilPopupOpens(trigger, MAX_CLICK_ATTEMPTS);
+    if (!opened) {
+      showToast(
+        'הסינון לא נפתח אוטומטית — לחץ "Add filter" והדבק (Ctrl+V) ידנית: ' + filterValue,
+        false,
+      );
+      return;
+    }
     // Step 4: toast guides the next 2 user actions.
     showToast(
       '📋 הסינון פתוח לסלאג "' + filterValue + '" — הדבק (Ctrl+V) ובחר מהצעת האוטוקומפליט',
