@@ -297,7 +297,10 @@
  * but their soft backgrounds get a dark tint pair so contrast stays
  * readable. Shadows get stronger to compensate for the dark bg. */
 [data-theme="dark"] {
-  --bg: #0a0a18;
+  --bg: #0b1220;  /* navy page bg — matches the dashboard webapp's
+                     --bg so the hub + embedded iframe share the same
+                     dark hue family instead of clashing (hub was
+                     #0a0a18 purple-tinted, dashboard is cool navy). */
   /* --surface, --surface-soft, --border, --text, --muted intentionally
      NOT overridden here — they're aliased to M3 sys.color tokens in
      :root, and M3 sys.color tokens already swap to their dark values
@@ -379,24 +382,32 @@
   --md-sys-color-on-error: #690005;
   --md-sys-color-error-container: #93000a;
   --md-sys-color-on-error-container: #ffb4ab;
-  --md-sys-color-background: #1c1b1f;
-  --md-sys-color-on-background: #e5e1e6;
-  --md-sys-color-surface: #1c1b1f;
-  --md-sys-color-on-surface: #e5e1e6;
-  --md-sys-color-surface-variant: #46464f;
-  --md-sys-color-on-surface-variant: #c8c5d0;
-  --md-sys-color-outline: #918f9a;
-  --md-sys-color-outline-variant: #46464f;
-  --md-sys-color-inverse-surface: #e5e1e6;
-  --md-sys-color-inverse-on-surface: #313034;
+  /* Dark surface ramp — borrowed from the dashboard webapp's cool-navy
+     palette (Index.html lines 50-76), refit to M3's 5-step surface-
+     container hierarchy. The HUE is dashboard's; the STEPS (relative
+     brightness between bg → surface → container → container-high →
+     container-highest) follow M3's lift logic, so cards-on-columns-
+     on-bg keep their proper tonal separation. Primary/secondary/
+     tertiary/error stay on the M3 indigo palette — only the neutral
+     surface family changes. */
+  --md-sys-color-background: #0b1220;             /* dashboard --bg */
+  --md-sys-color-on-background: #e2e8f0;          /* dashboard --ink */
+  --md-sys-color-surface: #1a2234;                /* dashboard --surface */
+  --md-sys-color-on-surface: #e2e8f0;             /* dashboard --ink */
+  --md-sys-color-surface-variant: #2d3748;        /* dashboard --border */
+  --md-sys-color-on-surface-variant: #94a3b8;     /* dashboard --ink-soft */
+  --md-sys-color-outline: #475569;                /* slate, mid-tone */
+  --md-sys-color-outline-variant: #2d3748;        /* dashboard --border */
+  --md-sys-color-inverse-surface: #e2e8f0;
+  --md-sys-color-inverse-on-surface: #1a2234;
   --md-sys-color-inverse-primary: #494bd6;
-  --md-sys-color-surface-dim: #131316;
-  --md-sys-color-surface-bright: #39393c;
-  --md-sys-color-surface-container-lowest: #0e0e11;
-  --md-sys-color-surface-container-low: #1c1b1f;
-  --md-sys-color-surface-container: #201f23;
-  --md-sys-color-surface-container-high: #2a292d;
-  --md-sys-color-surface-container-highest: #353438;
+  --md-sys-color-surface-dim: #0b1220;            /* same as bg */
+  --md-sys-color-surface-bright: #2d3852;
+  --md-sys-color-surface-container-lowest: #08101c;   /* deeper than bg */
+  --md-sys-color-surface-container-low: #141c2d;      /* dashboard --surface-alt */
+  --md-sys-color-surface-container: #1a2234;          /* dashboard --surface */
+  --md-sys-color-surface-container-high: #232b3f;     /* dashboard --surface-hi */
+  --md-sys-color-surface-container-highest: #2a3349;  /* interpolated brighter */
 }
 
 * {
