@@ -22,6 +22,7 @@ import {
 } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TaskStatusCell from "@/components/TaskStatusCell";
+import TaskActionPrompt from "@/components/TaskActionPrompt";
 import TaskCreateForm from "@/components/TaskCreateForm";
 import TaskComments from "@/components/TaskComments";
 import TaskDriveComments from "@/components/TaskDriveComments";
@@ -276,6 +277,16 @@ export default async function TaskDetailPage({
                 separate TaskStatusActions panel that used to sit below
                 is gone (redundant once the pill is interactive). */}
             <TaskStatusCell task={t} />
+            {/* Contextual "next step" prompt — sits inline with the
+                status pill so the most-obvious action is one click
+                away instead of buried in the dropdown. See
+                TaskActionPrompt for the role × status matrix:
+                  • assignee + awaiting_handling → התחל לעבוד
+                  • assignee + in_progress       → הגש לאישור
+                  • approver + awaiting_approval → אשר / החזר לטיפול / דחה
+                Renders null in every other (role × status) combo,
+                falling through to the pill's own dropdown. */}
+            {myEmail && <TaskActionPrompt task={t} myEmail={myEmail} />}
           </div>
           <div className="subtitle task-detail-meta">
             <span className={`tasks-priority-pill p${t.priority}`} title="דחיפות">

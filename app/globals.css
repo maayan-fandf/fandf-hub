@@ -16556,6 +16556,48 @@ html[data-theme="dark"] .task-approval-banner-rejection .task-approval-banner-ch
   border-radius: 6px;
 }
 
+/* ─── Inline next-step prompt next to the status pill ─────────────
+   Used on /tasks/[id] alongside TaskStatusCell. See
+   components/TaskActionPrompt.tsx for the role × status matrix that
+   drives which buttons render. Mostly leans on the existing
+   .btn-primary / .btn-ghost styles + adds a tiny wrapping flex row
+   so the buttons sit on the same line as the status pill at desktop
+   width and wrap below it on narrow viewports. */
+.task-action-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+.task-action-prompt-btn {
+  /* Slightly tighter than the default .btn-sm so 3 approver buttons
+     fit comfortably on one row next to a status pill. */
+  padding-inline: 0.85em;
+  white-space: nowrap;
+}
+/* Approve = positive green (matches the existing approve-confirm
+   color story); reject = rose/danger so it reads as the destructive
+   choice. החזר לטיפול keeps the neutral ghost. */
+.task-action-prompt-approve {
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-color: #059669;
+}
+.task-action-prompt-approve:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669, #047857);
+}
+.task-action-prompt-reject {
+  color: #b91c1c;
+  border-color: rgba(244, 63, 94, 0.4);
+}
+.task-action-prompt-reject:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.08);
+}
+.task-action-prompt-error {
+  color: var(--danger, #b91c1c);
+  font-size: 0.82em;
+  padding-inline: 0.4em;
+}
+
 /* ─── "Wants something from you" row/card highlights on /tasks ─────
    Three states (computed by lib/taskUserState):
      • awaiting_approval     — amber (matches the in-task approval banner)
