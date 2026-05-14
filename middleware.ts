@@ -23,6 +23,13 @@ export default auth((req) => {
     // popup follow a clean top-level navigation chain to the
     // destination.
     path === "/api/external-redirect" ||
+    // Public Tampermonkey userscripts — must be reachable without a
+    // session so the extension can auto-update them. The files live
+    // in public/userscripts/ and are intentionally non-sensitive (they
+    // contain glue logic that runs against ads.google.com; no F&F
+    // tokens or business data). Without this exemption Tampermonkey's
+    // auto-update request gets a 302→/signin and silently fails.
+    path.startsWith("/userscripts/") ||
     path === "/signin" ||
     path === "/unauthorized" ||
     path === "/favicon.ico";
