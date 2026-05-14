@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F&F Google Ads Auto-Filter
 // @namespace    https://hub.fandf.co.il/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Auto-applies the campaign filter when Google Ads opens with a #fandf-filter=<slug> hash in the URL. Triggered by clicking the קצב יומי cell in the F&F dashboard.
 // @author       F&F Brandvertising
 // @match        https://ads.google.com/*
@@ -77,45 +77,49 @@
     } catch (_) {}
   }
 
-  /** Dispatch a Shift+W keydown to document — Google Ads' built-in
-   *  "show the campaign view filter" shortcut. The listener is on
-   *  the document level, so this works as long as no <input>
-   *  currently has focus. */
-  function pressShiftW() {
-    // Defocus any currently-focused input — Google Ads' shortcuts
-    // are suppressed while typing in a form field.
-    try {
-      if (document.activeElement && document.activeElement.blur) {
-        document.activeElement.blur();
-      }
-    } catch (_) {}
-    const opts = {
-      key: 'W',
-      code: 'KeyW',
-      keyCode: 87,
-      which: 87,
-      shiftKey: true,
-      bubbles: true,
-      cancelable: true,
-    };
-    document.dispatchEvent(new KeyboardEvent('keydown', opts));
-    document.dispatchEvent(new KeyboardEvent('keyup', opts));
-  }
-
-  /** Best-effort locator for the filter input that mounts inside the
-   *  filter panel. Selectors ordered from most-stable to most-generic. */
-  function findFilterInput() {
-    const candidates = [
-      'input[aria-label*="filter" i]',
-      'input[aria-label*="search" i]',
-      'input[placeholder*="filter" i]',
-      'input[placeholder*="search" i]',
-      // The Material-style nested input that the new Ads UI uses.
-      'material-input input[type="text"]:not([readonly])',
+  /** Best-effort locator for Google Ads' "Add filter" trigger — either
+   *  the collapsed button (when no filters are open) or the
+   *  always-present combobox in the filters bar (campaigns view).
+   *  Both surfaces carry an aria-label / placeholder of "Add filter".
+   *  Falls back to scanning button/input text content for "add filter"
+   *  if attribute matches fail. */
+  function findAddFilterTrigger() {
+    const selectors = [
+      'input[aria-label*="Add filter" i]',
+      'button[aria-label*="Add filter" i]',
+      'input[placeholder*="Add filter" i]',
+      '[role="combobox"][aria-label*="filter" i]',
     ];
-    for (const sel of candidates) {
+    for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el && isVisible(el)) return el;
+    }
+    // Text-content fallback — scan buttons + inputs for visible "Add filter".
+    const nodes = document.querySelectorAll('button, input, [role="button"], [role="combobox"]');
+    for (const el of nodes) {
+      const txt = (
+        (el.textContent || '') +
+        ' ' +
+        (el.value || '') +
+        ' ' +
+        (el.getAttribute('aria-label') || '') +
+        ' ' +
+        (el.getAttribute('placeholder') || '')
+      ).toLowerCase();
+      if (txt.includes('add filter') && isVisible(el)) return el;
+    }
+    return null;
+  }
+
+  /** After clicking the "Add filter" trigger, an input element gains
+   *  focus (Google Ads' combobox auto-focuses its sub-input). Find
+   *  whichever input is currently focused or, failing that, the
+   *  first visible text input on the page that wasn't already a
+   *  permanent header search. */
+  function findActiveTextInput() {
+    const ae = document.activeElement;
+    if (ae && /^(input|textarea)$/i.test(ae.tagName) && isVisible(ae)) {
+      return ae;
     }
     return null;
   }
@@ -195,41 +199,56 @@
   }
 
   async function applyFilter(filterValue) {
-    // Step 1: open the panel.
-    pressShiftW();
-    // Step 2: wait for the panel's filter input to mount.
-    let input = null;
+    // Step 1: find Google Ads' "Add filter" trigger. The synthetic
+    // Shift+W keyboard event approach (v0.1.0-0.1.1) didn't work — the
+    // Material UI filters out untrusted KeyboardEvents — so we click
+    // the actual DOM element instead.
+    let trigger;
     try {
-      input = await pollUntil(findFilterInput, POLL_TIMEOUT_MS, POLL_INTERVAL_MS);
+      trigger = await pollUntil(findAddFilterTrigger, POLL_TIMEOUT_MS, POLL_INTERVAL_MS);
     } catch (e) {
-      // Panel may have opened but selectors didn't catch the input.
       showToast(
-        'פאנל הסינון פתוח — הדבק (Ctrl+V) כדי לסנן ל-"' + filterValue + '"',
+        'לא נמצא כפתור "Add filter" — אולי דף לא צפוי. הדבק ידנית: ' + filterValue,
         false,
       );
       return;
     }
+    // Step 2: click + focus. Click via .click() (synthetic, but element-
+    // level clicks usually go through React handlers cleanly even when
+    // synthetic keyboard events don't). If the trigger is already an
+    // open combobox, clicking just focuses it.
     try {
-      input.focus();
-      setInputValue(input, filterValue);
-      // Give the framework a beat to render typeahead results, then
-      // press Enter to apply.
-      setTimeout(function () {
-        input.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-        }));
-      }, 500);
-      showToast('סינון "' + filterValue + '" הוחל אוטומטית ✓', true);
-    } catch (e) {
-      showToast(
-        'נמצא שדה סינון אך מילוי אוטומטי נכשל — הדבק ידנית: ' + filterValue,
-        false,
-      );
+      if (trigger.click) trigger.click();
+      if (trigger.focus) trigger.focus();
+    } catch (_) {}
+    // Step 3: a short beat for Google Ads to render the now-active input,
+    // then try to pre-fill the slug. The active input might be a
+    // different element than what we clicked (e.g. clicking the button
+    // mounts a popup with its own input that takes focus).
+    await new Promise(function (r) { setTimeout(r, 400); });
+    const input = findActiveTextInput() || (trigger.tagName === 'INPUT' ? trigger : null);
+    if (input) {
+      try {
+        input.focus();
+        setInputValue(input, filterValue);
+        // Toast: filter is half-applied. User presses Enter to confirm
+        // or picks an autocomplete suggestion.
+        showToast(
+          '📋 "' + filterValue + '" הוזן בסינון — לחץ Enter או בחר מהאוטוקומפליט',
+          true,
+        );
+        return;
+      } catch (_) {
+        // Fall through to "panel-open, user pastes" fallback.
+      }
     }
+    // Fallback: input not auto-fillable. The filter UI IS open from
+    // step 2 — user pastes from clipboard (slug already there from the
+    // dashboard click) + Enter.
+    showToast(
+      '📋 הסינון פתוח — הדבק (Ctrl+V) כדי לסנן ל-"' + filterValue + '"',
+      false,
+    );
   }
 
   function run() {
