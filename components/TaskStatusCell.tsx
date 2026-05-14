@@ -8,6 +8,37 @@ import TaskTransitionModal, {
   getModalTransitionKind,
 } from "./TaskTransitionModal";
 import { isRejectionPending } from "@/lib/taskRejectionPending";
+import Avatar from "./Avatar";
+
+/** Per-status "who's currently on the hook?" lookup. Drives the small
+ *  avatar that renders inside the status pill so a queue/kanban
+ *  scanner sees both WHAT state the task is in AND WHOSE court the
+ *  ball is in without opening the row.
+ *
+ *  - awaiting_handling / in_progress → first assignee on the row
+ *  - awaiting_approval               → approver
+ *  - awaiting_clarification          → author (the approver bounced
+ *                                       it back with questions)
+ *  - draft                           → author (still being shaped)
+ *  - blocked / done / cancelled      → null (no one's actively on it)
+ *
+ *  Multi-assignee tasks: we pick the first email in the array. The
+ *  others surface in the row's people cell; this avatar is a "lead
+ *  owner" hint, not a full roster. */
+function responsibleEmailForStatus(task: WorkTask): string {
+  switch (task.status) {
+    case "awaiting_handling":
+    case "in_progress":
+      return (task.assignees || [])[0] || "";
+    case "awaiting_approval":
+      return task.approver_email || "";
+    case "awaiting_clarification":
+    case "draft":
+      return task.author_email || "";
+    default:
+      return "";
+  }
+}
 
 // Open lifecycle — every status routes to every other status (minus
 // self). The previous whitelist was forcing the team into a single
@@ -168,6 +199,10 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
   // separately below so the pill never lies about which bucket the
   // row lives in.
   const displayLabel = STATUS_LABELS[task.status] || task.status;
+  // The person whose court the ball is in for this status. Drives a
+  // tiny avatar inside the pill — see responsibleEmailForStatus() at
+  // the top of the file for the per-status mapping.
+  const responsibleEmail = responsibleEmailForStatus(task);
 
   async function transition(to: WorkTaskStatus, label: string) {
     // Transitions that need a deliverable (submission / clarification
@@ -248,6 +283,11 @@ export default function TaskStatusCell({ task }: { task: WorkTask }) {
           disabled={pendingTo !== null}
           title={pendingTo ? `מעדכן ל־${pendingTargetLabel}…` : "לחץ לשינוי סטטוס"}
         >
+          {responsibleEmail && !pendingTo && (
+            <span className="tasks-status-cell-avatar" aria-hidden>
+              <Avatar name={responsibleEmail} size={16} />
+            </span>
+          )}
           {displayLabel}
           {pendingTo ? (
             <span className="tasks-status-cell-spinner" aria-hidden>

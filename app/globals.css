@@ -9490,6 +9490,20 @@ html[data-theme="dark"] .tasks-bucket-count { background: rgba(255,255,255,.1); 
 .tasks-status-cell-caret {
   font-size: .9em; opacity: .6;
 }
+/* Tiny "responsible person" avatar inside the status pill — shows whose
+   court the ball is in for the current status (assignee / approver /
+   author depending on stage). Negative margins keep the pill height
+   from growing past its existing 1.5em-ish footprint when the avatar
+   is present — the 16px circle sits flush with the label baseline. */
+.tasks-status-cell-avatar {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: -.2em;
+  margin-inline-end: .05em;
+  /* The Avatar component renders a 16px circle here; the inline-flex
+     parent keeps it vertically centered against the status label. */
+  line-height: 1;
+}
 .tasks-status-cell-wrap {
   display: inline-flex;
   align-items: center;
