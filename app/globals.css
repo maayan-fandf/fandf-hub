@@ -620,6 +620,26 @@ a:hover {
   padding: 2rem 1.5rem;
 }
 
+/* Project page (/projects/[name]) main element — flex-column with a
+   single source-of-truth gap. The project page has many sibling
+   sections (page header, alerts, prisot, metrics iframe, CRM funnel,
+   Clarity insights, ...) and the previous margin-bottom-per-section
+   pattern produced visibly uneven gaps where margin-collapsing math
+   diverged (the .project-section-metrics had a margin-top:1.25rem
+   that collapsed asymmetrically with the previous sibling's
+   margin-bottom). Flex gap sidesteps all of that — every section
+   gets exactly 1.5rem above it, period. */
+.container.project-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.container.project-main > * {
+  /* Zero any legacy per-section margin so it can't double the gap. */
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 .page-header {
   display: flex;
   align-items: baseline;
@@ -3112,9 +3132,6 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 1.25rem;
-  /* Matches .project-section's margin-bottom — the 2-column grid is
-     a single visual section as far as page rhythm is concerned. */
-  margin-bottom: 1.5rem;
 }
 
 @media (min-width: 1100px) {
@@ -4214,12 +4231,6 @@ html[data-theme="dark"] .chip.chip-mention {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.1rem 1.25rem;
-  /* Uniform vertical rhythm between every section on the project page.
-     The 2-column grid container .project-sections has its own
-     margin-bottom (below) since grid layout swallows child margins,
-     but for every other top-level section this rule is the single
-     source of truth for inter-section spacing. */
-  margin-bottom: 1.5rem;
 }
 
 .section-head {
@@ -5610,7 +5621,8 @@ html[data-theme="dark"] .quick-note-saved {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1rem 1.1rem 1.2rem;
-  margin-bottom: 1.5rem;
+  /* margin-bottom removed — .project-main's flex-column gap is the
+     single source of inter-section spacing on the project page. */
 }
 /* Inset cards — every inner block gets its own subtle border + bg so the
    funnel / objections / chips / pie / trendline read as separate areas
@@ -8079,7 +8091,8 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 /* Full-width metrics section lives outside the .project-sections grid,
    so it spans the container. Same card styling as other sections. */
 .project-section-metrics {
-  margin-top: 1.25rem;
+  /* margin-top removed — .project-main's flex-column gap is the
+     single source of inter-section spacing on the project page. */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;

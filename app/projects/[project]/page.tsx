@@ -391,7 +391,7 @@ export default async function ProjectOverviewPage({
   const resolvedCount = resolvedMentions + resolvedComments;
 
   return (
-    <main className="container">
+    <main className="container project-main">
       <header className="page-header">
         {/* Tiny client-side scroll watcher: toggles `is-scrolled` on
             this header once the user scrolls past ~80px. CSS handles
