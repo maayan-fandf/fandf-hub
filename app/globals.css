@@ -2504,11 +2504,11 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
    Staff-only — mounted by app/layout.tsx behind the same client-user
    gate as the rest of the staff-only nav surface. */
 
-/* M3 small FAB — Gemini chat. 48dp container, corner-medium squircle.
-   Keeps the violet→pink brand gradient as a deliberate AI-brand
-   override (functional cue: "this is the AI surface, not a normal
-   action"); shape, elevation, and motion follow the M3 small-FAB
-   spec. */
+/* Gemini chat FAB — round (50%) per user preference. Keeps the
+   violet→pink brand gradient as a deliberate AI-brand override
+   (functional cue: "this is the AI surface, not a normal action");
+   M3 elevation + motion still apply, only the shape opted back out
+   of the v3 squircle to match the .quick-task-fab pair. */
 .gemini-fab {
   position: fixed;
   /* Stack ABOVE the QuickTaskFAB (`+`). See .quick-task-fab for the
@@ -2518,7 +2518,7 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   z-index: 40;            /* above the topnav (20), below modals (50+) */
   width: 3.25rem;
   height: 3.25rem;
-  border-radius: var(--md-sys-shape-corner-medium);
+  border-radius: 50%;
   border: none;
   background: linear-gradient(135deg, var(--violet, #7c3aed), var(--pink, #ec4899));
   color: white;
@@ -2873,6 +2873,12 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
     width: 2.85rem;
     height: 2.85rem;
     font-size: 1.3rem;
+  }
+  /* Mirror the gemini-fab's horizontal anchor on mobile so both
+     FABs stack at the same x-position. Without this, .gemini-fab
+     would float 0.6rem closer to the screen edge than .quick-task-fab. */
+  .quick-task-fab {
+    inset-inline-end: 1rem;
   }
 }
 
@@ -7197,10 +7203,11 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 
 /* Bottom-left floating action button — global "+" for quick-task entry.
    Sits below the topnav z-index but above page content; persistent. */
-/* M3 regular FAB — primary action surface. M3 v3 changed FABs from
-   round (50%) to squircle (corner-large = 16dp). Color is the muted
-   primary-container, not raw primary — the FAB stands out by shape +
-   elevation, not loud color. */
+/* Quick-task FAB — round (50%) per user preference. Anchored via the
+   inline-end logical property so it shares the same RTL-safe axis as
+   .gemini-fab above it (was a physical `left:` which mis-aligned with
+   .gemini-fab on mobile when the latter's responsive override moved
+   to a different inset value). */
 .quick-task-fab {
   position: fixed;
   /* iPhones with the home-indicator gesture bar reserve ~0.85rem at the
@@ -7211,10 +7218,10 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
      above the home indicator on modern iPhones. Requires
      viewportFit:"cover" in the layout viewport meta to unlock. */
   bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px));
-  left: 1.6rem;
-  width: 3.5rem;            /* M3 regular FAB = 56dp */
+  inset-inline-end: 1.6rem;
+  width: 3.5rem;            /* regular FAB = 56dp */
   height: 3.5rem;
-  border-radius: var(--md-sys-shape-corner-large);
+  border-radius: 50%;
   border: none;
   background: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-primary-container);
