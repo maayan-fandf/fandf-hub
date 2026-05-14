@@ -62,6 +62,13 @@ export async function GET(
   // single-project result). For regular projects this stays empty.
   const incomingCompany = String(incomingParams.get("company") || "").trim();
 
+  // `clientView=1` is forwarded by /projects/[project] when the viewer is
+  // a client-tier user. The Apps Script side reads it in
+  // renderDashboardHtml + emits a `body.client-view` class so the
+  // template's CSS can hide negative-signal surfaces (alert.bad,
+  // pd-bad/pd-warn insight cards, fd-bad funnel diagnoses).
+  const clientView = incomingParams.get("clientView") === "1" ? "1" : "";
+
   const url = new URL(base);
   url.searchParams.set("api", "1");
   url.searchParams.set("action", "renderDashboardHtml");
@@ -70,6 +77,7 @@ export async function GET(
   url.searchParams.set("project", project);
   if (incomingCompany) url.searchParams.set("company", incomingCompany);
   if (monthOverride) url.searchParams.set("monthOverride", monthOverride);
+  if (clientView) url.searchParams.set("clientView", clientView);
 
   // Cold-render on the Apps Script side can take 15–30s (sheet reads +
   // creative map + platform data). Allow plenty of headroom.

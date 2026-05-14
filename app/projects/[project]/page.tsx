@@ -337,18 +337,21 @@ export default async function ProjectOverviewPage({
         authuser: userEmail,
         embed: true,
         monthOverride,
+        clientView: isClientUser,
       })
     : "";
   // External-client proxy URL — append monthOverride as a query param so the
   // proxy route can forward it upstream to renderDashboardHtml. For כללי
   // the proxy route also needs to see the `company` param so its upstream
   // call to renderDashboardHtml carries it through to the Apps Script
-  // company-mode pivot.
+  // company-mode pivot. clientView is forwarded similarly so the dashboard
+  // hides its negative-signal surfaces (see dashboard-clasp Index.html).
   const proxyEmbedParams = new URLSearchParams();
   if (monthOverride) proxyEmbedParams.set("monthOverride", monthOverride);
   if (isKullitProject && companyForDashboard) {
     proxyEmbedParams.set("company", companyForDashboard);
   }
+  if (isClientUser) proxyEmbedParams.set("clientView", "1");
   const proxyEmbedQs = proxyEmbedParams.toString();
   const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}${proxyEmbedQs ? `?${proxyEmbedQs}` : ""}`;
   const dashboardEmbedUrl = isInternalUser ? legacyEmbedUrl : proxyEmbedUrl;
@@ -1527,6 +1530,13 @@ function buildDashboardUrl(
     /** "YYYY-MM" — auto-applies the dashboard's month-override mode on
      *  initial load. Anything else is silently dropped. */
     monthOverride?: string;
+    /** When true, the dashboard suppresses negative-signal surfaces that
+     *  clients can't interpret correctly out of context — top-bar "bad"
+     *  alert chips, "wasted budget" / "expensive vs portfolio" insight
+     *  cards, funnel-weakness diagnoses. Positive insights and headline
+     *  numbers stay visible. Set whenever the viewer is a client tier
+     *  user (see isClientUser in this file). */
+    clientView?: boolean;
   },
 ): string {
   let url: URL;
@@ -1542,6 +1552,7 @@ function buildDashboardUrl(
   if (filters.monthOverride && /^\d{4}-\d{2}$/.test(filters.monthOverride)) {
     url.searchParams.set("monthOverride", filters.monthOverride);
   }
+  if (filters.clientView) url.searchParams.set("clientView", "1");
   return url.toString();
 }
 
