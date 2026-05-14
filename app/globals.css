@@ -15413,6 +15413,20 @@ html[data-theme="dark"] .kanban-card-umbrella {
   color: var(--muted);
 }
 
+/* Owner badge in the kanban card header — small avatar of the person
+   currently on the hook for the card's status (same mapping as the
+   queue's status pill via responsibleEmailForStatus). Lives in the
+   header next to the title so the answer to "whose court is the
+   ball in?" is the first thing the eye lands on after the title;
+   the footer's full people-row still shows everyone else. */
+.kanban-card-owner {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  /* Tight against the title — no extra gap; the kanban-card-header's
+     own gap already separates this from neighbors. */
+}
+
 /* ── People-involved row (kanban card) ──────────────────────────────
    Same overlapping-avatar shape as .kanban-card-assignees but each
    avatar lives in a wrapper span so the highlighted person can carry

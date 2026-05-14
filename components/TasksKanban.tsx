@@ -25,7 +25,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
-import { STATUS_LABELS, STATUS_EMOJIS } from "@/components/TaskStatusCell";
+import {
+  STATUS_LABELS,
+  STATUS_EMOJIS,
+  responsibleEmailForStatus,
+} from "@/components/TaskStatusCell";
 import Avatar from "@/components/Avatar";
 import { useTaskPreview } from "@/components/TaskPreviewProvider";
 import { fireConfetti, firePulse } from "@/lib/confetti";
@@ -618,6 +622,33 @@ function KanbanCard({
             {TASK_USER_STATE_LABELS[userState]}
           </span>
         )}
+        {/* Owner avatar — same per-status "whose court is the ball in?"
+            mapping as the queue's status pill. Kanban doesn't have a
+            status pill on the card (the column IS the status), so we
+            surface the owner as a header badge instead. The footer's
+            kanban-card-person.is-highlighted ring still highlights the
+            same person inside the full people roster; this badge just
+            makes them glanceable without scanning the avatar cluster. */}
+        {(() => {
+          const ownerEmail = responsibleEmailForStatus(task);
+          if (!ownerEmail) return null;
+          const person = peopleByEmail.get(ownerEmail.toLowerCase());
+          const display =
+            person?.he_name || person?.name || ownerEmail.split("@")[0] || "";
+          return (
+            <span
+              className="kanban-card-owner"
+              title={`${display} · אחראי על הסטטוס הנוכחי`}
+            >
+              <Avatar
+                name={ownerEmail}
+                title={display}
+                role={person?.role}
+                size={18}
+              />
+            </span>
+          );
+        })()}
         <Link
           href={`/tasks/${encodeURIComponent(task.id)}`}
           className="kanban-card-title"

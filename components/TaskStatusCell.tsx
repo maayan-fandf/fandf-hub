@@ -25,7 +25,7 @@ import Avatar from "./Avatar";
  *  Multi-assignee tasks: we pick the first email in the array. The
  *  others surface in the row's people cell; this avatar is a "lead
  *  owner" hint, not a full roster. */
-function responsibleEmailForStatus(task: WorkTask): string {
+export function responsibleEmailForStatus(task: WorkTask): string {
   switch (task.status) {
     case "awaiting_handling":
     case "in_progress":
