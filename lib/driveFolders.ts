@@ -310,11 +310,18 @@ export type LatestPrisot = {
  *  image formats, and PDFs. PDFs are a common deliverable format
  *  for media plans (a spread exported from a Sheet, or a standalone
  *  PDF the agency built); they render via PrisotThumb when picked
- *  as latest. Anything else (Docs, raw bytes, video) is ignored
- *  because the renderer doesn't have a meaningful display path for
- *  them and the user only puts spreads in this folder by convention. */
+ *  as latest. Excel (.xlsx / .xls) is included alongside native
+ *  Google Sheets — uploaded media plans often arrive as .xlsx and
+ *  the helper's `isSheet` branch only fires for native Sheets, so
+ *  Excel files fall through to PrisotThumb (Drive's thumbnail API
+ *  handles xlsx preview rendering). Anything else (Docs, raw bytes,
+ *  video) is ignored because the renderer doesn't have a meaningful
+ *  display path for them and the user only puts spreads in this
+ *  folder by convention. */
 const PRISOT_MIMES = [
   "application/vnd.google-apps.spreadsheet",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
   "application/pdf",
   "image/jpeg",
   "image/png",
