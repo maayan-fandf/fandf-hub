@@ -2874,11 +2874,18 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
     height: 2.85rem;
     font-size: 1.3rem;
   }
-  /* Mirror the gemini-fab's horizontal anchor on mobile so both
-     FABs stack at the same x-position. Without this, .gemini-fab
-     would float 0.6rem closer to the screen edge than .quick-task-fab. */
+  /* Mirror the gemini-fab on mobile so the pair stacks as a unit:
+     same x-anchor (inset-inline-end), same footprint (2.85rem), same
+     icon size. Without this, the + FAB stayed at desktop's 3.5rem
+     and read as oversized next to the smaller gemini-fab — the user
+     flagged the visual mismatch 2026-05-14. The bottom offset still
+     keeps the + below ✨ (gemini-fab is at 4.75rem); ~1.6rem clears
+     iOS gesture bar via env(safe-area-inset-bottom). */
   .quick-task-fab {
     inset-inline-end: 1rem;
+    width: 2.85rem;
+    height: 2.85rem;
+    font-size: 1.5rem;
   }
 }
 
@@ -7248,8 +7255,13 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   height: 3.5rem;
   border-radius: 50%;
   border: none;
-  background: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
+  /* Full primary purple (matches the "+ משימה חדשה" primary button
+     on /tasks) instead of the soft primary-container tint — Maayan
+     flagged the lighter look made the + FAB read as secondary/muted
+     next to the bold gemini-fab purple, and inconsistent with the
+     "new task" CTA elsewhere in the hub. */
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
   font-size: 1.8rem;
   font-weight: 300;
   line-height: 1;
@@ -7266,13 +7278,13 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   user-select: none;
 }
 .quick-task-fab:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 8%, var(--md-sys-color-primary-container));
+  background: color-mix(in srgb, var(--md-sys-color-on-primary) 8%, var(--md-sys-color-primary));
   transform: translateY(-2px);
   box-shadow: var(--md-sys-elevation-level4);
 }
 .quick-task-fab:active {
   transform: translateY(0);
-  background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 10%, var(--md-sys-color-primary-container));
+  background: color-mix(in srgb, var(--md-sys-color-on-primary) 12%, var(--md-sys-color-primary));
 }
 @media print {
   .quick-task-fab { display: none !important; }
