@@ -557,17 +557,21 @@ export default async function ProjectOverviewPage({
       {/* Alerts section — pacing/budget/deadline/paused-budget signals for
           this project only. Same dismiss/snooze/revisit behavior as the
           morning page; dismissals are team-wide.
+          Internal-only — these are operational warnings (audience
+          mismatch, paused budget, ramp-up suggestions) that clients
+          shouldn't see surfaced in their own view of the project.
           Streamed via <Suspense> so the slow Apps-Script-backed
           getMorningFeed call (~1–3s cold) doesn't block the משימות /
-          תיוגים / הערות sections above from rendering. The section
-          materializes when ready; nothing visible while it's pending. */}
-      <Suspense fallback={null}>
-        <ProjectAlertsSection
-          projectName={projectName}
-          company={companyForDashboard}
-          monthOverride={monthOverride}
-        />
-      </Suspense>
+          תיוגים / הערות sections above from rendering. */}
+      {!isClientUser && (
+        <Suspense fallback={null}>
+          <ProjectAlertsSection
+            projectName={projectName}
+            company={companyForDashboard}
+            monthOverride={monthOverride}
+          />
+        </Suspense>
+      )}
 
       {/* Latest פריסה (spread / deployment sheet) — the most-recently-
           updated Google Sheet inside `<project>/פריסות/`. Internal-only:
@@ -627,18 +631,18 @@ export default async function ProjectOverviewPage({
           external "Consolidated" workbook (BMBY + Sehel). Sits below the
           dashboard iframe because it answers "what happened AFTER the
           lead came in" while the dashboard above shows "how leads got
-          here". Internal-only (mirrors LatestPrisotCard gate).
+          here". Surfaced for clients too — they care about their own
+          funnel and the card shows downstream-of-our-ads activity,
+          not internal F&F performance signals.
           Renders null when the project's Keys row has no `CRM` mapping
           or the source tab has no matching rows. */}
-      {!isClientUser && (
-        <Suspense fallback={null}>
-          <CrmFunnelCard
-            company={companyForDashboard}
-            project={projectName}
-            monthFilter={monthOverride}
-          />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <CrmFunnelCard
+          company={companyForDashboard}
+          project={projectName}
+          monthFilter={monthOverride}
+        />
+      </Suspense>
 
       {/* Landing-page behavior insights — Clarity API + Claude-generated
           Hebrew narrative. Internal-only (mirrors the LatestPrisotCard

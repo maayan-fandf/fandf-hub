@@ -260,7 +260,11 @@ export default async function RootLayout({
             )}
             {email && (
               <div className="topnav-user">
-                <UserSettingsMenu myEmail={email} isAdmin={isAdminUser} />
+                <UserSettingsMenu
+                  myEmail={email}
+                  isAdmin={isAdminUser}
+                  isClientUser={isClientUser}
+                />
                 <ThemeToggle />
                 <span
                   className="topnav-hint"

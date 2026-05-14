@@ -122,6 +122,7 @@ const ADMIN_LINKS: { href: string; label: string; emoji: string }[] = [
 export default function UserSettingsMenu({
   myEmail,
   isAdmin,
+  isClientUser = false,
 }: {
   myEmail: string;
   /** When true, the menu renders an "Admin" section linking to the
@@ -129,6 +130,12 @@ export default function UserSettingsMenu({
    *  top nav. Server-computed in layout.tsx so the section can render
    *  on first paint without a /api/me round-trip. */
   isAdmin: boolean;
+  /** When true, the menu hides staff-only sections (Google Tasks sync,
+   *  customer-emails toggle, archive controls, view-as, admin) — clients
+   *  see only "התראות במייל" + "השתק התראות בהאב", which are the
+   *  prefs they can actually exercise on their view of the hub.
+   *  Server-computed in layout.tsx alongside isAdmin. */
+  isClientUser?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -312,90 +319,99 @@ export default function UserSettingsMenu({
                     <small>הצמדות במשימות + ממתין לאישור + סיכום יומי</small>
                   </span>
                 </label>
-                <label className="settings-menu-toggle">
-                  <input
-                    type="checkbox"
-                    checked={prefs.gtasks_sync}
-                    disabled={busy === "gtasks_sync"}
-                    onChange={(e) => save({ gtasks_sync: e.target.checked })}
-                  />
-                  <span className="settings-menu-toggle-label">
-                    סנכרון Google Tasks
-                    <small>הוספה ועדכון של משימות ברשימת ה-Tasks האישית</small>
-                  </span>
-                </label>
-                <label className="settings-menu-toggle">
-                  <input
-                    type="checkbox"
-                    checked={prefs.gmail_customer_poll}
-                    disabled={busy === "gmail_customer_poll"}
-                    onChange={(e) =>
-                      save({ gmail_customer_poll: e.target.checked })
-                    }
-                  />
-                  <span className="settings-menu-toggle-label">
-                    מיילים מלקוחות
-                    <small>
-                      הצגת מיילים מלקוחות רשומים (Keys col E) מ-3 הימים
-                      האחרונים, להמרה למשימה או להעברה לחלל הצ׳אט
-                    </small>
-                  </span>
-                </label>
-                {prefs.gmail_customer_poll && (
-                  <Link
-                    href="/customer-emails"
-                    className="settings-menu-link"
-                    onClick={() => setOpen(false)}
-                  >
-                    📩 פתח מיילים מלקוחות →
-                  </Link>
+                {!isClientUser && (
+                  <>
+                    <label className="settings-menu-toggle">
+                      <input
+                        type="checkbox"
+                        checked={prefs.gtasks_sync}
+                        disabled={busy === "gtasks_sync"}
+                        onChange={(e) => save({ gtasks_sync: e.target.checked })}
+                      />
+                      <span className="settings-menu-toggle-label">
+                        סנכרון Google Tasks
+                        <small>הוספה ועדכון של משימות ברשימת ה-Tasks האישית</small>
+                      </span>
+                    </label>
+                    <label className="settings-menu-toggle">
+                      <input
+                        type="checkbox"
+                        checked={prefs.gmail_customer_poll}
+                        disabled={busy === "gmail_customer_poll"}
+                        onChange={(e) =>
+                          save({ gmail_customer_poll: e.target.checked })
+                        }
+                      />
+                      <span className="settings-menu-toggle-label">
+                        מיילים מלקוחות
+                        <small>
+                          הצגת מיילים מלקוחות רשומים (Keys col E) מ-3 הימים
+                          האחרונים, להמרה למשימה או להעברה לחלל הצ׳אט
+                        </small>
+                      </span>
+                    </label>
+                    {prefs.gmail_customer_poll && (
+                      <Link
+                        href="/customer-emails"
+                        className="settings-menu-link"
+                        onClick={() => setOpen(false)}
+                      >
+                        📩 פתח מיילים מלקוחות →
+                      </Link>
+                    )}
+                  </>
                 )}
               </div>
 
-              <div className="settings-menu-section">
-                <label className="settings-menu-toggle">
-                  <input
-                    type="checkbox"
-                    checked={prefs.hide_archived}
-                    disabled={busy === "hide_archived"}
-                    onChange={(e) =>
-                      save({ hide_archived: e.target.checked })
-                    }
-                  />
-                  <span className="settings-menu-toggle-label">
-                    הסתר משימות שבוצעו / בוטלו
-                    <small>
-                      ב‑/tasks הארכיון נכנס תחת תפריט נפתח. ניתן להציגו
-                      בלחיצה על 📦 ארכיון או על ידי סינון לפי סטטוס.
-                    </small>
-                  </span>
-                </label>
-                <label className="settings-menu-input-row">
-                  <span className="settings-menu-input-label">
-                    ימים עד ארכיון
-                    <small>
-                      משימות שבוצעו / בוטלו לפני יותר מהמספר הזה נחשבות
-                      ארכיון
-                    </small>
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    step={1}
-                    className="settings-menu-input settings-menu-input-narrow"
-                    value={prefs.archive_after_days}
-                    disabled={busy === "archive_after_days"}
-                    onChange={(e) =>
-                      // Track the typed value as-is so the input stays
-                      // controlled; only persist a valid clamped value.
-                      void save({
-                        archive_after_days: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-              </div>
+              {/* Archive prefs apply to /tasks, which is staff-only —
+                  hide the section entirely for clients (they have no
+                  משימות nav and no archive concept). */}
+              {!isClientUser && (
+                <div className="settings-menu-section">
+                  <label className="settings-menu-toggle">
+                    <input
+                      type="checkbox"
+                      checked={prefs.hide_archived}
+                      disabled={busy === "hide_archived"}
+                      onChange={(e) =>
+                        save({ hide_archived: e.target.checked })
+                      }
+                    />
+                    <span className="settings-menu-toggle-label">
+                      הסתר משימות שבוצעו / בוטלו
+                      <small>
+                        ב‑/tasks הארכיון נכנס תחת תפריט נפתח. ניתן להציגו
+                        בלחיצה על 📦 ארכיון או על ידי סינון לפי סטטוס.
+                      </small>
+                    </span>
+                  </label>
+                  <label className="settings-menu-input-row">
+                    <span className="settings-menu-input-label">
+                      ימים עד ארכיון
+                      <small>
+                        משימות שבוצעו / בוטלו לפני יותר מהמספר הזה נחשבות
+                        ארכיון
+                      </small>
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      step={1}
+                      className="settings-menu-input settings-menu-input-narrow"
+                      value={prefs.archive_after_days}
+                      disabled={busy === "archive_after_days"}
+                      onChange={(e) =>
+                        // Track the typed value as-is so the input stays
+                        // controlled; only persist a valid clamped value.
+                        void save({
+                          archive_after_days: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="settings-menu-section">
                 <div className="settings-menu-label">
@@ -444,6 +460,10 @@ export default function UserSettingsMenu({
                   )}
               </div>
 
+              {/* View-as is a staff impersonation feature (lets a
+                  manager scope filters to another team member).
+                  Hidden for clients — they only have themselves. */}
+              {!isClientUser && (
               <div className="settings-menu-section">
                 <div className="settings-menu-label">
                   הצג כ
@@ -501,6 +521,7 @@ export default function UserSettingsMenu({
                   </button>
                 )}
               </div>
+              )}
 
               {isAdmin && (
                 <div className="settings-menu-section settings-menu-admin">
