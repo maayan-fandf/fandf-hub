@@ -8576,14 +8576,16 @@ html[data-theme="dark"] .morning-severity-chip .chip-count { background: rgba(25
   list-style: none; padding: 0; margin: .5em 0 0;
   display: flex; flex-direction: column; gap: .45em;
 }
-/* On the project page (.project-section direct parent), use a 2-column
-   grid on desktop — alerts are short and the section sits at full
-   container width below the 2-column tasks/discussion grid, so 1-per-
-   row wastes horizontal space. /morning's per-project lists keep the
-   single-column flex behavior because each project card there is
-   already narrow. */
+/* 2-column alert grid on desktop. Applies in both contexts where this
+   list appears:
+     - /projects/[name] alerts section (.project-section > the list)
+     - /morning project cards (.morning-card > the list) — each card
+       is a full-width row on /morning so there's plenty of horizontal
+       space; the original 1-per-row was wasting it.
+   Mobile (<900px) keeps the flex-column behavior from the base rule. */
 @media (min-width: 900px) {
-  .project-section > .morning-signal-list {
+  .project-section > .morning-signal-list,
+  .morning-card > .morning-signal-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.55em;
