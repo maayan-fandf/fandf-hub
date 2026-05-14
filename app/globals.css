@@ -9699,6 +9699,14 @@ html[data-theme="dark"] .inline-edit-err {
 }
 .tasks-desc-preview {
   color: var(--muted); font-size: .9em; margin-top: .2em;
+  /* Break long URLs / unbroken token runs anywhere so they wrap inside
+     the column instead of forcing the title-cell wide. Without this a
+     figma.com / drive.google.com URL in the 90-char description preview
+     pushes the table past 100% width and triggers a horizontal
+     scrollbar on JUST the bucket that happens to contain that row —
+     looks like an unintentional scroll-quirk rather than a feature. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* (The tasks-company-header / tasks-project-header / tasks-person-header
