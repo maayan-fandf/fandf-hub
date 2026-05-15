@@ -150,13 +150,18 @@ export default function MetricsIframe({ src, projectName }: Props) {
                 // See the MutationObserver send() for rationale.
               }
             }}
-            // Defer the iframe fetch until the user is close to scrolling
-            // it into view. The metrics section sits below the משימות /
-            // תיוגים / הערות cards, so the dashboard's Apps Script load
-            // (5–15s) no longer competes for network/CPU during the page
-            // render. Most users only scroll down occasionally — this
-            // turns the metrics into an opt-in cost.
-            loading="lazy"
+            // Eager — start the Apps Script fetch immediately on page
+            // load rather than deferring to "user scrolls near". The
+            // dashboard render is 5–15s on a typical project and 30s+
+            // on heavy ones (e.g. אורנבך ראשון לציון: 4-channel funnel
+            // pivot through Sheets); with loading="lazy" the user
+            // scrolls down, sees a blank iframe, and gives up before
+            // it renders. Pre-loading while the user reads the top of
+            // the page (משימות / תיוגים / הערות) hides most of the
+            // render cost behind their reading time. Network/CPU cost
+            // is acceptable: only one iframe per project page, modern
+            // browsers prioritize in-viewport requests anyway.
+            loading="eager"
             // sandbox lets Apps Script JS run, talk to its own server, and
             // POST forms — same permissions as loading in a normal tab.
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
