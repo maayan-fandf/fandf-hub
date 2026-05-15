@@ -2107,6 +2107,32 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   color: transparent;
 }
 
+/* F&F company mark — small square logo at the visual right edge of
+   the topnav. Acts as a wayfinding anchor + secondary "home" target
+   alongside the ✨ Hub brand link beside it. */
+.topnav-fandf-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--md-sys-shape-corner-small);
+  transition: opacity var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+  opacity: 0.85;
+}
+.topnav-fandf-logo:hover {
+  opacity: 1;
+}
+.topnav-fandf-logo img {
+  display: block;
+  height: 22px;
+  width: auto;
+}
+/* In dark mode the logo (black on transparent) disappears — invert
+   so it reads as white on dark surface. */
+html[data-theme="dark"] .topnav-fandf-logo img {
+  filter: invert(1);
+}
+
 .topnav-link {
   color: var(--md-sys-color-on-surface-variant);
   font-size: var(--md-sys-typescale-label-large-size);

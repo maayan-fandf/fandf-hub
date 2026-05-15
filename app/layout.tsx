@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Rubik } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -206,6 +207,20 @@ export default async function RootLayout({
         </Suspense>
         <nav className="topnav">
           <div className="topnav-inner">
+            {/* F&F company mark — first in DOM order so it appears at
+                the visual right edge of the topnav (RTL). Clicking
+                returns the user to /, same destination as the ✨ Hub
+                brand link beside it. Maayan asked 2026-05-15 to add a
+                company logo to the topnav as a wayfinding anchor. */}
+            <Link href="/" className="topnav-fandf-logo" aria-label="F&F — חזרה לדף הבית">
+              <Image
+                src="/fandf-logo.png"
+                alt="F&F"
+                width={28}
+                height={28}
+                priority
+              />
+            </Link>
             <Link href="/" className="topnav-brand">
               ✨ Hub
             </Link>
