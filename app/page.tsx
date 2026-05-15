@@ -85,10 +85,23 @@ export default async function HomePage() {
     : new Set<string>();
 
   // endIso map from the morning feed — powers the hide-ended filter.
+  // inactiveByProject — projects with no current campaign activity
+  // (paused-budget signal active, or never ran). Powers the
+  // hide-inactive filter (mirrors hide-ended). General (כללי) is
+  // never marked inactive here; the menu component re-checks that
+  // anyway as a defense-in-depth.
   const endIsoByProject = new Map<string, string>();
+  const inactiveByProject = new Set<string>();
   if (morning) {
     for (const p of morning.projects) {
       if (p.endIso) endIsoByProject.set(p.name, p.endIso);
+      const hasPausedSignal = p.signals.some(
+        (s) => s.kind === "paused-budget" && !s.dismissed,
+      );
+      const neverRan = p.spend === 0 && p.budget === 0;
+      if (hasPausedSignal || neverRan) {
+        inactiveByProject.add(p.name);
+      }
     }
   }
   const byProject = counts?.byProject ?? {};
@@ -225,12 +238,22 @@ export default async function HomePage() {
             const anyMine = g.projects.some((p) =>
               mineKeys.has(`${p.company}|${p.name}`),
             );
+            // "Fully inactive" — every non-General project is paused/
+            // never-ran. General (כללי) is excluded so a company that
+            // only has its catch-all as "active" still collapses out
+            // when hide-inactive is on.
+            const allInactive =
+              g.projects.filter((p) => p.name !== GENERAL_PROJECT_NAME).length > 0 &&
+              g.projects
+                .filter((p) => p.name !== GENERAL_PROJECT_NAME)
+                .every((p) => inactiveByProject.has(p.name));
             return (
               <details
                 key={g.company || "__ungrouped"}
                 className="company-group"
                 data-co={slot}
                 data-all-ended={allEnded ? "1" : "0"}
+                data-all-inactive={allInactive ? "1" : "0"}
                 data-any-mine={anyMine ? "1" : "0"}
               >
                 <summary className="company-group-summary">
@@ -263,12 +286,15 @@ export default async function HomePage() {
                       endIsoByProject.get(p.name),
                     );
                     const isMine = mineKeys.has(`${p.company}|${p.name}`);
+                    const isGeneral = p.name === GENERAL_PROJECT_NAME;
+                    const inactive = !isGeneral && inactiveByProject.has(p.name);
                     return (
                       <li
                         key={p.name}
                         data-ended={ended ? "1" : "0"}
+                        data-inactive={inactive ? "1" : "0"}
                         data-mine={isMine ? "1" : "0"}
-                        data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
+                        data-general={isGeneral ? "1" : "0"}
                       >
                         <Link href={projectHref(p.name, p.company)}>
                           <div className="project-pill-top">

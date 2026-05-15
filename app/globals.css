@@ -1134,6 +1134,24 @@ html[data-hide-ended="1"] .projects-nav-company[data-all-ended="1"] {
   display: none;
 }
 
+/* Hide-inactive CSS: parallel to hide-ended for projects with no current
+   campaign activity (paused-budget signal active, or never ran).
+   data-hide-inactive="1" on <html> hides individual inactive rows and
+   fully-inactive company groups. General (כללי) entries always show
+   regardless — the page/menu components stamp data-inactive="0" on them. */
+html[data-hide-inactive="1"] .project-list > li[data-inactive="1"] {
+  display: none;
+}
+html[data-hide-inactive="1"] .company-group[data-all-inactive="1"] {
+  display: none;
+}
+html[data-hide-inactive="1"] .projects-nav-projects > li[data-inactive="1"] {
+  display: none;
+}
+html[data-hide-inactive="1"] .projects-nav-company[data-all-inactive="1"] {
+  display: none;
+}
+
 /* "רק שלי" CSS: the toggle writes data-show-mine="1" on <html>.
    Mirrors the hide-ended pattern — non-mine project rows hide, and
    companies whose every project is non-mine collapse out of the grid.
@@ -8151,6 +8169,62 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   height: min(80vh, 720px);
   border: 0;
   display: block;
+}
+
+/* Pointer-event shield used during iframe resize. Off by default so
+   the iframe stays interactive; flipped to absolute-fill while the
+   user drags the handle, so pointermove events keep firing on the
+   wrapper instead of being swallowed by the cross-origin iframe. */
+.metrics-frame-shield {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+}
+.metrics-frame-shield[data-active="1"] {
+  pointer-events: auto;
+  /* No visible style — the user shouldn't notice it's there. The
+     handle's :active state below provides the visual feedback. */
+}
+
+/* Resize handle — sits flush against the bottom edge of the iframe
+   wrap. Wide enough to be easy to grab without crowding the page; the
+   grip line in the middle is the visual cue. ns-resize cursor signals
+   vertical drag intent across browsers. */
+.metrics-frame-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 14px;
+  cursor: ns-resize;
+  background: var(--surface, transparent);
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background-color 0.12s ease;
+}
+.metrics-frame-resize-handle:hover,
+.metrics-frame-resize-handle[data-active="1"] {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-primary, #1a73e8) 14%,
+    transparent
+  );
+}
+.metrics-frame-resize-grip {
+  display: block;
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--md-sys-color-on-surface-variant, #5f6368);
+  opacity: 0.45;
+  transition: opacity 0.12s ease, width 0.12s ease;
+}
+.metrics-frame-resize-handle:hover .metrics-frame-resize-grip,
+.metrics-frame-resize-handle[data-active="1"] .metrics-frame-resize-grip {
+  opacity: 0.85;
+  width: 72px;
 }
 
 .metrics-loading {

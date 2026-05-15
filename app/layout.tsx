@@ -52,7 +52,7 @@ import {
   type Project,
 } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
-import { getEndIsoByProject } from "@/lib/projectEnded";
+import { getProjectNavData } from "@/lib/projectEnded";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -117,12 +117,16 @@ export default async function RootLayout({
   // shortname inside TopnavUserMenu, so the pill always renders.
   let myHeName = "";
   let myRole = "";
-  // endIso per project, sourced from the morning feed (via a thin
-  // unstable_cache wrapper that stores only the slim `{name → endIso}`
-  // map — see lib/projectEnded.ts for why). Powers the "hide ended
-  // projects" behavior in the topnav dropdown so the same
-  // html[data-hide-ended="1"] toggle controls both home grid + nav.
+  // endIso + inactive map per project, sourced from the morning feed
+  // (via a thin unstable_cache wrapper that stores only slim slug-keyed
+  // maps — see lib/projectEnded.ts for why). Powers two nav filters:
+  //   - data-hide-ended="1" → hides projects whose endIso passed
+  //   - data-hide-inactive="1" → hides projects with no current
+  //     campaign activity (paused-budget signal, or never ran)
+  // Both attributes flip on <html> from HomeFilterBar, so the same
+  // toggles control the top-nav dropdown AND the home grid.
   let endIsoByProject: Record<string, string> = {};
+  let inactiveByProject: Record<string, true> = {};
   if (email) {
     viewAs = await getEffectiveViewAs(email).catch(() => "");
     try {
@@ -154,15 +158,17 @@ export default async function RootLayout({
     } catch {
       // Silent — empty name/role is the rendering fallback.
     }
-    // Cached-per-user via getEndIsoByProject — 60s TTL, stores only
-    // the small slug-keyed map (NOT the full multi-MB morning feed,
+    // Cached-per-user via getProjectNavData — 60s TTL, stores only
+    // the small slug-keyed maps (NOT the full multi-MB morning feed,
     // which would silently bust Next.js's 2MB unstable_cache ceiling).
     // Skipped for client users since morning feed is staff-only.
     if (!isClientUser) {
-      endIsoByProject = await getEndIsoByProject(
+      const navData = await getProjectNavData(
         viewAs || email,
         viewAs || undefined,
-      ).catch(() => ({}));
+      ).catch(() => ({ endIso: {}, inactive: {} as Record<string, true> }));
+      endIsoByProject = navData.endIso;
+      inactiveByProject = navData.inactive;
     }
   }
 
@@ -235,6 +241,7 @@ export default async function RootLayout({
               <ProjectsNavMenu
                 projects={navProjects}
                 endIsoByProject={endIsoByProject}
+                inactiveByProject={inactiveByProject}
               />
             ) : (
               <Link href="/" className="topnav-link">

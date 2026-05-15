@@ -48,8 +48,13 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
 }
 
 /**
- * Per-user `{ projectName → endIso }` map, cached with a thin
- * unstable_cache wrapper.
+ * Per-user nav-filter data, cached with a thin unstable_cache wrapper.
+ *
+ * Returns the small slug-keyed maps the top-nav + home grid need to
+ * decide which projects to show or hide:
+ *   - endIso: project end-date → drives the "ended" filter
+ *   - inactive: true when the project has no active campaign this
+ *     month → drives the "active campaigns only" filter
  *
  * Why a wrapper instead of calling getMorningFeed directly: the full
  * morning-feed payload can exceed Next.js's 2MB unstable_cache ceiling
@@ -58,32 +63,65 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
  * store. Without this wrapper, the top-nav dropdown would trigger a
  * fresh Sheets read on every page render for those users.
  *
- * This wrapper extracts only `{name: endIso}` (a few hundred bytes for
- * 30 projects, well under 2MB) so the cache reliably stores. Same
- * 60s TTL as the underlying feed — staleness on "is this project
- * ended" is fine to the day.
+ * This wrapper extracts only the two slug-keyed maps (a few hundred
+ * bytes for 30 projects, well under 2MB) so the cache reliably stores.
+ * Same 60s TTL as the underlying feed.
  *
  * Tag-invalidated via "morning-feed" alongside the underlying feed
  * cache, so any future revalidateTag("morning-feed") clears both.
+ *
+ * "Inactive" heuristic: a project counts as inactive when it has an
+ * active (non-dismissed) `paused-budget` signal — this is the Apps
+ * Script side's existing notion of "approved budget but no recent
+ * spend". Also catches the never-launched case (no budget AND no
+ * spend at all) so projects that were configured but never ran
+ * stop cluttering the nav. Past-end projects are NOT marked inactive
+ * here — the `ended` filter handles those independently so the user
+ * can still toggle ended back on without revealing paused-but-current
+ * projects too.
  */
-export const getEndIsoByProject = unstable_cache(
+export const getProjectNavData = unstable_cache(
   async (
     effectiveEmail: string,
     overrideEmail: string | undefined,
-  ): Promise<Record<string, string>> => {
+  ): Promise<{
+    endIso: Record<string, string>;
+    inactive: Record<string, true>;
+  }> => {
     const scope = morningScopeFor(effectiveEmail);
     try {
       const morning = await getMorningFeed({ scope, overrideEmail });
-      const out: Record<string, string> = {};
+      const endIso: Record<string, string> = {};
+      const inactive: Record<string, true> = {};
       for (const p of morning.projects) {
-        if (p.endIso) out[p.name] = p.endIso;
+        if (p.endIso) endIso[p.name] = p.endIso;
+        const hasPausedSignal = p.signals.some(
+          (s) => s.kind === "paused-budget" && !s.dismissed,
+        );
+        const neverRan = p.spend === 0 && p.budget === 0;
+        if (hasPausedSignal || neverRan) {
+          inactive[p.name] = true;
+        }
       }
-      return out;
+      return { endIso, inactive };
     } catch {
-      // Best-effort — empty map = nothing hides, the safer default.
-      return {};
+      // Best-effort — empty maps = nothing hides, the safer default.
+      return { endIso: {}, inactive: {} };
     }
   },
-  ["endIsoByProject"],
+  ["projectNavData"],
   { revalidate: 60, tags: ["morning-feed"] },
 );
+
+/**
+ * Back-compat thin wrapper — older callsites import the endIso map
+ * directly. New code should call getProjectNavData() to get both
+ * fields in one shot from the same cache entry.
+ */
+export async function getEndIsoByProject(
+  effectiveEmail: string,
+  overrideEmail: string | undefined,
+): Promise<Record<string, string>> {
+  const { endIso } = await getProjectNavData(effectiveEmail, overrideEmail);
+  return endIso;
+}

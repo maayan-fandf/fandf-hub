@@ -15,9 +15,17 @@ import { isProjectEndedByIso } from "@/lib/projectEnded";
 // or the SSR default), per-project <li>s with data-ended="1" hide via CSS,
 // and company groups where every project is ended (data-all-ended="1") hide
 // entirely. Same data attributes + same CSS pattern as the home grid.
+//
+// Hide-inactive: same pattern but for projects without a currently-running
+// campaign (paused-budget signal active, or never spent anything). The
+// data-inactive / data-all-inactive attributes are stamped here and the CSS
+// hide rule keys off html[data-hide-inactive="1"]. The General (כללי)
+// catch-all project is always shown even when inactive so the user has a
+// place to drop ad-hoc tasks.
 export default function ProjectsNavMenu({
   projects,
   endIsoByProject,
+  inactiveByProject,
 }: {
   projects: Project[];
   /** Map of project name → endIso string. Empty object means we don't have
@@ -25,6 +33,9 @@ export default function ProjectsNavMenu({
    *  every entry stays data-ended="0" and the hide-ended toggle has no effect
    *  on this menu, which is the safe fallback. */
   endIsoByProject: Record<string, string>;
+  /** Set of project names that are currently inactive (paused-budget signal
+   *  or never ran). Empty object = no filter applies, all stay data-inactive="0". */
+  inactiveByProject: Record<string, true>;
 }) {
   const grouped = groupByCompany(projects);
 
@@ -57,11 +68,23 @@ export default function ProjectsNavMenu({
           const allEnded =
             list.length > 0 &&
             list.every((p) => isProjectEndedByIso(endIsoByProject[p.name]));
+          // Parallel concept for "fully inactive" — every non-General
+          // project lacks current campaign activity. General (כללי)
+          // is excluded from this aggregate because it always shows,
+          // so if a company's only "active" project is the General one
+          // we still want the whole company group to collapse.
+          const nonGeneral = list.filter(
+            (p) => p.name !== GENERAL_PROJECT_NAME,
+          );
+          const allInactive =
+            nonGeneral.length > 0 &&
+            nonGeneral.every((p) => !!inactiveByProject[p.name]);
           return (
             <div
               key={company}
               className="projects-nav-company"
               data-all-ended={allEnded ? "1" : "0"}
+              data-all-inactive={allInactive ? "1" : "0"}
             >
               <div
                 className="projects-nav-company-btn"
@@ -77,11 +100,17 @@ export default function ProjectsNavMenu({
               <ul className="projects-nav-projects" role="menu">
                 {list.map((p) => {
                   const ended = isProjectEndedByIso(endIsoByProject[p.name]);
+                  const isGeneral = p.name === GENERAL_PROJECT_NAME;
+                  // General is never marked inactive — it's a manual
+                  // catch-all (per feedback_general_project_manual) so
+                  // the user should always be able to reach it.
+                  const inactive = !isGeneral && !!inactiveByProject[p.name];
                   return (
                     <li
                       key={p.name}
                       data-ended={ended ? "1" : "0"}
-                      data-general={p.name === GENERAL_PROJECT_NAME ? "1" : "0"}
+                      data-inactive={inactive ? "1" : "0"}
+                      data-general={isGeneral ? "1" : "0"}
                     >
                       <Link
                         href={projectHref(p.name, p.company)}

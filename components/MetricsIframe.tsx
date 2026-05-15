@@ -48,6 +48,34 @@ function appendTheme(src: string, theme: "light" | "dark"): string {
   }
 }
 
+// Height bounds for the resize handle. Min keeps the iframe usable even
+// after a stray drag-to-zero; max prevents the user from making it
+// taller than the viewport (would push the CRM funnel below the fold).
+const MIN_HEIGHT = 320;
+const MAX_HEIGHT_VH = 0.92;
+const HEIGHT_KEY = "hub_metrics_iframe_height";
+// Default falls back to the existing CSS `min(80vh, 720px)` math. When
+// the user hasn't dragged yet, we don't write any inline height so the
+// stylesheet still rules — important on mobile where the breakpoint
+// overrides to a shorter default.
+function readSavedHeight(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = window.localStorage.getItem(HEIGHT_KEY);
+    if (!v) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return clampHeight(n);
+  } catch {
+    return null;
+  }
+}
+function clampHeight(h: number): number {
+  if (typeof window === "undefined") return h;
+  const max = Math.round(window.innerHeight * MAX_HEIGHT_VH);
+  return Math.max(MIN_HEIGHT, Math.min(max, Math.round(h)));
+}
+
 /**
  * Inline wrapper around the dashboard iframe, rendered inside a section
  * of the project overview page. Shows a "loading…" overlay until the
@@ -76,6 +104,13 @@ function appendTheme(src: string, theme: "light" | "dark"): string {
  * iframe makes exactly one network request. Server-side, we render
  * the loading skeleton without an iframe; that gets replaced on
  * hydrate when the theme is known.
+ *
+ * Vertical resize: a drag handle below the iframe lets the user grow
+ * the embed to nearly the full viewport so they can work the dashboard
+ * without a popout tab. Height persists in localStorage so it sticks
+ * across project switches — most users either prefer "compact" or
+ * "tall" and don't want to redo the drag every page. Double-click on
+ * the handle resets to the CSS default (clears the override).
  */
 export default function MetricsIframe({ src, projectName }: Props) {
   const [loaded, setLoaded] = useState(false);
@@ -84,6 +119,14 @@ export default function MetricsIframe({ src, projectName }: Props) {
   // theme on the client (via useEffect), we set it once and the iframe
   // mounts with theme already in its URL.
   const [themedSrc, setThemedSrc] = useState<string | null>(null);
+  // Custom height in px. null = use stylesheet default (no inline
+  // override). Hydrated from localStorage on mount.
+  const [customHeight, setCustomHeight] = useState<number | null>(null);
+  const [resizing, setResizing] = useState(false);
+  const dragStateRef = useRef<{ startY: number; startHeight: number } | null>(
+    null,
+  );
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -120,9 +163,86 @@ export default function MetricsIframe({ src, projectName }: Props) {
     return () => obs.disconnect();
   }, [src]);
 
+  // Hydrate persisted height on mount — separate from the theme effect
+  // so it runs exactly once and doesn't re-clamp on every src change.
+  useEffect(() => {
+    const saved = readSavedHeight();
+    if (saved != null) setCustomHeight(saved);
+  }, []);
+
+  // Pointer-based drag — single source of truth for resize. Uses Pointer
+  // Events so the same code path covers mouse, touch, and pen without
+  // separate listeners. `setPointerCapture` is critical because the
+  // iframe will capture pointermove events the moment the pointer
+  // crosses into it — capturing on the handle keeps the parent
+  // receiving moves throughout the drag.
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const wrapEl = wrapRef.current;
+    if (!wrapEl) return;
+    const currentHeight = wrapEl.getBoundingClientRect().height;
+    dragStateRef.current = { startY: e.clientY, startHeight: currentHeight };
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    setResizing(true);
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const st = dragStateRef.current;
+    if (!st) return;
+    const dy = e.clientY - st.startY;
+    setCustomHeight(clampHeight(st.startHeight + dy));
+  }
+  function onPointerEnd(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStateRef.current) return;
+    dragStateRef.current = null;
+    setResizing(false);
+    try {
+      (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Capture may have already been released by the browser if the
+      // pointer was lost — non-fatal.
+    }
+    // Persist final height. Reading from the latest state via the
+    // wrapper ref keeps the saved value consistent even if React
+    // batched the last setCustomHeight call.
+    const wrapEl = wrapRef.current;
+    if (wrapEl) {
+      try {
+        const h = Math.round(wrapEl.getBoundingClientRect().height);
+        window.localStorage.setItem(HEIGHT_KEY, String(h));
+      } catch {
+        // Private mode / quota — height persisted in-memory for the
+        // session is still fine.
+      }
+    }
+  }
+
+  // Double-click resets to stylesheet default and clears the saved
+  // override. Useful escape hatch if the user got the size wrong on
+  // a small viewport.
+  function onHandleDoubleClick() {
+    setCustomHeight(null);
+    try {
+      window.localStorage.removeItem(HEIGHT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // When the user is mid-drag, an invisible shield over the iframe
+  // catches the pointer events that would otherwise be eaten by the
+  // cross-origin iframe — without it, the drag stalls the moment the
+  // pointer crosses into the iframe area.
   return (
     <>
-      <div className="metrics-frame-wrap">
+      <div
+        ref={wrapRef}
+        className="metrics-frame-wrap"
+        style={
+          customHeight != null
+            ? { height: `${customHeight}px`, minHeight: `${customHeight}px` }
+            : undefined
+        }
+      >
         {(!loaded || !themedSrc) && (
           <div className="metrics-loading">
             <span className="emoji" aria-hidden>📊</span>
@@ -135,6 +255,9 @@ export default function MetricsIframe({ src, projectName }: Props) {
             src={themedSrc}
             title={`דוח שיווקי — ${projectName}`}
             className="metrics-iframe"
+            style={
+              customHeight != null ? { height: `${customHeight}px` } : undefined
+            }
             onLoad={() => {
               setLoaded(true);
               // Belt-and-suspenders: even though the URL param already
@@ -172,6 +295,32 @@ export default function MetricsIframe({ src, projectName }: Props) {
             allow="clipboard-write"
           />
         )}
+        {/* Pointer shield: covers the iframe during drag so pointermove
+            events keep firing on the parent. Pointer-events:none normally
+            (so the iframe stays interactive), flipped on only while
+            resizing. */}
+        <div
+          className="metrics-frame-shield"
+          aria-hidden
+          data-active={resizing ? "1" : "0"}
+        />
+      </div>
+      {/* Drag handle: stripe under the iframe. Double-click resets to
+          the CSS default height. */}
+      <div
+        className="metrics-frame-resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="גרור כדי לשנות את גובה הדשבורד; לחיצה כפולה לגובה ברירת המחדל"
+        title="גרור כדי לשנות גובה • לחיצה כפולה — איפוס"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onDoubleClick={onHandleDoubleClick}
+        data-active={resizing ? "1" : "0"}
+      >
+        <span className="metrics-frame-resize-grip" aria-hidden />
       </div>
     </>
   );
