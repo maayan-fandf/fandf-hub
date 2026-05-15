@@ -1134,21 +1134,28 @@ html[data-hide-ended="1"] .projects-nav-company[data-all-ended="1"] {
   display: none;
 }
 
-/* Hide-inactive CSS: parallel to hide-ended for projects with no current
-   campaign activity (paused-budget signal active, or never ran).
-   data-hide-inactive="1" on <html> hides individual inactive rows and
-   fully-inactive company groups. General (כללי) entries always show
-   regardless — the page/menu components stamp data-inactive="0" on them. */
+/* Hide-inactive CSS: hides projects with no current campaign activity
+   (paused-budget signal active, or never ran). General (כללי) entries
+   always show regardless — the page/menu components stamp
+   data-inactive="0" on them.
+
+   Two scoping policies on purpose:
+   1. The topnav dropdown menu is ALWAYS filtered — clutter in a tight
+      hover-menu is far worse than missing a paused project, and the
+      user can always reach paused projects from the full home grid.
+      So no html[data-hide-inactive] gate on the menu rules.
+   2. The home grid follows the HomeFilterBar toggle so the user has
+      an escape hatch to see paused projects when they need to. */
+.projects-nav-projects > li[data-inactive="1"] {
+  display: none;
+}
+.projects-nav-company[data-all-inactive="1"] {
+  display: none;
+}
 html[data-hide-inactive="1"] .project-list > li[data-inactive="1"] {
   display: none;
 }
 html[data-hide-inactive="1"] .company-group[data-all-inactive="1"] {
-  display: none;
-}
-html[data-hide-inactive="1"] .projects-nav-projects > li[data-inactive="1"] {
-  display: none;
-}
-html[data-hide-inactive="1"] .projects-nav-company[data-all-inactive="1"] {
   display: none;
 }
 

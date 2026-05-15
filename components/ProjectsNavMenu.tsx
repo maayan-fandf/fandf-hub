@@ -38,6 +38,15 @@ export default function ProjectsNavMenu({
   inactiveByProject: Record<string, true>;
 }) {
   const grouped = groupByCompany(projects);
+  // The dropdown menu is always filtered to active projects (see globals.css
+  // — the .projects-nav-projects li[data-inactive="1"] rule is unconditional).
+  // Count must reflect what the user actually sees, so subtract the inactive
+  // non-General projects. General (כללי) entries are excluded from the
+  // inactive set by the per-li logic below, so they still count.
+  const visibleCount = projects.reduce(
+    (n, p) => n + (inactiveByProject[p.name] ? 0 : 1),
+    0,
+  );
 
   return (
     <div className="projects-nav-menu">
@@ -55,7 +64,7 @@ export default function ProjectsNavMenu({
       </ActiveLink>
       <div className="projects-nav-dropdown" role="menu">
         <Link href="/" className="projects-nav-all" role="menuitem">
-          כל הפרויקטים ({projects.length})
+          כל הפרויקטים ({visibleCount})
         </Link>
         {grouped.length === 0 && (
           <div className="projects-nav-empty">אין פרויקטים זמינים</div>
@@ -92,7 +101,15 @@ export default function ProjectsNavMenu({
                 tabIndex={0}
               >
                 <span className="projects-nav-company-name">{company}</span>
-                <span className="projects-nav-company-count">{list.length}</span>
+                <span className="projects-nav-company-count">
+                  {/* Count only what's actually shown — the menu is
+                      always-filtered to active, so the raw list length
+                      would over-report. */}
+                  {list.reduce(
+                    (n, p) => n + (inactiveByProject[p.name] ? 0 : 1),
+                    0,
+                  )}
+                </span>
                 <span className="projects-nav-company-chev" aria-hidden>
                   ‹
                 </span>
