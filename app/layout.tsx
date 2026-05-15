@@ -219,12 +219,17 @@ export default async function RootLayout({
                 brand link beside it. Maayan asked 2026-05-15 to add a
                 company logo to the topnav as a wayfinding anchor. */}
             <Link href="/" className="topnav-fandf-logo" aria-label="F&F — חזרה לדף הבית">
+              {/* Animated transparent WebP, 64x64 source padded to square so
+                  the 28x28 navbar slot renders without distortion. `unoptimized`
+                  is required — Next's image optimizer otherwise extracts a
+                  single static frame, defeating the animation. */}
               <Image
-                src="/fandf-logo.png"
+                src="/fandf-logo.webp"
                 alt="F&F"
                 width={28}
                 height={28}
                 priority
+                unoptimized
               />
             </Link>
             <Link href="/" className="topnav-brand">
