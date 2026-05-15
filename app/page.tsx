@@ -85,21 +85,17 @@ export default async function HomePage() {
     : new Set<string>();
 
   // endIso map from the morning feed — powers the hide-ended filter.
-  // inactiveByProject — projects with no current campaign activity
-  // (paused-budget signal active, or never ran). Powers the
-  // hide-inactive filter (mirrors hide-ended). General (כללי) is
-  // never marked inactive here; the menu component re-checks that
-  // anyway as a defense-in-depth.
+  // inactiveByProject — projects with no current-month media spend.
+  // morning.spend is summed from the master tab's `current` rows only,
+  // so spend === 0 means "not running a budget this month". Powers the
+  // hide-inactive filter (mirrors hide-ended). General (כללי) is never
+  // marked inactive — the page/menu stamp data-inactive="0" on it.
   const endIsoByProject = new Map<string, string>();
   const inactiveByProject = new Set<string>();
   if (morning) {
     for (const p of morning.projects) {
       if (p.endIso) endIsoByProject.set(p.name, p.endIso);
-      const hasPausedSignal = p.signals.some(
-        (s) => s.kind === "paused-budget" && !s.dismissed,
-      );
-      const neverRan = p.spend === 0 && p.budget === 0;
-      if (hasPausedSignal || neverRan) {
+      if (!(p.spend > 0)) {
         inactiveByProject.add(p.name);
       }
     }

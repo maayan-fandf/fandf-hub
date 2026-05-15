@@ -70,15 +70,25 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
  * Tag-invalidated via "morning-feed" alongside the underlying feed
  * cache, so any future revalidateTag("morning-feed") clears both.
  *
- * "Inactive" heuristic: a project counts as inactive when it has an
- * active (non-dismissed) `paused-budget` signal — this is the Apps
- * Script side's existing notion of "approved budget but no recent
- * spend". Also catches the never-launched case (no budget AND no
- * spend at all) so projects that were configured but never ran
- * stop cluttering the nav. Past-end projects are NOT marked inactive
- * here — the `ended` filter handles those independently so the user
- * can still toggle ended back on without revealing paused-but-current
- * projects too.
+ * "Inactive" = no current-month media spend. The morning feed's
+ * `spend` is summed exclusively from the master tab's `current` rows
+ * (see dashboard-clasp getProjectsData ~L1879), so spend > 0 means
+ * the project is actively running a budget THIS month and spend === 0
+ * means it isn't — which is exactly what "show only running budgets"
+ * means. We deliberately do NOT use the `paused-budget` signal here:
+ * that only fires for Facebook campaigns explicitly marked PAUSED
+ * with a daily budget, so it misses the common cases (campaign
+ * deleted, never set up, Google-only paused, budget approved but
+ * never spent — e.g. a project carrying an approved budget at ₪0
+ * actual). Keying purely off current spend catches all of them.
+ *
+ * Fail-open: if the feed errors or returns no projects, the map is
+ * empty and nothing is flagged — the nav shows everything, which is
+ * the safe default (better to show a stale project than hide a live
+ * one).
+ *
+ * Past-end projects are NOT marked inactive here — the `ended` filter
+ * handles those independently.
  */
 export const getProjectNavData = unstable_cache(
   async (
@@ -95,11 +105,8 @@ export const getProjectNavData = unstable_cache(
       const inactive: Record<string, true> = {};
       for (const p of morning.projects) {
         if (p.endIso) endIso[p.name] = p.endIso;
-        const hasPausedSignal = p.signals.some(
-          (s) => s.kind === "paused-budget" && !s.dismissed,
-        );
-        const neverRan = p.spend === 0 && p.budget === 0;
-        if (hasPausedSignal || neverRan) {
+        // No current-month spend → not a running budget → inactive.
+        if (!(p.spend > 0)) {
           inactive[p.name] = true;
         }
       }
