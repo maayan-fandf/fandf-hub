@@ -2865,29 +2865,14 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
     max-width: 100vw;
     border-inline-start: none;
   }
-  /* Mobile FAB pair — both 2.85rem at inset-inline-end:1rem so they
-     stack as a tight vertical strip with a 0.5rem visible gap. Math:
-     quick-task-fab base = 1rem from bottom edge + safe-area; gemini-fab
-     sits at 1 + 2.85 + 0.5 = 4.35rem above the same anchor. Maayan
-     re-flagged 2026-05-15 that the pair still read as unaligned —
-     turned out the previous mobile rule overrode only gemini-fab's
-     bottom, leaving quick-task-fab on the desktop's 1.6rem. Resulting
-     0.3rem gap was uneven against the visible 1.75rem desktop gap and
-     the eye read it as "stacked but off". */
-  .gemini-fab {
-    bottom: calc(4.35rem + env(safe-area-inset-bottom, 0px));
-    inset-inline-end: 1rem;
-    width: 2.85rem;
-    height: 2.85rem;
-    font-size: 1.3rem;
-  }
-  .quick-task-fab {
-    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-    inset-inline-end: 1rem;
-    width: 2.85rem;
-    height: 2.85rem;
-    font-size: 1.5rem;
-  }
+  /* NOTE: the mobile FAB sizing/positioning rules USED to live here,
+     but they were getting overridden at mobile width by the
+     .quick-task-fab base rule farther down the file (~line 7250).
+     Both rules have identical specificity → CSS picks the later one,
+     so the mobile @media block at the top of the file lost. The
+     responsive overrides now live AFTER the .quick-task-fab base
+     rule — search for "Mobile FAB pair (must come after the
+     desktop .quick-task-fab base rule)" further down. */
 }
 
 /* Sign-in / unauthorized cards */
@@ -7296,6 +7281,32 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
 }
 @media print {
   .quick-task-fab { display: none !important; }
+}
+
+/* Mobile FAB pair (must come after the desktop .quick-task-fab base
+   rule above so source order doesn't sink the responsive override).
+   Both buttons share size + x-anchor; bottoms are offset so they
+   stack as a tight vertical strip with a 0.5rem visible gap above
+   the iOS gesture bar (env(safe-area-inset-bottom)). Previously this
+   block lived at the top of the file next to the .gemini-drawer
+   responsive rule, but it lost to .quick-task-fab's later base rule
+   at every mobile width — same specificity, so source order wins.
+   See the breadcrumb stub at the top of the file for the trail. */
+@media (max-width: 640px) {
+  .gemini-fab {
+    bottom: calc(4.35rem + env(safe-area-inset-bottom, 0px));
+    inset-inline-end: 1rem;
+    width: 2.85rem;
+    height: 2.85rem;
+    font-size: 1.3rem;
+  }
+  .quick-task-fab {
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    inset-inline-end: 1rem;
+    width: 2.85rem;
+    height: 2.85rem;
+    font-size: 1.5rem;
+  }
 }
 
 /* ─── Keyboard help (?) — M3 basic dialog ──────────────────────── */
