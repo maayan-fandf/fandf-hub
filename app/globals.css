@@ -1116,46 +1116,37 @@ a:hover {
   background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
 }
 
-/* Hide-ended CSS: the toggle writes data-hide-ended="1" on <html>. When set,
-   individual ended project rows AND fully-ended company groups disappear. */
-html[data-hide-ended="1"] .project-list > li[data-ended="1"] {
+/* Unified "show only live campaigns" filter.
+
+   One toggle on the home page (HomeFilterBar) writes data-hide-ended="1"
+   on <html>. When set, the home grid hides everything that isn't a
+   live campaign: projects past their end-date (data-ended="1") AND
+   projects with no current-month spend (data-inactive="1"), plus the
+   company groups where every project is one or the other. Merged from
+   two separate toggles per Maayan 2026-05-16 — the only question the
+   grid needs to answer is "is this live right now".
+
+   The top-nav dropdown is ALWAYS filtered to live (no data-hide-ended
+   gate) — a tight hover-menu should never carry dead weight, and the
+   full grid is one click away if the user needs to see everything. */
+html[data-hide-ended="1"] .project-list > li[data-ended="1"],
+html[data-hide-ended="1"] .project-list > li[data-inactive="1"] {
   display: none;
 }
-html[data-hide-ended="1"] .company-group[data-all-ended="1"] {
+html[data-hide-ended="1"] .company-group[data-all-ended="1"],
+html[data-hide-ended="1"] .company-group[data-all-inactive="1"] {
   display: none;
 }
 
-/* Same hide-ended treatment applied to the top-nav projects dropdown so
-   the toggle on the home page controls both surfaces consistently. */
-html[data-hide-ended="1"] .projects-nav-projects > li[data-ended="1"] {
-  display: none;
-}
-html[data-hide-ended="1"] .projects-nav-company[data-all-ended="1"] {
-  display: none;
-}
-
-/* Hide-inactive CSS: hides projects with no current campaign activity
-   (paused-budget signal active, or never ran). General (כללי) entries
-   always show regardless — the page/menu components stamp
-   data-inactive="0" on them.
-
-   Two scoping policies on purpose:
-   1. The topnav dropdown menu is ALWAYS filtered — clutter in a tight
-      hover-menu is far worse than missing a paused project, and the
-      user can always reach paused projects from the full home grid.
-      So no html[data-hide-inactive] gate on the menu rules.
-   2. The home grid follows the HomeFilterBar toggle so the user has
-      an escape hatch to see paused projects when they need to. */
+/* Dropdown — unconditionally hide non-live (ended OR no current spend).
+   General (כללי) always shows; the menu component stamps
+   data-ended="0" / data-inactive="0" on it. */
+.projects-nav-projects > li[data-ended="1"],
 .projects-nav-projects > li[data-inactive="1"] {
   display: none;
 }
+.projects-nav-company[data-all-ended="1"],
 .projects-nav-company[data-all-inactive="1"] {
-  display: none;
-}
-html[data-hide-inactive="1"] .project-list > li[data-inactive="1"] {
-  display: none;
-}
-html[data-hide-inactive="1"] .company-group[data-all-inactive="1"] {
   display: none;
 }
 

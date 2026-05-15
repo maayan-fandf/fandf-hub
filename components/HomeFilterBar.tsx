@@ -11,18 +11,16 @@ const HIDE_ENDED_KEY = "hub_hide_ended";
 // Absence of a value MEANS "use default" — which means future
 // transient renders can't write spurious "0" entries.
 const SHOW_MINE_KEY = "hub_show_mine_v3";
-// Same storage discipline as HIDE_ENDED — only write "0" when user
-// flips off the default; clear the key when they flip back on.
-const HIDE_INACTIVE_KEY = "hub_hide_inactive";
 
-// Filter bar for the home page — three controls:
-//   1. הצג / הסתר שהסתיימו  — hides project rows past their end-date
-//      Default: hide ended.
-//   2. הצג / הסתר לא פעילים — hides projects with no current campaign
-//      activity (paused-budget signal or never-ran). Default: hide
-//      inactive — keeps the menu and grid focused on what's running
-//      right now.
-//   3. רק שלי / הכל — narrows the grid to projects where the user is
+// Filter bar for the home page — two controls:
+//   1. הצג / הסתר שהושלמו — one toggle that hides everything that
+//      isn't a live campaign: projects past their end-date AND
+//      projects with no current-month spend. Default: hide (show
+//      only live). Earlier this was two separate pills (ended +
+//      inactive); merged per Maayan 2026-05-16 — the distinction
+//      was noise, "is this campaign live right now" is the only
+//      question the home grid needs to answer.
+//   2. רק שלי / הכל — narrows the grid to projects where the user is
 //      on the roster (same "involved at" semantic as /tasks).
 //      Default: רק שלי (narrowed).
 //
@@ -32,8 +30,11 @@ const HIDE_INACTIVE_KEY = "hub_hide_inactive";
 // "default applies", which makes the defaults immune to mid-render
 // state flips writing spurious values.
 export default function HomeFilterBar() {
+  // One state drives the unified "hide non-live" filter. Kept on the
+  // HIDE_ENDED_KEY / data-hide-ended attribute so the existing CSS +
+  // SSR default in layout.tsx keep working unchanged — the attribute
+  // now means "hide ended AND non-spending" via the globals.css rules.
   const [hideEnded, setHideEnded] = useState(true);
-  const [hideInactive, setHideInactive] = useState(true);
   const [showMine, setShowMine] = useState(true);
   const [mounted, setMounted] = useState(false);
 
@@ -43,8 +44,6 @@ export default function HomeFilterBar() {
     try {
       const v = localStorage.getItem(HIDE_ENDED_KEY);
       if (v === "0") setHideEnded(false);
-      const ia = localStorage.getItem(HIDE_INACTIVE_KEY);
-      if (ia === "0") setHideInactive(false);
       const m = localStorage.getItem(SHOW_MINE_KEY);
       // Only flip OFF the default when the user has explicitly opted
       // out — any other value (including missing) keeps the default.
@@ -60,9 +59,8 @@ export default function HomeFilterBar() {
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.dataset.hideEnded = hideEnded ? "1" : "0";
-    document.documentElement.dataset.hideInactive = hideInactive ? "1" : "0";
     document.documentElement.dataset.showMine = showMine ? "1" : "0";
-  }, [hideEnded, hideInactive, showMine, mounted]);
+  }, [hideEnded, showMine, mounted]);
 
   // Apply default data-attributes immediately on first mount, even if
   // the stored values match defaults — so CSS takes effect on first
@@ -72,9 +70,8 @@ export default function HomeFilterBar() {
     if (!mounted || appliedInit.current) return;
     appliedInit.current = true;
     document.documentElement.dataset.hideEnded = hideEnded ? "1" : "0";
-    document.documentElement.dataset.hideInactive = hideInactive ? "1" : "0";
     document.documentElement.dataset.showMine = showMine ? "1" : "0";
-  }, [mounted, hideEnded, hideInactive, showMine]);
+  }, [mounted, hideEnded, showMine]);
 
   // Click handlers — single source of truth for localStorage writes.
   // Each handler writes ONLY when moving to the non-default state and
@@ -86,17 +83,6 @@ export default function HomeFilterBar() {
     try {
       if (next) localStorage.removeItem(HIDE_ENDED_KEY);
       else localStorage.setItem(HIDE_ENDED_KEY, "0");
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function toggleHideInactive() {
-    const next = !hideInactive;
-    setHideInactive(next);
-    try {
-      if (next) localStorage.removeItem(HIDE_INACTIVE_KEY);
-      else localStorage.setItem(HIDE_INACTIVE_KEY, "0");
     } catch {
       /* ignore */
     }
@@ -120,29 +106,14 @@ export default function HomeFilterBar() {
         onClick={toggleHideEnded}
         title={
           hideEnded
-            ? "מציג רק פרויקטים פעילים (הסתיימו לפני יותר מ-5 ימים מוסתרים)"
-            : "הסתר פרויקטים שתאריך הסיום שלהם עבר לפני יותר מ-5 ימים"
+            ? "מציג רק קמפיינים פעילים. לחיצה תציג גם פרויקטים שהסתיימו או ללא הוצאה החודש."
+            : "מציג הכל. לחיצה תסתיר פרויקטים שהסתיימו או ללא הוצאה החודש."
         }
       >
         <span className="home-filter-pill-icon" aria-hidden>
-          🕑
+          🟢
         </span>
-        <span>{hideEnded ? "הצג שהסתיימו" : "הסתר שהסתיימו"}</span>
-      </button>
-      <button
-        type="button"
-        className={`home-filter-pill home-filter-pill--button${hideInactive ? " is-active" : ""}`}
-        onClick={toggleHideInactive}
-        title={
-          hideInactive
-            ? "מציג רק קמפיינים פעילים החודש (פרויקטים ללא הוצאה / בהפסקה מוסתרים)"
-            : "הסתר פרויקטים ללא קמפיין פעיל החודש (תקציב מאושר אך ללא הוצאה, או טרם הושק)"
-        }
-      >
-        <span className="home-filter-pill-icon" aria-hidden>
-          ⏸
-        </span>
-        <span>{hideInactive ? "הצג לא פעילים" : "הסתר לא פעילים"}</span>
+        <span>{hideEnded ? "הצג הכל" : "רק קמפיינים פעילים"}</span>
       </button>
       {/* Segmented "scope" control — visual twin of the /tasks page's
           TasksScopeToggle so the gesture feels the same across surfaces.

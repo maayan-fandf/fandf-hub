@@ -119,12 +119,11 @@ export default async function RootLayout({
   let myRole = "";
   // endIso + inactive map per project, sourced from the morning feed
   // (via a thin unstable_cache wrapper that stores only slim slug-keyed
-  // maps — see lib/projectEnded.ts for why). Powers two nav filters:
-  //   - data-hide-ended="1" → hides projects whose endIso passed
-  //   - data-hide-inactive="1" → hides projects with no current
-  //     campaign activity (paused-budget signal, or never ran)
-  // Both attributes flip on <html> from HomeFilterBar, so the same
-  // toggles control the top-nav dropdown AND the home grid.
+  // maps — see lib/projectEnded.ts for why). The menu stamps
+  // data-ended / data-inactive on each row. The dropdown hides both
+  // unconditionally (always live-only); the home grid hides both
+  // behind the single data-hide-ended toggle from HomeFilterBar.
+  // "inactive" = no current-month spend (not a running budget).
   let endIsoByProject: Record<string, string> = {};
   let inactiveByProject: Record<string, true> = {};
   if (email) {
