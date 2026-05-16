@@ -82,10 +82,26 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
  * never spent — e.g. a project carrying an approved budget at ₪0
  * actual). Keying purely off current spend catches all of them.
  *
- * Fail-open: if the feed errors or returns no projects, the map is
- * empty and nothing is flagged — the nav shows everything, which is
- * the safe default (better to show a stale project than hide a live
- * one).
+ * Failure policy — DO NOT swallow-and-cache the empty case here.
+ * This used to `try/catch` and return empty maps on any morning-feed
+ * error. The trap: this fn is itself unstable_cache-wrapped, so a
+ * single transient failure (the morning feed is a ~3.8MB uncacheable
+ * read for admins and routinely trips the Sheets read-quota) cached
+ * an EMPTY result for the full 60s revalidate window. During that
+ * window the top-nav dropdown showed every project unfiltered while
+ * the home grid — which fetches the morning feed on its own, separate
+ * code path — had already recovered. The two surfaces visibly
+ * disagreed (Maayan 2026-05-16: "navbar still shows finished
+ * campaigns").
+ *
+ * Now: a feed error (or a degenerate zero-project feed, which is the
+ * shape a quota failure upstream produces) THROWS. unstable_cache
+ * does not cache a rejected call, so the next nav render simply
+ * retries instead of being pinned to a poisoned empty entry. The
+ * fail-open fallback still exists — but at the CALL SITE
+ * (layout.tsx's `.catch(() => emptyMaps)`), which means it applies to
+ * that one render only and never gets cached. Net effect: the
+ * dropdown converges to exactly what the home grid shows.
  *
  * Past-end projects are NOT marked inactive here — the `ended` filter
  * handles those independently.
@@ -99,22 +115,24 @@ export const getProjectNavData = unstable_cache(
     inactive: Record<string, true>;
   }> => {
     const scope = morningScopeFor(effectiveEmail);
-    try {
-      const morning = await getMorningFeed({ scope, overrideEmail });
-      const endIso: Record<string, string> = {};
-      const inactive: Record<string, true> = {};
-      for (const p of morning.projects) {
-        if (p.endIso) endIso[p.name] = p.endIso;
-        // No current-month spend → not a running budget → inactive.
-        if (!(p.spend > 0)) {
-          inactive[p.name] = true;
-        }
-      }
-      return { endIso, inactive };
-    } catch {
-      // Best-effort — empty maps = nothing hides, the safer default.
-      return { endIso: {}, inactive: {} };
+    const morning = await getMorningFeed({ scope, overrideEmail });
+    // A zero-project feed is the signature of an upstream failure
+    // (quota / timeout returning the empty envelope), not a real
+    // "this user has no projects". Throw so it isn't cached as the
+    // authoritative answer — see the failure-policy note above.
+    if (!morning.projects || morning.projects.length === 0) {
+      throw new Error("projectNavData: empty morning feed — not caching");
     }
+    const endIso: Record<string, string> = {};
+    const inactive: Record<string, true> = {};
+    for (const p of morning.projects) {
+      if (p.endIso) endIso[p.name] = p.endIso;
+      // No current-month spend → not a running budget → inactive.
+      if (!(p.spend > 0)) {
+        inactive[p.name] = true;
+      }
+    }
+    return { endIso, inactive };
   },
   ["projectNavData"],
   { revalidate: 60, tags: ["morning-feed"] },
