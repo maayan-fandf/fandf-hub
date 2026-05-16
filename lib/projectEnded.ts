@@ -13,7 +13,7 @@
  * and we'd double the underlying Sheets reads.
  */
 
-import { unstable_cache } from "next/cache";
+import { cache } from "react";
 import { getMorningFeed } from "@/lib/appsScript";
 
 /** Hub admins always see "all" projects. Mirrors the set used in
@@ -48,27 +48,40 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
 }
 
 /**
- * Per-user nav-filter data, cached with a thin unstable_cache wrapper.
- *
- * Returns the small slug-keyed maps the top-nav + home grid need to
- * decide which projects to show or hide:
+ * Per-user nav-filter data. Returns the small slug-keyed maps the
+ * top-nav dropdown needs to decide which projects to show or hide:
  *   - endIso: project end-date → drives the "ended" filter
- *   - inactive: true when the project has no active campaign this
- *     month → drives the "active campaigns only" filter
+ *   - inactive: true when the project has no current-month spend →
+ *     drives the "active campaigns only" filter
  *
- * Why a wrapper instead of calling getMorningFeed directly: the full
- * morning-feed payload can exceed Next.js's 2MB unstable_cache ceiling
- * for admin / scope=all users (~30 projects × heavy per-project blob),
- * which makes the underlying getMorningFeed cache silently fail to
- * store. Without this wrapper, the top-nav dropdown would trigger a
- * fresh Sheets read on every page render for those users.
+ * Wrapped in React's per-request `cache()`, NOT `unstable_cache`.
  *
- * This wrapper extracts only the two slug-keyed maps (a few hundred
- * bytes for 30 projects, well under 2MB) so the cache reliably stores.
- * Same 60s TTL as the underlying feed.
+ * Why this is critical (root cause of the 2026-05-16 "navbar still
+ * shows old projects" bug): this fn calls getMorningFeed, which is
+ * ITSELF unstable_cache-wrapped (fetchMorningFeedCached in
+ * lib/appsScript.ts). Next.js does not support invoking one
+ * unstable_cache function from inside another — the inner cached read
+ * resolves broken/empty within the outer cache's execution scope. So
+ * when getProjectNavData was unstable_cache-wrapped, its nested
+ * getMorningFeed call returned an empty feed, the zero-project guard
+ * threw, layout.tsx's `.catch(() => emptyMaps)` swallowed it, and the
+ * dropdown stamped data-ended="0"/data-inactive="0" on EVERY project
+ * — permanently, every render, for admins (scope=all). The home grid
+ * stayed correctly filtered because it calls getMorningFeed DIRECTLY
+ * (top-level, not nested). Proof: in a single request the grid was
+ * filtered while the nav was fully unfiltered — not a transient quota
+ * failure (that would knock out both, since they share the same
+ * fetchMorningFeedCached entry).
  *
- * Tag-invalidated via "morning-feed" alongside the underlying feed
- * cache, so any future revalidateTag("morning-feed") clears both.
+ * React `cache()` dedupes within a request without nesting another
+ * unstable_cache, so getProjectNavData now runs the IDENTICAL,
+ * non-nested getMorningFeed path the home grid uses — the two
+ * surfaces can no longer diverge. Cross-request caching is delegated
+ * to fetchMorningFeedCached's own 60s unstable_cache (the grid relies
+ * on exactly the same thing). On the home page, layout + page resolve
+ * the same morning-feed cache key → still one Sheets read per minute.
+ * Matches the repo's standing rule: prefer React `cache()` over
+ * unstable_cache for App-Hosting multi-instance safety.
  *
  * "Inactive" = no current-month media spend. The morning feed's
  * `spend` is summed exclusively from the master tab's `current` rows
@@ -82,31 +95,17 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
  * never spent — e.g. a project carrying an approved budget at ₪0
  * actual). Keying purely off current spend catches all of them.
  *
- * Failure policy — DO NOT swallow-and-cache the empty case here.
- * This used to `try/catch` and return empty maps on any morning-feed
- * error. The trap: this fn is itself unstable_cache-wrapped, so a
- * single transient failure (the morning feed is a ~3.8MB uncacheable
- * read for admins and routinely trips the Sheets read-quota) cached
- * an EMPTY result for the full 60s revalidate window. During that
- * window the top-nav dropdown showed every project unfiltered while
- * the home grid — which fetches the morning feed on its own, separate
- * code path — had already recovered. The two surfaces visibly
- * disagreed (Maayan 2026-05-16: "navbar still shows finished
- * campaigns").
- *
- * Now: a feed error (or a degenerate zero-project feed, which is the
- * shape a quota failure upstream produces) THROWS. unstable_cache
- * does not cache a rejected call, so the next nav render simply
- * retries instead of being pinned to a poisoned empty entry. The
- * fail-open fallback still exists — but at the CALL SITE
- * (layout.tsx's `.catch(() => emptyMaps)`), which means it applies to
- * that one render only and never gets cached. Net effect: the
- * dropdown converges to exactly what the home grid shows.
+ * Failure policy: a zero-project feed is the signature of an upstream
+ * failure (quota / timeout returning the empty envelope), not a real
+ * "this user has no projects". We THROW rather than return empty maps
+ * so the call site's fail-open `.catch(() => emptyMaps)` applies to
+ * that one render only. Nothing is persisted across requests now, so
+ * the next render retries fresh — no poisoned entry is possible.
  *
  * Past-end projects are NOT marked inactive here — the `ended` filter
  * handles those independently.
  */
-export const getProjectNavData = unstable_cache(
+export const getProjectNavData = cache(
   async (
     effectiveEmail: string,
     overrideEmail: string | undefined,
@@ -116,12 +115,8 @@ export const getProjectNavData = unstable_cache(
   }> => {
     const scope = morningScopeFor(effectiveEmail);
     const morning = await getMorningFeed({ scope, overrideEmail });
-    // A zero-project feed is the signature of an upstream failure
-    // (quota / timeout returning the empty envelope), not a real
-    // "this user has no projects". Throw so it isn't cached as the
-    // authoritative answer — see the failure-policy note above.
     if (!morning.projects || morning.projects.length === 0) {
-      throw new Error("projectNavData: empty morning feed — not caching");
+      throw new Error("projectNavData: empty morning feed");
     }
     const endIso: Record<string, string> = {};
     const inactive: Record<string, true> = {};
@@ -134,8 +129,6 @@ export const getProjectNavData = unstable_cache(
     }
     return { endIso, inactive };
   },
-  ["projectNavData"],
-  { revalidate: 60, tags: ["morning-feed"] },
 );
 
 /**

@@ -157,9 +157,14 @@ export default async function RootLayout({
     } catch {
       // Silent — empty name/role is the rendering fallback.
     }
-    // Cached-per-user via getProjectNavData — 60s TTL, stores only
-    // the small slug-keyed maps (NOT the full multi-MB morning feed,
-    // which would silently bust Next.js's 2MB unstable_cache ceiling).
+    // getProjectNavData uses React per-request cache() over a direct
+    // getMorningFeed call — same non-nested path the home grid uses, so
+    // the dropdown and grid can't diverge. (It must NOT be
+    // unstable_cache-wrapped: nesting that around the already-
+    // unstable_cache'd getMorningFeed silently returned an empty feed
+    // and left the nav permanently unfiltered — see projectEnded.ts.)
+    // The .catch keeps a single bad render fail-open without poisoning
+    // anything, since nothing persists across requests here.
     // Skipped for client users since morning feed is staff-only.
     if (!isClientUser) {
       const navData = await getProjectNavData(
