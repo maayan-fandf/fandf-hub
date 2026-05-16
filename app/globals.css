@@ -2384,6 +2384,32 @@ html[data-theme="dark"] .topnav-fandf-logo img {
   text-decoration: none;
 }
 
+/* ─── Projects nav on touch / very-narrow screens ─────────────────────
+   The fly-out is a hover-only, two-level, absolutely-positioned menu.
+   It cannot work on touch: there's no :hover, and the trigger is a
+   real <Link href="/"> so a tap navigates instead of opening it. Worse,
+   if :focus-within ever fired, the nested sub-menu (240px positioned
+   to the LEFT of the 280px dropdown) would shoot off the side of a
+   phone screen and force horizontal scroll.
+
+   So on touch (or any <=640px viewport) we suppress the dropdown
+   entirely and let "📂 פרויקטים" be a plain link to "/" — the home
+   grid, which is the canonical project list and is already filtered
+   (live + mine) and mobile-responsive. The ▾ chevron is dropped too,
+   since without a dropdown it's a misleading affordance.
+
+   `display:none` (not visibility) so it's fully removed from layout
+   on every interaction state — no half-open / overflow possible. */
+@media (hover: none), (max-width: 640px) {
+  .projects-nav-dropdown,
+  .projects-nav-projects {
+    display: none;
+  }
+  .projects-nav-chev {
+    display: none;
+  }
+}
+
 .topnav-user {
   margin-left: auto;
   display: flex;
