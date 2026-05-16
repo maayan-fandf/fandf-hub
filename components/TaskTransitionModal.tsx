@@ -118,6 +118,16 @@ export default function TaskTransitionModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Clarify-only: tag additional people to loop into the task. They're
+  // union-merged into the task's assignees server-side (via the
+  // additive `addAssignees` patch field), so the task shows up in
+  // their queue as a worker ("עובדים") and the awaiting_clarification
+  // ping reaches them together with the issuer (author).
+  const [people, setPeople] = useState<
+    { email: string; name: string; role: string }[]
+  >([]);
+  const [tagged, setTagged] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState("");
 
   // Reset whenever the modal closes so a second open doesn't carry
   // over a half-typed previous submission.
@@ -128,8 +138,35 @@ export default function TaskTransitionModal({
       setNote("");
       setBusy(false);
       setError(null);
+      setTagged([]);
+      setTagQuery("");
     }
   }, [open]);
+
+  // Lazy-load the people list the first time a clarify modal opens —
+  // the static directory is cheap and cached for the modal's lifetime.
+  // getModalTransitionKind is pure so it's safe to call before the
+  // early returns below (this effect must run unconditionally per the
+  // rules of hooks).
+  useEffect(() => {
+    if (!open) return;
+    if (getModalTransitionKind(fromStatus, newStatus) !== "clarify") return;
+    if (people.length > 0) return;
+    let cancelled = false;
+    fetch("/api/people")
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; people?: typeof people }) => {
+        if (cancelled) return;
+        if (d?.ok && Array.isArray(d.people)) setPeople(d.people);
+      })
+      .catch(() => {
+        // Non-fatal: tagging is optional, the clarify flow still works
+        // without the directory. The field just shows no suggestions.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, fromStatus, newStatus, people.length]);
 
   if (!open) return null;
 
@@ -350,13 +387,20 @@ export default function TaskTransitionModal({
       ]
         .filter(Boolean)
         .join(" · ");
+      const patch: {
+        status: WorkTaskStatus;
+        note: string;
+        addAssignees?: string[];
+      } = { status: newStatus, note: shortNote };
+      // Only the clarify modal exposes the tag field; guard on kind so
+      // a stray selection can't leak collaborators onto other flows.
+      if (kind === "clarify" && tagged.length > 0) {
+        patch.addAssignees = tagged;
+      }
       const updateRes = await fetch("/api/worktasks/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: taskId,
-          patch: { status: newStatus, note: shortNote },
-        }),
+        body: JSON.stringify({ id: taskId, patch }),
       });
       const updateData = (await updateRes.json().catch(() => ({}))) as
         | { ok: true }
@@ -497,6 +541,93 @@ export default function TaskTransitionModal({
             {note.length}/{MAX_NOTE}
           </span>
         </label>
+
+        {kind === "clarify" && (
+          <div className="task-transition-modal-tagfield">
+            <span className="task-transition-modal-taglabel">
+              תיוג עובדים נוספים (אופציונלי)
+            </span>
+            <p className="task-transition-modal-taghint">
+              המתויגים יתווספו כעובדים במשימה, יראו אותה ברשימת המשימות שלהם
+              ויקבלו את התראת הבירור יחד עם הכותב.
+            </p>
+            {tagged.length > 0 && (
+              <div className="task-transition-modal-tagchips">
+                {tagged.map((em) => {
+                  const p = people.find((x) => x.email === em);
+                  return (
+                    <span key={em} className="task-transition-modal-tagchip">
+                      {p?.name || em.split("@")[0]}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTagged(tagged.filter((e) => e !== em))
+                        }
+                        disabled={busy}
+                        aria-label="הסר תיוג"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <input
+              type="text"
+              className="task-transition-modal-url"
+              placeholder="חפש/י לפי שם או אימייל…"
+              value={tagQuery}
+              onChange={(e) => setTagQuery(e.target.value)}
+              disabled={busy}
+              dir="auto"
+            />
+            {tagQuery.trim() &&
+              (() => {
+                const q = tagQuery.trim().toLowerCase();
+                const matches = people
+                  .filter((p) => !tagged.includes(p.email))
+                  .filter(
+                    (p) =>
+                      p.email.toLowerCase().includes(q) ||
+                      (p.name || "").toLowerCase().includes(q),
+                  )
+                  .slice(0, 8);
+                return (
+                  <ul className="task-transition-modal-tagresults themed-scrollbar">
+                    {matches.length === 0 ? (
+                      <li className="task-transition-modal-tagempty">
+                        אין תוצאות
+                      </li>
+                    ) : (
+                      matches.map((p) => (
+                        <li key={p.email}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTagged([...tagged, p.email]);
+                              setTagQuery("");
+                            }}
+                            disabled={busy}
+                          >
+                            <span className="task-transition-modal-tagname">
+                              {p.name || p.email.split("@")[0]}
+                            </span>
+                            <span
+                              className="task-transition-modal-tagemail"
+                              dir="ltr"
+                            >
+                              {p.email}
+                            </span>
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                );
+              })()}
+          </div>
+        )}
 
         {error && <div className="task-transition-modal-error">{error}</div>}
 

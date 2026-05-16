@@ -1227,6 +1227,15 @@ export type TasksUpdatePatch = {
    *  do their own access check (assertProjectAccess at the top of
    *  tasksUpdateDirect only validates the OLD project). */
   project?: string;
+  /** Additive-only collaborators. Unlike `assignees` (full replace +
+   *  author-gated), addAssignees is union-merged with the task's
+   *  current assignees server-side and is NOT author-gated — it can
+   *  only ADD people, never remove, so any task participant (e.g. an
+   *  assignee or approver requesting clarification) may loop helpers
+   *  in. Used by the clarification modal's "tag additional people"
+   *  field. The merged set then flows through the normal assignees
+   *  diff (Google Tasks spawn, task_assigned ping, status_history). */
+  addAssignees?: string[];
 };
 
 /** Distinct campaigns that have at least one task on the given project,

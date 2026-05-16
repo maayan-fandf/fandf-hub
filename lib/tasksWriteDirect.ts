@@ -2044,6 +2044,29 @@ async function tasksUpdateDirectInner(
     }
   }
 
+  // Additive collaborators (clarification modal's "tag additional
+  // people"). Resolve AFTER the author-gate scan above — addAssignees
+  // is intentionally NOT gated (an assignee/approver requesting
+  // clarification must be able to loop helpers in), and converting it
+  // to `patch.assignees` here keeps it out of the gated patchKeys set.
+  // Union-only: it can add people, never remove. The result flows
+  // through the normal assignees diff below, so the new collaborators
+  // get the same Google Task spawn + task_assigned ping + history
+  // entry as any reassignment, and the awaiting_clarification audience
+  // (author + assignees) now includes them — pinged with the issuer.
+  if (Array.isArray(patch.addAssignees) && patch.addAssignees.length > 0) {
+    const cur = String(cell("mentions") ?? "")
+      .split(/[,;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const add = patch.addAssignees
+      .map((s) => String(s || "").trim().toLowerCase())
+      .filter((s) => s.includes("@") && !cur.includes(s));
+    if (add.length > 0) {
+      patch.assignees = [...cur, ...Array.from(new Set(add))];
+    }
+  }
+
   // Track if assignees changed so the after-write block can email
   // newcomers (we only know the merged set after side-effect work).
   let assigneeAdded: string[] = [];
