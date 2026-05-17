@@ -11040,6 +11040,68 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
 }
 .task-form-author-line b { color: var(--text); }
 
+/* Pricing panel — last block of the new-task form, above the submit
+   row. Reactive: resolves company/project/department/kind against the
+   Pricingsetup tab (project optional → company-level fallback). */
+.task-pricing-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .7em .9em;
+  margin-top: .6em;
+  background: var(--surface-soft, rgba(99,102,241,.04));
+  display: flex;
+  flex-direction: column;
+  gap: .5em;
+}
+.task-pricing-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 600;
+  font-size: .92em;
+  color: var(--text);
+}
+.task-pricing-total {
+  font-size: .9em;
+  color: var(--accent, #6366f1);
+  font-variant-numeric: tabular-nums;
+}
+.task-pricing-empty,
+.task-pricing-note {
+  font-size: .78em;
+  color: var(--muted);
+}
+.task-pricing-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+.task-pricing-lines li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .8em;
+  font-size: .86em;
+}
+.task-pricing-dept { color: var(--text); }
+.task-pricing-val {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
+  gap: .45em;
+}
+.task-pricing-basis {
+  font-weight: 400;
+  font-size: .82em;
+  color: var(--muted);
+}
+.task-pricing-na { color: var(--muted); font-size: .82em; }
+
 .tasks-priority-pill {
   display: inline-block;
   min-width: 1.5em;

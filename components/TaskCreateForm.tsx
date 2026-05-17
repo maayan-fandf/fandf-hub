@@ -20,6 +20,10 @@ import {
   type ChainTemplate,
 } from "@/lib/chainTemplates";
 import { roleEmoji } from "./RoleChip";
+import {
+  resolvePricing,
+  type PricingRow,
+} from "@/lib/pricingMatch";
 
 /** Hardcoded fallback used only when the names-to-emails sheet has no
  *  Role column populated. Real departments come from the people list
@@ -59,6 +63,8 @@ export default function TaskCreateForm({
   driveAccessToken,
   drivePickerApiKey,
   editingTask = null,
+  pricing = [],
+  showPricing = false,
 }: {
   projects: ProjectOption[];
   defaultProject: string;
@@ -125,6 +131,15 @@ export default function TaskCreateForm({
    *  Both surfaces now go through TaskCreateForm so departments / kind /
    *  people-picker behavior never drifts again. */
   editingTask?: WorkTask | null;
+  /** Rows from the Pricingsetup tab. Server-loaded in
+   *  app/tasks/new/page.tsx; the form resolves the price reactively
+   *  from the current company/project/department/kind. Empty → the
+   *  pricing panel renders a "not configured" hint. */
+  pricing?: PricingRow[];
+  /** Gate for the pricing panel — only the new-task page sets this.
+   *  Edit mode (app/tasks/[id]) renders the same form but doesn't load
+   *  pricing, so the panel must stay hidden there. */
+  showPricing?: boolean;
 }) {
   // Edit mode shorthand. Used in many places below to fork initial
   // state, hide create-only UI sections, and route the submit handler.
@@ -1068,6 +1083,22 @@ export default function TaskCreateForm({
 
   const companies = Array.from(byCompany.keys()).filter(Boolean).sort();
 
+  // Reactive pricing — recomputed whenever the keying fields change.
+  // project is optional: resolvePricing falls back to the company-level
+  // row (blank project cell) when no project-specific row exists.
+  const pricingResult = useMemo(
+    () =>
+      resolvePricing(pricing, {
+        company,
+        project,
+        departments,
+        kind,
+      }),
+    [pricing, company, project, departments, kind],
+  );
+  const fmtILS = (n: number) =>
+    "₪" + Math.round(n).toLocaleString("he-IL");
+
   return (
     <form className="task-form" onSubmit={onSubmit}>
       {error && <div className="error">{error}</div>}
@@ -1800,6 +1831,52 @@ export default function TaskCreateForm({
         <div className="task-form-author-line">
           כותב המשימה: <b dir="ltr">{currentUserEmail}</b>
         </div>
+      )}
+
+      {showPricing && (
+      <div className="task-pricing-panel" aria-live="polite">
+        <div className="task-pricing-head">
+          <span>💰 תמחור</span>
+          {pricingResult.hasAny && (
+            <span className="task-pricing-total">
+              סה״כ משוער: {fmtILS(pricingResult.total)}
+            </span>
+          )}
+        </div>
+        {departments.length === 0 || !kind ? (
+          <div className="task-pricing-empty">
+            בחר/י מחלקה וסוג כדי לראות תמחור.
+          </div>
+        ) : (
+          <ul className="task-pricing-lines">
+            {pricingResult.lines.map((l) => (
+              <li key={l.department}>
+                <span className="task-pricing-dept">
+                  {l.department} · {kind}
+                </span>
+                {l.unitPrice == null ? (
+                  <span className="task-pricing-na">אין תמחור מוגדר</span>
+                ) : (
+                  <span className="task-pricing-val">
+                    {fmtILS(l.unitPrice)}
+                    <span className="task-pricing-basis">
+                      {l.basis === "project"
+                        ? "לפי פרוייקט"
+                        : "לפי חברה"}
+                    </span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {pricingResult.anyMissing && departments.length > 0 && kind && (
+          <div className="task-pricing-note">
+            שילובים ללא מחיר אינם נכללים בסכום. הגדרת מחירים בלשונית
+            Pricingsetup.
+          </div>
+        )}
+      </div>
       )}
 
       <div className="task-form-actions">

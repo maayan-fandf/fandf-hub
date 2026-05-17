@@ -10,6 +10,7 @@ import { listChainTemplates } from "@/lib/chainTemplatesStore";
 import { CHAIN_TEMPLATES } from "@/lib/chainTemplates";
 import { getCommentByIdDirect } from "@/lib/commentsDirect";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
+import { readPricingSetup } from "@/lib/pricing";
 import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +56,15 @@ export default async function NewTaskPage({
   // Four independent fetches, all server-side so the form renders with
   // everything pre-populated (no loading spinners). The comment fetch
   // is skipped when `from_comment` isn't set — the common path.
-  const [projectsRes, peopleRes, me, commentSeed, formSchema, chainTemplatesFromSheet] =
+  const [
+    projectsRes,
+    peopleRes,
+    me,
+    commentSeed,
+    formSchema,
+    chainTemplatesFromSheet,
+    pricing,
+  ] =
     await Promise.all([
       getMyProjects().catch(() => null),
       tasksPeopleList().catch(() => ({ ok: false, people: [] })),
@@ -81,6 +90,14 @@ export default async function NewTaskPage({
       currentUserEmail()
         .then((email) =>
           email ? listChainTemplates(email).catch(() => []) : Promise.resolve([]),
+        )
+        .catch(() => []),
+      // Pricing rows (Pricingsetup tab) — passed to the form so it can
+      // resolve the price reactively as company/project/department/kind
+      // change. Best-effort: [] just hides the pricing panel.
+      currentUserEmail()
+        .then((email) =>
+          email ? readPricingSetup(email).catch(() => []) : Promise.resolve([]),
         )
         .catch(() => []),
     ]);
@@ -188,6 +205,8 @@ export default async function NewTaskPage({
             : null
         }
         chainTemplates={chainTemplates}
+        pricing={pricing}
+        showPricing
         driveAccessToken={session?.user?.accessToken}
         drivePickerApiKey={process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY}
       />
