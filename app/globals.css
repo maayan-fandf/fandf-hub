@@ -11395,11 +11395,32 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   .billing-row { grid-template-columns: 1fr 1fr; }
   .billing-row-head { display: none; }
 }
-/* /admin/time — same chrome as billing. 9 cols:
-   תאריך | משימה | בריף | פרוייקט | מחלקה | עובד | הערה | זמן | תועד ע״י */
+/* /admin/time — same chrome as billing. 10 cols:
+   תאריך | משימה | בריף | פרוייקט | מחלקה | עובד | הערה |
+   זמן בפועל | זמן | תועד ע״י */
 .billing-row.time-row {
   grid-template-columns:
-    5.5em 1.6fr 1fr 1fr .9fr 1fr 1.2fr .8fr .9fr;
+    5.5em 1.5fr 1fr 1fr .9fr 1fr 1.1fr .9fr 1.15fr .9fr;
+}
+.time-actual {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* "זמן" cell when the shown amount no longer matches the actual
+   בעבודה wall-clock (hand-edited, or trimmed by a pause). */
+.tl-mismatch {
+  border-color: rgba(217, 119, 6, .5) !important;
+  background: rgba(217, 119, 6, .12);
+}
+.tl-mismatch .bill-amount {
+  color: #b45309;
+}
+[data-theme="dark"] .tl-mismatch .bill-amount {
+  color: #fbbf24;
+}
+.bill-unit {
+  font-size: .8em;
+  color: var(--muted);
 }
 /* Keep the wide row from blowing up — clip overflow, full text on
    hover via the per-cell title attributes. */

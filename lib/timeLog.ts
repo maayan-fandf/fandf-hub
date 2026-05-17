@@ -171,6 +171,19 @@ export type TimeLogRow = {
   running?: boolean;
   /** Status-time rows only: in_progress but currently paused. */
   paused?: boolean;
+  /** True for the synthesized per-task status-time rows (vs the manual
+   *  ledger rows). Only these are editable / get the actual-vs-shown
+   *  comparison on /admin/time. */
+  isStatus?: boolean;
+  /** Status rows only: raw wall-clock minutes the task sat in בעבודה
+   *  (ignores pauses AND the manual override) — the "actual" column. */
+  rawMinutes?: number;
+  /** Status rows only: the pause-adjusted derived minutes BEFORE any
+   *  manual override (what to fall back to when an override is reset). */
+  autoMinutes?: number;
+  /** Status rows only: a manual `inprogress_minutes` override is set
+   *  (shown amount = override, not the derived value). */
+  overridden?: boolean;
   /** Status-time rows only: accumulated time is abnormally large and
    *  has NOT been manually corrected — likely left in ׳בעבודה׳ without
    *  real work (e.g. over a weekend). Drives the ⚠ "needs review"

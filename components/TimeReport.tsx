@@ -14,10 +14,15 @@ function fmtDur(min: number): string {
 
 /**
  * Time-tracking report — the informational sibling of /admin/billing.
- * Reads the TimeLog ledger, filters by month (+ optional company),
- * groups by company with sub-totals + a grand total (all in time, not
- * money — time does not drive a charge), and exports the filtered view
- * as CSV. Mirrors BillingReport so the two admin reports read the same.
+ *
+ * Status rows show TWO times: "זמן בפועל" (raw wall-clock the task sat
+ * in בעבודה — ignores pauses + edits) and "זמן" (the effective /
+ * shown amount = manual override ?? pause-adjusted derived). The "זמן"
+ * cell is inline-editable here (writes the `inprogress_minutes`
+ * override via /api/tasks/tracked-time, exactly like the task page).
+ * When the shown amount differs from "זמן בפועל" — because it was
+ * hand-edited, or because the pause button trimmed it — the זמן cell
+ * is color-flagged so it's obvious it no longer reflects reality.
  */
 export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
   const months = useMemo(
@@ -31,11 +36,40 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
   const [company, setCompany] = useState<string>("__all__");
   const [onlyRunning, setOnlyRunning] = useState(false);
   const [onlyReview, setOnlyReview] = useState(false);
-  // Tasks paused from this page in this session — so the row's
-  // indicator + button update immediately without a reload.
   const [pausedIds, setPausedIds] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string>("");
   const [actionErr, setActionErr] = useState("");
+  // Per-session manual edits: taskId → override minutes, or null = the
+  // override was cleared (revert to the derived value). Absent key =
+  // use the server value.
+  const [edited, setEdited] = useState<Record<string, number | null>>({});
+  const [editing, setEditing] = useState<string>("");
+  const [draft, setDraft] = useState<string>("");
+  const [savingId, setSavingId] = useState<string>("");
+
+  // Override currently in effect for a status row (local edit wins;
+  // else the server override — which equals r.minutes when overridden).
+  const overrideOf = (r: TimeLogRow): number | null => {
+    if (Object.prototype.hasOwnProperty.call(edited, r.taskId))
+      return edited[r.taskId];
+    return r.overridden ? r.minutes ?? 0 : null;
+  };
+  // Effective (shown / billed-equivalent) minutes for a row.
+  const effOf = (r: TimeLogRow): number => {
+    if (!r.isStatus) return r.minutes || 0;
+    const ov = overrideOf(r);
+    if (ov != null) return ov;
+    return r.autoMinutes ?? r.minutes ?? 0;
+  };
+  // Shown amount no longer equals the raw בעבודה wall-clock — either
+  // hand-edited to a different number, or trimmed by a pause.
+  const mismatchOf = (r: TimeLogRow): boolean =>
+    !!r.isStatus && effOf(r) !== (r.rawMinutes ?? 0);
+  const mismatchReason = (r: TimeLogRow): string => {
+    const ov = overrideOf(r);
+    if (ov != null) return "נערך ידנית — לא תואם את הזמן בפועל בסטטוס בעבודה";
+    return "הזמן צומצם בעקבות השהיה — לא תואם את הזמן בפועל";
+  };
 
   const monthRows = useMemo(
     () => rows.filter((r) => (month ? r.month === month : true)),
@@ -55,8 +89,6 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       ),
     [monthRows, company],
   );
-  // A row is "running" if the task's counter is live AND we haven't
-  // just paused it from here.
   const runningCount = useMemo(
     () =>
       byCompany.filter((r) => !!r.running && !pausedIds.has(r.taskId)).length,
@@ -97,6 +129,46 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
     }
   }
 
+  async function saveTime(taskId: string, reset: boolean) {
+    setSavingId(taskId);
+    setActionErr("");
+    try {
+      let body: Record<string, unknown>;
+      if (reset) {
+        body = { taskId, reset: true };
+      } else {
+        const n = Number(draft.replace(",", "."));
+        if (!Number.isFinite(n) || n < 0) {
+          setActionErr("יש להזין מספר דקות תקין");
+          setSavingId("");
+          return;
+        }
+        body = { taskId, minutes: Math.round(n) };
+      }
+      const res = await fetch("/api/tasks/tracked-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "save failed");
+      setEdited((prev) => ({
+        ...prev,
+        [taskId]: reset
+          ? null
+          : typeof data.inprogress_minutes === "number"
+            ? data.inprogress_minutes
+            : Math.round(Number(draft.replace(",", "."))),
+      }));
+      setEditing("");
+      setDraft("");
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingId("");
+    }
+  }
+
   const groups = useMemo(() => {
     const m = new Map<string, TimeLogRow[]>();
     for (const r of filtered) {
@@ -112,12 +184,13 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       .map(([co, rs]) => ({
         company: co,
         rows: rs.slice().sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)),
-        subtotal: rs.reduce((s, r) => s + (r.minutes || 0), 0),
+        subtotal: rs.reduce((s, r) => s + effOf(r), 0),
       }))
       .sort((a, b) => a.company.localeCompare(b.company, "he"));
-  }, [filtered]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, edited]);
 
-  const grandTotal = filtered.reduce((s, r) => s + (r.minutes || 0), 0);
+  const grandTotal = filtered.reduce((s, r) => s + effOf(r), 0);
 
   function exportCsv() {
     const head = [
@@ -130,8 +203,10 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       "worker",
       "departments",
       "kind",
+      "actual_minutes",
       "minutes",
       "hours",
+      "differs_from_actual",
       "note",
       "needs_review",
       "task_id",
@@ -142,6 +217,7 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
     const lines = [head.join(",")];
     for (const g of groups) {
       for (const r of g.rows) {
+        const eff = effOf(r);
         lines.push(
           [
             r.month,
@@ -153,8 +229,10 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
             r.worker ?? "",
             r.departments,
             r.kind,
-            String(r.minutes),
-            (r.minutes / 60).toFixed(2),
+            r.isStatus ? String(r.rawMinutes ?? 0) : "",
+            String(eff),
+            (eff / 60).toFixed(2),
+            mismatchOf(r) ? "1" : "",
             r.note,
             r.needsReview ? "1" : "",
             r.taskId,
@@ -180,9 +258,8 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
   if (rows.length === 0) {
     return (
       <div className="billing-empty">
-        אין עדיין תיעוד זמן. ה־ledger מתמלא אוטומטית בכל פעם שמישהו מתעד
-        זמן על משימה (בלוק ״מעקב זמן״ בעמוד המשימה). הזמן הוא מידע בלבד —
-        אינו משפיע על החיוב ללקוח. חזור/י לכאן אחרי שיתועד זמן.
+        אין עדיין תיעוד זמן. הדוח מתמלא אוטומטית מהזמן שמשימות נמצאות
+        בסטטוס ״בעבודה״. הזמן הוא מידע בלבד — אינו משפיע על החיוב ללקוח.
       </div>
     );
   }
@@ -280,6 +357,9 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                 <span>מחלקה</span>
                 <span>עובד</span>
                 <span>הערה</span>
+                <span title="זמן wall-clock בפועל בסטטוס בעבודה (לא כולל השהיות/עריכות)">
+                  זמן בפועל
+                </span>
                 <span>זמן</span>
                 <span>תועד ע״י</span>
               </div>
@@ -287,71 +367,164 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                 const locallyPaused = pausedIds.has(r.taskId);
                 const isRun = !!r.running && !locallyPaused;
                 const isPaused = locallyPaused || !!r.paused;
+                const eff = effOf(r);
+                const mism = mismatchOf(r);
+                const isEditing = editing === r.taskId;
+                const hasOverride = overrideOf(r) != null;
                 return (
-                <div
-                  className="billing-row time-row"
-                  role="row"
-                  key={`${r.taskId}-${r.loggedAt}-${i}`}
-                >
-                  <span title={r.loggedAt}>{r.loggedAt.slice(0, 10)}</span>
-                  <span
-                    className="time-task-cell"
-                    title={r.title || r.taskId}
+                  <div
+                    className="billing-row time-row"
+                    role="row"
+                    key={`${r.taskId}-${r.loggedAt}-${i}`}
                   >
-                    {r.needsReview && (
-                      <span
-                        className="time-review-flag"
-                        title="זמן חריג — בדוק/תקן (כנראה נשאר ׳בעבודה׳ ללא עבודה בפועל)"
-                        aria-label="לבדיקה"
-                      >
-                        ⚠
+                    <span title={r.loggedAt}>{r.loggedAt.slice(0, 10)}</span>
+                    <span
+                      className="time-task-cell"
+                      title={r.title || r.taskId}
+                    >
+                      {r.needsReview && (
+                        <span
+                          className="time-review-flag"
+                          title="זמן חריג — בדוק/תקן (כנראה נשאר ׳בעבודה׳ ללא עבודה בפועל)"
+                          aria-label="לבדיקה"
+                        >
+                          ⚠
+                        </span>
+                      )}
+                      {isRun ? (
+                        <span
+                          className="time-run-dot"
+                          title="רצה כעת"
+                          aria-label="רצה כעת"
+                        />
+                      ) : isPaused ? (
+                        <span
+                          className="time-run-dot is-paused"
+                          title="מושהה"
+                          aria-label="מושהה"
+                        />
+                      ) : null}
+                      {r.taskId ? (
+                        <Link
+                          href={`/tasks/${encodeURIComponent(r.taskId)}`}
+                          className="time-task-link"
+                        >
+                          {r.title || r.taskId}
+                        </Link>
+                      ) : (
+                        <span className="time-task-link">
+                          {r.title || "—"}
+                        </span>
+                      )}
+                      {isRun && (
+                        <button
+                          type="button"
+                          className="btn-ghost btn-sm time-pause-btn"
+                          disabled={busyId === r.taskId}
+                          onClick={() => pauseTask(r.taskId)}
+                          title="השהה את ספירת הזמן (בלי לשנות סטטוס)"
+                        >
+                          {busyId === r.taskId ? "…" : "⏸"}
+                        </button>
+                      )}
+                    </span>
+                    <span title={r.brief || ""}>{r.brief || "—"}</span>
+                    <span>{r.project || "—"}</span>
+                    <span>{r.departments || "—"}</span>
+                    <span title={r.worker || ""}>{r.worker || "—"}</span>
+                    <span title={r.note}>{r.note || "—"}</span>
+                    <span
+                      className="time-actual"
+                      title={
+                        r.isStatus
+                          ? "כמה זמן המשימה הייתה בפועל בסטטוס בעבודה"
+                          : ""
+                      }
+                    >
+                      {r.isStatus ? fmtDur(r.rawMinutes ?? 0) : "—"}
+                    </span>
+                    {!r.isStatus ? (
+                      <span className="billing-price">{fmtDur(eff)}</span>
+                    ) : isEditing ? (
+                      <span className="bill-edit">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          step="1"
+                          className="bill-edit-input"
+                          value={draft}
+                          autoFocus
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter")
+                              void saveTime(r.taskId, false);
+                            if (e.key === "Escape") {
+                              setEditing("");
+                              setDraft("");
+                            }
+                          }}
+                        />
+                        <span className="bill-unit">דק׳</span>
+                        <button
+                          type="button"
+                          className="btn-primary btn-sm"
+                          disabled={savingId === r.taskId}
+                          onClick={() => void saveTime(r.taskId, false)}
+                        >
+                          {savingId === r.taskId ? "…" : "שמור"}
+                        </button>
+                        {hasOverride && (
+                          <button
+                            type="button"
+                            className="btn-ghost btn-sm"
+                            disabled={savingId === r.taskId}
+                            title="חזרה לערך האוטומטי לפי היסטוריית הסטטוסים"
+                            onClick={() => void saveTime(r.taskId, true)}
+                          >
+                            איפוס
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-ghost btn-sm"
+                          disabled={savingId === r.taskId}
+                          onClick={() => {
+                            setEditing("");
+                            setDraft("");
+                            setActionErr("");
+                          }}
+                        >
+                          ✕
+                        </button>
                       </span>
-                    )}
-                    {isRun ? (
-                      <span
-                        className="time-run-dot"
-                        title="רצה כעת"
-                        aria-label="רצה כעת"
-                      />
-                    ) : isPaused ? (
-                      <span
-                        className="time-run-dot is-paused"
-                        title="מושהה"
-                        aria-label="מושהה"
-                      />
-                    ) : null}
-                    {r.taskId ? (
-                      <Link
-                        href={`/tasks/${encodeURIComponent(r.taskId)}`}
-                        className="time-task-link"
-                      >
-                        {r.title || r.taskId}
-                      </Link>
                     ) : (
-                      <span className="time-task-link">{r.title || "—"}</span>
-                    )}
-                    {isRun && (
                       <button
                         type="button"
-                        className="btn-ghost btn-sm time-pause-btn"
-                        disabled={busyId === r.taskId}
-                        onClick={() => pauseTask(r.taskId)}
-                        title="השהה את ספירת הזמן (בלי לשנות סטטוס)"
+                        className={
+                          "bill-cell" + (mism ? " tl-mismatch" : "")
+                        }
+                        title={
+                          mism
+                            ? `${mismatchReason(r)} (בפועל ${fmtDur(r.rawMinutes ?? 0)}). לחיצה לעריכה`
+                            : "לחיצה לעריכת הזמן (גובר על הערך האוטומטי)"
+                        }
+                        onClick={() => {
+                          setEditing(r.taskId);
+                          setDraft(String(Math.round(eff)));
+                          setActionErr("");
+                        }}
                       >
-                        {busyId === r.taskId ? "…" : "⏸"}
+                        <span className="bill-amount">{fmtDur(eff)}</span>
+                        <span className="bill-pencil" aria-hidden>
+                          ✎
+                        </span>
                       </button>
                     )}
-                  </span>
-                  <span title={r.brief || ""}>{r.brief || "—"}</span>
-                  <span>{r.project || "—"}</span>
-                  <span>{r.departments || "—"}</span>
-                  <span title={r.worker || ""}>{r.worker || "—"}</span>
-                  <span title={r.note}>{r.note || "—"}</span>
-                  <span className="billing-price">{fmtDur(r.minutes)}</span>
-                  <span className="billing-by">
-                    {r.loggedBy.split("@")[0]}
-                  </span>
-                </div>
+                    <span className="billing-by">
+                      {r.loggedBy.split("@")[0]}
+                    </span>
+                  </div>
                 );
               })}
             </div>

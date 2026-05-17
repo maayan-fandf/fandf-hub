@@ -45,6 +45,10 @@ export type InProgressTime = {
   /** Total ACTIVE minutes in_progress (closed intervals + live tail,
    *  minus paused stretches), rounded. */
   minutes: number;
+  /** Total RAW minutes in_progress — pure wall-clock between entering
+   *  בעבודה and the next status change, ignoring pauses AND any manual
+   *  override. "How long the task actually sat in בעבודה." */
+  rawMinutes: number;
   /** True when in_progress right now AND not paused — the value is
    *  still growing. */
   isRunning: boolean;
@@ -99,10 +103,12 @@ export function deriveInProgressTime(
   // 2. For each interval, replay pauses scoped to that interval (each
   //    starts un-paused → no bleed across status sessions).
   let totalMs = 0;
+  let rawMs = 0;
   let isPaused = false;
   let runningSinceMs = 0;
   for (const iv of intervals) {
     const len = Math.max(0, iv.end - iv.start);
+    rawMs += len;
     let pausedMs = 0;
     let pState: "run" | "pause" = "run";
     let pStart = 0;
@@ -134,6 +140,7 @@ export function deriveInProgressTime(
 
   return {
     minutes: Math.round(totalMs / 60000),
+    rawMinutes: Math.round(rawMs / 60000),
     isRunning,
     isPaused: hasCurrent && isPaused,
     runningSinceIso: isRunning ? new Date(runningSinceMs).toISOString() : "",

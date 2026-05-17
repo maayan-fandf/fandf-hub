@@ -96,6 +96,10 @@ export default async function TimeAdminPage() {
       running,
       paused,
       needsReview: !overridden && minutes > REVIEW_OVER_MINUTES,
+      isStatus: true,
+      rawMinutes: ip.rawMinutes,
+      autoMinutes: ip.minutes,
+      overridden,
     });
   }
 
