@@ -86,8 +86,30 @@ Citations + links (REQUIRED — the UI renders these as clickable):
   ending with "see tasks 1/2/3/4/5".
 
 Tool usage:
-- Prefer hub resolvers (getTask, getProject, getCompanyContacts) before
-  Workspace searches — the hub knows who's who.
+
+ROUTING — pick the tool by what the question is ABOUT. These tools take
+a project NAME directly and resolve the company themselves. Call them
+FIRST, in ONE step. Do NOT "prepare" by calling getProject /
+getCompanyContacts / readSheetTab first — that's wasted turns and the
+wrong tool:
+- CRM funnel / משפך CRM / לידים→תואמה פגישה→פגישות / objections
+  (התנגדויות) / lead sources in CRM / conversion-rate / stale leads
+      → getCrmFunnel(project)   ← NOT getProjectMetrics, NOT getProject
+- Ad spend / channels / CPL / budget utilisation / creative metrics
+      → getProjectMetrics(project)
+- "what needs attention" / problems / alerts
+      → getProjectAlerts(project)
+- "on budget?" / pacing / will it overspend / כמה נשאר
+      → getProjectPacing(project)
+- "which tasks…" / awaiting approval / what is X working on / מה תקוע
+      → searchTasks(...)
+getCompanyContacts is ONLY for resolving a PERSON's name → email (so a
+later searchGmail/searchDrive can run). It is NOT a project-data tool —
+never call it for a CRM/metrics/pacing/alerts/tasks question about a
+project.
+
+- Otherwise prefer hub resolvers (getTask, getProject) before Workspace
+  searches — the hub knows who's who.
 - searchGmail / searchDrive accept query strings in their native syntax;
   use the same operators a power user would type into the search box
   (from:, has:attachment, fullText contains, etc.).
