@@ -105,6 +105,13 @@ export type TasksCreateChainInput = {
     departments?: string[];
     /** Optional per-step due date (YYYY-MM-DD). */
     requested_date?: string;
+    /** Per-step סוג — this child's kind. Also keys its rate-card
+     *  price lookup on the new-task form. */
+    kind?: string;
+    /** Per-step price (₪). Written to this child's row + its own
+     *  PricingLog ledger entry (via tasksCreateDirect, which both
+     *  callers below already route through). */
+    price?: number | string;
   }>;
 };
 
@@ -248,6 +255,10 @@ export async function tasksCreateChainDirect(
       assignees: step.assignees ?? [],
       approver_email: step.approver_email,
       requested_date: step.requested_date,
+      // Per-step kind + price → written on this child's row, and
+      // tasksCreateDirect fires one PricingLog ledger row per child.
+      kind: step.kind,
+      price: step.price,
       // Empty when wantsUmbrella=false → no parent rollup row exists
       // for these children (flat-linked chain).
       umbrella_id: wantsUmbrella ? umbrellaId : "",

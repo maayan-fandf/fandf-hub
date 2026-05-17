@@ -11396,6 +11396,55 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   align-items: center;
   margin-bottom: .4em;
 }
+/* Each step is a 2-line block: the title/assignee row + a pricing
+   sub-row (department · סוג · ₪ · hint). Per-child pricing for chains. */
+.task-form-chain-step {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .5em .6em;
+  margin-bottom: .5em;
+}
+.task-form-chain-step .task-form-chain-step-row { margin-bottom: 0; }
+.task-form-chain-step-pricing {
+  display: grid;
+  grid-template-columns: 1.6em 1fr 1fr 6em 1fr;
+  gap: .5em;
+  align-items: center;
+  margin-top: .4em;
+  padding-top: .4em;
+  border-top: 1px dashed var(--border);
+}
+/* Align the pricing sub-row under title/assignee (skip the num cell). */
+.task-form-chain-step-pricing > :first-child { grid-column-start: 2; }
+.task-form-chain-step-pricing select,
+.task-form-chain-step-price {
+  padding: .35em .5em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .85em;
+  width: 100%;
+}
+.task-form-chain-step-price { font-variant-numeric: tabular-nums; }
+.task-form-chain-step-pricing select:disabled { opacity: .55; }
+.task-form-chain-step-pricehint {
+  font-size: .76em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.task-form-chain-total {
+  font-weight: 600;
+  color: var(--accent, #6366f1);
+  font-size: .9em;
+}
+@media (max-width: 640px) {
+  .task-form-chain-step-pricing {
+    grid-template-columns: 1fr 1fr;
+  }
+  .task-form-chain-step-pricing > :first-child { grid-column-start: auto; }
+}
 .task-form-chain-step-num {
   text-align: center;
   font-weight: 600;

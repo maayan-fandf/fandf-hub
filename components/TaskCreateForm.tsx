@@ -254,10 +254,17 @@ export default function TaskCreateForm({
     assigneeHint?: string;
     /** When set, the step's assignee picker filters to people whose
      *  Role on names-to-emails matches this value (case-insensitive).
-     *  Empty/undefined = "any role". Comes from the template; NOT
-     *  user-editable in the standard create form (the admin chain
-     *  builder manages template departments). */
+     *  Seeded from the template; now ALSO user-editable per step so
+     *  per-step pricing can resolve (rate card keys on department). */
     department?: string;
+    /** Per-step סוג. Drives this child's kind AND its price lookup
+     *  (resolvePricing on company/project/step.department/step.kind). */
+    kind?: string;
+    /** Per-step price (₪) as a string for the input. Undefined =
+     *  "follow the resolved rate"; once the user edits it,
+     *  priceTouched pins the manual value even as dept/kind change. */
+    price?: string;
+    priceTouched?: boolean;
   };
   const [steps, setSteps] = useState<ChainStep[]>([
     { title: "", assignees: "" },
@@ -844,13 +851,20 @@ export default function TaskCreateForm({
     // it earlier for nicer UX).
     if (chainMode) {
       const trimmedSteps = steps
-        .map((s) => ({
-          title: s.title.trim(),
-          assignees: s.assignees
-            .split(/[,;\n]/)
-            .map((x) => x.trim())
-            .filter(Boolean),
-        }))
+        .map((s) => {
+          const eff = effectiveStepPrice(s).replace(/[^\d.-]/g, "");
+          const priceNum = Number(eff);
+          return {
+            title: s.title.trim(),
+            assignees: s.assignees
+              .split(/[,;\n]/)
+              .map((x) => x.trim())
+              .filter(Boolean),
+            department: (s.department || "").trim(),
+            kind: (s.kind || "").trim(),
+            price: eff && Number.isFinite(priceNum) ? priceNum : undefined,
+          };
+        })
         .filter((s) => s.title); // drop blank rows
       if (trimmedSteps.length === 0) {
         setError("יש להוסיף לפחות שלב אחד עם כותרת");
@@ -879,10 +893,13 @@ export default function TaskCreateForm({
         steps: trimmedSteps.map((s) => ({
           title: s.title,
           assignees: s.assignees,
-          // Per-step approver / departments / due could be exposed in
-          // a richer step editor later; v1 keeps the row compact.
           approver_email: approver,
-          departments,
+          // Per-step department (falls back to the chain departments),
+          // per-step kind, and the resolved/manual price — drive this
+          // child's row + its own PricingLog ledger entry.
+          departments: s.department ? [s.department] : departments,
+          kind: s.kind || undefined,
+          price: s.price,
         })),
       };
       try {
@@ -956,14 +973,23 @@ export default function TaskCreateForm({
           description: String(fd.get("description") || ""),
         },
         // One step per assignee — same title, single-email assignees.
-        // requested_date/approver/departments inherited per child.
-        steps: assigneeList.map((email) => ({
-          title: title.trim(),
-          assignees: [email],
-          approver_email: approver,
-          requested_date: requestedDate,
-          departments,
-        })),
+        // Parallel children replicate the SAME task per person, so each
+        // carries the form's kind + the resolved/entered single-task
+        // price (each peer is its own billable unit → one PricingLog
+        // row per child, like the chain children).
+        steps: assigneeList.map((email) => {
+          const pn = Number(String(priceInput).replace(/[^\d.-]/g, ""));
+          return {
+            title: title.trim(),
+            assignees: [email],
+            approver_email: approver,
+            requested_date: requestedDate,
+            departments,
+            kind: String(fd.get("kind") || "") || undefined,
+            price:
+              priceInput.trim() && Number.isFinite(pn) ? pn : undefined,
+          };
+        }),
       };
       try {
         const res = await fetch("/api/worktasks/create-chain", {
@@ -1105,6 +1131,40 @@ export default function TaskCreateForm({
   );
   const fmtILS = (n: number) =>
     "₪" + Math.round(n).toLocaleString("he-IL");
+
+  // Per-step (chain) helpers — kinds scoped to the step's department,
+  // and the rate-card price for a single (department, kind) pair.
+  const kindsForDept = (dept: string): string[] => {
+    if (formSchema && dept && (formSchema.kindsByDepartment[dept]?.length ?? 0) > 0)
+      return formSchema.kindsByDepartment[dept];
+    if (formSchema && formSchema.allKinds.length > 0) return formSchema.allKinds;
+    return KINDS.map((k) => k.label);
+  };
+  const resolveStepPrice = (step: ChainStep): number | null => {
+    const dept = (step.department || "").trim();
+    if (!dept || !step.kind) return null;
+    const r = resolvePricing(pricing, {
+      company,
+      project,
+      departments: [dept],
+      kind: step.kind,
+    });
+    return r.hasAny ? r.total : null;
+  };
+  /** Value shown in a step's price input: the manual override once
+   *  touched, otherwise the resolved rate (blank when unresolved →
+   *  open field, same rule as the single-task panel). */
+  const effectiveStepPrice = (step: ChainStep): string => {
+    if (step.priceTouched) return step.price ?? "";
+    const r = resolveStepPrice(step);
+    return r != null ? String(r) : "";
+  };
+  const chainPriceTotal = chainMode
+    ? steps.reduce((sum, s) => {
+        const v = Number(effectiveStepPrice(s).replace(/[^\d.-]/g, ""));
+        return sum + (Number.isFinite(v) ? v : 0);
+      }, 0)
+    : 0;
 
   // Editable price field. Authoritative value submitted with the task.
   // Auto-prefills from the resolved rate-card total UNTIL the user
@@ -1531,9 +1591,22 @@ export default function TaskCreateForm({
           departments inherited). */}
       {chainMode && (
         <fieldset className="task-form-chain-steps">
-          <legend>שלבים בשרשרת</legend>
+          <legend>
+            שלבים בשרשרת
+            {showPricing && chainPriceTotal > 0 && (
+              <span className="task-form-chain-total">
+                {" "}· סה״כ תמחור משוער: {fmtILS(chainPriceTotal)}
+              </span>
+            )}
+          </legend>
           <div className="task-form-chain-steps-help">
             כל שלב נפתח אוטומטית כשהשלב הקודם מסומן בוצע. השלב הראשון מתחיל מיד; השאר ממתינים בסטטוס &quot;חסום&quot;.
+            {showPricing && (
+              <>
+                {" "}לכל שלב אפשר לבחור מחלקה + סוג — המחיר נשלף
+                אוטומטית מהמחירון (ניתן לעקוף ידנית).
+              </>
+            )}
           </div>
 
           {/* Phase 8 polish — template picker. Picking a template
@@ -1567,8 +1640,11 @@ export default function TaskCreateForm({
                 )
               : filteredPeople;
             const datalistId = `tasks-people-chain-${i}`;
+            const stepKinds = kindsForDept(s.department || "");
+            const stepResolved = resolveStepPrice(s);
             return (
-              <div key={i} className="task-form-chain-step-row">
+              <div key={i} className="task-form-chain-step">
+              <div className="task-form-chain-step-row">
                 <span className="task-form-chain-step-num">{i + 1}</span>
                 <input
                   type="text"
@@ -1625,6 +1701,88 @@ export default function TaskCreateForm({
                 >
                   ✕
                 </button>
+              </div>
+              {showPricing && (
+                <div className="task-form-chain-step-pricing">
+                  <select
+                    aria-label={`מחלקה לשלב ${i + 1}`}
+                    value={s.department || ""}
+                    onChange={(e) => {
+                      const next = [...steps];
+                      // Department change resets kind (kinds are
+                      // department-scoped) and the resolved price.
+                      next[i] = {
+                        ...next[i],
+                        department: e.target.value,
+                        kind: "",
+                        priceTouched: false,
+                        price: undefined,
+                      };
+                      setSteps(next);
+                    }}
+                  >
+                    <option value="">מחלקה…</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label={`סוג לשלב ${i + 1}`}
+                    value={s.kind || ""}
+                    disabled={!s.department}
+                    onChange={(e) => {
+                      const next = [...steps];
+                      next[i] = {
+                        ...next[i],
+                        kind: e.target.value,
+                        priceTouched: false,
+                        price: undefined,
+                      };
+                      setSteps(next);
+                    }}
+                  >
+                    <option value="">סוג…</option>
+                    {stepKinds.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    aria-label={`מחיר לשלב ${i + 1}`}
+                    className="task-form-chain-step-price"
+                    value={effectiveStepPrice(s)}
+                    placeholder={
+                      stepResolved != null
+                        ? String(stepResolved)
+                        : "מחיר ₪"
+                    }
+                    onChange={(e) => {
+                      const next = [...steps];
+                      next[i] = {
+                        ...next[i],
+                        price: e.target.value,
+                        priceTouched: true,
+                      };
+                      setSteps(next);
+                    }}
+                  />
+                  <span className="task-form-chain-step-pricehint">
+                    {!s.department || !s.kind
+                      ? "בחר/י מחלקה+סוג"
+                      : stepResolved != null
+                        ? s.priceTouched
+                          ? "ידני"
+                          : "מהמחירון"
+                        : "אין במחירון — הזן/י ידנית"}
+                  </span>
+                </div>
+              )}
               </div>
             );
           })}

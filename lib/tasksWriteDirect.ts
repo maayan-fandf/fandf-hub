@@ -1685,7 +1685,10 @@ export async function tasksCreateDirect(
   // Pricing ledger (non-fatal, fire-and-forget). Mirrors the task's
   // `price` column into the flat PricingLog tab for billing export.
   // Never awaited — must not affect create latency or outcome.
-  {
+  // Skip umbrella containers: they aren't billable units (their child
+  // steps each log their own price); logging the umbrella too would
+  // add a blank/duplicate ledger row and risk double-counting.
+  if (!task.is_umbrella) {
     const { logTaskPricing } = await import("@/lib/pricingLog");
     void logTaskPricing({
       subjectEmail,
