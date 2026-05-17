@@ -532,13 +532,19 @@ export default function UserSettingsMenu({
                   📁 button's popover. */}
               {!isClientUser && (
                 <div className="settings-menu-section">
-                  <Link
-                    href="/help/open-locally"
-                    className="settings-menu-link"
-                    onClick={() => setOpen(false)}
-                  >
-                    💻 פתיחת תיקיות במחשב (התקנה חד-פעמית) →
-                  </Link>
+                  <ul className="settings-menu-admin-list">
+                    <li>
+                      <Link
+                        href="/help/open-locally"
+                        className="settings-menu-admin-link"
+                        role="menuitem"
+                        onClick={() => setOpen(false)}
+                      >
+                        <span aria-hidden>💻</span>
+                        פתיחת תיקיות במחשב
+                      </Link>
+                    </li>
+                  </ul>
                 </div>
               )}
 
