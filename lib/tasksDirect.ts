@@ -181,6 +181,14 @@ function rowToTask(
       }
       return false;
     })(),
+    // Task price (₪). Graceful: empty / missing `price` column → undefined
+    // (legacy rows + rollout window). Tolerates "₪500" / "1,200".
+    price: (() => {
+      const raw = cell("price");
+      if (raw === "" || raw == null) return undefined;
+      const n = Number(String(raw).replace(/[^\d.-]/g, ""));
+      return Number.isFinite(n) ? n : undefined;
+    })(),
   };
 }
 

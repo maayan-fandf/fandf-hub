@@ -11101,6 +11101,41 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   color: var(--muted);
 }
 .task-pricing-na { color: var(--muted); font-size: .82em; }
+.task-pricing-field {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  margin-top: .55em;
+  padding-top: .55em;
+  border-top: 1px dashed var(--border);
+  font-size: .88em;
+  color: var(--text);
+}
+.task-pricing-field > span { font-weight: 600; }
+.task-pricing-field input {
+  width: 8.5em;
+  padding: .35em .55em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.task-pricing-field input:focus {
+  outline: 2px solid var(--accent-soft, rgba(99,102,241,.25));
+  border-color: var(--accent, #6366f1);
+}
+.task-pricing-reset {
+  border: none;
+  background: transparent;
+  color: var(--accent, #6366f1);
+  font: inherit;
+  font-size: .82em;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
 
 .tasks-priority-pill {
   display: inline-block;

@@ -966,6 +966,13 @@ export type WorkTask = {
    *  no own work, status/dates derived from children via umbrella_id
    *  back-reference). False on plain tasks and on chain children. */
   is_umbrella: boolean;
+  /** Task price (₪). Resolved from the Pricingsetup rate card on the
+   *  new-task form (project→company fallback) or typed into the open
+   *  field when no rate is configured. Optional / graceful: legacy
+   *  rows and the rollout window before the `price` column ships parse
+   *  as undefined. Persisted on the task row AND appended to the
+   *  PricingLog ledger at create time. */
+  price?: number;
 };
 
 export type TasksListFilters = {
@@ -1175,6 +1182,11 @@ export type TasksCreateInput = {
    *  is trusted as-is — caller is responsible for uniqueness +
    *  format (`T-<rand>`). */
   id?: string;
+  /** Task price (₪). From the new-task form's pricing field — the
+   *  resolved Pricingsetup rate, or a manual amount when no rate is
+   *  configured. Accepted as number or numeric string (JSON payload
+   *  symmetry). Written to the task row + the PricingLog ledger. */
+  price?: number | string;
 };
 
 export function tasksCreate(

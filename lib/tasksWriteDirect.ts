@@ -1406,6 +1406,15 @@ export async function tasksCreateDirect(
     blocked_by: incomingBlockedBy,
     umbrella_id: String(payload.umbrella_id || "").trim(),
     is_umbrella: payload.is_umbrella === true || payload.is_umbrella === "true",
+    // Task price (₪) — resolved Pricingsetup rate or the manual amount
+    // typed into the new-task form's open field. Tolerates number or
+    // numeric string; blank/invalid → undefined (no price recorded).
+    price: (() => {
+      const raw = payload.price;
+      if (raw === undefined || raw === null || raw === "") return undefined;
+      const n = Number(String(raw).replace(/[^\d.-]/g, ""));
+      return Number.isFinite(n) ? n : undefined;
+    })(),
   };
 
   // Side effects — run in parallel where safe.
@@ -1622,6 +1631,10 @@ export async function tasksCreateDirect(
     blocked_by: JSON.stringify(task.blocked_by ?? []),
     umbrella_id: task.umbrella_id ?? "",
     is_umbrella: task.is_umbrella ? "TRUE" : "FALSE",
+    // Graceful like the dependency cols: written only if a `price`
+    // header exists (added by scripts/add-price-column.mjs). "" when
+    // no price was set so the cell stays blank rather than 0.
+    price: task.price == null ? "" : task.price,
   };
   // Reflect rank back on the in-memory task so callers see it.
   task.rank = newTaskRank;
@@ -1667,6 +1680,23 @@ export async function tasksCreateDirect(
         e instanceof Error ? e.message : String(e),
       );
     }
+  }
+
+  // Pricing ledger (non-fatal, fire-and-forget). Mirrors the task's
+  // `price` column into the flat PricingLog tab for billing export.
+  // Never awaited — must not affect create latency or outcome.
+  {
+    const { logTaskPricing } = await import("@/lib/pricingLog");
+    void logTaskPricing({
+      subjectEmail,
+      taskId: task.id,
+      company: task.company,
+      project: task.project,
+      departments: task.departments,
+      kind: task.kind,
+      price: task.price,
+      createdBy: task.author_email,
+    });
   }
 
   // After-write notifications (non-fatal). On create we ping the

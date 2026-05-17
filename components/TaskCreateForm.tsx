@@ -1008,6 +1008,13 @@ export default function TaskCreateForm({
       requested_date: requestedDate,
       campaign: campaign.trim(),
     };
+    // Price: the resolved rate-card total or the manual amount typed
+    // into the open field. Omit when blank/invalid so the server
+    // records no price rather than 0.
+    {
+      const p = Number(String(priceInput).replace(/[^\d.-]/g, ""));
+      if (priceInput.trim() && Number.isFinite(p)) payload.price = p;
+    }
     if (fromComment) {
       // Server re-parents the source comment + its replies under the
       // newly-created task id (Flavor C migration).
@@ -1098,6 +1105,18 @@ export default function TaskCreateForm({
   );
   const fmtILS = (n: number) =>
     "₪" + Math.round(n).toLocaleString("he-IL");
+
+  // Editable price field. Authoritative value submitted with the task.
+  // Auto-prefills from the resolved rate-card total UNTIL the user
+  // edits it (then their override sticks even as company/dept/kind
+  // change). When nothing resolves it's simply an open field — exactly
+  // the "no תמחור setup → open field" behavior requested.
+  const [priceInput, setPriceInput] = useState<string>("");
+  const priceTouched = useRef(false);
+  useEffect(() => {
+    if (priceTouched.current) return;
+    setPriceInput(pricingResult.hasAny ? String(pricingResult.total) : "");
+  }, [pricingResult.hasAny, pricingResult.total]);
 
   return (
     <form className="task-form" onSubmit={onSubmit}>
@@ -1872,10 +1891,42 @@ export default function TaskCreateForm({
         )}
         {pricingResult.anyMissing && departments.length > 0 && kind && (
           <div className="task-pricing-note">
-            שילובים ללא מחיר אינם נכללים בסכום. הגדרת מחירים בלשונית
-            Pricingsetup.
+            שילובים ללא מחיר אינם נכללים בסכום (אפשר להזין מחיר ידני
+            למטה). הגדרת מחירים בלשונית Pricingsetup.
           </div>
         )}
+        <label className="task-pricing-field">
+          <span>מחיר המשימה (₪)</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="1"
+            name="price"
+            value={priceInput}
+            onChange={(e) => {
+              priceTouched.current = true;
+              setPriceInput(e.target.value);
+            }}
+            placeholder={
+              pricingResult.hasAny
+                ? String(pricingResult.total)
+                : "אין תמחור מוגדר — הזן/י מחיר"
+            }
+          />
+          {priceTouched.current && pricingResult.hasAny && (
+            <button
+              type="button"
+              className="task-pricing-reset"
+              onClick={() => {
+                priceTouched.current = false;
+                setPriceInput(String(pricingResult.total));
+              }}
+            >
+              איפוס למחירון
+            </button>
+          )}
+        </label>
       </div>
       )}
 
