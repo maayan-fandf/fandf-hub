@@ -17,7 +17,7 @@
  *   kind | price | created_by
  */
 
-import { sheetsClient } from "@/lib/sa";
+import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
 
 const TAB = "PricingLog";
 const HEADER = [
@@ -199,6 +199,23 @@ export type PricingLogRow = {
 export async function readPricingLog(
   subjectEmail: string,
 ): Promise<PricingLogRow[]> {
+  // Phase 3 storage migration — Firestore read path behind the flag.
+  // Returns the base PricingLogRow shape; the report page joins
+  // title/brief/worker by taskId afterwards (unchanged).
+  if (useFirestoreTasks()) {
+    try {
+      const { readPricingLogFromFirestore } = await import(
+        "@/lib/firestoreRead"
+      );
+      return (await readPricingLogFromFirestore()) as PricingLogRow[];
+    } catch (e) {
+      console.log(
+        "[pricingLog] Firestore read failed (non-fatal):",
+        e instanceof Error ? e.message : String(e),
+      );
+      return [];
+    }
+  }
   try {
     const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
     const sheets = sheetsClient(subjectEmail);

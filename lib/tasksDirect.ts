@@ -32,7 +32,7 @@ import {
   type TasksPerson,
   type GTaskRef,
 } from "@/lib/appsScript";
-import { sheetsClient } from "@/lib/sa";
+import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 
 const JSON_ARRAY_FIELDS = new Set([
@@ -258,6 +258,21 @@ const readCommentsTab = cache(
   async (subjectEmail: string): Promise<CommentsValue> => {
     if (_commentsCacheValue && Date.now() < _commentsCacheExpiresAt) {
       return _commentsCacheValue;
+    }
+    // Phase 3 storage migration — Firestore read path behind the flag.
+    // Returns the EXACT Sheets shape (rows/headerIdx) so every
+    // downstream reader (rowToTask, the filters) runs unchanged. Still
+    // honors the process-local TTL cache below for cross-request dedupe
+    // (handoff: keep the cache structure until Phase 5). invalidate-
+    // CommentsCache() (called by the dual-write) busts it on writes.
+    if (useFirestoreTasks()) {
+      const { readCommentsShapeFromFirestore } = await import(
+        "@/lib/firestoreRead"
+      );
+      const fsResult = await readCommentsShapeFromFirestore();
+      _commentsCacheValue = fsResult;
+      _commentsCacheExpiresAt = Date.now() + COMMENTS_CACHE_TTL_MS;
+      return fsResult;
     }
     const sheets = sheetsClient(subjectEmail);
     const res = await sheets.spreadsheets.values.get({

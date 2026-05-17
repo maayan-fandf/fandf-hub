@@ -29,7 +29,7 @@ import type {
   MentionItem,
   TaskItem,
 } from "@/lib/appsScript";
-import { sheetsClient } from "@/lib/sa";
+import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
 import { getAccessScope } from "@/lib/tasksDirect";
 
 function envOrThrow(name: string): string {
@@ -55,6 +55,15 @@ async function readCommentsOnce(subjectEmail: string): Promise<{
   rows: unknown[][];
   headerIdx: Map<string, number>;
 }> {
+  // Phase 3 storage migration — Firestore read path behind the flag.
+  // Same Sheets shape so every comment reader runs unchanged.
+  if (useFirestoreTasks()) {
+    const { readCommentsShapeFromFirestore } = await import(
+      "@/lib/firestoreRead"
+    );
+    const { rows, headerIdx } = await readCommentsShapeFromFirestore();
+    return { rows, headerIdx };
+  }
   const sheets = sheetsClient(subjectEmail);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
@@ -206,6 +215,7 @@ export async function migrateCommentThreadDirect(
   // sourceCommentId. The first set has 0 or 1 entries (the root); the
   // second set is the replies. Both move to parent_id = newTaskId.
   const updates: Array<{ range: string; values: [[string]] }> = [];
+  const movedCommentIds: string[] = [];
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const rowId = String(row[idIdx] ?? "").trim();
@@ -219,12 +229,30 @@ export async function migrateCommentThreadDirect(
       range: `Comments!${parentCol}${sheetRow}`,
       values: [[newTaskId]],
     });
+    if (rowId) movedCommentIds.push(rowId);
   }
   if (updates.length === 0) return { migrated: 0 };
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: ssId,
     requestBody: { valueInputOption: "RAW", data: updates },
   });
+
+  // Phase 2/3 storage migration — this Sheets write (re-parent the
+  // converted thread under the new task) bypasses commentsWriteDirect,
+  // so it needs its own Firestore mirror or the comment docs' parent_id
+  // / taskId drift. newTaskId is a task id, so taskId := newTaskId
+  // (matches taskCommentsDirect's parent-is-task rule). Flag-gated,
+  // never throws, not awaited.
+  for (const cid of movedCommentIds) {
+    void import("@/lib/firestoreSync")
+      .then((m) =>
+        m.mirrorCommentFields(cid, {
+          parent_id: newTaskId,
+          taskId: newTaskId,
+        }),
+      )
+      .catch(() => {});
+  }
   return { migrated: updates.length };
 }
 
