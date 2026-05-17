@@ -2038,6 +2038,13 @@ async function tasksUpdateDirectInner(
     // validates the OLD project) — see /api/worktasks/promote-personal for
     // the canonical guarded path.
     "project",
+    // Editable status-derived time override (minutes). A number sets
+    // the override; "" clears it (revert to the status_history-derived
+    // value). Graceful: the Object.entries(changes) writer below skips
+    // it when the `inprogress_minutes` header isn't on the sheet yet
+    // (idx.get(k) == null → continue), so this is rollout-safe. NOT in
+    // AUTHOR_GATED_FIELDS → any task participant may correct it.
+    "inprogress_minutes",
   ] as const;
   for (const k of SIMPLE_DIRECT) {
     if (k in patch && patch[k] !== cell(k)) {
@@ -2950,6 +2957,15 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
         return s === "true" || s === "1" || s === "yes";
       }
       return false;
+    })(),
+    // Editable status-derived time override (minutes). Graceful: empty /
+    // missing column → undefined (UI falls back to the value derived
+    // from status_history). Mirrors lib/tasksDirect.ts rowToTask.
+    inprogress_minutes: (() => {
+      const raw = cell("inprogress_minutes");
+      if (raw === "" || raw == null) return undefined;
+      const n = Number(String(raw).replace(/[^\d.-]/g, ""));
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
     })(),
   };
 }

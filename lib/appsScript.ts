@@ -973,6 +973,14 @@ export type WorkTask = {
    *  as undefined. Persisted on the task row AND appended to the
    *  PricingLog ledger at create time. */
   price?: number;
+  /** Editable status-derived time counter, in minutes. The AUTO value
+   *  (sum of every interval the task spent in status `in_progress`,
+   *  derived from status_history — see lib/inProgressTime) is shown
+   *  when this is undefined. When set, it OVERRIDES the auto value so
+   *  a task left in_progress over the weekend can be corrected.
+   *  Optional / graceful: legacy rows + the window before the
+   *  `inprogress_minutes` column ships parse as undefined. */
+  inprogress_minutes?: number;
 };
 
 export type TasksListFilters = {
@@ -1248,6 +1256,11 @@ export type TasksUpdatePatch = {
    *  field. The merged set then flows through the normal assignees
    *  diff (Google Tasks spawn, task_assigned ping, status_history). */
   addAssignees?: string[];
+  /** Editable status-derived time counter (minutes). A number sets the
+   *  manual override; "" clears it (revert to the auto value derived
+   *  from status_history). NOT author-gated — any task participant who
+   *  can see the task may correct it, like a status change. */
+  inprogress_minutes?: number | "";
 };
 
 /** Distinct campaigns that have at least one task on the given project,

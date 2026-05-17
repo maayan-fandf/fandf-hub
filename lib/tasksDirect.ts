@@ -189,6 +189,15 @@ function rowToTask(
       const n = Number(String(raw).replace(/[^\d.-]/g, ""));
       return Number.isFinite(n) ? n : undefined;
     })(),
+    // Editable status-derived time override (minutes). Graceful: empty /
+    // missing `inprogress_minutes` column → undefined, which makes the
+    // UI fall back to the value derived live from status_history.
+    inprogress_minutes: (() => {
+      const raw = cell("inprogress_minutes");
+      if (raw === "" || raw == null) return undefined;
+      const n = Number(String(raw).replace(/[^\d.-]/g, ""));
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
+    })(),
   };
 }
 

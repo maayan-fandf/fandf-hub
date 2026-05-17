@@ -44,6 +44,7 @@ import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
 import TaskTemplatePreview from "@/components/TaskTemplatePreview";
 import TaskTimeTracker from "@/components/TaskTimeTracker";
+import { deriveInProgressTime } from "@/lib/inProgressTime";
 import { linkifyParagraphs } from "@/lib/linkify";
 
 export const dynamic = "force-dynamic";
@@ -639,11 +640,26 @@ export default async function TaskDetailPage({
               price). Suppressed for umbrella containers (no own work, like
               the People block) and in edit mode (the aside is inert then,
               and an interactive tracker there would mislead). */}
-          {!editing && !t.is_umbrella && (
-            <SideBlock title="מעקב זמן">
-              <TaskTimeTracker taskId={t.id} />
-            </SideBlock>
-          )}
+          {!editing && !t.is_umbrella && (() => {
+            // Status-derived in-progress time (the counter "starts on
+            // בעבודה, stops on the next status change"). Computed here
+            // server-side from status_history; the manual override on
+            // the row supersedes it when set.
+            const ip = deriveInProgressTime(
+              t.status_history || [],
+              t.status,
+            );
+            return (
+              <SideBlock title="מעקב זמן">
+                <TaskTimeTracker
+                  taskId={t.id}
+                  autoMinutes={ip.minutes}
+                  isRunning={ip.isRunning}
+                  overrideMinutes={t.inprogress_minutes ?? null}
+                />
+              </SideBlock>
+            );
+          })()}
 
           {/* Schedule — when-this-task-is dates. Pulled out of פרטים
               (where created/updated lived) and the page header (where
