@@ -9167,6 +9167,63 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   color: var(--muted);
   line-height: 1.6;
 }
+/* /help/open-locally — one-time helper install guide */
+.help-open-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1em 1.2em;
+  margin-bottom: 1em;
+  background: var(--surface, #fff);
+}
+.help-open-card h2 {
+  margin: 0 0 .5em;
+  font-size: 1.05em;
+  display: flex;
+  align-items: center;
+  gap: .4em;
+}
+.help-open-card p {
+  margin: .4em 0;
+  line-height: 1.7;
+  color: var(--text);
+}
+.help-open-req {
+  font-size: .92em;
+  color: var(--muted);
+}
+.help-open-card code {
+  background: var(--surface-soft, rgba(120, 120, 120, .12));
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: .05em .35em;
+  font-size: .9em;
+}
+.help-open-steps {
+  margin: .3em 1.3em;
+  padding: 0;
+  line-height: 2.1;
+}
+.help-open-steps li {
+  margin: .35em 0;
+}
+.help-open-steps .btn-primary {
+  text-decoration: none;
+  vertical-align: middle;
+}
+.help-open-alt {
+  font-size: .88em;
+  color: var(--muted);
+}
+.help-open-safety {
+  background: var(--surface-soft, rgba(99, 102, 241, .06));
+}
+.help-open-back {
+  margin: 1.4em 0 2em;
+}
+.help-open-back a {
+  color: var(--accent, #6366f1);
+  text-decoration: none;
+}
 .copy-local-path-hint-install a {
   color: var(--accent, #6366f1);
   text-decoration: none;

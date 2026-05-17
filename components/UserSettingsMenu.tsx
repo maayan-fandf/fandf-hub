@@ -525,6 +525,23 @@ export default function UserSettingsMenu({
               </div>
               )}
 
+              {/* One-time "open folders in Explorer/Finder" helper —
+                  staff-only (clients have no shared-drive paths). Links
+                  to the install guide; everyone (non-client) sees it so
+                  the one-time setup is discoverable, not buried in the
+                  📁 button's popover. */}
+              {!isClientUser && (
+                <div className="settings-menu-section">
+                  <Link
+                    href="/help/open-locally"
+                    className="settings-menu-link"
+                    onClick={() => setOpen(false)}
+                  >
+                    💻 פתיחת תיקיות במחשב (התקנה חד-פעמית) →
+                  </Link>
+                </div>
+              )}
+
               {isAdmin && (
                 <div className="settings-menu-section settings-menu-admin">
                   <div className="settings-menu-label">

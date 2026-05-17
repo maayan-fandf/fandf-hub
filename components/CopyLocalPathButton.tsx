@@ -218,27 +218,9 @@ export default function CopyLocalPathButton({
             {effectivePath}
           </code>
           <div className="copy-local-path-hint-install">
-            רוצה שייפתח אוטומטית בלחיצה? התקנה חד-פעמית:{" "}
-            {usingMac ? (
-              <a
-                href="/desktop-open/install-macos.command"
-                download
-                dir="ltr"
-              >
-                install-macos.command
-              </a>
-            ) : (
-              <a
-                href="/desktop-open/install-windows.ps1"
-                download
-                dir="ltr"
-              >
-                install-windows.ps1
-              </a>
-            )}{" "}
-            ·{" "}
-            <a href="/desktop-open/README.txt" target="_blank" rel="noreferrer">
-              הוראות
+            רוצה שייפתח אוטומטית בלחיצה?{" "}
+            <a href="/help/open-locally" target="_blank" rel="noreferrer">
+              התקנה חד-פעמית (הוראות) →
             </a>
           </div>
           <button
