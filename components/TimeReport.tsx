@@ -30,6 +30,7 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
   const [month, setMonth] = useState<string>(months[0] ?? "");
   const [company, setCompany] = useState<string>("__all__");
   const [onlyRunning, setOnlyRunning] = useState(false);
+  const [onlyReview, setOnlyReview] = useState(false);
   // Tasks paused from this page in this session — so the row's
   // indicator + button update immediately without a reload.
   const [pausedIds, setPausedIds] = useState<Set<string>>(new Set());
@@ -61,15 +62,17 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       byCompany.filter((r) => !!r.running && !pausedIds.has(r.taskId)).length,
     [byCompany, pausedIds],
   );
-  const filtered = useMemo(
-    () =>
-      onlyRunning
-        ? byCompany.filter(
-            (r) => !!r.running && !pausedIds.has(r.taskId),
-          )
-        : byCompany,
-    [byCompany, onlyRunning, pausedIds],
+  const reviewCount = useMemo(
+    () => byCompany.filter((r) => !!r.needsReview).length,
+    [byCompany],
   );
+  const filtered = useMemo(() => {
+    let out = byCompany;
+    if (onlyRunning)
+      out = out.filter((r) => !!r.running && !pausedIds.has(r.taskId));
+    if (onlyReview) out = out.filter((r) => !!r.needsReview);
+    return out;
+  }, [byCompany, onlyRunning, onlyReview, pausedIds]);
 
   async function pauseTask(taskId: string) {
     setBusyId(taskId);
@@ -130,6 +133,7 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       "minutes",
       "hours",
       "note",
+      "needs_review",
       "task_id",
       "logged_by",
     ];
@@ -152,6 +156,7 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
             String(r.minutes),
             (r.minutes / 60).toFixed(2),
             r.note,
+            r.needsReview ? "1" : "",
             r.taskId,
             r.loggedBy,
           ]
@@ -232,6 +237,21 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
         >
           ● רצות כעת: {runningCount}
         </button>
+        <button
+          type="button"
+          className={`time-review-chip${reviewCount ? " is-on" : ""}${
+            onlyReview ? " is-active" : ""
+          }`}
+          onClick={() => setOnlyReview((v) => !v)}
+          title={
+            reviewCount
+              ? "זמן חריג (מעל 24 שע׳ בסטטוס ׳בעבודה׳, לא תוקן) — כנראה נשאר פתוח ללא עבודה. הצג רק אותן"
+              : "אין רשומות עם זמן חריג"
+          }
+          disabled={!reviewCount && !onlyReview}
+        >
+          ⚠ לבדיקה: {reviewCount}
+        </button>
         <span className="billing-grand">
           סה״כ זמן {month}: <b>{fmtDur(grandTotal)}</b>
         </span>
@@ -278,6 +298,15 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                     className="time-task-cell"
                     title={r.title || r.taskId}
                   >
+                    {r.needsReview && (
+                      <span
+                        className="time-review-flag"
+                        title="זמן חריג — בדוק/תקן (כנראה נשאר ׳בעבודה׳ ללא עבודה בפועל)"
+                        aria-label="לבדיקה"
+                      >
+                        ⚠
+                      </span>
+                    )}
                     {isRun ? (
                       <span
                         className="time-run-dot"

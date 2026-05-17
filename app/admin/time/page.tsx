@@ -46,6 +46,11 @@ export default async function TimeAdminPage() {
   const workerOf = (emails: string[] | undefined): string =>
     (emails || []).map((e) => e.split("@")[0]).join(", ");
 
+  // Accumulated status-time above this (and not manually corrected) is
+  // almost certainly a task left in ׳בעבודה׳ without real work (e.g.
+  // over a weekend) → flag it ⚠ for review. Tunable one-liner.
+  const REVIEW_OVER_MINUTES = 24 * 60; // 24h elapsed in-progress
+
   // Synthesize one status-time row per task (override wins over the
   // status_history-derived value; umbrellas have no own work).
   const statusRows: TimeLogRow[] = [];
@@ -90,6 +95,7 @@ export default async function TimeAdminPage() {
       worker: workerOf(t.assignees),
       running,
       paused,
+      needsReview: !overridden && minutes > REVIEW_OVER_MINUTES,
     });
   }
 

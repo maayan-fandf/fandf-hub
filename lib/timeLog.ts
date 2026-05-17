@@ -171,6 +171,11 @@ export type TimeLogRow = {
   running?: boolean;
   /** Status-time rows only: in_progress but currently paused. */
   paused?: boolean;
+  /** Status-time rows only: accumulated time is abnormally large and
+   *  has NOT been manually corrected — likely left in ׳בעבודה׳ without
+   *  real work (e.g. over a weekend). Drives the ⚠ "needs review"
+   *  marker + filter on /admin/time. */
+  needsReview?: boolean;
 };
 
 function parseRows(values: unknown[][]): TimeLogRow[] {

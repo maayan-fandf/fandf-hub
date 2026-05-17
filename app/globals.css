@@ -11376,6 +11376,40 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
 [data-theme="dark"] .time-running-chip.is-on {
   color: #4ade80;
 }
+.time-review-chip {
+  font: inherit;
+  font-size: .85em;
+  padding: .35em .7em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface, #fff);
+  color: var(--muted);
+  cursor: pointer;
+}
+.time-review-chip.is-on {
+  border-color: rgba(217, 119, 6, .55);
+  color: #b45309;
+  font-weight: 600;
+}
+.time-review-chip.is-active {
+  background: rgba(217, 119, 6, .14);
+}
+.time-review-chip:disabled {
+  cursor: default;
+  opacity: .6;
+}
+[data-theme="dark"] .time-review-chip.is-on {
+  color: #fbbf24;
+}
+.time-review-flag {
+  flex: none;
+  color: #b45309;
+  font-size: .95em;
+  line-height: 1;
+}
+[data-theme="dark"] .time-review-flag {
+  color: #fbbf24;
+}
 @media (max-width: 760px) {
   .billing-row.time-row { grid-template-columns: 1fr 1fr; }
 }
