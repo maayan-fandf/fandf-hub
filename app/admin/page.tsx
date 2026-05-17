@@ -70,6 +70,14 @@ export default async function AdminHome() {
       ready: true,
     },
     {
+      href: "/admin/time",
+      title: "מעקב זמן",
+      emoji: "⏱️",
+      subtitle:
+        "כל הזמן שתועד על משימות, מקובץ לפי חודש × חברה עם סכום זמן וייצוא CSV. מידע בלבד — אינו משפיע על החיוב ללקוח.",
+      ready: true,
+    },
+    {
       href: "/admin/projects",
       title: "פרויקטים",
       emoji: "🏢",

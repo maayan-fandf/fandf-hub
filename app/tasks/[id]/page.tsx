@@ -43,6 +43,7 @@ import Avatar from "@/components/Avatar";
 import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
 import TaskTemplatePreview from "@/components/TaskTemplatePreview";
+import TaskTimeTracker from "@/components/TaskTimeTracker";
 import { linkifyParagraphs } from "@/lib/linkify";
 
 export const dynamic = "force-dynamic";
@@ -630,6 +631,17 @@ export default async function TaskDetailPage({
                 filterKey="assignee"
                 people={peopleRes?.people ?? []}
               />
+            </SideBlock>
+          )}
+
+          {/* Optional per-task time tracking — append-only, informational
+              (does NOT drive billing; that stays on the flat Pricingsetup
+              price). Suppressed for umbrella containers (no own work, like
+              the People block) and in edit mode (the aside is inert then,
+              and an interactive tracker there would mislead). */}
+          {!editing && !t.is_umbrella && (
+            <SideBlock title="מעקב זמן">
+              <TaskTimeTracker taskId={t.id} />
             </SideBlock>
           )}
 

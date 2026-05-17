@@ -36,7 +36,8 @@ export default async function BillingAdminPage() {
           </h1>
           <div className="subtitle">
             <Link href="/admin">→ ניהול</Link> ·{" "}
-            <Link href="/admin/pricing">💰 מחירון</Link> · כל החיובים
+            <Link href="/admin/pricing">💰 מחירון</Link> ·{" "}
+            <Link href="/admin/time">⏱️ מעקב זמן</Link> · כל החיובים
             שנצברו מ-<code>PricingLog</code> — שורה לכל משימה (וכל שלב
             בשרשרת; עטיפות לא נספרות). סינון לפי חודש + חברה, סכום
             לחיוב, וייצוא CSV לחשבונאות.

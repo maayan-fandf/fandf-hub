@@ -11301,6 +11301,101 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   .billing-row { grid-template-columns: 1fr 1fr; }
   .billing-row-head { display: none; }
 }
+/* /admin/time — same chrome as billing, wider note column instead of
+   the money column. */
+.billing-row.time-row {
+  grid-template-columns: 6em 1.1fr 1fr 1.4fr .9fr .9fr;
+}
+@media (max-width: 760px) {
+  .billing-row.time-row { grid-template-columns: 1fr 1fr; }
+}
+
+/* Per-task time tracker — side-panel block on the task detail page. */
+.time-tracker {
+  display: flex;
+  flex-direction: column;
+  gap: .6em;
+}
+.time-tracker-total {
+  display: flex;
+  flex-direction: column;
+  gap: .1em;
+}
+.time-tracker-total-num {
+  font-size: 1.15em;
+  font-weight: 700;
+  color: var(--accent, #6366f1);
+  font-variant-numeric: tabular-nums;
+}
+.time-tracker-total-label {
+  font-size: .78em;
+  color: var(--muted);
+}
+.time-tracker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+}
+.time-tracker-entry {
+  display: flex;
+  flex-direction: column;
+  gap: .05em;
+  font-size: .82em;
+  padding: .3em .45em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.time-tracker-entry-dur {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.time-tracker-entry-meta {
+  color: var(--muted);
+  font-size: .92em;
+  word-break: break-word;
+}
+.time-tracker-more {
+  font-size: .78em;
+  color: var(--muted);
+}
+.time-tracker-error {
+  font-size: .8em;
+  color: var(--danger, #dc2626);
+}
+.time-tracker-form {
+  display: flex;
+  flex-direction: column;
+  gap: .45em;
+}
+.time-tracker-row {
+  display: flex;
+  gap: .4em;
+}
+.time-tracker-amount {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.time-tracker-amount,
+.time-tracker-unit,
+.time-tracker-note {
+  padding: .4em .55em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .88em;
+}
+.time-tracker-actions {
+  display: flex;
+  gap: .4em;
+}
+.time-tracker-add {
+  align-self: flex-start;
+}
 
 .tasks-priority-pill {
   display: inline-block;
