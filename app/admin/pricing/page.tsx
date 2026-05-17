@@ -61,7 +61,8 @@ export default async function PricingAdminPage() {
           </h1>
           <div className="subtitle">
             <Link href="/admin">→ ניהול</Link> ·{" "}
-            <Link href="/admin/task-form-schema">סכמת טופס משימה</Link> ·
+            <Link href="/admin/task-form-schema">סכמת טופס משימה</Link> ·{" "}
+            <Link href="/admin/billing">🧾 חיובים ללקוח</Link> ·
             מחירון לפי חברה/פרוייקט × מחלקה × סוג. הערכים מוזנים בטופס
             ״משימה חדשה״ (פרוייקט-ספציפי, אחרת לפי חברה), ונשמרים על
             המשימה ובלשונית <code>PricingLog</code>.

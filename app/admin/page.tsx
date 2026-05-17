@@ -62,6 +62,14 @@ export default async function AdminHome() {
       ready: true,
     },
     {
+      href: "/admin/billing",
+      title: "חיובים ללקוח",
+      emoji: "🧾",
+      subtitle:
+        "כל החיובים שנצברו, מקובצים לפי חודש × חברה עם סכום לחיוב וייצוא CSV — המסך לחיוב הלקוחות בסוף החודש.",
+      ready: true,
+    },
+    {
       href: "/admin/projects",
       title: "פרויקטים",
       emoji: "🏢",

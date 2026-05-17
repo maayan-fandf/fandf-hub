@@ -136,3 +136,67 @@ export async function logTaskPricing(entry: TaskPricingEntry): Promise<void> {
     );
   }
 }
+
+export type PricingLogRow = {
+  /** "YYYY-MM-DD HH:MM:SS" Asia/Jerusalem (as written by the appender). */
+  createdAt: string;
+  /** Derived "YYYY-MM" for month grouping. */
+  month: string;
+  taskId: string;
+  company: string;
+  project: string;
+  departments: string;
+  kind: string;
+  price: number;
+  createdBy: string;
+};
+
+/**
+ * Read the whole PricingLog ledger for the billing report. Returns []
+ * when the tab doesn't exist yet (no priced task created since the
+ * feature shipped) — the report renders an empty state, not an error.
+ * Read-only; admin-gated at the route.
+ */
+export async function readPricingLog(
+  subjectEmail: string,
+): Promise<PricingLogRow[]> {
+  try {
+    const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
+    const sheets = sheetsClient(subjectEmail);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${TAB}!A2:H`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    const values = (res.data.values ?? []) as unknown[][];
+    const out: PricingLogRow[] = [];
+    for (const r of values) {
+      const createdAt = String(r[0] ?? "").trim();
+      const taskId = String(r[1] ?? "").trim();
+      if (!createdAt && !taskId) continue;
+      const priceRaw = r[6];
+      const price =
+        typeof priceRaw === "number"
+          ? priceRaw
+          : Number(String(priceRaw ?? "").replace(/[^\d.-]/g, ""));
+      out.push({
+        createdAt,
+        month: createdAt.slice(0, 7), // "YYYY-MM"
+        taskId,
+        company: String(r[2] ?? "").trim(),
+        project: String(r[3] ?? "").trim(),
+        departments: String(r[4] ?? "").trim(),
+        kind: String(r[5] ?? "").trim(),
+        price: Number.isFinite(price) ? price : 0,
+        createdBy: String(r[7] ?? "").trim(),
+      });
+    }
+    return out;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/Unable to parse range|not found/i.test(msg)) return [];
+    console.log("[pricingLog] readPricingLog failed (non-fatal):", msg);
+    return [];
+  }
+}

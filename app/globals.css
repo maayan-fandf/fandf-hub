@@ -11215,6 +11215,93 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   }
 }
 
+/* /admin/billing — month-end charges report */
+.billing-empty {
+  color: var(--muted);
+  font-size: .9em;
+  line-height: 1.6;
+  padding: 1.2em;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.billing-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 1em;
+  flex-wrap: wrap;
+  margin-bottom: 1.2em;
+}
+.billing-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+  font-size: .8em;
+  color: var(--muted);
+}
+.billing-controls select {
+  padding: .4em .6em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .9em;
+}
+.billing-grand {
+  margin-inline-start: auto;
+  font-size: .95em;
+  color: var(--text);
+}
+.billing-grand b {
+  color: var(--accent, #6366f1);
+  font-variant-numeric: tabular-nums;
+}
+.billing-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 1em;
+  overflow: hidden;
+}
+.billing-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: .6em .9em;
+  background: var(--surface-soft, rgba(99,102,241,.06));
+  font-weight: 600;
+}
+.billing-company { color: var(--text); }
+.billing-subtotal {
+  color: var(--accent, #6366f1);
+  font-variant-numeric: tabular-nums;
+}
+.billing-table { padding: .3em .5em .5em; }
+.billing-row {
+  display: grid;
+  grid-template-columns: 6em 1.3fr 1fr 1fr .8fr .9fr;
+  gap: .6em;
+  align-items: center;
+  padding: .35em .4em;
+  font-size: .86em;
+  border-top: 1px solid var(--border);
+}
+.billing-row:first-child { border-top: none; }
+.billing-row-head {
+  font-size: .76em;
+  font-weight: 600;
+  color: var(--muted);
+  border-top: none;
+}
+.billing-price {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.billing-by { color: var(--muted); }
+@media (max-width: 760px) {
+  .billing-row { grid-template-columns: 1fr 1fr; }
+  .billing-row-head { display: none; }
+}
+
 .tasks-priority-pill {
   display: inline-block;
   min-width: 1.5em;
