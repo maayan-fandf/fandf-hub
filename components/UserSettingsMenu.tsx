@@ -117,6 +117,7 @@ const ADMIN_LINKS: { href: string; label: string; emoji: string }[] = [
   { href: "/admin/user-prefs", label: "העדפות משתמשים", emoji: "👥" },
   { href: "/admin/task-form-schema", label: "סכמת טופס משימה", emoji: "📐" },
   { href: "/admin/keys", label: "Keys", emoji: "🔑" },
+  { href: "/admin/time", label: "מעקב זמן", emoji: "⏱️" },
 ];
 
 export default function UserSettingsMenu({
