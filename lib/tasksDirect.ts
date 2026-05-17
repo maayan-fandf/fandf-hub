@@ -142,6 +142,9 @@ function rowToTask(
     ) as Record<string, string>,
     google_tasks: parseGoogleTasksCell(cell("google_tasks")),
     status_history: parseJsonCell(cell("status_history"), true) as WorkTask["status_history"],
+    // Pause/resume events on the in-progress counter. Graceful: empty /
+    // missing `time_pauses` column → [] (legacy rows + rollout window).
+    time_pauses: parseJsonCell(cell("time_pauses"), true) as WorkTask["time_pauses"],
     description_history: parseJsonCell(
       cell("description_history"),
       true,

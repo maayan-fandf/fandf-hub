@@ -42,6 +42,7 @@ import type {
   WorkTask,
   WorkTaskStatus,
   GTaskRef,
+  TimePauseEvent,
 } from "@/lib/appsScript";
 
 /** Normalize the cell to the canonical array shape. Legacy rows wrote
@@ -2052,6 +2053,37 @@ async function tasksUpdateDirectInner(
     }
   }
 
+  // Pause/resume append for the in-progress time counter. Mirrors the
+  // status_history append: read the current JSON array off the row,
+  // push one {at,action,by} event, write it back — all inside the
+  // task lock (tasksUpdateDirect → withTaskLock) so concurrent clicks
+  // can't lose an event. Redundant events (⏸ when already paused, ▶
+  // when not) are dropped here to keep the log clean; the per-interval
+  // replay in lib/inProgressTime is tolerant either way. Graceful: the
+  // generic writer below skips this if the `time_pauses` header isn't
+  // on the sheet yet (idx.get == null → continue).
+  if (patch.appendTimePause) {
+    const action = patch.appendTimePause.action;
+    const existing: TimePauseEvent[] = (() => {
+      try {
+        const parsed = JSON.parse(String(cell("time_pauses") ?? "[]"));
+        return Array.isArray(parsed) ? (parsed as TimePauseEvent[]) : [];
+      } catch {
+        return [];
+      }
+    })();
+    const lastAction = existing.length
+      ? existing[existing.length - 1].action
+      : "resume";
+    const isRedundant =
+      (action === "pause" && lastAction === "pause") ||
+      (action === "resume" && lastAction !== "pause");
+    if (!isRedundant) {
+      existing.push({ at: now, action, by: subjectEmail });
+      changes.time_pauses = JSON.stringify(existing);
+    }
+  }
+
   // Capture a snapshot of the OLD body (and title, if it also
   // changed in the same save) before overwriting it, so the task
   // detail page's history section can surface previous versions.
@@ -2937,6 +2969,7 @@ function rowToTask(row: unknown[], idx: Map<string, number>): WorkTask {
     calendar_event_ids: parseJsonField("calendar_event_ids", false) as Record<string, string>,
     google_tasks: normalizeGTaskCell(cell("google_tasks")),
     status_history: parseJsonField("status_history", true) as WorkTask["status_history"],
+    time_pauses: parseJsonField("time_pauses", true) as WorkTask["time_pauses"],
     description_history: parseJsonField(
       "description_history",
       true,

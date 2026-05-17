@@ -1,22 +1,28 @@
 /**
  * Client-safe, dependency-free derivation of "how long has this task
- * been in status בעבודה (in_progress)" from its status_history.
+ * been actively in status בעבודה (in_progress)" from its status_history
+ * + pause/resume events.
  *
- * The counter the user asked for "starts when you hit בעבודה and stops
- * when you switch the status" — but rather than a stateful start/stop
- * timer (fragile across missed stops / server restarts), we DERIVE it:
- * status_history already records every transition with a timestamp, so
- * the in-progress time is just the sum of every [enter in_progress →
- * next transition] interval, plus a live tail if it's in_progress now.
+ * The counter "starts when you hit בעבודה and stops when you change the
+ * status" — derived, not a stateful timer: status_history records every
+ * transition with a timestamp, so the in-progress time is the sum of
+ * every [enter in_progress → next transition] interval, plus a live
+ * tail if it's in_progress now.
  *
- * This measures ELAPSED wall-clock time in the in_progress state, not
- * effort — a task left in_progress over the weekend accrues the whole
- * weekend. That's exactly why the value is editable: the manual
- * `inprogress_minutes` override on the task row supersedes this when
- * set (see WorkTask.inprogress_minutes / lib/tasksWriteDirect).
+ * On top of that the user can ⏸ pause / ▶ resume WITHOUT changing
+ * status (a break, lunch, context-switch). Those events live in a
+ * separate stream (WorkTask.time_pauses); paused stretches are
+ * subtracted. Pauses are replayed PER in_progress interval, each
+ * starting un-paused, so a pause can never bleed across status
+ * sessions (leave בעבודה and a dangling pause is closed at that
+ * boundary; re-entering בעבודה starts fresh).
  *
- * No server imports — a minimal local input type keeps this usable
- * from a client component too (mirrors lib/pricingMatch's rationale).
+ * Even with pauses this is still ELAPSED wall-clock, not guaranteed
+ * effort, so the manual `inprogress_minutes` override on the task row
+ * supersedes this entirely when set (see WorkTask.inprogress_minutes).
+ *
+ * No server imports — minimal local input types keep this usable from
+ * a client component too (mirrors lib/pricingMatch's rationale).
  */
 
 export const IN_PROGRESS_STATUS = "in_progress";
@@ -26,21 +32,26 @@ export type StatusHistoryLike = {
   at: string;
   /** Status the task moved TO at `at`. */
   to: string;
-  /** Status the task moved FROM (unused by the interval math — the
-   *  next entry's `at` is the authoritative close — but kept so callers
-   *  can pass status_history rows verbatim). */
   from?: string;
 };
 
+export type PauseEventLike = {
+  /** ISO timestamp of the pause/resume. */
+  at: string;
+  action: "pause" | "resume";
+};
+
 export type InProgressTime = {
-  /** Total minutes spent in_progress (closed intervals + live tail),
-   *  rounded. */
+  /** Total ACTIVE minutes in_progress (closed intervals + live tail,
+   *  minus paused stretches), rounded. */
   minutes: number;
-  /** True when the task is in_progress right now (last transition led
-   *  to in_progress and it never left) — the value is still growing. */
+  /** True when in_progress right now AND not paused — the value is
+   *  still growing. */
   isRunning: boolean;
-  /** ISO time the current open in_progress stretch began, when
-   *  isRunning; "" otherwise. */
+  /** True when in_progress right now but currently paused. */
+  isPaused: boolean;
+  /** ISO time the current ACTIVE (running, un-paused) stretch began,
+   *  when isRunning; "" otherwise. */
   runningSinceIso: string;
 };
 
@@ -49,16 +60,12 @@ function ts(s: string): number {
   return Number.isFinite(t) ? t : NaN;
 }
 
-/**
- * @param history       The task's status_history (any order; sorted here).
- * @param currentStatus The task's CURRENT status — gates the live tail
- *                       so a data gap (status changed without a history
- *                       row) can't make a stale interval run forever.
- * @param nowMs         Override for "now" (testing); defaults to Date.now().
- */
+type Interval = { start: number; end: number; isCurrent: boolean };
+
 export function deriveInProgressTime(
   history: StatusHistoryLike[] | undefined | null,
   currentStatus: string,
+  pauses?: PauseEventLike[] | undefined | null,
   nowMs: number = Date.now(),
 ): InProgressTime {
   const entries = (history ?? [])
@@ -66,33 +73,69 @@ export function deriveInProgressTime(
     .slice()
     .sort((a, b) => ts(a.at) - ts(b.at));
 
-  let totalMs = 0;
+  // 1. Build the in_progress intervals from status_history.
+  const intervals: Interval[] = [];
   let openAt: number | null = null;
-
   for (const e of entries) {
     const at = ts(e.at);
     if (e.to === IN_PROGRESS_STATUS) {
-      // Entering (or re-affirming) in_progress — open an interval if
-      // one isn't already open.
       if (openAt == null) openAt = at;
     } else if (openAt != null) {
-      // Any transition away from in_progress closes the open interval.
-      totalMs += Math.max(0, at - openAt);
+      intervals.push({ start: openAt, end: at, isCurrent: false });
       openAt = null;
     }
   }
-
-  let isRunning = false;
-  let runningSinceIso = "";
   if (openAt != null && currentStatus === IN_PROGRESS_STATUS) {
-    isRunning = true;
-    runningSinceIso = new Date(openAt).toISOString();
-    totalMs += Math.max(0, nowMs - openAt);
+    intervals.push({ start: openAt, end: nowMs, isCurrent: true });
   }
+  // (If openAt != null but not currently in_progress, it's a data gap —
+  //  a status change with no history row — so we don't extend it.)
+
+  const pauseEvents = (pauses ?? [])
+    .filter((p) => p && typeof p.at === "string" && !Number.isNaN(ts(p.at)))
+    .slice()
+    .sort((a, b) => ts(a.at) - ts(b.at));
+
+  // 2. For each interval, replay pauses scoped to that interval (each
+  //    starts un-paused → no bleed across status sessions).
+  let totalMs = 0;
+  let isPaused = false;
+  let runningSinceMs = 0;
+  for (const iv of intervals) {
+    const len = Math.max(0, iv.end - iv.start);
+    let pausedMs = 0;
+    let pState: "run" | "pause" = "run";
+    let pStart = 0;
+    let activeSince = iv.start;
+    for (const pe of pauseEvents) {
+      const at = ts(pe.at);
+      if (at < iv.start || at > iv.end) continue;
+      if (pe.action === "pause" && pState === "run") {
+        pState = "pause";
+        pStart = at;
+      } else if (pe.action === "resume" && pState === "pause") {
+        pausedMs += Math.max(0, at - pStart);
+        pState = "run";
+        activeSince = at;
+      }
+    }
+    if (pState === "pause") {
+      pausedMs += Math.max(0, iv.end - pStart);
+    }
+    totalMs += Math.max(0, len - pausedMs);
+    if (iv.isCurrent) {
+      isPaused = pState === "pause";
+      runningSinceMs = activeSince;
+    }
+  }
+
+  const hasCurrent = intervals.some((iv) => iv.isCurrent);
+  const isRunning = hasCurrent && !isPaused;
 
   return {
     minutes: Math.round(totalMs / 60000),
     isRunning,
-    runningSinceIso,
+    isPaused: hasCurrent && isPaused,
+    runningSinceIso: isRunning ? new Date(runningSinceMs).toISOString() : "",
   };
 }

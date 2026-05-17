@@ -648,6 +648,7 @@ export default async function TaskDetailPage({
             const ip = deriveInProgressTime(
               t.status_history || [],
               t.status,
+              t.time_pauses || [],
             );
             return (
               <SideBlock title="מעקב זמן">
@@ -655,6 +656,7 @@ export default async function TaskDetailPage({
                   taskId={t.id}
                   autoMinutes={ip.minutes}
                   isRunning={ip.isRunning}
+                  isPaused={ip.isPaused}
                   overrideMinutes={t.inprogress_minutes ?? null}
                 />
               </SideBlock>

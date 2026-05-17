@@ -9,11 +9,12 @@ import type { TimeLogRow } from "@/lib/timeLog";
  * Two parts:
  *  1. STATUS COUNTER (top) — "time in status בעבודה", derived live from
  *     status_history (starts when the task enters in_progress, stops
- *     when it leaves; see lib/inProgressTime). Because that's elapsed
- *     wall-clock — not effort — and inflates if a task is left in
- *     progress over a weekend, the value is EDITABLE: saving a number
- *     writes the `inprogress_minutes` override on the task row, which
- *     supersedes the auto value until reset.
+ *     when it leaves; see lib/inProgressTime). While in_progress the
+ *     user can ⏸ pause / ▶ resume it without changing status. Because
+ *     it's elapsed wall-clock — not effort — the value is EDITABLE any
+ *     time (incl. after the task is no longer in progress): saving a
+ *     number writes the `inprogress_minutes` override on the task row,
+ *     which supersedes the auto value until reset.
  *  2. MANUAL LOG (bottom) — append-only per-person entries via the
  *     /api/tasks/time ledger (informational; does not drive billing).
  */
@@ -30,31 +31,40 @@ export default function TaskTimeTracker({
   taskId,
   autoMinutes,
   isRunning,
+  isPaused,
   overrideMinutes,
 }: {
   taskId: string;
-  /** Status-derived in-progress minutes (computed server-side from
-   *  status_history at page render). */
+  /** Status-derived active in-progress minutes (computed server-side
+   *  from status_history + pauses at page render). */
   autoMinutes: number;
-  /** True when the task is in_progress right now (counter still grows;
-   *  the shown value is as of page load). */
+  /** True when in_progress now and not paused (counter still growing;
+   *  shown value is as of page load). */
   isRunning: boolean;
+  /** True when in_progress now but paused. */
+  isPaused: boolean;
   /** Manual override persisted on the task row, or null when unset
    *  (→ show the auto value). */
   overrideMinutes: number | null;
 }) {
-  /* ── Status counter (auto + editable override) ─────────────────── */
+  /* ── Status counter (auto + pause/resume + editable override) ──── */
   const [override, setOverride] = useState<number | null>(overrideMinutes);
+  const [auto, setAuto] = useState(autoMinutes);
+  const [running, setRunning] = useState(isRunning);
+  const [paused, setPaused] = useState(isPaused);
   const [editOpen, setEditOpen] = useState(false);
   const [editAmount, setEditAmount] = useState("");
   const [editUnit, setEditUnit] = useState<"min" | "hr">("min");
   const [savingOverride, setSavingOverride] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [counterErr, setCounterErr] = useState("");
 
-  const effective = override != null ? override : autoMinutes;
+  const effective = override != null ? override : auto;
+  // Pause/resume only matters while the auto counter is the live one.
+  const inProgress = running || paused;
+  const showPausePlay = override == null && inProgress;
 
   function openEdit() {
-    // Prefill with the current effective value (in minutes).
     setEditAmount(String(effective));
     setEditUnit("min");
     setCounterErr("");
@@ -79,7 +89,11 @@ export default function TaskTimeTracker({
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "save failed");
-      setOverride(typeof data.inprogress_minutes === "number" ? data.inprogress_minutes : minutes);
+      setOverride(
+        typeof data.inprogress_minutes === "number"
+          ? data.inprogress_minutes
+          : minutes,
+      );
       setEditOpen(false);
     } catch (err) {
       setCounterErr(err instanceof Error ? err.message : String(err));
@@ -105,6 +119,28 @@ export default function TaskTimeTracker({
       setCounterErr(err instanceof Error ? err.message : String(err));
     } finally {
       setSavingOverride(false);
+    }
+  }
+
+  async function togglePause() {
+    const action = paused ? "resume" : "pause";
+    setToggling(true);
+    setCounterErr("");
+    try {
+      const res = await fetch("/api/tasks/time-pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, action }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "toggle failed");
+      if (typeof data.minutes === "number") setAuto(data.minutes);
+      setRunning(!!data.isRunning);
+      setPaused(!!data.isPaused);
+    } catch (err) {
+      setCounterErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setToggling(false);
     }
   }
 
@@ -183,13 +219,20 @@ export default function TaskTimeTracker({
         <span className="time-tracker-total-label">
           זמן בסטטוס ״בעבודה״
           {override != null ? (
-            <span className="time-tracker-tag" title={`אוטומטי: ${fmtDur(autoMinutes)}`}>
+            <span
+              className="time-tracker-tag"
+              title={`אוטומטי: ${fmtDur(auto)} · ערך ידני גובר`}
+            >
               נערך ידנית
             </span>
-          ) : isRunning ? (
+          ) : paused ? (
+            <span className="time-tracker-tag is-paused" title="הספירה מושהית">
+              ⏸ מושהה
+            </span>
+          ) : running ? (
             <span
               className="time-tracker-tag is-running"
-              title="המשימה בסטטוס ׳בעבודה׳ כעת — הערך מתעדכן בריענון"
+              title="המשימה בסטטוס ׳בעבודה׳ — הספירה רצה (מתעדכן בריענון)"
             >
               ● בעבודה כעת
             </span>
@@ -199,7 +242,34 @@ export default function TaskTimeTracker({
 
       {counterErr && <div className="time-tracker-error">{counterErr}</div>}
 
-      {editOpen ? (
+      <div className="time-tracker-actions">
+        {showPausePlay && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={togglePause}
+            disabled={toggling}
+            title={
+              paused
+                ? "המשך ספירת הזמן"
+                : "השהה את ספירת הזמן (בלי לשנות סטטוס)"
+            }
+          >
+            {toggling ? "…" : paused ? "▶ המשך" : "⏸ השהה"}
+          </button>
+        )}
+        {!editOpen && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={openEdit}
+          >
+            ✎ ערוך זמן
+          </button>
+        )}
+      </div>
+
+      {editOpen && (
         <form className="time-tracker-form" onSubmit={saveOverride}>
           <div className="time-tracker-row">
             <input
@@ -223,7 +293,11 @@ export default function TaskTimeTracker({
             </select>
           </div>
           <div className="time-tracker-actions">
-            <button type="submit" className="btn-primary btn-sm" disabled={savingOverride}>
+            <button
+              type="submit"
+              className="btn-primary btn-sm"
+              disabled={savingOverride}
+            >
               {savingOverride ? "שומר…" : "שמור"}
             </button>
             {override != null && (
@@ -250,14 +324,6 @@ export default function TaskTimeTracker({
             </button>
           </div>
         </form>
-      ) : (
-        <button
-          type="button"
-          className="btn-ghost btn-sm time-tracker-add"
-          onClick={openEdit}
-        >
-          ✎ ערוך זמן
-        </button>
       )}
 
       <hr className="time-tracker-sep" />
@@ -274,7 +340,9 @@ export default function TaskTimeTracker({
         <ul className="time-tracker-list">
           {entries.slice(0, 6).map((en, i) => (
             <li key={`${en.loggedAt}-${i}`} className="time-tracker-entry">
-              <span className="time-tracker-entry-dur">{fmtDur(en.minutes)}</span>
+              <span className="time-tracker-entry-dur">
+                {fmtDur(en.minutes)}
+              </span>
               <span className="time-tracker-entry-meta">
                 {en.loggedAt.slice(0, 10)} · {en.loggedBy.split("@")[0]}
                 {en.note ? ` · ${en.note}` : ""}
@@ -323,7 +391,11 @@ export default function TaskTimeTracker({
             maxLength={500}
           />
           <div className="time-tracker-actions">
-            <button type="submit" className="btn-primary btn-sm" disabled={submitting}>
+            <button
+              type="submit"
+              className="btn-primary btn-sm"
+              disabled={submitting}
+            >
               {submitting ? "שומר…" : "שמור"}
             </button>
             <button

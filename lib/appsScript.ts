@@ -825,6 +825,17 @@ export type WorkTaskStatusHistoryEntry = {
   note?: string;
 };
 
+/** One pause/resume event on the in-progress time counter. While the
+ *  task is in status בעבודה the user can ⏸/▶ without changing status;
+ *  lib/inProgressTime subtracts paused stretches from the
+ *  status-derived time. Append-only; replayed per in_progress interval
+ *  (a pause never bleeds across status sessions). */
+export type TimePauseEvent = {
+  at: string;
+  action: "pause" | "resume";
+  by: string;
+};
+
 /** One captured snapshot of a task's previous body/title, written
  *  immediately before the edit that replaced it. The `body` is the
  *  value that USED TO be in the task — not the new value — so the
@@ -981,6 +992,11 @@ export type WorkTask = {
    *  Optional / graceful: legacy rows + the window before the
    *  `inprogress_minutes` column ships parse as undefined. */
   inprogress_minutes?: number;
+  /** Pause/resume events on the in-progress time counter. Optional /
+   *  graceful: legacy rows + the window before the `time_pauses`
+   *  column ships parse as []. Replayed per in_progress interval by
+   *  lib/inProgressTime so a pause never leaks across status sessions. */
+  time_pauses?: TimePauseEvent[];
 };
 
 export type TasksListFilters = {
@@ -1261,6 +1277,10 @@ export type TasksUpdatePatch = {
    *  from status_history). NOT author-gated — any task participant who
    *  can see the task may correct it, like a status change. */
   inprogress_minutes?: number | "";
+  /** Append one pause/resume event to the in-progress counter. Handled
+   *  like status_history (read-push-write inside the task lock). NOT
+   *  author-gated — any task participant may ⏸/▶, like a status flip. */
+  appendTimePause?: { action: "pause" | "resume" };
 };
 
 /** Distinct campaigns that have at least one task on the given project,
