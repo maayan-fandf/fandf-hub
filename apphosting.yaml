@@ -164,7 +164,7 @@ env:
   #      Sheets instantly; DUALWRITE stays "1" so Firestore stays
   #      current and a re-flip needs no re-backfill).
   - variable: USE_FIRESTORE_DUALWRITE
-    value: ""
+    value: "1"
     availability:
       - BUILD
       - RUNTIME
