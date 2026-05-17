@@ -8,8 +8,9 @@ import { useEffect, useRef, useState } from "react";
  * the path in File Explorer / Finder.
  *
  * One-click open: on click we ALSO fire a `fandfopen:<enc path>`
- * custom-scheme link (via a throwaway iframe so an unhandled scheme
- * fails silently). If the user installed the one-time helper
+ * custom-scheme link (top-level anchor click inside the user gesture;
+ * an unhandled scheme just no-ops). If the user installed the one-time
+ * helper
  * (public/desktop-open/) Explorer/Finder opens the folder directly.
  * Browsers block plain `file://` from web pages, so a registered
  * custom protocol + tiny per-user helper is the only way to truly
@@ -118,8 +119,32 @@ export default function CopyLocalPathButton({
     };
   }, [showHint]);
 
+  function launchScheme() {
+    // Fire the custom scheme via a real top-level anchor click —
+    // SYNCHRONOUSLY inside the user gesture, before any await. Two
+    // hard-won points:
+    //   1. iframe-initiated external protocols are silently blocked in
+    //      current Chrome/Edge (no prompt at all) — must be a top-level
+    //      navigation / anchor click.
+    //   2. It must run before the awaited clipboard write; once the
+    //      gesture is "consumed" the browser drops the protocol launch.
+    // If the helper isn't installed the browser just does nothing — the
+    // copied path + hint is the fallback (we can't detect which).
+    try {
+      const a = document.createElement("a");
+      a.href = "fandfopen:" + encodeURIComponent(effectivePath);
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      /* scheme launch unsupported — copy fallback still stands */
+    }
+  }
+
   async function copy() {
     setErr(null);
+    launchScheme();
     let ok = false;
     try {
       await navigator.clipboard.writeText(effectivePath);
@@ -145,25 +170,6 @@ export default function CopyLocalPathButton({
       setCopied(true);
       setShowHint(true);
       window.setTimeout(() => setCopied(false), 2000);
-    }
-    // Best-effort one-click open: fire the custom scheme. If the helper
-    // (public/desktop-open/) is installed, Explorer/Finder opens the
-    // folder. If not, the throwaway iframe just fails silently — the
-    // copied path + hint above is the fallback. We can't detect which.
-    try {
-      const ifr = document.createElement("iframe");
-      ifr.style.display = "none";
-      ifr.src = "fandfopen:" + encodeURIComponent(effectivePath);
-      document.body.appendChild(ifr);
-      window.setTimeout(() => {
-        try {
-          ifr.remove();
-        } catch {
-          /* already gone */
-        }
-      }, 1500);
-    } catch {
-      /* scheme launch unsupported — copy fallback still stands */
     }
   }
 
