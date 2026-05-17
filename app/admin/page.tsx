@@ -54,6 +54,14 @@ export default async function AdminHome() {
       ready: true,
     },
     {
+      href: "/admin/pricing",
+      title: "תמחור",
+      emoji: "💰",
+      subtitle:
+        "מחירון לפי חברה/פרוייקט × מחלקה × סוג. מוזן בטופס ״משימה חדשה״ (פרוייקט-ספציפי, אחרת לפי חברה) ונשמר על המשימה ובלשונית PricingLog.",
+      ready: true,
+    },
+    {
       href: "/admin/projects",
       title: "פרויקטים",
       emoji: "🏢",

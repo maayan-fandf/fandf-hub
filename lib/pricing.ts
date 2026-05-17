@@ -65,3 +65,71 @@ export const readPricingSetup = cache(
     }
   },
 );
+
+/* ── Admin editor (replace-the-whole-table) ───────────────────────────
+ * The /admin/pricing UI submits the entire rate card on Save. Small
+ * sheet → overwrite A2:E with the new rows and blank any trailing old
+ * rows. Header row (A1:E1) is (re)asserted so a fresh sheet works too.
+ * Admin-gated at the route; this just does the write as the admin. */
+
+const PRICING_HEADER = ["חברה", "פרוייקט", "מחלקה", "סוג", "מחיר יחידה"];
+
+export async function replacePricingRows(
+  subjectEmail: string,
+  rows: PricingRow[],
+): Promise<{ ok: true; written: number }> {
+  const sheets = sheetsClient(subjectEmail);
+  const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
+
+  // Drop blank/incomplete rows (company + department + type are the
+  // key; price may legitimately be 0 but we keep the row).
+  const clean = rows
+    .map((r) => ({
+      company: String(r.company ?? "").trim(),
+      project: String(r.project ?? "").trim(),
+      department: String(r.department ?? "").trim(),
+      type: String(r.type ?? "").trim(),
+      unitPrice: Number.isFinite(r.unitPrice) ? r.unitPrice : 0,
+    }))
+    .filter((r) => r.company && r.department && r.type);
+
+  // How far the existing data extends, so we can blank rows the admin
+  // deleted (new set shorter than old).
+  const cur = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Pricingsetup!A2:E",
+  });
+  const oldLen = (cur.data.values ?? []).length;
+
+  const values = clean.map((r) => [
+    r.company,
+    r.project,
+    r.department,
+    r.type,
+    r.unitPrice,
+  ]);
+
+  // Header (idempotent — also bootstraps a fresh tab).
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: "Pricingsetup!A1:E1",
+    valueInputOption: "RAW",
+    requestBody: { values: [PRICING_HEADER] },
+  });
+
+  if (values.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `Pricingsetup!A2:E${1 + values.length}`,
+      valueInputOption: "RAW",
+      requestBody: { values },
+    });
+  }
+  if (oldLen > values.length) {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `Pricingsetup!A${2 + values.length}:E${1 + oldLen}`,
+    });
+  }
+  return { ok: true, written: values.length };
+}

@@ -34,7 +34,9 @@ export default async function TaskFormSchemaAdminPage() {
             סכמת טופס משימה
           </h1>
           <div className="subtitle">
-            <Link href="/admin">→ ניהול</Link> · שולט על המחלקות והסוגים
+            <Link href="/admin">→ ניהול</Link> ·{" "}
+            <Link href="/admin/pricing">💰 תמחור</Link> (מחירון לפי
+            חברה/פרוייקט × מחלקה × סוג) · שולט על המחלקות והסוגים
             הזמינים בטופס &quot;משימה חדשה&quot;. כל סוג הוא תיקייה ב-Drive
             תחת <code>סכמות משימה/&lt;מחלקה&gt;/&lt;סוג&gt;/</code>. כשמוסיפים
             תיקייה כאן (או ישירות ב-Drive), היא נכנסת לתוקף תוך כ-5 דקות

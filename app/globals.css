@@ -11137,6 +11137,84 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   text-decoration: underline;
 }
 
+/* /admin/pricing — rate-card editor */
+.pricing-editor-hint {
+  font-size: .88em;
+  color: var(--muted);
+  margin: 0 0 1em;
+  line-height: 1.5;
+}
+.pricing-editor-table {
+  display: flex;
+  flex-direction: column;
+  gap: .4em;
+}
+.pricing-editor-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.4fr 1fr 1.2fr .7fr auto;
+  gap: .5em;
+  align-items: center;
+}
+.pricing-editor-head {
+  font-size: .78em;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 .2em;
+}
+.pricing-editor-row select,
+.pricing-editor-row input {
+  width: 100%;
+  padding: .4em .5em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .88em;
+}
+.pricing-editor-row select:focus,
+.pricing-editor-row input:focus {
+  outline: 2px solid var(--accent-soft, rgba(99,102,241,.25));
+  border-color: var(--accent, #6366f1);
+}
+.pricing-editor-row select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.pricing-editor-del {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 7px;
+  cursor: pointer;
+  padding: .35em .6em;
+  font-size: .85em;
+}
+.pricing-editor-del:hover {
+  color: var(--danger, #b91c1c);
+  border-color: var(--danger, #b91c1c);
+}
+.pricing-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: .8em;
+  margin-top: 1.1em;
+  flex-wrap: wrap;
+}
+.pricing-editor-warn { color: #92400e; font-size: .82em; }
+.pricing-editor-ok { color: #047857; font-size: .85em; }
+.pricing-editor-err { color: var(--danger, #b91c1c); font-size: .85em; }
+@media (max-width: 760px) {
+  .pricing-editor-head { display: none; }
+  .pricing-editor-row {
+    grid-template-columns: 1fr 1fr;
+    gap: .4em;
+    padding: .6em;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+}
+
 .tasks-priority-pill {
   display: inline-block;
   min-width: 1.5em;
