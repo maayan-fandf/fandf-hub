@@ -332,6 +332,22 @@ export function useSAProjectsReads(): boolean {
   return String(process.env.USE_SA_PROJECTS_READS || "").trim() === "1";
 }
 
+/** True when the hub uses Firestore (Native mode) for the migrated
+ *  data — tasks / comments / pricingLog. Mirrors the useSA* flag style
+ *  above. Default OFF.
+ *
+ *  Rollout (see docs/STORAGE_MIGRATION_HANDOFF.md):
+ *    - Phase 2 gates dual-WRITE behind this (Sheets stays source of
+ *      truth; a Firestore write failure never breaks the Sheets write).
+ *    - Phase 3 gates the Firestore READ path behind this, flipped for
+ *      everyone at once. Sheets stays dual-written → flipping back to
+ *      "" is an instant, lossless rollback.
+ *  The companion lib/firestore.ts owns the actual client; it re-exports
+ *  this so Firestore code has one import. */
+export function useFirestoreTasks(): boolean {
+  return String(process.env.USE_FIRESTORE_TASKS || "").trim() === "1";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */

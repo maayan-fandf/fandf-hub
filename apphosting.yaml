@@ -148,6 +148,20 @@ env:
       - BUILD
       - RUNTIME
 
+  # Sheets -> Firestore storage migration (docs/STORAGE_MIGRATION_HANDOFF.md).
+  # Default OFF ("" = off). Phase 2 gates dual-WRITE behind this (Sheets
+  # stays source of truth); Phase 3 gates the Firestore READ path behind
+  # it, flipped all-at-once once parity is clean. Sheets stays
+  # dual-written through Phase 3 so flipping back to "" is an instant,
+  # lossless rollback. Reuses TASKS_SA_KEY_JSON — no new secret. Requires
+  # the one-time infra in lib/firestore.ts (enable API + create Native
+  # DB + grant the SA roles/datastore.user + deploy rules/indexes).
+  - variable: USE_FIRESTORE_TASKS
+    value: ""
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Inline-template feature on /tasks/new — when "1", picking a
   # (department, kind) shows a picker of files inside the matching
   # סכמות משימה/<Dept>/<Kind>/ folder; selecting one materializes a

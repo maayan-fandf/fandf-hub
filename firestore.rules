@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// Storage migration (docs/STORAGE_MIGRATION_HANDOFF.md): the hub never
+// touches Firestore from a browser/client SDK. ALL access is server-side
+// through the Admin SDK (lib/firestore.ts), which authenticates as the
+// service account and BYPASSES these rules entirely. Per-user access
+// control stays in the lib seam (getAccessScope etc.), applied in app
+// code after the read — exactly as it is for the Sheets path today.
+//
+// Therefore: deny every client request, unconditionally. If a client
+// SDK ever appears and needs scoped access, add explicit match blocks —
+// never widen this catch-all.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
