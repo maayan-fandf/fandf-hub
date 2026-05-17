@@ -70,22 +70,34 @@ export default async function TaskDetailPage({
   // formSchema is fetched only when we're going to render the edit
   // panel — non-edit (read-mode) renders don't need it. Same TTL-cached
   // helper /tasks/new uses, so it's effectively free on a warm cache.
-  const [res, peopleRes, accessRes, formSchemaRes] = await Promise.all([
-    tasksGet(decodedId).catch((e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.toLowerCase().includes("not found")) return null;
-      throw e;
-    }),
-    tasksPeopleList().catch(() => ({ ok: false, people: [] })),
-    getMyProjects().catch(() => null),
-    editing
-      ? currentUserEmail()
-          .then((email) =>
-            email ? getTaskFormSchema(email).catch(() => null) : null,
-          )
-          .catch(() => null)
-      : Promise.resolve(null),
-  ]);
+  // getTaskComments reads the full Comments tab via commentsDirect's
+  // OWN (uncached) reader — a SEPARATE Sheets GET from tasksGet's
+  // (two-layer-cached) readCommentsTab. It only needs the task id
+  // (== decodedId), so run it HERE inside the parallel batch instead
+  // of awaiting it sequentially after — that took a second full
+  // large-sheet read off the critical path (it was the main reason
+  // this page felt slow). Errors → [] (banner renders null; the
+  // discussion section surfaces its own error).
+  const [res, peopleRes, accessRes, formSchemaRes, bannerComments] =
+    await Promise.all([
+      tasksGet(decodedId).catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.toLowerCase().includes("not found")) return null;
+        throw e;
+      }),
+      tasksPeopleList().catch(() => ({ ok: false, people: [] })),
+      getMyProjects().catch(() => null),
+      editing
+        ? currentUserEmail()
+            .then((email) =>
+              email ? getTaskFormSchema(email).catch(() => null) : null,
+            )
+            .catch(() => null)
+        : Promise.resolve(null),
+      getTaskComments(decodedId)
+        .then((d) => d.comments)
+        .catch(() => []),
+    ]);
   if (accessRes) {
     const isClientUser =
       !!accessRes.isClient &&
@@ -98,18 +110,11 @@ export default async function TaskDetailPage({
 
   const t = res.task;
 
-  // Pre-fetch the task's comments for the approval banner.
-  // getTaskComments is wrapped in React's cache(), so this call is
-  // deduped with the one TaskComments makes for the discussion section
-  // — the two surfaces share a single Sheets read. The banner itself
-  // decides whether to render based on status + matching comment
-  // prefix, so we can pre-fetch unconditionally without paying a
-  // second read. On error or when the user can't access the project
-  // we silently fall back to an empty list; the banner renders null
-  // in that case and the discussion section surfaces the error itself.
-  const bannerComments = await getTaskComments(t.id)
-    .then((d) => d.comments)
-    .catch(() => []);
+  // `bannerComments` was fetched in the parallel batch above (the
+  // approval banner needs it; getTaskComments is React-cache()-wrapped
+  // so the discussion section's TaskComments reuses the same result —
+  // no second read within this request). On error it's [] and the
+  // banner renders null.
   const myEmail = (await currentUserEmail()) || "";
 
   // Auto-dismiss bell pings about this task. When the user lands on
