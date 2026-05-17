@@ -555,6 +555,31 @@ export async function postReplyDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
+  // Phase 2 storage migration — mirror the reply into Firestore.
+  // taskId is set only when the DIRECT parent is a task row (matches
+  // taskCommentsDirect's matching rule). Flag-gated, never throws,
+  // not awaited.
+  void import("@/lib/firestoreSync")
+    .then((m) =>
+      m.mirrorComment({
+        id,
+        project: parentProject,
+        anchor: "general",
+        parent_id: parentCommentId,
+        taskId: parentIsTask ? parentCommentId : "",
+        author_email: me,
+        author_name: subjectEmail.split("@")[0],
+        body: trimmedBody,
+        mentions: parsedMentions,
+        resolved: false,
+        createdAt: now,
+        edited_at: "",
+        google_tasks: [],
+        status_history: [],
+      }),
+    )
+    .catch(() => {});
+
   // Find the thread root + collect every email @-mentioned anywhere
   // earlier in the thread. Mirrors the Chat-side listThreadMentioned-
   // Emails fan-out: when a reply lands, anyone tagged earlier in the
@@ -731,6 +756,13 @@ export async function resolveCommentDirect(
     });
   }
 
+  // Phase 2 storage migration — mirror the resolved toggle (merge so
+  // it doesn't clobber the rest of the doc). Flag-gated, never throws,
+  // not awaited.
+  void import("@/lib/firestoreSync")
+    .then((m) => m.mirrorCommentFields(commentId, { resolved }))
+    .catch(() => {});
+
   return { ok: true, comment_id: commentId, resolved };
 }
 
@@ -795,6 +827,22 @@ export async function deleteCommentDirect(
       })),
     },
   });
+
+  // Phase 2 storage migration — mirror the deletion (root + replies)
+  // into Firestore. Reply ids resolved from the in-memory rows.
+  // Flag-gated, never throws, not awaited.
+  {
+    const idCol = idx.get("id");
+    const deletedIds = [
+      commentId,
+      ...(idCol != null
+        ? replyRowIndices.map((ri) => String(rows[ri][idCol] ?? "").trim())
+        : []),
+    ].filter(Boolean);
+    void import("@/lib/firestoreSync")
+      .then((m) => m.mirrorCommentsDeleted(deletedIds))
+      .catch(() => {});
+  }
 
   if (Object.keys(gtToDelete).length > 0) {
     deferAfterResponse(async () => {
@@ -886,6 +934,17 @@ export async function editCommentDirect(
     spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
     requestBody: { valueInputOption: "RAW", data },
   });
+
+  // Phase 2 storage migration — mirror the body edit + edited_at
+  // (merge). Flag-gated, never throws, not awaited.
+  void import("@/lib/firestoreSync")
+    .then((m) =>
+      m.mirrorCommentFields(commentId, {
+        body: newBody.trim(),
+        edited_at: now,
+      }),
+    )
+    .catch(() => {});
 
   // Sync spawned Google Tasks notes (top-level only) after the response —
   // the edit body is already in the Sheet, so the user's view reflects the
@@ -985,6 +1044,29 @@ export async function createMentionDirect(
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [row as unknown[]] },
   });
+
+  // Phase 2 storage migration — mirror the mention row (top-level,
+  // no parent → taskId ""). Flag-gated, never throws, not awaited.
+  void import("@/lib/firestoreSync")
+    .then((m) =>
+      m.mirrorComment({
+        id,
+        project,
+        anchor: "general",
+        parent_id: "",
+        taskId: "",
+        author_email: me,
+        author_name: me.split("@")[0],
+        body: args.body.trim(),
+        mentions: assignees,
+        resolved: false,
+        createdAt: now,
+        edited_at: "",
+        google_tasks: [],
+        status_history: [],
+      }),
+    )
+    .catch(() => {});
 
   // Notifications run after the response is flushed. Each mentioned
   // assignee gets a `mention` notification (writes a row to the

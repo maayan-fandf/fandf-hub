@@ -191,6 +191,16 @@ export async function recomputeUmbrellaStatus(args: {
     } catch {
       /* probe-script callers without @/ resolution: safe to skip */
     }
+    // Phase 2 storage migration — mirror the umbrella row (its derived
+    // status just changed). Bypasses tasksUpdateDirect → own hook.
+    // Flag-gated, never throws, not awaited.
+    try {
+      void import("@/lib/firestoreSync")
+        .then((m) => m.mirrorTaskById(subjectEmail, umbrellaId))
+        .catch(() => {});
+    } catch {
+      /* probe-script callers without @/ resolution: safe to skip */
+    }
   } catch (e) {
     return {
       ok: false,

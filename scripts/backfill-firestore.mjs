@@ -11,13 +11,16 @@
  * with a full `.set()` (overwrite), so re-running converges — no dupes.
  *   - tasks/{taskId}       taskId = the row's existing `T-…` id
  *   - comments/{commentId} commentId = the row's existing `c-…` id
- *   - pricingLog/{plog-r<sheetRow>}  PricingLog is append-only (rows
- *       never reorder), so the 1-based sheet row number is a stable id
- *       that preserves every ledger row 1:1 (autoId would duplicate on
- *       re-run; a content hash would collapse true byte-identical
- *       rows and break the Phase-2 parity count). If a row is ever
- *       manually deleted/inserted mid-tab (documented non-case for an
- *       append-only ledger) a re-run rewrites shifted ids — acceptable.
+ *   - pricingLog/{plog-<sha1(content)>}  content-hash id, IDENTICAL to
+ *       lib/firestoreSync.ts pricingDocId. This is the key correctness
+ *       constraint: the Phase-2 dual-write of a NEW ledger entry and a
+ *       later backfill re-run of the SAME sheet row produce the SAME
+ *       doc id → no double-count, and parity is an exact multiset
+ *       compare. Two byte-identical ledger rows (same second, task,
+ *       price, creator) collapse to one doc — indistinguishable
+ *       charges on an append-only ledger; acceptable + safer than
+ *       id drift. (A sheet-row-number id would NOT survive the
+ *       dual-write join, since an appended entry doesn't know its row.)
  *
  * AUTH (two contexts, mirrors lib/firestore.ts vs lib/sa.ts):
  *   - Sheets read  → SA with domain-wide delegation, subject=maayan
@@ -40,6 +43,14 @@
 
 import { google } from "googleapis";
 import fs from "node:fs";
+// Shared mapping — backfill + parity-check import the SAME logic so a
+// parity check is meaningful (and stays aligned with lib/firestoreSync).
+import {
+  rowToTaskDoc,
+  rowToCommentDoc,
+  pricingRowToDoc,
+  pricingDocId,
+} from "./_fs-migration-map.mjs";
 
 /* ── env ──────────────────────────────────────────────────────────── */
 const envText = fs.existsSync(".env.local")
@@ -75,70 +86,6 @@ const ONLY = (() => {
 })();
 const wants = (name) => !ONLY || ONLY === name;
 
-/* ── parsers (faithful port of the lib seam) ──────────────────────── */
-function parseJsonArray(v) {
-  if (v == null || v === "") return [];
-  if (typeof v !== "string") return Array.isArray(v) ? v : [];
-  try {
-    const p = JSON.parse(v);
-    return Array.isArray(p) ? p : [];
-  } catch {
-    return [];
-  }
-}
-function parseJsonObject(v) {
-  if (v == null || v === "") return {};
-  if (typeof v !== "string") return v && typeof v === "object" ? v : {};
-  try {
-    const p = JSON.parse(v);
-    return p && typeof p === "object" && !Array.isArray(p) ? p : {};
-  } catch {
-    return {};
-  }
-}
-/** google_tasks: array now, legacy `{email:ref}` object → Object.values. */
-function parseGoogleTasksCell(v) {
-  if (v == null || v === "") return [];
-  let p = v;
-  if (typeof v === "string") {
-    try {
-      p = JSON.parse(v);
-    } catch {
-      return [];
-    }
-  }
-  if (Array.isArray(p)) return p;
-  if (p && typeof p === "object") return Object.values(p);
-  return [];
-}
-function toIsoDate(v) {
-  if (!v) return "";
-  if (v instanceof Date) return v.toISOString();
-  if (typeof v === "string") return v;
-  return String(v);
-}
-function numOrNull(raw, { nonNeg = false } = {}) {
-  if (raw === "" || raw == null) return null;
-  const n = Number(String(raw).replace(/[^\d.-]/g, ""));
-  if (!Number.isFinite(n)) return null;
-  if (nonNeg && n < 0) return null;
-  return n;
-}
-function boolCoerce(v) {
-  if (v === true || v === 1) return true;
-  if (typeof v === "string") {
-    const s = v.trim().toLowerCase();
-    return s === "true" || s === "1" || s === "yes";
-  }
-  return false;
-}
-function emailsFromCsv(s) {
-  return String(s ?? "")
-    .split(/[,;\n]+/)
-    .map((x) => x.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 /* ── Sheets read (DWD) ────────────────────────────────────────────── */
 const sheetsAuth = new google.auth.JWT({
   email: key.client_email,
@@ -156,98 +103,6 @@ async function readTab(range) {
     dateTimeRenderOption: "FORMATTED_STRING",
   });
   return (res.data.values ?? []);
-}
-
-/* ── map a Comments task row → tasks/{id} doc ─────────────────────── */
-function rowToTaskDoc(row, headerIdx) {
-  const cell = (k) => {
-    const i = headerIdx.get(k);
-    return i == null ? "" : row[i];
-  };
-  const createdAt = toIsoDate(cell("timestamp"));
-  const rankRaw = cell("rank");
-  const parsedRank =
-    rankRaw === "" || rankRaw == null ? NaN : parseFloat(String(rankRaw));
-  const fallbackRank = (() => {
-    const ms = Date.parse(createdAt);
-    return Number.isFinite(ms) ? -ms : Number.MAX_SAFE_INTEGER / 2;
-  })();
-  return {
-    id: String(cell("id") ?? ""),
-    brief: String(cell("brief") ?? ""),
-    company: String(cell("company") ?? ""),
-    project: String(cell("project") ?? ""),
-    title: String(cell("title") ?? ""),
-    description: String(cell("body") ?? ""),
-    departments: parseJsonArray(cell("departments")),
-    kind: String(cell("kind") ?? "other"),
-    priority: parseInt(String(cell("priority") ?? "2"), 10) || 2,
-    status: String(cell("status") ?? "awaiting_approval"),
-    sub_status: String(cell("sub_status") ?? ""),
-    author_email: String(cell("author_email") ?? "").toLowerCase(),
-    approver_email: String(cell("approver_email") ?? "").toLowerCase(),
-    project_manager_email: String(cell("project_manager_email") ?? "").toLowerCase(),
-    assignees: emailsFromCsv(cell("mentions")),
-    requested_date: String(cell("requested_date") ?? ""),
-    created_at: createdAt,
-    updated_at: String(cell("updated_at") ?? ""),
-    parent_id: String(cell("parent_id") ?? ""),
-    round_number: parseInt(String(cell("round_number") ?? "1"), 10) || 1,
-    revision_of: String(cell("revision_of") ?? ""),
-    drive_folder_id: String(cell("drive_folder_id") ?? ""),
-    drive_folder_url: String(cell("drive_folder_url") ?? ""),
-    chat_space_id: String(cell("chat_space_id") ?? ""),
-    chat_task_name: String(cell("chat_task_name") ?? ""),
-    calendar_event_ids: parseJsonObject(cell("calendar_event_ids")),
-    google_tasks: parseGoogleTasksCell(cell("google_tasks")),
-    status_history: parseJsonArray(cell("status_history")),
-    time_pauses: parseJsonArray(cell("time_pauses")),
-    description_history: parseJsonArray(cell("description_history")),
-    edited_at: String(cell("edited_at") ?? ""),
-    campaign: String(cell("campaign") ?? ""),
-    file_order: String(cell("file_order") ?? ""),
-    pending_complete: String(cell("pending_complete") ?? ""),
-    rank: Number.isFinite(parsedRank) ? parsedRank : fallbackRank,
-    blocks: parseJsonArray(cell("blocks")),
-    blocked_by: parseJsonArray(cell("blocked_by")),
-    umbrella_id: String(cell("umbrella_id") ?? ""),
-    is_umbrella: boolCoerce(cell("is_umbrella")),
-    // graceful columns → null when absent (Firestore rejects undefined)
-    price: numOrNull(cell("price")),
-    inprogress_minutes: numOrNull(cell("inprogress_minutes"), { nonNeg: true }),
-  };
-}
-
-/* ── map a Comments comment row → comments/{id} doc ───────────────── */
-function rowToCommentDoc(row, headerIdx, taskIds) {
-  const cell = (k) => {
-    const i = headerIdx.get(k);
-    return i == null ? "" : row[i];
-  };
-  const parentId = String(cell("parent_id") ?? "").trim();
-  return {
-    id: String(cell("id") ?? ""),
-    project: String(cell("project") ?? "").trim(),
-    anchor: String(cell("anchor") ?? ""),
-    parent_id: parentId,
-    // taskId set only when the DIRECT parent is a task row — mirrors how
-    // taskCommentsDirect matches a task's own comments (parent_id ===
-    // taskId). Replies (parent = a comment) get "".
-    taskId: parentId && taskIds.has(parentId) ? parentId : "",
-    author_email: String(cell("author_email") ?? "").toLowerCase(),
-    author_name: String(cell("author_name") ?? ""),
-    body: String(cell("body") ?? ""),
-    mentions: String(cell("mentions") ?? "")
-      .split(/[,;\n]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter((s) => s.includes("@")),
-    resolved: Boolean(cell("resolved")),
-    createdAt: toIsoDate(cell("timestamp")),
-    edited_at: toIsoDate(cell("edited_at")) || "",
-    row_kind: "",
-    google_tasks: parseGoogleTasksCell(cell("google_tasks")),
-    status_history: parseJsonArray(cell("status_history")),
-  };
 }
 
 /* ── main ─────────────────────────────────────────────────────────── */
@@ -324,33 +179,9 @@ async function main() {
         throw e;
       }
     }
-    plog.forEach((r, i) => {
-      const createdAtIl = String(r[0] ?? "").trim();
-      const taskId = String(r[1] ?? "").trim();
-      if (!createdAtIl && !taskId) return; // matches readPricingLog skip
-      const sheetRow = i + 2; // A2 is the first data row
-      pricingDocs.push({
-        _id: `plog-r${sheetRow}`,
-        createdAtIl,
-        month: createdAtIl.slice(0, 7),
-        taskId,
-        company: String(r[2] ?? "").trim(),
-        project: String(r[3] ?? "").trim(),
-        departments: String(r[4] ?? "").trim(),
-        kind: String(r[5] ?? "").trim(),
-        price: (() => {
-          const n = numOrNull(r[6]);
-          return n == null ? 0 : n;
-        })(),
-        createdBy: String(r[7] ?? "").trim(),
-        billed: (() => {
-          const raw = r[8];
-          const has =
-            raw !== undefined && raw !== null && String(raw).trim() !== "";
-          const n = numOrNull(raw);
-          return has && n != null ? n : null;
-        })(),
-      });
+    plog.forEach((r) => {
+      const doc = pricingRowToDoc(r); // null = readPricingLog-skip row
+      if (doc) pricingDocs.push(doc);
     });
   }
 
@@ -408,7 +239,7 @@ async function main() {
     if (tSlice.length) wT = await writeAll("tasks", tSlice, (d) => d.id);
     if (cSlice.length) wC = await writeAll("comments", cSlice, (d) => d.id);
     if (pSlice.length)
-      wP = await writeAll("pricingLog", pSlice, (d) => d._id);
+      wP = await writeAll("pricingLog", pSlice, (d) => pricingDocId(d));
 
     console.log(
       `[backfill] DONE — wrote tasks=${wT} comments=${wC} pricingLog=${wP}`,
@@ -431,10 +262,11 @@ async function main() {
       );
     }
     for (const d of pSlice.slice(0, 1)) {
-      const snap = await db.collection("pricingLog").doc(d._id).get();
+      const pid = pricingDocId(d);
+      const snap = await db.collection("pricingLog").doc(pid).get();
       const p = snap.data();
       console.log(
-        `  pricingLog/${d._id} exists=${snap.exists} month=${p?.month} taskId=${p?.taskId} price=${p?.price} billed=${p?.billed}`,
+        `  pricingLog/${pid} exists=${snap.exists} month=${p?.month} taskId=${p?.taskId} price=${p?.price} billed=${p?.billed}`,
       );
     }
   } catch (e) {

@@ -105,8 +105,9 @@ export async function logTaskPricing(entry: TaskPricingEntry): Promise<void> {
   try {
     const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
     const sheets = sheetsClient(entry.subjectEmail);
+    const createdAtIl = nowIsraelString();
     const row = [
-      nowIsraelString(),
+      createdAtIl,
       entry.taskId,
       entry.company,
       entry.project,
@@ -135,6 +136,24 @@ export async function logTaskPricing(entry: TaskPricingEntry): Promise<void> {
         throw e;
       }
     }
+    // Phase 2 storage migration — mirror the ledger entry. Same
+    // deterministic content-hash id as the backfill ⇒ a backfill
+    // re-run can't double-count. Flag-gated, never throws, not awaited.
+    void import("@/lib/firestoreSync")
+      .then((m) =>
+        m.mirrorPricingEntry({
+          createdAtIl,
+          taskId: entry.taskId,
+          company: entry.company,
+          project: entry.project,
+          departments: (entry.departments || []).join(", "),
+          kind: entry.kind,
+          price: typeof entry.price === "number" ? entry.price : 0,
+          createdBy: entry.createdBy,
+          billed: null,
+        }),
+      )
+      .catch(() => {});
   } catch (e) {
     console.log(
       "[pricingLog] append failed (non-fatal):",
@@ -285,5 +304,10 @@ export async function updatePricingLogBilled(
     spreadsheetId,
     requestBody: { valueInputOption: "RAW", data },
   });
+  // Phase 2 storage migration — mirror the billed override onto every
+  // ledger doc for this task. Flag-gated, never throws, not awaited.
+  void import("@/lib/firestoreSync")
+    .then((m) => m.mirrorPricingBilled(id, billed))
+    .catch(() => {});
   return data.length - 1;
 }

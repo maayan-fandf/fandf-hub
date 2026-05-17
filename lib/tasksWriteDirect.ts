@@ -1665,6 +1665,13 @@ export async function tasksCreateDirect(
     invalidateCommentsCache();
   }
 
+  // Phase 2 storage migration — best-effort Firestore dual-write.
+  // Flag-gated (default off) + never throws + not awaited, so it can't
+  // affect create latency or outcome. Sheets stays source of truth.
+  void import("@/lib/firestoreSync")
+    .then((m) => m.mirrorTask(task))
+    .catch(() => {});
+
   // "Convert comment to task" — Flavor C migration. Re-parent the
   // source comment + every direct reply to the new task id, so the
   // entire conversation moves under the task verbatim. Best-effort:
@@ -2795,6 +2802,17 @@ async function tasksUpdateDirectInner(
     const fresh = rowToTask(freshRow, idx);
     await patchGoogleTaskDates(fresh);
   }
+
+  // Phase 2 storage migration — best-effort Firestore dual-write.
+  // Uses mirrorTaskById (re-reads the FINAL committed row) rather than
+  // rowToTask(freshRow): freshRow was captured before the GT-cascade /
+  // dependencyCascade / umbrella writes, so its google_tasks (and a
+  // self-cascaded status) can be stale. The cascade writes already
+  // busted the Comments cache, so the re-read sees the true final
+  // state. Flag-gated, never throws, not awaited.
+  void import("@/lib/firestoreSync")
+    .then((m) => m.mirrorTaskById(subjectEmail, taskId))
+    .catch(() => {});
 
   return { ok: true, task: rowToTask(freshRow, idx), changed: true };
 }

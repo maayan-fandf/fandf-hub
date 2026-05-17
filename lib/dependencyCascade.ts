@@ -348,6 +348,17 @@ export async function cascadeAfterTerminal(args: {
       } catch {
         /* probe-script callers won't have @/ resolution; safe to skip */
       }
+      // Phase 2 storage migration — mirror the unblocked task. This
+      // write bypasses tasksUpdateDirect, so it needs its own hook.
+      // Flag-gated, never throws, not awaited. The same try/catch as
+      // the cache bust covers probe-script @/ resolution gaps.
+      try {
+        void import("@/lib/firestoreSync")
+          .then((m) => m.mirrorTaskById(subjectEmail, u.candidate.id))
+          .catch(() => {});
+      } catch {
+        /* probe-script callers won't have @/ resolution; safe to skip */
+      }
       // Capture all the fields the post-cascade GT spawn-hook
       // needs — saves the caller a re-read for each unblocked row.
       // `mentions` is the legacy column name that holds assignees as

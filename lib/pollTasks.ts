@@ -350,6 +350,12 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
           requestBody: { values: [[JSON.stringify(updatedRefs)]] },
         });
         duesUpdated++;
+        // Phase 2 storage migration — mirror the google_tasks cell.
+        // This write bypasses tasksUpdateDirect (no function-level
+        // mirror covers it). Flag-gated, never throws, not awaited.
+        void import("@/lib/firestoreSync")
+          .then((m) => m.mirrorGoogleTasks(job.rowId, updatedRefs))
+          .catch(() => {});
       } catch (e) {
         console.log(
           `[pollTasks] due-date write failed for row ${job.rowId}:`,
@@ -669,6 +675,12 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
         );
         rowsHealed++;
         gtsSpawned += spawnedThisRow;
+        // Phase 2 storage migration — mirror the reconciled
+        // google_tasks cell (bypasses tasksUpdateDirect). Flag-gated,
+        // never throws, not awaited.
+        void import("@/lib/firestoreSync")
+          .then((m) => m.mirrorGoogleTasks(taskId, mergedRefs))
+          .catch(() => {});
         console.log(
           `[pollTasks] reconcile: healed ${taskId} — spawned ${spawnedThisRow} GT(s)`,
         );
