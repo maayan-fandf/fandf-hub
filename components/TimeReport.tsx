@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { TimeLogRow } from "@/lib/timeLog";
 
@@ -76,6 +77,9 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       "logged_at",
       "company",
       "project",
+      "task",
+      "brief",
+      "worker",
       "departments",
       "kind",
       "minutes",
@@ -95,6 +99,9 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
             r.loggedAt,
             r.company,
             r.project,
+            r.title ?? "",
+            r.brief ?? "",
+            r.worker ?? "",
             r.departments,
             r.kind,
             String(r.minutes),
@@ -182,8 +189,11 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
             <div className="billing-table" role="table">
               <div className="billing-row time-row billing-row-head" role="row">
                 <span>תאריך</span>
+                <span>משימה</span>
+                <span>בריף</span>
                 <span>פרוייקט</span>
                 <span>מחלקה</span>
+                <span>עובד</span>
                 <span>הערה</span>
                 <span>זמן</span>
                 <span>תועד ע״י</span>
@@ -195,8 +205,22 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                   key={`${r.taskId}-${r.loggedAt}-${i}`}
                 >
                   <span title={r.loggedAt}>{r.loggedAt.slice(0, 10)}</span>
+                  <span title={r.title || r.taskId}>
+                    {r.taskId ? (
+                      <Link
+                        href={`/tasks/${encodeURIComponent(r.taskId)}`}
+                        className="time-task-link"
+                      >
+                        {r.title || r.taskId}
+                      </Link>
+                    ) : (
+                      r.title || "—"
+                    )}
+                  </span>
+                  <span title={r.brief || ""}>{r.brief || "—"}</span>
                   <span>{r.project || "—"}</span>
                   <span>{r.departments || "—"}</span>
+                  <span title={r.worker || ""}>{r.worker || "—"}</span>
                   <span title={r.note}>{r.note || "—"}</span>
                   <span className="billing-price">{fmtDur(r.minutes)}</span>
                   <span className="billing-by">

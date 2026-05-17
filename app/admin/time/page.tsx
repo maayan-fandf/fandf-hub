@@ -38,6 +38,14 @@ export default async function TimeAdminPage() {
       .catch(() => []),
   ]);
 
+  // taskId → task, for joining the task name / brief / worker onto
+  // every row (the ledger tab doesn't store those). Worker = the
+  // task's assignee(s); shown as email local-parts like the rest of
+  // the report.
+  const taskById = new Map(taskRows.map((t) => [t.id, t]));
+  const workerOf = (emails: string[] | undefined): string =>
+    (emails || []).map((e) => e.split("@")[0]).join(", ");
+
   // Synthesize one status-time row per task (override wins over the
   // status_history-derived value; umbrellas have no own work).
   const statusRows: TimeLogRow[] = [];
@@ -74,10 +82,26 @@ export default async function TimeAdminPage() {
         "זמן בסטטוס ׳בעבודה׳" +
         (t.inprogress_minutes != null ? " (נערך ידנית)" : ""),
       loggedBy: "(סטטוס)",
+      title: t.title,
+      brief: t.campaign,
+      worker: workerOf(t.assignees),
     });
   }
 
-  const rows = [...ledger, ...statusRows];
+  // Join task name / brief / worker onto the manual ledger rows too.
+  const enrichedLedger = ledger.map((r) => {
+    const t = taskById.get(r.taskId);
+    return t
+      ? {
+          ...r,
+          title: t.title,
+          brief: t.campaign,
+          worker: workerOf(t.assignees),
+        }
+      : r;
+  });
+
+  const rows = [...enrichedLedger, ...statusRows];
 
   return (
     <main className="container">

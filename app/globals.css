@@ -11301,10 +11301,25 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   .billing-row { grid-template-columns: 1fr 1fr; }
   .billing-row-head { display: none; }
 }
-/* /admin/time — same chrome as billing, wider note column instead of
-   the money column. */
+/* /admin/time — same chrome as billing. 9 cols:
+   תאריך | משימה | בריף | פרוייקט | מחלקה | עובד | הערה | זמן | תועד ע״י */
 .billing-row.time-row {
-  grid-template-columns: 6em 1.1fr 1fr 1.4fr .9fr .9fr;
+  grid-template-columns:
+    5.5em 1.6fr 1fr 1fr .9fr 1fr 1.2fr .8fr .9fr;
+}
+/* Keep the wide row from blowing up — clip overflow, full text on
+   hover via the per-cell title attributes. */
+.billing-row.time-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time-task-link {
+  color: var(--accent, #6366f1);
+  text-decoration: none;
+}
+.time-task-link:hover {
+  text-decoration: underline;
 }
 @media (max-width: 760px) {
   .billing-row.time-row { grid-template-columns: 1fr 1fr; }

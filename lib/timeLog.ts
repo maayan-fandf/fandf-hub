@@ -157,6 +157,14 @@ export type TimeLogRow = {
   minutes: number;
   note: string;
   loggedBy: string;
+  /** Enrichment joined from the task by taskId at report time (the
+   *  ledger tab itself doesn't store these). Undefined when the task
+   *  can't be resolved (deleted / no access). */
+  title?: string;
+  /** The task's brief (WorkTask.campaign). */
+  brief?: string;
+  /** The task's assignee(s) — display string. */
+  worker?: string;
 };
 
 function parseRows(values: unknown[][]): TimeLogRow[] {
