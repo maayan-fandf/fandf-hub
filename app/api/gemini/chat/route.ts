@@ -202,6 +202,15 @@ guess column positions — always read headers first.
        CRM-funnel question from getProjectMetrics' scheduled/meetings
        (those are media-tab figures, a different cohort).
 
+       Other focused project tools — prefer these over raw sheet reads:
+       • "which tasks…" (open work, awaiting approval, what is X working
+         on, מה תקוע) → searchTasks. It's access-scoped automatically.
+         getTask is only for one task by id.
+       • "what's wrong / needs attention / any alerts on X" →
+         getProjectAlerts (live morning-feed signals + severities).
+       • "is X on budget / pacing / will it overspend / כמה נשאר" →
+         getProjectPacing (budget vs time + end-of-period projection).
+
      STEP 1 — Read the FULL Keys row for the project.
        readSheetTab on 'Keys' (Main sheet 15GKqEy8...). Find the row
        where 'פרוייקט' matches the user's project name. Read the

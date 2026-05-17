@@ -332,6 +332,277 @@ const getCrmFunnelTool: Tool = {
   },
 };
 
+const searchTasksTool: Tool = {
+  declaration: {
+    name: "searchTasks",
+    description:
+      "Search hub WORK TASKS (the משימות board) by project / status / " +
+      "person. Answers any 'which tasks…' question: 'what's awaiting my " +
+      "approval?', 'open tasks on קאזר', 'what is Nadav working on?', " +
+      "'מה תקוע בבירור?'. Access is automatically scoped to what the " +
+      "signed-in user is allowed to see — no escalation. getTask is for " +
+      "ONE task by id; this is for finding tasks by criteria. status is " +
+      "one of: draft, awaiting_handling, in_progress, " +
+      "awaiting_clarification, awaiting_approval, done, cancelled, " +
+      "blocked. Person filters take an EMAIL (use getCompanyContacts / " +
+      "getProject first to resolve a name → email). Done + cancelled " +
+      "are excluded unless you pass that status explicitly or " +
+      "includeClosed:true.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name as it appears in the hub (Hebrew ok).",
+        },
+        status: {
+          type: SchemaType.STRING,
+          description:
+            "Exact status key (e.g. 'awaiting_approval'). Omit for all " +
+            "open statuses.",
+        },
+        assignee: {
+          type: SchemaType.STRING,
+          description: "Assignee EMAIL — tasks this person works on.",
+        },
+        approver: {
+          type: SchemaType.STRING,
+          description: "Approver EMAIL — tasks this person must approve.",
+        },
+        author: {
+          type: SchemaType.STRING,
+          description: "Author EMAIL — tasks this person opened.",
+        },
+        relevantToMe: {
+          type: SchemaType.STRING,
+          description:
+            "EMAIL — OR-match across author/approver/PM/assignee. Use for " +
+            "'my tasks' / 'tasks relevant to <person>'.",
+        },
+        priority: {
+          type: SchemaType.STRING,
+          description: "'1' (top) | '2' | '3'.",
+        },
+        includeClosed: {
+          type: SchemaType.BOOLEAN,
+          description:
+            "Include done + cancelled tasks (default false: open work only).",
+        },
+        limit: {
+          type: SchemaType.NUMBER,
+          description: "Max tasks to return (default 25, cap 50).",
+        },
+      },
+    },
+  },
+  execute: async (email, args) => {
+    const project = optionalString(args, "project");
+    const status = optionalString(args, "status");
+    const assignee = optionalString(args, "assignee");
+    const approver = optionalString(args, "approver");
+    const author = optionalString(args, "author");
+    const relevantToMe = optionalString(args, "relevantToMe");
+    const priority = optionalString(args, "priority");
+    const includeClosed = args.includeClosed === true;
+    const limit = optionalInt(args, "limit", 25, 50);
+
+    const { tasksListDirect } = await import("@/lib/tasksDirect");
+    const res = await tasksListDirect(email, {
+      project,
+      // Free-text from the model; tasksListDirect does a plain equality
+      // filter, so an unknown status simply yields no matches.
+      status: (status ?? "") as "" ,
+      assignee,
+      approver,
+      author,
+      relevant_to_me: relevantToMe,
+      priority,
+    });
+    const CLOSED = new Set(["done", "cancelled"]);
+    let tasks = res.tasks;
+    if (!includeClosed && !status) {
+      tasks = tasks.filter((t) => !CLOSED.has(t.status));
+    }
+    const total = tasks.length;
+    const projected = tasks.slice(0, limit).map((t) => ({
+      id: t.id,
+      title: t.title,
+      project: t.project,
+      company: t.company,
+      status: t.status,
+      sub_status: t.sub_status || "",
+      priority: t.priority,
+      assignees: t.assignees,
+      approver_email: t.approver_email,
+      author_email: t.author_email,
+      requested_date: t.requested_date,
+      updated_at: t.updated_at,
+    }));
+    return {
+      ok: true,
+      total,
+      returned: projected.length,
+      truncated: total > projected.length,
+      tasks: projected,
+    };
+  },
+};
+
+// Shared morning-feed lookup for the alerts + pacing tools. Both read
+// the SAME getMorningFeed call the home grid / top-nav use (cached +
+// deduped), so a turn that calls both pays one fetch. Resolves the
+// project case-insensitively; returns null when the project isn't in
+// the viewer's morning scope (no access, or feed empty for clients).
+async function findMorningProject(email: string, projectQuery: string) {
+  const { getMorningFeed } = await import("@/lib/appsScript");
+  const { morningScopeFor } = await import("@/lib/projectEnded");
+  const feed = await getMorningFeed({
+    scope: morningScopeFor(email),
+    overrideEmail: email,
+  });
+  const lc = projectQuery.toLowerCase().trim();
+  return (
+    feed.projects.find((p) => p.name.toLowerCase().trim() === lc) || null
+  );
+}
+
+const getProjectAlertsTool: Tool = {
+  declaration: {
+    name: "getProjectAlerts",
+    description:
+      "Get the live ALERTS / things-that-need-attention for a project — " +
+      "the same signals the morning feed + dashboard surface (budget " +
+      "pacing, CPL spikes, zero-lead channels, creative mismatch, stale " +
+      "CRM leads, etc.). Use for 'what's wrong with X?', 'any problems " +
+      "on X?', 'מה דורש טיפול ב-X?', 'יש התראות?'. Returns each signal's " +
+      "severity (severe/warn/info), title and detail. Returns ok:false " +
+      "when the project isn't in the viewer's morning scope — report " +
+      "that rather than guessing.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name as it appears in the hub (Hebrew ok).",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  execute: async (email, args) => {
+    const project = requireString(args, "project");
+    const mp = await findMorningProject(email, project);
+    if (!mp) {
+      return {
+        ok: false,
+        error:
+          `no morning-feed entry for '${project}' visible to ${email} — ` +
+          `the project may be out of scope, ended, or have no signals.`,
+      };
+    }
+    const signals = (mp.signals || []).map((s) => ({
+      severity: s.severity,
+      kind: s.kind,
+      title: s.title,
+      detail: s.detail,
+      channel: s.channel || "",
+      platform: s.platform || "",
+      dismissed: !!s.dismissed,
+    }));
+    const counts = signals.reduce(
+      (acc, s) => {
+        acc[s.severity] = (acc[s.severity] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+    return {
+      ok: true,
+      project: mp.name,
+      company: mp.company,
+      counts: {
+        severe: counts.severe || 0,
+        warn: counts.warn || 0,
+        info: counts.info || 0,
+      },
+      signals,
+    };
+  },
+};
+
+const getProjectPacingTool: Tool = {
+  declaration: {
+    name: "getProjectPacing",
+    description:
+      "Is the project on budget? Returns budget vs. spend, % budget " +
+      "used vs. % of the period elapsed, a pacing verdict (בקצב תקין / " +
+      "יש לבדוק / מתחת לקצב / מעל הקצב — the same logic as the " +
+      "dashboard's pacing pill), and an end-of-period spend projection " +
+      "at the current daily rate. Use for 'is X pacing OK?', 'will X go " +
+      "over budget?', 'כמה נשאר ל-X?', 'האם X בקצב?'. Distinct from " +
+      "getProjectMetrics (full channel breakdown) — this is the focused " +
+      "budget-pacing answer.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name as it appears in the hub (Hebrew ok).",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  execute: async (email, args) => {
+    const project = requireString(args, "project");
+    const mp = await findMorningProject(email, project);
+    if (!mp) {
+      return {
+        ok: false,
+        error:
+          `no morning-feed entry for '${project}' visible to ${email} — ` +
+          `the project may be out of scope or ended.`,
+      };
+    }
+    // pctBudget / pctTime are 0..1 fractions (same as the home grid's
+    // progress bars). ratio>1 = spending faster than time; <1 = behind.
+    // Bands mirror the dashboard's computePacing_ verdict.
+    const timeFrac = mp.pctTime || 0;
+    const budgetFrac = mp.pctBudget || 0;
+    const ratio = timeFrac > 0 ? budgetFrac / timeFrac : null;
+    let verdict = "אין מספיק נתונים";
+    if (ratio != null) {
+      if (ratio >= 0.9 && ratio <= 1.1) verdict = "בקצב תקין";
+      else if (ratio >= 0.7 && ratio <= 1.3) verdict = "יש לבדוק";
+      else if (ratio < 0.7) verdict = "מתחת לקצב";
+      else verdict = "מעל הקצב";
+    }
+    // Project end-of-period spend at the current daily burn.
+    const projectedSpend =
+      timeFrac > 0 ? Math.round(mp.spend / timeFrac) : null;
+    return {
+      ok: true,
+      project: mp.name,
+      company: mp.company,
+      period: { startIso: mp.startIso, endIso: mp.endIso },
+      budget: mp.budget,
+      spend: mp.spend,
+      pctBudgetUsed: Math.round(budgetFrac * 100),
+      pctTimeElapsed: Math.round(timeFrac * 100),
+      daysElapsed: mp.daysElapsed,
+      daysRemaining: mp.daysRemaining,
+      daysTotal: mp.daysTotal,
+      pacingRatio: ratio == null ? null : Math.round(ratio * 100) / 100,
+      verdict,
+      projectedEndOfPeriodSpend: projectedSpend,
+      projectedVsBudgetPct:
+        projectedSpend != null && mp.budget > 0
+          ? Math.round((projectedSpend / mp.budget) * 100)
+          : null,
+    };
+  },
+};
+
 const getCompanyContactsTool: Tool = {
   declaration: {
     name: "getCompanyContacts",
@@ -1146,6 +1417,9 @@ export const TOOL_CATALOG: Tool[] = [
   getProjectTool,
   getProjectMetricsTool,
   getCrmFunnelTool,
+  searchTasksTool,
+  getProjectAlertsTool,
+  getProjectPacingTool,
   getCompanyContactsTool,
   searchGmailTool,
   readGmailThreadTool,
