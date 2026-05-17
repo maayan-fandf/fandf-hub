@@ -288,3 +288,25 @@ cleanup is optional (phase 5), not a dependency.
    column parsers, so the Firestore mapping is faithful.
 4. Start Phase 0. tsc-gate + push after each phase. Tell the user
    what to verify in their browser (you can't).
+
+---
+
+## 9. Deployment gotchas (learned 2026-05-18, during execution)
+
+- **`apphosting.yaml` rejects an empty-string `value:`.** `value: ""`
+  fails the App Hosting *preparer* step with `fah/invalid-apphosting-yaml`
+  / raw log `either 'value' or 'secret' field is required` — App
+  Hosting treats an empty value as "no value field". Every storage
+  rollout `627ee0a`→`c25eb6e` was rejected for this; prod kept serving
+  the last good build (no outage). Fix: off-state env vars must be
+  `value: "0"` (the flag code already treats anything != "1" as off),
+  never `""`. A failed preparer step never reaches `next build`, so
+  tsc-clean code can still be sitting undeployed — always confirm the
+  rollout actually succeeded, not just that you pushed.
+- **`next build` can't be validated locally in this repo** — the
+  working copy is under OneDrive on Windows and `next build` dies with
+  `EINVAL readlink .next/...`. The Linux App Hosting builder is the
+  real build gate. De-risk statically instead: ensure no `"use client"`
+  file imports the server-only Firestore modules (they're dynamic-
+  `import()`-ed from `lib/*` server code only, mirroring how
+  `googleapis` is used).
