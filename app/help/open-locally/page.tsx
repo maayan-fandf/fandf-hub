@@ -85,20 +85,21 @@ export default function OpenLocallyHelpPage() {
           אפשר להריץ שוב בכל עת (כולל אחרי הסרה) — זה idempotent.
         </p>
         <details className="help-open-fallback">
-          <summary>מעדיף/ה קובץ התקנה?</summary>
+          <summary>מעדיף/ה חבילת קבצים?</summary>
           <p>
             הורד{" "}
             <a
               className="btn-primary btn-sm"
-              href="/desktop-open/install-windows.ps1"
+              href="/desktop-open/fandf-open-helper.zip"
               download
               dir="ltr"
             >
-              ⬇ install-windows.ps1
+              ⬇ fandf-open-helper.zip
             </a>{" "}
-            ואז לחיצה ימנית → <b>“Run with PowerShell”</b>. אם הקובץ
-            נפתח בעורך טקסט במקום לרוץ, או “Run with PowerShell” חסום —
-            השתמש/י בשיטת ההדבקה למעלה (אותה תוצאה בדיוק).
+            (מכילה install / uninstall / README ל־Windows ול־macOS),
+            פתח אותה, ובתיקיית <code dir="ltr">windows</code> לחיצה
+            כפולה על <code dir="ltr">install.cmd</code>. אם גם זה חסום —
+            שיטת ההדבקה למעלה תמיד עובדת (אותה תוצאה בדיוק).
           </p>
         </details>
       </section>
@@ -115,23 +116,27 @@ export default function OpenLocallyHelpPage() {
         </h2>
         <ol className="help-open-steps">
           <li>
-            הורד את קובץ ההתקנה:{" "}
+            הורד את החבילה:{" "}
             <a
               className="btn-primary btn-sm"
-              href="/desktop-open/install-macos.command"
+              href="/desktop-open/fandf-open-helper.zip"
               download
               dir="ltr"
             >
-              ⬇ install-macos.command
-            </a>
+              ⬇ fandf-open-helper.zip
+            </a>{" "}
+            ופתח אותה (לחיצה כפולה).
           </li>
           <li>
-            לחיצה ימנית על הקובץ שהורד → <b>Open</b> → ושוב{" "}
-            <b>Open</b> (פעם ראשונה, כדי לעקוף את Gatekeeper).
+            בתיקיית <code dir="ltr">macos</code>: לחיצה ימנית על{" "}
+            <code dir="ltr">install.command</code> → <b>Open</b> → ושוב{" "}
+            <b>Open</b> (פעם ראשונה, לעקוף את Gatekeeper).
             <br />
             <span className="help-open-alt">
-              לחלופין ב־Terminal:{" "}
-              <code dir="ltr">bash ~/Downloads/install-macos.command</code>
+              אם לחיצה כפולה לא עובדת:{" "}
+              <code dir="ltr">bash ./install.command</code> ב־Terminal
+              מתוך תיקיית <code dir="ltr">macos</code>. הסרה:{" "}
+              <code dir="ltr">uninstall.command</code> באותו אופן.
             </span>
           </li>
           <li>מופיע אישור שההתקנה בוצעה — אפשר לסגור.</li>
@@ -155,7 +160,11 @@ export default function OpenLocallyHelpPage() {
           המפוענח ל־Explorer / Finder, כך שקישור זדוני יכול לכל היותר
           לפתוח חלון של תיקייה. פרטים מלאים, הסבר טכני והוראות הסרה
           בקובץ{" "}
-          <a href="/desktop-open/README.txt" target="_blank" rel="noreferrer">
+          <a
+            href="/desktop-open/bundle/README.txt"
+            target="_blank"
+            rel="noreferrer"
+          >
             README.txt
           </a>
           .

@@ -2,17 +2,15 @@
 # FandF "open folder locally" helper — macOS installer
 # ---------------------------------------------------------------------
 # Registers the  fandfopen:  URL scheme so the folder button on
-# hub.fandf.co.il can open a project's folder in Finder via Google
-# Drive for Desktop. Per-user, no sudo.
+# hub.fandf.co.il opens a project's folder in Finder via Google Drive
+# for Desktop. Per-user, no sudo. Safe to re-run (idempotent).
 #
 # It builds a tiny handler app at  ~/Applications/FandF Open.app  whose
-# only job is: decode the path from the URL and hand it to `open`
-# (which just reveals a folder in Finder). It never runs the URL as a
-# command.
+# only job is: decode the path and hand it to `open` (just reveals a
+# folder). It never runs the URL as a command.
 #
-# RUN:        right-click this file -> Open  (then "Open" again)
-#             or in Terminal:  bash ~/Downloads/install-macos.command
-# UNINSTALL:  delete ~/Applications/FandF Open.app  (see README.txt)
+# RUN:  right-click -> Open -> Open   (first time, past Gatekeeper)
+#       or in Terminal:  bash "install.command"
 # ---------------------------------------------------------------------
 set -e
 
@@ -21,8 +19,6 @@ mkdir -p "$HOME/Applications"
 rm -rf "$APP"
 
 WORK="$(mktemp -d)"
-# Quoted heredoc => the $vars / perl below are written verbatim into
-# the AppleScript; they are evaluated by /bin/sh at click time, not now.
 cat > "$WORK/handler.applescript" <<'OSA'
 on open location this_URL
 	do shell script "u=" & quoted form of this_URL & "
@@ -56,7 +52,7 @@ LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServic
 
 echo ""
 echo "  [OK] Installed: ~/Applications/FandF Open.app"
-echo "       Go back to the hub and click the folder button again."
+echo "       Go to the hub, reload, click the folder button."
 echo ""
 read -n 1 -s -r -p "  Press any key to close..."
 echo ""
