@@ -14,22 +14,21 @@
  * whose `פרויקט` doesn't match any Keys.CRM are ignored (orphan
  * projects upstream that haven't been onboarded yet — Maayan's call).
  *
- * Caching layers, matching lib/keys.ts:
- *   1. `unstable_cache` cross-request, 5 min TTL — avoids hammering
- *      Sheets quota when many users hit project pages near-simultaneously.
- *      The CRM workbook only updates daily so 5 min stale is fine.
- *   2. React `cache()` per-request dedup — multiple components on the
- *      same page can call into this without paying for the read twice.
+ * Caching: React `cache()` per-request dedup only. Multiple components
+ * on the same page (CRM card, morning-alert enrichment) call into this
+ * without paying for the Sheets read twice within a request.
  *
- * NB: The 5-min cross-request cache is acceptable here despite the App
- * Hosting tag-propagation issue (feedback_unstable_cache_multi_instance)
- * because CRM data is steady-state — once a project is set up its rows
- * exist continuously, and "stale by 5 min" never means "blank for a
- * day." Contrast with findProjectFolderUrl which we had to drop the
- * cross-request layer on because new projects routinely cache `null`.
+ * No cross-request `unstable_cache` layer. The raw "מאגר במבי" /
+ * "מאגר שכל" tabs are huge and grow continuously (~50K×27 and ~29K×20
+ * at the 2026-05-12 migration probe); once serialized they exceed
+ * Next.js's hard 2MB per-entry `unstable_cache` limit, so every
+ * cross-request cache write threw "items over 2MB can not be cached"
+ * as an unhandledRejection and degraded /morning + /projects/[project].
+ * Dropping the layer also aligns with the App-Hosting multi-instance
+ * preference (feedback_unstable_cache_multi_instance). The CRM workbook
+ * only updates daily and one Sheets read per request is acceptable.
  */
 import { cache } from "react";
-import { unstable_cache } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
@@ -44,7 +43,6 @@ import { readKeysCached } from "@/lib/keys";
 //   - Sehel: lost the merged-banner row 1 — header is now row 1.
 const CRM_SHEET_ID =
   process.env.CRM_SHEET_ID || "1tYtnB1Ve8RcsZ9_PpRuZyE0jlhD6r-Q35yLO5_7FhEQ";
-const CACHE_TTL_SECONDS = 5 * 60;
 
 export type CrmPlatform = "bmby" | "sehel";
 
@@ -176,23 +174,18 @@ async function fetchTabFromSheet(
 
 // BMBY: header row is row 1, data starts at row 2. Open-ended row
 // bound — the new "מאגר במבי" tab held ~50K rows on the 2026-05-12
-// migration probe and grows; A:AA covers all 27 cols.
-const fetchBmbyCrossRequest = unstable_cache(
-  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "מאגר במבי!A:AA"),
-  ["crm-bmby"],
-  { revalidate: CACHE_TTL_SECONDS, tags: ["crm-data"] },
+// migration probe and grows; A:AA covers all 27 cols. Per-request
+// cache() only (no unstable_cache) — see the module header for why
+// the cross-request layer was dropped (2MB cap + multi-instance).
+const readBmby = cache((subjectEmail: string) =>
+  fetchTabFromSheet(subjectEmail, "מאגר במבי!A:AA"),
 );
 // Sehel: header is row 1 (the old workbook had a merged banner above
 // it — the new "מאגר שכל" tab dropped that). Open-ended; ~29K rows at
 // migration, A:T covers all 20 named cols.
-const fetchSehelCrossRequest = unstable_cache(
-  (subjectEmail: string) => fetchTabFromSheet(subjectEmail, "מאגר שכל!A:T"),
-  ["crm-sehel"],
-  { revalidate: CACHE_TTL_SECONDS, tags: ["crm-data"] },
+const readSehel = cache((subjectEmail: string) =>
+  fetchTabFromSheet(subjectEmail, "מאגר שכל!A:T"),
 );
-
-const readBmby = cache((subjectEmail: string) => fetchBmbyCrossRequest(subjectEmail));
-const readSehel = cache((subjectEmail: string) => fetchSehelCrossRequest(subjectEmail));
 
 /* ── Utility ────────────────────────────────────────────────────────── */
 
