@@ -191,6 +191,17 @@ guess column positions — always read headers first.
            (per-ad or per-keyword performance).
          - getProjectMetrics returned ok:false (project not found).
 
+       NOT for CRM-funnel questions. getProjectMetrics is MEDIA data
+       (ad spend, channels, CPL). Anything about the sales/CRM funnel —
+       "משפך CRM", leads→contacted→תואמה פגישה→פגישות, objections
+       (התנגדויות), lead sources in the CRM, meeting/conversion rate,
+       top salespeople, stale leads — use getCrmFunnel(project). It
+       applies the per-project Keys CRM-account+platform scoping
+       (BMBY/Sehel) that raw sheet reads cannot reproduce, and its
+       numbers match the page's משפך CRM card exactly. Never answer a
+       CRM-funnel question from getProjectMetrics' scheduled/meetings
+       (those are media-tab figures, a different cohort).
+
      STEP 1 — Read the FULL Keys row for the project.
        readSheetTab on 'Keys' (Main sheet 15GKqEy8...). Find the row
        where 'פרוייקט' matches the user's project name. Read the

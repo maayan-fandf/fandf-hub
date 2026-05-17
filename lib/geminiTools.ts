@@ -189,6 +189,149 @@ const getProjectMetricsTool: Tool = {
   },
 };
 
+const getCrmFunnelTool: Tool = {
+  declaration: {
+    name: "getCrmFunnel",
+    description:
+      "Get the project's CRM SALES FUNNEL — the 'משפך CRM' card on the " +
+      "project page. This is DIFFERENT from getProjectMetrics: " +
+      "getProjectMetrics is media/ad-platform data (spend, channels, " +
+      "CPL); getCrmFunnel is the sales-side funnel from the client's " +
+      "CRM (BMBY / Sehel): leads → contacted → scheduled meetings " +
+      "(תואמה פגישה) → meetings held (פגישות), the lead-source " +
+      "breakdown, the objections (התנגדויות) breakdown, top " +
+      "salespeople, and stale-lead detection. Use this for ANY question " +
+      "about the CRM funnel / משפך / לידים שתואמה להם פגישה / " +
+      "פגישות שהתקיימו / התנגדויות / מקורות לידים ב-CRM / שיעור המרה. " +
+      "It applies the SAME per-project scoping the page uses (the " +
+      "Keys CRM-account + platform join — BMBY exact-match, Sehel " +
+      "prefix-with-word-boundary), so the numbers match the card " +
+      "exactly. Do NOT try to reproduce CRM scoping with " +
+      "searchSheetRows — only this tool knows the join. Returns " +
+      "ok:false with a reason when the project has no CRM mapping in " +
+      "Keys (e.g. כללי, or a project not yet onboarded) — relay that, " +
+      "don't fabricate funnel numbers.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description:
+            "Project name as it appears in the hub (Hebrew is fine).",
+        },
+        monthFilter: {
+          type: SchemaType.STRING,
+          description:
+            "Optional 'YYYY-MM' to restrict the funnel to one calendar " +
+            "month (against BMBY's תאריך כניסה / Sehel's תאריך רישום). " +
+            "Omit for the current Asia/Jerusalem month — matches the " +
+            "page's default 'live' view.",
+        },
+        allTime: {
+          type: SchemaType.BOOLEAN,
+          description:
+            "Set true to disable the month filter and return all " +
+            "available rows (~60 days). Use only when the user explicitly " +
+            "asks for all-time / since-launch CRM numbers.",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  execute: async (email, args) => {
+    const projectQuery = requireString(args, "project");
+    const monthFilter = optionalString(args, "monthFilter");
+    const allTime = args.allTime === true;
+
+    // Resolve project → company the same way getProject / getProjectMetrics
+    // do, so getCrmFunnelForProject gets the (company, project) pair its
+    // Keys join needs.
+    const { getMyProjectsDirect } = await import("@/lib/projectsDirect");
+    const data = await getMyProjectsDirect(email);
+    const lc = projectQuery.toLowerCase().trim();
+    const match = data.projects.find(
+      (p) => p.name.toLowerCase().trim() === lc,
+    );
+    if (!match) {
+      return {
+        ok: false,
+        error: `no project named '${projectQuery}' is visible to ${email}`,
+      };
+    }
+
+    const { getCrmFunnelForProject } = await import("@/lib/crmData");
+    const funnel = await getCrmFunnelForProject({
+      company: match.company,
+      project: match.name,
+      monthFilter,
+      noFilter: allTime,
+    });
+    if (!funnel) {
+      return {
+        ok: false,
+        error:
+          `no CRM funnel for '${match.name}' — the project has no CRM ` +
+          `account/platform mapping in Keys, or zero CRM rows in the ` +
+          `selected window. This is expected for catch-all (כללי) and ` +
+          `not-yet-onboarded projects; report it rather than guessing.`,
+      };
+    }
+
+    // Compact projection — the model needs the funnel narrative, NOT the
+    // full sourceMatrices / dailyTimeSeries blobs (those exist for the
+    // client card's chip re-aggregation and would blow the context
+    // window). Aggregate the per-source matrices down to ranked totals.
+    const sm = funnel.sourceMatrices;
+    const sumRow = (rec: Record<string, number>) =>
+      Object.values(rec).reduce((a, b) => a + (b || 0), 0);
+    const topSources = sm.allSources
+      .map((s) => ({
+        source: s,
+        leads: sm.leadsBySource[s] || 0,
+        scheduledMeetings: sm.scheduledMeetingsBySource[s] || 0,
+        meetings: sm.meetingsBySource[s] || 0,
+      }))
+      .sort((a, b) => b.leads - a.leads)
+      .slice(0, 8);
+    const statusFunnel = sm.statusFunnelOrder
+      .map((status) => ({
+        status,
+        count: sumRow(sm.statusBySource[status] || {}),
+      }))
+      .filter((x) => x.count > 0);
+    const topObjections = Object.entries(sm.objectionBySource)
+      .map(([objection, bySource]) => ({
+        objection,
+        count: sumRow(bySource),
+      }))
+      .filter((x) => x.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    return {
+      ok: true,
+      project: match.name,
+      company: match.company,
+      platform: funnel.platform,
+      crmAccount: funnel.crmAccount,
+      monthFilter: funnel.monthFilter || "(all available data)",
+      dateRange: funnel.dateRange,
+      totals: {
+        leads: funnel.leads,
+        contacted: funnel.contacted,
+        scheduledMeetings: funnel.scheduledMeetings,
+        meetings: funnel.meetings,
+        meetingRatePct: funnel.meetingRatePct,
+      },
+      statusFunnel,
+      topSources,
+      topObjections,
+      topSellers: funnel.topSellers,
+      staleLeads: funnel.staleLeads,
+    };
+  },
+};
+
 const getCompanyContactsTool: Tool = {
   declaration: {
     name: "getCompanyContacts",
@@ -1002,6 +1145,7 @@ export const TOOL_CATALOG: Tool[] = [
   getTaskTool,
   getProjectTool,
   getProjectMetricsTool,
+  getCrmFunnelTool,
   getCompanyContactsTool,
   searchGmailTool,
   readGmailThreadTool,
