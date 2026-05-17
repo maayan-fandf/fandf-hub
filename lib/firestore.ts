@@ -134,6 +134,8 @@ export function getDb(): Firestore {
 /**
  * Re-exported from lib/sa.ts (canonical home, alongside the other
  * useSA* flags per the migration handoff) so Firestore code paths only
- * need this one import. Default OFF.
+ * need this one import. Both default OFF.
+ *   - useFirestoreDualWrite → Phase 2 mirror enable (turn on first)
+ *   - useFirestoreTasks     → Phase 3 read cutover (flip after soak)
  */
-export { useFirestoreTasks } from "@/lib/sa";
+export { useFirestoreDualWrite, useFirestoreTasks } from "@/lib/sa";

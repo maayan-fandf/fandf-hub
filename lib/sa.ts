@@ -332,18 +332,28 @@ export function useSAProjectsReads(): boolean {
   return String(process.env.USE_SA_PROJECTS_READS || "").trim() === "1";
 }
 
-/** True when the hub uses Firestore (Native mode) for the migrated
- *  data — tasks / comments / pricingLog. Mirrors the useSA* flag style
- *  above. Default OFF.
+/**
+ * TWO independent Firestore-migration controls (see
+ * docs/STORAGE_MIGRATION_HANDOFF.md). They MUST be separate so the
+ * handoff's soak gate + rollback model work:
  *
- *  Rollout (see docs/STORAGE_MIGRATION_HANDOFF.md):
- *    - Phase 2 gates dual-WRITE behind this (Sheets stays source of
- *      truth; a Firestore write failure never breaks the Sheets write).
- *    - Phase 3 gates the Firestore READ path behind this, flipped for
- *      everyone at once. Sheets stays dual-written → flipping back to
- *      "" is an instant, lossless rollback.
- *  The companion lib/firestore.ts owns the actual client; it re-exports
- *  this so Firestore code has one import. */
+ *   USE_FIRESTORE_DUALWRITE  → Phase 2. Enables best-effort mirroring
+ *     of every Sheets write into Firestore. Turn this ON FIRST and let
+ *     it soak (run scripts/parity-check across a full GT poll cycle)
+ *     while reads still come from Sheets.
+ *   USE_FIRESTORE_TASKS      → Phase 3. Flips the READ path to
+ *     Firestore (all-at-once), ONLY after parity is clean across a poll
+ *     cycle. Rollback = set this back to "" → reads return to Sheets
+ *     INSTANTLY while DUALWRITE keeps Sheets↔Firestore in sync (so a
+ *     re-flip needs no re-backfill). That rollback is only lossless
+ *     *because* dual-write is gated independently of this flag.
+ *
+ * Both default OFF. Mirrors the useSA* flag style above. The companion
+ * lib/firestore.ts re-exports these so Firestore code has one import.
+ */
+export function useFirestoreDualWrite(): boolean {
+  return String(process.env.USE_FIRESTORE_DUALWRITE || "").trim() === "1";
+}
 export function useFirestoreTasks(): boolean {
   return String(process.env.USE_FIRESTORE_TASKS || "").trim() === "1";
 }

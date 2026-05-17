@@ -3,7 +3,8 @@
  * Part of the storage migration (docs/STORAGE_MIGRATION_HANDOFF.md).
  *
  * CONTRACT (do not weaken before Phase 4):
- *  - Every function is GATED on useFirestoreTasks(). Flag off → instant
+ *  - Every function is GATED on useFirestoreDualWrite() (the Phase-2
+ *    flag, INDEPENDENT of the Phase-3 read flag). Flag off → instant
  *    no-op (returns before touching anything). Default off.
  *  - Every function is BEST-EFFORT: it NEVER throws and NEVER blocks the
  *    Sheets write. Callers `void` these. A Firestore failure logs and is
@@ -21,12 +22,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { useFirestoreTasks } from "@/lib/sa";
+import { useFirestoreDualWrite } from "@/lib/sa";
 import { getDb, FS_COLLECTIONS } from "@/lib/firestore";
 import type { WorkTask, GTaskRef } from "@/lib/appsScript";
 
+/** Dual-write is gated on its OWN flag (USE_FIRESTORE_DUALWRITE), NOT
+ *  the read flag — so it can soak (Sheets still serving reads) and so
+ *  the read-flag rollback stays lossless (Sheets keeps being mirrored
+ *  while reads fall back to Sheets). See lib/sa.ts. */
 function fsEnabled(): boolean {
-  return useFirestoreTasks();
+  return useFirestoreDualWrite();
 }
 
 /** Run a best-effort mirror. Never throws; logs and swallows. No-op
