@@ -25,6 +25,9 @@ $run = 'powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File 
 Set-ItemProperty -Path 'HKCU:\Software\Classes\fandfopen\shell\open\command' -Name '(default)' -Value $run
 reg query "HKCU\Software\Classes\fandfopen\shell\open\command"`;
 
+const WIN_UNINSTALL = String.raw`Remove-Item -Recurse -Force 'HKCU:\Software\Classes\fandfopen' -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\FandFOpen" -ErrorAction SilentlyContinue`;
+
 /**
  * One-time setup guide for the `fandfopen:` helper. Linked from the
  * ⚙️ gear menu (everyone) and the 📁 folder button's hint popover.
@@ -69,11 +72,22 @@ export default function OpenLocallyHelpPage() {
 
       <section className="help-open-card">
         <h2>
-          <span aria-hidden>🪟</span> Windows
+          <span aria-hidden>🪟</span> Windows — מומלץ (הדבקה)
         </h2>
-        <ol className="help-open-steps">
-          <li>
-            הורד את קובץ ההתקנה:{" "}
+        <p>
+          השיטה הכי אמינה (עובדת גם כשמדיניות החברה חוסמת הרצת קבצים):
+          פתח <b>PowerShell</b> (תפריט התחלה → הקלד <code>PowerShell</code>{" "}
+          → Enter), הדבק את <b>כל</b> הבלוק הבא בבת אחת ולחץ Enter:
+        </p>
+        <pre dir="ltr">{WIN_SNIPPET}</pre>
+        <p className="help-open-alt">
+          השורה האחרונה תדפיס את הפקודה שנרשמה — סימן שההתקנה הצליחה.
+          אפשר להריץ שוב בכל עת (כולל אחרי הסרה) — זה idempotent.
+        </p>
+        <details className="help-open-fallback">
+          <summary>מעדיף/ה קובץ התקנה?</summary>
+          <p>
+            הורד{" "}
             <a
               className="btn-primary btn-sm"
               href="/desktop-open/install-windows.ps1"
@@ -81,29 +95,18 @@ export default function OpenLocallyHelpPage() {
               dir="ltr"
             >
               ⬇ install-windows.ps1
-            </a>
-          </li>
-          <li>
-            לחיצה ימנית על הקובץ שהורד →{" "}
-            <b>“Run with PowerShell”</b>. (אם יש אזהרת SmartScreen — זה
-            צפוי לקובץ התקנה; אפשר לאשר.)
-          </li>
-          <li>נפתח חלון קצר ומאשר שההתקנה בוצעה — אפשר לסגור.</li>
-        </ol>
-        <details className="help-open-fallback">
-          <summary>
-            לא עבד / “Run with PowerShell” חסום? פתרון בהדבקה
-          </summary>
-          <p>
-            פתח <b>PowerShell</b> (תפריט התחלה → הקלד PowerShell) והדבק
-            את כל הבלוק הבא בבת אחת, Enter:
-          </p>
-          <pre dir="ltr">{WIN_SNIPPET}</pre>
-          <p className="help-open-alt">
-            השורה האחרונה אמורה להדפיס את הפקודה שנרשמה — סימן
-            שההתקנה הצליחה.
+            </a>{" "}
+            ואז לחיצה ימנית → <b>“Run with PowerShell”</b>. אם הקובץ
+            נפתח בעורך טקסט במקום לרוץ, או “Run with PowerShell” חסום —
+            השתמש/י בשיטת ההדבקה למעלה (אותה תוצאה בדיוק).
           </p>
         </details>
+      </section>
+
+      <section className="help-open-card">
+        <h2>הסרה (Windows)</h2>
+        <p>הדבק ב־PowerShell (בטוח גם אם משהו לא קיים):</p>
+        <pre dir="ltr">{WIN_UNINSTALL}</pre>
       </section>
 
       <section className="help-open-card">
