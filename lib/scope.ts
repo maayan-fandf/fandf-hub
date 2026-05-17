@@ -20,13 +20,27 @@ const GENERAL_PROJECT_NAME = "כללי";
  * project manager, internal team, client-facing) for a case-insensitive match
  * on the person's full display name.
  */
+
+/** A roster cell can list more than one person ("Name1, Name2" — e.g.
+ *  שיכון ובינוי has two campaign managers in Keys' מנהל קמפיינים column).
+ *  Split on the same delimiters splitRosterCell uses in projectsDirect.ts
+ *  (kept inline so this module stays client-safe / server-import-free) and
+ *  test each name. `mediaManager` / `projectManagerFull` arrive as raw
+ *  strings (the display layer wants the original cell), so unlike
+ *  `internalOnly` / `clientFacing` they aren't pre-split — do it here. */
+function rosterCellHas(cell: string | undefined, target: string): boolean {
+  if (!cell) return false;
+  return cell
+    .split(/[,;\n]/)
+    .some((n) => n.trim().toLowerCase() === target);
+}
+
 export function isPersonOnProject(p: Project, person: string): boolean {
   if (!person) return false;
   const target = person.toLowerCase();
   const r = p.roster;
-  if (r.mediaManager && r.mediaManager.toLowerCase() === target) return true;
-  if (r.projectManagerFull && r.projectManagerFull.toLowerCase() === target)
-    return true;
+  if (rosterCellHas(r.mediaManager, target)) return true;
+  if (rosterCellHas(r.projectManagerFull, target)) return true;
   if (r.internalOnly.some((n) => n.toLowerCase() === target)) return true;
   if (r.clientFacing.some((n) => n.toLowerCase() === target)) return true;
   return false;
