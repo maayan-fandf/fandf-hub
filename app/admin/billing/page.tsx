@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getMyProjects, currentUserEmail } from "@/lib/appsScript";
-import { readPricingLog } from "@/lib/pricingLog";
+import { getMyProjects, currentUserEmail, tasksList } from "@/lib/appsScript";
+import { readPricingLog, type PricingLogRow } from "@/lib/pricingLog";
 import BillingReport from "@/components/BillingReport";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,11 @@ export const dynamic = "force-dynamic";
  * company × month with subtotals + a grand total + CSV export — the
  * "what do I invoice each client this month" view. The rate card is
  * the inputs (/admin/pricing); this is the accumulated charges.
+ *
+ * Rows are enriched (task name / brief / worker) by joining the task
+ * via taskId, same as /admin/time. The price is editable per-entry:
+ * the edit writes a `billed` override on the ledger row only — the
+ * recorded `price`, the task, and the rate card are untouched.
  */
 export default async function BillingAdminPage() {
   let isAdmin = false;
@@ -24,7 +29,29 @@ export default async function BillingAdminPage() {
   if (!isAdmin) redirect("/");
 
   const adminEmail = await currentUserEmail();
-  const rows = await readPricingLog(adminEmail).catch(() => []);
+
+  const [ledger, taskRows] = await Promise.all([
+    readPricingLog(adminEmail).catch(() => [] as PricingLogRow[]),
+    tasksList()
+      .then((r) => r.tasks ?? [])
+      .catch(() => []),
+  ]);
+
+  const taskById = new Map(taskRows.map((t) => [t.id, t]));
+  const workerOf = (emails: string[] | undefined): string =>
+    (emails || []).map((e) => e.split("@")[0]).join(", ");
+
+  const rows: PricingLogRow[] = ledger.map((r) => {
+    const t = taskById.get(r.taskId);
+    return t
+      ? {
+          ...r,
+          title: t.title,
+          brief: t.campaign,
+          worker: workerOf(t.assignees),
+        }
+      : r;
+  });
 
   return (
     <main className="container">
@@ -39,8 +66,9 @@ export default async function BillingAdminPage() {
             <Link href="/admin/pricing">💰 מחירון</Link> ·{" "}
             <Link href="/admin/time">⏱️ מעקב זמן</Link> · כל החיובים
             שנצברו מ-<code>PricingLog</code> — שורה לכל משימה (וכל שלב
-            בשרשרת; עטיפות לא נספרות). סינון לפי חודש + חברה, סכום
-            לחיוב, וייצוא CSV לחשבונאות.
+            בשרשרת; עטיפות לא נספרות). אפשר לערוך סכום לחיוב לכל שורה
+            (גובר על המחיר הרשום, בלי לשנות את המחיר או את המחירון).
+            סינון לפי חודש + חברה, וייצוא CSV.
           </div>
         </div>
       </header>

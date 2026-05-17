@@ -11504,6 +11504,83 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
 [data-theme="dark"] .time-review-flag {
   color: #fbbf24;
 }
+
+/* /admin/billing — enriched + editable. 9 cols:
+   תאריך | משימה | בריף | פרוייקט | מחלקה | סוג | מחיר | חיוב | נוצר ע״י */
+.billing-row.bill-row {
+  grid-template-columns:
+    5.5em 1.5fr 1fr 1fr .9fr .9fr .8fr 1.15fr .9fr;
+}
+.billing-row.bill-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.billing-price.is-struck {
+  text-decoration: line-through;
+  color: var(--muted);
+  font-weight: 400;
+}
+.bill-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  font: inherit;
+  font-size: 1em;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: .1em .35em;
+  cursor: pointer;
+  color: var(--text);
+  text-align: start;
+}
+.bill-cell:hover {
+  border-color: var(--border);
+  background: var(--surface-soft, rgba(120, 120, 120, .1));
+}
+.bill-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.bill-cell.is-adjusted .bill-amount {
+  color: var(--accent, #6366f1);
+}
+.bill-tag {
+  font-size: .76em;
+  padding: .02em .4em;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, .14);
+  color: var(--accent, #6366f1);
+  font-weight: 600;
+}
+.bill-pencil {
+  opacity: 0;
+  font-size: .85em;
+  color: var(--muted);
+}
+.bill-cell:hover .bill-pencil {
+  opacity: 1;
+}
+.bill-edit {
+  display: flex;
+  align-items: center;
+  gap: .3em;
+  flex-wrap: wrap;
+}
+.bill-edit-input {
+  width: 6em;
+  padding: .25em .4em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .9em;
+}
+@media (max-width: 760px) {
+  .billing-row.bill-row { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 760px) {
   .billing-row.time-row { grid-template-columns: 1fr 1fr; }
 }
