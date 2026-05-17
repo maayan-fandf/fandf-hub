@@ -22,6 +22,39 @@
 import { gmailReadClient } from "@/lib/sa";
 import { findCompanyByClientEmail, readKeysCached } from "@/lib/keys";
 import { parseEmailAddress } from "@/lib/gmailTasks";
+import { getMyProjectsDirect } from "@/lib/projectsDirect";
+import { scopeProjectsToPerson } from "@/lib/scope";
+
+/**
+ * The set of company names the viewer is actually on the roster for —
+ * the SAME computation the home grid + top-nav use (getMyProjectsDirect
+ * gives the access list, scopeProjectsToPerson narrows it to roster
+ * membership, inheriting the multi-manager `מנהל קמפיינים` split fix).
+ *
+ * Returns `null` ("don't scope") when the viewer resolves to zero
+ * roster companies — e.g. an admin who isn't personally on any project,
+ * or names→emails couldn't resolve. Falling back to the global list
+ * there mirrors scopeProjectsToPerson's own empty-fallback rule and
+ * avoids an empty feature for someone genuinely on no roster. Keys is
+ * read through the shared React-cached reader, so this adds no extra
+ * Keys round-trip on top of listRegisteredCustomerEmails'.
+ */
+async function viewerRosterCompanies(
+  subjectEmail: string,
+): Promise<Set<string> | null> {
+  try {
+    const my = await getMyProjectsDirect(subjectEmail);
+    const scoped = scopeProjectsToPerson(my.projects, my.person, my.isClient);
+    const companies = new Set(
+      scoped.map((p) => (p.company || "").trim()).filter(Boolean),
+    );
+    return companies.size > 0 ? companies : null;
+  } catch {
+    // Resolution failed — don't silently hide everything; fall back to
+    // the global behavior (caller treats null as "no scope").
+    return null;
+  }
+}
 
 export type CustomerEmailItem = {
   /** Gmail message id (stable per-message). */
@@ -72,8 +105,19 @@ export async function listRegisteredCustomerEmails(
   const { headers, rows } = await readKeysCached(subjectEmail);
   const i = headers.findIndex((h) => /email\s*client/i.test(h));
   if (i < 0) return [];
+  // Scope to the viewer's roster companies so a campaign manager only
+  // sees customer mail for clients they actually own — not every
+  // registered F&F client across all companies (Maayan reported
+  // seeing מצלאוי mail despite only managing other companies,
+  // 2026-05-17). null = viewer on no roster → don't scope (global).
+  const allowedCompanies = await viewerRosterCompanies(subjectEmail);
+  const iCo = headers.indexOf("חברה");
   const set = new Set<string>();
   for (const row of rows) {
+    if (allowedCompanies && iCo >= 0) {
+      const co = String(row[iCo] ?? "").trim();
+      if (!allowedCompanies.has(co)) continue;
+    }
     const cell = String(row[i] ?? "").trim();
     if (!cell) continue;
     for (const raw of cell.split(/[,;]/)) {
