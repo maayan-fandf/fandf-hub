@@ -1657,6 +1657,34 @@ export default function TaskCreateForm({
                   placeholder={`שלב ${i + 1} — כותרת (לדוגמה: קופי)`}
                   className="task-form-chain-step-title"
                 />
+                {/* מחלקה comes BEFORE the assignee: picking it narrows
+                    the עובד autocomplete to that department's people
+                    (and seeds kind/price below). */}
+                <select
+                  aria-label={`מחלקה לשלב ${i + 1}`}
+                  className="task-form-chain-step-dept"
+                  value={s.department || ""}
+                  onChange={(e) => {
+                    const next = [...steps];
+                    // Department change resets kind (kinds are
+                    // department-scoped) + the resolved price.
+                    next[i] = {
+                      ...next[i],
+                      department: e.target.value,
+                      kind: "",
+                      priceTouched: false,
+                      price: undefined,
+                    };
+                    setSteps(next);
+                  }}
+                >
+                  <option value="">מחלקה…</option>
+                  {departmentOptions.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="text"
                   value={s.assignees}
@@ -1668,7 +1696,9 @@ export default function TaskCreateForm({
                   placeholder={
                     s.assigneeHint
                       ? `מבצע — ${s.assigneeHint}`
-                      : "מבצע — name@fandf.co.il"
+                      : stepDept
+                        ? "בחר/י עובד מהמחלקה"
+                        : "מבצע — name@fandf.co.il"
                   }
                   list={datalistId}
                   className="task-form-chain-step-assignee"
@@ -1704,30 +1734,9 @@ export default function TaskCreateForm({
               </div>
               {showPricing && (
                 <div className="task-form-chain-step-pricing">
-                  <select
-                    aria-label={`מחלקה לשלב ${i + 1}`}
-                    value={s.department || ""}
-                    onChange={(e) => {
-                      const next = [...steps];
-                      // Department change resets kind (kinds are
-                      // department-scoped) and the resolved price.
-                      next[i] = {
-                        ...next[i],
-                        department: e.target.value,
-                        kind: "",
-                        priceTouched: false,
-                        price: undefined,
-                      };
-                      setSteps(next);
-                    }}
-                  >
-                    <option value="">מחלקה…</option>
-                    {departmentOptions.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="task-form-chain-step-pricing-lead">
+                    {s.department ? `${s.department} ·` : "תמחור:"}
+                  </span>
                   <select
                     aria-label={`סוג לשלב ${i + 1}`}
                     value={s.kind || ""}

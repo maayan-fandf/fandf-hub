@@ -11391,10 +11391,22 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .task-form-chain-step-row {
   display: grid;
-  grid-template-columns: 1.6em 1fr 1fr 2em;
+  /* num · title · מחלקה · עובד · ✕  — dept sits BEFORE the assignee so
+     picking it narrows the עובד autocomplete. */
+  grid-template-columns: 1.6em 1fr minmax(7em, .9fr) 1fr 2em;
   gap: .5em;
   align-items: center;
   margin-bottom: .4em;
+}
+.task-form-chain-step-dept {
+  padding: .4em .5em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .88em;
+  width: 100%;
 }
 /* Each step is a 2-line block: the title/assignee row + a pricing
    sub-row (department · סוג · ₪ · hint). Per-child pricing for chains. */
@@ -11407,15 +11419,20 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .task-form-chain-step .task-form-chain-step-row { margin-bottom: 0; }
 .task-form-chain-step-pricing {
   display: grid;
-  grid-template-columns: 1.6em 1fr 1fr 6em 1fr;
+  /* lead-label · סוג · ₪ · hint  (department now lives on the row
+     above, before the assignee). */
+  grid-template-columns: auto 1fr 6em 1fr;
   gap: .5em;
   align-items: center;
   margin-top: .4em;
   padding-top: .4em;
   border-top: 1px dashed var(--border);
 }
-/* Align the pricing sub-row under title/assignee (skip the num cell). */
-.task-form-chain-step-pricing > :first-child { grid-column-start: 2; }
+.task-form-chain-step-pricing-lead {
+  font-size: .8em;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .task-form-chain-step-pricing select,
 .task-form-chain-step-price {
   padding: .35em .5em;
@@ -11440,10 +11457,16 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   font-size: .9em;
 }
 @media (max-width: 640px) {
+  .task-form-chain-step-row {
+    grid-template-columns: 1.6em 1fr 1fr;
+  }
+  .task-form-chain-step-row .task-form-chain-step-dept,
+  .task-form-chain-step-row .task-form-chain-step-assignee {
+    grid-column: 2 / -1;
+  }
   .task-form-chain-step-pricing {
     grid-template-columns: 1fr 1fr;
   }
-  .task-form-chain-step-pricing > :first-child { grid-column-start: auto; }
 }
 .task-form-chain-step-num {
   text-align: center;
