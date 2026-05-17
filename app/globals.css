@@ -732,6 +732,17 @@ a:hover {
     overflow: hidden;
     pointer-events: none;
   }
+  /* /tasks opts OUT of the sticky page-header — its toolbar + "+ משימה
+     חדשה" row is tall and the user prefers it to scroll away normally
+     here (requested 2026-05-18). Static + neutralized shrink so the
+     PageHeaderShrinkObserver toggling .is-scrolled has no visual effect. */
+  .page-header.tasks-page-header,
+  .page-header.tasks-page-header.is-scrolled {
+    position: static;
+    top: auto;
+    z-index: auto;
+    box-shadow: none;
+  }
 }
 
 .header-actions {
