@@ -39,12 +39,11 @@ do is open a file-manager window at some folder.
 
 Uninstall
 ---------
-Windows:
-  - Delete registry key:  HKEY_CURRENT_USER\Software\Classes\fandfopen
-  - Delete folder:        %LOCALAPPDATA%\FandFOpen
-  (PowerShell one-liner:
-   Remove-Item -Recurse -Force 'HKCU:\Software\Classes\fandfopen';
-   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\FandFOpen")
+Windows — paste these two lines in PowerShell (the -ErrorAction part
+avoids an error if a part was never created):
+
+  Remove-Item -Recurse -Force 'HKCU:\Software\Classes\fandfopen' -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force "$env:LOCALAPPDATA\FandFOpen" -ErrorAction SilentlyContinue
 
 macOS:
   - Delete:  ~/Applications/FandF Open.app

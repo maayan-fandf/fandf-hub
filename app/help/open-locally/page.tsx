@@ -2,6 +2,29 @@ import Link from "next/link";
 
 export const metadata = { title: "פתיחת תיקיות במחשב — F&F Hub" };
 
+// Copy-paste fallback for when "Run with PowerShell" is blocked (org
+// policy / double-click opens an editor). String.raw so backslashes
+// render verbatim; the snippet has no backticks and no ${ } so it's
+// safe in a raw template. Mirrors public/desktop-open/install-windows.ps1.
+const WIN_SNIPPET = String.raw`$dir = "$env:LOCALAPPDATA\FandFOpen"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$h = @(
+ 'param([string]$u)',
+ 'try {',
+ '  $p = [uri]::UnescapeDataString(($u -replace "^fandfopen:","")).Replace("/","\")',
+ '  $c = $p',
+ '  while ($c -and -not (Test-Path -LiteralPath $c)) { $c = Split-Path -Parent $c }',
+ '  if ($c) { Start-Process explorer.exe -ArgumentList ([char]34 + $c + [char]34) }',
+ '} catch {}'
+)
+Set-Content -LiteralPath "$dir\open.ps1" -Value $h -Encoding UTF8
+New-Item -Path 'HKCU:\Software\Classes\fandfopen\shell\open\command' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\Software\Classes\fandfopen' -Name '(default)' -Value 'URL:FandF Open'
+Set-ItemProperty -Path 'HKCU:\Software\Classes\fandfopen' -Name 'URL Protocol' -Value ''
+$run = 'powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $dir + '\open.ps1" "%1"'
+Set-ItemProperty -Path 'HKCU:\Software\Classes\fandfopen\shell\open\command' -Name '(default)' -Value $run
+reg query "HKCU\Software\Classes\fandfopen\shell\open\command"`;
+
 /**
  * One-time setup guide for the `fandfopen:` helper. Linked from the
  * ⚙️ gear menu (everyone) and the 📁 folder button's hint popover.
@@ -67,6 +90,20 @@ export default function OpenLocallyHelpPage() {
           </li>
           <li>נפתח חלון קצר ומאשר שההתקנה בוצעה — אפשר לסגור.</li>
         </ol>
+        <details className="help-open-fallback">
+          <summary>
+            לא עבד / “Run with PowerShell” חסום? פתרון בהדבקה
+          </summary>
+          <p>
+            פתח <b>PowerShell</b> (תפריט התחלה → הקלד PowerShell) והדבק
+            את כל הבלוק הבא בבת אחת, Enter:
+          </p>
+          <pre dir="ltr">{WIN_SNIPPET}</pre>
+          <p className="help-open-alt">
+            השורה האחרונה אמורה להדפיס את הפקודה שנרשמה — סימן
+            שההתקנה הצליחה.
+          </p>
+        </details>
       </section>
 
       <section className="help-open-card">

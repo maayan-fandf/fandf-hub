@@ -9224,6 +9224,28 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   color: var(--accent, #6366f1);
   text-decoration: none;
 }
+.help-open-fallback {
+  margin-top: .8em;
+  font-size: .92em;
+}
+.help-open-fallback summary {
+  cursor: pointer;
+  color: var(--accent, #6366f1);
+  user-select: none;
+}
+.help-open-fallback pre {
+  direction: ltr;
+  text-align: left;
+  background: var(--surface-soft, rgba(120, 120, 120, .12));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .8em 1em;
+  overflow-x: auto;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace);
+  font-size: .82em;
+  line-height: 1.5;
+  white-space: pre;
+}
 .copy-local-path-hint-install a {
   color: var(--accent, #6366f1);
   text-decoration: none;
