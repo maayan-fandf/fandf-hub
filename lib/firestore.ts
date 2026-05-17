@@ -26,26 +26,32 @@
  * lands behind USE_FIRESTORE_TASKS, default off, until parity is clean).
  *
  * ─── One-time infra the project OWNER must do (Phase 0, cannot be
- *     done from this session — no gcloud, firebase CLI auth expired,
- *     and the SA can't self-grant) ──────────────────────────────────
+ *     done from a Claude session — no gcloud on the box, firebase CLI
+ *     auth expired, and the SA can't self-grant). No-gcloud path: ────
  *
- *   1. Enable the API:
- *        gcloud services enable firestore.googleapis.com \
- *          --project fandf-dashboard
- *   2. Create the Native-mode database (IRREVERSIBLE mode choice — must
- *      be NATIVE, not DATASTORE; pick a region, e.g. nam5 or eur3):
- *        gcloud firestore databases create \
- *          --project fandf-dashboard \
- *          --location nam5 \
- *          --type firestore-native
- *      (or: firebase firestore:databases:create "(default)" --location nam5)
- *   3. Grant the migration SA read/write on Firestore:
- *        gcloud projects add-iam-policy-binding fandf-dashboard \
- *          --member serviceAccount:dashboard-tasks-writer@fandf-dashboard.iam.gserviceaccount.com \
- *          --role roles/datastore.user
- *   4. Deploy the locked rules + composite indexes from this repo:
+ *   A. Enable API + create the Native DB (Cloud Console):
+ *        https://console.cloud.google.com/firestore?project=fandf-dashboard
+ *        → Create database → mode = NATIVE (IRREVERSIBLE; not Datastore)
+ *        → location = me-west1 (Tel Aviv) or nam5 if App Hosting is US
+ *        (also permanent). Creating the DB auto-enables the API.
+ *   B. Grant the migration SA Firestore access (Cloud Console):
+ *        https://console.cloud.google.com/iam-admin/iam?project=fandf-dashboard
+ *        → Grant access → principal
+ *        dashboard-tasks-writer@fandf-dashboard.iam.gserviceaccount.com
+ *        → role "Cloud Datastore User" (roles/datastore.user) → Save
+ *   C. Deploy the locked rules + composite indexes from this repo:
+ *        firebase login --reauth
+ *        cd hub-next
  *        firebase deploy --only firestore:rules,firestore:indexes \
  *          --project fandf-dashboard
+ *
+ *   (gcloud equivalents, if ever available:
+ *      gcloud services enable firestore.googleapis.com --project fandf-dashboard
+ *      gcloud firestore databases create --project fandf-dashboard \
+ *        --location me-west1 --type firestore-native
+ *      gcloud projects add-iam-policy-binding fandf-dashboard \
+ *        --member serviceAccount:dashboard-tasks-writer@fandf-dashboard.iam.gserviceaccount.com \
+ *        --role roles/datastore.user )
  *
  *   No new Secret Manager entry is needed — Firestore reuses the
  *   existing TASKS_SA_KEY_JSON secret already wired in apphosting.yaml.
