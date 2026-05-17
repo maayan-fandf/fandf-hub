@@ -25,6 +25,7 @@ import { getMyProjects } from "@/lib/appsScript";
 import { streamClaudeChat } from "@/lib/claudeChat";
 import { type GeminiTurn } from "@/lib/gemini";
 import { TOOL_DECLARATIONS, getTool } from "@/lib/geminiTools";
+import { logToolCall } from "@/lib/aiToolLog";
 import {
   snapshotToSystemBlock,
   type PageContextSnapshot,
@@ -40,7 +41,7 @@ type Body = {
   pageContext?: PageContextSnapshot;
 };
 
-const SYSTEM_PERSONA = `
+export const SYSTEM_PERSONA = `
 You are the F&F Hub assistant — a helpful Hebrew/English bilingual
 assistant embedded in the team's internal hub. Users are F&F staff
 (account managers, designers, copywriters, media managers, devs).
@@ -557,14 +558,38 @@ export async function POST(req: Request) {
             if (!tool) {
               return { ok: false, error: `unknown tool: ${name}` };
             }
+            // Telemetry: time the call + record the outcome. Logging is
+            // fire-and-forget (never awaited) so it can't add latency to
+            // the stream, and logToolCall swallows its own errors.
+            const startedAt = Date.now();
+            const lastQuestion =
+              [...history].reverse().find((t) => t.role === "user")?.text ??
+              "";
             try {
               const result = await tool.execute(subjectEmail, args);
+              void logToolCall({
+                userEmail: myEmail,
+                subjectEmail,
+                question: lastQuestion,
+                tool: name,
+                args,
+                ok: true,
+                durationMs: Date.now() - startedAt,
+              });
               return { ok: true, result };
             } catch (e) {
-              return {
+              const error = e instanceof Error ? e.message : String(e);
+              void logToolCall({
+                userEmail: myEmail,
+                subjectEmail,
+                question: lastQuestion,
+                tool: name,
+                args,
                 ok: false,
-                error: e instanceof Error ? e.message : String(e),
-              };
+                error,
+                durationMs: Date.now() - startedAt,
+              });
+              return { ok: false, error };
             }
           },
         })) {
