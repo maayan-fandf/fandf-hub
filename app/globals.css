@@ -689,14 +689,15 @@ a:hover {
   transition: opacity 200ms ease, max-height 200ms ease;
 }
 
-/* Desktop-only sticky behavior. On mobile (≤768px) the header scrolls
-   away normally — too little vertical room to make sticky pay off,
-   and the header would consume disproportionate viewport. The topnav
-   sits at top:0 with z-index 20 (height ≈ 3rem), so we anchor below
-   it and run a lower z-index so any popovers from the topnav still
-   render above. */
+/* Desktop-only sticky behavior — PROJECT PAGE ONLY (scoped to
+   .project-main, which only /projects/[project] renders). Every other
+   page's .page-header scrolls away normally. The global .topnav stays
+   sticky regardless (separate rule). On mobile (≤768px) even the
+   project header scrolls — too little vertical room. The topnav sits
+   at top:0 z-index 20 (height ≈ 3rem), so we anchor below it with a
+   lower z-index so topnav popovers still render above. */
 @media (min-width: 769px) {
-  .page-header {
+  .project-main .page-header {
     position: sticky;
     top: 3rem; /* matches the topnav's measured height — 0.75rem top
                   pad + 0.75rem bottom pad + ~1.5rem content */
@@ -712,18 +713,18 @@ a:hover {
      window.scrollY > 80. Trims height aggressively so the user can
      still see the row of action chips (+ משימה חדשה, picker, Drive,
      etc.) even after scrolling deep into the dashboard. */
-  .page-header.is-scrolled {
+  .project-main .page-header.is-scrolled {
     padding: 0.3rem 0;
     margin-bottom: 0.5rem;
     box-shadow: 0 4px 12px -8px rgba(0, 0, 0, 0.15);
   }
-  .page-header.is-scrolled h1 {
+  .project-main .page-header.is-scrolled h1 {
     font-size: 1.05rem;
   }
-  .page-header.is-scrolled h1 .emoji {
+  .project-main .page-header.is-scrolled h1 .emoji {
     font-size: 1em;
   }
-  .page-header.is-scrolled .subtitle {
+  .project-main .page-header.is-scrolled .subtitle {
     /* Hide the "← כל הפרויקטים" breadcrumb when scrolled — the user is
        focused on the project, breadcrumb is one-click away via topnav.
        Collapse via max-height + opacity for a smooth tuck. */
@@ -731,17 +732,6 @@ a:hover {
     opacity: 0;
     overflow: hidden;
     pointer-events: none;
-  }
-  /* /tasks opts OUT of the sticky page-header — its toolbar + "+ משימה
-     חדשה" row is tall and the user prefers it to scroll away normally
-     here (requested 2026-05-18). Static + neutralized shrink so the
-     PageHeaderShrinkObserver toggling .is-scrolled has no visual effect. */
-  .page-header.tasks-page-header,
-  .page-header.tasks-page-header.is-scrolled {
-    position: static;
-    top: auto;
-    z-index: auto;
-    box-shadow: none;
   }
 }
 
