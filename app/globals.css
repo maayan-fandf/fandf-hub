@@ -9159,6 +9159,21 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   word-break: break-all;
   user-select: all;
 }
+.copy-local-path-hint-install {
+  margin-top: .55em;
+  padding-top: .5em;
+  border-top: 1px dashed var(--border);
+  font-size: .8em;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.copy-local-path-hint-install a {
+  color: var(--accent, #6366f1);
+  text-decoration: none;
+}
+.copy-local-path-hint-install a:hover {
+  text-decoration: underline;
+}
 .copy-local-path-hint-close {
   position: absolute;
   top: 6px;
