@@ -11321,6 +11321,61 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
 .time-task-link:hover {
   text-decoration: underline;
 }
+/* משימה cell: dot + link + quick-pause, link truncates within. */
+.billing-row.time-row > span.time-task-cell {
+  display: flex;
+  align-items: center;
+  gap: .4em;
+  white-space: nowrap;
+}
+.time-task-cell .time-task-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.time-run-dot {
+  flex: none;
+  width: .62em;
+  height: .62em;
+  border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 0 .16em rgba(22, 163, 74, .22);
+}
+.time-run-dot.is-paused {
+  background: #d97706;
+  box-shadow: 0 0 0 .16em rgba(217, 119, 6, .22);
+}
+.time-pause-btn {
+  flex: none;
+  padding: 0 .45em;
+  line-height: 1.6;
+}
+.time-running-chip {
+  font: inherit;
+  font-size: .85em;
+  padding: .35em .7em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface, #fff);
+  color: var(--muted);
+  cursor: pointer;
+}
+.time-running-chip.is-on {
+  border-color: rgba(22, 163, 74, .5);
+  color: #15803d;
+  font-weight: 600;
+}
+.time-running-chip.is-active {
+  background: rgba(22, 163, 74, .14);
+}
+.time-running-chip:disabled {
+  cursor: default;
+  opacity: .6;
+}
+[data-theme="dark"] .time-running-chip.is-on {
+  color: #4ade80;
+}
 @media (max-width: 760px) {
   .billing-row.time-row { grid-template-columns: 1fr 1fr; }
 }

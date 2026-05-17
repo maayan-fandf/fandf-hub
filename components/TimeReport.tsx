@@ -29,6 +29,12 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
   );
   const [month, setMonth] = useState<string>(months[0] ?? "");
   const [company, setCompany] = useState<string>("__all__");
+  const [onlyRunning, setOnlyRunning] = useState(false);
+  // Tasks paused from this page in this session — so the row's
+  // indicator + button update immediately without a reload.
+  const [pausedIds, setPausedIds] = useState<Set<string>>(new Set());
+  const [busyId, setBusyId] = useState<string>("");
+  const [actionErr, setActionErr] = useState("");
 
   const monthRows = useMemo(
     () => rows.filter((r) => (month ? r.month === month : true)),
@@ -41,13 +47,52 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
       ).sort((a, b) => a.localeCompare(b, "he")),
     [monthRows],
   );
-  const filtered = useMemo(
+  const byCompany = useMemo(
     () =>
       monthRows.filter((r) =>
         company === "__all__" ? true : r.company === company,
       ),
     [monthRows, company],
   );
+  // A row is "running" if the task's counter is live AND we haven't
+  // just paused it from here.
+  const runningCount = useMemo(
+    () =>
+      byCompany.filter((r) => !!r.running && !pausedIds.has(r.taskId)).length,
+    [byCompany, pausedIds],
+  );
+  const filtered = useMemo(
+    () =>
+      onlyRunning
+        ? byCompany.filter(
+            (r) => !!r.running && !pausedIds.has(r.taskId),
+          )
+        : byCompany,
+    [byCompany, onlyRunning, pausedIds],
+  );
+
+  async function pauseTask(taskId: string) {
+    setBusyId(taskId);
+    setActionErr("");
+    try {
+      const res = await fetch("/api/tasks/time-pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, action: "pause" }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "pause failed");
+      setPausedIds((prev) => {
+        const n = new Set(prev);
+        n.add(taskId);
+        return n;
+      });
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId("");
+    }
+  }
 
   const groups = useMemo(() => {
     const m = new Map<string, TimeLogRow[]>();
@@ -172,10 +217,30 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
         >
           ⬇ ייצוא CSV
         </button>
+        <button
+          type="button"
+          className={`time-running-chip${runningCount ? " is-on" : ""}${
+            onlyRunning ? " is-active" : ""
+          }`}
+          onClick={() => setOnlyRunning((v) => !v)}
+          title={
+            runningCount
+              ? "הצג רק משימות שרצות כעת — לחיצה חוזרת מבטלת"
+              : "אין כרגע משימות שרצות"
+          }
+          disabled={!runningCount && !onlyRunning}
+        >
+          ● רצות כעת: {runningCount}
+        </button>
         <span className="billing-grand">
           סה״כ זמן {month}: <b>{fmtDur(grandTotal)}</b>
         </span>
       </div>
+      {actionErr && (
+        <div className="time-tracker-error" role="alert">
+          {actionErr}
+        </div>
+      )}
 
       {groups.length === 0 ? (
         <div className="billing-empty">אין תיעוד בחודש/חברה שנבחרו.</div>
@@ -198,14 +263,34 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                 <span>זמן</span>
                 <span>תועד ע״י</span>
               </div>
-              {g.rows.map((r, i) => (
+              {g.rows.map((r, i) => {
+                const locallyPaused = pausedIds.has(r.taskId);
+                const isRun = !!r.running && !locallyPaused;
+                const isPaused = locallyPaused || !!r.paused;
+                return (
                 <div
                   className="billing-row time-row"
                   role="row"
                   key={`${r.taskId}-${r.loggedAt}-${i}`}
                 >
                   <span title={r.loggedAt}>{r.loggedAt.slice(0, 10)}</span>
-                  <span title={r.title || r.taskId}>
+                  <span
+                    className="time-task-cell"
+                    title={r.title || r.taskId}
+                  >
+                    {isRun ? (
+                      <span
+                        className="time-run-dot"
+                        title="רצה כעת"
+                        aria-label="רצה כעת"
+                      />
+                    ) : isPaused ? (
+                      <span
+                        className="time-run-dot is-paused"
+                        title="מושהה"
+                        aria-label="מושהה"
+                      />
+                    ) : null}
                     {r.taskId ? (
                       <Link
                         href={`/tasks/${encodeURIComponent(r.taskId)}`}
@@ -214,7 +299,18 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                         {r.title || r.taskId}
                       </Link>
                     ) : (
-                      r.title || "—"
+                      <span className="time-task-link">{r.title || "—"}</span>
+                    )}
+                    {isRun && (
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm time-pause-btn"
+                        disabled={busyId === r.taskId}
+                        onClick={() => pauseTask(r.taskId)}
+                        title="השהה את ספירת הזמן (בלי לשנות סטטוס)"
+                      >
+                        {busyId === r.taskId ? "…" : "⏸"}
+                      </button>
                     )}
                   </span>
                   <span title={r.brief || ""}>{r.brief || "—"}</span>
@@ -227,7 +323,8 @@ export default function TimeReport({ rows }: { rows: TimeLogRow[] }) {
                     {r.loggedBy.split("@")[0]}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))

@@ -165,6 +165,12 @@ export type TimeLogRow = {
   brief?: string;
   /** The task's assignee(s) — display string. */
   worker?: string;
+  /** Status-time rows only: the task's counter is running right now
+   *  (in_progress, not paused, no manual override) — drives the live
+   *  indicator + quick-pause button on /admin/time. */
+  running?: boolean;
+  /** Status-time rows only: in_progress but currently paused. */
+  paused?: boolean;
 };
 
 function parseRows(values: unknown[][]): TimeLogRow[] {

@@ -51,15 +51,18 @@ export default async function TimeAdminPage() {
   const statusRows: TimeLogRow[] = [];
   for (const t of taskRows) {
     if (t.is_umbrella) continue;
-    const minutes =
-      t.inprogress_minutes != null
-        ? t.inprogress_minutes
-        : deriveInProgressTime(
-            t.status_history || [],
-            t.status,
-            t.time_pauses || [],
-          ).minutes;
-    if (!minutes || minutes <= 0) continue;
+    const overridden = t.inprogress_minutes != null;
+    const ip = deriveInProgressTime(
+      t.status_history || [],
+      t.status,
+      t.time_pauses || [],
+    );
+    const minutes = overridden ? (t.inprogress_minutes as number) : ip.minutes;
+    const running = !overridden && ip.isRunning;
+    const paused = !overridden && ip.isPaused;
+    // Skip empties — but keep a just-started running/paused task even
+    // at 0 min so it still surfaces for the quick-pause indicator.
+    if ((!minutes || minutes <= 0) && !running && !paused) continue;
     // Attribute to the month of the most recent status change (fall
     // back to updated/created) — fuzzy but fine for an informational
     // report; the note explains the source.
@@ -85,6 +88,8 @@ export default async function TimeAdminPage() {
       title: t.title,
       brief: t.campaign,
       worker: workerOf(t.assignees),
+      running,
+      paused,
     });
   }
 
