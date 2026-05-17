@@ -149,18 +149,20 @@ env:
       - RUNTIME
 
   # Sheets -> Firestore storage migration (docs/STORAGE_MIGRATION_HANDOFF.md).
-  # TWO independent controls, both default OFF ("" = off). Reuses
-  # TASKS_SA_KEY_JSON — no new secret. Requires the one-time infra in
-  # lib/firestore.ts (enable API + create Native DB + grant the SA
-  # roles/datastore.user + deploy rules/indexes) — DONE.
+  # TWO independent controls. Code treats anything != "1" as OFF, so
+  # "0" = off, "1" = on. NOTE: App Hosting rejects an empty-string
+  # `value:` ("Invalid apphosting.yaml"), so the off-state MUST be "0",
+  # never "". Reuses TASKS_SA_KEY_JSON — no new secret. One-time infra
+  # (enable API + Native DB + SA roles/datastore.user + rules/indexes)
+  # is DONE.
   #
   # Operational sequence:
-  #   1. Set USE_FIRESTORE_DUALWRITE="1" (reads still Sheets). Every
-  #      Sheets write also mirrors to Firestore, best-effort. Soak: run
+  #   1. USE_FIRESTORE_DUALWRITE="1" (reads still Sheets). Every Sheets
+  #      write also mirrors to Firestore, best-effort. Soak: run
   #      scripts/parity-check.mjs across a full GT poll cycle until it
   #      stays ALL CLEAN.
-  #   2. THEN set USE_FIRESTORE_TASKS="1" — reads flip to Firestore,
-  #      all-at-once. Rollback = set it back to "" (reads return to
+  #   2. THEN USE_FIRESTORE_TASKS="1" — reads flip to Firestore,
+  #      all-at-once. Rollback = set it back to "0" (reads return to
   #      Sheets instantly; DUALWRITE stays "1" so Firestore stays
   #      current and a re-flip needs no re-backfill).
   - variable: USE_FIRESTORE_DUALWRITE
@@ -170,7 +172,7 @@ env:
       - RUNTIME
 
   - variable: USE_FIRESTORE_TASKS
-    value: ""
+    value: "0"
     availability:
       - BUILD
       - RUNTIME
