@@ -21,6 +21,10 @@ export default auth((req) => {
     // skip the NextAuth redirect or Scheduler gets a 302→/signin
     // (surfaces as a 400 INVALID_ARGUMENT on the job).
     path === "/api/cron/sync-chat-spaces" ||
+    // One-off batch space re-provisioner (delete+recreate-as-threaded
+    // migration). Same X-Cron-Token shared secret; server-to-server,
+    // must skip the NextAuth redirect.
+    path === "/api/admin/recreate-chat-spaces" ||
     // External-link redirect endpoint used by the dashboard's ads /
     // sheet buttons to escape Apps Script's sandboxed iframe popup
     // restrictions. The route hardcodes a hostname whitelist so it
