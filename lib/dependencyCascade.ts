@@ -139,6 +139,22 @@ export async function cascadeAfterTerminal(args: {
   const result: CascadeResult = { unblocked: [], stillBlocked: [], errors: [] };
   if (!completedTaskId) return result;
 
+  // Phase 4 — once Sheets writes stop the Comments tab goes stale, so
+  // source rows from Firestore in the same [headers, ...rows] shape so
+  // the candidate scan + blocker-status lookups run byte-identically.
+  // Probe scripts inject args.sheets and never set the env, so they
+  // stay on the Sheets path (the try/catch also covers the @/ alias
+  // resolution gap under node --experimental-strip-types).
+  let fsWrites = false;
+  if (!args.sheets) {
+    try {
+      const sa = await import("@/lib/sa");
+      fsWrites = sa.useFirestoreWrites();
+    } catch {
+      fsWrites = false;
+    }
+  }
+
   const sheets =
     args.sheets ??
     (await (async () => {
@@ -146,21 +162,29 @@ export async function cascadeAfterTerminal(args: {
       return sheetsClient(subjectEmail);
     })());
 
-  // Step 1 — read the full Comments tab. Only path that gives us:
-  //   (a) every row's blocked_by/status to identify downstream candidates
-  //   (b) the row indices we need for targeted writes
-  // We can't use the cached read in tasksDirect.ts because that's
-  // wrapped in React's per-request `cache()` — not available outside
-  // a render. Direct fetch is fine; cascade only fires on actual state
-  // changes which are themselves Sheets writes (1 read per write is
+  // Step 1 — get every row's blocked_by/status (to identify downstream
+  // candidates) + the row indices for targeted writes. From Firestore
+  // (Phase 4) or the full Comments tab. We can't use the cached read
+  // in tasksDirect.ts because that's wrapped in React's per-request
+  // `cache()` — not available outside a render. Direct fetch is fine;
+  // cascade only fires on actual state changes (1 read per write is
   // cheap relative to the write itself).
-  const readRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: commentsSpreadsheetId,
-    range: "Comments",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (readRes.data.values ?? []) as unknown[][];
+  let values: unknown[][];
+  if (fsWrites) {
+    const { readCommentsShapeFromFirestore } = await import(
+      "@/lib/firestoreRead"
+    );
+    const shaped = await readCommentsShapeFromFirestore();
+    values = [shaped.headers, ...shaped.rows];
+  } else {
+    const readRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: commentsSpreadsheetId,
+      range: "Comments",
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    values = (readRes.data.values ?? []) as unknown[][];
+  }
   if (values.length < 2) return result;
 
   const headers = (values[0] ?? []).map((h) => String(h ?? "").trim());
@@ -232,7 +256,10 @@ export async function cascadeAfterTerminal(args: {
   type Update = {
     candidate: IndexedRow;
     unblockedByIds: string[];
+    /** Full re-serialized array — Sheets path writes the whole cell. */
     newStatusHistory: unknown[];
+    /** Just the appended entry — Phase 4 passes this as a txn delta. */
+    newEntry: unknown;
   };
   const updates: Update[] = [];
 
@@ -305,6 +332,7 @@ export async function cascadeAfterTerminal(args: {
       candidate: c,
       unblockedByIds: blockerIds,
       newStatusHistory: [...existingHistory, newEntry],
+      newEntry,
     });
   }
 
@@ -318,46 +346,73 @@ export async function cascadeAfterTerminal(args: {
   // candidate level (3 cells in 1 round-trip per candidate).
   for (const u of updates) {
     const sheetRow = u.candidate.sheetRowIndex;
-    const ranges = [
-      {
-        range: `Comments!${columnLetter(colStatus + 1)}${sheetRow}`,
-        values: [["awaiting_handling"]],
-      },
-      {
-        range: `Comments!${columnLetter(colStatusHistory + 1)}${sheetRow}`,
-        values: [[JSON.stringify(u.newStatusHistory)]],
-      },
-      {
-        range: `Comments!${columnLetter(colUpdatedAt + 1)}${sheetRow}`,
-        values: [[nowIso]],
-      },
-    ];
     try {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: commentsSpreadsheetId,
-        requestBody: {
-          valueInputOption: "RAW",
-          data: ranges,
-        },
-      });
-      // Bust the Comments cache so subsequent reads on this instance
-      // see the unblocked rows. See tasksDirect.ts for why this caches.
-      try {
-        const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
-        invalidateCommentsCache();
-      } catch {
-        /* probe-script callers won't have @/ resolution; safe to skip */
-      }
-      // Phase 2 storage migration — mirror the unblocked task. This
-      // write bypasses tasksUpdateDirect, so it needs its own hook.
-      // Flag-gated, never throws, not awaited. The same try/catch as
-      // the cache bust covers probe-script @/ resolution gaps.
-      try {
-        void import("@/lib/firestoreSync")
-          .then((m) => m.mirrorTaskById(subjectEmail, u.candidate.id))
-          .catch(() => {});
-      } catch {
-        /* probe-script callers won't have @/ resolution; safe to skip */
+      if (fsWrites) {
+        // Phase 4 — persist the unblock to the Firestore doc in a
+        // transaction: status_history is appended as a DELTA onto the
+        // doc's CURRENT array (concurrency-safe; the faithful
+        // withTaskLock→txn port). NO Sheets batchUpdate. The
+        // post-write mirrorTaskById is intentionally DROPPED — it
+        // re-reads the Sheets-pinned row, which is stale under Phase 4,
+        // and would clobber the doc we just wrote (handoff §10.4).
+        const { persistTaskUpdateFirestore } = await import(
+          "@/lib/firestoreWrite"
+        );
+        await persistTaskUpdateFirestore(
+          u.candidate.id,
+          { status: "awaiting_handling", updated_at: nowIso },
+          { status_history: [u.newEntry] },
+        );
+        try {
+          const { invalidateCommentsCache } = await import(
+            "@/lib/tasksDirect"
+          );
+          invalidateCommentsCache();
+        } catch {
+          /* probe-script callers won't have @/ resolution; safe to skip */
+        }
+      } else {
+        const ranges = [
+          {
+            range: `Comments!${columnLetter(colStatus + 1)}${sheetRow}`,
+            values: [["awaiting_handling"]],
+          },
+          {
+            range: `Comments!${columnLetter(colStatusHistory + 1)}${sheetRow}`,
+            values: [[JSON.stringify(u.newStatusHistory)]],
+          },
+          {
+            range: `Comments!${columnLetter(colUpdatedAt + 1)}${sheetRow}`,
+            values: [[nowIso]],
+          },
+        ];
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId: commentsSpreadsheetId,
+          requestBody: {
+            valueInputOption: "RAW",
+            data: ranges,
+          },
+        });
+        // Bust the Comments cache so subsequent reads on this instance
+        // see the unblocked rows. See tasksDirect.ts for why this caches.
+        try {
+          const { invalidateCommentsCache } = await import(
+            "@/lib/tasksDirect"
+          );
+          invalidateCommentsCache();
+        } catch {
+          /* probe-script callers won't have @/ resolution; safe to skip */
+        }
+        // Phase 2 storage migration — best-effort dual-write mirror of
+        // the unblocked task (bypasses tasksUpdateDirect → own hook).
+        // Flag-gated, never throws, not awaited.
+        try {
+          void import("@/lib/firestoreSync")
+            .then((m) => m.mirrorTaskById(subjectEmail, u.candidate.id))
+            .catch(() => {});
+        } catch {
+          /* probe-script callers won't have @/ resolution; safe to skip */
+        }
       }
       // Capture all the fields the post-cascade GT spawn-hook
       // needs — saves the caller a re-read for each unblocked row.

@@ -54,6 +54,20 @@ export async function recomputeUmbrellaStatus(args: {
   const { subjectEmail, umbrellaId, commentsSpreadsheetId, nowIso } = args;
   if (!umbrellaId) return { ok: true, changed: false, reason: "no umbrella_id" };
 
+  // Phase 4 — Sheets goes stale once writes stop; source rows from
+  // Firestore. Probe scripts inject args.sheets and never set the env
+  // (the try/catch also covers the @/ alias gap under
+  // node --experimental-strip-types) → they stay on the Sheets path.
+  let fsWrites = false;
+  if (!args.sheets) {
+    try {
+      const sa = await import("@/lib/sa");
+      fsWrites = sa.useFirestoreWrites();
+    } catch {
+      fsWrites = false;
+    }
+  }
+
   const sheets =
     args.sheets ??
     (await (async () => {
@@ -63,13 +77,21 @@ export async function recomputeUmbrellaStatus(args: {
 
   let values: unknown[][];
   try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: commentsSpreadsheetId,
-      range: "Comments",
-      valueRenderOption: "UNFORMATTED_VALUE",
-      dateTimeRenderOption: "FORMATTED_STRING",
-    });
-    values = (res.data.values ?? []) as unknown[][];
+    if (fsWrites) {
+      const { readCommentsShapeFromFirestore } = await import(
+        "@/lib/firestoreRead"
+      );
+      const shaped = await readCommentsShapeFromFirestore();
+      values = [shaped.headers, ...shaped.rows];
+    } else {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: commentsSpreadsheetId,
+        range: "Comments",
+        valueRenderOption: "UNFORMATTED_VALUE",
+        dateTimeRenderOption: "FORMATTED_STRING",
+      });
+      values = (res.data.values ?? []) as unknown[][];
+    }
   } catch (e) {
     return {
       ok: false,
@@ -167,39 +189,63 @@ export async function recomputeUmbrellaStatus(args: {
   };
 
   try {
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: commentsSpreadsheetId,
-      requestBody: {
-        valueInputOption: "RAW",
-        data: [
-          {
-            range: `Comments!${colLetter(colStatus + 1)}${umbrellaRowIndex}`,
-            values: [[derived]],
-          },
-          {
-            range: `Comments!${colLetter(colUpdatedAt + 1)}${umbrellaRowIndex}`,
-            values: [[nowIso]],
-          },
-        ],
-      },
-    });
-    // Bust the Comments cache so the umbrella's recomputed status
-    // shows up on the next read. See tasksDirect.ts for why.
-    try {
-      const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
-      invalidateCommentsCache();
-    } catch {
-      /* probe-script callers without @/ resolution: safe to skip */
-    }
-    // Phase 2 storage migration — mirror the umbrella row (its derived
-    // status just changed). Bypasses tasksUpdateDirect → own hook.
-    // Flag-gated, never throws, not awaited.
-    try {
-      void import("@/lib/firestoreSync")
-        .then((m) => m.mirrorTaskById(subjectEmail, umbrellaId))
-        .catch(() => {});
-    } catch {
-      /* probe-script callers without @/ resolution: safe to skip */
+    if (fsWrites) {
+      // Phase 4 — write the derived status to the umbrella's Firestore
+      // doc (targeted merge: status + updated_at only; status_history
+      // intentionally untouched, same as the Sheets path). NO Sheets
+      // batchUpdate. The post-write mirrorTaskById is DROPPED — it
+      // re-reads the Sheets-pinned row, stale under Phase 4, and would
+      // clobber this write (handoff §10.4).
+      const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
+      await getDb()
+        .collection(FS_COLLECTIONS.tasks)
+        .doc(umbrellaId)
+        .set({ status: derived, updated_at: nowIso }, { merge: true });
+      try {
+        const { invalidateCommentsCache } = await import(
+          "@/lib/tasksDirect"
+        );
+        invalidateCommentsCache();
+      } catch {
+        /* probe-script callers without @/ resolution: safe to skip */
+      }
+    } else {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: commentsSpreadsheetId,
+        requestBody: {
+          valueInputOption: "RAW",
+          data: [
+            {
+              range: `Comments!${colLetter(colStatus + 1)}${umbrellaRowIndex}`,
+              values: [[derived]],
+            },
+            {
+              range: `Comments!${colLetter(colUpdatedAt + 1)}${umbrellaRowIndex}`,
+              values: [[nowIso]],
+            },
+          ],
+        },
+      });
+      // Bust the Comments cache so the umbrella's recomputed status
+      // shows up on the next read. See tasksDirect.ts for why.
+      try {
+        const { invalidateCommentsCache } = await import(
+          "@/lib/tasksDirect"
+        );
+        invalidateCommentsCache();
+      } catch {
+        /* probe-script callers without @/ resolution: safe to skip */
+      }
+      // Phase 2 storage migration — best-effort dual-write mirror of
+      // the umbrella row (bypasses tasksUpdateDirect → own hook).
+      // Flag-gated, never throws, not awaited.
+      try {
+        void import("@/lib/firestoreSync")
+          .then((m) => m.mirrorTaskById(subjectEmail, umbrellaId))
+          .catch(() => {});
+      } catch {
+        /* probe-script callers without @/ resolution: safe to skip */
+      }
     }
   } catch (e) {
     return {
