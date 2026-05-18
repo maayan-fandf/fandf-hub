@@ -5,6 +5,24 @@ here runs automatically. This mutates shared Google Chat spaces
 (user-visible, high blast radius, only semi-reversible) — every write
 step needs sign-off.
 
+> **Update 2026-05-18 — membership reconcile is now AUTOMATED (dormant).**
+> Owner chose: membership = **roster-ONLY** (Keys C/D/J/K, @fandf;
+> system admins are NOT blanket-members — only if rostered) and a
+> **fully-automatic cron**. Shipped (commit `69fb258`):
+> `lib/chatSpaceSync.ts` + `/api/cron/sync-chat-spaces`, gated on
+> `USE_RESTRICTED_CHAT_SPACES` (dormant). Once the flag is on (after
+> the `chat.memberships` scope is granted) the cron continuously
+> adds/removes members on EVERY space — existing spaces included — to
+> match Keys, with hard mass-removal rails.
+> ⇒ The membership-prune work in Phases B/C below is now done by the
+> cron. **The remaining manual remediation is ONLY the access
+> tightening**: existing spaces are still org-DISCOVERABLE, so even
+> after the cron prunes non-roster members anyone can re-join — the
+> `spaces.patch(accessSettings)` step (needs the still-unverified
+> patch scope) is what actually closes them. Patch-before-relying-on-
+> the-prune still holds. Phase A (read-only audit) is still the safe
+> first step.
+
 ## Why
 
 "When anyone writes in the internal chatspace the whole office gets
