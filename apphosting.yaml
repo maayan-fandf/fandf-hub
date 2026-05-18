@@ -218,9 +218,15 @@ env:
   # scope, then flip. Existing already-discoverable spaces also need a
   # one-time access tightening (separate spaces.patch scope) — see
   # docs/CHAT_SPACE_MEMBERSHIP_CLEANUP.md. Empty `value:` is rejected
-  # by the App Hosting preparer — keep it "0", never "".
+  # by the App Hosting preparer — keep it "1"/"0", never "".
+  #
+  # ENABLED 2026-05-18 (owner granted chat.memberships scope + created
+  # the Cloud Scheduler job). Reversible: set back to "0" to revert
+  # (no irreversible effect). The cron still mutates NOTHING because
+  # CHAT_SPACE_SYNC_DRYRUN defaults to "1" — going live is the separate
+  # second flip of that flag after the dry-run plan is reviewed.
   - variable: USE_RESTRICTED_CHAT_SPACES
-    value: "0"
+    value: "1"
     availability:
       - BUILD
       - RUNTIME
