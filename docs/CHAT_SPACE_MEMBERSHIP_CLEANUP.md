@@ -1,6 +1,37 @@
-# Existing Chat-space membership remediation — PLAN (not yet executed)
+# Existing Chat-space membership remediation — DONE (2026-05-18)
 
-Status: **proposed, awaiting explicit owner go-ahead per step.** Nothing
+> **✅ EXECUTED & COMPLETE 2026-05-18.** This plan was superseded by a
+> full **delete + recreate-as-threaded** migration (chosen because the
+> hub had no real usage yet, so lost history/URLs didn't matter, and
+> existing spaces are physically un-quietable: threading is immutable
+> post-create and per-member notification is not admin/API-settable).
+>
+> What ran: pre-check `scripts/probe-threaded-space.mjs` (confirmed the
+> API honors `spaceThreadingState:THREADED_MESSAGES`) → `backup-keys-
+> chat-space.mjs` → `clear-keys-chat-space.mjs --apply` (blanked 24
+> Keys cells, emitted recreate manifest) → `POST /api/admin/recreate-
+> chat-spaces?apply=1` with the manifest (24 fresh threaded+restricted
+> spaces, roster invited at create, Keys repointed) → reconcile cron
+> (`/api/cron/sync-chat-spaces`, 0 drift, 24/24) → owner bulk-deleted
+> the 24 old spaces + the probe space in Admin console. Flags steady:
+> `USE_RESTRICTED_CHAT_SPACES=1`, `CHAT_SPACE_SYNC_DRYRUN=0`,
+> `USE_THREADED_CHAT_SPACES=1`. **Irreversible now; problem closed.**
+>
+> **Gotcha for any future bulk run:** `/api/admin/recreate-chat-spaces`
+> does N sequential createChatSpaceForProject calls in one request;
+> ~24 exceeds the App Hosting request timeout (first apply 500'd with
+> a Firebase HTML page after ~20/24). createChatSpaceForProject is
+> idempotent (Keys cell set → returns existing), so re-running
+> `?apply=1` until `failed:0` is a safe, sufficient recovery. If
+> reused at scale, add batching / a `?max=N` cursor instead.
+>
+> The original plan text below is kept for historical context only.
+
+---
+
+## Original plan (historical — superseded by the migration above)
+
+Status: ~~proposed, awaiting explicit owner go-ahead per step.~~ Nothing
 here runs automatically. This mutates shared Google Chat spaces
 (user-visible, high blast radius, only semi-reversible) — every write
 step needs sign-off.
