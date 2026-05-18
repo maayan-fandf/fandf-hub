@@ -23,7 +23,7 @@
  * cascade for the resulting status change.
  */
 
-import { sheetsClient, tasksApiClient } from "@/lib/sa";
+import { sheetsClient, tasksApiClient, useFirestoreWrites } from "@/lib/sa";
 import { applyAutoTransition } from "@/lib/autoTransition";
 import {
   createGoogleTasks,
@@ -204,14 +204,30 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   const subjectEmail = "maayan@fandf.co.il";
   const sheets = sheetsClient(subjectEmail);
   const commentsSsId = envOrThrow("SHEET_ID_COMMENTS");
+  const fsWrites = useFirestoreWrites();
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: commentsSsId,
-    range: "Comments",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const rows = (res.data.values ?? []) as unknown[][];
+  // Phase 4 — once Sheets writes stop the Comments tab goes stale, so
+  // source rows from Firestore in the SAME `[headers, ...dataRows]`
+  // shape (header at [0]) the rest of this function iterates over.
+  // readCommentsShapeFromFirestore is React cache()-wrapped; outside a
+  // request scope (this cron) it just passes through (no memo, no
+  // throw) — exactly what we want here.
+  let rows: unknown[][];
+  if (fsWrites) {
+    const { readCommentsShapeFromFirestore } = await import(
+      "@/lib/firestoreRead"
+    );
+    const shaped = await readCommentsShapeFromFirestore();
+    rows = [shaped.headers, ...shaped.rows];
+  } else {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: commentsSsId,
+      range: "Comments",
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    rows = (res.data.values ?? []) as unknown[][];
+  }
   if (rows.length < 2) {
     return summary(start, 0, 0, 0, 0, 0, 0, 0);
   }
@@ -343,19 +359,31 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     });
     if (mutated) {
       try {
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: commentsSsId,
-          range: `Comments!${gtCol}${job.sheetRow}`,
-          valueInputOption: "RAW",
-          requestBody: { values: [[JSON.stringify(updatedRefs)]] },
-        });
-        duesUpdated++;
-        // Phase 2 storage migration — mirror the google_tasks cell.
-        // This write bypasses tasksUpdateDirect (no function-level
-        // mirror covers it). Flag-gated, never throws, not awaited.
-        void import("@/lib/firestoreSync")
-          .then((m) => m.mirrorGoogleTasks(job.rowId, updatedRefs))
-          .catch(() => {});
+        if (fsWrites) {
+          // Phase 4 — write the google_tasks cell to the Firestore
+          // doc; NO Sheets update. writeGoogleTasks is the un-gated
+          // body of mirrorGoogleTasks (same merge shape). Stays
+          // best-effort here — the reconciliation + orphan scan below
+          // are the safety net, so a due-date drift write isn't worth
+          // hard-failing the whole poll cycle.
+          const { writeGoogleTasks } = await import("@/lib/firestoreSync");
+          await writeGoogleTasks(job.rowId, updatedRefs);
+          duesUpdated++;
+        } else {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: commentsSsId,
+            range: `Comments!${gtCol}${job.sheetRow}`,
+            valueInputOption: "RAW",
+            requestBody: { values: [[JSON.stringify(updatedRefs)]] },
+          });
+          duesUpdated++;
+          // Phase 2 storage migration — best-effort dual-write mirror
+          // of the google_tasks cell (bypasses tasksUpdateDirect).
+          // Flag-gated, never throws, not awaited.
+          void import("@/lib/firestoreSync")
+            .then((m) => m.mirrorGoogleTasks(job.rowId, updatedRefs))
+            .catch(() => {});
+        }
       } catch (e) {
         console.log(
           `[pollTasks] due-date write failed for row ${job.rowId}:`,
@@ -676,12 +704,17 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
         );
         rowsHealed++;
         gtsSpawned += spawnedThisRow;
-        // Phase 2 storage migration — mirror the reconciled
-        // google_tasks cell (bypasses tasksUpdateDirect). Flag-gated,
-        // never throws, not awaited.
-        void import("@/lib/firestoreSync")
-          .then((m) => m.mirrorGoogleTasks(taskId, mergedRefs))
-          .catch(() => {});
+        // Phase 2 storage migration — best-effort dual-write mirror of
+        // the reconciled google_tasks cell (bypasses tasksUpdateDirect).
+        // Flag-gated, never throws, not awaited. Phase 4: skipped —
+        // persistGoogleTasksCell above already wrote the Firestore doc
+        // authoritatively (it takes taskId), so the mirror would be a
+        // redundant idempotent re-write.
+        if (!fsWrites) {
+          void import("@/lib/firestoreSync")
+            .then((m) => m.mirrorGoogleTasks(taskId, mergedRefs))
+            .catch(() => {});
+        }
         console.log(
           `[pollTasks] reconcile: healed ${taskId} — spawned ${spawnedThisRow} GT(s)`,
         );
