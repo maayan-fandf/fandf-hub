@@ -328,12 +328,38 @@ cleanup is optional (phase 5), not a dependency.
 
 ---
 
-## 10. Current status & how to RESUME Phase 4 (2026-05-18)
+## 10. Current status (2026-05-18) — PHASE 4 ACTIVATED & VERIFIED
 
-**Live in prod:** Phases 0–3 DONE. `USE_FIRESTORE_DUALWRITE=1`,
-`USE_FIRESTORE_TASKS=1` → reads served from Firestore, ~5× faster,
-parity ALL CLEAN, instant lossless rollback (flip
-`USE_FIRESTORE_TASKS`→`0`). `USE_FIRESTORE_WRITES=0` (Phase 4 dormant).
+**Phase 4 is LIVE in prod.** Activation commit `f63b9ad` (then docs):
+`apphosting.yaml` `USE_FIRESTORE_WRITES="1"` + `USE_FIRESTORE_DUALWRITE
+="0"` (flipped atomically in one rollout), `USE_FIRESTORE_TASKS="1"`.
+Firestore is now the SOURCE OF TRUTH; Sheets writes for moved data
+(tasks/comments/pricingLog) have STOPPED. This is IRREVERSIBLE — no
+lossless rollback (Sheets is now stale).
+
+**Live verification done (Claude-in-Chrome vs owner's logged-in
+browser):** posted a comment on task `T-mpaeulnb-2llb` via the live
+hub → discussion `(1)→(2)`, comment rendered (read-your-writes), and
+`Comments!A:A` stayed **byte-identical to the pre-activation baseline**
+(range `A1:A1204`, 1203 data rows, last id `c-mpb0io7n-e4gq`). Proves
+the rollout is live, the write went to Firestore only, Sheets no
+longer changes. Baseline sentinels for future spot-checks: Comments =
+1203 data rows / last id `c-mpb0io7n-e4gq`; PricingLog = 3 data rows /
+last `T-mpaeulnb-2llb @ 2026-05-18 02:32:53`.
+
+**Verified live: 1 representative path (comment write).** NOT yet
+exercised live (high confidence from the uniform branch pattern +
+tsc + the dormant series, but not behaviorally confirmed):
+tasksCreate, status-change (txn + status_history), pricing override,
+chain append, campaign rename, file-upload-folder-resolve, and a full
+GT poll cycle. A leftover probe comment ("Phase 4 verification
+probe… Safe to delete.") sits on task `T-mpaeulnb-2llb` — deleting it
+would also exercise the delete path; left for the owner.
+
+**Pre-Phase-4 status (for history):** Phases 0–3 ran with
+`USE_FIRESTORE_DUALWRITE=1` + `USE_FIRESTORE_TASKS=1` (reads Firestore,
+~5× faster, parity ALL CLEAN, Sheets dual-written for lossless
+rollback). That rollback window is now CLOSED (Phase 4 is one-way).
 
 **Phase 4 — ALL write paths now BRANCHED + DORMANT + tsc-clean +
 pushed (HEAD `023a440`).** Nothing is active until the flag flips.
