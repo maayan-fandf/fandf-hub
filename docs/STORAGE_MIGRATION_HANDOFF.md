@@ -450,6 +450,44 @@ vestigial Apps Script routes (manifest-flip discipline). Also revisit
 the two pre-existing Phase-3 dual-write gaps above. Update MEMORY.md +
 this doc.
 
-**Owner-paused 2026-05-18** post-branching. System is in an excellent,
-safe, fully-reversible state: everything dormant behind
-`USE_FIRESTORE_WRITES=0`, Phase-3 rollback still intact.
+**Status 2026-05-18:** Phase 4 ACTIVATED & verified live (see top of
+§10). Migration is complete through cutover; only the gated Phase 5
+cleanup + the deferred §11 optimization remain. Warm prod perf
+measured healthy post-cutover (TTFB: /tasks ~785ms, task detail
+~1.4s [was 30s+ pre-Phase-3-cache-fix], project page ~775ms). Note:
+`minInstances: 0` → first request after idle is a ~15–18s cold start
+(infra, not the migration; bump to `1` if the first-hit lag matters).
+
+---
+
+## 11. Deferred optimization — indexed Firestore reads (NOT Phase 5)
+
+Separately-scoped, owner-deferred 2026-05-18 ("put it off for later").
+**Independent of the gated Phase-5 cleanup** (that's dead-code hygiene
+with ~zero runtime effect; this is the actual further speedup/cost
+win). Pick up only as its own approved task if read latency or
+Firestore read cost becomes a concern — current warm perf is already
+healthy, so this is "faster + cheaper," not "fix something slow."
+
+**What:** `lib/firestoreRead.ts` `readCommentsShapeFromFirestore()`
+currently reads the ENTIRE `tasks` + `comments` collections on every
+request and filters in memory (React `cache()` dedups per-request).
+This was the deliberate minimal-blast-radius cutover choice — it
+mirrors the old full-tab Sheets read so every existing filter /
+`rowToTask` / comment reader ran byte-identically. Firestore makes
+targeted reads cheap and the composite indexes already exist (Phase 0,
+§4: `(project,status)`, `(company,project)`, `(assignees
+array-contains,status)`, `(umbrella_id)`, `(parent_id)`,
+`(blocked_by array-contains)`, `(status,requested_date)`, comments
+`(taskId,createdAt)` / `(parentId)` / mentions).
+
+**Approach (high level, re-verify carefully — touches the read seam):**
+detail page → single `tasks/{id}` doc get + `comments where taskId==id`
+instead of whole-collection; list/queue → query by project/status/
+assignee; project page → query by `(company,project)`. Keep the
+`{headers,rows,headerIdx}` shaped-return contract so downstream
+filter/`rowToTask` code stays unchanged where possible; the win is
+fetching far fewer docs per request. Expect biggest gains on the task
+detail page and large project/queue views, plus lower Firestore
+read-doc cost. Must re-verify in-browser per surface (the Phase-3
+read-flip surfaced 3 bugs offline parity couldn't catch — §9).
