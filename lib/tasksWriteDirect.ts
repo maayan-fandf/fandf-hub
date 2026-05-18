@@ -2595,6 +2595,7 @@ async function tasksUpdateDirectInner(
             idx,
             rowIndex,
             merged,
+            taskId, // Phase 4: Firestore doc target
           );
         }
       }
@@ -2624,6 +2625,7 @@ async function tasksUpdateDirectInner(
             idx,
             rowIndex,
             merged,
+            taskId, // Phase 4: Firestore doc target
           );
         }
       }
@@ -2655,6 +2657,7 @@ async function tasksUpdateDirectInner(
             idx,
             rowIndex,
             merged,
+            taskId, // Phase 4: Firestore doc target
           );
         }
       }
@@ -2750,6 +2753,7 @@ async function tasksUpdateDirectInner(
               idx,
               u.sheetRowIndex - 1, // persistGoogleTasksCell adds +1 internally
               spawnedRefs,
+              u.taskId, // Phase 4: Firestore doc target (unblocked task)
             );
           }
           // Phase 7 polish — fire `task_unblocked` (NOT `task_assigned`)
@@ -2903,7 +2907,35 @@ export async function persistGoogleTasksCell(
   headerIdx: Map<string, number>,
   rowIndex: number,
   googleTasks: GTaskRef[],
+  taskIdForFs?: string,
 ): Promise<void> {
+  // Phase 4 — write the Firestore doc's google_tasks instead of the
+  // Sheet cell. Stays best-effort (GT-ref bookkeeping has a
+  // reconciliation safety net in pollTasks; making it hard-fail task
+  // transitions would be a regression). rowIndex/sheets are Sheets-only.
+  if (useFirestoreWrites() && taskIdForFs && taskIdForFs.trim()) {
+    try {
+      const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
+      await getDb()
+        .collection(FS_COLLECTIONS.tasks)
+        .doc(taskIdForFs.trim())
+        .set(
+          {
+            google_tasks: Array.isArray(googleTasks) ? googleTasks : [],
+            updated_at: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+      const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+      invalidateCommentsCache();
+    } catch (e) {
+      console.log(
+        "[tasksWriteDirect] persistGoogleTasksCell (Firestore) failed:",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+    return;
+  }
   const colIdx = headerIdx.get("google_tasks");
   if (colIdx == null) return;
   const sheetRow = rowIndex + 1;

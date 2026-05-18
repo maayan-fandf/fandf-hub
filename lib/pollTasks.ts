@@ -672,6 +672,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
           headerIdx,
           i, // 0-based index into values; persistGoogleTasksCell adds 1
           mergedRefs,
+          taskId, // Phase 4: Firestore doc target
         );
         rowsHealed++;
         gtsSpawned += spawnedThisRow;
