@@ -28,6 +28,7 @@
  * required for the correctness cutover.
  */
 
+import { cache } from "react";
 import { getDb, FS_COLLECTIONS } from "@/lib/firestore";
 
 /** Canonical header set — the union of every column name any task /
@@ -193,12 +194,7 @@ function commentDocToRow(d: Record<string, unknown>): Row {
   return row;
 }
 
-/**
- * Read the tasks + comments collections and return them in the exact
- * Sheets `{ headers, rows, headerIdx }` shape every reader expects.
- * Server-only (Firestore admin SDK). Caller decides caching.
- */
-export async function readCommentsShapeFromFirestore(): Promise<{
+async function readCommentsShapeImpl(): Promise<{
   headers: string[];
   rows: unknown[][];
   headerIdx: Map<string, number>;
@@ -215,10 +211,28 @@ export async function readCommentsShapeFromFirestore(): Promise<{
   commentSnap.forEach((doc) =>
     rows.push(commentDocToRow(doc.data() as Record<string, unknown>)),
   );
-  // headerIdx is a fresh Map per call (consumers may mutate-iterate it;
-  // cheap to rebuild — HEADERS is ~45 entries).
   return { headers: [...HEADERS], rows, headerIdx: buildHeaderIdx() };
 }
+
+/**
+ * Read the tasks + comments collections and return them in the exact
+ * Sheets `{ headers, rows, headerIdx }` shape every reader expects.
+ * Server-only (Firestore admin SDK).
+ *
+ * Wrapped in React `cache()` for PER-REQUEST dedup — this is the
+ * read-flip perf fix. The task detail page calls several comment-family
+ * readers (taskComments / projectComments / getCommentById / counts …)
+ * and tasksGet, each of which funnels here. Uncached, every one did its
+ * own full tasks+comments collection read → the detail render went
+ * unresponsive (30s+) after a write under Firestore reads. cache()
+ * collapses them all to ONE Firestore round-trip per request. Same
+ * proven pattern as the Sheets `readCommentsTab` (also React cache()-
+ * wrapped + shared across consumers in a request). NOT unstable_cache
+ * (the nested-unstable_cache hazard in memory does not apply to React
+ * cache(), which composes safely). Cross-request freshness is handled
+ * by the per-write invalidate + the awaited mirror (read-your-writes).
+ */
+export const readCommentsShapeFromFirestore = cache(readCommentsShapeImpl);
 
 /** PricingLog ledger from Firestore, shaped like lib/pricingLog.ts
  *  PricingLogRow (minus the report-time title/brief/worker enrichment
