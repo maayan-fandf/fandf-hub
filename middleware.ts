@@ -16,6 +16,11 @@ export default auth((req) => {
     // pollTaskCompletions trigger). Same shared-secret auth model as
     // the auto-transition endpoint above.
     path === "/api/cron/poll-tasks" ||
+    // Cloud Scheduler membership-reconcile cron. Same shared-secret
+    // (X-Cron-Token / APPS_SCRIPT_API_TOKEN) auth as poll-tasks; must
+    // skip the NextAuth redirect or Scheduler gets a 302→/signin
+    // (surfaces as a 400 INVALID_ARGUMENT on the job).
+    path === "/api/cron/sync-chat-spaces" ||
     // External-link redirect endpoint used by the dashboard's ads /
     // sheet buttons to escape Apps Script's sandboxed iframe popup
     // restrictions. The route hardcodes a hostname whitelist so it
