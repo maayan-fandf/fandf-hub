@@ -238,8 +238,13 @@ env:
   # org-policy-controlled). The fix that also covers EXISTING spaces
   # is the Google Workspace Admin org-wide Chat notification default
   # (not code). Empty `value:` is rejected by the preparer — keep "0".
+  # ENABLED 2026-05-18: new project spaces are created THREADED so
+  # members default to "@mentions + followed threads only" (no
+  # per-message ping). Independent flag, no chat.memberships prereq;
+  # worst case the API ignores the field (no regression). VERIFY on the
+  # next real space creation that it actually comes out threaded.
   - variable: USE_THREADED_CHAT_SPACES
-    value: "0"
+    value: "1"
     availability:
       - BUILD
       - RUNTIME
