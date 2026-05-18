@@ -172,7 +172,7 @@ env:
       - RUNTIME
 
   - variable: USE_FIRESTORE_TASKS
-    value: "1"
+    value: "0"
     availability:
       - BUILD
       - RUNTIME
