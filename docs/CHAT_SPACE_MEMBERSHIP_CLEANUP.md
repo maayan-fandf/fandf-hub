@@ -1,5 +1,19 @@
 # Existing Chat-space membership remediation — DONE (2026-05-18)
 
+> **🛑 SUPERSEDED BY PATH B (final, 2026-05-18): Chat integration
+> de-scoped.** After all the membership/threading work below, the
+> owner concluded the team works in WhatsApp/email, not Google Chat,
+> and the whole Chat integration "isn't worth it." The hub's automated
+> cross-stream mirror is now **OFF by default**
+> (`CHAT_CROSSPOST_ENABLED=0`, commit `0da5c42`) — `postChatWebhook`
+> early-returns. This is intentional; do not re-enable Chat mirroring
+> or rebuild Chat-surface features without an explicit owner ask. Hub
+> discussion lives in Firestore; Chat was only ever a mirror. Roster
+> cron + the quiet/threaded/restricted spaces + the 2 explicit
+> user-initiated posts remain (harmless). Authoritative rationale:
+> memory `reference_chat_space_membership_model.md` (Path B section).
+> Everything below is now history.
+
 > **✅ EXECUTED & COMPLETE 2026-05-18.** This plan was superseded by a
 > full **delete + recreate-as-threaded** migration (chosen because the
 > hub had no real usage yet, so lost history/URLs didn't matter, and
