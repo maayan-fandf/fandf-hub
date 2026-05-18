@@ -83,6 +83,21 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** True for F&F team members. The single rule that decides who may
+ *  author / read `scope:"internal"` discussion — identical to the
+ *  project page's `isInternalUser` test, kept here so the write-side
+ *  guard never depends on getAccessScope (which has no client flag). */
+function isInternalEmail(email: string): boolean {
+  return email.toLowerCase().trim().endsWith("@fandf.co.il");
+}
+
+/** Normalize an untrusted scope input to the two valid values. Anything
+ *  that isn't the explicit string "internal" collapses to "shared" —
+ *  the safe default (client-visible, = pre-scope behavior). */
+function normalizeScope(v: unknown): "internal" | "shared" {
+  return v === "internal" ? "internal" : "shared";
+}
+
 function genCommentId(): string {
   return (
     "c-" +
@@ -537,6 +552,22 @@ export async function postReplyDirect(
   if (!parentProject) throw new Error("Parent comment has no project");
   await assertProjectAccess(subjectEmail, parentProject);
 
+  // A reply ALWAYS inherits its thread's scope. Threads are flat
+  // (parent_id === root.id), so the direct parent row carries the
+  // canonical scope. This makes mixed-scope threads structurally
+  // impossible — there is no way to slip a "shared" reply into an
+  // "internal" thread (which would leak it to the client) or vice
+  // versa. Legacy/sheet rows with no scope column → "shared".
+  const threadScope = normalizeScope(
+    String(parentRow[idx.get("scope") ?? -1] ?? ""),
+  );
+  // Defense in depth: only F&F may write into an internal thread.
+  // The internal composer is never rendered for clients, but the
+  // create/reply API is directly callable — refuse here too.
+  if (threadScope === "internal" && !isInternalEmail(subjectEmail)) {
+    throw new Error("Not authorized to post in an internal thread");
+  }
+
   const parentAuthor = String(
     parentRow[idx.get("author_email") ?? -1] ?? "",
   ).toLowerCase().trim();
@@ -581,6 +612,7 @@ export async function postReplyDirect(
     edited_at: "",
     google_tasks: [],
     status_history: [],
+    scope: threadScope,
   };
   if (fsWrites) {
     // Phase 4 — authoritative Firestore comment write; NO Sheets
@@ -605,6 +637,7 @@ export async function postReplyDirect(
       edited_at: "",
       row_kind: "",
       status_history: "[]",
+      scope: threadScope,
     };
     const row = headers.map((h) => (h in cells ? cells[h] : ""));
     const sheets = sheetsClient(subjectEmail);
@@ -726,7 +759,10 @@ export async function postReplyDirect(
     // task-level noise that's actionable elsewhere. Resolve / create
     // posts continue to cross-post regardless because those are
     // higher-signal events worth team awareness.
-    if (!parentIsTask) {
+    // Internal-scoped discussion must NEVER cross-post to the
+    // office-wide Chat space (Chat is globally off today, but keep the
+    // invariant true if it's ever revived — internal = F&F-only).
+    if (!parentIsTask && threadScope !== "internal") {
       await postChatWebhook(subjectEmail, parentProject, "reply", {
         authorName: me.split("@")[0],
         body: trimmedBody.slice(0, 120),
@@ -1068,12 +1104,29 @@ export type CreateMentionResult = {
 
 export async function createMentionDirect(
   subjectEmail: string,
-  args: { project: string; body: string; assignees: unknown; due?: string },
+  args: {
+    project: string;
+    body: string;
+    assignees: unknown;
+    due?: string;
+    /** Audience of the new top-level thread. "internal" = F&F only;
+     *  omitted/"shared" = client-visible (the historical behavior). */
+    scope?: "internal" | "shared";
+  },
 ): Promise<CreateMentionResult> {
   const project = String(args.project || "").trim();
   if (!project) throw new Error("project required");
   if (!args.body || !args.body.trim()) throw new Error("body required");
   await assertProjectAccess(subjectEmail, project);
+
+  const scope = normalizeScope(args.scope);
+  // Only F&F may open an internal thread. The internal composer isn't
+  // shown to clients, but this endpoint is directly callable — refuse a
+  // non-F&F caller asking for scope:"internal" rather than silently
+  // downgrading (a downgrade would leak the message to the client).
+  if (scope === "internal" && !isInternalEmail(subjectEmail)) {
+    throw new Error("Not authorized to post an internal message");
+  }
 
   const assignees = parseAssignees(args.assignees);
   const due = String(args.due || "").trim();
@@ -1105,6 +1158,7 @@ export async function createMentionDirect(
     edited_at: "",
     google_tasks: [],
     status_history: [],
+    scope,
   };
   const fsWrites = useFirestoreWrites();
   if (fsWrites) {
@@ -1129,6 +1183,7 @@ export async function createMentionDirect(
       edited_at: "",
       row_kind: "",
       status_history: "[]",
+      scope,
     };
     const sheets = sheetsClient(subjectEmail);
     const headerRes = await sheets.spreadsheets.values.get({
@@ -1176,11 +1231,14 @@ export async function createMentionDirect(
         link,
       });
     }
-    await postChatWebhook(subjectEmail, project, "create", {
-      authorName: me.split("@")[0],
-      body: trimmedBody.slice(0, 120),
-      deepLink: link,
-    });
+    // Internal threads never reach the office-wide Chat space.
+    if (scope !== "internal") {
+      await postChatWebhook(subjectEmail, project, "create", {
+        authorName: me.split("@")[0],
+        body: trimmedBody.slice(0, 120),
+        deepLink: link,
+      });
+    }
   });
 
   return {

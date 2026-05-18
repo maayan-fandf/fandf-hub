@@ -1,18 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import type { CustomerEmailItem } from "@/lib/customerEmails";
-import ChatShareButton from "./ChatShareButton";
 import { formatDateTimeIso } from "@/lib/dateFormat";
 
 /**
  * Render the customer-email list with per-row actions:
  *   - ➕ צור משימה — deep-link to /tasks/new with prefill
- *   - 💬 צ׳אט פנימי ▾ — picks a project under the email's company,
- *     posts email summary to that project's Google Chat Space
- *   - 💬 צ׳אט עם לקוח ▾ — picks a project, posts to that project's
- *     Comments sheet (visible to client on the project's client tab)
  *   - 📧 הגב במייל — opens the Gmail thread (the actual email
  *     conversation surface)
  *
@@ -30,14 +24,6 @@ export default function CustomerEmailsList({
   items: CustomerEmailItem[];
   error?: string;
 }) {
-  const [toast, setToast] = useState<string | null>(null);
-
-  function showToast(msg: string) {
-    setToast(msg);
-    const ttl = msg.startsWith("שגיאה") ? 6000 : 4000;
-    setTimeout(() => setToast(null), ttl);
-  }
-
   if (error) {
     return (
       <div className="customer-emails-error" role="alert">
@@ -55,7 +41,6 @@ export default function CustomerEmailsList({
 
   return (
     <>
-      {toast && <div className="customer-emails-toast">{toast}</div>}
       <ul className="customer-emails-list">
         {items.map((it) => (
           <li
@@ -89,18 +74,6 @@ export default function CustomerEmailsList({
               >
                 ➕ צור משימה
               </Link>
-              <ChatShareButton
-                email={it}
-                target="internal"
-                label="💬 צ׳אט פנימי"
-                onResult={showToast}
-              />
-              <ChatShareButton
-                email={it}
-                target="client"
-                label="💬 צ׳אט עם לקוח"
-                onResult={showToast}
-              />
               <a
                 className="customer-email-action"
                 href={it.gmailLink}

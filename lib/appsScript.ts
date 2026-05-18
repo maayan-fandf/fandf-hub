@@ -354,6 +354,11 @@ export type MentionItem = {
   /** Number of replies on the thread root — drives the inline "💬 N" expand
    *  indicator in the inbox. */
   reply_count?: number;
+  /** Audience scope of the thread. "internal" = F&F-only discussion,
+   *  "shared" = visible to the client. Absent on responses from readers
+   *  that don't compute it → treat as "shared". A non-F&F caller never
+   *  receives an "internal" row (enforced server-side in the readers). */
+  scope?: "internal" | "shared";
   deep_link: string;
 };
 
@@ -432,6 +437,10 @@ export type CommentItem = {
    *  viewed. Populated only by `taskCommentsDirect` (chain-walk) — other
    *  comment readers leave it undefined. */
   from_task?: { id: string; title: string };
+  /** Audience scope. "internal" = F&F-only, "shared" = client-visible.
+   *  Absent → "shared". A non-F&F caller never receives an "internal"
+   *  row (the readers drop them server-side). */
+  scope?: "internal" | "shared";
 };
 
 export type ProjectComments = {
@@ -464,16 +473,20 @@ export function getCommentReplies(
 export async function getProjectComments(
   project: string,
   limit = 20,
+  /** Restrict to one audience scope. Omitted → both (subject to the
+   *  reader's hard rule that a non-F&F caller never gets "internal"). */
+  scope?: "internal" | "shared",
 ): Promise<ProjectComments> {
   const { useSACommentsReads } = await import("@/lib/sa");
   if (useSACommentsReads()) {
     const { projectCommentsDirect } = await import("@/lib/commentsDirect");
     const user = await currentUserEmail();
-    return projectCommentsDirect(user, project, limit);
+    return projectCommentsDirect(user, project, limit, scope);
   }
   return callApi<ProjectComments>("projectComments", {
     project,
     limit: String(limit),
+    ...(scope ? { scope } : {}),
   });
 }
 

@@ -241,6 +241,9 @@ export type CommentMirror = {
   edited_at: string;
   google_tasks: GTaskRef[];
   status_history: unknown[];
+  /** Audience scope. "internal" = F&F team only (client never sees it);
+   *  "shared" (default) = visible to the client too. */
+  scope: "internal" | "shared";
 };
 
 /**
@@ -269,6 +272,7 @@ export async function writeCommentDoc(c: CommentMirror): Promise<void> {
     row_kind: "",
     google_tasks: Array.isArray(c.google_tasks) ? c.google_tasks : [],
     status_history: Array.isArray(c.status_history) ? c.status_history : [],
+    scope: c.scope === "internal" ? "internal" : "shared",
   });
 }
 

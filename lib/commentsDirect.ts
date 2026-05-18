@@ -45,6 +45,23 @@ function toIsoDate(v: unknown): string {
   return String(v);
 }
 
+/** True for F&F team members — the ONE rule that decides who may read
+ *  `scope:"internal"` discussion. Every client-reachable reader below
+ *  drops internal rows for a non-F&F caller, so the "client never sees
+ *  internal" invariant holds at the data layer regardless of which UI
+ *  surface (project page, timeline, inbox, badge, counts) does the
+ *  reading. Mirrors the project page's `isInternalUser` test. */
+function isInternalEmail(email: string): boolean {
+  return email.toLowerCase().trim().endsWith("@fandf.co.il");
+}
+
+/** Read a comment row's audience scope. Missing/legacy → "shared"
+ *  (client-visible) so every pre-scope comment keeps its old behavior;
+ *  only an explicit "internal" narrows it. */
+function rowScopeOf(cell: (k: string) => unknown): "internal" | "shared" {
+  return String(cell("scope") ?? "") === "internal" ? "internal" : "shared";
+}
+
 /**
  * Read the whole Comments tab once + build a header-name → index map.
  * Callers apply their own filters in memory. This is the single
@@ -292,6 +309,9 @@ export async function projectCommentsDirect(
   subjectEmail: string,
   project: string,
   limit: number,
+  /** When set, return only this audience scope. Independent of (and
+   *  applied after) the hard non-F&F → no-internal rule below. */
+  scopeFilter?: "internal" | "shared",
 ): Promise<ProjectComments> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
     readCommentsOnce(subjectEmail),
@@ -302,6 +322,7 @@ export async function projectCommentsDirect(
     throw new Error("Access denied to project: " + project);
   }
 
+  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
 
   // Collect all comment rows (row_kind empty) for this project.
@@ -317,6 +338,7 @@ export async function projectCommentsDirect(
     timestamp: string;
     resolved: boolean;
     edited_at: string;
+    scope: "internal" | "shared";
   };
   const all: Raw[] = [];
   for (const row of rows) {
@@ -325,6 +347,13 @@ export async function projectCommentsDirect(
     const cell = cellGetter(row, headerIdx);
     const proj = String(cell("project") ?? "").trim();
     if (proj !== project) continue;
+    // Hard invariant: a non-F&F caller never sees an internal row.
+    // Then the optional per-channel scopeFilter. Because replies
+    // inherit their root's scope at write time, filtering the flat
+    // `all` set keeps every thread whole (no orphaned replies).
+    const rowScope = rowScopeOf(cell);
+    if (!callerInternal && rowScope === "internal") continue;
+    if (scopeFilter && rowScope !== scopeFilter) continue;
     const mentionsRaw = String(cell("mentions") ?? "");
     all.push({
       id: String(cell("id") ?? ""),
@@ -341,6 +370,7 @@ export async function projectCommentsDirect(
       timestamp: toIsoDate(cell("timestamp")),
       resolved: Boolean(cell("resolved")),
       edited_at: toIsoDate(cell("edited_at")),
+      scope: rowScope,
     });
   }
 
@@ -376,6 +406,7 @@ export async function projectCommentsDirect(
     resolved: r.resolved,
     reply_count: r.parent_id ? 0 : replyCount.get(r.id) ?? 0,
     edited_at: r.edited_at || undefined,
+    scope: r.scope,
     deep_link: hubCommentUrl(r.project, r.id),
   });
 
@@ -403,6 +434,7 @@ export async function myMentionsDirect(
   ]);
 
   const lcEmail = subjectEmail.toLowerCase().trim();
+  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
 
   // Two-pass: build the thread-root resolved map first so reply-mentions
@@ -433,6 +465,12 @@ export async function myMentionsDirect(
     const project = String(cell("project") ?? "").trim();
     if (!scope.isAdmin && !scope.accessibleProjects.has(project)) continue;
 
+    // Hard invariant: a non-F&F caller never receives an internal-scoped
+    // mention — closes the leak for the inbox, the nav badge, the tasks
+    // page, and the project page's client path in one place.
+    const rowScope = rowScopeOf(cell);
+    if (!callerInternal && rowScope === "internal") continue;
+
     const id = String(cell("id") ?? "");
     const parent = String(cell("parent_id") ?? "");
     const threadRootId = parent || id;
@@ -452,6 +490,7 @@ export async function myMentionsDirect(
       timestamp: toIsoDate(cell("timestamp")),
       resolved,
       edited_at: toIsoDate(cell("edited_at")) || undefined,
+      scope: rowScope,
       deep_link: hubCommentUrl(project, id),
     });
   }
@@ -870,6 +909,7 @@ export async function getMyCountsDirect(
     getAccessScope(subjectEmail),
   ]);
 
+  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
   const idIdx = headerIdx.get("id");
   const parentIdx = headerIdx.get("parent_id");
@@ -877,6 +917,7 @@ export async function getMyCountsDirect(
   const resolvedIdx = headerIdx.get("resolved");
   const mentionsIdx = headerIdx.get("mentions");
   const googleTasksIdx = headerIdx.get("google_tasks");
+  const scopeIdx = headerIdx.get("scope");
 
   // First pass: index all comment rows by id so a reply can look up
   // its root's resolved state. Skip task rows.
@@ -891,6 +932,15 @@ export async function getMyCountsDirect(
   const all: Raw[] = [];
   for (const row of rows) {
     if (rowKindIdx != null && String(row[rowKindIdx] ?? "").trim() === "task") {
+      continue;
+    }
+    // Non-F&F callers never count internal-scoped rows (badge / home
+    // per-project tallies). Same hard invariant as the readers above.
+    if (
+      !callerInternal &&
+      scopeIdx != null &&
+      String(row[scopeIdx] ?? "") === "internal"
+    ) {
       continue;
     }
     const id = idIdx != null ? String(row[idIdx] ?? "") : "";

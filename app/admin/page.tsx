@@ -38,14 +38,6 @@ export default async function AdminHome() {
       ready: true,
     },
     {
-      href: "/admin/chat-spaces",
-      title: "Chat Spaces",
-      emoji: "💬",
-      subtitle:
-        "הקמה אוטומטית של Space ב־Google Chat לכל פרויקט — צוות + לקוחות במקום אחד, עם Tasks + Files משותפים.",
-      ready: true,
-    },
-    {
       href: "/admin/chain-templates",
       title: "תבניות שרשרת",
       emoji: "📦",

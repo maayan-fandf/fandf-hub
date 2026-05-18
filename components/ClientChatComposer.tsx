@@ -19,18 +19,23 @@ const MAX = 4000;
  * the full task form. Keeps the inline composer lean so it actually
  * feels like a chat input rather than a mini form.
  *
- * Role gating: `isClientUser` flips the placeholder + button title
- * so the language matches who's typing — clients see "הודעה לצוות",
- * staff/admin see "הודעה ללקוח". The endpoint is identical either
- * way (the row lands in the project's Comments sheet, audible to
- * everyone with project access).
+ * Audience:
+ *   - scope="internal" → posts to the F&F-only channel. The client
+ *     never sees it. Only rendered for internal users.
+ *   - scope="shared" → the client-visible channel. `isClientUser`
+ *     flips the wording so it reads naturally for whoever is typing
+ *     (client → "לצוות", staff → "ללקוח").
+ * `scope` rides along to /api/tasks/create; the server re-checks that
+ * a non-F&F caller can't post internal.
  */
 export default function ClientChatComposer({
   project,
   isClientUser,
+  scope = "shared",
 }: {
   project: string;
   isClientUser: boolean;
+  scope?: "internal" | "shared";
 }) {
   const router = useRouter();
   const [body, setBody] = useState("");
@@ -38,10 +43,13 @@ export default function ClientChatComposer({
   const [isPending, startTransition] = useTransition();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const audience = isClientUser ? "לצוות" : "ללקוח";
-  const placeholder = isClientUser
-    ? "כתוב הודעה לצוות... (⌘/Ctrl+Enter לשליחה)"
-    : "כתוב הודעה ללקוח... (⌘/Ctrl+Enter לשליחה)";
+  const isInternal = scope === "internal";
+  const audience = isInternal ? "פנימית" : isClientUser ? "לצוות" : "ללקוח";
+  const placeholder = isInternal
+    ? "כתוב הודעה פנימית (צוות F&F בלבד)... (⌘/Ctrl+Enter לשליחה)"
+    : isClientUser
+      ? "כתוב הודעה לצוות... (⌘/Ctrl+Enter לשליחה)"
+      : "כתוב הודעה ללקוח... (⌘/Ctrl+Enter לשליחה)";
 
   function submit() {
     const text = body.trim();
@@ -66,6 +74,7 @@ export default function ClientChatComposer({
             body: sending,
             assignees: [],
             due: "",
+            scope,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {
@@ -131,9 +140,11 @@ export default function ClientChatComposer({
           onClick={submit}
           disabled={isPending || empty || over}
           title={
-            isClientUser
-              ? "פרסם הודעה לצוות בפרוייקט"
-              : "פרסם הודעה לערוץ הלקוח"
+            isInternal
+              ? "פרסם הודעה פנימית — צוות F&F בלבד, הלקוח לא רואה"
+              : isClientUser
+                ? "פרסם הודעה לצוות בפרוייקט"
+                : "פרסם הודעה לערוץ הלקוח"
           }
         >
           {isPending ? "שולח…" : `שלח הודעה ${audience}`}

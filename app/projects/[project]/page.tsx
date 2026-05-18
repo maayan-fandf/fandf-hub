@@ -27,8 +27,6 @@ import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
 import CommentBody from "@/components/CommentBody";
-import InternalDiscussionTab from "@/components/InternalDiscussionTab";
-import { getDisplayNamesForEmail } from "@/lib/projectsDirect";
 import { personDisplayName } from "@/lib/personDisplay";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
@@ -142,6 +140,7 @@ export default async function ProjectOverviewPage({
 
   const [
     commentsRes,
+    internalCommentsRes,
     mentionsRes,
     projectsRes,
     workTasksRes,
@@ -149,7 +148,13 @@ export default async function ProjectOverviewPage({
     driveFolderRes,
     sharedDriveRes,
   ] = await Promise.allSettled([
-    getProjectComments(projectName, 15),
+    // Two scoped reads. They funnel through the same React-cache()'d
+    // Firestore shape (one round-trip), then filter in memory — the
+    // extra call is ~free. For a non-F&F caller the "internal" read
+    // returns empty by the reader's hard rule, so this is safe to run
+    // unconditionally.
+    getProjectComments(projectName, 15, "shared"),
+    getProjectComments(projectName, 15, "internal"),
     getMyMentions(),
     projectsP,
     // Pass company when supplied — tasksListDirect honors `filters.company`
@@ -167,6 +172,10 @@ export default async function ProjectOverviewPage({
 
   const commentsData =
     commentsRes.status === "fulfilled" ? commentsRes.value : null;
+  const internalCommentsData =
+    internalCommentsRes.status === "fulfilled"
+      ? internalCommentsRes.value
+      : null;
   const mentionsData =
     mentionsRes.status === "fulfilled" ? mentionsRes.value : null;
   const projectsData =
@@ -206,7 +215,6 @@ export default async function ProjectOverviewPage({
   // the Apps Script side wouldn't trigger.
   const companyForDashboard =
     projectMeta?.company ?? (companyScope || "");
-  const chatSpaceUrl = projectMeta?.chatSpaceUrl ?? "";
   const userEmail = projectsData?.email ?? "";
 
   // Resolve the project's Drive folder URL — the Drive lookup itself
@@ -308,28 +316,20 @@ export default async function ProjectOverviewPage({
   // (the resolved-filter pill below) against it. DiscussionSection
   // re-derives this internally — keep the rules in sync if they
   // change.
-  const activeChannel: "internal" | "client" | "tasks" =
-    sp.channel === "internal"
+  // Non-F&F users only ever have the shared channel — the internal and
+  // tasks channels are F&F-only, so a hand-crafted ?channel=internal
+  // from a client must NOT resolve to "internal" (the data layer also
+  // refuses, this is the UI half of the same invariant). Keep this in
+  // sync with the identical gate inside DiscussionSection.
+  const activeChannel: "internal" | "client" | "tasks" = !isInternalUser
+    ? "client"
+    : sp.channel === "internal"
       ? "internal"
       : sp.channel === "client"
         ? "client"
         : sp.channel === "tasks"
           ? "tasks"
-          : isInternalUser
-            ? "internal"
-            : "client";
-  // Mark chat_mention notifications for this project as read when the
-  // user opens the internal Chat tab. Fire-and-forget — the bell badge
-  // polls every 60s, so the user sees the count drop within a minute
-  // after landing on the page. Non-blocking by design: a Sheets write
-  // failure shouldn't gate page render.
-  if (activeChannel === "internal" && userEmail) {
-    void import("@/lib/notifications").then((m) =>
-      m
-        .markReadByProjectAndKind(userEmail, projectName, "chat_mention")
-        .catch(() => {}),
-    );
-  }
+          : "internal";
   const legacyEmbedUrl = dashboardBaseUrl
     ? buildDashboardUrl(dashboardBaseUrl, {
         company: companyForDashboard,
@@ -369,9 +369,21 @@ export default async function ProjectOverviewPage({
         ? extractError(workTasksRes.reason)
         : null;
 
+  // Shared (client-visible) vs internal (F&F-only) discussion. The two
+  // channels render with the SAME components — they only differ by
+  // which scoped slice they get and what the composer posts. For a
+  // non-F&F caller the internal slices are already empty (reader rule),
+  // and the internal channel never renders for them anyway.
   const comments = commentsData?.comments ?? [];
+  const internalComments = internalCommentsData?.comments ?? [];
   const myMentionsOnProject =
     mentionsData?.mentions.filter((m) => m.project === projectName) ?? [];
+  const sharedMentions = myMentionsOnProject.filter(
+    (m) => m.scope !== "internal",
+  );
+  const internalMentions = myMentionsOnProject.filter(
+    (m) => m.scope === "internal",
+  );
   const workTasks = workTasksData?.tasks ?? [];
 
   // Open work-tasks: anything not in a terminal state. Matches the queue's
@@ -381,17 +393,26 @@ export default async function ProjectOverviewPage({
     (t) => t.status !== "done" && t.status !== "cancelled",
   ).length;
   const totalComments = commentsData?.total ?? 0;
-  const openMentions = myMentionsOnProject.filter((m) => !m.resolved).length;
-
-  // Resolved-item count across the two remaining preview sections (mentions
-  // + comments). Drives the "(N)" badge on the filter-bar toggle so users
-  // see at a glance how much is currently hidden. Only top-level comments
-  // are countable here — replies inherit their parent's resolved state.
-  const resolvedMentions = myMentionsOnProject.filter((m) => m.resolved).length;
-  const resolvedComments = comments.filter(
-    (c) => !c.parent_id && c.resolved,
+  const internalTotal = internalCommentsData?.total ?? 0;
+  const openMentions = sharedMentions.filter((m) => !m.resolved).length;
+  const internalOpenMentions = internalMentions.filter(
+    (m) => !m.resolved,
   ).length;
-  const resolvedCount = resolvedMentions + resolvedComments;
+
+  // Resolved-item count for the filter-bar "(N)" badge — computed for
+  // the CURRENTLY ACTIVE channel so the pill reflects what's hidden in
+  // the surface the user is actually looking at. Only top-level comments
+  // are countable here (replies inherit their parent's resolved state).
+  const resolvedFor = (
+    cs: typeof comments,
+    ms: typeof myMentionsOnProject,
+  ): number =>
+    ms.filter((m) => m.resolved).length +
+    cs.filter((c) => !c.parent_id && c.resolved).length;
+  const resolvedCount =
+    activeChannel === "internal"
+      ? resolvedFor(internalComments, internalMentions)
+      : resolvedFor(comments, sharedMentions);
 
   return (
     <main className="container project-main">
@@ -488,20 +509,19 @@ export default async function ProjectOverviewPage({
 
       {isOutOfScope && <OutOfScopeBanner person={scopedPerson} />}
 
-      {/* Resolved-state filter — hub Comments rows only have a resolved
-          flag, Chat messages don't. So the toggle is meaningful on the
-          client tab and inert (and confusing) on the internal tab.
-          We mirror DiscussionSection's role-aware default below — when
-          ?channel= is absent, internal users land on the internal tab
-          and see no filter; clients land on client and see it.
-          Hidden also when the project has nothing resolved yet AND the
+      {/* Resolved-state filter — both the internal and shared channels
+          are hub Comments now, so the toggle is meaningful on both
+          (the old Google-Chat internal tab had no resolved state, which
+          is why this used to be client-only). The tasks channel has no
+          resolved filter. Hidden when nothing is resolved yet AND the
           user isn't already in show-resolved mode. */}
-      {activeChannel === "client" && (resolvedCount > 0 || showResolved) && (
-        <ProjectFilterBar
-          showResolved={showResolved}
-          resolvedCount={resolvedCount}
-        />
-      )}
+      {(activeChannel === "client" || activeChannel === "internal") &&
+        (resolvedCount > 0 || showResolved) && (
+          <ProjectFilterBar
+            showResolved={showResolved}
+            resolvedCount={resolvedCount}
+          />
+        )}
 
       {/* Section order intentionally matches the stats row above (tasks /
           mentions / comments) so each column lines up with its count tile
@@ -539,20 +559,21 @@ export default async function ProjectOverviewPage({
         )}
 
         <DiscussionSection
-          comments={comments}
-          mentions={myMentionsOnProject}
-          totalComments={totalComments}
-          openMentions={openMentions}
+          sharedComments={comments}
+          sharedMentions={sharedMentions}
+          sharedTotal={totalComments}
+          sharedOpenMentions={openMentions}
+          internalComments={internalComments}
+          internalMentions={internalMentions}
+          internalTotal={internalTotal}
+          internalOpenMentions={internalOpenMentions}
           projectName={projectName}
-          projectCompany={companyForDashboard}
           showResolved={showResolved}
           requestedView={sp.view}
           requestedChannel={sp.channel}
           isInternalUser={isInternalUser}
           isClientUser={isClientUser}
-          isAdmin={!!projectsData?.isAdmin}
           userEmail={userEmail}
-          chatSpaceUrl={chatSpaceUrl}
           people={peopleData?.ok ? peopleData.people : []}
         />
       </div>
@@ -746,50 +767,55 @@ async function ProjectAlertsSection({
 }
 
 /**
- * Two-channel discussion section. Outer tabs split the conversation
- * surface by audience:
- *   🔒 פנימי   — Google Chat space (internal team only). Read-only
- *               mirror of recent messages + a button to open Chat.
- *   🤝 לקוח   — hub Comments (internal + client). Full composer,
- *               attachments, mentions, resolve / edit / delete.
+ * Discussion section. Outer tabs split the conversation surface by
+ * audience — all three are now hub-native (Firestore) and render with
+ * the SAME components, so they look and behave identically:
+ *   🔒 פנימי  — internal hub discussion (F&F only; the client never
+ *               sees it). Full composer / mentions / resolve / edit.
+ *   🤝 משותף  — shared hub discussion (visible to the client too).
+ *               Same surface as פנימי, just a different audience.
+ *   📋 משימות — read-only aggregation of the open tasks' discussions.
  *
- * Each tab carries its own inner toggle (הכל / 🏷️ תיוגים שלי) so the
- * "things needing my attention" affordance survives across both
- * surfaces.
+ * (The פנימי channel used to be a read-only Google Chat mirror; Chat
+ * was de-scoped, so it's now a first-class hub channel scoped
+ * "internal" — identical UX to משותף.)
  *
- * Default channel is role-aware:
- *   - Internal user (`@fandf.co.il`) lands on "internal" — they live
- *     in Chat and that's where their day-to-day pings come from.
- *   - Clients (and unknown roles) land on "client" — they can't see
- *     the internal channel at all.
- * User-driven tab clicks set `?channel=internal|client` explicitly.
+ * Each tab keeps its own inner toggle (הכל / 🏷️ תיוגים שלי).
+ *
+ * Default channel is role-aware: F&F users land on "internal" (their
+ * day-to-day), clients are HARD-pinned to "client" (they have no
+ * internal/tasks channel at all).
  */
 function DiscussionSection({
-  comments,
-  mentions,
-  totalComments,
-  openMentions,
+  sharedComments,
+  sharedMentions,
+  sharedTotal,
+  sharedOpenMentions,
+  internalComments,
+  internalMentions,
+  internalTotal,
+  internalOpenMentions,
   projectName,
-  projectCompany,
   showResolved,
   requestedView,
   requestedChannel,
   isInternalUser,
   isClientUser,
-  isAdmin,
   userEmail,
-  chatSpaceUrl,
   people,
 }: {
-  comments: CommentItem[];
-  mentions: MentionItem[];
-  totalComments: number;
-  openMentions: number;
+  /** Client-visible (`scope:"shared"`) slice. */
+  sharedComments: CommentItem[];
+  sharedMentions: MentionItem[];
+  sharedTotal: number;
+  sharedOpenMentions: number;
+  /** F&F-only (`scope:"internal"`) slice. Already empty for non-F&F
+   *  callers (reader rule) and never rendered for them. */
+  internalComments: CommentItem[];
+  internalMentions: MentionItem[];
+  internalTotal: number;
+  internalOpenMentions: number;
   projectName: string;
-  /** Resolved company for this (project, ?company=) combo — threaded
-   *  to InternalChannel/InternalDiscussionTab so the empty-state
-   *  CreateChatSpaceButton can disambiguate non-unique project names. */
-  projectCompany: string;
   showResolved: boolean;
   requestedView: string | undefined;
   requestedChannel: string | undefined;
@@ -797,25 +823,23 @@ function DiscussionSection({
   /** True when the viewer is a client (col-E only). Drops the
    *  convert-to-task icon on every comment / mention card. */
   isClientUser: boolean;
-  /** True when the viewer is a hub admin. Gates the
-   *  CreateChatSpaceButton on the internal-tab empty state. */
-  isAdmin: boolean;
   userEmail: string;
-  chatSpaceUrl: string;
   /** People list used to resolve channel-row author emails to Hebrew
    *  names. Optional; falls back to email-prefix on miss. */
   people: import("@/lib/appsScript").TasksPerson[];
 }) {
-  const channel: "internal" | "client" | "tasks" =
-    requestedChannel === "internal"
+  // Hard gate: a non-F&F viewer can ONLY ever be on "client". Mirrors
+  // the page-level activeChannel gate AND the data-layer rule, so a
+  // hand-crafted ?channel=internal can never surface internal data.
+  const channel: "internal" | "client" | "tasks" = !isInternalUser
+    ? "client"
+    : requestedChannel === "internal"
       ? "internal"
       : requestedChannel === "client"
         ? "client"
         : requestedChannel === "tasks"
           ? "tasks"
-          : isInternalUser
-            ? "internal"
-            : "client";
+          : "internal";
 
   // Build hrefs for the outer tab — preserve other params (view,
   // resolved) so flipping channels doesn't reset the inner state.
@@ -838,11 +862,11 @@ function DiscussionSection({
             role="tab"
             aria-selected={channel === "internal"}
             href={channelHref("internal")}
-            title="פנימי — רק אצלנו ב-F&F"
+            title="פנימי — צוות F&F בלבד; הלקוח לא רואה"
             className={`discussion-channel-tab ${channel === "internal" ? "is-active" : ""}`}
           >
             🔒 פנימי
-            <span className="discussion-channel-tab-hint">Chat</span>
+            <span className="discussion-channel-tab-hint">צוות</span>
           </Link>
           <Link
             role="tab"
@@ -852,7 +876,7 @@ function DiscussionSection({
             className={`discussion-channel-tab ${channel === "client" ? "is-active" : ""}`}
           >
             🤝 משותף
-            <span className="discussion-channel-tab-hint">Hub</span>
+            <span className="discussion-channel-tab-hint">לקוח</span>
           </Link>
           <Link
             role="tab"
@@ -866,28 +890,32 @@ function DiscussionSection({
           </Link>
         </div>
       )}
-      {channel === "internal" ? (
-        <InternalChannel
-          subjectEmail={userEmail}
-          chatSpaceUrl={chatSpaceUrl}
-          requestedView={requestedView}
-          showResolved={showResolved}
-          projectName={projectName}
-          projectCompany={projectCompany}
-          isAdmin={isAdmin}
-        />
-      ) : channel === "tasks" ? (
+      {channel === "tasks" ? (
         <TasksChannel
           subjectEmail={userEmail}
           projectName={projectName}
           people={people}
         />
+      ) : channel === "internal" ? (
+        <HubChannel
+          channel="internal"
+          comments={internalComments}
+          mentions={internalMentions}
+          totalComments={internalTotal}
+          openMentions={internalOpenMentions}
+          projectName={projectName}
+          showResolved={showResolved}
+          requestedView={requestedView}
+          isClientUser={isClientUser}
+          people={people}
+        />
       ) : (
-        <ClientChannel
-          comments={comments}
-          mentions={mentions}
-          totalComments={totalComments}
-          openMentions={openMentions}
+        <HubChannel
+          channel="client"
+          comments={sharedComments}
+          mentions={sharedMentions}
+          totalComments={sharedTotal}
+          openMentions={sharedOpenMentions}
           projectName={projectName}
           showResolved={showResolved}
           requestedView={requestedView}
@@ -896,90 +924,6 @@ function DiscussionSection({
         />
       )}
     </section>
-  );
-}
-
-/**
- * Server component for the internal-channel tab. Pulls recent Chat
- * messages via Suspense so the chat-API fetch (~300–800ms) doesn't
- * block the rest of the page. Inner toggle (הכל / 🏷️ תיוגים שלי)
- * works the same as on the client tab.
- */
-async function InternalChannel({
-  subjectEmail,
-  chatSpaceUrl,
-  requestedView,
-  showResolved,
-  projectName,
-  projectCompany,
-  isAdmin,
-}: {
-  subjectEmail: string;
-  chatSpaceUrl: string;
-  requestedView: string | undefined;
-  showResolved: boolean;
-  projectName: string;
-  /** Resolved company for the (project, ?company=) combo. Lets the
-   *  empty-state CreateChatSpaceButton match the right Keys row when
-   *  the project name is non-unique (כללי, אחוזת אפרידר, …). */
-  projectCompany: string;
-  /** Threaded down to InternalDiscussionTab so the empty-state can
-   *  render a one-click "create chat space" button for admins. */
-  isAdmin: boolean;
-}) {
-  const view: "all" | "mine" = requestedView === "mine" ? "mine" : "all";
-  const buildHref = (nextView: "all" | "mine") => {
-    const qs = new URLSearchParams();
-    if (showResolved) qs.set("resolved", "1");
-    qs.set("channel", "internal");
-    qs.set("view", nextView);
-    return `/projects/${encodeURIComponent(projectName)}?${qs.toString()}`;
-  };
-  // Pull display-name aliases for the תיוגים filter — Chat mention
-  // annotations use displayName, not email. Best-effort.
-  const myDisplayNames = subjectEmail
-    ? await getDisplayNamesForEmail(subjectEmail).catch(() => [])
-    : [];
-  return (
-    <>
-      <div className="section-head section-head-inner">
-        <p className="section-subtitle">
-          {view === "mine"
-            ? "הודעות אחרונות בחלל הצ׳אט הפנימי שתויגת בהן"
-            : "הודעות אחרונות בחלל הצ׳אט הפנימי של הפרויקט"}
-        </p>
-        <div className="tasks-view-toggle" role="tablist">
-          <Link
-            role="tab"
-            aria-selected={view === "all"}
-            href={buildHref("all")}
-            className={`tasks-view-toggle-btn ${view === "all" ? "is-active" : ""}`}
-          >
-            הכל
-          </Link>
-          <Link
-            role="tab"
-            aria-selected={view === "mine"}
-            href={buildHref("mine")}
-            className={`tasks-view-toggle-btn ${view === "mine" ? "is-active" : ""}`}
-          >
-            🏷️ תיוגים שלי
-          </Link>
-        </div>
-      </div>
-      <Suspense fallback={<div className="discussion-empty">טוען צ׳אט…</div>}>
-        <InternalDiscussionTab
-          subjectEmail={subjectEmail}
-          spaceUrlOrWebhook={chatSpaceUrl}
-          showOnlyMine={view === "mine"}
-          myEmail={subjectEmail}
-          myDisplayNames={myDisplayNames}
-          projectName={projectName}
-          projectCompany={projectCompany}
-          isAdmin={isAdmin}
-        />
-      </Suspense>
-    </>
   );
 }
 
@@ -1109,11 +1053,16 @@ function formatRelativeIso(iso: string): string {
 }
 
 /**
- * Hub-native client-channel tab — the previous unified
- * DiscussionSection body, narrowed to "client tab" semantics. Inner
- * toggle (הכל / 🏷️ תיוגים שלי) operates on hub Comments rows.
+ * Hub-native discussion channel — drives BOTH the internal (F&F-only)
+ * and the shared (client-visible) tabs. The two are intentionally the
+ * SAME component: identical toggle, list, composer, empty states — the
+ * only differences are which scoped slice it's handed and the `scope`
+ * the composer posts with. That's what makes the internal and external
+ * chats homogeneous. Inner toggle (הכל / 🏷️ תיוגים שלי) operates on
+ * hub Comments rows.
  */
-function ClientChannel({
+function HubChannel({
+  channel,
   comments,
   mentions,
   totalComments,
@@ -1124,6 +1073,9 @@ function ClientChannel({
   isClientUser,
   people,
 }: {
+  /** Which audience this instance renders. Drives the composer scope
+   *  and keeps `?channel=` sticky across the inner toggle. */
+  channel: "internal" | "client";
   comments: CommentItem[];
   mentions: MentionItem[];
   totalComments: number;
@@ -1153,14 +1105,13 @@ function ClientChannel({
   );
 
   // Toggle hrefs preserve every other search param so e.g. ?resolved=1
-  // doesn't reset when flipping views, and the outer ?channel=client
-  // sticks so the toggle doesn't drop the user back onto the internal
-  // tab. Toggle is server-rendered as <Link>s — no JS required for
-  // state, refresh-safe by construction.
+  // doesn't reset when flipping views, and the outer ?channel sticks to
+  // THIS channel so the inner toggle never bounces the user to another
+  // tab. Server-rendered <Link>s — no JS, refresh-safe by construction.
   const buildHref = (nextView: "all" | "mine") => {
     const qs = new URLSearchParams();
     if (showResolved) qs.set("resolved", "1");
-    qs.set("channel", "client");
+    qs.set("channel", channel);
     qs.set("view", nextView);
     return `/projects/${encodeURIComponent(projectName)}?${qs.toString()}`;
   };
@@ -1243,6 +1194,7 @@ function ClientChannel({
         <ClientChatComposer
           project={projectName}
           isClientUser={isClientUser}
+          scope={channel === "internal" ? "internal" : "shared"}
         />
       </div>
     </>

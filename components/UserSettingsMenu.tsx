@@ -113,7 +113,6 @@ function writeViewAsCookie(value: string): void {
  *  are added here, not as separate top-nav entries. */
 const ADMIN_LINKS: { href: string; label: string; emoji: string }[] = [
   { href: "/admin/names-to-emails", label: "שמות ואימיילים", emoji: "📇" },
-  { href: "/admin/chat-spaces", label: "Chat Spaces", emoji: "💬" },
   { href: "/admin/user-prefs", label: "העדפות משתמשים", emoji: "👥" },
   { href: "/admin/task-form-schema", label: "סכמת טופס משימה", emoji: "📐" },
   { href: "/admin/keys", label: "Keys", emoji: "🔑" },

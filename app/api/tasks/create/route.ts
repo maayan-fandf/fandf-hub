@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
     body?: string;
     assignees?: string[];
     due?: string;
+    scope?: string;
   };
   try {
     body = await req.json();
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest) {
   }
 
   const { project, body: taskBody, assignees, due } = body;
+  // Audience scope. Only "internal" | "shared" are meaningful; anything
+  // else (incl. absent) → "shared" (client-visible, the legacy default).
+  // createMentionDirect re-checks that a non-F&F caller can't post
+  // "internal" — this is just input normalization.
+  const scope: "internal" | "shared" =
+    body.scope === "internal" ? "internal" : "shared";
 
   if (!project || !taskBody || !taskBody.trim()) {
     return NextResponse.json(
@@ -62,6 +69,7 @@ export async function POST(req: NextRequest) {
       body: taskBody,
       assignees,
       due: due ?? "",
+      scope,
     });
     return NextResponse.json(result);
   } catch (err) {

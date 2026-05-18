@@ -80,6 +80,11 @@ const HEADERS: string[] = [
   "price",
   "inprogress_minutes",
   "resolved",
+  // Comment-only: audience scope. "internal" = F&F team only (client
+  // never sees it), "shared" = visible to the client too. Absent on
+  // legacy docs → defaulted to "shared" in commentDocToRow so every
+  // pre-scope comment keeps its current client-visible behavior.
+  "scope",
 ];
 
 function buildHeaderIdx(): Map<string, number> {
@@ -211,6 +216,10 @@ function commentDocToRow(d: Record<string, unknown>): Row {
   put(row, "edited_at", String(d.edited_at ?? ""));
   put(row, "google_tasks", jstr(d.google_tasks, true));
   put(row, "status_history", jstr(d.status_history, true));
+  // Graceful: legacy comment docs predate `scope` → treat as "shared"
+  // (client-visible), preserving their pre-migration behavior. Only an
+  // explicit "internal" narrows visibility.
+  put(row, "scope", d.scope === "internal" ? "internal" : "shared");
   return row;
 }
 

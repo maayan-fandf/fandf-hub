@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import ChatShareButton from "./ChatShareButton";
 import { formatDateTimeIso } from "@/lib/dateFormat";
 
 /**
@@ -40,13 +39,6 @@ export default function NavCustomerEmails() {
   const [items, setItems] = useState<CustomerEmail[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-
-  function showToast(msg: string) {
-    setToast(msg);
-    const ttl = msg.startsWith("שגיאה") ? 6000 : 4000;
-    setTimeout(() => setToast(null), ttl);
-  }
   const wrapRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -189,9 +181,6 @@ export default function NavCustomerEmails() {
               לסגירת פריט — קרא או העבר לארכיון ב-Gmail.
             </p>
           </div>
-          {toast && (
-            <div className="nav-customer-emails-toast">{toast}</div>
-          )}
           {loading && <div className="nav-customer-emails-loading">טוען…</div>}
           {error && (
             <div className="nav-customer-emails-error">שגיאה: {error}</div>
@@ -237,18 +226,6 @@ export default function NavCustomerEmails() {
                     >
                       ➕ צור משימה
                     </button>
-                    <ChatShareButton
-                      email={it}
-                      target="internal"
-                      label="💬 צ׳אט פנימי"
-                      onResult={showToast}
-                    />
-                    <ChatShareButton
-                      email={it}
-                      target="client"
-                      label="💬 צ׳אט עם לקוח"
-                      onResult={showToast}
-                    />
                     <a
                       href={it.gmailLink}
                       target="_blank"
