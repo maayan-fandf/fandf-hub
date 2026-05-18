@@ -225,6 +225,20 @@ env:
       - BUILD
       - RUNTIME
 
+  # Safety valve for the membership-reconcile cron. DEFAULT dry-run ON
+  # (anything other than exactly "0" = dry-run). While on, the cron
+  # reads Keys + lists each space's members (so a missing
+  # chat.memberships scope still surfaces) and LOGS the exact per-space
+  # add/remove plan, but mutates NOTHING. Going live = a deliberate
+  # second flip to "0", only after the dry-run plan in the cron logs
+  # has been reviewed. Enabling USE_RESTRICTED_CHAT_SPACES alone can
+  # therefore never mass-remove anyone.
+  - variable: CHAT_SPACE_SYNC_DRYRUN
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # When "1", new project Chat spaces are created THREADED
   # (spaceThreadingState: THREADED_MESSAGES) so the default per-member
   # notification is "@mentions + followed threads only" — members

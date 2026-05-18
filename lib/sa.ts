@@ -414,6 +414,23 @@ export function useThreadedChatSpaces(): boolean {
   return String(process.env.USE_THREADED_CHAT_SPACES || "").trim() === "1";
 }
 
+/**
+ * Safety valve for the membership-reconcile cron. DEFAULT = dry-run
+ * ON (returns true unless CHAT_SPACE_SYNC_DRYRUN is explicitly "0").
+ *
+ * While dry-run is on, the cron still reads Keys + lists each space's
+ * members (so a missing chat.memberships scope still surfaces) and
+ * logs the EXACT per-space add/remove plan — but performs NO
+ * membership mutation. You must deliberately set
+ * CHAT_SPACE_SYNC_DRYRUN="0" to let it actually add/remove people.
+ * This makes an accidental mass-removal impossible: enabling the
+ * master flag alone can never mutate membership; going live is a
+ * separate, explicit second flip after the dry-run diff is reviewed.
+ */
+export function chatSpaceSyncDryRun(): boolean {
+  return String(process.env.CHAT_SPACE_SYNC_DRYRUN ?? "1").trim() !== "0";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */

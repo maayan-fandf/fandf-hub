@@ -33,7 +33,7 @@
  */
 
 import { sheetsClient, chatMembershipsClient, driveFolderOwner } from "@/lib/sa";
-import { useRestrictedChatSpaces } from "@/lib/sa";
+import { useRestrictedChatSpaces, chatSpaceSyncDryRun } from "@/lib/sa";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 import { parseSpaceId, lookupUserGaiaResource } from "@/lib/chat";
 
@@ -53,11 +53,18 @@ function envOrThrow(name: string): string {
 export type ChatSpaceSyncSummary = {
   ok: boolean;
   skipped?: string;
+  /** When true, NOTHING was mutated — counts below are the PLAN. */
+  dryRun: boolean;
   spacesSeen: number;
   spacesReconciled: number;
   spacesSkipped: number;
+  /** Members actually added (0 in dry-run). */
   added: number;
+  /** Members actually removed (0 in dry-run). */
   removed: number;
+  /** What WOULD be added/removed (populated in both modes). */
+  plannedAdds: number;
+  plannedRemovals: number;
   /** Spaces whose removals were suppressed by a safety rail. */
   removalsSuppressed: { space: string; reason: string }[];
   scopeMissing: boolean;
@@ -72,11 +79,14 @@ export async function reconcileAllChatSpaces(): Promise<ChatSpaceSyncSummary> {
     return {
       ok: true,
       skipped: "USE_RESTRICTED_CHAT_SPACES off",
+      dryRun: chatSpaceSyncDryRun(),
       spacesSeen: 0,
       spacesReconciled: 0,
       spacesSkipped: 0,
       added: 0,
       removed: 0,
+      plannedAdds: 0,
+      plannedRemovals: 0,
       removalsSuppressed: [],
       scopeMissing: false,
       errors: [],
@@ -199,13 +209,17 @@ function isScopeMissing(e: unknown): boolean {
 }
 
 async function run(): Promise<ChatSpaceSyncSummary> {
+  const dryRun = chatSpaceSyncDryRun();
   const summary: ChatSpaceSyncSummary = {
     ok: true,
+    dryRun,
     spacesSeen: 0,
     spacesReconciled: 0,
     spacesSkipped: 0,
     added: 0,
     removed: 0,
+    plannedAdds: 0,
+    plannedRemovals: 0,
     removalsSuppressed: [],
     scopeMissing: false,
     errors: [],
@@ -352,48 +366,68 @@ async function run(): Promise<ChatSpaceSyncSummary> {
         );
       }
 
-      // Apply adds (idempotent — 409 ALREADY_EXISTS is success).
-      for (const email of addEmails) {
-        try {
-          await chat.spaces.members.create({
-            parent: spaceResource,
-            requestBody: {
-              member: { name: `users/${email}`, type: "HUMAN" },
-            },
-          });
-          summary.added++;
-        } catch (e) {
-          if (isScopeMissing(e)) {
-            summary.scopeMissing = true;
-            summary.ok = false;
-            summary.errors.push(
-              "ABORT: chat.memberships scope missing (add) at " + label,
-            );
-            return summary;
-          }
-          const msg = e instanceof Error ? e.message : String(e);
-          if (/already.*member|already.*exist/i.test(msg)) continue;
-          summary.errors.push(`add ${email} @ ${label}: ${msg}`);
-        }
+      // Plan log (both modes) — the per-space audit artifact.
+      if (addEmails.length || removable.length) {
+        console.log(
+          `[chatSpaceSync]${dryRun ? "[DRYRUN]" : ""} ${label}: ` +
+            `+${addEmails.length} [${addEmails.join(", ")}] ` +
+            `-${doRemovals ? removable.length : 0}` +
+            (doRemovals
+              ? ` [${removable.map((m) => m.member?.name).join(", ")}]`
+              : ` (removals suppressed)`),
+        );
       }
 
-      // Apply removals (only if rails passed).
-      if (doRemovals) {
-        for (const m of removable) {
+      // Adds (idempotent — 409 ALREADY_EXISTS is success). dry-run
+      // counts the plan and mutates nothing.
+      summary.plannedAdds += addEmails.length;
+      if (!dryRun) {
+        for (const email of addEmails) {
           try {
-            await chat.spaces.members.delete({ name: m.name as string });
-            summary.removed++;
+            await chat.spaces.members.create({
+              parent: spaceResource,
+              requestBody: {
+                member: { name: `users/${email}`, type: "HUMAN" },
+              },
+            });
+            summary.added++;
           } catch (e) {
             if (isScopeMissing(e)) {
               summary.scopeMissing = true;
               summary.ok = false;
               summary.errors.push(
-                "ABORT: chat.memberships scope missing (delete) at " + label,
+                "ABORT: chat.memberships scope missing (add) at " + label,
               );
               return summary;
             }
             const msg = e instanceof Error ? e.message : String(e);
-            summary.errors.push(`remove @ ${label}: ${msg}`);
+            if (/already.*member|already.*exist/i.test(msg)) continue;
+            summary.errors.push(`add ${email} @ ${label}: ${msg}`);
+          }
+        }
+      }
+
+      // Removals (only if rails passed). dry-run counts the plan and
+      // mutates nothing.
+      if (doRemovals) {
+        summary.plannedRemovals += removable.length;
+        if (!dryRun) {
+          for (const m of removable) {
+            try {
+              await chat.spaces.members.delete({ name: m.name as string });
+              summary.removed++;
+            } catch (e) {
+              if (isScopeMissing(e)) {
+                summary.scopeMissing = true;
+                summary.ok = false;
+                summary.errors.push(
+                  "ABORT: chat.memberships scope missing (delete) at " + label,
+                );
+                return summary;
+              }
+              const msg = e instanceof Error ? e.message : String(e);
+              summary.errors.push(`remove @ ${label}: ${msg}`);
+            }
           }
         }
       }
