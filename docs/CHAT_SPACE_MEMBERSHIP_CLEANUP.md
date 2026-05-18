@@ -5,6 +5,18 @@ here runs automatically. This mutates shared Google Chat spaces
 (user-visible, high blast radius, only semi-reversible) — every write
 step needs sign-off.
 
+> **Update 2026-05-18 (later) — reconcile is now LIVE.**
+> `USE_RESTRICTED_CHAT_SPACES=1` + `CHAT_SPACE_SYNC_DRYRUN=0` +
+> `USE_THREADED_CHAT_SPACES=1`. Owner granted the `chat.memberships`
+> scope + created the Cloud Scheduler job (`chatspacessync`, me-west1,
+> ~30 min). Dry-run was reviewed (24 spaces, +13 adds / −42 removes —
+> the removes were shir/nadav/sapir off non-rostered spaces). An
+> admin/owner never-remove allowlist was recommended; **owner
+> explicitly chose STRICT roster-only and confirmed in chat** — so
+> there is no allowlist and the cron now actively removes non-roster
+> members (admins included) every cycle. Halt = `CHAT_SPACE_SYNC_DRYRUN
+> =1`. Only Phase A→ (access tightening) below remains relevant.
+>
 > **Update 2026-05-18 — membership reconcile is now AUTOMATED (dormant).**
 > Owner chose: membership = **roster-ONLY** (Keys C/D/J/K, @fandf;
 > system admins are NOT blanket-members — only if rostered) and a
