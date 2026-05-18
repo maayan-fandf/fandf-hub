@@ -21,7 +21,6 @@ import {
 import { findChatSpaceColumnIndex, invalidateKeysCache } from "@/lib/keys";
 import { chatSpaceUrlFromWebhook } from "@/lib/projectsDirect";
 import { parseSpaceId } from "@/lib/chat";
-import { HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -500,9 +499,13 @@ async function inviteProjectRoster(
     const e = resolveOne(t);
     if (e) candidates.add(e);
   }
-  for (const a of HUB_ADMIN_EMAILS) {
-    candidates.add(a.toLowerCase());
-  }
+  // Roster-ONLY membership (owner decision 2026-05-18): the synced
+  // member set is strictly who is assigned to the project in Keys
+  // (cols C/D/J/K). System admins are intentionally NOT blanket-added
+  // — an admin is only in a space if they're actually on that
+  // project's roster row. (The space creator/manager is still
+  // structurally protected from removal in the reconcile path — that's
+  // a Chat requirement, not an admin exception.)
   // The space creator (adminEmail) is implicitly a member; skip.
   candidates.delete(adminEmail.toLowerCase());
   // Filter: chat space is internal-only — drop any non-@fandf.co.il
