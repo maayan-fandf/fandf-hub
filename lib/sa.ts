@@ -431,6 +431,24 @@ export function chatSpaceSyncDryRun(): boolean {
   return String(process.env.CHAT_SPACE_SYNC_DRYRUN ?? "1").trim() !== "0";
 }
 
+/**
+ * The automated cross-stream signal (postChatWebhook mirrors hub
+ * comment/reply/resolve/mention activity into the project's Chat
+ * space). DEFAULT OFF (returns true only when CHAT_CROSSPOST_ENABLED
+ * === "1"). Owner decision 2026-05-18 (Path B): the team works in
+ * WhatsApp/email, not Google Chat; the hub's discussion is stored in
+ * Firestore (not Chat) so nothing is lost by silencing the mirror.
+ * Off = the hub never auto-posts into Chat spaces → zero firehose.
+ * Flag-gated (not deleted) so the cross-stream feature is revivable
+ * if the team ever moves into Chat. Does NOT affect the two
+ * explicit, user-initiated Chat posts (customer-email share-to-chat,
+ * the in-hub discussion-tab "send") — those only fire when a user
+ * deliberately clicks, so they aren't noise.
+ */
+export function useChatCrossPost(): boolean {
+  return String(process.env.CHAT_CROSSPOST_ENABLED || "").trim() === "1";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */

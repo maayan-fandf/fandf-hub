@@ -251,6 +251,23 @@ env:
       - BUILD
       - RUNTIME
 
+  # Path B (owner decision 2026-05-18): the team works in
+  # WhatsApp/email, not Google Chat — the hub's automated
+  # cross-stream mirror (postChatWebhook: comment/reply/resolve/
+  # mention → Chat space) is not worth its noise, and the hub's
+  # discussion is stored in Firestore (Chat was only ever a mirror,
+  # so nothing is lost). DEFAULT "0" = the hub never auto-posts into
+  # Chat spaces. Flag-gated (code kept) so it's revivable if the team
+  # ever moves into Chat — set "1" to re-enable. Does NOT touch the
+  # two explicit user-initiated posts (customer-email share-to-chat,
+  # in-hub discussion-tab send) or the roster-sync cron. Empty
+  # `value:` is rejected by the preparer — keep "0", never "".
+  - variable: CHAT_CROSSPOST_ENABLED
+    value: "0"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # When "1", new project Chat spaces are created THREADED
   # (spaceThreadingState: THREADED_MESSAGES) so the default per-member
   # notification is "@mentions + followed threads only" — members

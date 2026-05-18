@@ -43,6 +43,7 @@ import {
   gmailClient,
   useFirestoreTasks,
   useFirestoreWrites,
+  useChatCrossPost,
 } from "@/lib/sa";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
@@ -316,6 +317,12 @@ async function postChatWebhook(
   kind: "reply" | "resolve" | "create",
   card: { authorName: string; body?: string; deepLink?: string },
 ): Promise<void> {
+  // Path B (owner decision 2026-05-18): the hub no longer mirrors
+  // activity into Chat spaces — team uses WhatsApp/email, hub
+  // discussion lives in Firestore. Default-off kill switch; single
+  // chokepoint neutralizes all callers (reply / resolve / create).
+  // Revive by setting CHAT_CROSSPOST_ENABLED=1.
+  if (!useChatCrossPost()) return;
   try {
     const { headers, rows } = await readKeysCached(subjectEmail);
     const iProj = headers.indexOf("פרוייקט");
