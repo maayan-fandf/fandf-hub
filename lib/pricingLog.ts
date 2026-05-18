@@ -17,7 +17,7 @@
  *   kind | price | created_by
  */
 
-import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
+import { sheetsClient, useFirestoreTasks, useFirestoreWrites } from "@/lib/sa";
 
 const TAB = "PricingLog";
 const HEADER = [
@@ -103,57 +103,67 @@ export type TaskPricingEntry = {
 /** Append one ledger row. Never throws. Not awaited by the create path. */
 export async function logTaskPricing(entry: TaskPricingEntry): Promise<void> {
   try {
-    const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
-    const sheets = sheetsClient(entry.subjectEmail);
     const createdAtIl = nowIsraelString();
-    const row = [
+    const pricingPayload = {
       createdAtIl,
-      entry.taskId,
-      entry.company,
-      entry.project,
-      (entry.departments || []).join(", "),
-      entry.kind,
-      entry.price == null ? "" : entry.price,
-      entry.createdBy,
-      "", // billed — blank at create; only /admin/billing sets it
-    ];
-    const doAppend = () =>
-      sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `${TAB}!A:I`,
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: [row] },
-      });
-    try {
-      await doAppend();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!tabEnsured && /Unable to parse range|not found/i.test(msg)) {
-        const created = await ensureTab(sheets, spreadsheetId);
-        if (created) await doAppend();
-      } else {
-        throw e;
+      taskId: entry.taskId,
+      company: entry.company,
+      project: entry.project,
+      departments: (entry.departments || []).join(", "),
+      kind: entry.kind,
+      price: typeof entry.price === "number" ? entry.price : 0,
+      createdBy: entry.createdBy,
+      billed: null as number | null,
+    };
+    if (useFirestoreWrites()) {
+      // Phase 4 — authoritative ledger write to Firestore; NO Sheets
+      // append. Stays telemetry-grade: the outer try/catch swallows
+      // and the create path `void`s this, so a ledger hiccup still
+      // can't slow or break task creation (the HARD RULE above). The
+      // deterministic content-hash doc id keeps it idempotent with
+      // the backfill and any prior dual-write of the same entry.
+      const { writePricingEntry } = await import("@/lib/firestoreSync");
+      await writePricingEntry(pricingPayload);
+    } else {
+      const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
+      const sheets = sheetsClient(entry.subjectEmail);
+      const row = [
+        createdAtIl,
+        entry.taskId,
+        entry.company,
+        entry.project,
+        (entry.departments || []).join(", "),
+        entry.kind,
+        entry.price == null ? "" : entry.price,
+        entry.createdBy,
+        "", // billed — blank at create; only /admin/billing sets it
+      ];
+      const doAppend = () =>
+        sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `${TAB}!A:I`,
+          valueInputOption: "RAW",
+          insertDataOption: "INSERT_ROWS",
+          requestBody: { values: [row] },
+        });
+      try {
+        await doAppend();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!tabEnsured && /Unable to parse range|not found/i.test(msg)) {
+          const created = await ensureTab(sheets, spreadsheetId);
+          if (created) await doAppend();
+        } else {
+          throw e;
+        }
       }
+      // Phase 2 storage migration — best-effort dual-write mirror.
+      // Same deterministic content-hash id as the backfill ⇒ a
+      // backfill re-run can't double-count. Flag-gated, never throws.
+      void import("@/lib/firestoreSync")
+        .then((m) => m.mirrorPricingEntry(pricingPayload))
+        .catch(() => {});
     }
-    // Phase 2 storage migration — mirror the ledger entry. Same
-    // deterministic content-hash id as the backfill ⇒ a backfill
-    // re-run can't double-count. Flag-gated, never throws, not awaited.
-    void import("@/lib/firestoreSync")
-      .then((m) =>
-        m.mirrorPricingEntry({
-          createdAtIl,
-          taskId: entry.taskId,
-          company: entry.company,
-          project: entry.project,
-          departments: (entry.departments || []).join(", "),
-          kind: entry.kind,
-          price: typeof entry.price === "number" ? entry.price : 0,
-          createdBy: entry.createdBy,
-          billed: null,
-        }),
-      )
-      .catch(() => {});
   } catch (e) {
     console.log(
       "[pricingLog] append failed (non-fatal):",
@@ -288,6 +298,17 @@ export async function updatePricingLogBilled(
 ): Promise<number> {
   const id = String(taskId || "").trim();
   if (!id) return 0;
+  if (useFirestoreWrites()) {
+    // Phase 4 — authoritative billed-override across every ledger doc
+    // for the task; NO Sheets read/write. Returns the matched doc
+    // count (same semantics as the Sheets path's `data.length - 1`).
+    // Failure SURFACES — this is a deliberate admin action the route
+    // wants to report, not fire-and-forget (matches the Sheets path,
+    // which also throws on a hard failure). The dual-write mirror
+    // below is unreachable here (early return).
+    const { writePricingBilled } = await import("@/lib/firestoreSync");
+    return writePricingBilled(id, billed);
+  }
   const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
   const sheets = sheetsClient(subjectEmail);
   let res;
