@@ -165,8 +165,15 @@ env:
   #      all-at-once. Rollback = set it back to "0" (reads return to
   #      Sheets instantly; DUALWRITE stays "1" so Firestore stays
   #      current and a re-flip needs no re-backfill).
+  #
+  # Phase 4 ACTIVATED 2026-05-18 → DUALWRITE set to "0" in the SAME
+  # rollout as USE_FIRESTORE_WRITES="1" (atomic — no window with
+  # dual-write off while writes is still off, which would break
+  # Phase-3 rollback). With Sheets no longer written the mirror is
+  # dead weight; the !fsWrites guards make Phase 4 correct either way,
+  # but off is the clean end state. Was "1" through Phase 3.
   - variable: USE_FIRESTORE_DUALWRITE
-    value: "1"
+    value: "0"
     availability:
       - BUILD
       - RUNTIME
@@ -179,16 +186,18 @@ env:
 
   # Phase 4 — Firestore = SOURCE OF TRUTH (writes go Firestore-first,
   # transactional; Sheets writes for moved data STOP). IRREVERSIBLE
-  # once "1" (Sheets goes stale). Default "0" = off. DO NOT set to "1"
-  # until ALL write paths are branched (see docs/STORAGE_MIGRATION_
-  # HANDOFF.md §10 "Resume Phase 4"): currently tasksUpdateDirect +
-  # persistGoogleTasksCell are done; tasksCreateDirect,
-  # commentsWriteDirect ×5, pricingLog ×2, dependencyCascade,
-  # umbrellaRecompute, pollTasks (read+due-date) are NOT yet — a
-  # partial activation splits data across two stores. Activation is
-  # all-or-nothing and one-way.
+  # once "1" (Sheets goes stale — there is no lossless rollback past
+  # this point). ACTIVATED 2026-05-18 with explicit owner go-ahead:
+  # ALL write paths are branched + tsc-clean + pushed (handoff §10 —
+  # the §10 list: tasksCreateDirect, commentsWriteDirect ×5,
+  # pricingLog ×2, dependencyCascade, umbrellaRecompute, pollTasks;
+  # PLUS 4 discovered siblings: migrateCommentThreadDirect,
+  # appendChainStep.updateTailBlocksCell, campaigns/rename route,
+  # taskUpload.findTaskFolderInfo; PLUS the tasksUpdateDirect
+  # post-write-mirror guard `023a440`). DUALWRITE flips to "0" in the
+  # same rollout (above).
   - variable: USE_FIRESTORE_WRITES
-    value: "0"
+    value: "1"
     availability:
       - BUILD
       - RUNTIME
