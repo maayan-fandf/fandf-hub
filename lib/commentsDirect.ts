@@ -29,7 +29,7 @@ import type {
   MentionItem,
   TaskItem,
 } from "@/lib/appsScript";
-import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
+import { sheetsClient, useFirestoreTasks, useFirestoreWrites } from "@/lib/sa";
 import { getAccessScope } from "@/lib/tasksDirect";
 
 function envOrThrow(name: string): string {
@@ -193,15 +193,28 @@ export async function migrateCommentThreadDirect(
   sourceCommentId: string,
   newTaskId: string,
 ): Promise<{ migrated: number }> {
+  const fsWrites = useFirestoreWrites();
   const sheets = sheetsClient(subjectEmail);
   const ssId = envOrThrow("SHEET_ID_COMMENTS");
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: ssId,
-    range: "Comments",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (res.data.values ?? []) as unknown[][];
+  // Phase 4 — Sheets is no longer written (goes stale), so source the
+  // rows from Firestore in the same `[headers, ...rows]` shape so the
+  // root/replies scan below runs byte-identically. Else: legacy read.
+  let values: unknown[][];
+  if (fsWrites) {
+    const { readCommentsShapeFromFirestore } = await import(
+      "@/lib/firestoreRead"
+    );
+    const shaped = await readCommentsShapeFromFirestore();
+    values = [shaped.headers, ...shaped.rows];
+  } else {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: ssId,
+      range: "Comments",
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    values = (res.data.values ?? []) as unknown[][];
+  }
   if (values.length < 2) return { migrated: 0 };
   const headers = (values[0] as unknown[]).map((h) =>
     String(h ?? "").trim(),
@@ -232,18 +245,29 @@ export async function migrateCommentThreadDirect(
     if (rowId) movedCommentIds.push(rowId);
   }
   if (updates.length === 0) return { migrated: 0 };
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: ssId,
-    requestBody: { valueInputOption: "RAW", data: updates },
-  });
-
-  // Phase 2/3 storage migration — this Sheets write (re-parent the
-  // converted thread under the new task) bypasses commentsWriteDirect,
-  // so it needs its own Firestore mirror or the comment docs' parent_id
-  // / taskId drift. newTaskId is a task id, so taskId := newTaskId
-  // (matches taskCommentsDirect's parent-is-task rule). Flag-gated,
-  // never throws, not awaited.
-  {
+  if (fsWrites) {
+    // Phase 4 — authoritative re-parent in Firestore: set parent_id +
+    // taskId on every moved comment doc; NO Sheets batchUpdate.
+    // writeCommentFields is the un-gated body of mirrorCommentFields.
+    // newTaskId is a task id, so taskId := newTaskId (matches
+    // taskCommentsDirect's parent-is-task rule). Failure SURFACES
+    // (propagates to the caller's try/catch in tasksCreateDirect).
+    const { writeCommentFields } = await import("@/lib/firestoreSync");
+    for (const cid of movedCommentIds) {
+      await writeCommentFields(cid, {
+        parent_id: newTaskId,
+        taskId: newTaskId,
+      });
+    }
+  } else {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: ssId,
+      requestBody: { valueInputOption: "RAW", data: updates },
+    });
+    // Phase 2/3 storage migration — this Sheets write (re-parent the
+    // converted thread under the new task) bypasses commentsWriteDirect,
+    // so it needs its own Firestore mirror or the comment docs'
+    // parent_id / taskId drift. Best-effort, flag-gated.
     const _fsMirror = import("@/lib/firestoreSync")
       .then((m) =>
         Promise.all(

@@ -42,6 +42,7 @@ import {
   tasksApiClient,
   gmailClient,
   useFirestoreTasks,
+  useFirestoreWrites,
 } from "@/lib/sa";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
@@ -175,6 +176,31 @@ async function readCommentsSheet(subjectEmail: string): Promise<CommentsSheetRea
     if (h) idx.set(h, i);
   });
   return { rows: values.slice(1), headers, idx, sheetId };
+}
+
+/**
+ * Phase 4 — source the comment/task rows for a write. When
+ * useFirestoreWrites() is on, the Comments sheet is no longer written
+ * (it goes stale), so reconstruct the SAME `{ rows, headers, idx }`
+ * shape from Firestore (the parity-proven inverse mapping) so every
+ * find-parent / find-row / thread-walk below runs byte-identically.
+ * `sheetId` is Sheets-only (deleteDimension) and unused under Phase 4.
+ * Else: the legacy direct Sheets read.
+ */
+async function readCommentsForWrite(
+  subjectEmail: string,
+): Promise<CommentsSheetRead & { fsWrites: boolean }> {
+  const fsWrites = useFirestoreWrites();
+  if (fsWrites) {
+    const { readCommentsShapeFromFirestore } = await import(
+      "@/lib/firestoreRead"
+    );
+    const { headers, rows, headerIdx } =
+      await readCommentsShapeFromFirestore();
+    return { rows, headers, idx: headerIdx, sheetId: -1, fsWrites };
+  }
+  const r = await readCommentsSheet(subjectEmail);
+  return { ...r, fsWrites };
 }
 
 function findRowByCommentId(
@@ -491,7 +517,8 @@ export async function postReplyDirect(
   if (!body || !body.trim()) throw new Error("body required");
 
   const trimmedParentId = parentCommentId.trim();
-  const { rows, headers, idx } = await readCommentsSheet(subjectEmail);
+  const { rows, headers, idx, fsWrites } =
+    await readCommentsForWrite(subjectEmail);
   const parentRowIdx = findRowByCommentId(rows, idx, trimmedParentId);
   if (parentRowIdx < 0) {
     throw new Error("Parent comment not found: " + trimmedParentId);
@@ -530,57 +557,62 @@ export async function postReplyDirect(
     ? hubTaskUrl(parentCommentId)
     : hubCommentUrl(parentProject, parentCommentId);
 
-  const cells: Record<string, unknown> = {
+  // Canonical comment doc. taskId is set only when the DIRECT parent
+  // is a task row (matches taskCommentsDirect's matching rule).
+  const commentDoc = {
     id,
-    timestamp: now,
     project: parentProject,
     anchor: "general",
+    parent_id: parentCommentId,
+    taskId: parentIsTask ? parentCommentId : "",
     author_email: me,
     author_name: subjectEmail.split("@")[0],
-    parent_id: parentCommentId,
     body: trimmedBody,
+    mentions: parsedMentions,
     resolved: false,
-    mentions: parsedMentions.join(","),
-    google_tasks: "[]",
+    createdAt: now,
     edited_at: "",
-    row_kind: "",
-    status_history: "[]",
+    google_tasks: [],
+    status_history: [],
   };
-  const row = headers.map((h) => (h in cells ? cells[h] : ""));
-  const sheets = sheetsClient(subjectEmail);
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    range: "Comments",
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [row as unknown[]] },
-  });
-
-  // Phase 2/3 storage migration — mirror the reply into Firestore.
-  // taskId is set only when the DIRECT parent is a task row (matches
-  // taskCommentsDirect's matching rule). Never throws. Awaited only
-  // when reads are flipped to Firestore (read-your-writes); fire-and-
-  // forget otherwise (Phase-2 non-blocking soak).
-  {
+  if (fsWrites) {
+    // Phase 4 — authoritative Firestore comment write; NO Sheets
+    // append. writeCommentDoc is the un-gated body of the dual-write
+    // mirror, so the doc shape is identical. Failure SURFACES (Phase-4
+    // writes are no longer swallowed).
+    const { writeCommentDoc } = await import("@/lib/firestoreSync");
+    await writeCommentDoc(commentDoc);
+  } else {
+    const cells: Record<string, unknown> = {
+      id,
+      timestamp: now,
+      project: parentProject,
+      anchor: "general",
+      author_email: me,
+      author_name: subjectEmail.split("@")[0],
+      parent_id: parentCommentId,
+      body: trimmedBody,
+      resolved: false,
+      mentions: parsedMentions.join(","),
+      google_tasks: "[]",
+      edited_at: "",
+      row_kind: "",
+      status_history: "[]",
+    };
+    const row = headers.map((h) => (h in cells ? cells[h] : ""));
+    const sheets = sheetsClient(subjectEmail);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: "Comments",
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [row as unknown[]] },
+    });
+    // Phase 2/3 storage migration — best-effort dual-write mirror.
+    // Never throws. Awaited only when reads are flipped to Firestore
+    // (read-your-writes); fire-and-forget otherwise (Phase-2 soak).
     const _fsMirror = import("@/lib/firestoreSync")
-      .then((m) =>
-        m.mirrorComment({
-          id,
-          project: parentProject,
-          anchor: "general",
-          parent_id: parentCommentId,
-          taskId: parentIsTask ? parentCommentId : "",
-          author_email: me,
-          author_name: subjectEmail.split("@")[0],
-          body: trimmedBody,
-          mentions: parsedMentions,
-          resolved: false,
-          createdAt: now,
-          edited_at: "",
-          google_tasks: [],
-          status_history: [],
-        }),
-      )
+      .then((m) => m.mirrorComment(commentDoc))
       .catch(() => {});
     if (useFirestoreTasks()) await _fsMirror;
   }
@@ -719,25 +751,34 @@ export async function resolveCommentDirect(
   commentId: string,
   resolved: boolean,
 ): Promise<ResolveCommentResult> {
-  const { rows, idx } = await readCommentsSheet(subjectEmail);
+  const { rows, idx, fsWrites } = await readCommentsForWrite(subjectEmail);
   const rowIdx = findRowByCommentId(rows, idx, commentId);
   if (rowIdx < 0) throw new Error("Comment not found: " + commentId);
   const row = rows[rowIdx];
   const project = String(row[idx.get("project") ?? -1] ?? "").trim();
   await assertProjectAccess(subjectEmail, project);
 
-  const sheetRow = rowIdx + 2; // +1 for header, +1 for 1-based
-  const resolvedCol = idx.get("resolved");
-  if (resolvedCol == null) throw new Error("Sheet missing 'resolved' column");
-  const colLetter = columnLetter(resolvedCol + 1);
-
-  const sheets = sheetsClient(subjectEmail);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    range: `Comments!${colLetter}${sheetRow}`,
-    valueInputOption: "RAW",
-    requestBody: { values: [[resolved]] },
-  });
+  if (fsWrites) {
+    // Phase 4 — authoritative Firestore merge; NO Sheets write.
+    // writeCommentFields is the un-gated body of mirrorCommentFields.
+    // Failure SURFACES.
+    const { writeCommentFields } = await import("@/lib/firestoreSync");
+    await writeCommentFields(commentId, { resolved });
+  } else {
+    const sheetRow = rowIdx + 2; // +1 for header, +1 for 1-based
+    const resolvedCol = idx.get("resolved");
+    if (resolvedCol == null) {
+      throw new Error("Sheet missing 'resolved' column");
+    }
+    const colLetter = columnLetter(resolvedCol + 1);
+    const sheets = sheetsClient(subjectEmail);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: `Comments!${colLetter}${sheetRow}`,
+      valueInputOption: "RAW",
+      requestBody: { values: [[resolved]] },
+    });
+  }
 
   // If this is a top-level comment with spawned Google Tasks, cascade the
   // status change + post a Chat ping. Both are after-response — the user
@@ -764,7 +805,8 @@ export async function resolveCommentDirect(
   // Phase 2/3 storage migration — mirror the resolved toggle (merge so
   // it doesn't clobber the rest of the doc). Never throws. Awaited
   // only when reads are flipped (read-your-writes); else fire-and-forget.
-  {
+  // Phase 4: skipped — the write above was already authoritative.
+  if (!fsWrites) {
     const _fsMirror = import("@/lib/firestoreSync")
       .then((m) => m.mirrorCommentFields(commentId, { resolved }))
       .catch(() => {});
@@ -787,7 +829,8 @@ export async function deleteCommentDirect(
   subjectEmail: string,
   commentId: string,
 ): Promise<DeleteCommentResult> {
-  const { rows, idx, sheetId } = await readCommentsSheet(subjectEmail);
+  const { rows, idx, sheetId, fsWrites } =
+    await readCommentsForWrite(subjectEmail);
   const rowIdx = findRowByCommentId(rows, idx, commentId);
   if (rowIdx < 0) throw new Error("Comment not found: " + commentId);
   const row = rows[rowIdx];
@@ -816,37 +859,45 @@ export async function deleteCommentDirect(
   // moment the row vanishes from their view.
   const gtToDelete: GTaskRef[] = readGTaskCell(row[idx.get("google_tasks") ?? -1]);
 
-  // Delete the rows in descending order so indices don't shift.
-  // Sheet row numbers: header is row 1; rows[i] is row (i + 2).
-  const allRowsToDelete = [rowIdx, ...replyRowIndices].sort((a, b) => b - a);
-  const sheets = sheetsClient(subjectEmail);
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    requestBody: {
-      requests: allRowsToDelete.map((ri) => ({
-        deleteDimension: {
-          range: {
-            sheetId,
-            dimension: "ROWS",
-            startIndex: ri + 1, // header is sheet row 1 = startIndex 0
-            endIndex: ri + 2,
+  // Resolve every doc/row id to remove: the comment + its direct
+  // replies (reply ids read from the in-memory rows).
+  const idCol = idx.get("id");
+  const deletedIds = [
+    commentId,
+    ...(idCol != null
+      ? replyRowIndices.map((ri) => String(rows[ri][idCol] ?? "").trim())
+      : []),
+  ].filter(Boolean);
+  if (fsWrites) {
+    // Phase 4 — authoritative Firestore delete (root + replies); NO
+    // Sheets deleteDimension. deleteCommentDocs is the un-gated body
+    // of mirrorCommentsDeleted. Failure SURFACES.
+    const { deleteCommentDocs } = await import("@/lib/firestoreSync");
+    await deleteCommentDocs(deletedIds);
+  } else {
+    // Delete the rows in descending order so indices don't shift.
+    // Sheet row numbers: header is row 1; rows[i] is row (i + 2).
+    const allRowsToDelete = [rowIdx, ...replyRowIndices].sort(
+      (a, b) => b - a,
+    );
+    const sheets = sheetsClient(subjectEmail);
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      requestBody: {
+        requests: allRowsToDelete.map((ri) => ({
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: ri + 1, // header is sheet row 1 = startIndex 0
+              endIndex: ri + 2,
+            },
           },
-        },
-      })),
-    },
-  });
-
-  // Phase 2 storage migration — mirror the deletion (root + replies)
-  // into Firestore. Reply ids resolved from the in-memory rows.
-  // Flag-gated, never throws, not awaited.
-  {
-    const idCol = idx.get("id");
-    const deletedIds = [
-      commentId,
-      ...(idCol != null
-        ? replyRowIndices.map((ri) => String(rows[ri][idCol] ?? "").trim())
-        : []),
-    ].filter(Boolean);
+        })),
+      },
+    });
+    // Phase 2 storage migration — best-effort dual-write mirror of the
+    // deletion (root + replies). Flag-gated, never throws, not awaited.
     const _fsMirror = import("@/lib/firestoreSync")
       .then((m) => m.mirrorCommentsDeleted(deletedIds))
       .catch(() => {});
@@ -884,7 +935,7 @@ export async function editCommentDirect(
   newBody: string,
 ): Promise<EditCommentResult> {
   if (!newBody || !newBody.trim()) throw new Error("body required");
-  const { rows, idx } = await readCommentsSheet(subjectEmail);
+  const { rows, idx, fsWrites } = await readCommentsForWrite(subjectEmail);
   const rowIdx = findRowByCommentId(rows, idx, commentId);
   if (rowIdx < 0) throw new Error("Comment not found: " + commentId);
   const row = rows[rowIdx];
@@ -920,34 +971,41 @@ export async function editCommentDirect(
     };
   }
 
-  const sheetRow = rowIdx + 2;
-  const bodyCol = idx.get("body");
-  const editedAtCol = idx.get("edited_at");
-  if (bodyCol == null) throw new Error("Sheet missing 'body' column");
   const now = nowIso();
-
-  const data: Array<{ range: string; values: string[][] }> = [
-    {
-      range: `Comments!${columnLetter(bodyCol + 1)}${sheetRow}`,
-      values: [[newBody.trim()]],
-    },
-  ];
-  if (editedAtCol != null) {
-    data.push({
-      range: `Comments!${columnLetter(editedAtCol + 1)}${sheetRow}`,
-      values: [[now]],
+  if (fsWrites) {
+    // Phase 4 — authoritative Firestore merge (body + edited_at); NO
+    // Sheets write. writeCommentFields is the un-gated body of
+    // mirrorCommentFields. Failure SURFACES.
+    const { writeCommentFields } = await import("@/lib/firestoreSync");
+    await writeCommentFields(commentId, {
+      body: newBody.trim(),
+      edited_at: now,
     });
-  }
-  const sheets = sheetsClient(subjectEmail);
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    requestBody: { valueInputOption: "RAW", data },
-  });
-
-  // Phase 2/3 storage migration — mirror the body edit + edited_at
-  // (merge). Never throws. Awaited only when reads are flipped
-  // (read-your-writes); else fire-and-forget (Phase-2 soak).
-  {
+  } else {
+    const sheetRow = rowIdx + 2;
+    const bodyCol = idx.get("body");
+    const editedAtCol = idx.get("edited_at");
+    if (bodyCol == null) throw new Error("Sheet missing 'body' column");
+    const data: Array<{ range: string; values: string[][] }> = [
+      {
+        range: `Comments!${columnLetter(bodyCol + 1)}${sheetRow}`,
+        values: [[newBody.trim()]],
+      },
+    ];
+    if (editedAtCol != null) {
+      data.push({
+        range: `Comments!${columnLetter(editedAtCol + 1)}${sheetRow}`,
+        values: [[now]],
+      });
+    }
+    const sheets = sheetsClient(subjectEmail);
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      requestBody: { valueInputOption: "RAW", data },
+    });
+    // Phase 2/3 storage migration — best-effort dual-write mirror of
+    // the body edit + edited_at (merge). Never throws. Awaited only
+    // when reads are flipped (read-your-writes); else fire-and-forget.
     const _fsMirror = import("@/lib/firestoreSync")
       .then((m) =>
         m.mirrorCommentFields(commentId, {
@@ -1024,63 +1082,69 @@ export async function createMentionDirect(
   // digest email — all without polluting people's Google Tasks lists.
   // (See `tasksWriteDirect.createGoogleTasks` for the surviving spawn
   // path; this cut is intentional, design decision 2026-04-27.)
-  const cells: Record<string, unknown> = {
+  // Canonical mention doc (top-level, no parent → taskId "").
+  const commentDoc = {
     id,
-    timestamp: now,
     project,
     anchor: "general",
+    parent_id: "",
+    taskId: "",
     author_email: me,
     author_name: me.split("@")[0],
-    parent_id: "",
     body: args.body.trim(),
+    mentions: assignees,
     resolved: false,
-    mentions: assignees.join(","),
-    google_tasks: "[]",
+    createdAt: now,
     edited_at: "",
-    row_kind: "",
-    status_history: "[]",
+    google_tasks: [],
+    status_history: [],
   };
-  const sheets = sheetsClient(subjectEmail);
-  const headerRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    range: "Comments!1:1",
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  const headers = ((headerRes.data.values?.[0] ?? []) as unknown[]).map((h) =>
-    String(h ?? "").trim(),
-  );
-  const row = headers.map((h) => (h in cells ? cells[h] : ""));
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
-    range: "Comments",
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [row as unknown[]] },
-  });
-
-  // Phase 2/3 storage migration — mirror the mention row (top-level,
-  // no parent → taskId ""). Never throws. Awaited only when reads are
-  // flipped (read-your-writes); else fire-and-forget (Phase-2 soak).
-  {
+  const fsWrites = useFirestoreWrites();
+  if (fsWrites) {
+    // Phase 4 — authoritative Firestore comment write; NO Sheets
+    // header read + append. writeCommentDoc is the un-gated body of
+    // mirrorComment (identical doc shape). Failure SURFACES.
+    const { writeCommentDoc } = await import("@/lib/firestoreSync");
+    await writeCommentDoc(commentDoc);
+  } else {
+    const cells: Record<string, unknown> = {
+      id,
+      timestamp: now,
+      project,
+      anchor: "general",
+      author_email: me,
+      author_name: me.split("@")[0],
+      parent_id: "",
+      body: args.body.trim(),
+      resolved: false,
+      mentions: assignees.join(","),
+      google_tasks: "[]",
+      edited_at: "",
+      row_kind: "",
+      status_history: "[]",
+    };
+    const sheets = sheetsClient(subjectEmail);
+    const headerRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: "Comments!1:1",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const headers = ((headerRes.data.values?.[0] ?? []) as unknown[]).map(
+      (h) => String(h ?? "").trim(),
+    );
+    const row = headers.map((h) => (h in cells ? cells[h] : ""));
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+      range: "Comments",
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [row as unknown[]] },
+    });
+    // Phase 2/3 storage migration — best-effort dual-write mirror of
+    // the mention row. Never throws. Awaited only when reads are
+    // flipped (read-your-writes); else fire-and-forget (Phase-2 soak).
     const _fsMirror = import("@/lib/firestoreSync")
-      .then((m) =>
-        m.mirrorComment({
-          id,
-          project,
-          anchor: "general",
-          parent_id: "",
-          taskId: "",
-          author_email: me,
-          author_name: me.split("@")[0],
-          body: args.body.trim(),
-          mentions: assignees,
-          resolved: false,
-          createdAt: now,
-          edited_at: "",
-          google_tasks: [],
-          status_history: [],
-        }),
-      )
+      .then((m) => m.mirrorComment(commentDoc))
       .catch(() => {});
     if (useFirestoreTasks()) await _fsMirror;
   }
