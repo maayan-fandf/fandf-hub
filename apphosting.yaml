@@ -239,8 +239,14 @@ env:
   # second flip to "0", only after the dry-run plan in the cron logs
   # has been reviewed. Enabling USE_RESTRICTED_CHAT_SPACES alone can
   # therefore never mass-remove anyone.
+  #
+  # LIVE 2026-05-18: dry-run plan reviewed with owner (24 spaces,
+  # +13 adds / -42 removes = shir/nadav/sapir off non-rostered
+  # spaces); owner explicitly chose strict roster-only. Flipped "0" →
+  # the cron now applies adds/removes (safety rails still on). Set
+  # back to "1" to halt further mutations.
   - variable: CHAT_SPACE_SYNC_DRYRUN
-    value: "1"
+    value: "0"
     availability:
       - BUILD
       - RUNTIME
