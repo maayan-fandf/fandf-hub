@@ -172,6 +172,26 @@ function taskDocToRow(d: Record<string, unknown>): Row {
   return row;
 }
 
+/**
+ * Phase 4 — expose a single Firestore task doc in the EXACT Sheets
+ * `{ row, idx }` shape, so the existing (parity-proven) update logic in
+ * tasksUpdateDirect can run UNCHANGED against a Firestore-sourced row
+ * inside a transaction. `idx` is a fresh Map per call (callers treat it
+ * read-only via .get()). Returns null for an empty/absent doc.
+ */
+export function taskDocToShapedRow(
+  d: Record<string, unknown> | undefined | null,
+): { row: unknown[]; idx: Map<string, number> } | null {
+  if (!d || !d.id) return null;
+  return { row: taskDocToRow(d), idx: buildHeaderIdx() };
+}
+
+/** The canonical Comments-shaped header list (Phase 4 writers need it
+ *  to translate column-keyed `changes` back to doc fields). */
+export function commentsShapeHeaders(): string[] {
+  return [...HEADERS];
+}
+
 /** Firestore comment doc → a Comments-shaped row (row_kind=''). The
  *  inverse of scripts/_fs-migration-map.mjs rowToCommentDoc /
  *  lib/firestoreSync.ts mirrorComment. */

@@ -137,5 +137,10 @@ export function getDb(): Firestore {
  * need this one import. Both default OFF.
  *   - useFirestoreDualWrite → Phase 2 mirror enable (turn on first)
  *   - useFirestoreTasks     → Phase 3 read cutover (flip after soak)
+ *   - useFirestoreWrites    → Phase 4 Firestore = source of truth
  */
-export { useFirestoreDualWrite, useFirestoreTasks } from "@/lib/sa";
+export {
+  useFirestoreDualWrite,
+  useFirestoreTasks,
+  useFirestoreWrites,
+} from "@/lib/sa";

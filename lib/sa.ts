@@ -348,7 +348,14 @@ export function useSAProjectsReads(): boolean {
  *     re-flip needs no re-backfill). That rollback is only lossless
  *     *because* dual-write is gated independently of this flag.
  *
- * Both default OFF. Mirrors the useSA* flag style above. The companion
+ *   USE_FIRESTORE_WRITES     → Phase 4. Makes Firestore the SOURCE OF
+ *     TRUTH: writes go Firestore-first (transactional, failures
+ *     surface) and the Sheets writes for moved data STOP. This is the
+ *     irreversible cutover (once Sheets stops being written it goes
+ *     stale). Landed dormant + verified before activation, same
+ *     flag-gated discipline as Phase 3. Implies the read flag is on.
+ *
+ * All default OFF. Mirrors the useSA* flag style above. The companion
  * lib/firestore.ts re-exports these so Firestore code has one import.
  */
 export function useFirestoreDualWrite(): boolean {
@@ -356,6 +363,9 @@ export function useFirestoreDualWrite(): boolean {
 }
 export function useFirestoreTasks(): boolean {
   return String(process.env.USE_FIRESTORE_TASKS || "").trim() === "1";
+}
+export function useFirestoreWrites(): boolean {
+  return String(process.env.USE_FIRESTORE_WRITES || "").trim() === "1";
 }
 
 /** The email the hub impersonates for Drive folder creation. Defaults
