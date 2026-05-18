@@ -28,6 +28,7 @@ import {
   tasksApiClient,
   gmailClient,
   driveFolderOwner,
+  useFirestoreTasks,
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { isQuietHours, nextWorkDateIso } from "@/lib/quietHours";
@@ -1665,12 +1666,18 @@ export async function tasksCreateDirect(
     invalidateCommentsCache();
   }
 
-  // Phase 2 storage migration — best-effort Firestore dual-write.
-  // Flag-gated (default off) + never throws + not awaited, so it can't
-  // affect create latency or outcome. Sheets stays source of truth.
-  void import("@/lib/firestoreSync")
-    .then((m) => m.mirrorTask(task))
-    .catch(() => {});
+  // Phase 2/3 storage migration — best-effort Firestore dual-write.
+  // Never throws. When reads are still Sheets (soak / default) it's
+  // fire-and-forget so it can't affect create latency (Phase-2
+  // contract). When reads are flipped to Firestore we MUST await it,
+  // else the post-create render reads Firestore before the mirror
+  // lands → the new task appears missing (read-after-write).
+  {
+    const _mirror = import("@/lib/firestoreSync")
+      .then((m) => m.mirrorTask(task))
+      .catch(() => {});
+    if (useFirestoreTasks()) await _mirror;
+  }
 
   // "Convert comment to task" — Flavor C migration. Re-parent the
   // source comment + every direct reply to the new task id, so the
@@ -2809,10 +2816,17 @@ async function tasksUpdateDirectInner(
   // dependencyCascade / umbrella writes, so its google_tasks (and a
   // self-cascaded status) can be stale. The cascade writes already
   // busted the Comments cache, so the re-read sees the true final
-  // state. Flag-gated, never throws, not awaited.
-  void import("@/lib/firestoreSync")
-    .then((m) => m.mirrorTaskById(subjectEmail, taskId))
-    .catch(() => {});
+  // state (mirrorTaskById re-reads the row pinned to SHEETS, never the
+  // flag-gated reader — the read-flip-bug fix). Never throws. Awaited
+  // ONLY when reads are flipped to Firestore, so the user's next
+  // render reflects this write (read-your-writes); fire-and-forget
+  // otherwise to keep the Phase-2 soak non-blocking.
+  {
+    const _mirror = import("@/lib/firestoreSync")
+      .then((m) => m.mirrorTaskById(subjectEmail, taskId))
+      .catch(() => {});
+    if (useFirestoreTasks()) await _mirror;
+  }
 
   return { ok: true, task: rowToTask(freshRow, idx), changed: true };
 }

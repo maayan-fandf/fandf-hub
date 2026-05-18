@@ -170,8 +170,14 @@ export async function mirrorTaskById(
   await safe(`taskById ${taskId}`, async () => {
     const id = String(taskId ?? "").trim();
     if (!id) return;
-    const { tasksGetDirect } = await import("@/lib/tasksDirect");
-    const { task } = await tasksGetDirect(subjectEmail, id);
+    // MUST read the just-written SHEETS row — NOT tasksGetDirect, which
+    // is flag-gated and (when reads are flipped to Firestore) would
+    // read the stale Firestore copy and mirror it back unchanged. That
+    // was the read-flip bug. tasksGetFromSheetsForMirror is pinned to
+    // Sheets unconditionally.
+    const { tasksGetFromSheetsForMirror } = await import("@/lib/tasksDirect");
+    const task = await tasksGetFromSheetsForMirror(subjectEmail, id);
+    if (!task) return;
     await getDb()
       .collection(FS_COLLECTIONS.tasks)
       .doc(id)

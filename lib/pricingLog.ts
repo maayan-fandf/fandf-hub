@@ -321,10 +321,15 @@ export async function updatePricingLogBilled(
     spreadsheetId,
     requestBody: { valueInputOption: "RAW", data },
   });
-  // Phase 2 storage migration — mirror the billed override onto every
-  // ledger doc for this task. Flag-gated, never throws, not awaited.
-  void import("@/lib/firestoreSync")
-    .then((m) => m.mirrorPricingBilled(id, billed))
-    .catch(() => {});
+  // Phase 2/3 storage migration — mirror the billed override onto every
+  // ledger doc for this task. Never throws. Awaited only when reads are
+  // flipped (so /admin/billing reflects it on re-render); else
+  // fire-and-forget (Phase-2 soak non-blocking).
+  {
+    const _fsMirror = import("@/lib/firestoreSync")
+      .then((m) => m.mirrorPricingBilled(id, billed))
+      .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
+  }
   return data.length - 1;
 }

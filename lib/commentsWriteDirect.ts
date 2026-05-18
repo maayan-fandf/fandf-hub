@@ -41,6 +41,7 @@ import {
   sheetsClient,
   tasksApiClient,
   gmailClient,
+  useFirestoreTasks,
 } from "@/lib/sa";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
@@ -555,30 +556,34 @@ export async function postReplyDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
-  // Phase 2 storage migration — mirror the reply into Firestore.
+  // Phase 2/3 storage migration — mirror the reply into Firestore.
   // taskId is set only when the DIRECT parent is a task row (matches
-  // taskCommentsDirect's matching rule). Flag-gated, never throws,
-  // not awaited.
-  void import("@/lib/firestoreSync")
-    .then((m) =>
-      m.mirrorComment({
-        id,
-        project: parentProject,
-        anchor: "general",
-        parent_id: parentCommentId,
-        taskId: parentIsTask ? parentCommentId : "",
-        author_email: me,
-        author_name: subjectEmail.split("@")[0],
-        body: trimmedBody,
-        mentions: parsedMentions,
-        resolved: false,
-        createdAt: now,
-        edited_at: "",
-        google_tasks: [],
-        status_history: [],
-      }),
-    )
-    .catch(() => {});
+  // taskCommentsDirect's matching rule). Never throws. Awaited only
+  // when reads are flipped to Firestore (read-your-writes); fire-and-
+  // forget otherwise (Phase-2 non-blocking soak).
+  {
+    const _fsMirror = import("@/lib/firestoreSync")
+      .then((m) =>
+        m.mirrorComment({
+          id,
+          project: parentProject,
+          anchor: "general",
+          parent_id: parentCommentId,
+          taskId: parentIsTask ? parentCommentId : "",
+          author_email: me,
+          author_name: subjectEmail.split("@")[0],
+          body: trimmedBody,
+          mentions: parsedMentions,
+          resolved: false,
+          createdAt: now,
+          edited_at: "",
+          google_tasks: [],
+          status_history: [],
+        }),
+      )
+      .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
+  }
 
   // Find the thread root + collect every email @-mentioned anywhere
   // earlier in the thread. Mirrors the Chat-side listThreadMentioned-
@@ -756,12 +761,15 @@ export async function resolveCommentDirect(
     });
   }
 
-  // Phase 2 storage migration — mirror the resolved toggle (merge so
-  // it doesn't clobber the rest of the doc). Flag-gated, never throws,
-  // not awaited.
-  void import("@/lib/firestoreSync")
-    .then((m) => m.mirrorCommentFields(commentId, { resolved }))
-    .catch(() => {});
+  // Phase 2/3 storage migration — mirror the resolved toggle (merge so
+  // it doesn't clobber the rest of the doc). Never throws. Awaited
+  // only when reads are flipped (read-your-writes); else fire-and-forget.
+  {
+    const _fsMirror = import("@/lib/firestoreSync")
+      .then((m) => m.mirrorCommentFields(commentId, { resolved }))
+      .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
+  }
 
   return { ok: true, comment_id: commentId, resolved };
 }
@@ -839,9 +847,10 @@ export async function deleteCommentDirect(
         ? replyRowIndices.map((ri) => String(rows[ri][idCol] ?? "").trim())
         : []),
     ].filter(Boolean);
-    void import("@/lib/firestoreSync")
+    const _fsMirror = import("@/lib/firestoreSync")
       .then((m) => m.mirrorCommentsDeleted(deletedIds))
       .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
   }
 
   if (Object.keys(gtToDelete).length > 0) {
@@ -935,16 +944,20 @@ export async function editCommentDirect(
     requestBody: { valueInputOption: "RAW", data },
   });
 
-  // Phase 2 storage migration — mirror the body edit + edited_at
-  // (merge). Flag-gated, never throws, not awaited.
-  void import("@/lib/firestoreSync")
-    .then((m) =>
-      m.mirrorCommentFields(commentId, {
-        body: newBody.trim(),
-        edited_at: now,
-      }),
-    )
-    .catch(() => {});
+  // Phase 2/3 storage migration — mirror the body edit + edited_at
+  // (merge). Never throws. Awaited only when reads are flipped
+  // (read-your-writes); else fire-and-forget (Phase-2 soak).
+  {
+    const _fsMirror = import("@/lib/firestoreSync")
+      .then((m) =>
+        m.mirrorCommentFields(commentId, {
+          body: newBody.trim(),
+          edited_at: now,
+        }),
+      )
+      .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
+  }
 
   // Sync spawned Google Tasks notes (top-level only) after the response —
   // the edit body is already in the Sheet, so the user's view reflects the
@@ -1045,28 +1058,32 @@ export async function createMentionDirect(
     requestBody: { values: [row as unknown[]] },
   });
 
-  // Phase 2 storage migration — mirror the mention row (top-level,
-  // no parent → taskId ""). Flag-gated, never throws, not awaited.
-  void import("@/lib/firestoreSync")
-    .then((m) =>
-      m.mirrorComment({
-        id,
-        project,
-        anchor: "general",
-        parent_id: "",
-        taskId: "",
-        author_email: me,
-        author_name: me.split("@")[0],
-        body: args.body.trim(),
-        mentions: assignees,
-        resolved: false,
-        createdAt: now,
-        edited_at: "",
-        google_tasks: [],
-        status_history: [],
-      }),
-    )
-    .catch(() => {});
+  // Phase 2/3 storage migration — mirror the mention row (top-level,
+  // no parent → taskId ""). Never throws. Awaited only when reads are
+  // flipped (read-your-writes); else fire-and-forget (Phase-2 soak).
+  {
+    const _fsMirror = import("@/lib/firestoreSync")
+      .then((m) =>
+        m.mirrorComment({
+          id,
+          project,
+          anchor: "general",
+          parent_id: "",
+          taskId: "",
+          author_email: me,
+          author_name: me.split("@")[0],
+          body: args.body.trim(),
+          mentions: assignees,
+          resolved: false,
+          createdAt: now,
+          edited_at: "",
+          google_tasks: [],
+          status_history: [],
+        }),
+      )
+      .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
+  }
 
   // Notifications run after the response is flushed. Each mentioned
   // assignee gets a `mention` notification (writes a row to the

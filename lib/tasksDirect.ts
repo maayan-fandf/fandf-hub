@@ -750,6 +750,55 @@ export async function tasksGetDirect(
 }
 
 /**
+ * Phase 3 fix — read ONE task row straight from the **Sheets**
+ * `Comments` tab, unconditionally (never the flag-gated reader, never
+ * Firestore, no process cache, no access gate). Used ONLY by the
+ * Firestore dual-write mirror.
+ *
+ * Why this exists: every task WRITE path (tasksUpdateDirect /
+ * createDirect / dependencyCascade / umbrellaRecompute) commits to
+ * Sheets directly regardless of the read flag. The mirror must reflect
+ * THAT just-written Sheets state. Routing the mirror's re-read through
+ * `tasksGetDirect` was the read-flip bug: with USE_FIRESTORE_TASKS=1 it
+ * read Firestore (the stale copy we're trying to update) instead of the
+ * fresh Sheets row, so the mirror wrote stale data back and Firestore
+ * never converged. Pinning the mirror read to Sheets fixes that. No
+ * access gate: this is an internal system mirror, not a user read.
+ * Returns null when the task row isn't found.
+ */
+export async function tasksGetFromSheetsForMirror(
+  subjectEmail: string,
+  taskId: string,
+): Promise<WorkTask | null> {
+  const id = String(taskId ?? "").trim();
+  if (!id) return null;
+  const sheets = sheetsClient(subjectEmail);
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: envOrThrow("SHEET_ID_COMMENTS"),
+    range: "Comments",
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (values.length < 2) return null;
+  const headers = (values[0] as unknown[]).map((h) => String(h ?? "").trim());
+  const headerIdx = new Map<string, number>();
+  headers.forEach((h, i) => {
+    if (h) headerIdx.set(h, i);
+  });
+  const idIdx = headerIdx.get("id");
+  const rowKindIdx = headerIdx.get("row_kind");
+  if (idIdx == null || rowKindIdx == null) return null;
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[idIdx] ?? "") !== id) continue;
+    if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
+    return rowToTask(row, headerIdx);
+  }
+  return null;
+}
+
+/**
  * Distinct campaigns for a given project. Drive folders under
  * `<company>/<project>/` are the canonical source: every Drive
  * subfolder there counts as a campaign, even one with zero tasks yet.
