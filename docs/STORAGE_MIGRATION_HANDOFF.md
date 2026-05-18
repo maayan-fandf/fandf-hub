@@ -310,3 +310,85 @@ cleanup is optional (phase 5), not a dependency.
   file imports the server-only Firestore modules (they're dynamic-
   `import()`-ed from `lib/*` server code only, mirroring how
   `googleapis` is used).
+- **App Router has no grep-able build id in `/signin` HTML** — can't
+  detect "new deploy live" that way. Detect via behavior, or have the
+  owner confirm the rollout. Authenticated pages can't be driven via
+  the preview server (OAuth) but CAN via the Claude-in-Chrome MCP
+  against the owner's logged-in browser — that's how Phase 3 was
+  verified live.
+- **Read flip (Phase 3) surfaced 3 runtime bugs offline parity can't
+  catch**, all fixed: (1) `mirrorTaskById` re-read via the flag-gated
+  reader → stale; fixed with a Sheets-pinned mirror read. (2) async
+  mirror lost read-your-writes once reads were Firestore; fixed by
+  awaiting the mirror when `useFirestoreTasks()`. (3) task **detail**
+  page did N uncached full-collection reads → 30s+ render; fixed by
+  React `cache()` on `readCommentsShapeFromFirestore`. Lesson: verify
+  the read flip live in-browser (detail page especially), not just via
+  the offline parity script.
+
+---
+
+## 10. Current status & how to RESUME Phase 4 (2026-05-18)
+
+**Live in prod (commit `e9ee8fe`, all verified):** Phases 0–3 DONE.
+`USE_FIRESTORE_DUALWRITE=1`, `USE_FIRESTORE_TASKS=1` → reads served
+from Firestore, ~5× faster data fetch than Sheets (measured), all
+pages verified fast in-browser, `scripts/parity-check.mjs` ALL CLEAN.
+Sheets still dual-written ⇒ instant lossless rollback (flip
+`USE_FIRESTORE_TASKS` → `0`). `USE_FIRESTORE_WRITES=0` (Phase 4
+dormant).
+
+**Phase 4 built so far (DORMANT — flag off, tsc-clean, pushed):**
+- `lib/sa.ts` `useFirestoreWrites()` + re-export; `apphosting.yaml`
+  documents it (`"0"`).
+- `lib/firestore.ts` `getDb()` (admin SDK, SA identity).
+- `lib/firestoreRead.ts` `taskDocToShapedRow()` + `commentsShapeHeaders()`.
+- `lib/firestoreWrite.ts` — `changesToTaskDocFields()` (exact inverse
+  of `taskDocToRow`), `persistTaskUpdateFirestore()` (a Firestore
+  **transaction**; history fields `status_history`/`time_pauses`/
+  `description_history` re-applied as **deltas** onto the doc's CURRENT
+  array — the faithful `withTaskLock`→transaction port),
+  `createTaskFirestore()`.
+- `lib/tasksDirect.ts` `rowToTaskForMirror()` export.
+- `tasksWriteDirect.tasksUpdateDirectInner` — fully flag-branched
+  (Firestore-doc source row → unchanged change-computation → txn
+  persist; 3 append sites record the delta entry in `fsAppends`).
+- `persistGoogleTasksCell` — flag-branched (writes the Firestore doc's
+  `google_tasks`; all 5 callers pass the task id).
+
+**STILL TODO before activation (each still Sheets-only; pattern =
+copy the `useFirestoreWrites()` branch already shown):**
+1. `tasksCreateDirect` — instead of `sheets.values.append(row)`, call
+   `createTaskFirestore(taskToDoc(task))` (`taskToDoc` is in
+   `lib/firestoreSync.ts`). Side effects (Drive/GT) unchanged.
+2. `commentsWriteDirect` ×5 (postReply, createMention, resolve, edit,
+   delete) — the existing `mirror*` fns in `lib/firestoreSync.ts`
+   already do the exact Firestore comment writes; under the flag make
+   them AUTHORITATIVE (await, surface errors) and SKIP the Sheets
+   append/update/deleteDimension.
+3. `pricingLog` ×2 — `logTaskPricing`→`mirrorPricingEntry`,
+   `updatePricingLogBilled`→`mirrorPricingBilled`, authoritative; skip
+   Sheets. (Note `logTaskPricing` is fire-and-forget telemetry — keep
+   that nature.)
+4. `dependencyCascade.ts` / `umbrellaRecompute.ts` — they `batchUpdate`
+   Sheets task rows; under the flag write the Firestore doc instead
+   (status/status_history/updated_at for cascade; status/updated_at
+   for umbrella). Reuse `persistTaskUpdateFirestore` or a targeted
+   `tasks/{id}.set(merge)`. Their post-write `mirrorTaskById` reads
+   Sheets-pinned (stale under Phase 4) → drop/replace it under the flag.
+5. `pollTasks.ts` — top read: under the flag read from Firestore (use
+   `readCommentsShapeFromFirestore()`); due-date `values.update` →
+   Firestore doc `google_tasks` write. `applyAutoTransition` already
+   routes through `tasksUpdateDirect` (branched).
+
+**Activation is ALL-OR-NOTHING + IRREVERSIBLE.** Do NOT set
+`USE_FIRESTORE_WRITES=1` until every path above is branched + tsc-clean
++ reviewed; a partial flip splits data across Sheets+Firestore. After
+activation: verify writes in-browser (create/status/comment/pricing),
+confirm Firestore docs update + Sheets no longer changes, then Phase 5
+(delete the dead Sheets-write code + `lib/timeLog`, etc.; needs
+explicit owner go-ahead).
+
+**Owner-paused here 2026-05-18** for a focused Phase-4 continuation
+(session length / irreversibility risk). System is in an excellent,
+safe, fully-reversible state in the meantime.

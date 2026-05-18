@@ -177,6 +177,22 @@ env:
       - BUILD
       - RUNTIME
 
+  # Phase 4 — Firestore = SOURCE OF TRUTH (writes go Firestore-first,
+  # transactional; Sheets writes for moved data STOP). IRREVERSIBLE
+  # once "1" (Sheets goes stale). Default "0" = off. DO NOT set to "1"
+  # until ALL write paths are branched (see docs/STORAGE_MIGRATION_
+  # HANDOFF.md §10 "Resume Phase 4"): currently tasksUpdateDirect +
+  # persistGoogleTasksCell are done; tasksCreateDirect,
+  # commentsWriteDirect ×5, pricingLog ×2, dependencyCascade,
+  # umbrellaRecompute, pollTasks (read+due-date) are NOT yet — a
+  # partial activation splits data across two stores. Activation is
+  # all-or-nothing and one-way.
+  - variable: USE_FIRESTORE_WRITES
+    value: "0"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Inline-template feature on /tasks/new — when "1", picking a
   # (department, kind) shows a picker of files inside the matching
   # סכמות משימה/<Dept>/<Kind>/ folder; selecting one materializes a
