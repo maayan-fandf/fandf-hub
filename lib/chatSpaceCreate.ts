@@ -16,6 +16,7 @@ import {
   sheetsClient,
   chatSpaceCreateClient,
   chatMembershipsClient,
+  useRestrictedChatSpaces,
 } from "@/lib/sa";
 import { findChatSpaceColumnIndex, invalidateKeysCache } from "@/lib/keys";
 import { chatSpaceUrlFromWebhook } from "@/lib/projectsDirect";
@@ -243,6 +244,12 @@ export async function createChatSpaceForProject(
   // @fandf.co.il, confirming the same design intent.
   let spaceName = "";
   let spaceUri = "";
+  // Flag off (default): create the space org-discoverable to all of
+  // F&F (legacy behavior). Flag on: omit accessSettings entirely → a
+  // RESTRICTED space (only invited members); the Keys roster is
+  // invited after creation. See useRestrictedChatSpaces() for the
+  // chat.memberships scope prerequisite + why this is gated.
+  const restricted = useRestrictedChatSpaces();
   try {
     const chat = chatSpaceCreateClient(adminEmail);
     const res = await chat.spaces.create({
@@ -250,10 +257,14 @@ export async function createChatSpaceForProject(
         spaceType: "SPACE",
         displayName,
         externalUserAllowed: false,
-        accessSettings: {
-          accessState: "DISCOVERABLE",
-          audience: "audiences/default",
-        },
+        ...(restricted
+          ? {}
+          : {
+              accessSettings: {
+                accessState: "DISCOVERABLE",
+                audience: "audiences/default",
+              },
+            }),
       },
     });
     spaceName = res.data.name || "";
@@ -358,17 +369,34 @@ export async function createChatSpaceForProject(
     };
   }
 
-  // Per-member invite is no longer needed — the space is created with
-  // accessSettings.audience="audiences/default" above, so anyone in
-  // F&F can find/view/join via Chat's directory + "Allow requests to
-  // join". Helper kept below in case we need it for future "force-add
-  // these specific people" scenarios. The roster fields captured at
-  // pre-read are unused for this code path; intentionally left in
-  // place so the helper still works if we ever wire it back in.
-  void rosterMediaManager;
-  void rosterAcctManager;
-  void rosterInternalOnly;
-  void rosterClientFacing;
+  // Flag off (default): the space is org-discoverable
+  // (accessSettings.audience="audiences/default" above), so anyone in
+  // F&F finds/joins via Chat's directory — no per-member invite, and
+  // the captured roster fields are unused on this path.
+  // Flag on: the space was created RESTRICTED above, so explicitly
+  // invite the project roster (Keys C/D/J/K + admins, @fandf-only) via
+  // the chat.memberships API. Best-effort: the space + Keys link have
+  // already succeeded; a scope-missing / partial-add outcome is
+  // surfaced as a warning (invite.scopeMissing / failedEmails), never
+  // an error (the UI already renders these as a setup hint).
+  let invite: {
+    addedEmails: string[];
+    failedEmails: { email: string; reason: string }[];
+    scopeMissing: boolean;
+  } = { addedEmails: [], failedEmails: [], scopeMissing: false };
+  if (restricted) {
+    invite = await inviteProjectRoster(adminEmail, spaceName, {
+      mediaManager: rosterMediaManager,
+      acctManager: rosterAcctManager,
+      internalOnly: rosterInternalOnly,
+      clientFacing: rosterClientFacing,
+    });
+  } else {
+    void rosterMediaManager;
+    void rosterAcctManager;
+    void rosterInternalOnly;
+    void rosterClientFacing;
+  }
 
   return {
     ok: true,
@@ -376,7 +404,7 @@ export async function createChatSpaceForProject(
     spaceName,
     spaceUri,
     keysCellUrl,
-    invite: { addedEmails: [], failedEmails: [], scopeMissing: false },
+    invite,
   };
 }
 

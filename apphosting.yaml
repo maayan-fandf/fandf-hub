@@ -202,6 +202,25 @@ env:
       - BUILD
       - RUNTIME
 
+  # When "1", new project Chat spaces are created RESTRICTED (no
+  # org-wide discoverability) and the Keys roster (cols C/D/J/K +
+  # admins) is explicitly invited via the chat.memberships API.
+  # Default "0" = current behavior (discoverable to all of F&F, no
+  # per-member invite). PREREQUISITE before "1": the chat.memberships
+  # DWD scope MUST be granted (Workspace Admin → DWD client
+  # 102907403320696302169) — with the flag on but the scope missing a
+  # new space is created restricted-but-EMPTY (worse than today). The
+  # default-off gate is the safety mechanism: confirm the scope, then
+  # flip. Forward-only — does NOT fix already-discoverable spaces (see
+  # the existing-space remediation plan in
+  # docs/CHAT_SPACE_MEMBERSHIP_CLEANUP.md). Empty `value:` is rejected
+  # by the App Hosting preparer — keep it "0", never "".
+  - variable: USE_RESTRICTED_CHAT_SPACES
+    value: "0"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Inline-template feature on /tasks/new — when "1", picking a
   # (department, kind) shows a picker of files inside the matching
   # סכמות משימה/<Dept>/<Kind>/ folder; selecting one materializes a

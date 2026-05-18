@@ -368,6 +368,29 @@ export function useFirestoreWrites(): boolean {
   return String(process.env.USE_FIRESTORE_WRITES || "").trim() === "1";
 }
 
+/**
+ * When "1", new project Chat spaces are created RESTRICTED (no
+ * org-wide `accessSettings` discoverability) and the project roster
+ * (Keys cols C/D/J/K + admins) is explicitly invited via the
+ * `chat.memberships` API. When off (default), spaces stay discoverable
+ * to all of F&F (`audiences/default`) and no per-member invite runs —
+ * the current behavior.
+ *
+ * PREREQUISITE before flipping to "1": the `chat.memberships` DWD
+ * scope MUST be granted (Workspace Admin → Security → API controls →
+ * Domain-wide delegation → client 102907403320696302169). The
+ * org-discoverable default was chosen specifically to avoid needing
+ * it; with the flag on but the scope missing, a new space is created
+ * restricted-but-EMPTY (only the creator, nobody can find/join it) —
+ * strictly worse than today. The default-off gate is the safety
+ * mechanism: confirm the scope, THEN flip. Forward-only — does not
+ * retroactively fix already-discoverable spaces (see the existing-
+ * space remediation plan).
+ */
+export function useRestrictedChatSpaces(): boolean {
+  return String(process.env.USE_RESTRICTED_CHAT_SPACES || "").trim() === "1";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */
