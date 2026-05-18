@@ -766,6 +766,17 @@ export async function tasksGetDirect(
  * access gate: this is an internal system mirror, not a user read.
  * Returns null when the task row isn't found.
  */
+/** Phase 4 — expose the canonical row→WorkTask reader so the
+ *  Firestore-authoritative write path (lib/firestoreWrite) can turn a
+ *  post-transaction shaped doc-row back into a WorkTask using the exact
+ *  same parsing every other reader uses. */
+export function rowToTaskForMirror(
+  row: unknown[],
+  headerIdx: Map<string, number>,
+): WorkTask {
+  return rowToTask(row, headerIdx);
+}
+
 export async function tasksGetFromSheetsForMirror(
   subjectEmail: string,
   taskId: string,

@@ -29,6 +29,7 @@ import {
   gmailClient,
   driveFolderOwner,
   useFirestoreTasks,
+  useFirestoreWrites,
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { isQuietHours, nextWorkDateIso } from "@/lib/quietHours";
@@ -1838,16 +1839,38 @@ async function tasksUpdateDirectInner(
   taskId: string,
   patch: TasksUpdatePatch,
 ): Promise<{ ok: true; task: WorkTask; changed: boolean }> {
-  // Read the whole Comments sheet once; we need header idx + the task row.
+  // Source the current task row. Phase 4 (useFirestoreWrites): read the
+  // Firestore doc and synthesize a 2-row [headers, taskRow] "sheet" so
+  // ALL the change-computation below runs byte-identically. Else: read
+  // the whole Comments sheet (legacy path). `sheets`/`commentsSsId`
+  // stay defined for the legacy persist + side-effect cells.
   const sheets = sheetsClient(subjectEmail);
   const commentsSsId = envOrThrow("SHEET_ID_COMMENTS");
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: commentsSsId,
-    range: "Comments",
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const values = (res.data.values ?? []) as unknown[][];
+  const fsWrites = useFirestoreWrites();
+  let values: unknown[][];
+  if (fsWrites) {
+    const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
+    const { taskDocToShapedRow, commentsShapeHeaders } = await import(
+      "@/lib/firestoreRead"
+    );
+    const snap = await getDb()
+      .collection(FS_COLLECTIONS.tasks)
+      .doc(taskId)
+      .get();
+    const shaped = taskDocToShapedRow(
+      snap.exists ? (snap.data() as Record<string, unknown>) : null,
+    );
+    if (!shaped) throw new Error("Task not found: " + taskId);
+    values = [commentsShapeHeaders(), shaped.row];
+  } else {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: commentsSsId,
+      range: "Comments",
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    values = (res.data.values ?? []) as unknown[][];
+  }
   if (values.length < 2) throw new Error("Task not found: " + taskId);
   const headers = (values[0] as unknown[]).map((h) => String(h ?? "").trim());
   const idx = new Map<string, number>();
@@ -1990,6 +2013,15 @@ async function tasksUpdateDirectInner(
   // mapping: description → body, assignees → mentions, status → also
   // sync `resolved`. Mirrors Apps Script tasksUpdateForUser_.
   const changes: Record<string, unknown> = {};
+  // Phase 4: the ENTRIES appended this update to the history fields, so
+  // the Firestore txn can re-apply them onto the doc's CURRENT array
+  // (concurrency-safe) instead of writing a possibly-stale full array.
+  // Unused on the legacy Sheets path.
+  const fsAppends: {
+    status_history?: unknown[];
+    time_pauses?: unknown[];
+    description_history?: unknown[];
+  } = {};
   const now = nowIso();
 
   if (patch.status && patch.status !== currentStatus) {
@@ -2016,14 +2048,16 @@ async function tasksUpdateDirectInner(
         return [];
       }
     })();
-    existingHist.push({
+    const _shEntry = {
       at: now,
       by: subjectEmail,
       from: currentStatus,
       to: patch.status,
       note: patch.note || "",
-    });
+    };
+    existingHist.push(_shEntry);
     changes.status_history = JSON.stringify(existingHist);
+    fsAppends.status_history = [_shEntry];
   }
 
   const SIMPLE_DIRECT = [
@@ -2093,8 +2127,10 @@ async function tasksUpdateDirectInner(
       (action === "pause" && lastAction === "pause") ||
       (action === "resume" && lastAction !== "pause");
     if (!isRedundant) {
-      existing.push({ at: now, action, by: subjectEmail });
+      const _tpEntry = { at: now, action, by: subjectEmail };
+      existing.push(_tpEntry);
       changes.time_pauses = JSON.stringify(existing);
+      fsAppends.time_pauses = [_tpEntry];
     }
   }
 
@@ -2120,13 +2156,15 @@ async function tasksUpdateDirectInner(
       const oldTitleVal = String(cell("title") ?? "");
       const titleChanged =
         "title" in patch && typeof patch.title === "string" && patch.title !== oldTitleVal;
-      descHist.push({
+      const _dhEntry = {
         at: now,
         by: subjectEmail,
         body: oldBody,
         ...(titleChanged ? { title: oldTitleVal } : {}),
-      });
+      };
+      descHist.push(_dhEntry);
       changes.description_history = JSON.stringify(descHist);
+      fsAppends.description_history = [_dhEntry];
     }
   }
 
@@ -2357,50 +2395,74 @@ async function tasksUpdateDirectInner(
   // task's actual row was never touched. User-visible symptom: "page
   // refreshes but nothing happens".
   const sheetRow = rowIndex + 1;
-  const data: Array<{ range: string; values: (string | number | boolean)[][] }> = [];
-  for (const [k, v] of Object.entries(changes)) {
-    const colIdx = idx.get(k);
-    if (colIdx == null) continue;
-    // Defensive guard: never let a patch wipe column A (id) on a task
-    // row. The patch shape doesn't expose `id` today, but a future
-    // refactor that accidentally threads an empty id through would
-    // produce the exact bug surfaced by the 2026-05-03 audit (row 117).
-    // The check is on `k === "id"` because that's the canonical
-    // header name; column-A index isn't necessarily 0 if the sheet
-    // schema ever changes.
-    if (k === "id" && !String(v ?? "").trim()) {
-      throw new Error(
-        `tasksUpdateDirect: refusing to write empty id to row ${sheetRow}`,
-      );
+  let freshRow: unknown[];
+  if (fsWrites) {
+    // Phase 4 — persist to Firestore in a transaction (history appends
+    // re-applied as deltas onto the doc's CURRENT array → concurrency-
+    // safe; replaces withTaskLock's cross-instance guarantee). No
+    // Sheets write. Failure SURFACES (no longer swallowed).
+    const { persistTaskUpdateFirestore } = await import(
+      "@/lib/firestoreWrite"
+    );
+    if (changes.id != null && !String(changes.id ?? "").trim()) {
+      throw new Error("tasksUpdateDirect: refusing to write empty id");
     }
-    const col = columnLetter(colIdx + 1);
-    data.push({
-      range: `Comments!${col}${sheetRow}`,
-      values: [[v as string | number | boolean]],
+    const persisted = await persistTaskUpdateFirestore(
+      taskId,
+      changes,
+      fsAppends,
+    );
+    {
+      const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+      invalidateCommentsCache();
+    }
+    freshRow = persisted.row;
+  } else {
+    const data: Array<{ range: string; values: (string | number | boolean)[][] }> = [];
+    for (const [k, v] of Object.entries(changes)) {
+      const colIdx = idx.get(k);
+      if (colIdx == null) continue;
+      // Defensive guard: never let a patch wipe column A (id) on a task
+      // row. The patch shape doesn't expose `id` today, but a future
+      // refactor that accidentally threads an empty id through would
+      // produce the exact bug surfaced by the 2026-05-03 audit (row 117).
+      // The check is on `k === "id"` because that's the canonical
+      // header name; column-A index isn't necessarily 0 if the sheet
+      // schema ever changes.
+      if (k === "id" && !String(v ?? "").trim()) {
+        throw new Error(
+          `tasksUpdateDirect: refusing to write empty id to row ${sheetRow}`,
+        );
+      }
+      const col = columnLetter(colIdx + 1);
+      data.push({
+        range: `Comments!${col}${sheetRow}`,
+        values: [[v as string | number | boolean]],
+      });
+    }
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: commentsSsId,
+      requestBody: { valueInputOption: "RAW", data },
     });
-  }
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: commentsSsId,
-    requestBody: { valueInputOption: "RAW", data },
-  });
-  // Bust the cross-request Comments cache so the user's own update
-  // shows up in their next /tasks render. See tasksDirect.ts for
-  // why this caches in the first place (Sheets API per-minute
-  // quota relief). Same-instance reads are fresh; other instances
-  // see at-most-TTL staleness (~5s).
-  {
-    const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
-    invalidateCommentsCache();
-  }
+    // Bust the cross-request Comments cache so the user's own update
+    // shows up in their next /tasks render. See tasksDirect.ts for
+    // why this caches in the first place (Sheets API per-minute
+    // quota relief). Same-instance reads are fresh; other instances
+    // see at-most-TTL staleness (~5s).
+    {
+      const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+      invalidateCommentsCache();
+    }
 
-  // Re-read the row so the return shape reflects the merged result.
-  const reread = await sheets.spreadsheets.values.get({
-    spreadsheetId: commentsSsId,
-    range: `Comments!A${sheetRow}:${columnLetter(headers.length)}${sheetRow}`,
-    valueRenderOption: "UNFORMATTED_VALUE",
-    dateTimeRenderOption: "FORMATTED_STRING",
-  });
-  const freshRow = (reread.data.values?.[0] ?? []) as unknown[];
+    // Re-read the row so the return shape reflects the merged result.
+    const reread = await sheets.spreadsheets.values.get({
+      spreadsheetId: commentsSsId,
+      range: `Comments!A${sheetRow}:${columnLetter(headers.length)}${sheetRow}`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    freshRow = (reread.data.values?.[0] ?? []) as unknown[];
+  }
 
   // Status-change notifications. Routed through the unified notifyOnce
   // pipeline so each kind writes a Notifications row + sends email
