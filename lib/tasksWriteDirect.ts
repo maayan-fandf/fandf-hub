@@ -2905,7 +2905,16 @@ async function tasksUpdateDirectInner(
   // ONLY when reads are flipped to Firestore, so the user's next
   // render reflects this write (read-your-writes); fire-and-forget
   // otherwise to keep the Phase-2 soak non-blocking.
-  {
+  //
+  // Phase 4: MUST be skipped. persistTaskUpdateFirestore already wrote
+  // the doc authoritatively above; this path's mirrorTaskById re-reads
+  // the SHEETS-pinned row (tasksGetFromSheetsForMirror), which is STALE
+  // once Sheets writes stop, and would clobber the authoritative doc
+  // with a pre-activation snapshot on EVERY update. Guarding on
+  // !fsWrites makes Phase 4 correct regardless of the dual-write flag
+  // (same drop-the-stale-mirror rule the handoff §10.4 applies to the
+  // cascade/umbrella post-write hooks).
+  if (!fsWrites) {
     const _mirror = import("@/lib/firestoreSync")
       .then((m) => m.mirrorTaskById(subjectEmail, taskId))
       .catch(() => {});
