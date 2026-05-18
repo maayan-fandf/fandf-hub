@@ -35,7 +35,11 @@
 import { sheetsClient, chatMembershipsClient, driveFolderOwner } from "@/lib/sa";
 import { useRestrictedChatSpaces, chatSpaceSyncDryRun } from "@/lib/sa";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
-import { parseSpaceId, lookupUserGaiaResource } from "@/lib/chat";
+import {
+  parseSpaceId,
+  lookupUserGaiaResource,
+  lookupEmailByGaiaResource,
+} from "@/lib/chat";
 
 /** Hard cap on removals per space per run — a glitch guard, not a
  *  product limit (real roster churn is 0–2 people at a time). */
@@ -67,6 +71,17 @@ export type ChatSpaceSyncSummary = {
   plannedRemovals: number;
   /** Spaces whose removals were suppressed by a safety rail. */
   removalsSuppressed: { space: string; reason: string }[];
+  /** Per-space audit detail (resolved emails) — the reviewable plan.
+   *  `removes` is what WOULD be removed (even if a rail suppressed it
+   *  this run — cross-reference removalsSuppressed). Only spaces with
+   *  a non-empty add/remove plan are listed. */
+  plan: {
+    project: string;
+    space: string;
+    adds: string[];
+    removes: string[];
+    removalsSuppressed?: string;
+  }[];
   scopeMissing: boolean;
   errors: string[];
 };
@@ -88,6 +103,7 @@ export async function reconcileAllChatSpaces(): Promise<ChatSpaceSyncSummary> {
       plannedAdds: 0,
       plannedRemovals: 0,
       removalsSuppressed: [],
+      plan: [],
       scopeMissing: false,
       errors: [],
     };
@@ -221,6 +237,7 @@ async function run(): Promise<ChatSpaceSyncSummary> {
     plannedAdds: 0,
     plannedRemovals: 0,
     removalsSuppressed: [],
+    plan: [],
     scopeMissing: false,
     errors: [],
   };
@@ -376,6 +393,28 @@ async function run(): Promise<ChatSpaceSyncSummary> {
               ? ` [${removable.map((m) => m.member?.name).join(", ")}]`
               : ` (removals suppressed)`),
         );
+      }
+
+      // Structured per-space audit detail — resolve the removal
+      // targets (users/<gaiaId>) to emails so the plan is reviewable
+      // without log-diving. Best-effort: fall back to the raw resource
+      // when the directory lookup can't resolve it.
+      if (addEmails.length || removable.length) {
+        const removeEmails: string[] = [];
+        for (const m of removable) {
+          const rn = m.member?.name || "";
+          const em = rn
+            ? await lookupEmailByGaiaResource(adminEmail, rn)
+            : "";
+          removeEmails.push(em || rn || "(unknown)");
+        }
+        summary.plan.push({
+          project: project || "?",
+          space: `spaces/${spaceId}`,
+          adds: addEmails,
+          removes: removeEmails,
+          ...(doRemovals ? {} : { removalsSuppressed: suppressReason }),
+        });
       }
 
       // Adds (idempotent — 409 ALREADY_EXISTS is success). dry-run
