@@ -1650,14 +1650,28 @@ export async function tasksCreateDirect(
   if (!String(cells.id ?? "").trim()) {
     throw new Error("createTask: refusing to write row with empty id");
   }
-  const row = headerRow.map((h) => (h in cells ? cells[h] : ""));
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: commentsSsId,
-    range: "Comments",
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [row as unknown[]] },
-  });
+  // Phase 4 (useFirestoreWrites): create the Firestore tasks/{id} doc
+  // authoritatively instead of appending the Comments-sheet row. The
+  // canonical WorkTask→doc mapping is `taskToDoc` — SHARED with the
+  // dual-write mirror so the create path and the mirror can never
+  // drift (the parity invariant firestoreSync.ts documents). Failure
+  // SURFACES (Phase-4 writes are no longer swallowed). All Drive/GT
+  // side effects above and notifications/umbrella below are unchanged.
+  const fsWrites = useFirestoreWrites();
+  if (fsWrites) {
+    const { createTaskFirestore } = await import("@/lib/firestoreWrite");
+    const { taskToDoc } = await import("@/lib/firestoreSync");
+    await createTaskFirestore(taskToDoc(task));
+  } else {
+    const row = headerRow.map((h) => (h in cells ? cells[h] : ""));
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: commentsSsId,
+      range: "Comments",
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [row as unknown[]] },
+    });
+  }
   // Bust the cross-request Comments-tab cache so this user's own
   // newly-created task is immediately visible in their next /tasks
   // render. Other Firebase App Hosting instances still see TTL-bound
@@ -1673,7 +1687,11 @@ export async function tasksCreateDirect(
   // contract). When reads are flipped to Firestore we MUST await it,
   // else the post-create render reads Firestore before the mirror
   // lands → the new task appears missing (read-after-write).
-  {
+  //
+  // Phase 4: skip entirely — createTaskFirestore above already wrote
+  // the doc authoritatively; mirrorTask would be a redundant
+  // idempotent re-write of identical content.
+  if (!fsWrites) {
     const _mirror = import("@/lib/firestoreSync")
       .then((m) => m.mirrorTask(task))
       .catch(() => {});

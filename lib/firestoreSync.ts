@@ -91,8 +91,13 @@ export function pricingDocId(e: {
 
 /** Canonical WorkTask → Firestore doc. Drops the derived
  *  `comments_count` (recomputed on read, not stored — would only cause
- *  spurious parity churn). Normalizes undefined → null/[]/{}. */
-function taskToDoc(t: WorkTask): Record<string, unknown> {
+ *  spurious parity churn). Normalizes undefined → null/[]/{}.
+ *
+ *  EXPORTED for Phase 4: tasksCreateDirect builds the create doc via
+ *  `createTaskFirestore(taskToDoc(task))` (handoff §10.1). It stays the
+ *  single canonical WorkTask→doc mapping so the create path and the
+ *  dual-write mirror can never drift. */
+export function taskToDoc(t: WorkTask): Record<string, unknown> {
   return {
     id: String(t.id ?? ""),
     brief: String(t.brief ?? ""),
@@ -193,20 +198,28 @@ export async function mirrorGoogleTasks(
   taskId: string,
   refs: GTaskRef[],
 ): Promise<void> {
-  await safe(`gtasks ${taskId}`, async () => {
-    const id = String(taskId ?? "").trim();
-    if (!id) return;
-    await getDb()
-      .collection(FS_COLLECTIONS.tasks)
-      .doc(id)
-      .set(
-        {
-          google_tasks: Array.isArray(refs) ? refs : [],
-          updated_at: new Date().toISOString(),
-        },
-        { merge: true },
-      );
-  });
+  await safe(`gtasks ${taskId}`, () => writeGoogleTasks(taskId, refs));
+}
+
+/** Phase 4 — AUTHORITATIVE google_tasks-cell merge. Un-gated body of
+ *  mirrorGoogleTasks (see writeCommentDoc rationale). Used by the
+ *  pollTasks due-date writer when Sheets writes have stopped. */
+export async function writeGoogleTasks(
+  taskId: string,
+  refs: GTaskRef[],
+): Promise<void> {
+  const id = String(taskId ?? "").trim();
+  if (!id) return;
+  await getDb()
+    .collection(FS_COLLECTIONS.tasks)
+    .doc(id)
+    .set(
+      {
+        google_tasks: Array.isArray(refs) ? refs : [],
+        updated_at: new Date().toISOString(),
+      },
+      { merge: true },
+    );
 }
 
 /* ── comment ──────────────────────────────────────────────────────── */
@@ -230,29 +243,52 @@ export type CommentMirror = {
   status_history: unknown[];
 };
 
+/**
+ * Phase 4 — AUTHORITATIVE comment-doc upsert. The exact Firestore write
+ * mirrorComment performs, but WITHOUT the `safe()` wrapper (no
+ * dual-write-flag gate, no error swallow). Phase-4 call sites await
+ * this directly so the write is the source of truth and failures
+ * surface. The doc shape lives here ONCE so the dual-write mirror and
+ * the Phase-4 authoritative path can never drift (parity invariant). */
+export async function writeCommentDoc(c: CommentMirror): Promise<void> {
+  const id = String(c.id ?? "").trim();
+  if (!id) return;
+  await getDb().collection(FS_COLLECTIONS.comments).doc(id).set({
+    id,
+    project: c.project,
+    anchor: c.anchor,
+    parent_id: c.parent_id,
+    taskId: c.taskId,
+    author_email: c.author_email,
+    author_name: c.author_name,
+    body: c.body,
+    mentions: Array.isArray(c.mentions) ? c.mentions : [],
+    resolved: c.resolved === true,
+    createdAt: c.createdAt,
+    edited_at: c.edited_at || "",
+    row_kind: "",
+    google_tasks: Array.isArray(c.google_tasks) ? c.google_tasks : [],
+    status_history: Array.isArray(c.status_history) ? c.status_history : [],
+  });
+}
+
 /** Upsert a full comment doc (postReply / createMention). */
 export async function mirrorComment(c: CommentMirror): Promise<void> {
-  await safe(`comment ${c.id}`, async () => {
-    const id = String(c.id ?? "").trim();
-    if (!id) return;
-    await getDb().collection(FS_COLLECTIONS.comments).doc(id).set({
-      id,
-      project: c.project,
-      anchor: c.anchor,
-      parent_id: c.parent_id,
-      taskId: c.taskId,
-      author_email: c.author_email,
-      author_name: c.author_name,
-      body: c.body,
-      mentions: Array.isArray(c.mentions) ? c.mentions : [],
-      resolved: c.resolved === true,
-      createdAt: c.createdAt,
-      edited_at: c.edited_at || "",
-      row_kind: "",
-      google_tasks: Array.isArray(c.google_tasks) ? c.google_tasks : [],
-      status_history: Array.isArray(c.status_history) ? c.status_history : [],
-    });
-  });
+  await safe(`comment ${c.id}`, () => writeCommentDoc(c));
+}
+
+/** Phase 4 — AUTHORITATIVE partial merge onto a comment doc. Un-gated
+ *  body of mirrorCommentFields (see writeCommentDoc rationale). */
+export async function writeCommentFields(
+  commentId: string,
+  partial: Record<string, unknown>,
+): Promise<void> {
+  const id = String(commentId ?? "").trim();
+  if (!id) return;
+  await getDb()
+    .collection(FS_COLLECTIONS.comments)
+    .doc(id)
+    .set(partial, { merge: true });
 }
 
 /** Merge a partial onto a comment doc (resolve toggle / body edit). */
@@ -260,30 +296,32 @@ export async function mirrorCommentFields(
   commentId: string,
   partial: Record<string, unknown>,
 ): Promise<void> {
-  await safe(`commentFields ${commentId}`, async () => {
-    const id = String(commentId ?? "").trim();
-    if (!id) return;
-    await getDb()
-      .collection(FS_COLLECTIONS.comments)
-      .doc(id)
-      .set(partial, { merge: true });
-  });
+  await safe(`commentFields ${commentId}`, () =>
+    writeCommentFields(commentId, partial),
+  );
+}
+
+/** Phase 4 — AUTHORITATIVE hard-delete of a comment + its replies.
+ *  Un-gated body of mirrorCommentsDeleted (see writeCommentDoc
+ *  rationale). */
+export async function deleteCommentDocs(commentIds: string[]): Promise<void> {
+  const ids = commentIds.map((s) => String(s ?? "").trim()).filter(Boolean);
+  if (ids.length === 0) return;
+  const db = getDb();
+  const batch = db.batch();
+  for (const id of ids) {
+    batch.delete(db.collection(FS_COLLECTIONS.comments).doc(id));
+  }
+  await batch.commit();
 }
 
 /** Hard-delete a comment + its replies (deleteCommentDirect). */
 export async function mirrorCommentsDeleted(
   commentIds: string[],
 ): Promise<void> {
-  await safe(`commentsDeleted ${commentIds.length}`, async () => {
-    const ids = commentIds.map((s) => String(s ?? "").trim()).filter(Boolean);
-    if (ids.length === 0) return;
-    const db = getDb();
-    const batch = db.batch();
-    for (const id of ids) {
-      batch.delete(db.collection(FS_COLLECTIONS.comments).doc(id));
-    }
-    await batch.commit();
-  });
+  await safe(`commentsDeleted ${commentIds.length}`, () =>
+    deleteCommentDocs(commentIds),
+  );
 }
 
 /* ── pricingLog ───────────────────────────────────────────────────── */
@@ -300,27 +338,62 @@ export type PricingMirror = {
   billed: number | null;
 };
 
+/** Phase 4 — AUTHORITATIVE single ledger-entry write. Un-gated body of
+ *  mirrorPricingEntry (see writeCommentDoc rationale). Deterministic
+ *  content-hash id → idempotent with the backfill AND with a prior
+ *  dual-write of the same entry. */
+export async function writePricingEntry(e: PricingMirror): Promise<void> {
+  const docId = pricingDocId(e);
+  await getDb()
+    .collection(FS_COLLECTIONS.pricingLog)
+    .doc(docId)
+    .set({
+      createdAtIl: e.createdAtIl,
+      month: String(e.createdAtIl || "").slice(0, 7),
+      taskId: e.taskId,
+      company: e.company,
+      project: e.project,
+      departments: e.departments,
+      kind: e.kind,
+      price: typeof e.price === "number" ? e.price : 0,
+      createdBy: e.createdBy,
+      billed: typeof e.billed === "number" ? e.billed : null,
+    });
+}
+
 /** Append one ledger entry (logTaskPricing dual-write). Deterministic
  *  content-hash id → idempotent with the backfill. */
 export async function mirrorPricingEntry(e: PricingMirror): Promise<void> {
-  await safe(`pricing ${e.taskId}`, async () => {
-    const docId = pricingDocId(e);
-    await getDb()
-      .collection(FS_COLLECTIONS.pricingLog)
-      .doc(docId)
-      .set({
-        createdAtIl: e.createdAtIl,
-        month: String(e.createdAtIl || "").slice(0, 7),
-        taskId: e.taskId,
-        company: e.company,
-        project: e.project,
-        departments: e.departments,
-        kind: e.kind,
-        price: typeof e.price === "number" ? e.price : 0,
-        createdBy: e.createdBy,
-        billed: typeof e.billed === "number" ? e.billed : null,
-      });
-  });
+  await safe(`pricing ${e.taskId}`, () => writePricingEntry(e));
+}
+
+/** Phase 4 — AUTHORITATIVE billed-override write across every ledger
+ *  doc for a task. Un-gated body of mirrorPricingBilled. Returns the
+ *  number of ledger docs updated (0 = task not in the ledger) so the
+ *  Phase-4 caller can surface the same count the Sheets path returned.
+ *  `null` clears the override. */
+export async function writePricingBilled(
+  taskId: string,
+  billed: number | null,
+): Promise<number> {
+  const id = String(taskId ?? "").trim();
+  if (!id) return 0;
+  const db = getDb();
+  const snap = await db
+    .collection(FS_COLLECTIONS.pricingLog)
+    .where("taskId", "==", id)
+    .get();
+  if (snap.empty) return 0;
+  const batch = db.batch();
+  snap.docs.forEach((d) =>
+    batch.set(
+      d.ref,
+      { billed: typeof billed === "number" ? billed : null },
+      { merge: true },
+    ),
+  );
+  await batch.commit();
+  return snap.size;
 }
 
 /** Set/clear the `billed` override on every ledger doc for a task
@@ -330,22 +403,6 @@ export async function mirrorPricingBilled(
   billed: number | null,
 ): Promise<void> {
   await safe(`pricingBilled ${taskId}`, async () => {
-    const id = String(taskId ?? "").trim();
-    if (!id) return;
-    const db = getDb();
-    const snap = await db
-      .collection(FS_COLLECTIONS.pricingLog)
-      .where("taskId", "==", id)
-      .get();
-    if (snap.empty) return;
-    const batch = db.batch();
-    snap.docs.forEach((d) =>
-      batch.set(
-        d.ref,
-        { billed: typeof billed === "number" ? billed : null },
-        { merge: true },
-      ),
-    );
-    await batch.commit();
+    await writePricingBilled(taskId, billed);
   });
 }
