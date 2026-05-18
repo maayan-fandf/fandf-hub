@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { sheetsClient } from "@/lib/sa";
+import { sheetsClient, useFirestoreWrites } from "@/lib/sa";
 import { getAccessScope } from "@/lib/tasksDirect";
 import {
   findCampaignFolderByName,
@@ -132,47 +132,79 @@ export async function POST(req: Request) {
     }
 
     // 2. Bulk-update task rows
-    const sheets = sheetsClient(userEmail);
-    const commentsSsId = envOrThrow("SHEET_ID_COMMENTS");
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: commentsSsId,
-      range: "Comments",
-      valueRenderOption: "UNFORMATTED_VALUE",
-      dateTimeRenderOption: "FORMATTED_STRING",
-    });
-    const values = (res.data.values ?? []) as unknown[][];
     let taskCount = 0;
-    if (values.length >= 2) {
-      const headers = (values[0] as unknown[]).map((h) =>
-        String(h ?? "").trim(),
+    if (useFirestoreWrites()) {
+      // Phase 4 — rename the campaign straight on the Firestore task
+      // docs; NO Sheets read/write. Single-field project query is
+      // auto-indexed (no composite index needed); the campaign filter
+      // runs in-memory. Every doc in `tasks` is a task row (the
+      // collection has no comment/row_kind discriminator).
+      const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
+      const db = getDb();
+      const snap = await db
+        .collection(FS_COLLECTIONS.tasks)
+        .where("project", "==", project)
+        .get();
+      const matches = snap.docs.filter(
+        (d) =>
+          String(
+            (d.data() as Record<string, unknown>).campaign ?? "",
+          ).trim() === fromName,
       );
-      const idx = new Map<string, number>();
-      headers.forEach((h, i) => {
-        if (h) idx.set(h, i);
-      });
-      const rowKindIdx = idx.get("row_kind");
-      const projIdx = idx.get("project");
-      const campaignIdx = idx.get("campaign");
-      if (rowKindIdx != null && projIdx != null && campaignIdx != null) {
-        const data: { range: string; values: string[][] }[] = [];
-        const colA1 = columnLetter(campaignIdx + 1);
-        for (let i = 1; i < values.length; i++) {
-          const row = values[i];
-          if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
-          if (String(row[projIdx] ?? "").trim() !== project) continue;
-          if (String(row[campaignIdx] ?? "").trim() !== fromName) continue;
-          // Sheet row number is i+1 (header at row 1).
-          data.push({
-            range: `Comments!${colA1}${i + 1}`,
-            values: [[toName]],
-          });
+      if (matches.length > 0) {
+        const batch = db.batch();
+        for (const d of matches) {
+          batch.set(d.ref, { campaign: toName }, { merge: true });
         }
-        if (data.length > 0) {
-          await sheets.spreadsheets.values.batchUpdate({
-            spreadsheetId: commentsSsId,
-            requestBody: { valueInputOption: "RAW", data },
-          });
-          taskCount = data.length;
+        await batch.commit();
+        taskCount = matches.length;
+        const { invalidateCommentsCache } = await import(
+          "@/lib/tasksDirect"
+        );
+        invalidateCommentsCache();
+      }
+    } else {
+      const sheets = sheetsClient(userEmail);
+      const commentsSsId = envOrThrow("SHEET_ID_COMMENTS");
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: commentsSsId,
+        range: "Comments",
+        valueRenderOption: "UNFORMATTED_VALUE",
+        dateTimeRenderOption: "FORMATTED_STRING",
+      });
+      const values = (res.data.values ?? []) as unknown[][];
+      if (values.length >= 2) {
+        const headers = (values[0] as unknown[]).map((h) =>
+          String(h ?? "").trim(),
+        );
+        const idx = new Map<string, number>();
+        headers.forEach((h, i) => {
+          if (h) idx.set(h, i);
+        });
+        const rowKindIdx = idx.get("row_kind");
+        const projIdx = idx.get("project");
+        const campaignIdx = idx.get("campaign");
+        if (rowKindIdx != null && projIdx != null && campaignIdx != null) {
+          const data: { range: string; values: string[][] }[] = [];
+          const colA1 = columnLetter(campaignIdx + 1);
+          for (let i = 1; i < values.length; i++) {
+            const row = values[i];
+            if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
+            if (String(row[projIdx] ?? "").trim() !== project) continue;
+            if (String(row[campaignIdx] ?? "").trim() !== fromName) continue;
+            // Sheet row number is i+1 (header at row 1).
+            data.push({
+              range: `Comments!${colA1}${i + 1}`,
+              values: [[toName]],
+            });
+          }
+          if (data.length > 0) {
+            await sheets.spreadsheets.values.batchUpdate({
+              spreadsheetId: commentsSsId,
+              requestBody: { valueInputOption: "RAW", data },
+            });
+            taskCount = data.length;
+          }
         }
       }
     }

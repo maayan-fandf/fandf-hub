@@ -184,6 +184,33 @@ async function updateTailBlocksCell(
   newBlocks: string[],
   sheetsClientFactory: typeof import("@/lib/sa")["sheetsClient"],
 ): Promise<void> {
+  // Phase 4 — write the tail's `blocks` straight to its Firestore doc
+  // (targeted merge); NO Sheets read + cell update. Firestore is keyed
+  // by id, so no row lookup is needed. The try/catch around the flag
+  // import keeps this safe under node --experimental-strip-types
+  // (probe scripts) where @/ aliases don't resolve.
+  let fsWrites = false;
+  try {
+    const sa = await import("@/lib/sa");
+    fsWrites = sa.useFirestoreWrites();
+  } catch {
+    fsWrites = false;
+  }
+  if (fsWrites) {
+    const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
+    await getDb()
+      .collection(FS_COLLECTIONS.tasks)
+      .doc(tailTaskId)
+      .set({ blocks: newBlocks }, { merge: true });
+    try {
+      const { invalidateCommentsCache } = await import("@/lib/tasksDirect");
+      invalidateCommentsCache();
+    } catch {
+      /* probe-script callers without @/ resolution: safe to skip */
+    }
+    return;
+  }
+
   const sheets = sheetsClientFactory(subjectEmail);
   const commentsSsId = process.env.SHEET_ID_COMMENTS;
   if (!commentsSsId) {

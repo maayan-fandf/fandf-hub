@@ -15,7 +15,12 @@
 
 import { Readable } from "node:stream";
 import type { drive_v3 } from "googleapis";
-import { sheetsClient, driveClient, driveFolderOwner } from "@/lib/sa";
+import {
+  sheetsClient,
+  driveClient,
+  driveFolderOwner,
+  useFirestoreWrites,
+} from "@/lib/sa";
 
 export type UploadResult = {
   fileId: string;
@@ -66,6 +71,33 @@ async function findTaskFolderInfo(
   const cached = FOLDER_INFO_CACHE.get(taskId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.info;
+  }
+  if (useFirestoreWrites()) {
+    // Phase 4 — the Comments sheet is no longer written (it goes
+    // stale, so a freshly-created/edited task's folder wouldn't be
+    // found here), so read this task's Drive-folder info straight
+    // from its Firestore doc: one keyed get, far cheaper than the
+    // full-tab scan below. Same error semantics as the Sheets path.
+    const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
+    const snap = await getDb()
+      .collection(FS_COLLECTIONS.tasks)
+      .doc(taskId)
+      .get();
+    if (!snap.exists) throw new Error("Task not found: " + taskId);
+    const d = snap.data() as Record<string, unknown>;
+    const folderId = String(d.drive_folder_id ?? "").trim();
+    if (!folderId) {
+      throw new Error(
+        "למשימה זו אין עדיין תיקיית Drive. פתח וערוך אותה כדי ליצור תיקייה.",
+      );
+    }
+    const title = String(d.title ?? "").trim();
+    const info: TaskFolderInfo = { folderId, title };
+    FOLDER_INFO_CACHE.set(taskId, {
+      info,
+      expiresAt: Date.now() + FOLDER_INFO_TTL_MS,
+    });
+    return info;
   }
   const sheets = sheetsClient(subjectEmail);
   const res = await sheets.spreadsheets.values.get({
