@@ -44,6 +44,38 @@ export async function POST(req: Request) {
   const apply = new URL(req.url).searchParams.get("apply") === "1";
   const admin = driveFolderOwner();
 
+  // Explicit scope list. apply=1 REQUIRES a non-empty
+  // body.projects[{project, company?}] — there is deliberately no
+  // "recreate every Keys row" mode (that would spawn spaces for the
+  // ~29 projects that intentionally never had one). The clear script
+  // emits this exact list as a manifest.
+  let wantProjects: { project: string; company?: string }[] | null = null;
+  try {
+    const body = (await req.json()) as
+      | { projects?: { project?: string; company?: string }[] }
+      | undefined;
+    if (Array.isArray(body?.projects)) {
+      wantProjects = body!.projects!
+        .map((p) => ({
+          project: String(p?.project ?? "").trim(),
+          company: String(p?.company ?? "").trim(),
+        }))
+        .filter((p) => p.project);
+    }
+  } catch {
+    wantProjects = null;
+  }
+  if (apply && (!wantProjects || wantProjects.length === 0)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "apply=1 requires a non-empty body.projects [{project, company}] list (the recreate manifest from clear-keys-chat-space.mjs). Refusing to recreate all Keys rows.",
+      },
+      { status: 400 },
+    );
+  }
+
   let headers: string[];
   let rows: unknown[][];
   try {
@@ -69,23 +101,37 @@ export async function POST(req: Request) {
     );
   }
 
-  const targets: { project: string; company: string; cell: string }[] = [];
+  const allRows: { project: string; company: string; cell: string }[] = [];
   for (const row of rows) {
     const project = String(row[iProj] ?? "").trim();
     if (!project) continue;
-    targets.push({
+    allRows.push({
       project,
       company: iCo >= 0 ? String(row[iCo] ?? "").trim() : "",
       cell: String(row[iChat] ?? "").trim(),
     });
   }
 
+  // Scope to the explicit manifest when provided (match on project,
+  // and on company too when the manifest entry specifies one — Keys
+  // has collisions like 4× כללי).
+  const inScope = (t: { project: string; company: string }) =>
+    !wantProjects ||
+    wantProjects.some(
+      (w) =>
+        w.project === t.project &&
+        (!w.company || w.company === t.company),
+    );
+  const targets = allRows.filter(inScope);
+
   if (!apply) {
     return NextResponse.json({
       ok: true,
       dryRun: true,
-      note: "Preview only. Re-call with ?apply=1 to create. createChatSpaceForProject is idempotent — rows whose Chat Space cell is still set return the existing space (clear the cells first to force fresh threaded spaces).",
-      count: targets.length,
+      note: "Preview only. ?apply=1 REQUIRES body.projects[] (the recreate manifest) — there is no recreate-all mode. createChatSpaceForProject is idempotent: a row whose Chat Space cell is still set returns the existing space, so clear the cells first to force fresh threaded spaces.",
+      manifestProvided: !!wantProjects,
+      scopedCount: targets.length,
+      allKeysRowCount: allRows.length,
       targets,
     });
   }

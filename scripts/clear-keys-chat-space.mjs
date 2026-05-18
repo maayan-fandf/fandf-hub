@@ -78,13 +78,34 @@ for (let r = 1; r < rows.length; r++) {
   if (name && cell) toClear.push({ sheetRow: r + 1, name, cell });
 }
 
+// Need company per row for the recreate manifest (Keys has
+// collisions like 4× כללי — companyHint disambiguates the right row).
+const iCo = headers.indexOf("חברה");
+for (const t of toClear) {
+  const rowArr = rows[t.sheetRow - 1] ?? [];
+  t.company = iCo >= 0 ? String(rowArr[iCo] ?? "").trim() : "";
+}
+
 console.log(
   `${toClear.length} Keys rows have a Chat Space cell to clear. Mode: ${
     APPLY ? "APPLY" : "dry-run"
   }`,
 );
 for (const t of toClear)
-  console.log(`  row ${t.sheetRow}  "${t.name}"  (was: ${t.cell.slice(0, 60)})`);
+  console.log(
+    `  row ${t.sheetRow}  "${t.name}" (${t.company || "—"})  (was: ${t.cell.slice(0, 50)})`,
+  );
+
+// Emit the recreate manifest — POST this as the body to
+// /api/admin/recreate-chat-spaces?apply=1 so it recreates EXACTLY
+// these projects (never the ~29 that intentionally had no space).
+const manifest = {
+  projects: toClear.map((t) => ({ project: t.name, company: t.company })),
+};
+const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+const manifestFile = `recreate-manifest-${stamp}.json`;
+fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
+console.log(`\nRecreate manifest (${manifest.projects.length} projects) → ${manifestFile}`);
 
 if (!APPLY) {
   console.log("\nDry run. Re-run with --apply to blank these cells.");
