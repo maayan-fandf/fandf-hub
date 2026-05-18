@@ -17,6 +17,7 @@ import {
   chatSpaceCreateClient,
   chatMembershipsClient,
   useRestrictedChatSpaces,
+  useThreadedChatSpaces,
 } from "@/lib/sa";
 import { findChatSpaceColumnIndex, invalidateKeysCache } from "@/lib/keys";
 import { chatSpaceUrlFromWebhook } from "@/lib/projectsDirect";
@@ -249,6 +250,11 @@ export async function createChatSpaceForProject(
   // invited after creation. See useRestrictedChatSpaces() for the
   // chat.memberships scope prerequisite + why this is gated.
   const restricted = useRestrictedChatSpaces();
+  // Flag on: create the space THREADED so the default per-member
+  // notification is "@mentions + followed threads only" (no ping on
+  // every message). Independent of `restricted`. Forward-only +
+  // verify-live (see useThreadedChatSpaces()).
+  const threaded = useThreadedChatSpaces();
   try {
     const chat = chatSpaceCreateClient(adminEmail);
     const res = await chat.spaces.create({
@@ -256,6 +262,9 @@ export async function createChatSpaceForProject(
         spaceType: "SPACE",
         displayName,
         externalUserAllowed: false,
+        ...(threaded
+          ? { spaceThreadingState: "THREADED_MESSAGES" }
+          : {}),
         ...(restricted
           ? {}
           : {

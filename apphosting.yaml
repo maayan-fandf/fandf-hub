@@ -225,6 +225,25 @@ env:
       - BUILD
       - RUNTIME
 
+  # When "1", new project Chat spaces are created THREADED
+  # (spaceThreadingState: THREADED_MESSAGES) so the default per-member
+  # notification is "@mentions + followed threads only" — members
+  # added to a space are NOT pinged on every message, only when
+  # actually @mentioned. Independent of USE_RESTRICTED_CHAT_SPACES
+  # (different lever; only needs the chat.spaces.create scope already
+  # in use — no chat.memberships prerequisite). Default "0". CAVEATS:
+  # forward-only (threading is immutable post-create — does NOT touch
+  # existing spaces) and MUST be verified live that API-created spaces
+  # actually come out threaded (the field may be output-only /
+  # org-policy-controlled). The fix that also covers EXISTING spaces
+  # is the Google Workspace Admin org-wide Chat notification default
+  # (not code). Empty `value:` is rejected by the preparer — keep "0".
+  - variable: USE_THREADED_CHAT_SPACES
+    value: "0"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Inline-template feature on /tasks/new — when "1", picking a
   # (department, kind) shows a picker of files inside the matching
   # סכמות משימה/<Dept>/<Kind>/ folder; selecting one materializes a

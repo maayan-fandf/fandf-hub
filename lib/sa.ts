@@ -391,6 +391,29 @@ export function useRestrictedChatSpaces(): boolean {
   return String(process.env.USE_RESTRICTED_CHAT_SPACES || "").trim() === "1";
 }
 
+/**
+ * When "1", new project Chat spaces are created THREADED
+ * (`spaceThreadingState: THREADED_MESSAGES`). A threaded space's
+ * default per-member notification is "@mentions and followed threads
+ * only" — so anyone added is NOT pinged for every message, only when
+ * actually @mentioned (or in a thread they're in). The hub's
+ * cross-stream FYI posts carry no @mention → silent; the hub's
+ * intentional notifications already add a real USER_MENTION → still
+ * ping. Independent of useRestrictedChatSpaces() (different lever,
+ * different/none prerequisite — only the chat.spaces.create scope
+ * already in use) so it can roll out on its own timeline.
+ *
+ * Forward-only + must be VERIFIED live: threading is immutable
+ * post-create (doesn't touch existing spaces) and the Chat API may
+ * treat `spaceThreadingState` as output-only / org-policy-controlled
+ * on create — confirm a flag-on space actually comes out threaded. The
+ * comprehensive fix that also covers EXISTING spaces is the Google
+ * Workspace Admin org-wide Chat notification default (not code).
+ */
+export function useThreadedChatSpaces(): boolean {
+  return String(process.env.USE_THREADED_CHAT_SPACES || "").trim() === "1";
+}
+
 /** The email the hub impersonates for Drive folder creation. Defaults
  *  to maayan@fandf.co.il so new folders land in the same account as
  *  the legacy Apps Script flow. Override via env. */
