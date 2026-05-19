@@ -155,7 +155,10 @@ export default async function ProjectOverviewPage({
     // unconditionally.
     getProjectComments(projectName, 15, "shared"),
     getProjectComments(projectName, 15, "internal"),
-    getMyMentions(),
+    // §11 — scope the mentions read to this project (page filters to it
+    // anyway). Inbox / badge / tasks page keep calling getMyMentions()
+    // with no arg (all-projects).
+    getMyMentions(projectName),
     projectsP,
     // Pass company when supplied — tasksListDirect honors `filters.company`
     // (lib/tasksDirect.ts:399), so kullit tasks under company X don't

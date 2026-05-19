@@ -368,12 +368,19 @@ export type MyMentions = {
   total: number;
 };
 
-export async function getMyMentions(): Promise<MyMentions> {
+export async function getMyMentions(
+  /** §11 — the project page passes its project so the mentions read is
+   *  scoped to one project's Firestore docs (it filters to that project
+   *  anyway). Inbox / nav mention badge / tasks page MUST keep calling
+   *  this with NO argument — they aggregate mentions across ALL
+   *  projects. */
+  project?: string,
+): Promise<MyMentions> {
   const { useSACommentsReads } = await import("@/lib/sa");
   if (useSACommentsReads()) {
     const { myMentionsDirect } = await import("@/lib/commentsDirect");
     const user = await currentUserEmail();
-    return myMentionsDirect(user);
+    return myMentionsDirect(user, project);
   }
   return callApi<MyMentions>("myMentions");
 }

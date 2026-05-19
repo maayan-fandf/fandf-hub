@@ -68,17 +68,28 @@ function rowScopeOf(cell: (k: string) => unknown): "internal" | "shared" {
  * Sheets API call that replaces three Apps Script round-trips on the
  * project page.
  */
-async function readCommentsOnce(subjectEmail: string): Promise<{
+async function readCommentsOnce(
+  subjectEmail: string,
+  /** §11 — when supplied, scope the Firestore read to ONE project
+   *  (`tasks`/`comments` where project==X) instead of the whole
+   *  collection. Behavior-identical for project-scoped readers; the
+   *  ~13s project-page win. Only the project-page readers pass it
+   *  (projectComments / projectOpenTasksDiscussion /
+   *  projectMentionTasks / myMentions-from-the-project-page). The
+   *  Sheets fallback below ignores it (legacy flag-off path). */
+  project?: string,
+): Promise<{
   rows: unknown[][];
   headerIdx: Map<string, number>;
 }> {
   // Phase 3 storage migration — Firestore read path behind the flag.
   // Same Sheets shape so every comment reader runs unchanged.
   if (useFirestoreTasks()) {
-    const { readCommentsShapeFromFirestore } = await import(
-      "@/lib/firestoreRead"
-    );
-    const { rows, headerIdx } = await readCommentsShapeFromFirestore();
+    const fr = await import("@/lib/firestoreRead");
+    const p = project?.trim();
+    const { rows, headerIdx } = p
+      ? await fr.readCommentsShapeForProject(p)
+      : await fr.readCommentsShapeFromFirestore();
     return { rows, headerIdx };
   }
   const sheets = sheetsClient(subjectEmail);
@@ -314,7 +325,7 @@ export async function projectCommentsDirect(
   scopeFilter?: "internal" | "shared",
 ): Promise<ProjectComments> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsOnce(subjectEmail),
+    readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
   ]);
 
@@ -427,9 +438,16 @@ export async function projectCommentsDirect(
 
 export async function myMentionsDirect(
   subjectEmail: string,
+  /** §11 — the project page passes its project so the mentions read
+   *  is scoped (it filters to one project anyway). Inbox / nav badge /
+   *  tasks page call this with NO project (cross-project surfaces) —
+   *  keep it that way. Behavior-identical: a reply-mention's root
+   *  shares the reply's project, so rootResolved inheritance still
+   *  works within the project-scoped set. */
+  project?: string,
 ): Promise<MyMentions> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsOnce(subjectEmail),
+    readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
   ]);
 
@@ -709,7 +727,7 @@ export async function projectOpenTasksDiscussionDirect(
   open_task_count: number;
 }> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsOnce(subjectEmail),
+    readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
   ]);
 
@@ -777,7 +795,7 @@ export async function projectMentionTasksDirect(
   project: string,
 ): Promise<ProjectTasks> {
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsOnce(subjectEmail),
+    readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
   ]);
 

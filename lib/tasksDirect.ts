@@ -255,7 +255,30 @@ export function invalidateCommentsCache(): void {
 }
 
 const readCommentsTab = cache(
-  async (subjectEmail: string): Promise<CommentsValue> => {
+  async (
+    subjectEmail: string,
+    /** §11 — when supplied (and the Firestore flag is on), read only
+     *  this project's `tasks`/`comments` instead of the whole
+     *  collection. Behavior-identical for project-filtered callers
+     *  (tasksListDirect with filters.project, tasksCampaignsDirect).
+     *  See readCommentsShapeForProject. */
+    project?: string,
+  ): Promise<CommentsValue> => {
+    // §11 — project-scoped path. MUST return BEFORE the single-slot
+    // TTL cache below and MUST NOT read/write it: `_commentsCacheValue`
+    // is ONE shared slot for the WHOLE collection — caching a project
+    // subset there would serve that subset to a whole-collection caller
+    // for up to COMMENTS_CACHE_TTL_MS. Per-request dedup comes from
+    // readCommentsShapeForProject's own React cache() (keyed by
+    // project); cross-request freshness is request-scoped, the same
+    // model the whole-collection Firestore branch below already uses.
+    const p = project?.trim();
+    if (p && useFirestoreTasks()) {
+      const { readCommentsShapeForProject } = await import(
+        "@/lib/firestoreRead"
+      );
+      return readCommentsShapeForProject(p);
+    }
     if (_commentsCacheValue && Date.now() < _commentsCacheExpiresAt) {
       return _commentsCacheValue;
     }
@@ -472,8 +495,16 @@ export async function tasksListDirect(
     include_umbrellas?: boolean;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
+  // §11 — when the caller filters by a single project (e.g. the
+  // project page's tasksList({project})), scope the Firestore read to
+  // that project. Behavior-identical: the access gate, every filter,
+  // the comment-count / involved_with pass, and the umbrella-sibling
+  // 2nd pass are all project-local (chain siblings + a task's comments
+  // share the task's project — see commentsWriteDirect / tasksCreate
+  // Chain). Unfiltered /tasks queue (no filters.project) → undefined →
+  // whole-collection read, unchanged.
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsTab(subjectEmail),
+    readCommentsTab(subjectEmail, filters.project),
     getAccessScope(subjectEmail),
   ]);
 
@@ -718,6 +749,10 @@ export async function tasksGetDirect(
   subjectEmail: string,
   taskId: string,
 ): Promise<{ ok: true; task: WorkTask }> {
+  // §11: do NOT thread a project here — this lookup is by task id and
+  // the caller does not know the task's project up front. The
+  // whole-collection read is required (a different, out-of-scope
+  // surface — task detail page — optimize separately if needed).
   const { rows, headerIdx } = await readCommentsTab(subjectEmail);
   const idIdx = headerIdx.get("id");
   const rowKindIdx = headerIdx.get("row_kind");
@@ -826,8 +861,9 @@ export async function tasksCampaignsDirect(
   subjectEmail: string,
   project: string,
 ): Promise<{ project: string; campaigns: string[] }> {
+  // §11 — campaigns are read per-project; scope the Firestore read.
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsTab(subjectEmail),
+    readCommentsTab(subjectEmail, project),
     getAccessScope(subjectEmail),
   ]);
 

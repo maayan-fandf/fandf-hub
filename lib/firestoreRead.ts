@@ -223,16 +223,22 @@ function commentDocToRow(d: Record<string, unknown>): Row {
   return row;
 }
 
-async function readCommentsShapeImpl(): Promise<{
+type ShapedRead = {
   headers: string[];
   rows: unknown[][];
   headerIdx: Map<string, number>;
-}> {
-  const db = getDb();
-  const [taskSnap, commentSnap] = await Promise.all([
-    db.collection(FS_COLLECTIONS.tasks).get(),
-    db.collection(FS_COLLECTIONS.comments).get(),
-  ]);
+};
+
+// Minimal structural snapshot type — matches Firestore's QuerySnapshot
+// `forEach` without importing @google-cloud/firestore types (mirrors
+// how the rest of this module treats snapshots).
+type DocLike = { data: () => unknown };
+type SnapLike = { forEach: (cb: (doc: DocLike) => void) => void };
+
+/** Build the Sheets-shaped read from a tasks snapshot + a comments
+ *  snapshot. Shared by the whole-collection read AND the §11
+ *  project-scoped read so the doc→row mapping can never diverge. */
+function shapeSnaps(taskSnap: SnapLike, commentSnap: SnapLike): ShapedRead {
   const rows: unknown[][] = [];
   taskSnap.forEach((doc) =>
     rows.push(taskDocToRow(doc.data() as Record<string, unknown>)),
@@ -241,6 +247,15 @@ async function readCommentsShapeImpl(): Promise<{
     rows.push(commentDocToRow(doc.data() as Record<string, unknown>)),
   );
   return { headers: [...HEADERS], rows, headerIdx: buildHeaderIdx() };
+}
+
+async function readCommentsShapeImpl(): Promise<ShapedRead> {
+  const db = getDb();
+  const [taskSnap, commentSnap] = await Promise.all([
+    db.collection(FS_COLLECTIONS.tasks).get(),
+    db.collection(FS_COLLECTIONS.comments).get(),
+  ]);
+  return shapeSnaps(taskSnap, commentSnap);
 }
 
 /**
@@ -262,6 +277,53 @@ async function readCommentsShapeImpl(): Promise<{
  * by the per-write invalidate + the awaited mirror (read-your-writes).
  */
 export const readCommentsShapeFromFirestore = cache(readCommentsShapeImpl);
+
+/**
+ * §11 — Project-scoped Firestore read. Same `{headers,rows,headerIdx}`
+ * contract as `readCommentsShapeFromFirestore`, but only the docs for
+ * ONE project: `tasks.where(project==X)` + `comments.where(project==X)`.
+ * Behavior-identical for the project-page readers (they all filter
+ * `proj !== project` anyway) — the win is fetching ~tens of docs
+ * instead of the whole collection, killing the ~13s project-page
+ * stream.
+ *
+ * Safe because: every tasks/comments doc carries `project`; a reply's
+ * project == its thread root's project (commentsWriteDirect); chain
+ * siblings share one project (tasksCreateChain) — so no thread/reply/
+ * chain can be split by the equality filter. `כללי` (non-unique name)
+ * returns the same multi-company row set the whole read did → company
+ * disambiguation downstream is fed identically.
+ *
+ * Wrapped in React `cache()` keyed by `project`, so every project-
+ * scoped reader on one project-page render (getProjectComments ×2,
+ * getMyMentions, tasksList, projectOpenTasksDiscussion) collapses to
+ * ONE tasks-by-project + ONE comments-by-project round trip. It does
+ * NOT touch the process-local TTL slot in lib/tasksDirect.ts (a single
+ * shared slot would be poisoned across projects) — freshness is
+ * per-request only, the same model the whole-collection Firestore
+ * branch already relies on.
+ */
+async function readCommentsShapeForProjectImpl(
+  project: string,
+): Promise<ShapedRead> {
+  // Degenerate caller (empty/whitespace) → whole-collection read.
+  // Stays behavior-identical at the edge: downstream `proj !== project`
+  // filters would select empty-project rows the same way.
+  if (!project.trim()) return readCommentsShapeImpl();
+  const db = getDb();
+  const [taskSnap, commentSnap] = await Promise.all([
+    db.collection(FS_COLLECTIONS.tasks).where("project", "==", project).get(),
+    db
+      .collection(FS_COLLECTIONS.comments)
+      .where("project", "==", project)
+      .get(),
+  ]);
+  return shapeSnaps(taskSnap, commentSnap);
+}
+
+export const readCommentsShapeForProject = cache(
+  readCommentsShapeForProjectImpl,
+);
 
 /** PricingLog ledger from Firestore, shaped like lib/pricingLog.ts
  *  PricingLogRow (minus the report-time title/brief/worker enrichment
