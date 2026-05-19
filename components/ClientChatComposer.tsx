@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Assignee } from "@/lib/appsScript";
 import Avatar from "@/components/Avatar";
@@ -8,9 +8,22 @@ import RoleChip from "@/components/RoleChip";
 
 const MAX = 4000;
 
+// `@email@host.tld` — the SAME token shape CommentBody renders as an
+// avatar + Hebrew-name chip and commentsWriteDirect parses. Keeping the
+// inserted token an email (not a display name) is what makes a tagged
+// person show up with their avatar after the message is sent.
+const MENTION_RE = /@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+
+function parseMentionEmails(body: string): string[] {
+  const out = new Set<string>();
+  let m: RegExpExecArray | null;
+  MENTION_RE.lastIndex = 0;
+  while ((m = MENTION_RE.exec(body)) !== null) out.add(m[1].toLowerCase());
+  return Array.from(out);
+}
+
 type PickerState = {
-  /** Index in the textarea value of the `@` that opened the picker.
-   *  -1 = picker closed. */
+  /** Index in the body of the `@` that opened the picker. -1 = closed. */
   queryStart: number;
   /** Text typed after `@` so far (the live filter query). */
   query: string;
@@ -34,24 +47,27 @@ const CLOSED: PickerState = {
  * BOTH the internal (F&F-only) and shared (client-visible) tabs.
  *
  * @-mention picker: typing `@` opens a dropdown of project members
- * (same `/api/projects/assignees` source the task form uses). Picking
- * one inserts `@<HebrewName> ` into the body AND tracks the person's
- * email; on submit the still-present picks are sent as `assignees` to
- * `/api/tasks/create` → `createMentionDirect`, which fans out a real
+ * (same `/api/projects/assignees` source the task form uses). The
+ * dropdown shows the Hebrew name + avatar; picking one inserts the
+ * person's `@<email>` token into the body. That token is what
+ * CommentBody turns into an avatar + Hebrew-name chip once the message
+ * is posted (the hub-wide mention convention), and the emails parsed
+ * out of the body on submit are sent as `assignees` to
+ * `/api/tasks/create` → createMentionDirect, which fans out a real
  * `mention` notification per person and stamps the comment with the
- * same `scope`. (This restores the tagging the old Google-Chat
- * internal composer had, now on BOTH channels.)
+ * channel `scope`. Manually-typed `@email` works too.
  *
  * Audience:
  *   - scope="internal" → F&F-only channel; the client never sees it
  *     (only rendered for internal users). Mentions stay internal.
  *   - scope="shared" → client-visible channel. `isClientUser` flips
  *     the wording (client → "לצוות", staff → "ללקוח").
- * `scope` rides along to /api/tasks/create; the server re-checks a
- * non-F&F caller can't post internal.
  *
- * Keys: ⌘/Ctrl+Enter submits, Esc clears (or closes the picker first),
- * Arrow up/down + Enter/Tab navigate the picker.
+ * Send is decoupled from the page refresh: the "שולח…" state ends as
+ * soon as the POST resolves; `router.refresh()` then updates the
+ * discussion list in the background. (Previously the spinner was tied
+ * to a full project-page re-render inside the transition — sending
+ * felt like it took "forever".)
  */
 export default function ClientChatComposer({
   project,
@@ -65,16 +81,10 @@ export default function ClientChatComposer({
   const router = useRouter();
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [sending, setSending] = useState(false);
   const [picker, setPicker] = useState<PickerState>(CLOSED);
   const [assignees, setAssignees] = useState<Assignee[] | null>(null);
   const [loadingAssignees, setLoadingAssignees] = useState(false);
-  // email → inserted label. Keyed by email so re-picking the same
-  // person can't double-tag. On submit we keep only the entries whose
-  // `@<label>` token is still in the body (user may have backspaced).
-  const [pickedMentions, setPickedMentions] = useState<Map<string, string>>(
-    new Map(),
-  );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isInternal = scope === "internal";
@@ -121,9 +131,9 @@ export default function ClientChatComposer({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [picker.queryStart]);
 
-  // Label preference: he_name (Hebrew) > name > email-prefix. The same
-  // label goes INTO the @-token so the message reads naturally and the
-  // submit-time reconciliation can find it.
+  // Dropdown label preference: he_name (Hebrew) > name > email-prefix.
+  // This is only what the user SEES while picking — the token inserted
+  // into the body is always the email (see applySelection).
   const labelOf = (a: Assignee): string => {
     const he = (a.he_name || "").trim();
     if (he) return he;
@@ -169,7 +179,11 @@ export default function ClientChatComposer({
       if (/\s/.test(ch)) break;
       i--;
     }
-    if (hasAt) openPickerAt(textarea, i, value.slice(i + 1, pos));
+    // Don't re-open the picker mid-completed-email (`@a@b.com`): if the
+    // span after `@` already contains another `@`, it's a finished
+    // mention token, not an in-progress query.
+    const span = hasAt ? value.slice(i + 1, pos) : "";
+    if (hasAt && !span.includes("@")) openPickerAt(textarea, i, span);
     else setPicker(CLOSED);
   }
 
@@ -179,15 +193,13 @@ export default function ClientChatComposer({
     const cursor = ta.selectionEnd;
     const before = body.slice(0, picker.queryStart);
     const after = body.slice(cursor);
-    const label = labelOf(r);
-    const insert = "@" + label + " ";
+    // Insert the EMAIL token — CommentBody renders `@email@host` as the
+    // person's avatar + Hebrew display name once posted (and the submit
+    // parse below turns it into a real `assignees` notification). The
+    // dropdown already showed the friendly name for picking.
+    const insert = "@" + r.email + " ";
     const newValue = before + insert + after;
     setBody(newValue);
-    setPickedMentions((prev) => {
-      const next = new Map(prev);
-      next.set(r.email, label);
-      return next;
-    });
     setPicker(CLOSED);
     requestAnimationFrame(() => {
       const newPos = (before + insert).length;
@@ -202,7 +214,7 @@ export default function ClientChatComposer({
     updatePickerFromCursor(v, e.target);
   }
 
-  function submit() {
+  async function submit() {
     const text = body.trim();
     if (!text) {
       setError("הודעה לא יכולה להיות ריקה.");
@@ -213,47 +225,46 @@ export default function ClientChatComposer({
       return;
     }
     setError(null);
-    const sending = text;
-    // Keep only picks whose `@<label>` token survived in the body —
-    // the user may have backspaced one out after picking. Send the
-    // emails as assignees; createMentionDirect notifies each + applies
-    // scope (internal mentions stay F&F-only via the read guard).
-    const sendingMentions = pickedMentions;
-    const sendAssignees = Array.from(sendingMentions.entries())
-      .filter(([, label]) => sending.includes("@" + label))
-      .map(([email]) => email);
+    const sendingText = text;
+    // The body IS the source of truth for who's tagged — parse every
+    // `@email` token (picked OR hand-typed). createMentionDirect
+    // notifies each + applies scope (internal mentions stay F&F-only).
+    const sendAssignees = parseMentionEmails(sendingText);
     setBody("");
-    setPickedMentions(new Map());
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/tasks/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            project,
-            body: sending,
-            assignees: sendAssignees,
-            due: "",
-            scope,
-          }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          error?: string;
-        };
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || `Request failed (${res.status})`);
-        }
-        router.refresh();
-      } catch (e) {
-        // Restore body + the mention map so the user doesn't lose the
-        // message OR have to re-pick people, surface the error, refocus.
-        setBody(sending);
-        setPickedMentions(sendingMentions);
-        setError(e instanceof Error ? e.message : String(e));
-        requestAnimationFrame(() => textareaRef.current?.focus());
+    setSending(true);
+    try {
+      const res = await fetch("/api/tasks/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          project,
+          body: sendingText,
+          assignees: sendAssignees,
+          due: "",
+          scope,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `Request failed (${res.status})`);
       }
-    });
+      // Send is done — free the composer NOW. The discussion list is a
+      // server component; refresh it in the BACKGROUND (don't gate the
+      // spinner on a full project-page re-render — that was the
+      // "forever to send" lag).
+      setSending(false);
+      router.refresh();
+    } catch (e) {
+      // Restore the body so the user doesn't lose what they typed,
+      // surface the error inline, refocus.
+      setBody(sendingText);
+      setSending(false);
+      setError(e instanceof Error ? e.message : String(e));
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -285,7 +296,7 @@ export default function ClientChatComposer({
     }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      submit();
+      void submit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       setBody("");
@@ -308,7 +319,7 @@ export default function ClientChatComposer({
         placeholder={placeholder}
         onChange={onChange}
         onKeyDown={onKeyDown}
-        disabled={isPending}
+        disabled={sending}
         maxLength={MAX + 1}
         aria-label={`הודעה חדשה ${audience}`}
       />
@@ -324,8 +335,8 @@ export default function ClientChatComposer({
         <button
           type="button"
           className="reply-btn reply-btn-primary"
-          onClick={submit}
-          disabled={isPending || empty || over}
+          onClick={() => void submit()}
+          disabled={sending || empty || over}
           title={
             isInternal
               ? "פרסם הודעה פנימית — צוות F&F בלבד, הלקוח לא רואה"
@@ -334,7 +345,7 @@ export default function ClientChatComposer({
                 : "פרסם הודעה לערוץ הלקוח"
           }
         >
-          {isPending ? "שולח…" : `שלח הודעה ${audience}`}
+          {sending ? "שולח…" : `שלח הודעה ${audience}`}
         </button>
       </div>
       {pickerOpen && (
