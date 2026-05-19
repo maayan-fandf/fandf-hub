@@ -191,7 +191,27 @@ export async function pollAllTaskCompletions(): Promise<PollResult> {
   }
   inFlight = pollAllTaskCompletionsInner();
   try {
-    return await inFlight;
+    const result = await inFlight;
+    // Best-effort: send/cancel deferred mention-reply emails whose 30s
+    // grace window elapsed. Runs here (outer wrapper) so it fires every
+    // tick even if the inner poll early-returns. Dynamic import keeps
+    // the module out of poll-tasks' graph until invoked. NEVER allowed
+    // to affect the poll result.
+    try {
+      const { flushDeferredNotificationEmails } = await import(
+        "@/lib/deferredEmails"
+      );
+      console.log(
+        "[pollTasks] deferred-email flush:",
+        JSON.stringify(await flushDeferredNotificationEmails()),
+      );
+    } catch (e) {
+      console.log(
+        "[pollTasks] deferred-email flush failed (non-fatal):",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+    return result;
   } finally {
     inFlight = null;
   }

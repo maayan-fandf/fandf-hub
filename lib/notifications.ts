@@ -41,7 +41,7 @@ export type NotificationKind =
   | "mention"
   | "chat_mention";
 
-const TAB = "Notifications";
+export const TAB = "Notifications";
 const HEADERS = [
   "id",
   "for_email",
@@ -155,6 +155,14 @@ export async function notifyOnce(opts: {
   emailPlain?: string;
   /** HTML body for the email. Optional — falls back to plain. */
   emailHtml?: string;
+  /** Epoch ms. When set and in the future, the EMAIL is held: this
+   *  call only writes the in-hub bell row (with an `emailed_at` defer
+   *  sentinel) and does NOT send now. `flushDeferredNotificationEmails`
+   *  (lib/deferredEmails.ts, run from poll-tasks) sends it after the
+   *  grace window — or cancels it if the underlying comment was deleted
+   *  meanwhile. The recipient pref is rechecked at flush time (the user
+   *  may toggle during the window). Omitted = unchanged immediate send. */
+  deferEmailUntil?: number;
 }): Promise<void> {
   const forEmail = (opts.forEmail || "").toLowerCase().trim();
   const actorEmail = (opts.actorEmail || "").toLowerCase().trim();
@@ -165,41 +173,48 @@ export async function notifyOnce(opts: {
     const sheets = sheetsClient(forEmail);
     const ssId = envOrThrow("SHEET_ID_COMMENTS");
 
-    // Decide whether email should fire BEFORE the row append so we can
-    // stamp emailed_at into the row and avoid a re-read.
-    const { shouldSendEmail } = await import("@/lib/userPrefs").then(
-      async (m) => {
-        const prefs = await m.getUserPrefs(forEmail).catch(() => null);
-        return {
-          shouldSendEmail:
-            !!prefs?.email_notifications && emailDefaultOn(opts.kind),
-        };
-      },
-    );
+    // Grace-period deferral: hold the email, write only the bell row
+    // with a `defer:<iso>` sentinel in emailed_at. The flusher
+    // (lib/deferredEmails.ts, via poll-tasks) sends it after the window
+    // or cancels it if the comment was deleted. Pref is rechecked there
+    // (skipped here on purpose — the user may toggle during the window).
+    const deferUntil =
+      typeof opts.deferEmailUntil === "number" &&
+      opts.deferEmailUntil > Date.now()
+        ? opts.deferEmailUntil
+        : 0;
 
     let emailedAt = "";
-    if (shouldSendEmail && actorEmail) {
-      try {
-        await sendNotificationEmail({
-          fromEmail: actorEmail,
-          toEmail: forEmail,
-          subject: opts.emailSubject || defaultEmailSubject(opts),
-          plainBody: opts.emailPlain || opts.body || "",
-          htmlBody:
-            opts.emailHtml ||
-            buildDefaultEmailHtml({
-              intro: defaultEmailIntro(opts),
-              body: opts.body || "",
-              link: opts.link,
-              ctaLabel: defaultCtaLabel(opts.kind),
-            }),
-        });
-        emailedAt = new Date().toISOString();
-      } catch (e) {
-        console.log(
-          "[notifications] email send failed (non-fatal):",
-          e instanceof Error ? e.message : String(e),
-        );
+    if (deferUntil) {
+      emailedAt = "defer:" + new Date(deferUntil).toISOString();
+    } else {
+      // Decide whether email should fire BEFORE the row append so we can
+      // stamp emailed_at into the row and avoid a re-read.
+      const { shouldSendEmail } = await import("@/lib/userPrefs").then(
+        async (m) => {
+          const prefs = await m.getUserPrefs(forEmail).catch(() => null);
+          return {
+            shouldSendEmail:
+              !!prefs?.email_notifications && emailDefaultOn(opts.kind),
+          };
+        },
+      );
+
+      if (shouldSendEmail && actorEmail) {
+        try {
+          const mail = buildNotificationEmail(opts);
+          await sendNotificationEmail({
+            fromEmail: actorEmail,
+            toEmail: forEmail,
+            ...mail,
+          });
+          emailedAt = new Date().toISOString();
+        } catch (e) {
+          console.log(
+            "[notifications] email send failed (non-fatal):",
+            e instanceof Error ? e.message : String(e),
+          );
+        }
       }
     }
 
@@ -497,7 +512,7 @@ export async function markReadByTask(
 /** All kinds default to email-on; the user's global email_notifications
  *  pref is the master switch. Kept as a function instead of a const map
  *  so future per-kind toggles can drop in without changing call sites. */
-function emailDefaultOn(_kind: NotificationKind): boolean {
+export function emailDefaultOn(_kind: NotificationKind): boolean {
   return true;
 }
 
@@ -631,9 +646,41 @@ function buildDefaultEmailHtml(opts: {
   ].join("");
 }
 
+/**
+ * The SINGLE place that turns notification opts → {subject, plainBody,
+ * htmlBody}. Used by both `notifyOnce` (immediate path) and the
+ * deferred-email flusher so the two can never drift (same parity
+ * rationale as writeCommentDoc/mirrorComment). Explicit overrides
+ * (emailSubject / emailPlain / emailHtml) win, else derive from kind.
+ */
+export function buildNotificationEmail(opts: {
+  kind: NotificationKind;
+  actorEmail: string;
+  project?: string;
+  title?: string;
+  body?: string;
+  link: string;
+  emailSubject?: string;
+  emailPlain?: string;
+  emailHtml?: string;
+}): { subject: string; plainBody: string; htmlBody: string } {
+  return {
+    subject: opts.emailSubject || defaultEmailSubject(opts),
+    plainBody: opts.emailPlain || opts.body || "",
+    htmlBody:
+      opts.emailHtml ||
+      buildDefaultEmailHtml({
+        intro: defaultEmailIntro(opts),
+        body: opts.body || "",
+        link: opts.link,
+        ctaLabel: defaultCtaLabel(opts.kind),
+      }),
+  };
+}
+
 /* ─── MIME email send (mirrors the helper in tasksWriteDirect) ──── */
 
-async function sendNotificationEmail(opts: {
+export async function sendNotificationEmail(opts: {
   fromEmail: string;
   toEmail: string;
   subject: string;
@@ -688,7 +735,7 @@ async function sendNotificationEmail(opts: {
   });
 }
 
-function columnLetter(n: number): string {
+export function columnLetter(n: number): string {
   let s = "";
   while (n > 0) {
     const r = (n - 1) % 26;

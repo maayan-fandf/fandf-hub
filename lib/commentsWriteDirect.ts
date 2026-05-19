@@ -717,6 +717,9 @@ export async function postReplyDirect(
         title: parentBodyShort,
         body: trimmedBody.slice(0, 280),
         link: replyLink,
+        // 30s grace — flusher (poll-tasks) sends after the window, or
+        // cancels if this reply is deleted within it.
+        deferEmailUntil: Date.now() + 30_000,
       });
     }
     // Mention notifications → each parsed @<email>.
@@ -731,6 +734,9 @@ export async function postReplyDirect(
         title: parentBodyShort,
         body: trimmedBody.slice(0, 280),
         link: replyLink,
+        // 30s grace — flusher (poll-tasks) sends after the window, or
+        // cancels if this reply is deleted within it.
+        deferEmailUntil: Date.now() + 30_000,
       });
     }
     // Thread-participant fan-out → anyone @-mentioned earlier in the
@@ -750,6 +756,9 @@ export async function postReplyDirect(
         title: parentBodyShort,
         body: trimmedBody.slice(0, 280),
         link: replyLink,
+        // 30s grace — flusher (poll-tasks) sends after the window, or
+        // cancels if this reply is deleted within it.
+        deferEmailUntil: Date.now() + 30_000,
       });
     }
     // Cross-post to the project's Chat Space ONLY for project-level
@@ -1229,6 +1238,9 @@ export async function createMentionDirect(
         title: due ? `תאריך: ${due}` : "",
         body: trimmedBody.slice(0, 280),
         link,
+        // 30s grace — flusher (poll-tasks) sends after the window, or
+        // cancels if this comment is deleted within it.
+        deferEmailUntil: Date.now() + 30_000,
       });
     }
     // Internal threads never reach the office-wide Chat space.
