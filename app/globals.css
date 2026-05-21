@@ -2108,9 +2108,13 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   display: flex;
   gap: 0.6rem 1.3rem;
   align-items: center;
-  /* Wrap onto multiple rows on narrow viewports (mobile). Without this,
-     10 items in a flex row overflow the viewport horizontally and shove
-     the page content off-center. */
+  /* Positioning context for the mobile nav dropdown (.topnav-links when
+     collapsed into the ☰ hamburger), so it anchors to the content edges
+     rather than the viewport. */
+  position: relative;
+  /* Last-resort wrap on very narrow viewports — but the hamburger
+     (see .topnav-links below) normally collapses the links before any
+     wrap is needed. */
   flex-wrap: wrap;
 }
 
@@ -2187,6 +2191,97 @@ html[data-theme="dark"] .topnav-fandf-logo img {
   /* Inherits all .topnav-link styling — kept as a hook in case future
      external links need a separate visual treatment, but currently a
      no-op so external nav items match internal ones in size + weight. */
+}
+
+/* ── Primary nav group + mobile hamburger (components/TopnavLinks) ──── */
+.topnav-links-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.topnav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem 1rem;
+}
+/* Hamburger is desktop-hidden; the @media block below reveals it and
+   turns .topnav-links into a dropdown panel on narrow viewports. */
+.topnav-hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--md-sys-color-outline-variant, var(--border));
+  border-radius: var(--md-sys-shape-corner-small);
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+.topnav-hamburger:hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
+}
+.topnav-hamburger[aria-expanded="true"] {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+/* Collapse the primary links into the hamburger before the row gets
+   tight enough to wrap. */
+@media (max-width: 900px) {
+  .topnav-hamburger {
+    display: inline-flex;
+  }
+  .topnav-links {
+    /* Anchored to .topnav-inner (position:relative) so it spans the
+       content width and drops below the bar. Hidden until the hamburger
+       opens it. */
+    display: none;
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    inset-inline-start: 1.5rem;
+    inset-inline-end: 1.5rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+    padding: 0.5rem;
+    background: var(--md-sys-color-surface-container-high, var(--surface));
+    border: 1px solid var(--md-sys-color-outline-variant, var(--border));
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+    z-index: 40;
+    /* Never truncate: scroll if the list is taller than the viewport. */
+    max-height: min(70vh, 30rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .topnav-links.is-open {
+    display: flex;
+  }
+  /* Full-width tap targets inside the dropdown. */
+  .topnav-links > *,
+  .topnav-links .topnav-link,
+  .topnav-links .projects-nav-menu,
+  .topnav-links .projects-nav-trigger {
+    width: 100%;
+  }
+  .topnav-links .topnav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: 10px;
+  }
+}
+@media (max-width: 640px) {
+  /* Match the bar's tighter mobile padding so the dropdown lines up. */
+  .topnav-links {
+    inset-inline-start: 0.75rem;
+    inset-inline-end: 0.75rem;
+  }
 }
 
 /* Projects nav dropdown — 2-level hover menu.
@@ -2412,7 +2507,13 @@ html[data-theme="dark"] .topnav-fandf-logo img {
 }
 
 .topnav-user {
-  margin-left: auto;
+  /* Push the user/utilities cluster to the far inline-end so the
+     primary nav anchors to the inline-start edge and the two groups
+     span the full content width with a clear break between them.
+     Logical `inline-start` (not `left`) so it resolves correctly under
+     dir="rtl" — physical `margin-left:auto` pushed the cluster the
+     wrong way in RTL and bunched everything against one side. */
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -8383,15 +8484,6 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
     padding: 0.28rem 0.45rem;
   }
 
-  /* Drop the dashboard-link text on phones — icon is enough. */
-  .topnav-external {
-    font-size: 0;   /* hides the "דשבורד" label but keeps the 🔗 emoji */
-  }
-  .topnav-external::before {
-    content: "🔗";
-    font-size: 1rem;
-  }
-
   /* Hide the email entirely on phones — identity is shown on the avatar. */
   .topnav-email {
     display: none;
@@ -9246,6 +9338,128 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
   font-size: .82em;
   line-height: 1.5;
   white-space: pre;
+}
+
+/* /onboarding — internal-team getting-started guide. Builds on the
+   .help-open-card shell above; only the extras below are onboarding-only. */
+.onboarding-steps {
+  margin: .3em 1.3em;
+  padding: 0;
+  line-height: 1.8;
+}
+.onboarding-steps li {
+  margin: .55em 0;
+}
+.onboarding-steps a,
+.onboarding-tools a {
+  color: var(--accent, #6366f1);
+  text-decoration: none;
+}
+.onboarding-steps a:hover,
+.onboarding-tools a:hover {
+  text-decoration: underline;
+}
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: .8em;
+  margin-top: .8em;
+}
+.onboarding-feature {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: .75em .9em;
+  background: var(--surface-soft, rgba(120, 120, 120, .06));
+}
+.onboarding-feature h3 {
+  margin: 0 0 .35em;
+  font-size: .98em;
+  display: flex;
+  align-items: center;
+  gap: .4em;
+}
+.onboarding-feature h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+.onboarding-feature h3 a:hover {
+  text-decoration: underline;
+}
+.onboarding-feature p {
+  margin: 0;
+  font-size: .86em;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.onboarding-status-list {
+  list-style: none;
+  margin: .6em 0;
+  padding: 0;
+  display: grid;
+  gap: .35em;
+}
+.onboarding-status-list li {
+  display: flex;
+  align-items: baseline;
+  gap: .6em;
+  line-height: 1.5;
+}
+.onboarding-status-he {
+  flex: 0 0 8.5em;
+  font-weight: 700;
+  color: var(--text);
+}
+.onboarding-status-desc {
+  color: var(--muted);
+  font-size: .92em;
+}
+.onboarding-tools {
+  margin: .4em 1.3em;
+  padding: 0;
+  line-height: 1.75;
+}
+.onboarding-tools li {
+  margin: .45em 0;
+}
+.onboarding-kbd-list {
+  list-style: none;
+  margin: .5em 0;
+  padding: 0;
+  display: grid;
+  gap: .45em;
+}
+.onboarding-kbd-list li {
+  display: flex;
+  align-items: center;
+  gap: .8em;
+}
+.onboarding-kbd-list kbd {
+  flex: 0 0 9.5em;
+  text-align: center;
+  font-size: .82em;
+  background: var(--surface-soft, rgba(120, 120, 120, .12));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .15em .4em;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace);
+}
+.onboarding-kbd-list span {
+  color: var(--muted);
+  font-size: .92em;
+}
+@media (max-width: 560px) {
+  .onboarding-status-he {
+    flex-basis: 6.5em;
+  }
+  .onboarding-kbd-list li {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .2em;
+  }
+  .onboarding-kbd-list kbd {
+    flex-basis: auto;
+    align-self: flex-start;
+  }
 }
 .copy-local-path-hint-install a {
   color: var(--accent, #6366f1);

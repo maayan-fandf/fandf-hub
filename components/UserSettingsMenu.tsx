@@ -534,6 +534,17 @@ export default function UserSettingsMenu({
                   <ul className="settings-menu-admin-list">
                     <li>
                       <Link
+                        href="/onboarding"
+                        className="settings-menu-admin-link"
+                        role="menuitem"
+                        onClick={() => setOpen(false)}
+                      >
+                        <span aria-hidden>✨</span>
+                        מדריך התחלה
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
                         href="/help/open-locally"
                         className="settings-menu-admin-link"
                         role="menuitem"

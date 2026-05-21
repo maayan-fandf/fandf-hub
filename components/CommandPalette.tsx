@@ -73,6 +73,14 @@ const STATIC_ACTIONS: ActionCmd[] = [
     haystack: "note quick הערה אישית self note todo personal reminder תזכורת",
     hint: "Ctrl+Shift+M",
   },
+  {
+    kind: "action",
+    key: "nav:onboarding",
+    label: "✨ מדריך התחלה",
+    sublabel: "סיור קצר ב-Hub לחברי צוות חדשים",
+    href: "/onboarding",
+    haystack: "onboarding מדריך התחלה הדרכה עזרה guide help getting started",
+  },
 ];
 
 const SEARCH_DEBOUNCE_MS = 220;

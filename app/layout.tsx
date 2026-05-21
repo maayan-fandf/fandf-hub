@@ -20,7 +20,6 @@ const rubik = Rubik({
   display: "swap",
   variable: "--font-rubik",
 });
-import { auth } from "@/auth";
 import { signOutAction } from "@/lib/signOutAction";
 import CommandPalette from "@/components/CommandPalette";
 import ExternalNavListener from "@/components/ExternalNavListener";
@@ -36,6 +35,7 @@ import ViewAsBanner from "@/components/ViewAsBanner";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import NavTasksBadge from "@/components/NavTasksBadge";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
+import TopnavLinks from "@/components/TopnavLinks";
 import UserSettingsMenu from "@/components/UserSettingsMenu";
 import TopnavUserMenu from "@/components/TopnavUserMenu";
 import ActiveLink from "@/components/ActiveLink";
@@ -49,6 +49,7 @@ import GeminiChatDrawer from "@/components/GeminiChatDrawer";
 import {
   getMyProjects,
   tasksPeopleList,
+  currentUserEmail,
   type Project,
 } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
@@ -96,8 +97,12 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-  const email = session?.user?.email ?? null;
+  // Canonical identity, same helper the rest of the app uses: real
+  // NextAuth session email in prod, DEV_USER_EMAIL fallback in local
+  // dev (so the topnav renders without a Google sign-in). Falls back to
+  // null when neither is available (e.g. the /signin page) so the nav
+  // renders its unauthenticated state instead of throwing.
+  const email = await currentUserEmail().catch(() => null);
 
   // Prefetch the user's projects server-side so the nav dropdown opens
   // instantly. Honors the gear-menu "view as" pref so the top-nav projects
@@ -176,18 +181,6 @@ export default async function RootLayout({
     }
   }
 
-  const dashboardBase = process.env.DASHBOARD_URL ?? "";
-  // Append ?authuser=<user-email> so multi-account browsers land in the right
-  // Google slot instead of Apps Script's default "last used" account. Preserves
-  // any existing query string if DASHBOARD_URL happens to carry one.
-  const dashboardUrl =
-    dashboardBase && email
-      ? dashboardBase +
-        (dashboardBase.includes("?") ? "&" : "?") +
-        "authuser=" +
-        encodeURIComponent(email)
-      : dashboardBase;
-
   return (
     <html
       lang="he"
@@ -246,49 +239,42 @@ export default async function RootLayout({
                 לקוחות → מ-Google Tasks → דשבורד.
                 NavInboxLink (תיוגים) self-hides when its count is 0,
                 so it appears only when there's something to triage. */}
-            {email ? (
-              <ProjectsNavMenu
-                projects={navProjects}
-                endIsoByProject={endIsoByProject}
-                inactiveByProject={inactiveByProject}
-              />
-            ) : (
-              <Link href="/" className="topnav-link">
-                📂 פרויקטים
-              </Link>
-            )}
-            {email && !isClientUser && (
-              <ActiveLink
-                href="/tasks"
-                className="topnav-link topnav-link-with-badge"
-              >
-                📋 משימות
-                <NavTasksBadge />
-              </ActiveLink>
-            )}
-            {email && !isClientUser && <NavCampaignsLink />}
-            {email && !isClientUser && (
-              <ActiveLink
-                href="/notifications"
-                className="topnav-link topnav-link-with-badge"
-              >
-                🔔 התראות
-                <NavBellBadge />
-              </ActiveLink>
-            )}
-            {email && <NavInboxLink isClientUser={isClientUser} />}
-            {email && !isClientUser && <NavCustomerEmails />}
-            {email && !isClientUser && <NavGmailTasks />}
-            {dashboardUrl && !isClientUser && (
-              <a
-                href={dashboardUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="topnav-link topnav-external"
-              >
-                🔗 דשבורד
-              </a>
-            )}
+            <TopnavLinks>
+              {email ? (
+                <ProjectsNavMenu
+                  projects={navProjects}
+                  endIsoByProject={endIsoByProject}
+                  inactiveByProject={inactiveByProject}
+                />
+              ) : (
+                <Link href="/" className="topnav-link">
+                  📂 פרויקטים
+                </Link>
+              )}
+              {email && !isClientUser && (
+                <ActiveLink
+                  href="/tasks"
+                  className="topnav-link topnav-link-with-badge"
+                >
+                  📋 משימות
+                  <NavTasksBadge />
+                </ActiveLink>
+              )}
+              {email && !isClientUser && <NavCampaignsLink />}
+              {email && !isClientUser && (
+                <ActiveLink
+                  href="/notifications"
+                  className="topnav-link topnav-link-with-badge"
+                >
+                  🔔 התראות
+                  <NavBellBadge />
+                </ActiveLink>
+              )}
+              {email && <NavInboxLink isClientUser={isClientUser} />}
+              {email && !isClientUser && <NavCustomerEmails />}
+              {email && !isClientUser && <NavGmailTasks />}
+            </TopnavLinks>
+            {/* דשבורד (Apps Script) link hidden 2026-05-22 — legacy feature. */}
             {email && (
               <div className="topnav-user">
                 <UserSettingsMenu
