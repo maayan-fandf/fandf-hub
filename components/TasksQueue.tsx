@@ -103,7 +103,8 @@ function humanizeBucketKey(
 // left on screen) the way work actually flows:
 //   ממתין לטיפול → בעבודה → ממתין לאישור → בוצע, with ממתין לבירור
 // parked alongside as the blocked-for-info bucket.
-// Terminal states (`draft` / `cancelled`) surface in the "other" fold.
+// Only true drafts surface in the "other" fold now; `blocked` has its
+// own visible section (added below) and `cancelled` is a real bucket.
 //
 // `archiveAfterDays` (when set) splits the bucket: rows with
 // `updated_at` newer than the cutoff render normally; older rows
@@ -133,6 +134,13 @@ const STATUS_BUCKETS: {
   { key: "in_progress", label: "בעבודה", tone: "in_progress" },
   { key: "awaiting_clarification", label: "ממתין לבירור", tone: "awaiting_clarification" },
   { key: "awaiting_approval", label: "ממתין לאישור", tone: "awaiting_approval" },
+  // Blocked = waiting on a dependency. Its own visible section so the
+  // worker sees what's coming, but it is NOT actionable (excluded from
+  // the nav badge). When the dependency cascade clears it, the task
+  // flips to awaiting_handling and moves into the active flow above.
+  // Not terminal, so it never archive-folds. Previously it fell into the
+  // "other"/drafts fold, which mislabeled blocked tasks as drafts.
+  { key: "blocked", label: "חסום", tone: "blocked" },
   { key: "done", label: "בוצע", tone: "done", isTerminal: true },
   // Cancelled used to live in the collapsed "other" fold, but now that
   // it's a revivable state (awaiting_handling / in_progress targets in

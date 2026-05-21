@@ -9600,6 +9600,9 @@ html[data-theme="dark"] .tasks-filter-people-group {
 .tasks-bucket-awaiting_approval .tasks-bucket-head { border-inline-start-color: #f59e0b; }
 .tasks-bucket-done .tasks-bucket-head { border-inline-start-color: #10b981; }
 .tasks-bucket-cancelled .tasks-bucket-head { border-inline-start-color: #9ca3af; }
+/* Blocked = waiting on a dependency, not yours yet → slate + dashed
+ * accent, echoing the .tasks-status-blocked palette. */
+.tasks-bucket-blocked .tasks-bucket-head { border-inline-start-color: #94a3b8; border-inline-start-style: dashed; }
 .tasks-bucket-count {
   background: rgba(0,0,0,.08);
   padding: 0 .55em;

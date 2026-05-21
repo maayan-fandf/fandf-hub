@@ -16,12 +16,21 @@ type Counts = StatusCounts & {
 };
 
 /**
- * Badge next to the "משימות" topnav link — total of every open task
- * the user is involved with (author / approver / PM / assignee /
- * mentioned-in-discussion). The tooltip splits that count into:
- *   - דורש פעולה ממך: per-status, only counting where the user has
- *     the action-owning role (assignee / approver / clarify owner)
- *   - במעקב: the rest — tasks they're aware of but waiting on others
+ * Badge next to the "משימות" topnav link — counts only tasks that are
+ * actionable BY THE USER right now: per-status, where the user holds
+ * the action-owning role (assignee on awaiting_handling/in_progress,
+ * clarify owner on awaiting_clarification, approver on awaiting_approval).
+ *
+ * Deliberately EXCLUDES: blocked (חסום — waiting on a dependency, not
+ * yet the user's to do; it starts counting only once the dependency
+ * cascade flips it to awaiting_handling), drafts, and tasks awaiting
+ * someone else's action. Those are still visible in /tasks and surface
+ * in the tooltip's "במעקב" tier — they just don't inflate the number.
+ *
+ * The tooltip splits the picture into:
+ *   - דורש פעולה ממך: the actionable items behind the badge number
+ *   - במעקב: open tasks you're involved with but waiting on others
+ *     (incl. awaiting-others-approval) — informational, not counted
  *
  * The split prevents the misread where e.g. an author of 7 tasks
  * waiting on someone else to approve sees "7 לאישור" and thinks
@@ -162,7 +171,19 @@ export default function NavTasksBadge() {
     };
   }, [title]);
 
-  if (!counts || counts.total <= 0) return null;
+  // The badge number = how many tasks are mine to act on right now.
+  // Sum of the role-aware actionable breakdown (assignee on
+  // handling/in_progress, clarify owner on clarification, approver on
+  // approval). Blocked / drafts / awaiting-someone-else never enter
+  // this sum — they live in the tooltip's "במעקב" tier and in /tasks.
+  const actionableTotal = counts
+    ? counts.actionable.awaiting_handling +
+      counts.actionable.in_progress +
+      counts.actionable.awaiting_clarification +
+      counts.actionable.awaiting_approval
+    : 0;
+
+  if (!counts || actionableTotal <= 0) return null;
 
   return (
     <span
@@ -171,7 +192,7 @@ export default function NavTasksBadge() {
       aria-label={title}
       title={title}
     >
-      {counts.total > 99 ? "99+" : counts.total}
+      {actionableTotal > 99 ? "99+" : actionableTotal}
     </span>
   );
 }
