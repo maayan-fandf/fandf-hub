@@ -321,38 +321,34 @@ export default async function TasksPage({
             />
             <TasksUmbrellaToggle showing={sp.umbrellas === "1"} />
           </div>
-          <div className="subtitle">
-            ניהול משימות — כל משימה מקבלת תיקייה ב־Drive, משימה
-            ב־Google Tasks לכל מבצע (מסומנת כהושלמה אוטומטית כשהמשימה
-            עוברת ל&quot;בוצע&quot;), ומייל לגורם המאשר.
-            {isViewingAs && (
-              <>
-                {" "}· 👁️ <b>מציג כ-<span dir="ltr">{viewAs}</span></b>
-                {" "}(שינוי בגלגל ההגדרות)
-              </>
-            )}
-            {/* Scope toggle now lives in the header row — see
-                TasksScopeToggle. The previous inline link / hint
-                copy was redundant once the toggle made the active
-                scope visible at a glance. We keep RoleDefaultHint
-                still around (it shows a small "מציג משימות הקשורות
-                אליך (handle)" status line when the role-default is
-                active) but its embedded "הצג את כולם" link is now
-                redundant — the prop is no-op'd via an empty
-                showAllHref so the link doesn't render alongside the
-                new toggle. */}
-            {mineOptIn && effectiveMe && (
-              <RoleDefaultHint
-                role={role}
-                me={effectiveMe}
-                isViewingAs={isViewingAs}
-                hasExplicitAuthor={sp.author !== undefined}
-                hasExplicitApprover={sp.approver !== undefined}
-                hasExplicitAssignee={sp.assignee !== undefined}
-                showAllHref=""
-              />
-            )}
-          </div>
+          {/* The static "ניהול משימות — …" explainer was removed
+              2026-05-22 (now covered by /onboarding). What stays is the
+              live status line: the role-default scope hint + the
+              "viewing as" indicator. */}
+          {(isViewingAs || (mineOptIn && !!effectiveMe)) && (
+            <div className="subtitle">
+              {mineOptIn && effectiveMe && (
+                <RoleDefaultHint
+                  role={role}
+                  me={effectiveMe}
+                  isViewingAs={isViewingAs}
+                  hasExplicitAuthor={sp.author !== undefined}
+                  hasExplicitApprover={sp.approver !== undefined}
+                  hasExplicitAssignee={sp.assignee !== undefined}
+                  showAllHref=""
+                />
+              )}
+              {isViewingAs && (
+                <>
+                  {mineOptIn && effectiveMe && !userSetExplicitMineFilter
+                    ? " · "
+                    : ""}
+                  👁️ <b>מציג כ-<span dir="ltr">{viewAs}</span></b>
+                  {" "}(שינוי בגלגל ההגדרות)
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="header-actions">
           <Link href="/tasks/new" className="btn-primary btn-sm">
@@ -507,8 +503,7 @@ function RoleDefaultHint({
   // "הצג את כולם" link (no double-up).
   return (
     <>
-      {" "}
-      · {text}
+      {text}
       {showAllHref && (
         <>
           {" "}
