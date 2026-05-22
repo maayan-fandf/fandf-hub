@@ -111,6 +111,16 @@ env:
       - BUILD
       - RUNTIME
 
+  # Kill-switch for the קמפיינים → תקציבים inline budget editor. When "1"
+  # the /api/campaigns/budget route may write column G (תקציב חודשי
+  # מאושר) on project tabs of SHEET_ID_MAIN. Flip to "" to instantly
+  # disable all budget writes (reads/UI keep working).
+  - variable: USE_BUDGET_WRITES
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Feature flag: when "1", the tasks read path talks to Sheets directly
   # (fast). When "" or missing, it falls back to the Apps Script proxy
   # (the current default). Start in dev, flip in prod after verifying.

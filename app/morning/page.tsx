@@ -22,6 +22,7 @@ import { driveFolderOwner } from "@/lib/sa";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 import GoogleAdsIcon from "@/components/GoogleAdsIcon";
+import CampaignsTabs from "@/components/CampaignsTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -200,6 +201,8 @@ export default async function MorningPage({
           )}
         </div>
       </header>
+
+      {roleEligible && <CampaignsTabs active="alerts" />}
 
       {error && (
         <div className="error">
