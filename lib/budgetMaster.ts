@@ -3,6 +3,7 @@ import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import {
+  canonicalManagers,
   classifyChannel,
   E3_PLATFORMS,
   type BudgetMaster,
@@ -238,6 +239,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
       tab,
       name: info?.name || tab,
       company: info?.company || "",
+      managers: info?.managers || [],
       e3,
       startIso,
       endIso,
@@ -281,19 +283,26 @@ function finalizeAgg(
 
 async function buildKeyInfo(
   subjectEmail: string,
-): Promise<Map<string, { name: string; company: string }>> {
-  const out = new Map<string, { name: string; company: string }>();
+): Promise<
+  Map<string, { name: string; company: string; managers: string[] }>
+> {
+  const out = new Map<
+    string,
+    { name: string; company: string; managers: string[] }
+  >();
   try {
     const { headers, rows } = await readKeysCached(subjectEmail);
     const iSlug = headers.findIndex((h) => /campaign\s*id/i.test(h));
     const iCompany = headers.indexOf("חברה");
     const iName = headers.findIndex((h) => /^(פרוייקט|פרויקט|project)$/i.test(h));
+    const iMgr = headers.indexOf("מנהל קמפיינים");
     for (const row of rows) {
       const slug = clean(iSlug >= 0 ? row[iSlug] : row[5]);
       if (!slug) continue;
       out.set(slug.toLowerCase(), {
         name: clean(iName >= 0 ? row[iName] : row[0]) || slug,
         company: clean(iCompany >= 0 ? row[iCompany] : row[1]),
+        managers: canonicalManagers(clean(iMgr >= 0 ? row[iMgr] : "")),
       });
     }
   } catch {

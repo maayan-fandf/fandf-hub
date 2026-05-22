@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import CopyAmountButton from "./CopyAmountButton";
 import {
   E3_PLATFORMS,
+  MANAGER_ORDER,
   PLATFORM_LABELS,
+  UNASSIGNED_MANAGER,
   type BudgetProject,
   type Platform,
   type PlatformAgg,
@@ -72,17 +74,50 @@ export default function BudgetGrid({
       // attention
       return dist || pace || (p.reconStatus === "no-target" && p.allocated > 0);
     });
-    // Sort: attention first, then biggest |delta|, then name.
-    return list.slice().sort((a, b) => {
-      const aa = needsAttention(a) ? 0 : 1;
-      const bb = needsAttention(b) ? 0 : 1;
-      if (aa !== bb) return aa - bb;
-      const ad = Math.abs(a.delta);
-      const bd = Math.abs(b.delta);
-      if (ad !== bd) return bd - ad;
-      return a.name.localeCompare(b.name, "he");
-    });
+    return list;
   }, [projects, filter, showInactive]);
+
+  // Group the filtered projects: manager → company → projects. A
+  // co-managed project lands under each of its managers.
+  const grouped = useMemo(() => {
+    const byMgr = new Map<string, Map<string, BudgetProject[]>>();
+    for (const p of visible) {
+      const mgrs = p.managers.length ? p.managers : [UNASSIGNED_MANAGER];
+      for (const m of mgrs) {
+        let cm = byMgr.get(m);
+        if (!cm) {
+          cm = new Map();
+          byMgr.set(m, cm);
+        }
+        const co = p.company || "ללא חברה";
+        let arr = cm.get(co);
+        if (!arr) {
+          arr = [];
+          cm.set(co, arr);
+        }
+        arr.push(p);
+      }
+    }
+    const keys = [...byMgr.keys()];
+    const ordered = [
+      ...MANAGER_ORDER.filter((m) => byMgr.has(m)),
+      ...keys
+        .filter((m) => !MANAGER_ORDER.includes(m) && m !== UNASSIGNED_MANAGER)
+        .sort((a, b) => a.localeCompare(b, "he")),
+      ...(byMgr.has(UNASSIGNED_MANAGER) ? [UNASSIGNED_MANAGER] : []),
+    ];
+    return ordered.map((m) => {
+      const cm = byMgr.get(m)!;
+      const companies = [...cm.keys()]
+        .sort((a, b) => a.localeCompare(b, "he"))
+        .map((co) => ({
+          company: co,
+          projects: cm.get(co)!.slice().sort(sortProjects),
+        }));
+      const projCount = companies.reduce((s, c) => s + c.projects.length, 0);
+      return { manager: m, companies, projCount };
+    });
+  }, [visible]);
 
   function toggle(tab: string) {
     setExpanded((s) => {
@@ -147,7 +182,7 @@ export default function BudgetGrid({
         <span className="budget-dot pace-over" /> מעל הקצב (חריגה)
       </div>
 
-      {visible.length === 0 ? (
+      {grouped.length === 0 ? (
         <div className="empty">
           <span className="emoji" aria-hidden>
             ✅
@@ -155,23 +190,76 @@ export default function BudgetGrid({
           אין פרויקטים בקטגוריה הזו.
         </div>
       ) : (
-        <ul className="budget-list">
-          {visible.map((p) => (
-            <ProjectRow
-              key={p.tab}
-              p={p}
-              open={expanded.has(p.tab)}
-              onToggle={() => toggle(p.tab)}
-              ad={adLinks[p.tab.toLowerCase()] || {}}
-              showAdLinks={showAdLinks}
-              canEdit={canEdit}
-              onEdit={applyEdit}
-            />
-          ))}
-        </ul>
+        grouped.map((mg) => (
+          <section key={mg.manager} className="budget-mgr-group">
+            <h2 className="budget-mgr-head">
+              <span className="budget-mgr-name">👤 {mg.manager}</span>
+              <span className="budget-mgr-count">{mg.projCount} פרויקטים</span>
+              <GroupTotals
+                projects={mg.companies.flatMap((c) => c.projects)}
+              />
+            </h2>
+            {mg.companies.map((cg) => (
+              <div key={cg.company} className="budget-co-group">
+                <h3 className="budget-co-head">
+                  <span className="budget-co-name">{cg.company}</span>
+                  <GroupTotals projects={cg.projects} />
+                </h3>
+                <ul className="budget-list">
+                  {cg.projects.map((p) => (
+                    <ProjectRow
+                      key={p.tab}
+                      p={p}
+                      open={expanded.has(p.tab)}
+                      onToggle={() => toggle(p.tab)}
+                      ad={adLinks[p.tab.toLowerCase()] || {}}
+                      showAdLinks={showAdLinks}
+                      canEdit={canEdit}
+                      onEdit={applyEdit}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+        ))
       )}
     </div>
   );
+}
+
+/** Σ E3 vs Σ allocated for a set of projects (manager/company subtotal). */
+function GroupTotals({ projects }: { projects: BudgetProject[] }) {
+  let e3 = 0,
+    allocated = 0;
+  for (const p of projects) {
+    e3 += p.e3;
+    allocated += p.allocated;
+  }
+  const diff = allocated - e3;
+  const tone = Math.abs(diff) < 1 ? "ok" : diff > 0 ? "over" : "under";
+  return (
+    <span className="budget-grouptotals">
+      יעד {fmt(e3)} · חולק {fmt(allocated)}
+      {Math.abs(diff) >= 1 && (
+        <span className={`budget-grouptotals-delta tone-${tone}`}>
+          ({diff > 0 ? "+" : "−"}
+          {fmt(Math.abs(diff))})
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Sort within a company: attention first, then biggest |delta|, then name. */
+function sortProjects(a: BudgetProject, b: BudgetProject): number {
+  const aa = needsAttention(a) ? 0 : 1;
+  const bb = needsAttention(b) ? 0 : 1;
+  if (aa !== bb) return aa - bb;
+  const ad = Math.abs(a.delta);
+  const bd = Math.abs(b.delta);
+  if (ad !== bd) return bd - ad;
+  return a.name.localeCompare(b.name, "he");
 }
 
 /* ── summary + drill-in row ──────────────────────────────────────── */

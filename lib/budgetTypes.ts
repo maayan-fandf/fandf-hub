@@ -31,17 +31,39 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
  * sheet (90+ spellings), so this is a best-effort normalizer. Generic
  * native/content rows (article/כתבה/news/teads/jerusalempost) fall to
  * "other" by design — only explicitly-labeled Taboola/Outbrain count.
+ *
+ * DV / DV360 / dv-360 (Display & Video 360) is NOT part of the
+ * internally-managed budget (owner decision 2026-05-23) → it must be
+ * caught BEFORE the Google branch and routed to "other".
  */
 export function classifyChannel(raw: string): Platform | "other" {
   const n = clean(raw).toLowerCase();
   if (!n) return "other";
+  if (/\bdv[\s-]?360\b|\bdv\b/.test(n)) return "other";
   if (/taboola|טאבולה/.test(n)) return "taboola";
   if (/outbrain|אאוטבריין|אאוטברין/.test(n)) return "outbrain";
-  if (/google|גוגל|discover|discovery|dicovery|pmax|dv360|\bdv\b|youtube|\byt\b/.test(n))
+  if (/google|גוגל|discover|discovery|dicovery|pmax|youtube|\byt\b/.test(n))
     return "google";
   if (/facebook|פייסבוק|\bfb\b|\bmeta\b|instagram|אינסטג/.test(n))
     return "facebook";
   return "other";
+}
+
+/** Display order for the budget desk's manager grouping. */
+export const MANAGER_ORDER = ["Maayan Sachs", "Nadav Eedelman"];
+export const UNASSIGNED_MANAGER = "ללא מנהל";
+
+/**
+ * Normalize the raw Keys "מנהל קמפיינים" cell into canonical manager
+ * label(s). Co-managed projects (e.g. "Maayan Sachs, nadav eedelman")
+ * resolve to BOTH so each manager sees the project in their group.
+ */
+export function canonicalManagers(raw: string): string[] {
+  const lc = (raw || "").toLowerCase();
+  const out: string[] = [];
+  if (/maayan|מעין/.test(lc)) out.push("Maayan Sachs");
+  if (/nadav|נדב/.test(lc)) out.push("Nadav Eedelman");
+  return out;
 }
 
 export type BudgetRow = {
@@ -78,6 +100,9 @@ export type BudgetProject = {
   tab: string;
   name: string;
   company: string;
+  /** Canonical campaign-manager label(s) from Keys (מנהל קמפיינים).
+   *  Co-managed projects list more than one. Empty = unassigned. */
+  managers: string[];
   /** E3 — תקציב פרוגרמטי. */
   e3: number;
   startIso: string;

@@ -18161,3 +18161,28 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   .budget-summary .budget-recon { grid-area: recon; }
   .budget-summary .budget-platcells { grid-area: plat; }
 }
+
+/* manager → company grouping */
+.budget-mgr-group { margin-top: 1.5em; }
+.budget-mgr-group:first-of-type { margin-top: .5em; }
+.budget-mgr-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .5em .9em;
+  margin: 0 0 .6em; padding-bottom: .35em;
+  border-bottom: 2px solid var(--accent);
+  font-size: 1.15em;
+}
+.budget-mgr-name { font-weight: 800; color: var(--text); }
+.budget-mgr-count { color: var(--muted); font-size: .8em; font-weight: 600; }
+.budget-co-group { margin: 0 0 1em; }
+.budget-co-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .5em .8em;
+  margin: .8em 0 .4em; font-size: .95em;
+}
+.budget-co-name {
+  font-weight: 700; color: var(--accent);
+}
+.budget-grouptotals { color: var(--muted); font-size: .78em; font-weight: 500; }
+.budget-grouptotals-delta { font-weight: 700; margin-inline-start: .3em; }
+.budget-grouptotals-delta.tone-over { color: #ef4444; }
+.budget-grouptotals-delta.tone-under { color: #f59e0b; }
+.budget-grouptotals-delta.tone-ok { color: #22c55e; }
