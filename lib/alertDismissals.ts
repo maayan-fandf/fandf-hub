@@ -12,6 +12,7 @@
  */
 
 import { getDb, FS_COLLECTIONS } from "@/lib/firestore";
+import type { MorningSignal } from "@/lib/appsScript";
 
 export type AlertDismissal = {
   user_email: string;
@@ -78,4 +79,42 @@ export async function upsertAlertDismissal(input: {
     .doc(keyToDocId(key))
     .set(rec);
   return rec;
+}
+
+/**
+ * Apply the dismissal store to hub-generated signals (e.g. crmAlerts),
+ * which — unlike the report's own morning signals — don't get dismissal
+ * state applied server-side. Mirrors the report's dismissalStateFor:
+ *   - active snooze (snooze_until >= today, Asia/Jerusalem) → dismissed
+ *   - expired snooze → revisit (resurfaced, flagged as previously handled)
+ *   - none → unchanged
+ * Pure + synchronous; the caller fetches the dismissals map once.
+ */
+export function applyDismissalsToSignals(
+  signals: MorningSignal[],
+  dismissals: Record<string, AlertDismissal>,
+): MorningSignal[] {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+  return signals.map((s) => {
+    const d = s.key ? dismissals[s.key] : undefined;
+    if (!d) return s;
+    const until = String(d.snooze_until || "").slice(0, 10);
+    if (until && until >= today) {
+      return {
+        ...s,
+        dismissed: true,
+        dismissedAt: d.dismissed_at || "",
+        dismissedUntil: d.snooze_until || "",
+        dismissedBy: d.user_email || "",
+      };
+    }
+    return {
+      ...s,
+      revisit: true,
+      previouslyDismissedAt: d.dismissed_at || "",
+      previouslySnoozedUntil: d.snooze_until || "",
+    };
+  });
 }

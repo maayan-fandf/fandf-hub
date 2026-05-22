@@ -17,6 +17,7 @@ import { canSeeCampaigns } from "@/lib/userRole";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { getAllClientsCurrentForProject } from "@/lib/allClients";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
+import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismissals";
 import { driveFolderOwner } from "@/lib/sa";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
@@ -95,6 +96,9 @@ export default async function MorningPage({
   // per-request cache()), so on warm cache this is in-memory filter
   // work; on cold cache the slowest underlying read dominates.
   // Promise.allSettled so one stuck project doesn't block the page.
+  // Fetch the dismissal store once (not per project) so the hub-side CRM
+  // alerts can be faded/hidden like the report's own signals.
+  const dismissals = await listAlertDismissals().catch(() => ({}));
   const enrichedResults = await Promise.allSettled(
     rawProjects.map(async (p) => {
       if (!p.company) return p;
@@ -113,12 +117,15 @@ export default async function MorningPage({
         getAllClientsCurrentForProject({ subjectEmail, project: p.name, projectSlug: p.slug })
           .catch(() => []),
       ]);
-      const crmSignals = computeCrmAlerts({
-        funnel,
-        funnelAllTime,
-        allClients,
-        projectSlug: p.slug || p.name,
-      });
+      const crmSignals = applyDismissalsToSignals(
+        computeCrmAlerts({
+          funnel,
+          funnelAllTime,
+          allClients,
+          projectSlug: p.slug || p.name,
+        }),
+        dismissals,
+      );
       if (crmSignals.length === 0) return p;
       const signals: MorningSignal[] = [...p.signals, ...crmSignals];
       return { ...p, signals, maxSeverity: maxSeverityFromSignals(signals) };

@@ -19,6 +19,7 @@ import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
+import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismissals";
 import { getAllClientsCurrentForProject, type AllClientsRow } from "@/lib/allClients";
 import { driveFolderOwner } from "@/lib/sa";
 import ClientChatComposer from "@/components/ClientChatComposer";
@@ -741,12 +742,17 @@ async function ProjectAlertsSection({
   ]);
   const dashboardProject: MorningProject | null = alertsData?.projects[0] ?? null;
   const dashboardSignals = dashboardProject?.signals ?? [];
-  const crmSignals = computeCrmAlerts({
+  const rawCrmSignals = computeCrmAlerts({
     funnel: crmFunnel,
     funnelAllTime: crmFunnelAllTime,
     allClients: allClientsRows,
     projectSlug: dashboardProject?.slug || projectName,
   });
+  // Hub-side CRM alerts don't get dismissal state from the report's feed,
+  // so apply the shared Firestore dismissal store here (best-effort —
+  // a store outage just shows them un-dismissed).
+  const crmDismissals = await listAlertDismissals().catch(() => ({}));
+  const crmSignals = applyDismissalsToSignals(rawCrmSignals, crmDismissals);
   const allSignals = [...dashboardSignals, ...crmSignals];
   if (allSignals.length === 0) return null;
   return (
