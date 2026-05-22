@@ -16,6 +16,10 @@ export default auth((req) => {
     // pollTaskCompletions trigger). Same shared-secret auth model as
     // the auto-transition endpoint above.
     path === "/api/cron/poll-tasks" ||
+    // Server-to-server alert-dismissals store, called by the Apps Script
+    // report (token-authed via APPS_SCRIPT_API_TOKEN). Must skip the
+    // NextAuth redirect — Apps Script runs unattended.
+    path === "/api/alert-dismissals" ||
     // Cloud Scheduler membership-reconcile cron. Same shared-secret
     // (X-Cron-Token / APPS_SCRIPT_API_TOKEN) auth as poll-tasks; must
     // skip the NextAuth redirect or Scheduler gets a 302→/signin

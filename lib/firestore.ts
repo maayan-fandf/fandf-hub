@@ -68,6 +68,10 @@ export const FS_COLLECTIONS = {
   comments: "comments",
   /** append-only ledger; doc id = Firestore autoId. */
   pricingLog: "pricingLog",
+  /** Morning-alert dismissals (team-wide). doc id = base64url(signal_key)
+   *  so there's exactly one doc per signal_key (latest write wins).
+   *  Migrated off the Apps Script report's "Alert Dismissals" sheet. */
+  alertDismissals: "alertDismissals",
 } as const;
 
 type SAKey = {
