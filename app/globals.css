@@ -18117,12 +18117,20 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-group-title { font-weight: 700; }
 .budget-group-stats { color: var(--muted); font-size: .82em; }
 
-.budget-rows { width: 100%; border-collapse: collapse; font-size: .85em; }
+/* table-layout:fixed + identical column widths so the per-platform
+   tables (Google / Facebook / אחר) line up column-for-column. */
+.budget-rows { width: 100%; border-collapse: collapse; font-size: .85em; table-layout: fixed; }
 .budget-rows th {
   text-align: start; color: var(--muted); font-weight: 600;
   padding: .25em .5em; border-bottom: 1px solid var(--border); font-size: .9em;
 }
 .budget-rows td { padding: .3em .5em; border-bottom: 1px solid var(--border); }
+.budget-rows th:nth-child(1), .budget-rows td:nth-child(1) { width: 26%; }
+.budget-rows th:nth-child(2), .budget-rows td:nth-child(2) { width: 10%; }
+.budget-rows th:nth-child(3), .budget-rows td:nth-child(3) { width: 20%; }
+.budget-rows th:nth-child(4), .budget-rows td:nth-child(4) { width: 14%; }
+.budget-rows th:nth-child(5), .budget-rows td:nth-child(5) { width: 9%; }
+.budget-rows th:nth-child(6), .budget-rows td:nth-child(6) { width: 21%; }
 .budget-rows tr.row-error td { background: rgba(239,68,68,.08); }
 .budget-rows .c-channel { max-width: 18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .budget-rows .c-type { color: var(--muted); }
