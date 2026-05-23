@@ -232,6 +232,7 @@ export default function BudgetGrid({
               <GroupTotals
                 projects={mg.companies.flatMap((c) => c.projects)}
               />
+              <ManagerCsvButtons manager={mg.manager} />
             </h2>
             {mg.companies.map((cg) => (
               <div key={cg.company} className="budget-co-group">
@@ -949,6 +950,74 @@ function FilterChip({
     >
       {label} <span className="chip-count">{count}</span>
     </button>
+  );
+}
+
+/** Per-manager budget export — one button group per platform. Download a
+ *  CSV (with a Project column for per-account filtering) or copy TSV rows
+ *  straight to the clipboard for the platform's bulk importer (Google Ads
+ *  Editor "Make multiple changes" / FB bulk import). Both hit the same
+ *  /api/campaigns/budget-csv endpoint. */
+function ManagerCsvButtons({ manager }: { manager: string }) {
+  return (
+    <span className="budget-csv-actions">
+      <CsvPlatformButtons manager={manager} platform="google" label="Google" />
+      <CsvPlatformButtons manager={manager} platform="facebook" label="FB" />
+    </span>
+  );
+}
+
+function CsvPlatformButtons({
+  manager,
+  platform,
+  label,
+}: {
+  manager: string;
+  platform: "google" | "facebook";
+  label: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const base = `/api/campaigns/budget-csv?manager=${encodeURIComponent(manager)}&platform=${platform}`;
+  const importer =
+    platform === "google" ? "Google Ads Editor ← Make multiple changes" : "FB bulk import";
+  async function copy() {
+    setCopying(true);
+    try {
+      const res = await fetch(`${base}&format=tsv`);
+      const text = await res.text();
+      if (res.ok && text.trim()) {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      }
+    } catch {
+      /* best-effort */
+    } finally {
+      setCopying(false);
+    }
+  }
+  return (
+    <span className="budget-csv-group">
+      <span className="budget-csv-label">{label}</span>
+      <a
+        className="budget-csv-btn"
+        href={base}
+        download
+        title={`הורד CSV עם תקציב יומי מומלץ לכל קמפיין ${label} — ייבוא ${importer}. ייבוא חשבון אחד בכל פעם; עמודת Project לסינון.`}
+      >
+        ⬇
+      </a>
+      <button
+        type="button"
+        className="budget-csv-btn"
+        onClick={copy}
+        disabled={copying}
+        title={`העתק שורות להדבקה ישירה ב-${importer}`}
+      >
+        {copied ? "✓" : "📋"}
+      </button>
+    </span>
   );
 }
 

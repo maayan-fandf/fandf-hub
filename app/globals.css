@@ -18214,6 +18214,22 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 }
 .budget-mgr-name { font-weight: 800; color: var(--text); }
 .budget-mgr-count { color: var(--muted); font-size: .8em; font-weight: 600; }
+.budget-csv-actions {
+  margin-inline-start: auto; align-self: center;
+  display: inline-flex; gap: .7em; flex-wrap: wrap;
+}
+.budget-csv-group { display: inline-flex; align-items: center; gap: .2em; }
+.budget-csv-label { font-size: .6em; font-weight: 700; color: var(--muted); }
+.budget-csv-btn {
+  display: inline-flex; align-items: center; gap: .3em;
+  padding: .3em .7em; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--accent); font-size: .62em; font-weight: 700;
+  text-decoration: none; white-space: nowrap;
+  cursor: pointer; font-family: inherit;
+}
+.budget-csv-btn:hover { border-color: var(--accent); filter: brightness(1.1); }
+.budget-csv-btn:disabled { opacity: .6; cursor: default; }
 .budget-co-group { margin: 0 0 1em; }
 .budget-co-head {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: .5em .8em;

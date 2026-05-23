@@ -60,9 +60,14 @@ function todayIso(): string {
 }
 
 export type CampaignBudgetItem = {
+  /** Original campaign name (for CSV export → Google Ads Editor match). */
+  name: string;
   nameLower: string;
   platform: "google" | "facebook";
   dailyBudget: number;
+  /** Platform campaign ID — required for the FB bulk-import match (FB
+   *  matches by ID, not name). "" when the sheet has no ID (#N/A). */
+  campaignId: string;
 };
 export type CampaignBudgets = {
   byProject: Record<string, { google: number; facebook: number }>;
@@ -83,12 +88,24 @@ async function fetchCampaignBudgets(
   };
   const addCamp = (
     slug: string,
-    nameLower: string,
+    name: string,
     platform: "google" | "facebook",
     dailyBudget: number,
+    campaignId: string,
   ) => {
     if (!campaignsBySlug[slug]) campaignsBySlug[slug] = [];
-    campaignsBySlug[slug].push({ nameLower, platform, dailyBudget });
+    campaignsBySlug[slug].push({
+      name,
+      nameLower: name.toLowerCase(),
+      platform,
+      dailyBudget,
+      campaignId,
+    });
+  };
+  // Supermetrics writes "#N/A" when a campaign has no ID — normalize to "".
+  const cleanId = (v: unknown): string => {
+    const s = clean(v);
+    return /^#?n\/?a$/i.test(s) ? "" : s;
   };
 
   try {
@@ -99,7 +116,9 @@ async function fetchCampaignBudgets(
 
     const bg = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: ssId,
-      ranges: ["'fb-campaigns'!A1:F", "'קמפיין ID גוגל'!A1:F"],
+      // A1:Z so a newly-added "Campaign ID" column is captured wherever it
+      // landed (matched by header via findCol, not a fixed position).
+      ranges: ["'fb-campaigns'!A1:Z", "'קמפיין ID גוגל'!A1:Z"],
       valueRenderOption: "UNFORMATTED_VALUE",
       dateTimeRenderOption: "FORMATTED_STRING",
     });
@@ -112,6 +131,7 @@ async function fetchCampaignBudgets(
       const iName = findCol(hdr, ["Campaign name"]);
       const iBud = findCol(hdr, ["Campaign daily budget", "Daily budget"]);
       const iStatus = findCol(hdr, ["Campaign status", "Status"]);
+      const iId = findCol(hdr, ["Campaign ID", "Campaign id", "campaign_id"]);
       if (iName >= 0 && iBud >= 0) {
         for (let r = 1; r < fbRows.length; r++) {
           const name = clean(fbRows[r][iName]);
@@ -119,10 +139,11 @@ async function fetchCampaignBudgets(
           const status = iStatus >= 0 ? clean(fbRows[r][iStatus]).toUpperCase() : "";
           if (status && status !== "ACTIVE") continue;
           const bud = num(fbRows[r][iBud]);
+          const cid = iId >= 0 ? cleanId(fbRows[r][iId]) : "";
           const slug = matchSlug(name, matchMap);
           if (slug) {
             addProj(slug, "facebook", bud);
-            addCamp(slug, name.toLowerCase(), "facebook", bud);
+            addCamp(slug, name, "facebook", bud, cid);
           }
         }
       }
@@ -135,6 +156,7 @@ async function fetchCampaignBudgets(
       const iName = findCol(hdr, ["Campaign name"]);
       const iBud = findCol(hdr, ["Daily budget", "Campaign daily budget"]);
       const iEnd = findCol(hdr, ["End date", "End time"]);
+      const iId = findCol(hdr, ["Campaign ID", "Campaign id", "campaign_id"]);
       if (iName >= 0 && iBud >= 0) {
         for (let r = 1; r < gRows.length; r++) {
           const name = clean(gRows[r][iName]);
@@ -143,10 +165,11 @@ async function fetchCampaignBudgets(
           if (end && end >= "2037-01-01") end = "";
           if (end && end < today) continue;
           const bud = num(gRows[r][iBud]);
+          const cid = iId >= 0 ? cleanId(gRows[r][iId]) : "";
           const slug = matchSlug(name, matchMap);
           if (slug) {
             addProj(slug, "google", bud);
-            addCamp(slug, name.toLowerCase(), "google", bud);
+            addCamp(slug, name, "google", bud, cid);
           }
         }
       }
