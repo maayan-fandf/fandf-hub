@@ -239,6 +239,7 @@ export default function BudgetGrid({
                 <h3 className="budget-co-head">
                   <span className="budget-co-name">{cg.company}</span>
                   <GroupTotals projects={cg.projects} />
+                  <CompanyCsvButtons company={cg.company} />
                 </h3>
                 <ul className="budget-list">
                   {cg.projects.map((p) => (
@@ -959,28 +960,44 @@ function FilterChip({
  *  Editor "Make multiple changes" / FB bulk import). Both hit the same
  *  /api/campaigns/budget-csv endpoint. */
 function ManagerCsvButtons({ manager }: { manager: string }) {
+  const q = `manager=${encodeURIComponent(manager)}`;
   return (
     <span className="budget-csv-actions">
-      <CsvPlatformButtons manager={manager} platform="google" label="Google" />
-      <CsvPlatformButtons manager={manager} platform="facebook" label="FB" />
+      <CsvPlatformButtons params={q} platform="google" label="Google" />
+      <CsvPlatformButtons params={q} platform="facebook" label="FB" />
+    </span>
+  );
+}
+
+/** Per-company Google export (the per-חברה button on the company header). */
+function CompanyCsvButtons({ company }: { company: string }) {
+  const q = `company=${encodeURIComponent(company)}`;
+  return (
+    <span className="budget-csv-actions">
+      <CsvPlatformButtons params={q} platform="google" label="Google" />
+      <CsvPlatformButtons params={q} platform="facebook" label="FB" />
     </span>
   );
 }
 
 function CsvPlatformButtons({
-  manager,
+  params,
   platform,
   label,
 }: {
-  manager: string;
+  params: string;
   platform: "google" | "facebook";
   label: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
-  const base = `/api/campaigns/budget-csv?manager=${encodeURIComponent(manager)}&platform=${platform}`;
+  const base = `/api/campaigns/budget-csv?${params}&platform=${platform}`;
   const importer =
     platform === "google" ? "Google Ads Editor ← Make multiple changes" : "FB bulk import";
+  const importHint =
+    platform === "google"
+      ? "ריבוי חשבונות בבת אחת: בחר 'My data includes account information' (עמודת Account = Customer ID מנתבת לכל חשבון, ומעדכן קמפיינים קיימים בלבד)"
+      : "ייבוא לכל חשבון פייסבוק בנפרד (התאמה לפי Campaign ID)";
   async function copy() {
     setCopying(true);
     try {
@@ -1004,7 +1021,7 @@ function CsvPlatformButtons({
         className="budget-csv-btn"
         href={base}
         download
-        title={`הורד CSV עם תקציב יומי מומלץ לכל קמפיין ${label} — ייבוא ${importer}. ייבוא חשבון אחד בכל פעם; עמודת Project לסינון.`}
+        title={`הורד CSV — תקציב יומי מומלץ לכל קמפיין ${label} (ייבוא ${importer}). ${importHint}. עמודות עזר: Account name · חברה · פרוייקט.`}
       >
         ⬇
       </a>

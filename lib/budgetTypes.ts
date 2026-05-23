@@ -163,6 +163,14 @@ export type BudgetProject = {
   tab: string;
   name: string;
   company: string;
+  /** Google Ads Customer ID (digits) for this project's account, resolved
+   *  Keys "Google ads account" → Accounts-lookup col G. Empty if unknown.
+   *  Used as the `Account` column for Editor's multi-account import. */
+  gAdsAccountId?: string;
+  /** Readable ad-account names from Keys — surfaced as an "Account name"
+   *  helper column in the budget export (sorting / sanity-check). */
+  gAdsAcctName?: string;
+  fbAcctName?: string;
   /** Canonical campaign-manager label(s) from Keys (מנהל קמפיינים).
    *  Co-managed projects list more than one. Empty = unassigned. */
   managers: string[];

@@ -4,6 +4,7 @@ import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { getCampaignBudgets } from "@/lib/platformDailyBudget";
 import { getDailySpend7d } from "@/lib/platformDailySpend";
+import { getGoogleAccountIds, normalizeAdAccountName } from "@/lib/adAccounts";
 import { getMediaPlan } from "@/lib/mediaPlan";
 import {
   canonicalManagers,
@@ -140,7 +141,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
 
   // Keys enrichment + actual daily budgets (creatives sheet) + media
   // plan (פריסה נוכחית) — all cached, fetched in parallel.
-  const [keyInfo, budgets, mediaPlan, spend7d] = await Promise.all([
+  const [keyInfo, budgets, mediaPlan, spend7d, googleAcctIds] = await Promise.all([
     buildKeyInfo(subjectEmail),
     getCampaignBudgets(subjectEmail).catch(() => ({
       byProject: {} as Record<string, { google: number; facebook: number }>,
@@ -153,6 +154,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     getDailySpend7d(subjectEmail).catch(
       () => ({}) as Record<string, Record<"google" | "facebook" | "taboola" | "outbrain", number>>,
     ),
+    getGoogleAccountIds(subjectEmail).catch(() => ({}) as Record<string, string>),
   ]);
 
   // One batchGet for every tab's top region (E3 + the activity table).
@@ -342,10 +344,16 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
             : "under";
 
     const info = keyInfo.get(tab.toLowerCase());
+    const gAdsAccountId = info?.gAdsAcctName
+      ? googleAcctIds[normalizeAdAccountName(info.gAdsAcctName)] || ""
+      : "";
     projects.push({
       tab,
       name: info?.name || tab,
       company: info?.company || "",
+      gAdsAccountId,
+      gAdsAcctName: info?.gAdsAcctName || "",
+      fbAcctName: info?.fbAcctName || "",
       managers: info?.managers || [],
       e3,
       startIso,
@@ -391,11 +399,26 @@ function emptyPlatforms(): Record<Platform, PlatformAgg> {
 async function buildKeyInfo(
   subjectEmail: string,
 ): Promise<
-  Map<string, { name: string; company: string; managers: string[] }>
+  Map<
+    string,
+    {
+      name: string;
+      company: string;
+      managers: string[];
+      gAdsAcctName: string;
+      fbAcctName: string;
+    }
+  >
 > {
   const out = new Map<
     string,
-    { name: string; company: string; managers: string[] }
+    {
+      name: string;
+      company: string;
+      managers: string[];
+      gAdsAcctName: string;
+      fbAcctName: string;
+    }
   >();
   try {
     const { headers, rows } = await readKeysCached(subjectEmail);
@@ -403,6 +426,8 @@ async function buildKeyInfo(
     const iCompany = headers.indexOf("חברה");
     const iName = headers.findIndex((h) => /^(פרוייקט|פרויקט|project)$/i.test(h));
     const iMgr = headers.indexOf("מנהל קמפיינים");
+    const iGAds = headers.findIndex((h) => /google\s*ads\s*account/i.test(h));
+    const iFb = headers.findIndex((h) => /facebook\s*account/i.test(h));
     for (const row of rows) {
       const slug = clean(iSlug >= 0 ? row[iSlug] : row[5]);
       if (!slug) continue;
@@ -410,6 +435,8 @@ async function buildKeyInfo(
         name: clean(iName >= 0 ? row[iName] : row[0]) || slug,
         company: clean(iCompany >= 0 ? row[iCompany] : row[1]),
         managers: canonicalManagers(clean(iMgr >= 0 ? row[iMgr] : "")),
+        gAdsAcctName: clean(iGAds >= 0 ? row[iGAds] : ""),
+        fbAcctName: clean(iFb >= 0 ? row[iFb] : ""),
       });
     }
   } catch {

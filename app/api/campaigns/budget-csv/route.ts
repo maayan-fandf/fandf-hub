@@ -43,6 +43,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const manager = String(url.searchParams.get("manager") || "").trim();
+  const company = String(url.searchParams.get("company") || "").trim();
   const platform = String(url.searchParams.get("platform") || "google").toLowerCase();
   // csv = downloadable file (incl. Project column for per-account filtering);
   // tsv = plain text for one-click "copy → paste into Make multiple changes".
@@ -62,6 +63,10 @@ export async function GET(req: Request) {
   ]);
 
   const projects = master.projects.filter((p) => {
+    // Company filter (the per-חברה button) takes precedence when present.
+    if (company) {
+      return company === "ללא חברה" ? !p.company : p.company === company;
+    }
     if (!manager) return true;
     if (manager === UNASSIGNED_MANAGER) return p.managers.length === 0;
     return p.managers.includes(manager);
@@ -69,6 +74,9 @@ export async function GET(req: Request) {
 
   type OutRow = {
     project: string;
+    company: string;
+    accountId: string;
+    accountName: string;
     campaign: string;
     budget: number;
     campaignId: string;
@@ -105,6 +113,9 @@ export async function GET(req: Request) {
             : target / matched.length;
         out.push({
           project: p.name,
+          company: p.company || "",
+          accountId: p.gAdsAccountId || "",
+          accountName: (isFb ? p.fbAcctName : p.gAdsAcctName) || "",
           campaign: c.name,
           budget: Math.max(1, rec),
           campaignId: c.campaignId,
@@ -124,19 +135,23 @@ export async function GET(req: Request) {
   const fmtBudget = (n: number) =>
     isFb ? (Math.round(n * 100) / 100).toFixed(2) : String(Math.round(n));
 
-  // Column layout matches each platform's bulk importer exactly.
-  const cols = isFb
-    ? { header: ["Campaign name", "Campaign Daily Budget", "Campaign ID"], proj: true }
-    : { header: ["Campaign", "Budget", "Budget type"], proj: true };
+  // Column layout. The importer columns come first (Google Ads Editor / FB
+  // bulk read these), then helper columns: Account name + חברה + פרוייקט for
+  // sorting. For Google the `Account` = Customer ID so Editor's multi-account
+  // import ("My data includes account information") routes each row to its
+  // account; FB bulk is single-account, so it gets no Account/CID column.
+  const header = isFb
+    ? ["Campaign name", "Campaign Daily Budget", "Campaign ID", "Account name", "חברה", "פרוייקט"]
+    : ["Account", "Campaign", "Budget", "Budget type", "Account name", "חברה", "פרוייקט"];
   const rowVals = (o: OutRow): string[] =>
     isFb
-      ? [o.campaign, fmtBudget(o.budget), o.campaignId]
-      : [o.campaign, fmtBudget(o.budget), "Daily"];
+      ? [o.campaign, fmtBudget(o.budget), o.campaignId, o.accountName, o.company, o.project]
+      : [o.accountId, o.campaign, fmtBudget(o.budget), "Daily", o.accountName, o.company, o.project];
 
-  // TSV (copy-to-clipboard): just the importer columns, tab-separated, so it
-  // pastes clean into Editor "Make multiple changes" / FB bulk import.
+  // TSV (copy-to-clipboard) → paste into Editor "Make multiple changes"
+  // (Google, with the Account/CID column) / FB bulk import.
   if (format === "tsv") {
-    const tlines = [cols.header.join("\t")];
+    const tlines = [header.join("\t")];
     for (const o of out) tlines.push(rowVals(o).join("\t"));
     return new NextResponse(tlines.join("\n") + "\n", {
       status: 200,
@@ -147,23 +162,20 @@ export async function GET(req: Request) {
     });
   }
 
-  // CSV (download): importer columns + a Project reference column for
-  // per-account filtering.
-  const header = [...cols.header, "Project"];
-  const lines = [header.join(",")];
+  // CSV (download) — same columns; lead with a UTF-8 BOM so Excel renders
+  // the Hebrew Project/חברה columns correctly instead of mojibake.
+  const lines = [header.map(csvField).join(",")];
   for (const o of out) {
-    lines.push([...rowVals(o), o.project].map(csvField).join(","));
+    lines.push(rowVals(o).map(csvField).join(","));
   }
-  // Lead with a UTF-8 BOM so Excel renders the Hebrew Project column
-  // correctly instead of mojibake. (The 📋 copy/TSV path stays BOM-free —
-  // it's pasted straight into the importer, no Project column.)
   const csv = "﻿" + lines.join("\r\n") + "\r\n";
 
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
-  const safeMgr = (manager || "all").replace(/[^a-z0-9_-]+/gi, "-") || "all";
-  const filename = `${platform}-budgets-${safeMgr}-${today}.csv`;
+  const scope = company || manager || "all";
+  const safeScope = scope.replace(/[^a-z0-9_-]+/gi, "-") || "all";
+  const filename = `${platform}-budgets-${safeScope}-${today}.csv`;
 
   return new NextResponse(csv, {
     status: 200,
