@@ -18225,3 +18225,38 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-plan-kpi { display: flex; flex-direction: column; gap: .1em; }
 .budget-plan-kpi-label { color: var(--muted); font-size: .75em; }
 .budget-plan-kpi-val { font-weight: 700; font-size: .95em; }
+
+/* פריסה מאושרת modal */
+.prisa-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(2, 6, 23, .6);
+  display: flex; align-items: center; justify-content: center;
+  padding: 2vh 2vw;
+}
+.prisa-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  max-width: 94vw; max-height: 92vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
+}
+.prisa-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1em; padding: .8em 1em;
+  border-bottom: 1px solid var(--border);
+}
+.prisa-modal-title { font-weight: 800; }
+.prisa-modal-actions { display: flex; gap: .4em; align-items: center; }
+.prisa-modal-body {
+  padding: 1em; overflow: auto; min-width: min(60vw, 520px); min-height: 120px;
+}
+.prisa-state { color: var(--muted); padding: 2em; text-align: center; }
+.prisa-error { color: var(--danger, #ef4444); }
+.prisa-filemeta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5em;
+  margin-bottom: .75em;
+}
+.prisa-filename { font-weight: 600; color: var(--muted); }
+.prisa-thumb-wrap { display: flex; justify-content: center; }
+.prisa-thumb-wrap img { max-width: 100%; height: auto; border-radius: 8px; }

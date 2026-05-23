@@ -2,10 +2,9 @@ import Link from "next/link";
 import {
   pickLatestPrisotForCompanyOrProject,
   readPrisotData,
-  type PrisotCellFormat,
-  type PrisotData,
 } from "@/lib/driveFolders";
 import PrisotThumb from "./PrisotThumb";
+import PrisotDataTable from "./PrisotDataTable";
 import SendForApprovalButton from "./SendForApprovalButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
 import { personDisplayName } from "@/lib/personDisplay";
@@ -287,102 +286,6 @@ export default async function LatestPrisotCard({
       </Link>
     </section>
   );
-}
-
-/**
- * Renders the parsed sheet data as an HTML table that visually
- * approximates the Google Sheets view: per-cell background + foreground
- * colors, bold/italic/underline, alignment, merged cells via
- * rowSpan/colSpan, column widths from `<col>`, and a sticky-header
- * treatment for the frozen rows from gridProperties.
- *
- * Cell-level formatting that matches Sheets defaults (white background,
- * black foreground) is intentionally elided — the readPrisotData layer
- * does that filtering — so the table inherits the hub's themed
- * background + ink colors. This keeps the card legible in dark mode
- * while still surfacing meaningful color choices the spreadsheet
- * author made (header bands, status pills, highlighted totals, …).
- */
-function PrisotDataTable({ data }: { data: PrisotData }) {
-  // Build the "skip this cell because it's covered by a merge" map
-  // and the "this cell is the merge anchor" span map. Indices are
-  // post-trim row/col positions.
-  const occupied = new Set<string>();
-  const spanByAnchor = new Map<string, { rowSpan: number; colSpan: number }>();
-  for (const m of data.merges) {
-    spanByAnchor.set(`${m.r1},${m.c1}`, {
-      rowSpan: m.r2 - m.r1,
-      colSpan: m.c2 - m.c1,
-    });
-    for (let r = m.r1; r < m.r2; r++) {
-      for (let c = m.c1; c < m.c2; c++) {
-        if (r === m.r1 && c === m.c1) continue;
-        occupied.add(`${r},${c}`);
-      }
-    }
-  }
-
-  const colCount = data.rows[0]?.length ?? 0;
-
-  return (
-    <div className="prisot-data" dir="rtl">
-      <table className="prisot-data-table">
-        {data.colWidths.length > 0 && (
-          <colgroup>
-            {data.colWidths.slice(0, colCount).map((w, i) => (
-              <col key={i} style={{ width: `${Math.max(40, w)}px` }} />
-            ))}
-          </colgroup>
-        )}
-        <tbody>
-          {data.rows.map((row, ri) => {
-            const isFrozen = ri < data.frozenRows;
-            return (
-              <tr
-                key={ri}
-                className={isFrozen ? "prisot-data-header" : undefined}
-              >
-                {row.map((cell, ci) => {
-                  if (occupied.has(`${ri},${ci}`)) return null;
-                  const span = spanByAnchor.get(`${ri},${ci}`);
-                  const fmt = data.formats[ri]?.[ci] ?? null;
-                  return (
-                    <td
-                      key={ci}
-                      rowSpan={span?.rowSpan}
-                      colSpan={span?.colSpan}
-                      style={cellStyle(fmt)}
-                    >
-                      {cell}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** Builds the React inline-style object for a single cell. Returns
- *  undefined when the cell has no overrides — keeps the DOM lean. */
-function cellStyle(fmt: PrisotCellFormat | null): React.CSSProperties | undefined {
-  if (!fmt) return undefined;
-  const s: React.CSSProperties = {};
-  if (fmt.bg) s.backgroundColor = fmt.bg;
-  if (fmt.fg) s.color = fmt.fg;
-  if (fmt.bold) s.fontWeight = 700;
-  if (fmt.italic) s.fontStyle = "italic";
-  if (fmt.underline) s.textDecoration = "underline";
-  if (fmt.fontSize) s.fontSize = `${fmt.fontSize}pt`;
-  if (fmt.align) s.textAlign = fmt.align;
-  if (fmt.wrap) {
-    s.whiteSpace = "normal";
-    s.wordBreak = "break-word";
-  }
-  return Object.keys(s).length === 0 ? undefined : s;
 }
 
 /**

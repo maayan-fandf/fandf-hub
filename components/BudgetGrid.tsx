@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import CopyAmountButton from "./CopyAmountButton";
+import PrisaButton from "./PrisaButton";
 import {
   E3_PLATFORMS,
   MANAGER_ORDER,
@@ -351,9 +352,10 @@ function ProjectRow({
                 onClick={() => setShowPlan((s) => !s)}
                 aria-pressed={showPlan}
               >
-                📐 {showPlan ? "הסתר פריסה" : "הראה פריסה"}
+                📊 {showPlan ? "הסתר פריסה" : "הראה פריסה"}
               </button>
             )}
+            {p.company && <PrisaButton company={p.company} project={p.name} />}
           </div>
 
           {showPlan && p.plan && <MediaPlanPanel plan={p.plan} />}
