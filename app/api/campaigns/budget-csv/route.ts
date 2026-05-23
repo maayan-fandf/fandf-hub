@@ -154,7 +154,10 @@ export async function GET(req: Request) {
   for (const o of out) {
     lines.push([...rowVals(o), o.project].map(csvField).join(","));
   }
-  const csv = lines.join("\r\n") + "\r\n";
+  // Lead with a UTF-8 BOM so Excel renders the Hebrew Project column
+  // correctly instead of mojibake. (The 📋 copy/TSV path stays BOM-free —
+  // it's pasted straight into the importer, no Project column.)
+  const csv = "﻿" + lines.join("\r\n") + "\r\n";
 
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
