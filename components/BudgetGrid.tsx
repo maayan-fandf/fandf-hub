@@ -347,7 +347,18 @@ function ProjectRow({
       >
         <span className={`budget-caret ${open ? "open" : ""}`}>▸</span>
         <span className="budget-proj">
-          <span className="budget-proj-name">{p.name}</span>
+          <span className="budget-proj-name">
+            {hasChannelAlert(p) && (
+              <span
+                className="budget-alert"
+                title="יש ערוץ אחד או יותר שהתקציב היומי בו לא תואם את הנדרש — נדרש עדכון"
+                aria-label="נדרש עדכון תקציב באחד הערוצים"
+              >
+                ⚠️
+              </span>
+            )}
+            {p.name}
+          </span>
           {p.company && <span className="budget-proj-co">{p.company}</span>}
           <span className="budget-days">
             {p.remainingDays > 0 ? `עוד ${p.remainingDays} ימים` : "הסתיים"}
@@ -553,14 +564,17 @@ function PlatformDrillGroups({
                   amount={String(reqVal)}
                   variant="ghost"
                   url={showAdLinks ? url : undefined}
-                  // Facebook's deep-link opens already filtered to the
-                  // campaign, so copy ONLY the budget number. Google opens
-                  // the whole account → keep the id (paste into the search
-                  // filter first, budget from clipboard history).
+                  // When opening the account, DON'T clobber the clipboard
+                  // with the required number. Facebook just opens (its
+                  // deep-link is already campaign-scoped); Google keeps the
+                  // slug on the clipboard to paste into the campaign-name
+                  // filter. The number is still shown on the button as info.
+                  // No-url fallback stays a plain "copy the number" button.
                   copyId={g.platform === "facebook" ? undefined : p.tab}
+                  copyAmount={!(showAdLinks && url)}
                   label={
                     showAdLinks && url
-                      ? `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
+                      ? `⧉ פתח · נדרש ${cur}${reqVal}/יום`
                       : `📋 נדרש ${cur}${reqVal}/יום`
                   }
                 />
@@ -788,7 +802,11 @@ function CampaignRow({
   const dailyReq = Math.max(0, Math.round(r.dailyRequired));
   // Action is needed only when the configured daily is materially off the
   // required daily — not merely because the historical קצב deviates.
+  // "Other" channels live outside the programmatic (E3) budget, so the
+  // budget-action ⚠️ never applies to them.
+  const isProgrammatic = r.platform !== "other";
   const needsAction =
+    isProgrammatic &&
     !r.ended &&
     needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio);
   // Arrow direction: by the configured-vs-required gap when we know the
@@ -1243,6 +1261,24 @@ function hasPacingIssue(p: BudgetProject): boolean {
     if (a.budget <= 0) return false;
     return needsBudgetAction(a.actualDaily, a.dailyRequired, a.pacingRatio);
   });
+}
+
+/**
+ * Whether any individual PROGRAMMATIC channel row carries the per-row ⚠️
+ * (configured daily materially off the required daily). Mirrors the
+ * CampaignRow `needsAction` check so the project header flags attention the
+ * moment any single channel does — even when channels within a platform net
+ * out and the platform-aggregate pacing wouldn't trip. "Other" (non-
+ * programmatic) channels are excluded by design: they're outside the E3
+ * budget, so they never raise a budget-action alert.
+ */
+function hasChannelAlert(p: BudgetProject): boolean {
+  return p.rows.some(
+    (r) =>
+      r.platform !== "other" &&
+      !r.ended &&
+      needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio),
+  );
 }
 
 function needsAttention(p: BudgetProject): boolean {

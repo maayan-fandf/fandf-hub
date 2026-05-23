@@ -11,6 +11,7 @@ export default function CopyAmountButton({
   url,
   variant = "primary",
   copyId,
+  copyAmount = true,
 }: {
   amount: string;
   label?: string;
@@ -22,6 +23,11 @@ export default function CopyAmountButton({
    *  platform's campaign filter first, then grab the budget from
    *  clipboard history for the budget field). */
   copyId?: string;
+  /** When false, the `amount` is NOT written to the clipboard — used by
+   *  the "open the account" buttons, which shouldn't clobber the clipboard
+   *  with the budget number (a `copyId` slug, if given, is still copied so
+   *  the platform's campaign filter can be pasted). Defaults to true. */
+  copyAmount?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const className =
@@ -66,22 +72,32 @@ export default function CopyAmountButton({
             /* best-effort */
           }
         };
-        if (copyId) {
+        if (copyAmount && copyId) {
           // budget first, gap, then id last (id = current clipboard).
           await copyOne(amount);
           await new Promise((r) => setTimeout(r, 300));
           await copyOne(copyId);
-        } else {
+        } else if (copyAmount) {
           await copyOne(amount);
+        } else if (copyId) {
+          await copyOne(copyId);
         }
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1600);
+        // Only flash "copied" when something actually went to the clipboard
+        // (an open-only button with copyAmount=false and no copyId doesn't).
+        if (copyAmount || copyId) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        }
         if (url) window.open(url, "_blank", "noopener");
       }}
       title={
-        url
-          ? "מעתיק את הסכום ופותח את הפלטפורמה"
-          : "מעתיק את הסכום ללוח"
+        !copyAmount
+          ? copyId
+            ? "פותח את הפלטפורמה ומעתיק את מזהה הקמפיין לסינון"
+            : "פותח את הפלטפורמה"
+          : url
+            ? "מעתיק את הסכום ופותח את הפלטפורמה"
+            : "מעתיק את הסכום ללוח"
       }
     >
       {copied ? "✓ הועתק" : label ?? `📋 העתק ₪${amount}`}
