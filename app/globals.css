@@ -18065,9 +18065,9 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 
 .budget-summary {
   display: grid;
-  grid-template-columns: 1.2em minmax(150px, 1.3fr) minmax(180px, 1fr) minmax(180px, 1.2fr) minmax(250px, 1.8fr);
+  grid-template-columns: 1.2em minmax(150px, 1.3fr) minmax(150px, 0.85fr) minmax(190px, 1.3fr) minmax(240px, 1.55fr);
   align-items: center;
-  gap: .75em;
+  gap: 1.1em;
   width: 100%;
   padding: .8em 1em;
   background: none; border: none; cursor: pointer;
@@ -18090,6 +18090,9 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-progress {
   display: flex; flex-direction: column; gap: .45em;
   min-width: 0; font-size: .76em;
+  /* breathing room from the platform-cell column (its inline-end neighbour
+     in this RTL grid) so the bars don't crowd the platform cards */
+  margin-inline-end: 1.25em;
 }
 .budget-progress-row { display: flex; flex-direction: column; gap: .2em; min-width: 0; }
 .bp-head { display: flex; align-items: baseline; gap: .45em; white-space: nowrap; min-width: 0; }
