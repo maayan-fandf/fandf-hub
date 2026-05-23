@@ -18171,6 +18171,17 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-err { margin-inline-start: .35em; cursor: help; }
 
 .budget-daily { display: inline-flex; align-items: center; gap: .35em; }
+/* נדרש ליום — project-page-style colored pill + action arrow
+   (⬇ lower when over-pacing, ⬆ raise when under-pacing). */
+.budget-need {
+  display: inline-flex; align-items: center; gap: .15em;
+  padding: .1em .45em; border-radius: 6px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.budget-need.pace-over  { background: rgba(239,68,68,.18);  color: #fca5a5; }
+.budget-need.pace-under { background: rgba(245,158,11,.18); color: #fcd34d; }
+.budget-need.pace-ok    { background: rgba(34,197,94,.15);  color: #86efac; }
+.budget-need.pace-none  { color: var(--text); }
 
 .pace-val { font-weight: 700; }
 .pace-val.pace-under { color: #f59e0b; }

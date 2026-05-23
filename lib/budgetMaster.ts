@@ -256,10 +256,23 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         // ...discovery). Only Google/Facebook are tracked in creatives.
         let actualDaily = 0;
         if ((platform === "google" || platform === "facebook") && campaignType) {
-          const token = campaignType.toLowerCase();
-          for (const c of projCampaigns) {
-            if (c.platform === platform && c.nameLower.includes(token)) {
-              actualDaily += c.dailyBudget;
+          // Match by ALL tokens of the סוג cell (split on non-alphanumerics)
+          // so separators like the "*" in "israel*fb" don't break the match
+          // against the campaign name "..._israel_..._fb". A "GS" row →
+          // ["gs"] still sums all *_GS campaigns; "israel*fb" → ["israel",
+          // "fb"] matches only the israel FB campaign.
+          const tokens = campaignType
+            .toLowerCase()
+            .split(/[^a-z0-9֐-׿]+/)
+            .filter((t) => t.length >= 2);
+          if (tokens.length) {
+            for (const c of projCampaigns) {
+              if (
+                c.platform === platform &&
+                tokens.every((t) => c.nameLower.includes(t))
+              ) {
+                actualDaily += c.dailyBudget;
+              }
             }
           }
         }

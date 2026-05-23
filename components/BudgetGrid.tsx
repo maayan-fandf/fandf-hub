@@ -532,7 +532,7 @@ function PlatformDrillGroups({
                   amount={String(reqVal)}
                   variant="ghost"
                   url={showAdLinks ? url : undefined}
-                  copyFirst={p.tab}
+                  copyId={p.tab}
                   label={
                     showAdLinks && url
                       ? `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
@@ -805,8 +805,18 @@ function CampaignRow({
           "—"
         ) : (
           <span className="budget-daily">
-            ₪{dailyReq.toLocaleString("he-IL")}
-            <CopyAmountButton amount={String(dailyReq)} variant="ghost" label="📋" />
+            {/* Project-page design: color + action arrow (⬇ lower when
+                over-pacing, ⬆ raise when under-pacing). */}
+            <span className={`budget-need pace-${tone}`}>
+              ₪{dailyReq.toLocaleString("he-IL")}
+              {tone === "over" ? " ⬇" : tone === "under" ? " ⬆" : ""}
+            </span>
+            <CopyAmountButton
+              amount={String(dailyReq)}
+              variant="ghost"
+              label="📋"
+              copyId={tab}
+            />
           </span>
         )}
       </td>

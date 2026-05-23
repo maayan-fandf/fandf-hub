@@ -10,17 +10,18 @@ export default function CopyAmountButton({
   label,
   url,
   variant = "primary",
-  copyFirst,
+  copyId,
 }: {
   amount: string;
   label?: string;
   url?: string;
   variant?: "primary" | "ghost";
-  /** When set, this value is copied to the clipboard BEFORE `amount`, so
-   *  the OS/Chrome clipboard history holds both (e.g. the campaign id to
-   *  paste into the platform's campaign filter, then the daily budget to
-   *  paste into the budget field). The clipboard ends on `amount`. */
-  copyFirst?: string;
+  /** Campaign id (slug). When set, the clipboard ends up with TWO
+   *  history items: the budget (written first) and the id (written
+   *  LAST, so the id is the CURRENT clipboard — paste it into the
+   *  platform's campaign filter first, then grab the budget from
+   *  clipboard history for the budget field). */
+  copyId?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const className =
@@ -30,18 +31,17 @@ export default function CopyAmountButton({
       type="button"
       className={className}
       onClick={async () => {
-        // Copy the slug and the budget as TWO SEPARATE clipboard entries
-        // so the OS/Chrome clipboard history shows each on its own — paste
-        // the campaign id into the platform's campaign filter, then the
-        // daily budget into the budget field.
+        // Two SEPARATE clipboard-history items: the budget first, then the
+        // campaign id LAST so the id is the CURRENT clipboard (paste into
+        // the platform's campaign filter first; the budget stays in
+        // clipboard history for the budget field).
         //
-        // Use the async Clipboard API (reliable on the desk; execCommand
-        // is limited to a single copy per gesture, which is why two
-        // execCommand calls copied nothing). A real gap between the two
-        // writes lets the clipboard history register the id as its own
-        // item before the budget overwrites the current value. The URL is
-        // opened LAST (still within the gesture's activation window) so
-        // focus isn't stolen before the second write.
+        // Async Clipboard API (reliable on the desk; execCommand is
+        // limited to one copy per gesture, which is why two execCommand
+        // calls copied nothing). A real gap between the writes lets the OS
+        // clipboard history register the budget as its own item before the
+        // id overwrites the live clipboard. The URL opens LAST (still
+        // within the gesture's activation window) so focus isn't stolen.
         const copyOne = async (val: string): Promise<void> => {
           try {
             if (navigator.clipboard?.writeText) {
@@ -66,13 +66,14 @@ export default function CopyAmountButton({
             /* best-effort */
           }
         };
-        if (copyFirst) {
-          await copyOne(copyFirst);
-          // Give the clipboard history time to record the id as a distinct
-          // entry before the budget overwrites the live clipboard.
+        if (copyId) {
+          // budget first, gap, then id last (id = current clipboard).
+          await copyOne(amount);
           await new Promise((r) => setTimeout(r, 300));
+          await copyOne(copyId);
+        } else {
+          await copyOne(amount);
         }
-        await copyOne(amount);
         setCopied(true);
         setTimeout(() => setCopied(false), 1600);
         if (url) window.open(url, "_blank", "noopener");
