@@ -70,7 +70,11 @@ export const FS_COLLECTIONS = {
   pricingLog: "pricingLog",
   /** Morning-alert dismissals (team-wide). doc id = base64url(signal_key)
    *  so there's exactly one doc per signal_key (latest write wins).
-   *  Migrated off the Apps Script report's "Alert Dismissals" sheet. */
+   *  Migrated off the Apps Script report's "Alert Dismissals" sheet.
+   *  Also holds the budget-desk "טיפלתי" snoozes (signal_key prefixed
+   *  `budget:`), with the actual-daily baseline encoded in `reason` so a
+   *  snooze self-resurfaces next day if the platform budget didn't
+   *  actually change after Supermetrics ran overnight. */
   alertDismissals: "alertDismissals",
 } as const;
 

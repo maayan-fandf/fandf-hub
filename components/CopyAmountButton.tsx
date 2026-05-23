@@ -10,11 +10,17 @@ export default function CopyAmountButton({
   label,
   url,
   variant = "primary",
+  copyFirst,
 }: {
   amount: string;
   label?: string;
   url?: string;
   variant?: "primary" | "ghost";
+  /** When set, this value is copied to the clipboard BEFORE `amount`, so
+   *  the OS/Chrome clipboard history holds both (e.g. the campaign id to
+   *  paste into the platform's campaign filter, then the daily budget to
+   *  paste into the budget field). The clipboard ends on `amount`. */
+  copyFirst?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const className =
@@ -23,10 +29,14 @@ export default function CopyAmountButton({
     <button
       type="button"
       className={className}
-      onClick={() => {
+      onClick={async () => {
         try {
           if (navigator.clipboard?.writeText) {
-            navigator.clipboard.writeText(amount);
+            // Sequential awaited writes so BOTH land in clipboard history
+            // (Win+V / Chrome clipboard), with `amount` as the current
+            // clipboard value.
+            if (copyFirst) await navigator.clipboard.writeText(copyFirst);
+            await navigator.clipboard.writeText(amount);
           } else {
             const ta = document.createElement("textarea");
             ta.value = amount;

@@ -81,11 +81,24 @@ export type BudgetRow = {
   budget: number;
   /** עלות (col H) — spend so far this window. */
   spend: number;
-  /** spend ÷ expected-spend-by-today (>1 over-pace, <1 under-pace). */
+  /** spend ÷ expected-spend-by-today (>1 over-pace, <1 under-pace).
+   *  Uses THIS channel's own flight window (col B/C), not the project
+   *  envelope — channels can have irregular dates. */
   pacingRatio: number;
-  /** (budget − spend) ÷ days-remaining — the daily budget to set so the
-   *  allocation spends out exactly by the end date. */
+  /** (budget − spend) ÷ days-remaining-for-this-channel — the daily
+   *  budget to set so the allocation spends out exactly by the channel's
+   *  own end date. */
   dailyRequired: number;
+  /** This channel's own end date (col C / סיום), ISO. May differ from
+   *  the project envelope. */
+  endIso: string;
+  /** True when this channel's flight has already ended (endIso < today).
+   *  Ended channels don't raise pacing alerts. */
+  ended: boolean;
+  /** Actual daily budget currently set in the platform for THIS campaign
+   *  (matched by the campaign-name cell against the creatives sheet).
+   *  0 when the row isn't a single named campaign or has no match. */
+  actualDaily: number;
 };
 
 export type PlatformAgg = {

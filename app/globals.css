@@ -18125,12 +18125,29 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   padding: .25em .5em; border-bottom: 1px solid var(--border); font-size: .9em;
 }
 .budget-rows td { padding: .3em .5em; border-bottom: 1px solid var(--border); }
-.budget-rows th:nth-child(1), .budget-rows td:nth-child(1) { width: 26%; }
-.budget-rows th:nth-child(2), .budget-rows td:nth-child(2) { width: 10%; }
-.budget-rows th:nth-child(3), .budget-rows td:nth-child(3) { width: 20%; }
-.budget-rows th:nth-child(4), .budget-rows td:nth-child(4) { width: 14%; }
-.budget-rows th:nth-child(5), .budget-rows td:nth-child(5) { width: 9%; }
-.budget-rows th:nth-child(6), .budget-rows td:nth-child(6) { width: 21%; }
+.budget-rows th:nth-child(1), .budget-rows td:nth-child(1) { width: 11%; }
+.budget-rows th:nth-child(2), .budget-rows td:nth-child(2) { width: 19%; }
+.budget-rows th:nth-child(3), .budget-rows td:nth-child(3) { width: 13%; }
+.budget-rows th:nth-child(4), .budget-rows td:nth-child(4) { width: 10%; }
+.budget-rows th:nth-child(5), .budget-rows td:nth-child(5) { width: 8%; }
+.budget-rows th:nth-child(6), .budget-rows td:nth-child(6) { width: 11%; }
+.budget-rows th:nth-child(7), .budget-rows td:nth-child(7) { width: 14%; }
+.budget-rows th:nth-child(8), .budget-rows td:nth-child(8) { width: 14%; }
+.budget-rows .c-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.budget-rows .c-actualdaily { color: var(--text); }
+
+/* "טיפלתי" snooze + faded row */
+.budget-rows tr.is-dismissed { opacity: .42; }
+.budget-rows tr.is-dismissed:hover { opacity: .72; }
+.budget-handled-btn {
+  display: inline-flex; align-items: center; gap: .25em;
+  padding: .25em .6em; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font-size: .78em; font-weight: 600;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.budget-handled-btn:hover { border-color: #22c55e; color: #22c55e; }
+.budget-handled-btn.is-done:hover { border-color: var(--accent); color: var(--accent); }
 .budget-rows tr.row-error td { background: rgba(239,68,68,.08); }
 .budget-rows .c-channel { max-width: 18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .budget-rows .c-type { color: var(--muted); }

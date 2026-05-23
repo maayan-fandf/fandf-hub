@@ -34,17 +34,32 @@ type ProjLinks = {
   projectHref?: string;
 };
 
+export type BudgetDismissal = {
+  snooze_until: string;
+  dismissed_at: string;
+  reason: string;
+};
+
 export default function BudgetGrid({
   projects: initial,
   adLinks,
   showAdLinks,
   canEdit,
+  dismissals,
+  today,
+  usdIlsRate,
 }: {
   projects: BudgetProject[];
   /** keyed by tab name (lowercased). */
   adLinks: Record<string, ProjLinks>;
   showAdLinks: boolean;
   canEdit: boolean;
+  /** "טיפלתי" snoozes keyed by signal_key (`budget:slug:channel:type`). */
+  dismissals: Record<string, BudgetDismissal>;
+  /** Today (Asia/Jerusalem) YYYY-MM-DD, for snooze/resurface evaluation. */
+  today: string;
+  /** USD→ILS rate; Taboola/Outbrain required budgets copy in USD. */
+  usdIlsRate: number;
 }) {
   const [projects, setProjects] = useState<BudgetProject[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -224,6 +239,9 @@ export default function BudgetGrid({
                       showAdLinks={showAdLinks}
                       canEdit={canEdit}
                       onEdit={applyEdit}
+                      dismissals={dismissals}
+                      today={today}
+                      usdIlsRate={usdIlsRate}
                     />
                   ))}
                 </ul>
@@ -280,6 +298,9 @@ function ProjectRow({
   showAdLinks,
   canEdit,
   onEdit,
+  dismissals,
+  today,
+  usdIlsRate,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -288,6 +309,9 @@ function ProjectRow({
   showAdLinks: boolean;
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
+  dismissals: Record<string, BudgetDismissal>;
+  today: string;
+  usdIlsRate: number;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
@@ -366,6 +390,9 @@ function ProjectRow({
             showAdLinks={showAdLinks}
             canEdit={canEdit}
             onEdit={onEdit}
+            dismissals={dismissals}
+            today={today}
+            usdIlsRate={usdIlsRate}
           />
         </div>
       )}
@@ -412,12 +439,18 @@ function PlatformDrillGroups({
   showAdLinks,
   canEdit,
   onEdit,
+  dismissals,
+  today,
+  usdIlsRate,
 }: {
   p: BudgetProject;
   ad: ProjLinks;
   showAdLinks: boolean;
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
+  dismissals: Record<string, BudgetDismissal>;
+  today: string;
+  usdIlsRate: number;
 }) {
   const groups: { platform: Platform | "other"; label: string; agg: PlatformAgg }[] =
     [
@@ -441,6 +474,14 @@ function PlatformDrillGroups({
               ? ad.fbAdsUrl
               : undefined;
         const isPaid = g.platform !== "other";
+        // Taboola/Outbrain are set in the platform in USD, so the
+        // required-budget copy is converted from the ILS-tracked figure.
+        const isUsd = g.platform === "taboola" || g.platform === "outbrain";
+        const reqIls = Math.max(0, g.agg.dailyRequired);
+        const reqVal = isUsd
+          ? Math.max(0, Math.round(reqIls / (usdIlsRate || 3.7)))
+          : Math.max(0, Math.round(reqIls));
+        const cur = isUsd ? "$" : "₪";
         return (
           <div key={g.platform} className="budget-group">
             <div className="budget-group-head">
@@ -459,15 +500,16 @@ function PlatformDrillGroups({
                   )}
                 </span>
               )}
-              {isPaid && p.remainingDays > 0 && g.agg.budget > 0 && (
+              {isPaid && g.agg.dailyRequired > 0 && (
                 <CopyAmountButton
-                  amount={String(Math.max(0, Math.round(g.agg.dailyRequired)))}
+                  amount={String(reqVal)}
                   variant="ghost"
                   url={showAdLinks ? url : undefined}
+                  copyFirst={p.tab}
                   label={
                     showAdLinks && url
-                      ? `⧉ פתח + העתק נדרש ₪${Math.max(0, Math.round(g.agg.dailyRequired))}/יום`
-                      : `📋 נדרש ₪${Math.max(0, Math.round(g.agg.dailyRequired))}/יום`
+                      ? `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
+                      : `📋 נדרש ${cur}${reqVal}/יום`
                   }
                 />
               )}
@@ -481,7 +523,9 @@ function PlatformDrillGroups({
                     <th>תקציב מאושר</th>
                     <th>בפועל</th>
                     <th>קצב</th>
+                    <th>יומי מוגדר</th>
                     <th>נדרש ליום</th>
+                    <th aria-label="טיפלתי"> </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -489,10 +533,11 @@ function PlatformDrillGroups({
                     <CampaignRow
                       key={r.row}
                       tab={p.tab}
-                      remainingDays={p.remainingDays}
                       r={r}
                       canEdit={canEdit}
                       onEdit={onEdit}
+                      dismissals={dismissals}
+                      today={today}
                     />
                   ))}
                 </tbody>
@@ -505,23 +550,60 @@ function PlatformDrillGroups({
   );
 }
 
+type FadeState = "active" | "dismissed" | "resurfaced";
+
+function parseBaseline(reason: string): number | null {
+  const m = (reason || "").match(/baseline=(-?\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Whether a "טיפלתי"-snoozed row should stay faded or resurface. The
+ * snooze self-resurfaces the next day if the platform's actual daily
+ * budget didn't actually change after Supermetrics ran overnight (the
+ * baseline recorded at snooze time still matches the current value).
+ */
+function computeFadeState(
+  actualDaily: number,
+  dismissal: BudgetDismissal | undefined,
+  today: string,
+  local: "on" | "off" | null,
+): FadeState {
+  if (local === "off") return "active";
+  if (local === "on") return "dismissed";
+  if (!dismissal) return "active";
+  const until = (dismissal.snooze_until || "").slice(0, 10);
+  if (!until || until < today) return "active"; // expired / cleared
+  const baseline = parseBaseline(dismissal.reason);
+  const dDate = (dismissal.dismissed_at || "").slice(0, 10);
+  const overnightPassed = dDate < today;
+  const unchanged =
+    baseline != null && Math.round(actualDaily) === Math.round(baseline);
+  if (overnightPassed && unchanged) return "resurfaced";
+  return "dismissed";
+}
+
 function CampaignRow({
   tab,
-  remainingDays,
   r,
   canEdit,
   onEdit,
+  dismissals,
+  today,
 }: {
   tab: string;
-  remainingDays: number;
   r: BudgetProject["rows"][number];
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
+  dismissals: Record<string, BudgetDismissal>;
+  today: string;
 }) {
   const [draft, setDraft] = useState(String(Math.round(r.budget)));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [savedFlash, setSavedFlash] = useState(false);
+  const [localSnooze, setLocalSnooze] = useState<"on" | "off" | null>(null);
+  const [snoozing, setSnoozing] = useState(false);
 
   async function commit() {
     const value = Number(draft.replace(/[^\d.]/g, ""));
@@ -562,14 +644,50 @@ function CampaignRow({
     }
   }
 
-  const daily = remainingDays > 0 ? Math.max(0, Math.round(r.dailyRequired)) : 0;
+  async function snooze(restore: boolean) {
+    setSnoozing(true);
+    try {
+      const res = await fetch("/api/campaigns/budget-dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: tab,
+          channel: r.channel,
+          campaignType: r.campaignType,
+          baselineDaily: r.actualDaily,
+          restore,
+        }),
+      });
+      const d = (await res.json()) as { ok?: boolean };
+      if (res.ok && d.ok) setLocalSnooze(restore ? "off" : "on");
+    } catch {
+      /* best-effort; leave state as-is */
+    } finally {
+      setSnoozing(false);
+    }
+  }
+
+  const signalKey = `budget:${tab}:${r.channel}:${r.campaignType}`;
+  const state = computeFadeState(
+    r.actualDaily,
+    dismissals[signalKey],
+    today,
+    localSnooze,
+  );
+  const tone = paceTone(r.pacingRatio);
+  const offPace = !r.ended && (tone === "over" || tone === "under");
+  const dailyReq = Math.max(0, Math.round(r.dailyRequired));
 
   return (
-    <tr className={err ? "row-error" : ""}>
+    <tr
+      className={`${err ? "row-error" : ""} ${state === "dismissed" ? "is-dismissed" : ""}`}
+    >
       <td className="c-channel" title={r.channel}>
         {r.channel}
       </td>
-      <td className="c-type">{r.campaignType || "—"}</td>
+      <td className="c-type" title={r.campaignType}>
+        {r.campaignType || "—"}
+      </td>
       <td className="c-budget">
         {canEdit ? (
           <span className="budget-edit">
@@ -599,17 +717,51 @@ function CampaignRow({
       </td>
       <td className="c-spend">{fmt(r.spend)}</td>
       <td className="c-pace">
-        <Pacing ratio={r.pacingRatio} />
-      </td>
-      <td className="c-daily">
-        {remainingDays > 0 ? (
-          <span className="budget-daily">
-            ₪{daily.toLocaleString("he-IL")}
-            <CopyAmountButton amount={String(daily)} variant="ghost" label="📋" />
+        {r.ended ? (
+          <span className="pace-val pace-none" title={`הסתיים ${r.endIso}`}>
+            ⛔
           </span>
         ) : (
-          "—"
+          <Pacing ratio={r.pacingRatio} />
         )}
+      </td>
+      <td className="c-actualdaily" title="תקציב יומי שמוגדר בפלטפורמה">
+        {r.actualDaily > 0
+          ? `₪${Math.round(r.actualDaily).toLocaleString("he-IL")}`
+          : "—"}
+      </td>
+      <td className="c-daily">
+        {r.ended ? (
+          "—"
+        ) : (
+          <span className="budget-daily">
+            ₪{dailyReq.toLocaleString("he-IL")}
+            <CopyAmountButton amount={String(dailyReq)} variant="ghost" label="📋" />
+          </span>
+        )}
+      </td>
+      <td className="c-handled">
+        {state === "dismissed" ? (
+          <button
+            type="button"
+            className="budget-handled-btn is-done"
+            disabled={snoozing}
+            onClick={() => snooze(true)}
+            title="בטל טיפול — החזר את ההתראה"
+          >
+            ↩︎ בטל
+          </button>
+        ) : offPace ? (
+          <button
+            type="button"
+            className="budget-handled-btn"
+            disabled={snoozing}
+            onClick={() => snooze(false)}
+            title="טיפלתי — שקט עד מחר; אם התקציב לא ישתנה אחרי שהדאטה יתעדכן, ההתראה תחזור"
+          >
+            ✓ טיפלתי{state === "resurfaced" ? " (חזר)" : ""}
+          </button>
+        ) : null}
       </td>
     </tr>
   );

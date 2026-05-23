@@ -2,7 +2,7 @@ import { cache } from "react";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
-import { getPlatformDailyBudgets } from "@/lib/platformDailyBudget";
+import { getCampaignBudgets } from "@/lib/platformDailyBudget";
 import { getMediaPlan } from "@/lib/mediaPlan";
 import {
   canonicalManagers,
@@ -139,9 +139,12 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
 
   // Keys enrichment + actual daily budgets (creatives sheet) + media
   // plan (פריסה נוכחית) — all cached, fetched in parallel.
-  const [keyInfo, dailyBudgets, mediaPlan] = await Promise.all([
+  const [keyInfo, budgets, mediaPlan] = await Promise.all([
     buildKeyInfo(subjectEmail),
-    getPlatformDailyBudgets(subjectEmail).catch(() => ({}) as Record<string, { google: number; facebook: number }>),
+    getCampaignBudgets(subjectEmail).catch(() => ({
+      byProject: {} as Record<string, { google: number; facebook: number }>,
+      byCampaign: {} as Record<string, number>,
+    })),
     getMediaPlan(subjectEmail).catch(() => ({}) as Record<string, MediaPlanRow>),
   ]);
 
@@ -168,8 +171,6 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     const endIso = parseSheetDate(cell(4, 4)); // E5 ירידה
     const totalDays = Math.max(1, dayDiff(startIso, endIso) || 30);
     const remainingDays = Math.max(0, dayDiff(today, endIso));
-    const elapsedDays = Math.max(0, totalDays - remainingDays);
-    const elapsedFrac = Math.min(1, elapsedDays / totalDays);
 
     // Locate the "פעילות נוכחית" marker, then its header row, then data.
     let markerRow = -1;
@@ -189,6 +190,17 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
       }
     }
 
+    const platforms = emptyPlatforms();
+    const other = emptyAgg();
+    // Active-only accumulators (exclude ended channels) for the pacing
+    // ratio, so a finished channel doesn't drag a platform off-pace.
+    const expActive: Record<string, number> = {
+      google: 0, facebook: 0, taboola: 0, outbrain: 0, other: 0,
+    };
+    const spendActive: Record<string, number> = {
+      google: 0, facebook: 0, taboola: 0, outbrain: 0, other: 0,
+    };
+
     const rows: BudgetRow[] = [];
     if (headerRow >= 0) {
       let lastChannel = "";
@@ -199,13 +211,8 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         const budget = num(cell(r, 6)); // G
         const spend = num(cell(r, 7)); // H
         const campaignType = clean(cell(r, 5)); // F
-        // Forward-fill the channel across merged BMBY label cells. A
-        // platform that spans several rows (e.g. Facebook split into
-        // 45-60 / 60+ audiences) merges its מזהה BMBY label, so the
-        // continuation rows come back with an empty D even though they
-        // each carry their own G/H. Inherit the previous channel when D
-        // is blank but the row still has real data — otherwise we'd drop
-        // those rows and under-count the platform (and break E3 recon).
+        // Forward-fill the channel across merged BMBY label cells (e.g.
+        // Facebook split into 45-60 / 60+ audiences merges its label).
         if (!channel) {
           const hasData =
             budget !== 0 ||
@@ -218,10 +225,26 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         }
         lastChannel = channel;
         const platform = classifyChannel(channel);
-        const expected = budget * elapsedFrac;
+
+        // Per-channel flight window (col B/C) — channels can have
+        // irregular dates, so pacing + daily-required must use THIS
+        // channel's own end date, not the project envelope.
+        const rowStart = parseSheetDate(cell(r, 1)) || startIso;
+        const rowEnd = parseSheetDate(cell(r, 2)) || endIso;
+        const rowTotal = Math.max(1, dayDiff(rowStart, rowEnd) || totalDays);
+        const rowRemaining = Math.max(0, dayDiff(today, rowEnd));
+        const rowElapsedFrac = Math.min(
+          1,
+          Math.max(0, rowTotal - rowRemaining) / rowTotal,
+        );
+        const ended = !!rowEnd && rowEnd < today;
+        const expected = budget * rowElapsedFrac;
         const pacingRatio = expected > 0 ? spend / expected : 0;
         const dailyRequired =
-          remainingDays > 0 ? (budget - spend) / remainingDays : 0;
+          rowRemaining > 0 ? (budget - spend) / rowRemaining : 0;
+        const actualDaily =
+          budgets.byCampaign[campaignType.toLowerCase()] || 0;
+
         rows.push({
           row: r + 1,
           channel,
@@ -231,23 +254,33 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
           spend,
           pacingRatio,
           dailyRequired,
+          endIso: rowEnd,
+          ended,
+          actualDaily,
         });
+
+        const key = platform === "other" ? "other" : platform;
+        const agg = platform === "other" ? other : platforms[platform];
+        agg.budget += budget;
+        agg.spend += spend;
+        agg.rowCount += 1;
+        agg.dailyRequired += dailyRequired;
+        if (!ended) {
+          expActive[key] += expected;
+          spendActive[key] += spend;
+        }
       }
     }
 
-    const platforms = emptyPlatforms();
-    const other = emptyAgg();
-    for (const row of rows) {
-      const agg = row.platform === "other" ? other : platforms[row.platform];
-      agg.budget += row.budget;
-      agg.spend += row.spend;
-      agg.rowCount += 1;
-    }
-    finalizeAgg(other, elapsedFrac, remainingDays);
-    for (const p of E3_PLATFORMS) finalizeAgg(platforms[p], elapsedFrac, remainingDays);
+    // Platform pacing over ACTIVE channels only.
+    const finishPacing = (agg: PlatformAgg, key: string) => {
+      agg.pacingRatio = expActive[key] > 0 ? spendActive[key] / expActive[key] : 0;
+    };
+    finishPacing(other, "other");
+    for (const p of E3_PLATFORMS) finishPacing(platforms[p], p);
 
-    // Actual daily budget (from the creatives sheet) — Google + Facebook.
-    const db = dailyBudgets[tab.toLowerCase()];
+    // Actual daily budget per platform (creatives sheet) — Google + FB.
+    const db = budgets.byProject[tab.toLowerCase()];
     if (db) {
       platforms.google.actualDaily = db.google || 0;
       platforms.facebook.actualDaily = db.facebook || 0;
@@ -311,16 +344,6 @@ function emptyPlatforms(): Record<Platform, PlatformAgg> {
     taboola: emptyAgg(),
     outbrain: emptyAgg(),
   };
-}
-function finalizeAgg(
-  agg: PlatformAgg,
-  elapsedFrac: number,
-  remainingDays: number,
-): void {
-  const expected = agg.budget * elapsedFrac;
-  agg.pacingRatio = expected > 0 ? agg.spend / expected : 0;
-  agg.dailyRequired =
-    remainingDays > 0 ? (agg.budget - agg.spend) / remainingDays : 0;
 }
 
 async function buildKeyInfo(

@@ -8,7 +8,9 @@ import { canSeeCampaigns } from "@/lib/userRole";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import { driveFolderOwner } from "@/lib/sa";
 import { getBudgetMaster } from "@/lib/budgetMaster";
-import BudgetGrid from "@/components/BudgetGrid";
+import { listAlertDismissals } from "@/lib/alertDismissals";
+import { getUsdIlsRate } from "@/lib/fxRate";
+import BudgetGrid, { type BudgetDismissal } from "@/components/BudgetGrid";
 import CampaignsTabs from "@/components/CampaignsTabs";
 
 export const dynamic = "force-dynamic";
@@ -44,11 +46,14 @@ export default async function BudgetsPage() {
     );
   }
 
-  const [budgetRes, feedRes, peopleRes] = await Promise.allSettled([
-    getBudgetMaster(driveFolderOwner()),
-    getMorningFeed({ scope: "all", overrideEmail }),
-    tasksPeopleList(),
-  ]);
+  const [budgetRes, feedRes, peopleRes, dismissRes, rateRes] =
+    await Promise.allSettled([
+      getBudgetMaster(driveFolderOwner()),
+      getMorningFeed({ scope: "all", overrideEmail }),
+      tasksPeopleList(),
+      listAlertDismissals(),
+      getUsdIlsRate(),
+    ]);
 
   const master = budgetRes.status === "fulfilled" ? budgetRes.value : null;
   const error =
@@ -90,6 +95,24 @@ export default async function BudgetsPage() {
   }
   const showAdLinks = canViewAdLinks(subject, peopleList);
 
+  // Budget-desk "טיפלתי" snoozes — the budget-prefixed slice of the
+  // shared dismissal store, keyed by signal_key.
+  const allDismissals =
+    dismissRes.status === "fulfilled" ? dismissRes.value : {};
+  const budgetDismissals: Record<string, BudgetDismissal> = {};
+  for (const [key, d] of Object.entries(allDismissals)) {
+    if (!key.startsWith("budget:")) continue;
+    budgetDismissals[key] = {
+      snooze_until: d.snooze_until || "",
+      dismissed_at: d.dismissed_at || "",
+      reason: d.reason || "",
+    };
+  }
+  const usdIlsRate = rateRes.status === "fulfilled" ? rateRes.value : 3.7;
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+
   return (
     <main className="container">
       <header className="page-header">
@@ -123,6 +146,9 @@ export default async function BudgetsPage() {
           adLinks={adLinks}
           showAdLinks={showAdLinks}
           canEdit={roleEligible}
+          dismissals={budgetDismissals}
+          today={today}
+          usdIlsRate={usdIlsRate}
         />
       )}
     </main>

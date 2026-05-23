@@ -4,20 +4,20 @@ import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 
 /**
- * Actual daily budget per platform, per project — read from the SAME
- * creatives spreadsheet the Apps Script dashboard uses
- * (SHEET_ID_CREATIVES):
+ * Actual daily budget data, read from the SAME creatives spreadsheet the
+ * Apps Script dashboard uses (SHEET_ID_CREATIVES):
  *   - `fb-campaigns`     → Campaign daily budget (col C) + status
  *   - `קמפיין ID גוגל`   → Daily budget (col F)
  *
- * Campaigns are matched to a project exactly like the dashboard's
- * `matchProjectForCampaign_`: the campaign name must contain one of the
- * project's patterns from the Keys `campaign ID` column (comma-split,
- * longest-pattern-first so "peleg-yehud" wins over "peleg"). Only
- * ACTIVE Facebook campaigns count (Google has no status column → all);
- * Google campaigns with a real past end date are skipped.
- *
- * Returns Map<slugLower, { google, facebook }> of summed daily budgets.
+ * Two views are returned from one read:
+ *   - byProject:  Σ daily budget per platform per project (campaigns
+ *     matched to a project exactly like the dashboard's
+ *     matchProjectForCampaign_ — campaign name CONTAINS a Keys
+ *     `campaign ID` pattern, longest-first). ACTIVE FB only; Google
+ *     campaigns past their real end date skipped.
+ *   - byCampaign: campaign-name (lowercased) → daily budget, so the
+ *     budget desk can show the actual set budget on the specific
+ *     campaign row (matched by its סוג / campaign-name cell).
  */
 
 const CACHE_TAG = "platformDailyBudget";
@@ -70,7 +70,6 @@ async function buildMatchMap(subjectEmail: string): Promise<MatchEntry[]> {
       maxLen: Math.max(...patterns.map((p) => p.length)),
     });
   }
-  // Longest pattern first — greedy match (mirrors the dashboard).
   out.sort((a, b) => b.maxLen - a.maxLen);
   return out;
 }
@@ -95,13 +94,19 @@ function todayIso(): string {
   }).format(new Date());
 }
 
-async function fetchPlatformDailyBudgets(
+export type CampaignBudgets = {
+  byProject: Record<string, { google: number; facebook: number }>;
+  byCampaign: Record<string, number>;
+};
+
+async function fetchCampaignBudgets(
   subjectEmail: string,
-): Promise<Record<string, { google: number; facebook: number }>> {
-  const out: Record<string, { google: number; facebook: number }> = {};
-  const add = (slug: string, platform: "google" | "facebook", v: number) => {
-    if (!out[slug]) out[slug] = { google: 0, facebook: 0 };
-    out[slug][platform] += v;
+): Promise<CampaignBudgets> {
+  const byProject: Record<string, { google: number; facebook: number }> = {};
+  const byCampaign: Record<string, number> = {};
+  const addProj = (slug: string, platform: "google" | "facebook", v: number) => {
+    if (!byProject[slug]) byProject[slug] = { google: 0, facebook: 0 };
+    byProject[slug][platform] += v;
   };
 
   try {
@@ -131,8 +136,10 @@ async function fetchPlatformDailyBudgets(
           if (!name) continue;
           const status = iStatus >= 0 ? clean(fbRows[r][iStatus]).toUpperCase() : "";
           if (status && status !== "ACTIVE") continue;
+          const bud = num(fbRows[r][iBud]);
+          byCampaign[name.toLowerCase()] = bud;
           const slug = matchSlug(name, matchMap);
-          if (slug) add(slug, "facebook", num(fbRows[r][iBud]));
+          if (slug) addProj(slug, "facebook", bud);
         }
       }
     }
@@ -151,23 +158,25 @@ async function fetchPlatformDailyBudgets(
           let end = iEnd >= 0 ? clean(gRows[r][iEnd]) : "";
           if (end && end >= "2037-01-01") end = "";
           if (end && end < today) continue;
+          const bud = num(gRows[r][iBud]);
+          byCampaign[name.toLowerCase()] = bud;
           const slug = matchSlug(name, matchMap);
-          if (slug) add(slug, "google", num(gRows[r][iBud]));
+          if (slug) addProj(slug, "google", bud);
         }
       }
     }
   } catch {
     /* Best-effort enrichment — desk still works without actual daily. */
   }
-  return out;
+  return { byProject, byCampaign };
 }
 
-const fetchPlatformDailyBudgetsCrossRequest = unstable_cache(
-  fetchPlatformDailyBudgets,
+const fetchCampaignBudgetsCrossRequest = unstable_cache(
+  fetchCampaignBudgets,
   ["platformDailyBudget"],
   { revalidate: TTL_SECONDS, tags: [CACHE_TAG] },
 );
 
-export const getPlatformDailyBudgets = cache((subjectEmail: string) =>
-  fetchPlatformDailyBudgetsCrossRequest(subjectEmail),
+export const getCampaignBudgets = cache((subjectEmail: string) =>
+  fetchCampaignBudgetsCrossRequest(subjectEmail),
 );
