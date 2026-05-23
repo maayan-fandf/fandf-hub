@@ -30,30 +30,38 @@ export default function CopyAmountButton({
       type="button"
       className={className}
       onClick={() => {
-        // Mirror the dashboard's proven approach: when both a slug and a
-        // budget exist, put them on ONE clipboard entry separated by a
-        // newline (line 1 = slug for the campaign filter, line 2 = the
-        // daily budget). Use the synchronous textarea+execCommand path
-        // first (reliable inside nested iframes), clipboard API fallback.
-        const value = copyFirst ? `${copyFirst}\n${amount}` : amount;
-        let ok = false;
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = value;
-          ta.style.position = "fixed";
-          ta.style.top = "0";
-          ta.style.opacity = "0";
-          document.body.appendChild(ta);
-          ta.focus();
-          ta.select();
-          ok = document.execCommand("copy");
-          document.body.removeChild(ta);
-        } catch {
-          /* fall through to clipboard API */
-        }
-        if (!ok && navigator.clipboard?.writeText) {
+        // Put the slug and the budget on the clipboard as TWO SEPARATE
+        // entries (not one newline-joined string), so the OS/Chrome
+        // clipboard history shows each on its own — paste the campaign id
+        // into the platform's campaign filter, then the daily budget into
+        // the budget field. Each copy is a synchronous textarea +
+        // execCommand within the click gesture (reliable + records a
+        // distinct clipboard-history item per call); `amount` is written
+        // last so it's the current clipboard value.
+        const copyOne = (val: string): boolean => {
           try {
-            navigator.clipboard.writeText(value);
+            const ta = document.createElement("textarea");
+            ta.value = val;
+            ta.style.position = "fixed";
+            ta.style.top = "0";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+            return ok;
+          } catch {
+            return false;
+          }
+        };
+        let ok = true;
+        if (copyFirst) ok = copyOne(copyFirst) && ok;
+        ok = copyOne(amount) && ok;
+        if (!ok && navigator.clipboard?.writeText) {
+          // Fallback (e.g. execCommand blocked): at least the amount.
+          try {
+            navigator.clipboard.writeText(amount);
           } catch {
             /* best-effort */
           }

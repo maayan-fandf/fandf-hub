@@ -887,11 +887,16 @@ function recomputeProject(
   const rows = p.rows.map((r) => {
     if (r.row !== rowNum) return r;
     const expected = value * elapsedFrac;
+    // Derive this channel's day count from its existing sheet rate
+    // (dailyRequired = (G−H)/days) so the optimistic preview keeps the
+    // same days-left the sheet used — matching the project page.
+    const days =
+      r.dailyRequired !== 0 ? (r.budget - r.spend) / r.dailyRequired : 0;
     return {
       ...r,
       budget: value,
       pacingRatio: expected > 0 ? r.spend / expected : 0,
-      dailyRequired: p.remainingDays > 0 ? (value - r.spend) / p.remainingDays : 0,
+      dailyRequired: days > 0 ? (value - r.spend) / days : 0,
     };
   });
 
@@ -904,11 +909,13 @@ function recomputeProject(
   function agg(pl: Platform): PlatformAgg {
     let budget = 0,
       spend = 0,
-      rowCount = 0;
+      rowCount = 0,
+      daily = 0;
     for (const r of rows) {
       if (r.platform !== pl) continue;
       budget += r.budget;
       spend += r.spend;
+      daily += r.dailyRequired; // platform daily = Σ channel rates (col J)
       rowCount++;
     }
     const expected = budget * elapsedFrac;
@@ -917,17 +924,19 @@ function recomputeProject(
       spend,
       rowCount,
       pacingRatio: expected > 0 ? spend / expected : 0,
-      dailyRequired: p.remainingDays > 0 ? (budget - spend) / p.remainingDays : 0,
+      dailyRequired: daily,
       actualDaily: p.platforms[pl].actualDaily,
     };
   }
   let oBudget = 0,
     oSpend = 0,
-    oCount = 0;
+    oCount = 0,
+    oDaily = 0;
   for (const r of rows) {
     if (r.platform !== "other") continue;
     oBudget += r.budget;
     oSpend += r.spend;
+    oDaily += r.dailyRequired;
     oCount++;
   }
   const oExpected = oBudget * elapsedFrac;
@@ -936,7 +945,7 @@ function recomputeProject(
     spend: oSpend,
     rowCount: oCount,
     pacingRatio: oExpected > 0 ? oSpend / oExpected : 0,
-    dailyRequired: p.remainingDays > 0 ? (oBudget - oSpend) / p.remainingDays : 0,
+    dailyRequired: oDaily,
     actualDaily: 0,
   };
 

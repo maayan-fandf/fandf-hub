@@ -244,8 +244,11 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         const ended = !!rowEnd && rowEnd < today;
         const expected = budget * rowElapsedFrac;
         const pacingRatio = expected > 0 ? spend / expected : 0;
-        const dailyRequired =
-          rowRemaining > 0 ? (budget - spend) / rowRemaining : 0;
+        // Read the sheet's OWN daily rate (col J, קצב יומי) rather than
+        // recomputing — this is exactly what the project page shows
+        // (`c.dailyRate`), and it already bakes in the channel's own
+        // end-date math, so the two surfaces never diverge.
+        const dailyRequired = num(cell(r, 9));
         // Actual daily set in the platform for THIS channel-type: sum the
         // matched creatives campaigns whose name contains the row's סוג
         // token (e.g. "GS" → ...Brand_GS + ...generic_GS, excluding
