@@ -671,6 +671,21 @@ function parseBaseline(reason: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** A dismissal's `dismissed_at` (ISO/UTC) → its calendar date in Asia/
+ *  Jerusalem, so it compares apples-to-apples with `today` (also Jerusalem).
+ *  A raw .slice(0,10) would be the UTC date and trip the overnight check a
+ *  day early for evening-Israel dismissals. */
+function jeruDateOf(iso: string): string {
+  if (!iso) return "";
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+    }).format(new Date(iso));
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
 /**
  * Whether a "טיפלתי"-snoozed row should stay faded or resurface. The
  * snooze self-resurfaces the next day if the platform's actual daily
@@ -689,8 +704,13 @@ function computeFadeState(
   const until = (dismissal.snooze_until || "").slice(0, 10);
   if (!until || until < today) return "active"; // expired / cleared
   const baseline = parseBaseline(dismissal.reason);
-  const dDate = (dismissal.dismissed_at || "").slice(0, 10);
-  const overnightPassed = dDate < today;
+  // Compare the dismissal day in Asia/Jerusalem (same tz as `today`). A raw
+  // .slice(0,10) is the UTC date, which for an evening-Israel dismissal is
+  // already "yesterday" vs the Jerusalem "today" — flipping overnightPassed
+  // true immediately and resurfacing the snooze the same evening (the
+  // "doesn't stick on reload" bug).
+  const dDate = jeruDateOf(dismissal.dismissed_at);
+  const overnightPassed = !!dDate && dDate < today;
   const unchanged =
     baseline != null && Math.round(actualDaily) === Math.round(baseline);
   if (overnightPassed && unchanged) return "resurfaced";
