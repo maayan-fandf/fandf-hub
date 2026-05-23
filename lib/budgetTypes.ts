@@ -112,6 +112,9 @@ export type PlatformAgg = {
    *  (fb-campaigns / קמפיין ID גוגל). Only Google + Facebook are
    *  tracked there; 0 for Taboola/Outbrain. */
   actualDaily: number;
+  /** Actual avg daily SPEND over the last 7 days (standardized daily
+   *  file). Drives the pacing diagnosis (plan vs configured vs actual). */
+  actual7d: number;
 };
 
 /** Per-project current media-plan snapshot from the "פריסה נוכחית" tab. */

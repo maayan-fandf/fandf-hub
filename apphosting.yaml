@@ -120,6 +120,15 @@ env:
       - BUILD
       - RUNTIME
 
+  # Standardized platform-daily spend file (ILS-normalized; tabs GADS2 /
+  # FB / Taboola2 / OB2). Source of the budget desk's 7-day actual-spend
+  # average for the pacing diagnosis — same file the dashboard reads.
+  - variable: SHEET_ID_PLATFORM_DAILY
+    value: 1lv95d5kq62WjvDR5ykDrIgdcqxOj3pHrDzEYsaUsfWQ
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Kill-switch for the קמפיינים → תקציבים inline budget editor. When "1"
   # the /api/campaigns/budget route may write column G (תקציב חודשי
   # מאושר) on project tabs of SHEET_ID_MAIN. Flip to "" to instantly

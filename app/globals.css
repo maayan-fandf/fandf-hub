@@ -18116,6 +18116,8 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 }
 .budget-group-title { font-weight: 700; }
 .budget-group-stats { color: var(--muted); font-size: .82em; }
+.budget-pace-diag { cursor: help; white-space: nowrap; }
+.budget-pace-diag:hover { text-decoration: underline dotted; }
 
 /* table-layout:fixed + identical column widths so the per-platform
    tables (Google / Facebook / אחר) line up column-for-column. */

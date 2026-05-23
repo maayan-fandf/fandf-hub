@@ -489,7 +489,9 @@ function PlatformDrillGroups({
               {isPaid && (
                 <span className="budget-group-stats">
                   {fmt(g.agg.budget)} מאושר · {fmt(g.agg.spend)} בפועל ·{" "}
-                  <Pacing ratio={g.agg.pacingRatio} />
+                  <span className="budget-pace-diag" title={pacingTooltip(g.agg)}>
+                    <Pacing ratio={g.agg.pacingRatio} /> ⓘ
+                  </span>
                   {(g.platform === "google" || g.platform === "facebook") && (
                     <>
                       {" · "}יומי בפועל:{" "}
@@ -850,6 +852,46 @@ function paceTone(ratio: number): "none" | "under" | "ok" | "over" {
   return "ok";
 }
 
+/**
+ * Platform pacing diagnosis tooltip — ports the dashboard's three-way
+ * logic (plan vs platform-configured vs 7-day actual spend) so the desk
+ * tells the manager whether to lower/raise the budget or investigate
+ * delivery. מתוכנן = Σ קצב יומי (col J); מוגדר = configured platform
+ * budget; ממוצע 7 ימים = actual 7-day avg spend.
+ */
+function pacingTooltip(agg: PlatformAgg): string {
+  const ils = (n: number) => "₪" + Math.round(n || 0).toLocaleString("he-IL");
+  const planned = agg.dailyRequired;
+  const configured = agg.actualDaily;
+  const actual7d = agg.actual7d;
+  const lines = [`מתוכנן (קצב יומי): ${ils(planned)}`];
+  if (configured > 0) lines.push(`מוגדר בפלטפורמה: ${ils(configured)}`);
+  if (actual7d > 0) lines.push(`ממוצע 7 ימים בפועל: ${ils(actual7d)}`);
+
+  if (planned > 0 && actual7d > 0) {
+    const variance = (actual7d - planned) / planned;
+    const configVsPlan = configured > 0 ? (configured - planned) / planned : 0;
+    const sign = variance >= 0 ? "+" : "−";
+    lines.push(`סטייה: ${sign}${Math.abs(Math.round(variance * 100))}%`);
+    let action = "";
+    if (variance > 0.1) {
+      if (configured > 0 && configVsPlan > 0.1)
+        action = `💡 הורד את התקציב בפלטפורמה ל־${ils(planned)} (מוגדר ${ils(configured)}, חריגה ${Math.round(configVsPlan * 100)}% מהתכנון)`;
+      else if (configured > 0)
+        action = `🔍 התקציב מוגדר כהלכה (${ils(configured)}) אבל מוציא ${ils(actual7d)}/יום — בדוק CPC / CBO / עונתיות, לא תקציב`;
+      else action = `💡 הורד את התקציב היומי ל־${ils(planned)}`;
+    } else if (variance < -0.1) {
+      if (configured > 0 && configVsPlan < -0.1)
+        action = `💡 העלה את התקציב בפלטפורמה ל־${ils(planned)} (כרגע מוגדר ${ils(configured)})`;
+      else if (configured > 0)
+        action = `🔍 התקציב מוגדר כהלכה (${ils(configured)}) אבל מוציא רק ${ils(actual7d)}/יום — בדוק audience / הצעות מחיר / קריאייטיב, לא תקציב`;
+      else action = `💡 העלה את התקציב היומי ל־${ils(planned)}`;
+    }
+    if (action) lines.push(action);
+  }
+  return lines.join("\n");
+}
+
 function hasPacingIssue(p: BudgetProject): boolean {
   if (p.remainingDays <= 0) return false;
   return E3_PLATFORMS.some((pl) => {
@@ -926,6 +968,7 @@ function recomputeProject(
       pacingRatio: expected > 0 ? spend / expected : 0,
       dailyRequired: daily,
       actualDaily: p.platforms[pl].actualDaily,
+      actual7d: p.platforms[pl].actual7d,
     };
   }
   let oBudget = 0,
@@ -947,6 +990,7 @@ function recomputeProject(
     pacingRatio: oExpected > 0 ? oSpend / oExpected : 0,
     dailyRequired: oDaily,
     actualDaily: 0,
+    actual7d: 0,
   };
 
   const allocated = E3_PLATFORMS.reduce((s, pl) => s + platforms[pl].budget, 0);

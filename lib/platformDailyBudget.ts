@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
-import { readKeysCached } from "@/lib/keys";
+import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
 
 /**
  * Actual daily budget data, read from the SAME creatives spreadsheet the
@@ -48,42 +48,6 @@ function findCol(headers: string[], names: string[]): number {
     if (i >= 0) return i;
   }
   return -1;
-}
-
-type MatchEntry = { slug: string; patterns: string[]; maxLen: number };
-
-async function buildMatchMap(subjectEmail: string): Promise<MatchEntry[]> {
-  const { headers, rows } = await readKeysCached(subjectEmail);
-  const iSlug = headers.findIndex((h) => /campaign\s*id/i.test(h));
-  const out: MatchEntry[] = [];
-  for (const row of rows) {
-    const raw = clean(iSlug >= 0 ? row[iSlug] : row[5]);
-    if (!raw) continue;
-    const patterns = raw
-      .split(",")
-      .map((s) => s.toLowerCase().trim())
-      .filter(Boolean)
-      .filter((v, i, arr) => arr.indexOf(v) === i);
-    if (!patterns.length) continue;
-    out.push({
-      slug: patterns[0],
-      patterns,
-      maxLen: Math.max(...patterns.map((p) => p.length)),
-    });
-  }
-  out.sort((a, b) => b.maxLen - a.maxLen);
-  return out;
-}
-
-function matchSlug(campaignName: string, matchMap: MatchEntry[]): string | null {
-  const cn = campaignName.toLowerCase();
-  if (!cn) return null;
-  for (const m of matchMap) {
-    for (const p of m.patterns) {
-      if (cn.indexOf(p) >= 0) return m.slug;
-    }
-  }
-  return null;
 }
 
 function todayIso(): string {

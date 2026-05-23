@@ -3,6 +3,7 @@ import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { getCampaignBudgets } from "@/lib/platformDailyBudget";
+import { getDailySpend7d } from "@/lib/platformDailySpend";
 import { getMediaPlan } from "@/lib/mediaPlan";
 import {
   canonicalManagers,
@@ -139,7 +140,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
 
   // Keys enrichment + actual daily budgets (creatives sheet) + media
   // plan (פריסה נוכחית) — all cached, fetched in parallel.
-  const [keyInfo, budgets, mediaPlan] = await Promise.all([
+  const [keyInfo, budgets, mediaPlan, spend7d] = await Promise.all([
     buildKeyInfo(subjectEmail),
     getCampaignBudgets(subjectEmail).catch(() => ({
       byProject: {} as Record<string, { google: number; facebook: number }>,
@@ -149,6 +150,9 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
       >,
     })),
     getMediaPlan(subjectEmail).catch(() => ({}) as Record<string, MediaPlanRow>),
+    getDailySpend7d(subjectEmail).catch(
+      () => ({}) as Record<string, Record<"google" | "facebook" | "taboola" | "outbrain", number>>,
+    ),
   ]);
 
   // One batchGet for every tab's top region (E3 + the activity table).
@@ -303,6 +307,11 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
       platforms.google.actualDaily = db.google || 0;
       platforms.facebook.actualDaily = db.facebook || 0;
     }
+    // 7-day actual-spend average per platform (standardized daily file).
+    const sp = spend7d[tab.toLowerCase()];
+    if (sp) {
+      for (const p of E3_PLATFORMS) platforms[p].actual7d = sp[p] || 0;
+    }
 
     const allocated = E3_PLATFORMS.reduce((s, p) => s + platforms[p].budget, 0);
     const allocatedSpend = E3_PLATFORMS.reduce(
@@ -353,6 +362,7 @@ function emptyAgg(): PlatformAgg {
     pacingRatio: 0,
     dailyRequired: 0,
     actualDaily: 0,
+    actual7d: 0,
   };
 }
 function emptyPlatforms(): Record<Platform, PlatformAgg> {
