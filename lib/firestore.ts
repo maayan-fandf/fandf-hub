@@ -71,10 +71,12 @@ export const FS_COLLECTIONS = {
   /** Morning-alert dismissals (team-wide). doc id = base64url(signal_key)
    *  so there's exactly one doc per signal_key (latest write wins).
    *  Migrated off the Apps Script report's "Alert Dismissals" sheet.
-   *  Also holds the budget-desk "טיפלתי" snoozes (signal_key prefixed
-   *  `budget:`), with the actual-daily baseline encoded in `reason` so a
-   *  snooze self-resurfaces next day if the platform budget didn't
-   *  actually change after Supermetrics ran overnight. */
+   *  The pacing "טיפלתי" snooze shares ONE key across the morning feed,
+   *  the budget desk, and the dashboard pacing cell
+   *  (`<slug>|pacing-variance|platform|<platform>`), with the platform's
+   *  actual-daily baseline encoded in `reason` so a snooze self-resurfaces
+   *  next day if the budget didn't actually change after Supermetrics ran
+   *  overnight. */
   alertDismissals: "alertDismissals",
 } as const;
 

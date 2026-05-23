@@ -95,13 +95,14 @@ export default async function BudgetsPage() {
   }
   const showAdLinks = canViewAdLinks(subject, peopleList);
 
-  // Budget-desk "טיפלתי" snoozes — the budget-prefixed slice of the
-  // shared dismissal store, keyed by signal_key.
+  // "טיפלתי" snoozes — the per-platform pacing slice of the shared
+  // dismissal store. Same keys the morning feed + the dashboard
+  // project-page pacing cell use, so a dismiss on any of them fades here.
   const allDismissals =
     dismissRes.status === "fulfilled" ? dismissRes.value : {};
   const budgetDismissals: Record<string, BudgetDismissal> = {};
   for (const [key, d] of Object.entries(allDismissals)) {
-    if (!key.startsWith("budget:")) continue;
+    if (!key.includes("|pacing-variance|platform|")) continue;
     budgetDismissals[key] = {
       snooze_until: d.snooze_until || "",
       dismissed_at: d.dismissed_at || "",

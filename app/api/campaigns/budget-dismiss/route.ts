@@ -2,21 +2,24 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { upsertAlertDismissal } from "@/lib/alertDismissals";
+import { pacingPlatformKey, type Platform } from "@/lib/budgetTypes";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/campaigns/budget-dismiss
- * Body: { slug, channel, campaignType, baselineDaily, restore? }
+ * Body: { slug, platform, baselineDaily, restore? }
  *
- * "טיפלתי" snooze on a single budget-desk campaign row. Reuses the
- * existing Firestore alertDismissals store (signal_key prefixed
- * `budget:`). The actual daily budget at snooze time is recorded in
- * `reason` (baseline=N) so the desk can self-resurface the alert the
- * next day if the platform budget DIDN'T actually change after
- * Supermetrics ran overnight (see the fade logic in BudgetGrid).
+ * "טיפלתי" snooze on a project×platform pacing alert. Writes the ONE
+ * shared signal_key (`<slug>|pacing-variance|platform|<platform>`) into
+ * the Firestore alertDismissals store, so the same dismissal also fades
+ * the morning feed alert and the dashboard project-page pacing cell. The
+ * platform's summed actual daily budget at snooze time is recorded in
+ * `reason` (baseline=N) so all surfaces can self-resurface the alert the
+ * next day if the budget DIDN'T actually change after Supermetrics ran
+ * overnight (see computeFadeState in BudgetGrid).
  *
- * restore=true clears the snooze (snooze_until="") → un-fades the row.
+ * restore=true clears the snooze (snooze_until="") → un-fades it.
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -31,8 +34,7 @@ export async function POST(req: Request) {
 
   let body: {
     slug?: unknown;
-    channel?: unknown;
-    campaignType?: unknown;
+    platform?: unknown;
     baselineDaily?: unknown;
     restore?: unknown;
   };
@@ -43,19 +45,20 @@ export async function POST(req: Request) {
   }
 
   const slug = String(body.slug || "").trim();
-  const channel = String(body.channel || "").trim();
-  const campaignType = String(body.campaignType || "").trim();
-  if (!slug || !channel) {
-    return NextResponse.json({ ok: false, error: "slug + channel required" }, { status: 400 });
+  const platform = String(body.platform || "").trim().toLowerCase();
+  if (!slug || !platform) {
+    return NextResponse.json({ ok: false, error: "slug + platform required" }, { status: 400 });
   }
   const baseline = Number(body.baselineDaily);
   const restore = body.restore === true;
 
-  const signalKey = `budget:${slug}:${channel}:${campaignType}`;
+  const signalKey = pacingPlatformKey(slug, platform as Platform | "other");
 
-  // Snooze 7 days as an outer bound; the real resurface trigger is the
-  // overnight budget-change check, evaluated per-render.
-  const until = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  // Pacing spend swings daily — snooze ~1 day (matches the morning feed's
+  // pacing-variance default) so an unhandled alert resurfaces tomorrow.
+  // The baseline check (computeFadeState) keeps it faded past then only
+  // when the budget actually changed.
+  const until = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 
   try {
     const rec = await upsertAlertDismissal({

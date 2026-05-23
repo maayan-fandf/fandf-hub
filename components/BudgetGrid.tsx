@@ -8,6 +8,7 @@ import {
   MANAGER_ORDER,
   PLATFORM_LABELS,
   UNASSIGNED_MANAGER,
+  pacingPlatformKey,
   type BudgetProject,
   type MediaPlanRow,
   type Platform,
@@ -54,7 +55,9 @@ export default function BudgetGrid({
   adLinks: Record<string, ProjLinks>;
   showAdLinks: boolean;
   canEdit: boolean;
-  /** "טיפלתי" snoozes keyed by signal_key (`budget:slug:channel:type`). */
+  /** "טיפלתי" snoozes keyed by the shared per-platform pacing signal_key
+   *  (`<slug>|pacing-variance|platform|<platform>`) — the same key the
+   *  morning feed and the dashboard project-page pacing cell use. */
   dismissals: Record<string, BudgetDismissal>;
   /** Today (Asia/Jerusalem) YYYY-MM-DD, for snooze/resurface evaluation. */
   today: string;
@@ -532,7 +535,11 @@ function PlatformDrillGroups({
                   amount={String(reqVal)}
                   variant="ghost"
                   url={showAdLinks ? url : undefined}
-                  copyId={p.tab}
+                  // Facebook's deep-link opens already filtered to the
+                  // campaign, so copy ONLY the budget number. Google opens
+                  // the whole account → keep the id (paste into the search
+                  // filter first, budget from clipboard history).
+                  copyId={g.platform === "facebook" ? undefined : p.tab}
                   label={
                     showAdLinks && url
                       ? `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
@@ -561,6 +568,7 @@ function PlatformDrillGroups({
                       key={r.row}
                       tab={p.tab}
                       r={r}
+                      platActual={g.agg.actualDaily}
                       canEdit={canEdit}
                       onEdit={onEdit}
                       dismissals={dismissals}
@@ -612,15 +620,16 @@ function computeFadeState(
   return "dismissed";
 }
 
+/** The shared per-platform pacing key for a project row's platform. */
 function rowKey(tab: string, r: BudgetProject["rows"][number]): string {
-  return `budget:${tab}:${r.channel}:${r.campaignType}`;
+  return pacingPlatformKey(tab, r.platform);
 }
 
 /**
  * A platform's summary cell is "handled" (dimmed) when it has off-pace
- * channels and ALL of them are currently snoozed (dismissed). If any
- * off-pace channel is active or has resurfaced (the pacing problem
- * persists / the budget wasn't actually changed), the cell stays lit.
+ * channels and the platform's shared pacing snooze is active (dismissed).
+ * If the snooze expired or resurfaced (the pacing problem persists / the
+ * budget wasn't actually changed), the cell stays lit.
  */
 function platformDimmed(
   p: BudgetProject,
@@ -629,28 +638,27 @@ function platformDimmed(
   localDismiss: Record<string, "on" | "off">,
   today: string,
 ): boolean {
-  const off = p.rows.filter((r) => {
+  const hasOffPace = p.rows.some((r) => {
     if (r.platform !== pl || r.ended) return false;
     const t = paceTone(r.pacingRatio);
     return t === "over" || t === "under";
   });
-  if (off.length === 0) return false;
-  return off.every((r) => {
-    const key = rowKey(p.tab, r);
-    return (
-      computeFadeState(
-        r.actualDaily,
-        dismissals[key],
-        today,
-        localDismiss[key] ?? null,
-      ) === "dismissed"
-    );
-  });
+  if (!hasOffPace) return false;
+  const key = pacingPlatformKey(p.tab, pl);
+  return (
+    computeFadeState(
+      p.platforms[pl].actualDaily,
+      dismissals[key],
+      today,
+      localDismiss[key] ?? null,
+    ) === "dismissed"
+  );
 }
 
 function CampaignRow({
   tab,
   r,
+  platActual,
   canEdit,
   onEdit,
   dismissals,
@@ -660,6 +668,9 @@ function CampaignRow({
 }: {
   tab: string;
   r: BudgetProject["rows"][number];
+  /** The platform's summed actual daily budget — the shared snooze
+   *  baseline, so every row of a platform fades/resurfaces together. */
+  platActual: number;
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
   dismissals: Record<string, BudgetDismissal>;
@@ -722,14 +733,14 @@ function CampaignRow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slug: tab,
-          channel: r.channel,
-          campaignType: r.campaignType,
-          baselineDaily: r.actualDaily,
+          platform: r.platform,
+          baselineDaily: platActual,
           restore,
         }),
       });
       const d = (await res.json()) as { ok?: boolean };
-      // Lift to the grid so the project's platform-summary cell fades too.
+      // Lift to the grid so every row of this platform + the project's
+      // platform-summary cell fade together (shared per-platform key).
       if (res.ok && d.ok) onSnooze(signalKey, restore ? "off" : "on");
     } catch {
       /* best-effort; leave state as-is */
@@ -739,7 +750,7 @@ function CampaignRow({
   }
 
   const state = computeFadeState(
-    r.actualDaily,
+    platActual,
     dismissals[signalKey],
     today,
     localDismiss[signalKey] ?? null,
@@ -815,7 +826,6 @@ function CampaignRow({
               amount={String(dailyReq)}
               variant="ghost"
               label="📋"
-              copyId={tab}
             />
           </span>
         )}

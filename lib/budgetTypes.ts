@@ -52,6 +52,23 @@ export function classifyChannel(raw: string): Platform | "other" {
   return "other";
 }
 
+/**
+ * The ONE shared signal_key for a project×platform pacing alert, used by
+ * all three surfaces — the morning feed (Apps Script `_buildSignalKey_`),
+ * this budget desk, and the dashboard project-page pacing cell — so a
+ * "טיפלתי" on any of them suppresses the same alert everywhere via the
+ * Firestore `alertDismissals` store. Must stay byte-identical to the Apps
+ * Script `_buildSignalKey_(slug, 'pacing-variance', 'platform|'+platform)`.
+ */
+export function pacingPlatformKey(
+  slug: string,
+  platform: Platform | "other",
+): string {
+  const s = String(slug || "").toLowerCase().trim() || "(no-slug)";
+  const p = String(platform || "").toLowerCase().trim();
+  return `${s}|pacing-variance|platform|${p}`;
+}
+
 /** Display order for the budget desk's manager grouping. */
 export const MANAGER_ORDER = ["Maayan Sachs", "Nadav Eedelman"];
 export const UNASSIGNED_MANAGER = "ללא מנהל";
