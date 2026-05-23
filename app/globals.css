@@ -18127,6 +18127,8 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   text-align: start; color: var(--muted); font-weight: 600;
   padding: .25em .5em; border-bottom: 1px solid var(--border); font-size: .9em;
 }
+.budget-rows th.th-help { cursor: help; }
+.budget-rows th.th-help span { opacity: .55; font-size: .9em; }
 .budget-rows td { padding: .3em .5em; border-bottom: 1px solid var(--border); }
 .budget-rows th:nth-child(1), .budget-rows td:nth-child(1) { width: 11%; }
 .budget-rows th:nth-child(2), .budget-rows td:nth-child(2) { width: 19%; }

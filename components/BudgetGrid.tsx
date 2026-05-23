@@ -504,6 +504,8 @@ function PlatformDrillGroups({
         const isPaid = g.platform !== "other";
         // Taboola/Outbrain are set in the platform in USD, so the
         // required-budget copy is converted from the ILS-tracked figure.
+        // TikTok defaults to ILS (like Google/Facebook) — flip it into this
+        // set if the F&F TikTok account is actually billed in USD.
         const isUsd = g.platform === "taboola" || g.platform === "outbrain";
         const reqIls = Math.max(0, g.agg.dailyRequired);
         const reqVal = isUsd
@@ -556,7 +558,19 @@ function PlatformDrillGroups({
                     <th>סוג</th>
                     <th>תקציב מאושר</th>
                     <th>בפועל</th>
-                    <th>קצב</th>
+                    <th
+                      className="th-help"
+                      title={
+                        "קצב = הוצאה בפועל ÷ ההוצאה הצפויה עד היום " +
+                        "(לפי תאריכי הטיסה של הערוץ עצמו).\n" +
+                        "100% = בדיוק בקצב\n" +
+                        "מתחת ל-85% = מתחת לקצב — התקציב לא ינוצל עד תאריך הסיום (כדאי להעלות את היומי)\n" +
+                        "מעל 110% = חריגה — התקציב ייגמר לפני הסיום (כדאי להוריד)\n" +
+                        "ערוץ שהסתיים מסומן ⛔ ואינו נספר."
+                      }
+                    >
+                      קצב <span aria-hidden>ⓘ</span>
+                    </th>
                     <th>יומי מוגדר</th>
                     <th>נדרש ליום</th>
                     <th aria-label="טיפלתי"> </th>
@@ -1044,6 +1058,7 @@ function recomputeProject(
   const platforms = {
     google: agg("google"),
     facebook: agg("facebook"),
+    tiktok: agg("tiktok"),
     taboola: agg("taboola"),
     outbrain: agg("outbrain"),
   };

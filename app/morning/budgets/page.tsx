@@ -125,8 +125,8 @@ export default async function BudgetsPage() {
             תקציבים
           </h1>
           <div className="subtitle">
-            חלוקת התקציב הפרוגרמטי (E3) בין Google · Facebook · Taboola ·
-            Outbrain — ועריכת התקציב החודשי המאושר ישירות מכאן.
+            חלוקת התקציב הפרוגרמטי (E3) בין Google · Facebook · TikTok ·
+            Taboola · Outbrain — ועריכת התקציב החודשי המאושר ישירות מכאן.
           </div>
         </div>
       </header>

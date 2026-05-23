@@ -8,12 +8,18 @@ const CLEAN = /[​-‏‪-‮⁠­﻿\uD800-\uDFFF]/g;
 const clean = (s: unknown) =>
   String(s ?? "").replace(CLEAN, "").replace(/\s+/g, " ").trim();
 
-export type Platform = "google" | "facebook" | "taboola" | "outbrain";
+export type Platform =
+  | "google"
+  | "facebook"
+  | "tiktok"
+  | "taboola"
+  | "outbrain";
 
 /** The platforms whose G allocations must sum to E3. */
 export const E3_PLATFORMS: Platform[] = [
   "google",
   "facebook",
+  "tiktok",
   "taboola",
   "outbrain",
 ];
@@ -21,6 +27,7 @@ export const E3_PLATFORMS: Platform[] = [
 export const PLATFORM_LABELS: Record<Platform, string> = {
   google: "Google",
   facebook: "Facebook",
+  tiktok: "TikTok",
   taboola: "Taboola",
   outbrain: "Outbrain",
 };
@@ -30,7 +37,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
  * platforms or "other". The labels are extremely inconsistent in the
  * sheet (90+ spellings), so this is a best-effort normalizer. Generic
  * native/content rows (article/כתבה/news/teads/jerusalempost) fall to
- * "other" by design — only explicitly-labeled Taboola/Outbrain count.
+ * "other" by design — only explicitly-labeled Taboola/Outbrain/TikTok count.
  *
  * DV / DV360 / dv-360 (Display & Video 360) is NOT part of the
  * internally-managed budget (owner decision 2026-05-23) → it must be
@@ -45,6 +52,7 @@ export function classifyChannel(raw: string): Platform | "other" {
   if (/\bdv[\s-]?360\b|\bdv\b/.test(n)) return "other";
   if (/taboola|טאבולה/.test(n)) return "taboola";
   if (/outbrain|אאוטבריין|אאוטברין|teads|טידס/.test(n)) return "outbrain";
+  if (/tik[\s-]?tok|טיק[\s-]?טוק/.test(n)) return "tiktok";
   if (/google|גוגל|discover|discovery|dicovery|pmax|youtube|\byt\b/.test(n))
     return "google";
   if (/facebook|פייסבוק|\bfb\b|\bmeta\b|instagram|אינסטג/.test(n))

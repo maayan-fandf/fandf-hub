@@ -42,10 +42,10 @@ export type {
  *     rows are per-channel: D=channel, F=סוג קמפיין, G=תקציב חודשי מאושר
  *     (the editable allocation), H=עלות (spend so far).
  *
- * The page reconciles E3 against the sum of G for the four paid
- * platforms (Google, Facebook, Taboola, Outbrain) — generic native
- * "article/כתבה/news" rows are intentionally treated as "other" and
- * NOT counted toward E3 (owner decision). It also computes pacing
+ * The page reconciles E3 against the sum of G for the paid programmatic
+ * platforms (Google, Facebook, TikTok, Taboola, Outbrain) — generic
+ * native "article/כתבה/news" rows are intentionally treated as "other"
+ * and NOT counted toward E3 (owner decision). It also computes pacing
  * (spend vs expected-by-today) and the daily-required budget
  * ((G−H)/days-remaining) so managers can spend out exactly by the end
  * date without overshooting.
@@ -200,10 +200,10 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     // Active-only accumulators (exclude ended channels) for the pacing
     // ratio, so a finished channel doesn't drag a platform off-pace.
     const expActive: Record<string, number> = {
-      google: 0, facebook: 0, taboola: 0, outbrain: 0, other: 0,
+      google: 0, facebook: 0, tiktok: 0, taboola: 0, outbrain: 0, other: 0,
     };
     const spendActive: Record<string, number> = {
-      google: 0, facebook: 0, taboola: 0, outbrain: 0, other: 0,
+      google: 0, facebook: 0, tiktok: 0, taboola: 0, outbrain: 0, other: 0,
     };
 
     const rows: BudgetRow[] = [];
@@ -320,7 +320,10 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     // 7-day actual-spend average per platform (standardized daily file).
     const sp = spend7d[tab.toLowerCase()];
     if (sp) {
-      for (const p of E3_PLATFORMS) platforms[p].actual7d = sp[p] || 0;
+      // sp only carries the platforms with a daily-data tab (Google/FB/
+      // Taboola/Outbrain); TikTok has none yet → reads 0.
+      const spAny = sp as Record<string, number>;
+      for (const p of E3_PLATFORMS) platforms[p].actual7d = spAny[p] || 0;
     }
 
     const allocated = E3_PLATFORMS.reduce((s, p) => s + platforms[p].budget, 0);
@@ -379,6 +382,7 @@ function emptyPlatforms(): Record<Platform, PlatformAgg> {
   return {
     google: emptyAgg(),
     facebook: emptyAgg(),
+    tiktok: emptyAgg(),
     taboola: emptyAgg(),
     outbrain: emptyAgg(),
   };
