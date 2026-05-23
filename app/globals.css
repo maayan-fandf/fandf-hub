@@ -18102,6 +18102,7 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   font-size: .8em; min-width: 0;
 }
 .budget-platcell.is-empty { opacity: .5; }
+.budget-platcell.is-handled { opacity: .4; }
 .pc-name { color: var(--muted); font-size: .85em; }
 .pc-amt { font-weight: 700; }
 .pc-sub { color: var(--muted); display: inline-flex; align-items: center; }

@@ -67,6 +67,14 @@ export default function BudgetGrid({
     "all" | "attention" | "distribution" | "pacing"
   >("all");
   const [showInactive, setShowInactive] = useState(false);
+  // Optimistic "טיפלתי" snoozes lifted here (signal_key → on/off) so BOTH
+  // the campaign row AND the project's platform-summary cell fade
+  // immediately, before the next server read.
+  const [localDismiss, setLocalDismiss] = useState<Record<string, "on" | "off">>(
+    {},
+  );
+  const onSnooze = (key: string, val: "on" | "off") =>
+    setLocalDismiss((m) => ({ ...m, [key]: val }));
 
   const counts = useMemo(() => {
     let attention = 0,
@@ -242,6 +250,8 @@ export default function BudgetGrid({
                       dismissals={dismissals}
                       today={today}
                       usdIlsRate={usdIlsRate}
+                      localDismiss={localDismiss}
+                      onSnooze={onSnooze}
                     />
                   ))}
                 </ul>
@@ -301,6 +311,8 @@ function ProjectRow({
   dismissals,
   today,
   usdIlsRate,
+  localDismiss,
+  onSnooze,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -312,6 +324,8 @@ function ProjectRow({
   dismissals: Record<string, BudgetDismissal>;
   today: string;
   usdIlsRate: number;
+  localDismiss: Record<string, "on" | "off">;
+  onSnooze: (key: string, val: "on" | "off") => void;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
@@ -343,7 +357,12 @@ function ProjectRow({
 
         <span className="budget-platcells">
           {E3_PLATFORMS.map((pl) => (
-            <PlatformCell key={pl} platform={pl} agg={p.platforms[pl]} />
+            <PlatformCell
+              key={pl}
+              platform={pl}
+              agg={p.platforms[pl]}
+              dimmed={platformDimmed(p, pl, dismissals, localDismiss, today)}
+            />
           ))}
         </span>
       </button>
@@ -393,6 +412,8 @@ function ProjectRow({
             dismissals={dismissals}
             today={today}
             usdIlsRate={usdIlsRate}
+            localDismiss={localDismiss}
+            onSnooze={onSnooze}
           />
         </div>
       )}
@@ -442,6 +463,8 @@ function PlatformDrillGroups({
   dismissals,
   today,
   usdIlsRate,
+  localDismiss,
+  onSnooze,
 }: {
   p: BudgetProject;
   ad: ProjLinks;
@@ -451,6 +474,8 @@ function PlatformDrillGroups({
   dismissals: Record<string, BudgetDismissal>;
   today: string;
   usdIlsRate: number;
+  localDismiss: Record<string, "on" | "off">;
+  onSnooze: (key: string, val: "on" | "off") => void;
 }) {
   const groups: { platform: Platform | "other"; label: string; agg: PlatformAgg }[] =
     [
@@ -540,6 +565,8 @@ function PlatformDrillGroups({
                       onEdit={onEdit}
                       dismissals={dismissals}
                       today={today}
+                      localDismiss={localDismiss}
+                      onSnooze={onSnooze}
                     />
                   ))}
                 </tbody>
@@ -585,6 +612,42 @@ function computeFadeState(
   return "dismissed";
 }
 
+function rowKey(tab: string, r: BudgetProject["rows"][number]): string {
+  return `budget:${tab}:${r.channel}:${r.campaignType}`;
+}
+
+/**
+ * A platform's summary cell is "handled" (dimmed) when it has off-pace
+ * channels and ALL of them are currently snoozed (dismissed). If any
+ * off-pace channel is active or has resurfaced (the pacing problem
+ * persists / the budget wasn't actually changed), the cell stays lit.
+ */
+function platformDimmed(
+  p: BudgetProject,
+  pl: Platform,
+  dismissals: Record<string, BudgetDismissal>,
+  localDismiss: Record<string, "on" | "off">,
+  today: string,
+): boolean {
+  const off = p.rows.filter((r) => {
+    if (r.platform !== pl || r.ended) return false;
+    const t = paceTone(r.pacingRatio);
+    return t === "over" || t === "under";
+  });
+  if (off.length === 0) return false;
+  return off.every((r) => {
+    const key = rowKey(p.tab, r);
+    return (
+      computeFadeState(
+        r.actualDaily,
+        dismissals[key],
+        today,
+        localDismiss[key] ?? null,
+      ) === "dismissed"
+    );
+  });
+}
+
 function CampaignRow({
   tab,
   r,
@@ -592,6 +655,8 @@ function CampaignRow({
   onEdit,
   dismissals,
   today,
+  localDismiss,
+  onSnooze,
 }: {
   tab: string;
   r: BudgetProject["rows"][number];
@@ -599,12 +664,13 @@ function CampaignRow({
   onEdit: (tab: string, row: number, value: number) => void;
   dismissals: Record<string, BudgetDismissal>;
   today: string;
+  localDismiss: Record<string, "on" | "off">;
+  onSnooze: (key: string, val: "on" | "off") => void;
 }) {
   const [draft, setDraft] = useState(String(Math.round(r.budget)));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [savedFlash, setSavedFlash] = useState(false);
-  const [localSnooze, setLocalSnooze] = useState<"on" | "off" | null>(null);
   const [snoozing, setSnoozing] = useState(false);
 
   async function commit() {
@@ -646,6 +712,8 @@ function CampaignRow({
     }
   }
 
+  const signalKey = rowKey(tab, r);
+
   async function snooze(restore: boolean) {
     setSnoozing(true);
     try {
@@ -661,7 +729,8 @@ function CampaignRow({
         }),
       });
       const d = (await res.json()) as { ok?: boolean };
-      if (res.ok && d.ok) setLocalSnooze(restore ? "off" : "on");
+      // Lift to the grid so the project's platform-summary cell fades too.
+      if (res.ok && d.ok) onSnooze(signalKey, restore ? "off" : "on");
     } catch {
       /* best-effort; leave state as-is */
     } finally {
@@ -669,12 +738,11 @@ function CampaignRow({
     }
   }
 
-  const signalKey = `budget:${tab}:${r.channel}:${r.campaignType}`;
   const state = computeFadeState(
     r.actualDaily,
     dismissals[signalKey],
     today,
-    localSnooze,
+    localDismiss[signalKey] ?? null,
   );
   const tone = paceTone(r.pacingRatio);
   const offPace = !r.ended && (tone === "over" || tone === "under");
@@ -771,10 +839,21 @@ function CampaignRow({
 
 /* ── small presentational pieces ─────────────────────────────────── */
 
-function PlatformCell({ platform, agg }: { platform: Platform; agg: PlatformAgg }) {
+function PlatformCell({
+  platform,
+  agg,
+  dimmed,
+}: {
+  platform: Platform;
+  agg: PlatformAgg;
+  dimmed?: boolean;
+}) {
   const empty = agg.budget === 0 && agg.spend === 0;
   return (
-    <span className={`budget-platcell ${empty ? "is-empty" : ""}`}>
+    <span
+      className={`budget-platcell ${empty ? "is-empty" : ""} ${dimmed ? "is-handled" : ""}`}
+      title={dimmed ? "טופל — ההתראה מושתקת (תחזור אם הקצב עדיין חורג)" : undefined}
+    >
       <span className="pc-name">{PLATFORM_LABELS[platform]}</span>
       {empty ? (
         <span className="pc-empty">—</span>

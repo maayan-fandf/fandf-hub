@@ -179,21 +179,18 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     const totalDays = Math.max(1, dayDiff(startIso, endIso) || 30);
     const remainingDays = Math.max(0, dayDiff(today, endIso));
 
-    // Locate the "פעילות נוכחית" marker, then its header row, then data.
-    let markerRow = -1;
-    for (let r = 0; r < grid.length; r++) {
-      if (clean(cell(r, 1)) === "פעילות נוכחית") {
-        markerRow = r;
-        break;
-      }
-    }
+    // Locate the activity-table header (B="התחלה", D="מזהה BMBY") directly,
+    // skipping the frozen top header at row 0. The section label above it
+    // varies by tab ("פעילות נוכחית", "עלויות ולידים מצרפי", …), so we
+    // detect the header row itself rather than relying on the marker text
+    // — otherwise tabs with a non-standard label (e.g. tidhar-hever)
+    // parse as empty. The current-period table always precedes any
+    // "נתוני עבר" past-data table, so the FIRST header below row 0 is it.
     let headerRow = -1;
-    if (markerRow >= 0) {
-      for (let r = markerRow + 1; r < grid.length; r++) {
-        if (clean(cell(r, 1)) === "התחלה" && clean(cell(r, 3)) === "מזהה BMBY") {
-          headerRow = r;
-          break;
-        }
+    for (let r = 1; r < grid.length; r++) {
+      if (clean(cell(r, 1)) === "התחלה" && clean(cell(r, 3)) === "מזהה BMBY") {
+        headerRow = r;
+        break;
       }
     }
 
