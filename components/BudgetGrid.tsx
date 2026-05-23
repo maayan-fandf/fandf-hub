@@ -65,7 +65,7 @@ export default function BudgetGrid({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<
     "all" | "attention" | "distribution" | "pacing"
-  >("attention");
+  >("all");
   const [showInactive, setShowInactive] = useState(false);
 
   const counts = useMemo(() => {

@@ -15,9 +15,10 @@ import { readKeysCached } from "@/lib/keys";
  *     matchProjectForCampaign_ — campaign name CONTAINS a Keys
  *     `campaign ID` pattern, longest-first). ACTIVE FB only; Google
  *     campaigns past their real end date skipped.
- *   - byCampaign: campaign-name (lowercased) → daily budget, so the
- *     budget desk can show the actual set budget on the specific
- *     campaign row (matched by its סוג / campaign-name cell).
+ *   - campaignsBySlug: matched campaigns per project slug (name +
+ *     platform + daily budget), so the budget desk can attribute the
+ *     actual set budget to a channel row by its סוג token (e.g. a "GS"
+ *     row sums the campaigns whose name contains "GS").
  */
 
 const CACHE_TAG = "platformDailyBudget";
@@ -94,19 +95,36 @@ function todayIso(): string {
   }).format(new Date());
 }
 
+export type CampaignBudgetItem = {
+  nameLower: string;
+  platform: "google" | "facebook";
+  dailyBudget: number;
+};
 export type CampaignBudgets = {
   byProject: Record<string, { google: number; facebook: number }>;
-  byCampaign: Record<string, number>;
+  /** Matched campaigns grouped by project slug, so a budget-desk row can
+   *  attribute the actual daily budget to its channel-type (the row's
+   *  סוג token must appear in the campaign name, e.g. "GS"). */
+  campaignsBySlug: Record<string, CampaignBudgetItem[]>;
 };
 
 async function fetchCampaignBudgets(
   subjectEmail: string,
 ): Promise<CampaignBudgets> {
   const byProject: Record<string, { google: number; facebook: number }> = {};
-  const byCampaign: Record<string, number> = {};
+  const campaignsBySlug: Record<string, CampaignBudgetItem[]> = {};
   const addProj = (slug: string, platform: "google" | "facebook", v: number) => {
     if (!byProject[slug]) byProject[slug] = { google: 0, facebook: 0 };
     byProject[slug][platform] += v;
+  };
+  const addCamp = (
+    slug: string,
+    nameLower: string,
+    platform: "google" | "facebook",
+    dailyBudget: number,
+  ) => {
+    if (!campaignsBySlug[slug]) campaignsBySlug[slug] = [];
+    campaignsBySlug[slug].push({ nameLower, platform, dailyBudget });
   };
 
   try {
@@ -137,9 +155,11 @@ async function fetchCampaignBudgets(
           const status = iStatus >= 0 ? clean(fbRows[r][iStatus]).toUpperCase() : "";
           if (status && status !== "ACTIVE") continue;
           const bud = num(fbRows[r][iBud]);
-          byCampaign[name.toLowerCase()] = bud;
           const slug = matchSlug(name, matchMap);
-          if (slug) addProj(slug, "facebook", bud);
+          if (slug) {
+            addProj(slug, "facebook", bud);
+            addCamp(slug, name.toLowerCase(), "facebook", bud);
+          }
         }
       }
     }
@@ -159,16 +179,18 @@ async function fetchCampaignBudgets(
           if (end && end >= "2037-01-01") end = "";
           if (end && end < today) continue;
           const bud = num(gRows[r][iBud]);
-          byCampaign[name.toLowerCase()] = bud;
           const slug = matchSlug(name, matchMap);
-          if (slug) addProj(slug, "google", bud);
+          if (slug) {
+            addProj(slug, "google", bud);
+            addCamp(slug, name.toLowerCase(), "google", bud);
+          }
         }
       }
     }
   } catch {
     /* Best-effort enrichment — desk still works without actual daily. */
   }
-  return { byProject, byCampaign };
+  return { byProject, campaignsBySlug };
 }
 
 const fetchCampaignBudgetsCrossRequest = unstable_cache(

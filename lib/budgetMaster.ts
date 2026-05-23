@@ -143,7 +143,10 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     buildKeyInfo(subjectEmail),
     getCampaignBudgets(subjectEmail).catch(() => ({
       byProject: {} as Record<string, { google: number; facebook: number }>,
-      byCampaign: {} as Record<string, number>,
+      campaignsBySlug: {} as Record<
+        string,
+        { nameLower: string; platform: "google" | "facebook"; dailyBudget: number }[]
+      >,
     })),
     getMediaPlan(subjectEmail).catch(() => ({}) as Record<string, MediaPlanRow>),
   ]);
@@ -192,6 +195,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
 
     const platforms = emptyPlatforms();
     const other = emptyAgg();
+    const projCampaigns = budgets.campaignsBySlug[tab.toLowerCase()] || [];
     // Active-only accumulators (exclude ended channels) for the pacing
     // ratio, so a finished channel doesn't drag a platform off-pace.
     const expActive: Record<string, number> = {
@@ -242,8 +246,19 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         const pacingRatio = expected > 0 ? spend / expected : 0;
         const dailyRequired =
           rowRemaining > 0 ? (budget - spend) / rowRemaining : 0;
-        const actualDaily =
-          budgets.byCampaign[campaignType.toLowerCase()] || 0;
+        // Actual daily set in the platform for THIS channel-type: sum the
+        // matched creatives campaigns whose name contains the row's סוג
+        // token (e.g. "GS" → ...Brand_GS + ...generic_GS, excluding
+        // ...discovery). Only Google/Facebook are tracked in creatives.
+        let actualDaily = 0;
+        if ((platform === "google" || platform === "facebook") && campaignType) {
+          const token = campaignType.toLowerCase();
+          for (const c of projCampaigns) {
+            if (c.platform === platform && c.nameLower.includes(token)) {
+              actualDaily += c.dailyBudget;
+            }
+          }
+        }
 
         rows.push({
           row: r + 1,

@@ -29,29 +29,37 @@ export default function CopyAmountButton({
     <button
       type="button"
       className={className}
-      onClick={async () => {
+      onClick={() => {
+        // Mirror the dashboard's proven approach: when both a slug and a
+        // budget exist, put them on ONE clipboard entry separated by a
+        // newline (line 1 = slug for the campaign filter, line 2 = the
+        // daily budget). Use the synchronous textarea+execCommand path
+        // first (reliable inside nested iframes), clipboard API fallback.
+        const value = copyFirst ? `${copyFirst}\n${amount}` : amount;
+        let ok = false;
         try {
-          if (navigator.clipboard?.writeText) {
-            // Sequential awaited writes so BOTH land in clipboard history
-            // (Win+V / Chrome clipboard), with `amount` as the current
-            // clipboard value.
-            if (copyFirst) await navigator.clipboard.writeText(copyFirst);
-            await navigator.clipboard.writeText(amount);
-          } else {
-            const ta = document.createElement("textarea");
-            ta.value = amount;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand("copy");
-            document.body.removeChild(ta);
-          }
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1600);
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          ta.style.position = "fixed";
+          ta.style.top = "0";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          ok = document.execCommand("copy");
+          document.body.removeChild(ta);
         } catch {
-          /* best-effort — still open the URL below */
+          /* fall through to clipboard API */
         }
+        if (!ok && navigator.clipboard?.writeText) {
+          try {
+            navigator.clipboard.writeText(value);
+          } catch {
+            /* best-effort */
+          }
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
         if (url) window.open(url, "_blank", "noopener");
       }}
       title={
