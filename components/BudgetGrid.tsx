@@ -526,7 +526,17 @@ function PlatformDrillGroups({
                 <span className="budget-group-stats">
                   {fmt(g.agg.budget)} מאושר · {fmt(g.agg.spend)} בפועל ·{" "}
                   <span className="budget-pace-diag" title={pacingTooltip(g.agg)}>
-                    <Pacing ratio={g.agg.pacingRatio} /> ⓘ
+                    <Pacing
+                      ratio={g.agg.pacingRatio}
+                      muted={
+                        !needsBudgetAction(
+                          g.agg.actualDaily,
+                          g.agg.dailyRequired,
+                          g.agg.pacingRatio,
+                        )
+                      }
+                    />{" "}
+                    ⓘ
                   </span>
                   {(g.platform === "google" || g.platform === "facebook") && (
                     <>
@@ -775,9 +785,23 @@ function CampaignRow({
     today,
     localDismiss[signalKey] ?? null,
   );
-  const tone = paceTone(r.pacingRatio);
-  const offPace = !r.ended && (tone === "over" || tone === "under");
   const dailyReq = Math.max(0, Math.round(r.dailyRequired));
+  // Action is needed only when the configured daily is materially off the
+  // required daily — not merely because the historical קצב deviates.
+  const needsAction =
+    !r.ended &&
+    needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio);
+  // Arrow direction: by the configured-vs-required gap when we know the
+  // configured daily; else by the historical pacing tone.
+  const actionTone: "over" | "under" | "ok" | "none" = !needsAction
+    ? "ok"
+    : r.actualDaily > 0 && r.dailyRequired > 0
+      ? r.dailyRequired > r.actualDaily
+        ? "under"
+        : "over"
+      : paceTone(r.pacingRatio);
+  // ✓ טיפלתי only where there's actually something to handle.
+  const offPace = needsAction;
 
   return (
     <tr
@@ -785,6 +809,15 @@ function CampaignRow({
     >
       <td className="c-channel" title={r.channel}>
         <StatusDot status={r.campaignStatus} />
+        {needsAction && (
+          <span
+            className="budget-alert"
+            title="התקציב היומי בפלטפורמה לא תואם את הנדרש — נדרש עדכון"
+            aria-label="נדרש עדכון תקציב"
+          >
+            ⚠️
+          </span>
+        )}
         {r.channel}
       </td>
       <td className="c-type" title={r.campaignType}>
@@ -824,7 +857,7 @@ function CampaignRow({
             ⛔
           </span>
         ) : (
-          <Pacing ratio={r.pacingRatio} />
+          <Pacing ratio={r.pacingRatio} muted={!needsAction} />
         )}
       </td>
       <td className="c-actualdaily" title="תקציב יומי שמוגדר בפלטפורמה">
@@ -837,11 +870,12 @@ function CampaignRow({
           "—"
         ) : (
           <span className="budget-daily">
-            {/* Project-page design: color + action arrow (⬇ lower when
-                over-pacing, ⬆ raise when under-pacing). */}
-            <span className={`budget-need pace-${tone}`}>
+            {/* Action arrow by the configured-vs-required gap: ⬆ raise when
+                the platform daily is below נדרש, ⬇ lower when above. No
+                arrow / neutral when it's already set right. */}
+            <span className={`budget-need pace-${actionTone}`}>
               ₪{dailyReq.toLocaleString("he-IL")}
-              {tone === "over" ? " ⬇" : tone === "under" ? " ⬆" : ""}
+              {actionTone === "over" ? " ⬇" : actionTone === "under" ? " ⬆" : ""}
             </span>
             <CopyAmountButton
               amount={String(dailyReq)}
@@ -890,6 +924,9 @@ function PlatformCell({
   dimmed?: boolean;
 }) {
   const empty = agg.budget === 0 && agg.spend === 0;
+  const action =
+    !dimmed &&
+    needsBudgetAction(agg.actualDaily, agg.dailyRequired, agg.pacingRatio);
   return (
     <span
       className={`budget-platcell ${empty ? "is-empty" : ""} ${dimmed ? "is-handled" : ""}`}
@@ -897,6 +934,11 @@ function PlatformCell({
     >
       <span className="pc-name">
         <PlatformIcon platform={platform} /> {PLATFORM_LABELS[platform]}
+        {action && (
+          <span className="budget-alert" title="נדרש עדכון תקציב יומי">
+            ⚠️
+          </span>
+        )}
       </span>
       {empty ? (
         <span className="pc-empty">—</span>
@@ -904,7 +946,9 @@ function PlatformCell({
         <>
           <span className="pc-amt">{fmt(agg.budget)}</span>
           <span className="pc-sub">
-            <span className={`budget-dot pace-${paceTone(agg.pacingRatio)}`} />
+            <span
+              className={`budget-dot pace-${action ? paceTone(agg.pacingRatio) : "none"}`}
+            />
             {fmt(agg.spend)}
           </span>
         </>
@@ -927,14 +971,43 @@ function ReconBadge({ p }: { p: BudgetProject }) {
   );
 }
 
-function Pacing({ ratio }: { ratio: number }) {
+function Pacing({ ratio, muted }: { ratio: number; muted?: boolean }) {
   if (!ratio) return <span className="pace-val pace-none">—</span>;
-  const tone = paceTone(ratio);
+  // muted = the daily budget is already set to land on target, so the
+  // historical pacing ratio isn't actionable → show it neutral, not red.
+  const tone = muted ? "none" : paceTone(ratio);
   return (
-    <span className={`pace-val pace-${tone}`}>
+    <span
+      className={`pace-val pace-${tone}`}
+      title={
+        muted
+          ? "התקציב היומי מכוון לנחיתה על היעד — הסטייה היסטורית, אין צורך בפעולה"
+          : undefined
+      }
+    >
       {Math.round(ratio * 100)}%
     </span>
   );
+}
+
+/**
+ * Whether the manager actually needs to change the daily budget: the
+ * configured daily (actualDaily / יומי מוגדר) is materially off the required
+ * daily (dailyRequired / נדרש ליום). When they match, the campaign is set to
+ * land on budget by the end date, so the historical pacing ratio is stale —
+ * NOT an alert. When the configured daily is unknown (0, e.g. Taboola/
+ * Outbrain or an unmatched row), fall back to the historical pacing ratio.
+ */
+function needsBudgetAction(
+  actualDaily: number,
+  dailyRequired: number,
+  pacingRatio: number,
+): boolean {
+  if (actualDaily > 0 && dailyRequired > 0) {
+    return Math.abs(actualDaily - dailyRequired) / dailyRequired > 0.12;
+  }
+  const t = paceTone(pacingRatio);
+  return t === "over" || t === "under";
 }
 
 function FilterChip({
@@ -1153,8 +1226,7 @@ function hasPacingIssue(p: BudgetProject): boolean {
   return E3_PLATFORMS.some((pl) => {
     const a = p.platforms[pl];
     if (a.budget <= 0) return false;
-    const t = paceTone(a.pacingRatio);
-    return t === "over" || t === "under";
+    return needsBudgetAction(a.actualDaily, a.dailyRequired, a.pacingRatio);
   });
 }
 

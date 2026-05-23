@@ -18163,6 +18163,8 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .camp-status-ok { background: #22c55e; }
 .camp-status-off { background: #ef4444; }
 .camp-status-mixed { background: #f59e0b; }
+/* "needs budget action" marker — configured daily ≠ required daily */
+.budget-alert { font-size: .92em; margin-inline-end: .25em; cursor: help; }
 .budget-rows .c-type { color: var(--muted); }
 
 .budget-edit {
