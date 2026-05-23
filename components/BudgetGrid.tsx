@@ -927,6 +927,17 @@ function PlatformCell({
   const action =
     !dimmed &&
     needsBudgetAction(agg.actualDaily, agg.dailyRequired, agg.pacingRatio);
+  // Direction to move the daily budget — same semantics as the dashboard's
+  // קצב יומי cell: ⬆ raise (configured below required), ⬇ lower (above).
+  const dir: "over" | "under" | "none" = !action
+    ? "none"
+    : agg.actualDaily > 0 && agg.dailyRequired > 0
+      ? agg.dailyRequired > agg.actualDaily
+        ? "under"
+        : "over"
+      : paceTone(agg.pacingRatio) === "over"
+        ? "over"
+        : "under";
   return (
     <span
       className={`budget-platcell ${empty ? "is-empty" : ""} ${dimmed ? "is-handled" : ""}`}
@@ -934,11 +945,6 @@ function PlatformCell({
     >
       <span className="pc-name">
         <PlatformIcon platform={platform} /> {PLATFORM_LABELS[platform]}
-        {action && (
-          <span className="budget-alert" title="נדרש עדכון תקציב יומי">
-            ⚠️
-          </span>
-        )}
       </span>
       {empty ? (
         <span className="pc-empty">—</span>
@@ -946,9 +952,18 @@ function PlatformCell({
         <>
           <span className="pc-amt">{fmt(agg.budget)}</span>
           <span className="pc-sub">
-            <span
-              className={`budget-dot pace-${action ? paceTone(agg.pacingRatio) : "none"}`}
-            />
+            {dir !== "none" && (
+              <span
+                className={`budget-arrow pace-${dir}`}
+                title={
+                  dir === "under"
+                    ? "נדרש להעלות את התקציב היומי"
+                    : "נדרש להוריד את התקציב היומי"
+                }
+              >
+                {dir === "under" ? "⬆" : "⬇"}
+              </span>
+            )}
             {fmt(agg.spend)}
           </span>
         </>

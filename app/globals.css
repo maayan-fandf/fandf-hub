@@ -18163,8 +18163,13 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .camp-status-ok { background: #22c55e; }
 .camp-status-off { background: #ef4444; }
 .camp-status-mixed { background: #f59e0b; }
-/* "needs budget action" marker — configured daily ≠ required daily */
+/* per-row "needs attention" flag — daily budget materially off required */
 .budget-alert { font-size: .92em; margin-inline-end: .25em; cursor: help; }
+/* raise/lower arrow on the platform summary cell — configured daily off
+   the required daily (same semantics as the dashboard's קצב יומי cell) */
+.budget-arrow { font-weight: 800; margin-inline-end: .2em; cursor: help; font-size: .9em; }
+.budget-arrow.pace-over { color: #ef4444; }   /* ⬇ lower (overspending) */
+.budget-arrow.pace-under { color: #f59e0b; }  /* ⬆ raise (underspending) */
 .budget-rows .c-type { color: var(--muted); }
 
 .budget-edit {
