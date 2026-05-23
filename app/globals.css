@@ -18193,6 +18193,17 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-arrow { font-weight: 800; margin-inline-end: .2em; cursor: help; font-size: .9em; }
 .budget-arrow.pace-over { color: #ef4444; }   /* ⬇ lower (overspending) */
 .budget-arrow.pace-under { color: #f59e0b; }  /* ⬆ raise (underspending) */
+/* platform logo that doubles as an "open the ad account" link */
+.budget-logo-link {
+  background: none; border: 0; padding: 0; margin: 0;
+  cursor: pointer; display: inline-flex; align-items: center;
+  line-height: 1; border-radius: 4px; vertical-align: middle;
+  transition: opacity .12s, transform .12s;
+}
+.budget-logo-link:hover { opacity: .75; transform: scale(1.12); }
+.budget-logo-link:focus-visible {
+  outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px;
+}
 .budget-rows .c-type { color: var(--muted); }
 
 .budget-edit {

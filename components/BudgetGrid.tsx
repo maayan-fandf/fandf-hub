@@ -240,14 +240,24 @@ export default function BudgetGrid({
               <GroupTotals
                 projects={mg.companies.flatMap((c) => c.projects)}
               />
-              <ManagerCsvButtons manager={mg.manager} />
+              <ManagerCsvButtons
+                manager={mg.manager}
+                projects={mg.companies.flatMap((c) => c.projects)}
+                adLinks={adLinks}
+                showAdLinks={showAdLinks}
+              />
             </h2>
             {mg.companies.map((cg) => (
               <div key={cg.company} className="budget-co-group">
                 <h3 className="budget-co-head">
                   <span className="budget-co-name">{cg.company}</span>
                   <GroupTotals projects={cg.projects} />
-                  <CompanyCsvButtons company={cg.company} />
+                  <CompanyCsvButtons
+                    company={cg.company}
+                    projects={cg.projects}
+                    adLinks={adLinks}
+                    showAdLinks={showAdLinks}
+                  />
                 </h3>
                 <ul className="budget-list">
                   {cg.projects.map((p) => (
@@ -539,7 +549,19 @@ function PlatformDrillGroups({
           <div key={g.platform} className="budget-group">
             <div className="budget-group-head">
               <span className="budget-group-title">
-                <PlatformIcon platform={g.platform} /> {g.label}
+                <PlatformLogoLink
+                  platform={g.platform}
+                  href={showAdLinks ? url : undefined}
+                  copySlug={g.platform === "google" ? p.tab : undefined}
+                  title={
+                    g.platform === "google"
+                      ? "פתח את חשבון Google Ads (המזהה מועתק ללוח לסינון לפי שם קמפיין)"
+                      : g.platform === "facebook"
+                        ? "פתח את חשבון פייסבוק"
+                        : undefined
+                  }
+                />{" "}
+                {g.label}
               </span>
               {isPaid && (
                 <span className="budget-group-stats">
@@ -1173,6 +1195,65 @@ function PlatformIcon({
   ) : null;
 }
 
+/** A platform logo that doubles as a quick "open the ad account" link —
+ *  reuses the same deep-links as the "פתח" button. Google opens its account
+ *  and copies the project slug (so the F&F userscript filters by campaign
+ *  name); Facebook just opens its account. Plain (non-clickable) logo when
+ *  there's no url to open. */
+function PlatformLogoLink({
+  platform,
+  href,
+  copySlug,
+  size = "1em",
+  title,
+}: {
+  platform: Platform | "other";
+  href?: string;
+  copySlug?: string;
+  size?: string;
+  title?: string;
+}) {
+  if (!href) return <PlatformIcon platform={platform} size={size} />;
+  return (
+    <button
+      type="button"
+      className="budget-logo-link"
+      title={title || "פתח את חשבון הפרסום"}
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (copySlug) {
+          try {
+            await navigator.clipboard.writeText(copySlug);
+          } catch {
+            /* best-effort */
+          }
+        }
+        window.open(href, "_blank", "noopener");
+      }}
+    >
+      <PlatformIcon platform={platform} size={size} />
+    </button>
+  );
+}
+
+/** The single ad-account url shared by a set of projects, or undefined when
+ *  they span more than one account — so a manager/company logo only opens an
+ *  account when it's unambiguous. (Google urls carry a per-project filter
+ *  hash, so for Google a group is "one account" only with one project.) */
+function groupAccountUrl(
+  projects: BudgetProject[],
+  adLinks: Record<string, ProjLinks>,
+  platform: "google" | "facebook",
+): string | undefined {
+  const set = new Set<string>();
+  for (const p of projects) {
+    const a = adLinks[p.tab.toLowerCase()];
+    const u = platform === "google" ? a?.gAdsUrl : a?.fbAdsUrl;
+    if (u) set.add(u);
+  }
+  return set.size === 1 ? [...set][0] : undefined;
+}
+
 /** Active/paused dot for a row's matched FB/Google campaigns. */
 function StatusDot({
   status,
@@ -1202,23 +1283,47 @@ function StatusDot({
  *  straight to the clipboard for the platform's bulk importer (Google Ads
  *  Editor "Make multiple changes" / FB bulk import). Both hit the same
  *  /api/campaigns/budget-csv endpoint. */
-function ManagerCsvButtons({ manager }: { manager: string }) {
+function ManagerCsvButtons({
+  manager,
+  projects,
+  adLinks,
+  showAdLinks,
+}: {
+  manager: string;
+  projects: BudgetProject[];
+  adLinks: Record<string, ProjLinks>;
+  showAdLinks: boolean;
+}) {
   const q = `manager=${encodeURIComponent(manager)}`;
+  const gUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "google") : undefined;
+  const fbUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "facebook") : undefined;
   return (
     <span className="budget-csv-actions">
-      <CsvPlatformButtons params={q} platform="google" label="Google" />
-      <CsvPlatformButtons params={q} platform="facebook" label="FB" />
+      <CsvPlatformButtons params={q} platform="google" label="Google" openUrl={gUrl} />
+      <CsvPlatformButtons params={q} platform="facebook" label="FB" openUrl={fbUrl} />
     </span>
   );
 }
 
 /** Per-company Google export (the per-חברה button on the company header). */
-function CompanyCsvButtons({ company }: { company: string }) {
+function CompanyCsvButtons({
+  company,
+  projects,
+  adLinks,
+  showAdLinks,
+}: {
+  company: string;
+  projects: BudgetProject[];
+  adLinks: Record<string, ProjLinks>;
+  showAdLinks: boolean;
+}) {
   const q = `company=${encodeURIComponent(company)}`;
+  const gUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "google") : undefined;
+  const fbUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "facebook") : undefined;
   return (
     <span className="budget-csv-actions">
-      <CsvPlatformButtons params={q} platform="google" label="Google" />
-      <CsvPlatformButtons params={q} platform="facebook" label="FB" />
+      <CsvPlatformButtons params={q} platform="google" label="Google" openUrl={gUrl} />
+      <CsvPlatformButtons params={q} platform="facebook" label="FB" openUrl={fbUrl} />
     </span>
   );
 }
@@ -1227,10 +1332,14 @@ function CsvPlatformButtons({
   params,
   platform,
   label,
+  openUrl,
 }: {
   params: string;
   platform: "google" | "facebook";
   label: string;
+  /** When set, the platform logo becomes a quick "open the ad account" link
+   *  (only passed when the group resolves to a single account). */
+  openUrl?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -1259,8 +1368,19 @@ function CsvPlatformButtons({
   }
   return (
     <span className="budget-csv-group" title={label}>
-      <span className="budget-csv-logo" aria-hidden>
-        <PlatformIcon platform={platform} size="1.05em" />
+      <span className="budget-csv-logo">
+        {openUrl ? (
+          <PlatformLogoLink
+            platform={platform}
+            href={openUrl}
+            size="1.05em"
+            title={`פתח את חשבון ה${label}`}
+          />
+        ) : (
+          <span aria-hidden>
+            <PlatformIcon platform={platform} size="1.05em" />
+          </span>
+        )}
       </span>
       <a
         className="budget-csv-btn"
