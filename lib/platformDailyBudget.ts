@@ -177,6 +177,30 @@ async function fetchCampaignBudgets(
   } catch {
     /* Best-effort enrichment — desk still works without actual daily. */
   }
+
+  // Dedup campaigns by name within each project: the source tabs can list a
+  // campaign on more than one row (stale + active dupes, or two accounts),
+  // which otherwise shows the campaign twice in the export AND double-counts
+  // the desk's "יומי מוגדר". Sum the daily budgets onto one entry, keep the
+  // first campaign ID. Recompute byProject from the deduped set so the
+  // platform "יומי בפועל" total matches.
+  for (const slug of Object.keys(campaignsBySlug)) {
+    const m = new Map<string, CampaignBudgetItem>();
+    for (const c of campaignsBySlug[slug]) {
+      const ex = m.get(c.nameLower);
+      if (ex) {
+        ex.dailyBudget += c.dailyBudget;
+        if (!ex.campaignId && c.campaignId) ex.campaignId = c.campaignId;
+      } else {
+        m.set(c.nameLower, { ...c });
+      }
+    }
+    campaignsBySlug[slug] = Array.from(m.values());
+    const agg = { google: 0, facebook: 0 };
+    for (const c of campaignsBySlug[slug]) agg[c.platform] += c.dailyBudget;
+    byProject[slug] = agg;
+  }
+
   return { byProject, campaignsBySlug };
 }
 

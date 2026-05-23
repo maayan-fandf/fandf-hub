@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import CopyAmountButton from "./CopyAmountButton";
 import PrisaButton from "./PrisaButton";
+import GoogleAdsIcon from "./GoogleAdsIcon";
+import FacebookAdsIcon from "./FacebookAdsIcon";
 import {
   E3_PLATFORMS,
   MANAGER_ORDER,
@@ -517,7 +519,9 @@ function PlatformDrillGroups({
         return (
           <div key={g.platform} className="budget-group">
             <div className="budget-group-head">
-              <span className="budget-group-title">{g.label}</span>
+              <span className="budget-group-title">
+                <PlatformIcon platform={g.platform} /> {g.label}
+              </span>
               {isPaid && (
                 <span className="budget-group-stats">
                   {fmt(g.agg.budget)} מאושר · {fmt(g.agg.spend)} בפועל ·{" "}
@@ -890,7 +894,9 @@ function PlatformCell({
       className={`budget-platcell ${empty ? "is-empty" : ""} ${dimmed ? "is-handled" : ""}`}
       title={dimmed ? "טופל — ההתראה מושתקת (תחזור אם הקצב עדיין חורג)" : undefined}
     >
-      <span className="pc-name">{PLATFORM_LABELS[platform]}</span>
+      <span className="pc-name">
+        <PlatformIcon platform={platform} /> {PLATFORM_LABELS[platform]}
+      </span>
       {empty ? (
         <span className="pc-empty">—</span>
       ) : (
@@ -954,6 +960,30 @@ function FilterChip({
   );
 }
 
+/** Brand mark for a platform — reuses the project's Google Ads / Facebook
+ *  Ads SVGs; TikTok/Taboola/Outbrain fall back to their channel emoji. */
+function PlatformIcon({
+  platform,
+  size = "1em",
+}: {
+  platform: Platform | "other";
+  size?: string;
+}) {
+  if (platform === "google") return <GoogleAdsIcon size={size} />;
+  if (platform === "facebook") return <FacebookAdsIcon size={size} />;
+  const emoji =
+    platform === "tiktok"
+      ? "🎵"
+      : platform === "taboola" || platform === "outbrain"
+        ? "📰"
+        : "";
+  return emoji ? (
+    <span aria-hidden style={{ fontSize: size, lineHeight: 1 }}>
+      {emoji}
+    </span>
+  ) : null;
+}
+
 /** Per-manager budget export — one button group per platform. Download a
  *  CSV (with a Project column for per-account filtering) or copy TSV rows
  *  straight to the clipboard for the platform's bulk importer (Google Ads
@@ -1015,8 +1045,10 @@ function CsvPlatformButtons({
     }
   }
   return (
-    <span className="budget-csv-group">
-      <span className="budget-csv-label">{label}</span>
+    <span className="budget-csv-group" title={label}>
+      <span className="budget-csv-logo" aria-hidden>
+        <PlatformIcon platform={platform} size="1.05em" />
+      </span>
       <a
         className="budget-csv-btn"
         href={base}

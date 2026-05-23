@@ -18103,7 +18103,7 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 }
 .budget-platcell.is-empty { opacity: .5; }
 .budget-platcell.is-handled { opacity: .4; }
-.pc-name { color: var(--muted); font-size: .85em; }
+.pc-name { color: var(--muted); font-size: .85em; display: inline-flex; align-items: center; gap: .3em; }
 .pc-amt { font-weight: 700; }
 .pc-sub { color: var(--muted); display: inline-flex; align-items: center; }
 .pc-empty { color: var(--muted); }
@@ -18115,7 +18115,7 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   display: flex; flex-wrap: wrap; align-items: center; gap: .5em .9em;
   margin: .5em 0 .35em;
 }
-.budget-group-title { font-weight: 700; }
+.budget-group-title { font-weight: 700; display: inline-flex; align-items: center; gap: .35em; }
 .budget-group-stats { color: var(--muted); font-size: .82em; }
 .budget-pace-diag { cursor: help; white-space: nowrap; }
 .budget-pace-diag:hover { text-decoration: underline dotted; }
@@ -18216,20 +18216,26 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-mgr-count { color: var(--muted); font-size: .8em; font-weight: 600; }
 .budget-csv-actions {
   margin-inline-start: auto; align-self: center;
-  display: inline-flex; gap: .7em; flex-wrap: wrap;
+  display: inline-flex; gap: .5em; flex-wrap: wrap;
 }
-.budget-csv-group { display: inline-flex; align-items: center; gap: .2em; }
-.budget-csv-label { font-size: .6em; font-weight: 700; color: var(--muted); }
+/* Each platform export = a neat pill: [logo · ⬇ · 📋] */
+.budget-csv-group {
+  display: inline-flex; align-items: center; gap: .1em;
+  padding: .12em .25em; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--surface-soft, rgba(0,0,0,.02));
+}
+.budget-csv-logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1em; padding-inline-start: .25em; padding-inline-end: .1em;
+}
 .budget-csv-btn {
-  display: inline-flex; align-items: center; gap: .3em;
-  padding: .3em .7em; border-radius: 999px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--accent); font-size: .62em; font-weight: 700;
-  text-decoration: none; white-space: nowrap;
-  cursor: pointer; font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.7em; height: 1.7em; border-radius: 50%;
+  border: none; background: transparent; color: var(--muted);
+  font-size: .82em; cursor: pointer; font-family: inherit; text-decoration: none;
 }
-.budget-csv-btn:hover { border-color: var(--accent); filter: brightness(1.1); }
-.budget-csv-btn:disabled { opacity: .6; cursor: default; }
+.budget-csv-btn:hover { background: var(--surface-hi, rgba(0,0,0,.07)); color: var(--accent); }
+.budget-csv-btn:disabled { opacity: .5; cursor: default; }
 .budget-co-group { margin: 0 0 1em; }
 .budget-co-head {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: .5em .8em;
