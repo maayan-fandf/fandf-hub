@@ -18155,6 +18155,14 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-handled-btn.is-done:hover { border-color: var(--accent); color: var(--accent); }
 .budget-rows tr.row-error td { background: rgba(239,68,68,.08); }
 .budget-rows .c-channel { max-width: 18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Active/paused dot for a row's matched FB/Google campaigns */
+.camp-status-dot {
+  display: inline-block; width: .55em; height: .55em; border-radius: 50%;
+  margin-inline-end: .4em; vertical-align: middle; flex-shrink: 0;
+}
+.camp-status-ok { background: #22c55e; }
+.camp-status-off { background: #ef4444; }
+.camp-status-mixed { background: #f59e0b; }
 .budget-rows .c-type { color: var(--muted); }
 
 .budget-edit {

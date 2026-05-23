@@ -784,6 +784,7 @@ function CampaignRow({
       className={`${err ? "row-error" : ""} ${state === "dismissed" ? "is-dismissed" : ""}`}
     >
       <td className="c-channel" title={r.channel}>
+        <StatusDot status={r.campaignStatus} />
         {r.channel}
       </td>
       <td className="c-type" title={r.campaignType}>
@@ -982,6 +983,30 @@ function PlatformIcon({
       {emoji}
     </span>
   ) : null;
+}
+
+/** Active/paused dot for a row's matched FB/Google campaigns. */
+function StatusDot({
+  status,
+}: {
+  status: "none" | "active" | "paused" | "mixed";
+}) {
+  if (status === "none") return null;
+  const tone =
+    status === "active" ? "ok" : status === "paused" ? "off" : "mixed";
+  const title =
+    status === "active"
+      ? "קמפיין פעיל"
+      : status === "paused"
+        ? "קמפיין מושהה"
+        : "חלק מהקמפיינים מושהים";
+  return (
+    <span
+      className={`camp-status-dot camp-status-${tone}`}
+      title={title}
+      aria-label={title}
+    />
+  );
 }
 
 /** Per-manager budget export — one button group per platform. Download a

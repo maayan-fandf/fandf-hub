@@ -124,6 +124,10 @@ export type BudgetRow = {
    *  (matched by the campaign-name cell against the creatives sheet).
    *  0 when the row isn't a single named campaign or has no match. */
   actualDaily: number;
+  /** Status of the FB/Google campaigns matched to this row (by סוג token):
+   *  'active' all active · 'paused' all paused · 'mixed' some of each ·
+   *  'none' no matched platform campaign. Drives the active/paused dot. */
+  campaignStatus: "none" | "active" | "paused" | "mixed";
 };
 
 export type PlatformAgg = {

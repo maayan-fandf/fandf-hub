@@ -2,7 +2,7 @@ import { cache } from "react";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
-import { getCampaignBudgets } from "@/lib/platformDailyBudget";
+import { getCampaignBudgets, type CampaignBudgets } from "@/lib/platformDailyBudget";
 import { getDailySpend7d } from "@/lib/platformDailySpend";
 import { getGoogleAccountIds, normalizeAdAccountName } from "@/lib/adAccounts";
 import { getMediaPlan } from "@/lib/mediaPlan";
@@ -143,13 +143,9 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
   // plan (פריסה נוכחית) — all cached, fetched in parallel.
   const [keyInfo, budgets, mediaPlan, spend7d, googleAcctIds] = await Promise.all([
     buildKeyInfo(subjectEmail),
-    getCampaignBudgets(subjectEmail).catch(() => ({
-      byProject: {} as Record<string, { google: number; facebook: number }>,
-      campaignsBySlug: {} as Record<
-        string,
-        { nameLower: string; platform: "google" | "facebook"; dailyBudget: number }[]
-      >,
-    })),
+    getCampaignBudgets(subjectEmail).catch(
+      (): CampaignBudgets => ({ byProject: {}, campaignsBySlug: {} }),
+    ),
     getMediaPlan(subjectEmail).catch(() => ({}) as Record<string, MediaPlanRow>),
     getDailySpend7d(subjectEmail).catch(
       () => ({}) as Record<string, Record<"google" | "facebook" | "taboola" | "outbrain", number>>,
@@ -257,6 +253,8 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         // token (e.g. "GS" → ...Brand_GS + ...generic_GS, excluding
         // ...discovery). Only Google/Facebook are tracked in creatives.
         let actualDaily = 0;
+        let activeCount = 0;
+        let pausedCount = 0;
         if ((platform === "google" || platform === "facebook") && campaignType) {
           // Match by ALL tokens of the סוג cell (split on non-alphanumerics)
           // so separators like the "*" in "israel*fb" don't break the match
@@ -273,11 +271,24 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
                 c.platform === platform &&
                 tokens.every((t) => c.nameLower.includes(t))
               ) {
-                actualDaily += c.dailyBudget;
+                if (c.active) {
+                  actualDaily += c.dailyBudget; // active only
+                  activeCount++;
+                } else {
+                  pausedCount++;
+                }
               }
             }
           }
         }
+        const campaignStatus: BudgetRow["campaignStatus"] =
+          activeCount + pausedCount === 0
+            ? "none"
+            : pausedCount === 0
+              ? "active"
+              : activeCount === 0
+                ? "paused"
+                : "mixed";
 
         rows.push({
           row: r + 1,
@@ -291,6 +302,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
           endIso: rowEnd,
           ended,
           actualDaily,
+          campaignStatus,
         });
 
         const key = platform === "other" ? "other" : platform;

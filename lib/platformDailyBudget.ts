@@ -68,6 +68,10 @@ export type CampaignBudgetItem = {
   /** Platform campaign ID — required for the FB bulk-import match (FB
    *  matches by ID, not name). "" when the sheet has no ID (#N/A). */
   campaignId: string;
+  /** Whether the campaign is currently active (vs paused/removed). FB
+   *  status ACTIVE; Google status ENABLED. Drives the status dot; paused
+   *  campaigns are kept (for the dot) but excluded from budget sums. */
+  active: boolean;
 };
 export type CampaignBudgets = {
   byProject: Record<string, { google: number; facebook: number }>;
@@ -92,6 +96,7 @@ async function fetchCampaignBudgets(
     platform: "google" | "facebook",
     dailyBudget: number,
     campaignId: string,
+    active: boolean,
   ) => {
     if (!campaignsBySlug[slug]) campaignsBySlug[slug] = [];
     campaignsBySlug[slug].push({
@@ -100,8 +105,13 @@ async function fetchCampaignBudgets(
       platform,
       dailyBudget,
       campaignId,
+      active,
     });
   };
+  // Active = currently delivering. FB: ACTIVE; Google: ENABLED; empty
+  // (no status column yet) defaults to active so nothing disappears.
+  const isActiveStatus = (s: string): boolean =>
+    !s || s === "ACTIVE" || s === "ENABLED";
   // Supermetrics writes "#N/A" when a campaign has no ID — normalize to "".
   const cleanId = (v: unknown): string => {
     const s = clean(v);
@@ -137,13 +147,13 @@ async function fetchCampaignBudgets(
           const name = clean(fbRows[r][iName]);
           if (!name) continue;
           const status = iStatus >= 0 ? clean(fbRows[r][iStatus]).toUpperCase() : "";
-          if (status && status !== "ACTIVE") continue;
+          const active = isActiveStatus(status);
           const bud = num(fbRows[r][iBud]);
           const cid = iId >= 0 ? cleanId(fbRows[r][iId]) : "";
           const slug = matchSlug(name, matchMap);
           if (slug) {
-            addProj(slug, "facebook", bud);
-            addCamp(slug, name, "facebook", bud, cid);
+            if (active) addProj(slug, "facebook", bud); // budget sums = active only
+            addCamp(slug, name, "facebook", bud, cid, active); // keep paused for the status dot
           }
         }
       }
@@ -157,6 +167,7 @@ async function fetchCampaignBudgets(
       const iBud = findCol(hdr, ["Daily budget", "Campaign daily budget"]);
       const iEnd = findCol(hdr, ["End date", "End time"]);
       const iId = findCol(hdr, ["Campaign ID", "Campaign id", "campaign_id"]);
+      const iStatus = findCol(hdr, ["Campaign status", "Status"]);
       if (iName >= 0 && iBud >= 0) {
         for (let r = 1; r < gRows.length; r++) {
           const name = clean(gRows[r][iName]);
@@ -164,12 +175,14 @@ async function fetchCampaignBudgets(
           let end = iEnd >= 0 ? clean(gRows[r][iEnd]) : "";
           if (end && end >= "2037-01-01") end = "";
           if (end && end < today) continue;
+          const status = iStatus >= 0 ? clean(gRows[r][iStatus]).toUpperCase() : "";
+          const active = isActiveStatus(status);
           const bud = num(gRows[r][iBud]);
           const cid = iId >= 0 ? cleanId(gRows[r][iId]) : "";
           const slug = matchSlug(name, matchMap);
           if (slug) {
-            addProj(slug, "google", bud);
-            addCamp(slug, name, "google", bud, cid);
+            if (active) addProj(slug, "google", bud); // budget sums = active only
+            addCamp(slug, name, "google", bud, cid, active); // keep paused for the status dot
           }
         }
       }
@@ -191,13 +204,14 @@ async function fetchCampaignBudgets(
       if (ex) {
         ex.dailyBudget += c.dailyBudget;
         if (!ex.campaignId && c.campaignId) ex.campaignId = c.campaignId;
+        ex.active = ex.active || c.active;
       } else {
         m.set(c.nameLower, { ...c });
       }
     }
     campaignsBySlug[slug] = Array.from(m.values());
     const agg = { google: 0, facebook: 0 };
-    for (const c of campaignsBySlug[slug]) agg[c.platform] += c.dailyBudget;
+    for (const c of campaignsBySlug[slug]) if (c.active) agg[c.platform] += c.dailyBudget;
     byProject[slug] = agg;
   }
 

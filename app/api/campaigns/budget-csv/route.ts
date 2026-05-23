@@ -98,6 +98,7 @@ export async function GET(req: Request) {
       const matched = camps.filter(
         (c) =>
           c.platform === platform &&
+          c.active && // don't push budget updates to paused campaigns
           !seen.has(c.nameLower) &&
           tokens.every((t) => c.nameLower.includes(t)) &&
           // FB matches by Campaign ID — skip campaigns we can't address.
