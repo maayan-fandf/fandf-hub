@@ -55,6 +55,7 @@ export async function POST(req: Request) {
     row?: unknown;
     value?: unknown;
     expectedChannel?: unknown;
+    expectedBudget?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -69,6 +70,9 @@ export async function POST(req: Request) {
   const row = Number(body.row);
   const value = Number(body.value);
   const expectedChannel = clean(body.expectedChannel);
+  const hasExpectedBudget =
+    body.expectedBudget !== undefined && body.expectedBudget !== null;
+  const expectedBudget = Number(body.expectedBudget);
   if (!tab) {
     return NextResponse.json(
       { ok: false, error: "tab is required" },
@@ -94,19 +98,35 @@ export async function POST(req: Request) {
     if (!ssId) throw new Error("SHEET_ID_MAIN is not set");
     const ref = `'${tab.replace(/'/g, "''")}'`;
 
-    // Drift guard: confirm the channel cell (D) on this row still matches
-    // what the client showed before overwriting the budget cell (G).
+    // Drift guard: confirm we're about to overwrite the cell the client
+    // actually showed. Re-read D (channel) + G (current budget) on the
+    // row. Normally the channel must match. But a merged מזהה BMBY label
+    // (e.g. Facebook split into 45-60 / 60+ audiences) leaves the
+    // continuation row's D empty — there we fall back to confirming the
+    // current G still equals the value the client displayed.
     const check = await sheets.spreadsheets.values.get({
       spreadsheetId: ssId,
-      range: `${ref}!D${row}`,
+      range: `${ref}!D${row}:G${row}`,
       valueRenderOption: "UNFORMATTED_VALUE",
     });
-    const actualChannel = clean(check.data.values?.[0]?.[0]);
-    if (expectedChannel && actualChannel !== expectedChannel) {
+    const cells = check.data.values?.[0] ?? [];
+    const actualChannel = clean(cells[0]); // D
+    const actualBudget = Number(cells[3]) || 0; // G (D,E,F,G)
+
+    let driftOk = true;
+    if (actualChannel) {
+      driftOk = !expectedChannel || actualChannel === expectedChannel;
+    } else {
+      // Merged/continuation row — verify by the budget value instead.
+      driftOk = hasExpectedBudget
+        ? Math.round(actualBudget) === Math.round(expectedBudget)
+        : true;
+    }
+    if (!driftOk) {
       return NextResponse.json(
         {
           ok: false,
-          error: `Row changed (expected "${expectedChannel}", found "${actualChannel}"). Reload and retry.`,
+          error: `Row changed (expected "${expectedChannel}" / ₪${Math.round(expectedBudget)}, found "${actualChannel}" / ₪${Math.round(actualBudget)}). Reload and retry.`,
           actualChannel,
         },
         { status: 409 },

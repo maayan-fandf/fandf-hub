@@ -2,6 +2,8 @@ import { cache } from "react";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
+import { getPlatformDailyBudgets } from "@/lib/platformDailyBudget";
+import { getMediaPlan } from "@/lib/mediaPlan";
 import {
   canonicalManagers,
   classifyChannel,
@@ -9,6 +11,7 @@ import {
   type BudgetMaster,
   type BudgetProject,
   type BudgetRow,
+  type MediaPlanRow,
   type Platform,
   type PlatformAgg,
   type ReconStatus,
@@ -134,8 +137,13 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     .map((s) => clean(s.properties?.title))
     .filter((t) => t && !SKIP_TABS.has(t) && !/crm$/i.test(t));
 
-  // Map slug(tab) → {company, name} from Keys (cheap, cached).
-  const keyInfo = await buildKeyInfo(subjectEmail);
+  // Keys enrichment + actual daily budgets (creatives sheet) + media
+  // plan (פריסה נוכחית) — all cached, fetched in parallel.
+  const [keyInfo, dailyBudgets, mediaPlan] = await Promise.all([
+    buildKeyInfo(subjectEmail),
+    getPlatformDailyBudgets(subjectEmail).catch(() => ({}) as Record<string, { google: number; facebook: number }>),
+    getMediaPlan(subjectEmail).catch(() => ({}) as Record<string, MediaPlanRow>),
+  ]);
 
   // One batchGet for every tab's top region (E3 + the activity table).
   const ranges = titles.map((t) => `'${t.replace(/'/g, "''")}'!A1:J60`);
@@ -183,13 +191,32 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
 
     const rows: BudgetRow[] = [];
     if (headerRow >= 0) {
+      let lastChannel = "";
       for (let r = headerRow + 1; r < grid.length; r++) {
         const b = clean(cell(r, 1));
         if (b === "total") break;
-        const channel = clean(cell(r, 3)); // D
-        if (!channel) continue;
+        let channel = clean(cell(r, 3)); // D — מזהה BMBY
         const budget = num(cell(r, 6)); // G
         const spend = num(cell(r, 7)); // H
+        const campaignType = clean(cell(r, 5)); // F
+        // Forward-fill the channel across merged BMBY label cells. A
+        // platform that spans several rows (e.g. Facebook split into
+        // 45-60 / 60+ audiences) merges its מזהה BMBY label, so the
+        // continuation rows come back with an empty D even though they
+        // each carry their own G/H. Inherit the previous channel when D
+        // is blank but the row still has real data — otherwise we'd drop
+        // those rows and under-count the platform (and break E3 recon).
+        if (!channel) {
+          const hasData =
+            budget !== 0 ||
+            spend !== 0 ||
+            !!campaignType ||
+            !!b ||
+            !!clean(cell(r, 2));
+          if (lastChannel && hasData) channel = lastChannel;
+          else continue;
+        }
+        lastChannel = channel;
         const platform = classifyChannel(channel);
         const expected = budget * elapsedFrac;
         const pacingRatio = expected > 0 ? spend / expected : 0;
@@ -198,7 +225,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         rows.push({
           row: r + 1,
           channel,
-          campaignType: clean(cell(r, 5)),
+          campaignType,
           platform,
           budget,
           spend,
@@ -218,6 +245,13 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
     }
     finalizeAgg(other, elapsedFrac, remainingDays);
     for (const p of E3_PLATFORMS) finalizeAgg(platforms[p], elapsedFrac, remainingDays);
+
+    // Actual daily budget (from the creatives sheet) — Google + Facebook.
+    const db = dailyBudgets[tab.toLowerCase()];
+    if (db) {
+      platforms.google.actualDaily = db.google || 0;
+      platforms.facebook.actualDaily = db.facebook || 0;
+    }
 
     const allocated = E3_PLATFORMS.reduce((s, p) => s + platforms[p].budget, 0);
     const allocatedSpend = E3_PLATFORMS.reduce(
@@ -253,6 +287,7 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
       delta,
       reconStatus,
       hasActivityTable: headerRow >= 0,
+      plan: mediaPlan[tab.toLowerCase()] || null,
     });
   });
 
@@ -260,7 +295,14 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
 }
 
 function emptyAgg(): PlatformAgg {
-  return { budget: 0, spend: 0, rowCount: 0, pacingRatio: 0, dailyRequired: 0 };
+  return {
+    budget: 0,
+    spend: 0,
+    rowCount: 0,
+    pacingRatio: 0,
+    dailyRequired: 0,
+    actualDaily: 0,
+  };
 }
 function emptyPlatforms(): Record<Platform, PlatformAgg> {
   return {

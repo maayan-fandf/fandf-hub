@@ -18194,3 +18194,34 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-grouptotals-delta.tone-over { color: #ef4444; }
 .budget-grouptotals-delta.tone-under { color: #f59e0b; }
 .budget-grouptotals-delta.tone-ok { color: #22c55e; }
+
+/* drill-in action bar (open in sheet / project page / show media plan) */
+.budget-actions {
+  display: flex; flex-wrap: wrap; gap: .5em;
+  margin: .25em 0 .75em;
+}
+.budget-action-btn {
+  display: inline-flex; align-items: center; gap: .35em;
+  padding: .4em .9em; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: .82em; font-weight: 600;
+  cursor: pointer; font-family: inherit; text-decoration: none;
+}
+.budget-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.budget-action-btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.budget-actual-daily { color: var(--text); }
+
+/* הראה פריסה media-plan KPI panel */
+.budget-plan {
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); padding: .7em .9em; margin-bottom: 1em;
+}
+.budget-plan-title { font-weight: 700; margin-bottom: .5em; }
+.budget-plan-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .5em .9em;
+}
+.budget-plan-kpi { display: flex; flex-direction: column; gap: .1em; }
+.budget-plan-kpi-label { color: var(--muted); font-size: .75em; }
+.budget-plan-kpi-val { font-weight: 700; font-size: .95em; }

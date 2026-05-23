@@ -63,8 +63,17 @@ export default async function BudgetsPage() {
       ? peopleRes.value.people
       : [];
 
-  // Ad-account deep links from the morning feed, keyed by slug (== tab).
-  const adLinks: Record<string, { gAdsUrl?: string; fbAdsUrl?: string }> = {};
+  // Per-project links from the morning feed, keyed by slug (== tab):
+  // ad-account deep links, the sheet tab URL, and the Hub project page.
+  const adLinks: Record<
+    string,
+    {
+      gAdsUrl?: string;
+      fbAdsUrl?: string;
+      sheetTabUrl?: string;
+      projectHref?: string;
+    }
+  > = {};
   if (feed) {
     for (const pr of feed.projects) {
       const key = (pr.slug || pr.name || "").toLowerCase();
@@ -72,6 +81,10 @@ export default async function BudgetsPage() {
       adLinks[key] = {
         gAdsUrl: pr.gAdsUrl || undefined,
         fbAdsUrl: pr.fbAdsUrl || undefined,
+        sheetTabUrl: pr.sheetTabUrl || undefined,
+        projectHref: pr.name
+          ? `/projects/${encodeURIComponent(pr.name)}`
+          : undefined,
       };
     }
   }

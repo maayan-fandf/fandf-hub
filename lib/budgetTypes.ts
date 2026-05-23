@@ -35,13 +35,16 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
  * DV / DV360 / dv-360 (Display & Video 360) is NOT part of the
  * internally-managed budget (owner decision 2026-05-23) → it must be
  * caught BEFORE the Google branch and routed to "other".
+ *
+ * Teads is a rebrand/alias of Outbrain → classified as outbrain
+ * (owner note 2026-05-23).
  */
 export function classifyChannel(raw: string): Platform | "other" {
   const n = clean(raw).toLowerCase();
   if (!n) return "other";
   if (/\bdv[\s-]?360\b|\bdv\b/.test(n)) return "other";
   if (/taboola|טאבולה/.test(n)) return "taboola";
-  if (/outbrain|אאוטבריין|אאוטברין/.test(n)) return "outbrain";
+  if (/outbrain|אאוטבריין|אאוטברין|teads|טידס/.test(n)) return "outbrain";
   if (/google|גוגל|discover|discovery|dicovery|pmax|youtube|\byt\b/.test(n))
     return "google";
   if (/facebook|פייסבוק|\bfb\b|\bmeta\b|instagram|אינסטג/.test(n))
@@ -91,6 +94,25 @@ export type PlatformAgg = {
   rowCount: number;
   pacingRatio: number;
   dailyRequired: number;
+  /** Actual daily budget currently configured in the ad platform —
+   *  Σ of active campaigns' daily budgets from the creatives sheet
+   *  (fb-campaigns / קמפיין ID גוגל). Only Google + Facebook are
+   *  tracked there; 0 for Taboola/Outbrain. */
+  actualDaily: number;
+};
+
+/** Per-project current media-plan snapshot from the "פריסה נוכחית" tab. */
+export type MediaPlanRow = {
+  budget: number;
+  spend: number;
+  spendPct: number;
+  leads: number;
+  cpl: number;
+  meetings: number;
+  meetingPct: number;
+  startIso: string;
+  endIso: string;
+  timePct: number;
 };
 
 export type ReconStatus = "ok" | "over" | "under" | "no-target";
@@ -120,6 +142,8 @@ export type BudgetProject = {
   reconStatus: ReconStatus;
   /** False when the "פעילות נוכחית" table couldn't be located. */
   hasActivityTable: boolean;
+  /** Current media-plan snapshot (פריסה נוכחית) for the הראה פריסה panel. */
+  plan: MediaPlanRow | null;
 };
 
 export type BudgetMaster = {

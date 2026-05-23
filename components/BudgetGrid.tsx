@@ -8,6 +8,7 @@ import {
   PLATFORM_LABELS,
   UNASSIGNED_MANAGER,
   type BudgetProject,
+  type MediaPlanRow,
   type Platform,
   type PlatformAgg,
 } from "@/lib/budgetTypes";
@@ -24,7 +25,13 @@ import {
  * the cell rolls back + shows an error if it fails.
  */
 
-type AdLink = { gAdsUrl?: string; fbAdsUrl?: string };
+type ProjLinks = {
+  gAdsUrl?: string;
+  fbAdsUrl?: string;
+  sheetTabUrl?: string;
+  /** Hub project-page href, e.g. /projects/<name>. */
+  projectHref?: string;
+};
 
 export default function BudgetGrid({
   projects: initial,
@@ -34,7 +41,7 @@ export default function BudgetGrid({
 }: {
   projects: BudgetProject[];
   /** keyed by tab name (lowercased). */
-  adLinks: Record<string, AdLink>;
+  adLinks: Record<string, ProjLinks>;
   showAdLinks: boolean;
   canEdit: boolean;
 }) {
@@ -276,11 +283,14 @@ function ProjectRow({
   p: BudgetProject;
   open: boolean;
   onToggle: () => void;
-  ad: AdLink;
+  ad: ProjLinks;
   showAdLinks: boolean;
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
 }) {
+  const [showPlan, setShowPlan] = useState(false);
+  const projectHref =
+    ad.projectHref || `/projects/${encodeURIComponent(p.name)}`;
   return (
     <li className={`budget-card ${needsAttention(p) ? "is-attention" : ""}`}>
       <button
@@ -315,6 +325,39 @@ function ProjectRow({
 
       {open && (
         <div className="budget-detail">
+          <div className="budget-actions">
+            {ad.sheetTabUrl && (
+              <a
+                href={ad.sheetTabUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="budget-action-btn"
+              >
+                📊 פתח בגיליון
+              </a>
+            )}
+            <a
+              href={projectHref}
+              target="_blank"
+              rel="noreferrer"
+              className="budget-action-btn"
+            >
+              🏢 פתח עמוד פרוייקט
+            </a>
+            {p.plan && (
+              <button
+                type="button"
+                className={`budget-action-btn ${showPlan ? "is-active" : ""}`}
+                onClick={() => setShowPlan((s) => !s)}
+                aria-pressed={showPlan}
+              >
+                📐 {showPlan ? "הסתר פריסה" : "הראה פריסה"}
+              </button>
+            )}
+          </div>
+
+          {showPlan && p.plan && <MediaPlanPanel plan={p.plan} />}
+
           <PlatformDrillGroups
             p={p}
             ad={ad}
@@ -328,6 +371,39 @@ function ProjectRow({
   );
 }
 
+/** הראה פריסה — the project's current media-plan KPIs (פריסה נוכחית). */
+function MediaPlanPanel({ plan }: { plan: MediaPlanRow }) {
+  const pct = (v: number) => `${Math.round((v || 0) * 100)}%`;
+  return (
+    <div className="budget-plan">
+      <div className="budget-plan-title">📐 פריסה נוכחית (תוכנית מדיה)</div>
+      <div className="budget-plan-kpis">
+        <PlanKpi label="תקציב כולל" value={fmt(plan.budget)} />
+        <PlanKpi label="ניצול" value={`${fmt(plan.spend)} · ${pct(plan.spendPct)}`} />
+        <PlanKpi label="זמן שחלף" value={pct(plan.timePct)} />
+        <PlanKpi label="לידים" value={String(Math.round(plan.leads))} />
+        <PlanKpi label="עלות לליד" value={fmt(plan.cpl)} />
+        <PlanKpi
+          label="תיאומים"
+          value={`${Math.round(plan.meetings)} · ${pct(plan.meetingPct)}`}
+        />
+        {(plan.startIso || plan.endIso) && (
+          <PlanKpi label="טווח" value={`${plan.startIso || "?"} – ${plan.endIso || "?"}`} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlanKpi({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="budget-plan-kpi">
+      <span className="budget-plan-kpi-label">{label}</span>
+      <span className="budget-plan-kpi-val">{value}</span>
+    </div>
+  );
+}
+
 function PlatformDrillGroups({
   p,
   ad,
@@ -336,7 +412,7 @@ function PlatformDrillGroups({
   onEdit,
 }: {
   p: BudgetProject;
-  ad: AdLink;
+  ad: ProjLinks;
   showAdLinks: boolean;
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
@@ -371,6 +447,14 @@ function PlatformDrillGroups({
                 <span className="budget-group-stats">
                   {fmt(g.agg.budget)} מאושר · {fmt(g.agg.spend)} בפועל ·{" "}
                   <Pacing ratio={g.agg.pacingRatio} />
+                  {(g.platform === "google" || g.platform === "facebook") && (
+                    <>
+                      {" · "}יומי בפועל:{" "}
+                      <b className="budget-actual-daily">
+                        ₪{Math.round(g.agg.actualDaily).toLocaleString("he-IL")}
+                      </b>
+                    </>
+                  )}
                 </span>
               )}
               {isPaid && p.remainingDays > 0 && g.agg.budget > 0 && (
@@ -380,8 +464,8 @@ function PlatformDrillGroups({
                   url={showAdLinks ? url : undefined}
                   label={
                     showAdLinks && url
-                      ? `⧉ פתח + העתק ₪${Math.max(0, Math.round(g.agg.dailyRequired))}/יום`
-                      : `📋 ₪${Math.max(0, Math.round(g.agg.dailyRequired))}/יום`
+                      ? `⧉ פתח + העתק נדרש ₪${Math.max(0, Math.round(g.agg.dailyRequired))}/יום`
+                      : `📋 נדרש ₪${Math.max(0, Math.round(g.agg.dailyRequired))}/יום`
                   }
                 />
               )}
@@ -456,6 +540,7 @@ function CampaignRow({
           row: r.row,
           value,
           expectedChannel: r.channel,
+          expectedBudget: r.budget,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -679,6 +764,7 @@ function recomputeProject(
       rowCount,
       pacingRatio: expected > 0 ? spend / expected : 0,
       dailyRequired: p.remainingDays > 0 ? (budget - spend) / p.remainingDays : 0,
+      actualDaily: p.platforms[pl].actualDaily,
     };
   }
   let oBudget = 0,
@@ -697,6 +783,7 @@ function recomputeProject(
     rowCount: oCount,
     pacingRatio: oExpected > 0 ? oSpend / oExpected : 0,
     dailyRequired: p.remainingDays > 0 ? (oBudget - oSpend) / p.remainingDays : 0,
+    actualDaily: 0,
   };
 
   const allocated = E3_PLATFORMS.reduce((s, pl) => s + platforms[pl].budget, 0);

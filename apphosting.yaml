@@ -111,6 +111,15 @@ env:
       - BUILD
       - RUNTIME
 
+  # Creatives spreadsheet (Supermetrics-fed) — source of the actual
+  # per-campaign daily budgets (fb-campaigns / קמפיין ID גוגל) shown on
+  # the budget desk, same file the Apps Script dashboard reads.
+  - variable: SHEET_ID_CREATIVES
+    value: 1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA
+    availability:
+      - BUILD
+      - RUNTIME
+
   # Kill-switch for the קמפיינים → תקציבים inline budget editor. When "1"
   # the /api/campaigns/budget route may write column G (תקציב חודשי
   # מאושר) on project tabs of SHEET_ID_MAIN. Flip to "" to instantly
