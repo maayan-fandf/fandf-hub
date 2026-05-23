@@ -46,6 +46,7 @@ export type BudgetDismissal = {
 export default function BudgetGrid({
   projects: initial,
   adLinks,
+  inactiveProjects,
   showAdLinks,
   canEdit,
   dismissals,
@@ -55,6 +56,11 @@ export default function BudgetGrid({
   projects: BudgetProject[];
   /** keyed by tab name (lowercased). */
   adLinks: Record<string, ProjLinks>;
+  /** Slug(==tab, lowercased) → is-inactive, using the same rule as the
+   *  projects home screen / top-nav (lib/projectEnded): ended >5 days ago
+   *  OR no current-month spend. Explicit true/false per feed project;
+   *  absent = not in the feed (falls back to the all-zero heuristic). */
+  inactiveProjects: Record<string, boolean>;
   showAdLinks: boolean;
   canEdit: boolean;
   /** "טיפלתי" snoozes keyed by the shared per-platform pacing signal_key
@@ -87,7 +93,7 @@ export default function BudgetGrid({
       pacing = 0,
       active = 0;
     for (const p of projects) {
-      if (isInactive(p)) continue;
+      if (isInactive(p, inactiveProjects)) continue;
       active++;
       const dist = p.reconStatus === "over" || p.reconStatus === "under";
       const pace = hasPacingIssue(p);
@@ -97,11 +103,11 @@ export default function BudgetGrid({
         attention++;
     }
     return { attention, distribution, pacing, active, total: projects.length };
-  }, [projects]);
+  }, [projects, inactiveProjects]);
 
   const visible = useMemo(() => {
     const list = projects.filter((p) => {
-      if (isInactive(p) && !showInactive) return false;
+      if (isInactive(p, inactiveProjects) && !showInactive) return false;
       if (filter === "all") return true;
       const dist = p.reconStatus === "over" || p.reconStatus === "under";
       const pace = hasPacingIssue(p);
@@ -111,7 +117,7 @@ export default function BudgetGrid({
       return dist || pace || (p.reconStatus === "no-target" && p.allocated > 0);
     });
     return list;
-  }, [projects, filter, showInactive]);
+  }, [projects, filter, showInactive, inactiveProjects]);
 
   // Group the filtered projects: manager → company → projects. A
   // co-managed project lands under each of its managers.
@@ -372,6 +378,8 @@ function ProjectRow({
           <span className="budget-recon-alloc">חולק: {fmt(p.allocated)}</span>
           <ReconBadge p={p} />
         </span>
+
+        <ProjectProgress p={p} />
 
         <span className="budget-platcells">
           {E3_PLATFORMS.map((pl) => (
@@ -990,6 +998,77 @@ function PlatformCell({
   );
 }
 
+/**
+ * Two compact progress bars on the project summary row: budget consumed
+ * (allocatedSpend ÷ allocated, i.e. the Σ col-G approved budget actually
+ * spent) and time elapsed (days passed ÷ flight length). Each shows the
+ * %, the real amounts, and the date range — same idea as the morning
+ * dashboard's פריסה cards. Mirrors the BudgetBar/TimeBar math there.
+ */
+function ProjectProgress({ p }: { p: BudgetProject }) {
+  // Prefer the actually-allocated budget (חולק); fall back to the E3 target
+  // when nothing's distributed yet so the bar still reads.
+  const budget = p.allocated > 0 ? p.allocated : p.e3;
+  const spent = p.allocatedSpend;
+  const budgetPct = budget > 0 ? spent / budget : 0;
+  const overBudget = budgetPct > 1;
+  const elapsedPct =
+    p.totalDays > 0
+      ? Math.max(0, (p.totalDays - p.remainingDays) / p.totalDays)
+      : 0;
+  const hasBudget = budget > 0;
+  const hasDates = !!(p.startIso && p.endIso);
+  if (!hasBudget && !hasDates) return <span className="budget-progress" />;
+  return (
+    <span className="budget-progress">
+      {hasBudget && (
+        <span
+          className="budget-progress-row"
+          title={`נוצל ₪${Math.round(spent).toLocaleString("he-IL")} מתוך ₪${Math.round(
+            budget,
+          ).toLocaleString("he-IL")}`}
+        >
+          <span className="bp-head">
+            <span className="bp-label">תקציב</span>
+            <span className="bp-val">{Math.round(budgetPct * 100)}%</span>
+            <span className="bp-detail">
+              {fmt(spent)} / {fmt(budget)}
+            </span>
+          </span>
+          <span className="bp-track">
+            <span
+              className={`bp-fill ${overBudget ? "is-over" : ""}`}
+              style={{ width: `${Math.round(Math.min(100, budgetPct * 100))}%` }}
+            />
+          </span>
+        </span>
+      )}
+      {hasDates && (
+        <span
+          className="budget-progress-row"
+          title={`${p.startIso} – ${p.endIso}${
+            p.remainingDays > 0 ? ` · עוד ${p.remainingDays} ימים` : " · הסתיים"
+          }`}
+        >
+          <span className="bp-head">
+            <span className="bp-label">זמן</span>
+            <span className="bp-val">{Math.round(elapsedPct * 100)}%</span>
+            <span className="bp-detail">
+              {fmtDmy(p.startIso)} – {fmtDmy(p.endIso)}
+            </span>
+          </span>
+          <span className="bp-track">
+            <span
+              className="bp-fill"
+              style={{ width: `${Math.round(Math.min(100, elapsedPct * 100))}%` }}
+            />
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function ReconBadge({ p }: { p: BudgetProject }) {
   if (p.reconStatus === "no-target")
     return <span className="recon-badge tone-none">אין יעד</span>;
@@ -1207,6 +1286,13 @@ function fmt(n: number): string {
   return "₪" + Math.round(n || 0).toLocaleString("he-IL");
 }
 
+/** ISO date (YYYY-MM-DD) → compact D.M.YY for the time-bar date range. */
+function fmtDmy(iso: string): string {
+  const m = (iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso || "—";
+  return `${Number(m[3])}.${Number(m[2])}.${m[1].slice(2)}`;
+}
+
 function paceTone(ratio: number): "none" | "under" | "ok" | "over" {
   if (!ratio) return "none";
   if (ratio > 1.1) return "over";
@@ -1287,7 +1373,18 @@ function needsAttention(p: BudgetProject): boolean {
   return hasPacingIssue(p);
 }
 
-function isInactive(p: BudgetProject): boolean {
+/**
+ * Same "is this live?" answer as the projects home screen + top-nav: a
+ * project is inactive when it ended (>5 days past) OR has no current-month
+ * spend — precomputed server-side in `inactiveProjects` from the morning
+ * feed. Projects missing from the feed fall back to the all-zero heuristic.
+ */
+function isInactive(
+  p: BudgetProject,
+  inactiveProjects: Record<string, boolean>,
+): boolean {
+  const key = p.tab.toLowerCase();
+  if (key in inactiveProjects) return inactiveProjects[key];
   return p.e3 === 0 && p.allocated === 0 && p.allocatedSpend === 0;
 }
 

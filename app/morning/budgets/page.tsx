@@ -8,6 +8,7 @@ import { canSeeCampaigns } from "@/lib/userRole";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import { driveFolderOwner } from "@/lib/sa";
 import { getBudgetMaster } from "@/lib/budgetMaster";
+import { isProjectEndedByIso } from "@/lib/projectEnded";
 import { listAlertDismissals } from "@/lib/alertDismissals";
 import { getUsdIlsRate } from "@/lib/fxRate";
 import BudgetGrid, { type BudgetDismissal } from "@/components/BudgetGrid";
@@ -79,6 +80,13 @@ export default async function BudgetsPage() {
       projectHref?: string;
     }
   > = {};
+  // Live/inactive map (slug → is-inactive), keyed the same way as adLinks
+  // so the grid can look it up by tab. Uses the SAME definition as the
+  // projects home screen + top-nav (lib/projectEnded): a project is
+  // non-live when it ended (>5 days past) OR has no current-month spend.
+  // Every feed project gets an explicit true/false so the grid can tell a
+  // "live" project (false) from one missing from the feed (absent).
+  const inactiveProjects: Record<string, boolean> = {};
   if (feed) {
     for (const pr of feed.projects) {
       const key = (pr.slug || pr.name || "").toLowerCase();
@@ -91,6 +99,7 @@ export default async function BudgetsPage() {
           ? `/projects/${encodeURIComponent(pr.name)}`
           : undefined,
       };
+      inactiveProjects[key] = isProjectEndedByIso(pr.endIso) || !(pr.spend > 0);
     }
   }
   const showAdLinks = canViewAdLinks(subject, peopleList);
@@ -145,6 +154,7 @@ export default async function BudgetsPage() {
         <BudgetGrid
           projects={master.projects}
           adLinks={adLinks}
+          inactiveProjects={inactiveProjects}
           showAdLinks={showAdLinks}
           canEdit={roleEligible}
           dismissals={budgetDismissals}

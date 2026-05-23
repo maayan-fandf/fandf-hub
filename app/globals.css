@@ -18065,7 +18065,7 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 
 .budget-summary {
   display: grid;
-  grid-template-columns: 1.2em minmax(160px, 1.4fr) minmax(200px, 1.2fr) minmax(280px, 2fr);
+  grid-template-columns: 1.2em minmax(150px, 1.3fr) minmax(180px, 1fr) minmax(180px, 1.2fr) minmax(250px, 1.8fr);
   align-items: center;
   gap: .75em;
   width: 100%;
@@ -18085,6 +18085,26 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-recon { display: flex; flex-direction: column; gap: .2em; font-size: .82em; }
 .budget-recon-target { color: var(--muted); }
 .budget-recon-alloc { font-weight: 600; }
+
+/* budget-consumed + time-elapsed mini bars on the summary row */
+.budget-progress {
+  display: flex; flex-direction: column; gap: .45em;
+  min-width: 0; font-size: .76em;
+}
+.budget-progress-row { display: flex; flex-direction: column; gap: .2em; min-width: 0; }
+.bp-head { display: flex; align-items: baseline; gap: .45em; white-space: nowrap; min-width: 0; }
+.bp-label { color: var(--muted); font-weight: 600; }
+.bp-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.bp-detail {
+  color: var(--muted); font-variant-numeric: tabular-nums;
+  margin-inline-start: auto; overflow: hidden; text-overflow: ellipsis;
+}
+.bp-track {
+  background: var(--surface-soft); border-radius: 999px;
+  height: .45em; overflow: hidden; width: 100%;
+}
+.bp-fill { display: block; height: 100%; background: var(--accent); transition: width .25s ease; }
+.bp-fill.is-over { background: #dc2626; }
 .recon-badge {
   display: inline-block; align-self: flex-start;
   padding: .1em .6em; border-radius: 999px; font-size: .9em; font-weight: 700;
@@ -18209,12 +18229,13 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 @media (max-width: 760px) {
   .budget-summary {
     grid-template-columns: 1.2em 1fr;
-    grid-template-areas: "caret proj" "recon recon" "plat plat";
+    grid-template-areas: "caret proj" "recon recon" "bars bars" "plat plat";
     row-gap: .5em;
   }
   .budget-summary .budget-caret { grid-area: caret; }
   .budget-summary .budget-proj { grid-area: proj; }
   .budget-summary .budget-recon { grid-area: recon; }
+  .budget-summary .budget-progress { grid-area: bars; }
   .budget-summary .budget-platcells { grid-area: plat; }
 }
 
