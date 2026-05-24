@@ -340,6 +340,7 @@ export async function readPricingLogFromFirestore(): Promise<
     price: number;
     createdBy: string;
     billed?: number;
+    note?: string;
   }>
 > {
   const snap = await getDb().collection(FS_COLLECTIONS.pricingLog).get();
@@ -354,6 +355,7 @@ export async function readPricingLogFromFirestore(): Promise<
     price: number;
     createdBy: string;
     billed?: number;
+    note?: string;
   }> = [];
   snap.forEach((doc) => {
     const d = doc.data() as Record<string, unknown>;
@@ -361,6 +363,7 @@ export async function readPricingLogFromFirestore(): Promise<
     const taskId = String(d.taskId ?? "").trim();
     if (!createdAt && !taskId) return;
     const price = typeof d.price === "number" ? d.price : 0;
+    const note = String(d.note ?? "").trim();
     out.push({
       createdAt,
       month: String(d.month ?? createdAt.slice(0, 7)),
@@ -372,6 +375,7 @@ export async function readPricingLogFromFirestore(): Promise<
       price: Number.isFinite(price) ? price : 0,
       createdBy: String(d.createdBy ?? "").trim(),
       billed: typeof d.billed === "number" ? d.billed : undefined,
+      note: note || undefined,
     });
   });
   return out;

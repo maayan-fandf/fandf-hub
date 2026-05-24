@@ -14,7 +14,7 @@
  *
  * Tab columns:
  *   created_at_il | task_id | company | project | departments |
- *   kind | price | created_by
+ *   kind | price | created_by | billed | note
  */
 
 import { sheetsClient, useFirestoreTasks, useFirestoreWrites } from "@/lib/sa";
@@ -34,6 +34,11 @@ const HEADER = [
   // the invoice WITHOUT touching `price` (the historical charge stays
   // as-is) or the rate card. Set/cleared from /admin/billing only.
   "billed",
+  // Free-text per-entry billing note (col J). Optional. Set/cleared from
+  // /admin/billing only — context for the invoice (e.g. "discount agreed
+  // with client", "bill separately", "verify with finance"). Never
+  // affects amounts; purely annotation.
+  "note",
 ];
 
 function envOrThrow(name: string): string {
@@ -70,7 +75,7 @@ async function ensureTab(
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${TAB}!A1:I1`,
+      range: `${TAB}!A1:J1`,
       valueInputOption: "RAW",
       requestBody: { values: [HEADER] },
     });
@@ -137,11 +142,12 @@ export async function logTaskPricing(entry: TaskPricingEntry): Promise<void> {
         entry.price == null ? "" : entry.price,
         entry.createdBy,
         "", // billed — blank at create; only /admin/billing sets it
+        "", // note   — blank at create; only /admin/billing sets it
       ];
       const doAppend = () =>
         sheets.spreadsheets.values.append({
           spreadsheetId,
-          range: `${TAB}!A:I`,
+          range: `${TAB}!A:J`,
           valueInputOption: "RAW",
           insertDataOption: "INSERT_ROWS",
           requestBody: { values: [row] },
@@ -190,6 +196,9 @@ export type PricingLogRow = {
    *  (bill `price`); a number here is what to actually invoice this
    *  entry for. Does not touch `price` or the rate card. */
   billed?: number;
+  /** Free-text per-entry billing note (col J). "" / undefined = none.
+   *  Pure annotation — never affects amounts. */
+  note?: string;
   /** Enrichment joined from the task by taskId at report time (the
    *  ledger tab doesn't store these). Undefined when the task can't be
    *  resolved (deleted / no access). Mirrors TimeLogRow. */
@@ -231,7 +240,7 @@ export async function readPricingLog(
     const sheets = sheetsClient(subjectEmail);
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${TAB}!A2:I`,
+      range: `${TAB}!A2:J`,
       valueRenderOption: "UNFORMATTED_VALUE",
       dateTimeRenderOption: "FORMATTED_STRING",
     });
@@ -255,6 +264,7 @@ export async function readPricingLog(
         typeof billedRaw === "number"
           ? billedRaw
           : Number(String(billedRaw ?? "").replace(/[^\d.-]/g, ""));
+      const note = String(r[9] ?? "").trim();
       out.push({
         createdAt,
         month: createdAt.slice(0, 7), // "YYYY-MM"
@@ -267,6 +277,7 @@ export async function readPricingLog(
         createdBy: String(r[7] ?? "").trim(),
         billed:
           billedHas && Number.isFinite(billedNum) ? billedNum : undefined,
+        note: note || undefined,
       });
     }
     return out;
@@ -349,6 +360,71 @@ export async function updatePricingLogBilled(
   {
     const _fsMirror = import("@/lib/firestoreSync")
       .then((m) => m.mirrorPricingBilled(id, billed))
+      .catch(() => {});
+    if (useFirestoreTasks()) await _fsMirror;
+  }
+  return data.length - 1;
+}
+
+/**
+ * Set (or clear) the free-text billing `note` on a task's ledger
+ * row(s) — col J only. Like `updatePricingLogBilled`, it touches
+ * nothing else (price, task row, rate card all untouched); the note is
+ * pure annotation that never affects invoiced amounts.
+ *
+ * An empty/whitespace `note` clears it. Returns how many ledger rows
+ * matched (0 = task not in the ledger). Admin-gated at the route;
+ * throws on a hard Sheets failure so the deliberate action surfaces.
+ */
+export async function updatePricingLogNote(
+  subjectEmail: string,
+  taskId: string,
+  note: string,
+): Promise<number> {
+  const id = String(taskId || "").trim();
+  if (!id) return 0;
+  const clean = String(note ?? "").trim();
+  if (useFirestoreWrites()) {
+    // Phase 4 — authoritative note write across every ledger doc for the
+    // task; NO Sheets. Failure surfaces (deliberate admin action).
+    const { writePricingNote } = await import("@/lib/firestoreSync");
+    return writePricingNote(id, clean);
+  }
+  const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
+  const sheets = sheetsClient(subjectEmail);
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${TAB}!A2:J`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/Unable to parse range|not found/i.test(msg)) return 0;
+    throw e;
+  }
+  const values = (res.data.values ?? []) as unknown[][];
+  // Always (idempotently) assert the J1 header — tabs created before the
+  // `note` column won't have it.
+  const data: { range: string; values: string[][] }[] = [
+    { range: `${TAB}!J1`, values: [["note"]] },
+  ];
+  for (let i = 0; i < values.length; i++) {
+    const rowTaskId = String(values[i]?.[1] ?? "").trim();
+    if (rowTaskId !== id) continue;
+    const sheetRow = i + 2; // A2 is the first data row
+    data.push({ range: `${TAB}!J${sheetRow}`, values: [[clean]] });
+  }
+  if (data.length === 1) return 0; // only the header entry — no match
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+  {
+    const _fsMirror = import("@/lib/firestoreSync")
+      .then((m) => m.mirrorPricingNote(id, clean))
       .catch(() => {});
     if (useFirestoreTasks()) await _fsMirror;
   }

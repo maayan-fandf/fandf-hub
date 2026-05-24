@@ -5,19 +5,31 @@ import { useMemo, useState } from "react";
 import type { PricingLogRow } from "@/lib/pricingLog";
 
 const fmtILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
+const fmtInt = (n: number) => n.toLocaleString("he-IL");
+const ALL = "__all__";
 
 /**
- * Month-end billing report. Reads the PricingLog ledger, filters by
- * month (+ optional company), groups by company with subtotals + a
- * grand total, and exports the filtered view as CSV for finance.
+ * Month-end billing report + workbench. Reads the PricingLog ledger and
+ * lets the billing team:
+ *   - filter (month / company / worker / department / kind / free-text /
+ *     date range / "adjusted only" / "has note"),
+ *   - read a live summary (item count, price vs billed, adjustment delta)
+ *     and per-worker / per-department breakdowns,
+ *   - adjust the amount to invoice per entry (a `billed` override that
+ *     never touches the recorded `price` or the rate card), and
+ *   - attach a free-text note per entry (pure annotation),
+ *   - export the filtered view as CSV.
  *
- * The amount to invoice each entry is editable: an inline edit writes
- * a `billed` override on that ledger row ONLY (POST
- * /api/admin/billing/edit). The recorded `price`, the task, and the
- * rate card (/admin/pricing) are never touched — it's purely "bill
- * this entry higher/lower this month". Totals use the effective amount
- * (billed ?? price).
+ * Both per-entry edits (billed / note) write to that ledger row ONLY via
+ * the admin APIs; totals use the effective amount (billed ?? price).
  */
+
+const tokensOf = (s: string | undefined): string[] =>
+  (s || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
 export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
   const months = useMemo(
     () =>
@@ -26,18 +38,33 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
       ),
     [rows],
   );
-  const [month, setMonth] = useState<string>(months[0] ?? "");
-  const [company, setCompany] = useState<string>("__all__");
 
-  // Per-session edits: taskId → override (number) or null (= cleared,
-  // bill the price). Absent key = use the server's r.billed.
+  // ── Filter state ──────────────────────────────────────────────────
+  const [month, setMonth] = useState<string>(months[0] ?? ALL);
+  const [company, setCompany] = useState<string>(ALL);
+  const [worker, setWorker] = useState<string>(ALL);
+  const [department, setDepartment] = useState<string>(ALL);
+  const [kind, setKind] = useState<string>(ALL);
+  const [search, setSearch] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [adjustedOnly, setAdjustedOnly] = useState<boolean>(false);
+  const [notedOnly, setNotedOnly] = useState<boolean>(false);
+
+  // ── Per-session edits (override what the server returned) ──────────
+  // billed: taskId → number (override) | null (cleared → bill the price).
   const [edited, setEdited] = useState<Record<string, number | null>>({});
-  const [editing, setEditing] = useState<string>(""); // taskId being edited
+  // note: taskId → string (absent key = use the server's r.note).
+  const [notesEdited, setNotesEdited] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<string>(""); // billed cell taskId
   const [draft, setDraft] = useState<string>("");
+  const [editingNote, setEditingNote] = useState<string>(""); // note cell taskId
+  const [noteDraft, setNoteDraft] = useState<string>("");
   const [busyId, setBusyId] = useState<string>("");
+  const [busyNoteId, setBusyNoteId] = useState<string>("");
   const [actionErr, setActionErr] = useState<string>("");
 
-  // Effective override for a row: session edit wins, else server value.
+  // Effective billed override / amount for a row.
   const overrideOf = (r: PricingLogRow): number | null =>
     Object.prototype.hasOwnProperty.call(edited, r.taskId)
       ? edited[r.taskId]
@@ -46,25 +73,88 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
     const ov = overrideOf(r);
     return ov == null ? r.price || 0 : ov;
   };
+  // Effective note for a row.
+  const noteOf = (r: PricingLogRow): string =>
+    Object.prototype.hasOwnProperty.call(notesEdited, r.taskId)
+      ? notesEdited[r.taskId]
+      : r.note ?? "";
 
+  // Rows in the chosen month (drives the dependent filter option lists).
   const monthRows = useMemo(
-    () => rows.filter((r) => (month ? r.month === month : true)),
+    () => (month === ALL ? rows : rows.filter((r) => r.month === month)),
     [rows, month],
   );
+
   const companies = useMemo(
     () =>
-      Array.from(
-        new Set(monthRows.map((r) => r.company).filter(Boolean)),
-      ).sort((a, b) => a.localeCompare(b, "he")),
+      Array.from(new Set(monthRows.map((r) => r.company).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b, "he"),
+      ),
     [monthRows],
   );
-  const filtered = useMemo(
+  const workers = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of monthRows) for (const w of tokensOf(r.worker)) s.add(w);
+    return Array.from(s).sort((a, b) => a.localeCompare(b, "he"));
+  }, [monthRows]);
+  const departments = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of monthRows) for (const d of tokensOf(r.departments)) s.add(d);
+    return Array.from(s).sort((a, b) => a.localeCompare(b, "he"));
+  }, [monthRows]);
+  const kinds = useMemo(
     () =>
-      monthRows.filter((r) =>
-        company === "__all__" ? true : r.company === company,
+      Array.from(new Set(monthRows.map((r) => r.kind).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b, "he"),
       ),
-    [monthRows, company],
+    [monthRows],
   );
+
+  // ── Apply the advanced filters ────────────────────────────────────
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return monthRows.filter((r) => {
+      if (company !== ALL && r.company !== company) return false;
+      if (worker !== ALL && !tokensOf(r.worker).includes(worker)) return false;
+      if (department !== ALL && !tokensOf(r.departments).includes(department))
+        return false;
+      if (kind !== ALL && r.kind !== kind) return false;
+      if (adjustedOnly && overrideOf(r) == null) return false;
+      if (notedOnly && !noteOf(r)) return false;
+      const day = r.createdAt.slice(0, 10);
+      if (dateFrom && day < dateFrom) return false;
+      if (dateTo && day > dateTo) return false;
+      if (q) {
+        const hay = [
+          r.title,
+          r.brief,
+          r.project,
+          r.company,
+          r.worker,
+          r.kind,
+          noteOf(r),
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    monthRows,
+    company,
+    worker,
+    department,
+    kind,
+    adjustedOnly,
+    notedOnly,
+    dateFrom,
+    dateTo,
+    search,
+    edited,
+    notesEdited,
+  ]);
 
   const groups = useMemo(() => {
     const m = new Map<string, PricingLogRow[]>();
@@ -87,22 +177,79 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, edited]);
 
-  const grandTotal = filtered.reduce((s, r) => s + billOf(r), 0);
+  // ── Summary + breakdowns over the filtered cohort ─────────────────
+  const summary = useMemo(() => {
+    let totalPrice = 0;
+    let totalBilled = 0;
+    let adjusted = 0;
+    let noted = 0;
+    for (const r of filtered) {
+      totalPrice += r.price || 0;
+      totalBilled += billOf(r);
+      if (overrideOf(r) != null) adjusted++;
+      if (noteOf(r)) noted++;
+    }
+    return {
+      count: filtered.length,
+      totalPrice,
+      totalBilled,
+      delta: totalBilled - totalPrice,
+      adjusted,
+      noted,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, edited, notesEdited]);
+
+  const byWorker = useMemo(
+    () => breakdown(filtered, (r) => r.worker || "(לא משויך)", billOf),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, edited],
+  );
+  const byDepartment = useMemo(
+    () => breakdown(filtered, (r) => r.departments || "(ללא מחלקה)", billOf),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, edited],
+  );
+
+  const grandTotal = summary.totalBilled;
+  const anyAdvanced =
+    company !== ALL ||
+    worker !== ALL ||
+    department !== ALL ||
+    kind !== ALL ||
+    !!search ||
+    !!dateFrom ||
+    !!dateTo ||
+    adjustedOnly ||
+    notedOnly;
+
+  function clearFilters() {
+    setCompany(ALL);
+    setWorker(ALL);
+    setDepartment(ALL);
+    setKind(ALL);
+    setSearch("");
+    setDateFrom("");
+    setDateTo("");
+    setAdjustedOnly(false);
+    setNotedOnly(false);
+  }
 
   async function saveBilled(taskId: string, reset: boolean) {
     setBusyId(taskId);
     setActionErr("");
     try {
-      const body = reset
-        ? { taskId, reset: true }
-        : { taskId, billed: Number(draft.replace(",", ".")) };
-      if (!reset) {
+      let body: Record<string, unknown>;
+      if (reset) {
+        body = { taskId, reset: true };
+      } else {
         const n = Number(draft.replace(",", "."));
         if (!Number.isFinite(n) || n < 0) {
           setActionErr("יש להזין סכום תקין");
           setBusyId("");
           return;
         }
+        body = { taskId, billed: n };
       }
       const res = await fetch("/api/admin/billing/edit", {
         method: "POST",
@@ -128,6 +275,30 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
     }
   }
 
+  async function saveNote(taskId: string) {
+    setBusyNoteId(taskId);
+    setActionErr("");
+    try {
+      const res = await fetch("/api/admin/billing/note", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, note: noteDraft }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "save failed");
+      setNotesEdited((prev) => ({
+        ...prev,
+        [taskId]: typeof data.note === "string" ? data.note : "",
+      }));
+      setEditingNote("");
+      setNoteDraft("");
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyNoteId("");
+    }
+  }
+
   function exportCsv() {
     const head = [
       "month",
@@ -142,6 +313,7 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
       "price",
       "billed",
       "adjusted",
+      "note",
       "task_id",
       "created_by",
     ];
@@ -165,6 +337,7 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
             String(r.price),
             String(billOf(r)),
             ov != null ? "1" : "",
+            noteOf(r),
             r.taskId,
             r.createdBy,
           ]
@@ -178,8 +351,8 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
     });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `billing_${month || "all"}_${
-      company === "__all__" ? "all" : company
+    a.download = `billing_${month === ALL ? "all" : month}_${
+      company === ALL ? "all" : company
     }.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
@@ -197,10 +370,12 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
 
   return (
     <div className="billing-report">
+      {/* Primary controls */}
       <div className="billing-controls">
         <label>
           חודש
           <select value={month} onChange={(e) => setMonth(e.target.value)}>
+            <option value={ALL}>כל החודשים</option>
             {months.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -210,17 +385,23 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
         </label>
         <label>
           חברה
-          <select
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-          >
-            <option value="__all__">כל החברות</option>
+          <select value={company} onChange={(e) => setCompany(e.target.value)}>
+            <option value={ALL}>כל החברות</option>
             {companies.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
           </select>
+        </label>
+        <label className="billing-search">
+          חיפוש
+          <input
+            type="search"
+            value={search}
+            placeholder="משימה, בריף, פרויקט, עובד, הערה…"
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </label>
         <button
           type="button"
@@ -231,22 +412,139 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
           ⬇ ייצוא CSV
         </button>
         <span className="billing-grand">
-          סה״כ לחיוב {month}: <b>{fmtILS(grandTotal)}</b>
+          סה״כ לחיוב{month === ALL ? "" : ` ${month}`}:{" "}
+          <b>{fmtILS(grandTotal)}</b>
         </span>
       </div>
+
+      {/* Advanced filters */}
+      <div className="billing-filters">
+        <label>
+          עובד
+          <select value={worker} onChange={(e) => setWorker(e.target.value)}>
+            <option value={ALL}>כל העובדים</option>
+            {workers.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          מחלקה
+          <select
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+          >
+            <option value={ALL}>כל המחלקות</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          סוג
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value={ALL}>כל הסוגים</option>
+            {kinds.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          מתאריך
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label>
+          עד תאריך
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
+        <label className="billing-toggle">
+          <input
+            type="checkbox"
+            checked={adjustedOnly}
+            onChange={(e) => setAdjustedOnly(e.target.checked)}
+          />
+          מותאמים בלבד
+        </label>
+        <label className="billing-toggle">
+          <input
+            type="checkbox"
+            checked={notedOnly}
+            onChange={(e) => setNotedOnly(e.target.checked)}
+          />
+          עם הערה בלבד
+        </label>
+        {anyAdvanced && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm billing-clear"
+            onClick={clearFilters}
+          >
+            ✕ נקה סינון
+          </button>
+        )}
+      </div>
+
       {actionErr && (
         <div className="time-tracker-error" role="alert">
           {actionErr}
         </div>
       )}
 
+      {/* Summary stats */}
+      <div className="billing-summary">
+        <SummaryTile label="פריטים" value={fmtInt(summary.count)} />
+        <SummaryTile label="מחיר רשום" value={fmtILS(summary.totalPrice)} />
+        <SummaryTile label="לחיוב" value={fmtILS(summary.totalBilled)} accent />
+        <SummaryTile
+          label="פער התאמה"
+          value={(summary.delta >= 0 ? "+" : "−") + fmtILS(Math.abs(summary.delta))}
+          tone={summary.delta === 0 ? undefined : summary.delta > 0 ? "up" : "down"}
+        />
+        <SummaryTile
+          label="מותאמים"
+          value={fmtInt(summary.adjusted)}
+          sub={`מתוך ${fmtInt(summary.count)}`}
+        />
+        <SummaryTile label="עם הערה" value={fmtInt(summary.noted)} />
+      </div>
+
+      {/* Breakdowns */}
+      {filtered.length > 0 && (
+        <details className="billing-breakdowns">
+          <summary>פילוח לפי עובד ומחלקה</summary>
+          <div className="billing-breakdowns-grid">
+            <BreakdownList title="לפי עובד" rows={byWorker} />
+            <BreakdownList title="לפי מחלקה" rows={byDepartment} />
+          </div>
+        </details>
+      )}
+
       {groups.length === 0 ? (
-        <div className="billing-empty">אין חיובים בחודש/חברה שנבחרו.</div>
+        <div className="billing-empty">אין חיובים שתואמים את הסינון.</div>
       ) : (
         groups.map((g) => (
           <div key={g.company} className="billing-group">
             <div className="billing-group-head">
-              <span className="billing-company">{g.company}</span>
+              <span className="billing-company">
+                {g.company}{" "}
+                <span className="billing-group-count">
+                  ({fmtInt(g.rows.length)})
+                </span>
+              </span>
               <span className="billing-subtotal">{fmtILS(g.subtotal)}</span>
             </div>
             <div className="billing-table" role="table">
@@ -259,26 +557,24 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
                 <span>סוג</span>
                 <span>מחיר</span>
                 <span>חיוב</span>
+                <span>הערה</span>
                 <span>נוצר ע״י</span>
               </div>
               {g.rows.map((r) => {
                 const ov = overrideOf(r);
                 const adjusted = ov != null;
                 const bill = billOf(r);
+                const note = noteOf(r);
                 const isEditing = editing === r.taskId;
+                const isEditingNote = editingNote === r.taskId;
                 return (
                   <div
                     className="billing-row bill-row"
                     role="row"
                     key={r.taskId}
                   >
-                    <span title={r.createdAt}>
-                      {r.createdAt.slice(0, 10)}
-                    </span>
-                    <span
-                      className="time-task-cell"
-                      title={r.title || r.taskId}
-                    >
+                    <span title={r.createdAt}>{r.createdAt.slice(0, 10)}</span>
+                    <span className="time-task-cell" title={r.title || r.taskId}>
                       {r.taskId ? (
                         <Link
                           href={`/tasks/${encodeURIComponent(r.taskId)}`}
@@ -287,19 +583,17 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
                           {r.title || r.taskId}
                         </Link>
                       ) : (
-                        <span className="time-task-link">
-                          {r.title || "—"}
-                        </span>
+                        <span className="time-task-link">{r.title || "—"}</span>
                       )}
                     </span>
                     <span title={r.brief || ""}>{r.brief || "—"}</span>
-                    <span>{r.project || "—"}</span>
-                    <span>{r.departments || "—"}</span>
-                    <span>{r.kind || "—"}</span>
+                    <span title={r.project || ""}>{r.project || "—"}</span>
+                    <span title={r.departments || ""}>
+                      {r.departments || "—"}
+                    </span>
+                    <span title={r.kind || ""}>{r.kind || "—"}</span>
                     <span
-                      className={
-                        "billing-price" + (adjusted ? " is-struck" : "")
-                      }
+                      className={"billing-price" + (adjusted ? " is-struck" : "")}
                       title={adjusted ? "המחיר הרשום (לא משתנה)" : ""}
                     >
                       {fmtILS(r.price)}
@@ -359,9 +653,7 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
                     ) : (
                       <button
                         type="button"
-                        className={
-                          "bill-cell" + (adjusted ? " is-adjusted" : "")
-                        }
+                        className={"bill-cell" + (adjusted ? " is-adjusted" : "")}
                         title={
                           adjusted
                             ? `מותאם לחיוב — מחיר רשום ${fmtILS(r.price)}. לחיצה לעריכה`
@@ -374,15 +666,71 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
                         }}
                       >
                         <span className="bill-amount">{fmtILS(bill)}</span>
-                        {adjusted && (
-                          <span className="bill-tag">מותאם</span>
-                        )}
+                        {adjusted && <span className="bill-tag">מותאם</span>}
                         <span className="bill-pencil" aria-hidden>
                           ✎
                         </span>
                       </button>
                     )}
-                    <span className="billing-by">
+                    {/* Note cell */}
+                    {isEditingNote ? (
+                      <span className="bill-edit bill-note-edit">
+                        <input
+                          type="text"
+                          className="bill-note-input"
+                          value={noteDraft}
+                          autoFocus
+                          maxLength={2000}
+                          placeholder="הערת חיוב…"
+                          onChange={(e) => setNoteDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void saveNote(r.taskId);
+                            if (e.key === "Escape") {
+                              setEditingNote("");
+                              setNoteDraft("");
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn-primary btn-sm"
+                          disabled={busyNoteId === r.taskId}
+                          onClick={() => void saveNote(r.taskId)}
+                        >
+                          {busyNoteId === r.taskId ? "…" : "שמור"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost btn-sm"
+                          disabled={busyNoteId === r.taskId}
+                          onClick={() => {
+                            setEditingNote("");
+                            setNoteDraft("");
+                            setActionErr("");
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={"bill-note-cell" + (note ? " has-note" : "")}
+                        title={note || "לחיצה להוספת הערת חיוב"}
+                        onClick={() => {
+                          setEditingNote(r.taskId);
+                          setNoteDraft(note);
+                          setActionErr("");
+                        }}
+                      >
+                        {note ? (
+                          <span className="bill-note-text">{note}</span>
+                        ) : (
+                          <span className="bill-note-add">+ הערה</span>
+                        )}
+                      </button>
+                    )}
+                    <span className="billing-by" title={r.createdBy}>
                       {r.createdBy.split("@")[0]}
                     </span>
                   </div>
@@ -391,6 +739,88 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
             </div>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+/** Sum the effective billed amount per group key, sorted desc. */
+function breakdown(
+  rows: PricingLogRow[],
+  keyOf: (r: PricingLogRow) => string,
+  billOf: (r: PricingLogRow) => number,
+): { label: string; count: number; total: number }[] {
+  const m = new Map<string, { count: number; total: number }>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const cur = m.get(k) || { count: 0, total: 0 };
+    cur.count += 1;
+    cur.total += billOf(r);
+    m.set(k, cur);
+  }
+  return Array.from(m.entries())
+    .map(([label, v]) => ({ label, count: v.count, total: v.total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+function SummaryTile({
+  label,
+  value,
+  sub,
+  accent,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: boolean;
+  tone?: "up" | "down";
+}) {
+  return (
+    <div
+      className={
+        "billing-stat" +
+        (accent ? " is-accent" : "") +
+        (tone ? ` is-${tone}` : "")
+      }
+    >
+      <div className="billing-stat-value">{value}</div>
+      <div className="billing-stat-label">{label}</div>
+      {sub ? <div className="billing-stat-sub">{sub}</div> : null}
+    </div>
+  );
+}
+
+function BreakdownList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { label: string; count: number; total: number }[];
+}) {
+  const max = rows.reduce((m, r) => Math.max(m, r.total), 0) || 1;
+  return (
+    <div className="billing-breakdown">
+      <div className="billing-breakdown-title">{title}</div>
+      {rows.length === 0 ? (
+        <div className="billing-breakdown-empty">—</div>
+      ) : (
+        <ul className="billing-breakdown-list">
+          {rows.map((r) => (
+            <li key={r.label} className="billing-breakdown-row" title={r.label}>
+              <span className="billing-breakdown-bar-wrap">
+                <span
+                  className="billing-breakdown-bar"
+                  style={{ width: `${(r.total / max) * 100}%` }}
+                  aria-hidden
+                />
+                <span className="billing-breakdown-name">{r.label}</span>
+              </span>
+              <span className="billing-breakdown-count">{r.count}</span>
+              <span className="billing-breakdown-amount">{fmtILS(r.total)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

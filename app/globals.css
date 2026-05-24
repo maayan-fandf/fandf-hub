@@ -11748,7 +11748,7 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
    תאריך | משימה | בריף | פרוייקט | מחלקה | סוג | מחיר | חיוב | נוצר ע״י */
 .billing-row.bill-row {
   grid-template-columns:
-    5.5em 1.5fr 1fr 1fr .9fr .9fr .8fr 1.15fr .9fr;
+    5.5em 1.4fr 1fr .9fr .8fr .75fr .7fr 1fr 1.25fr .85fr;
 }
 .billing-row.bill-row > span {
   overflow: hidden;
@@ -11822,6 +11822,180 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
 }
 @media (max-width: 760px) {
   .billing-row.time-row { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── /admin/billing — advanced filters, summary, breakdowns, notes ── */
+.billing-search { flex: 1 1 16em; min-width: 12em; }
+.billing-search input {
+  padding: .4em .6em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .9em;
+  width: 100%;
+}
+.billing-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: .8em 1em;
+  flex-wrap: wrap;
+  padding: .7em .9em;
+  margin-bottom: 1em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, rgba(120, 120, 120, .04));
+}
+.billing-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+  font-size: .8em;
+  color: var(--muted);
+}
+.billing-filters select,
+.billing-filters input[type="date"] {
+  padding: .4em .6em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .9em;
+}
+.billing-toggle {
+  flex-direction: row !important;
+  align-items: center;
+  gap: .4em !important;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.billing-toggle input { accent-color: var(--accent, #6366f1); }
+.billing-clear { margin-inline-start: auto; }
+
+/* Summary stat tiles */
+.billing-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5em, 1fr));
+  gap: .6em;
+  margin-bottom: 1em;
+}
+.billing-stat {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .55em .7em;
+  background: var(--surface, #fff);
+}
+.billing-stat-value {
+  font-size: 1.15em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.billing-stat-label { font-size: .76em; color: var(--muted); margin-top: .15em; }
+.billing-stat-sub { font-size: .72em; color: var(--muted); }
+.billing-stat.is-accent .billing-stat-value { color: var(--accent, #6366f1); }
+.billing-stat.is-up .billing-stat-value { color: #16a34a; }
+.billing-stat.is-down .billing-stat-value { color: #dc2626; }
+
+/* Breakdowns (collapsible) */
+.billing-breakdowns {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 1em;
+  padding: 0 .9em;
+}
+.billing-breakdowns > summary {
+  cursor: pointer;
+  padding: .6em 0;
+  font-size: .85em;
+  font-weight: 600;
+  color: var(--text);
+}
+.billing-breakdowns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16em, 1fr));
+  gap: 1em;
+  padding-bottom: .9em;
+}
+.billing-breakdown-title {
+  font-size: .78em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: .4em;
+}
+.billing-breakdown-empty { color: var(--muted); font-size: .85em; }
+.billing-breakdown-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25em; }
+.billing-breakdown-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: .6em;
+  align-items: center;
+  font-size: .82em;
+}
+.billing-breakdown-bar-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 5px;
+  padding: .2em .45em;
+  min-width: 0;
+}
+.billing-breakdown-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(99, 102, 241, .16);
+  border-radius: 5px;
+  z-index: 0;
+}
+.billing-breakdown-name {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  color: var(--text);
+}
+.billing-breakdown-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.billing-breakdown-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent, #6366f1);
+}
+.billing-group-count { color: var(--muted); font-weight: 400; font-size: .85em; }
+
+/* Per-entry note cell */
+.bill-note-cell {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  font: inherit;
+  font-size: .92em;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: .1em .35em;
+  cursor: pointer;
+  color: var(--text);
+  text-align: start;
+}
+.bill-note-cell:hover { border-color: var(--border); background: var(--surface-soft, rgba(120, 120, 120, .1)); }
+.bill-note-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bill-note-add { color: var(--muted); opacity: .7; font-size: .92em; }
+.bill-note-cell:hover .bill-note-add { opacity: 1; }
+.bill-note-edit { flex-wrap: nowrap; }
+.bill-note-input {
+  width: 100%;
+  min-width: 7em;
+  padding: .25em .4em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .88em;
 }
 
 /* Per-task time tracker — side-panel block on the task detail page. */

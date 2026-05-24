@@ -410,3 +410,37 @@ export async function mirrorPricingBilled(
     await writePricingBilled(taskId, billed);
   });
 }
+
+/** Phase 4 — AUTHORITATIVE billing-`note` write across every ledger doc
+ *  for a task. Un-gated body of mirrorPricingNote. Returns the number of
+ *  ledger docs updated (0 = task not in the ledger). An empty string
+ *  clears the note. Pure annotation — never affects amounts. */
+export async function writePricingNote(
+  taskId: string,
+  note: string,
+): Promise<number> {
+  const id = String(taskId ?? "").trim();
+  if (!id) return 0;
+  const db = getDb();
+  const snap = await db
+    .collection(FS_COLLECTIONS.pricingLog)
+    .where("taskId", "==", id)
+    .get();
+  if (snap.empty) return 0;
+  const clean = String(note ?? "").trim();
+  const batch = db.batch();
+  snap.docs.forEach((d) => batch.set(d.ref, { note: clean }, { merge: true }));
+  await batch.commit();
+  return snap.size;
+}
+
+/** Set/clear the billing `note` on every ledger doc for a task
+ *  (updatePricingLogNote dual-write). "" clears it. */
+export async function mirrorPricingNote(
+  taskId: string,
+  note: string,
+): Promise<void> {
+  await safe(`pricingNote ${taskId}`, async () => {
+    await writePricingNote(taskId, note);
+  });
+}
