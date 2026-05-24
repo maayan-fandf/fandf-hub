@@ -2,15 +2,16 @@
  * CRM-funnel data for the project overview page.
  *
  * Data source: the external "Consolidated" workbook (env CRM_SHEET_ID,
- * default 1YOL2Rry…), which aggregates per-lead data from the two CRMs
- * F&F's clients use — BMBY and Sehel. Updated by an upstream pipeline
- * (currently daily; the workbook owner controls the cadence). The hub
- * is a read-only consumer.
+ * default 1YOL2Rry…), which aggregates per-lead data from the three CRMs
+ * F&F's clients use — BMBY, Sehel and Salesforce. Updated by an upstream
+ * pipeline (currently daily; the workbook owner controls the cadence).
+ * The hub is a read-only consumer.
  *
  * Join model: Keys (the dashboard's canonical project registry) carries
  * two columns — `CRM` (the account name in the external CRM, e.g.
- * "אפרידר גינות רחובות") and `CRM platform` ("bmby" or "sehel"). Each
- * project resolves to AT MOST one (platform, account) pair; CRM rows
+ * "אפרידר גינות רחובות") and `CRM platform` ("bmby" / "sehel" /
+ * "salesforce"). Each project resolves to AT MOST one (platform,
+ * account) pair; CRM rows
  * whose `פרויקט` doesn't match any Keys.CRM are ignored (orphan
  * projects upstream that haven't been onboarded yet — Maayan's call).
  *
@@ -44,7 +45,7 @@ import { readKeysCached } from "@/lib/keys";
 const CRM_SHEET_ID =
   process.env.CRM_SHEET_ID || "1tYtnB1Ve8RcsZ9_PpRuZyE0jlhD6r-Q35yLO5_7FhEQ";
 
-export type CrmPlatform = "bmby" | "sehel";
+export type CrmPlatform = "bmby" | "sehel" | "salesforce";
 
 export type CrmFunnel = {
   platform: CrmPlatform;
@@ -186,6 +187,15 @@ const readBmby = cache((subjectEmail: string) =>
 const readSehel = cache((subjectEmail: string) =>
   fetchTabFromSheet(subjectEmail, "מאגר שכל!A:T"),
 );
+// Salesforce: single "Salesforce" tab in the same archive workbook (the
+// two שיכון ובינוי projects — Essence + שיכון ובינוי חולון — use it).
+// Header is row 1; A:P covers all 16 cols (~2K rows). NOTE: the project
+// and creation-date headers carry a literal "↑" sort glyph
+// ("פרויקט ↑" / "תאריך יצירה ↑"), so those columns are matched by
+// prefix, not exact string, in computeSalesforceFunnel.
+const readSalesforce = cache((subjectEmail: string) =>
+  fetchTabFromSheet(subjectEmail, "Salesforce!A:P"),
+);
 
 /* ── Utility ────────────────────────────────────────────────────────── */
 
@@ -273,6 +283,58 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
 ];
 
 /**
+ * Salesforce — F&F's third CRM. Unlike BMBY/Sehel (where the meeting
+ * metrics are inferred from free-text status taxonomies), Salesforce's
+ * funnel is defined explicitly by Maayan's status→bucket matrix
+ * (2026-05-24). The three cumulative buckets map onto the existing
+ * CrmFunnel KPIs:
+ *
+ *   ליד חדש (every status)  → leads
+ *   נקבעה או בוטלה פגישה    → scheduledMeetings (תואמה פגישה)
+ *   התבצעה פגישה           → meetings (held)
+ *
+ *   מצב ליד               ליד חדש  נקבעה/בוטלה  התבצעה
+ *   לא רלוונטי              ✓
+ *   חדש                    ✓
+ *   ניסיון יצירת קשר        ✓
+ *   אין מענה               ✓
+ *   שיחה                   ✓
+ *   ניסיון תיאום פגישה      ✓         ✓
+ *   טופס הרשמה             ✓         ✓          ✓
+ *   פגישה התקיימה          ✓         ✓          ✓
+ *   ליד חוזר               ✓
+ *
+ * (טופס הרשמה — registering for the דיור-למשתכן lottery — is the real
+ * conversion goal for these projects, so the owner counts it the same as
+ * a held meeting.) `contacted` (נוצר קשר) isn't one of the matrix
+ * buckets; it's derived as "any status past חדש" — i.e. a salesperson
+ * has worked the lead — mirroring BMBY's "an outreach attempt was
+ * logged" notion of contacted.
+ */
+const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
+  "ניסיון תיאום פגישה",
+  "טופס הרשמה",
+  "פגישה התקיימה",
+]);
+const SALESFORCE_HELD_STATUSES = new Set<string>([
+  "טופס הרשמה",
+  "פגישה התקיימה",
+]);
+
+export const SALESFORCE_STATUS_FUNNEL_ORDER = [
+  "חדש",
+  "ניסיון יצירת קשר",
+  "אין מענה",
+  "שיחה",
+  "ניסיון תיאום פגישה",
+  "טופס הרשמה",
+  "פגישה התקיימה",
+  // off-funnel side states
+  "ליד חוזר",
+  "לא רלוונטי",
+];
+
+/**
  * Action-required early-funnel stages for the stale-leads detection.
  *
  * Deliberately TIGHTER than "everything before נקבעה פגישה" — that
@@ -308,6 +370,16 @@ const SEHEL_EARLY_FUNNEL_STAGES = new Set<string>([
   "| פניה חדשה",
   "| נוצר קשר ראשוני",
   "| נשלחו חומרים",
+]);
+// Salesforce: needs-a-follow-up early states. Salesforce carries NO
+// contact/update timestamp (only תאריך יצירה), so the stale check has
+// no contact-recency anchor — it relies on creation date alone. That's
+// acceptable here: a lead created >14d ago that's STILL in one of these
+// untouched/early states genuinely fell through the cracks.
+const SALESFORCE_EARLY_FUNNEL_STAGES = new Set<string>([
+  "חדש",
+  "ניסיון יצירת קשר",
+  "אין מענה",
 ]);
 const STALE_LEAD_DAYS = 14;
 
@@ -841,6 +913,165 @@ async function computeSehelFunnel(
   };
 }
 
+/* ── Salesforce funnel ─────────────────────────────────────────────── */
+
+async function computeSalesforceFunnel(
+  subjectEmail: string,
+  crmAccount: string,
+  monthFilter: string,
+): Promise<CrmFunnel | null> {
+  const { headers, rows } = await readSalesforce(subjectEmail);
+  if (!rows.length) return null;
+  // Project + creation-date headers carry a trailing "↑" sort glyph
+  // ("פרויקט ↑" / "תאריך יצירה ↑") — match by prefix, not exact string.
+  const iProject = headers.findIndex((h) => h.startsWith("פרויקט"));
+  const iEntry = headers.findIndex((h) => h.startsWith("תאריך יצירה"));
+  const iStatus = headers.indexOf("מצב ליד");
+  const iSource = headers.indexOf("מקור ליד");
+  const iObjection = headers.indexOf("התנגדות ראשית");
+  if (iProject < 0) return null;
+
+  // Exact match on פרויקט (like BMBY) — verified the two Keys.CRM
+  // account names match the Salesforce פרויקט values exactly.
+  const target = norm(crmAccount);
+  let leads = 0;
+  let scheduledMeetings = 0; // תואמה פגישה (נקבעה או בוטלה פגישה)
+  let meetings = 0;          // פגישות (התבצעה פגישה — held)
+  let contacted = 0;
+  const byStatus = new Map<string, number>();
+  const byObjection = new Map<string, number>();
+  const bySource = new Map<string, number>();
+  const leadsBySource = new Map<string, number>();
+  const contactedBySource = new Map<string, number>();
+  const scheduledMeetingsBySource = new Map<string, number>();
+  const meetingsBySource = new Map<string, number>();
+  // Stale-leads — anchored on תאריך יצירה only (no contact/update column
+  // exists for Salesforce). Runs BEFORE the monthFilter bail so it sees
+  // every project row, not just the filtered cohort.
+  let staleCount = 0;
+  let staleOldestDays = 0;
+  const staleByStage = new Map<string, number>();
+  const staleThresholdMs = STALE_LEAD_DAYS * 86400_000;
+  const nowMs = Date.now();
+  const dailySourceMatrix = new Map<
+    string,
+    Map<string, { leads: number; scheduledMeetings: number; meetings: number }>
+  >();
+  const objectionSourceMatrix = new Map<string, Map<string, number>>();
+  const statusSourceMatrix = new Map<string, Map<string, number>>();
+  let minDate = "";
+  let maxDate = "";
+
+  for (const row of rows) {
+    const arr = row as unknown[];
+    const proj = norm(arr[iProject]);
+    if (proj !== target) continue;
+
+    // Stale-leads check — early-stage AND created >14d ago. Creation
+    // date is the only available recency anchor (see the comment on
+    // SALESFORCE_EARLY_FUNNEL_STAGES).
+    if (iEntry >= 0) {
+      const stRow = String(arr[iStatus] ?? "").trim();
+      if (stRow && SALESFORCE_EARLY_FUNNEL_STAGES.has(stRow)) {
+        const dEntry = dateOnly(arr[iEntry]);
+        if (dEntry) {
+          const entryMs = Date.parse(dEntry + "T00:00:00");
+          if (!Number.isNaN(entryMs) && nowMs - entryMs > staleThresholdMs) {
+            staleCount++;
+            staleByStage.set(stRow, (staleByStage.get(stRow) || 0) + 1);
+            const days = Math.floor((nowMs - entryMs) / 86400_000);
+            if (days > staleOldestDays) staleOldestDays = days;
+          }
+        }
+      }
+    }
+
+    // Month filter — applied against תאריך יצירה, same field as dateRange.
+    if (monthFilter && iEntry >= 0) {
+      const d = dateOnly(arr[iEntry]);
+      if (!d.startsWith(monthFilter)) continue;
+    }
+    leads++;
+    const st = String(arr[iStatus] ?? "").trim();
+    // Funnel buckets per Maayan's status matrix (see the block above
+    // SALESFORCE_STATUS_FUNNEL_ORDER). scheduledMeetings ⊇ meetings.
+    const isScheduledMeeting = SALESFORCE_SCHEDULED_STATUSES.has(st);
+    const isHeldMeeting = SALESFORCE_HELD_STATUSES.has(st);
+    // contacted (נוצר קשר): any status past "חדש" (new/untouched).
+    const isContacted = st !== "" && st !== "חדש";
+    if (isScheduledMeeting) scheduledMeetings++;
+    if (isHeldMeeting) meetings++;
+    if (isContacted) contacted++;
+    if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
+    const obj = String(arr[iObjection] ?? "").trim();
+    if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
+    const src = normSource(arr[iSource]);
+    if (src) {
+      bySource.set(src, (bySource.get(src) || 0) + 1);
+      leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
+      if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
+      if (isScheduledMeeting) scheduledMeetingsBySource.set(src, (scheduledMeetingsBySource.get(src) || 0) + 1);
+      if (isHeldMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
+    }
+    if (obj && src) {
+      let m2 = objectionSourceMatrix.get(obj);
+      if (!m2) { m2 = new Map<string, number>(); objectionSourceMatrix.set(obj, m2); }
+      m2.set(src, (m2.get(src) || 0) + 1);
+    }
+    if (st && src) {
+      let m3 = statusSourceMatrix.get(st);
+      if (!m3) { m3 = new Map<string, number>(); statusSourceMatrix.set(st, m3); }
+      m3.set(src, (m3.get(src) || 0) + 1);
+    }
+    const d = dateOnly(arr[iEntry]);
+    if (d && src) {
+      let perDay = dailySourceMatrix.get(d);
+      if (!perDay) { perDay = new Map(); dailySourceMatrix.set(d, perDay); }
+      let bucket = perDay.get(src);
+      if (!bucket) { bucket = { leads: 0, scheduledMeetings: 0, meetings: 0 }; perDay.set(src, bucket); }
+      bucket.leads++;
+      if (isScheduledMeeting) bucket.scheduledMeetings++;
+      if (isHeldMeeting) bucket.meetings++;
+    }
+    if (d) {
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+  }
+
+  if (leads === 0) return null;
+  return {
+    platform: "salesforce",
+    crmAccount,
+    leads,
+    contacted,
+    scheduledMeetings,
+    meetings,
+    meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
+    // Salesforce carries a בעלי ליד (owner) column, but we keep the
+    // seller breakdown empty to match BMBY/Sehel's current behavior.
+    topSellers: [],
+    sourceMatrices: buildSourceMatrices({
+      allSourcesMap: bySource,
+      statusObserved: byStatus,
+      funnelOrder: SALESFORCE_STATUS_FUNNEL_ORDER,
+      leadsBySource, contactedBySource,
+      scheduledMeetingsBySource, meetingsBySource,
+      statusSourceMatrix, objectionSourceMatrix,
+    }),
+    dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
+    dateRange: { from: minDate, to: maxDate },
+    staleLeads: {
+      count: staleCount,
+      oldestDays: staleOldestDays,
+      byStage: [...staleByStage.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([stage, count]) => ({ stage, count })),
+    },
+    monthFilter,
+  };
+}
+
 /**
  * Serialize the per-row aggregation Maps into the JSON-friendly
  * sourceMatrices payload. Everything stays in raw, untruncated form so
@@ -974,12 +1205,18 @@ export async function getCrmFunnelForProject(args: {
     platform = String((r as unknown[])[iPlatform] ?? "").trim().toLowerCase();
     break;
   }
-  if (!crmAccount || (platform !== "bmby" && platform !== "sehel")) {
+  if (
+    !crmAccount ||
+    (platform !== "bmby" && platform !== "sehel" && platform !== "salesforce")
+  ) {
     return null;
   }
 
   if (platform === "bmby") {
     return computeBmbyFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
+  }
+  if (platform === "salesforce") {
+    return computeSalesforceFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
   }
   return computeSehelFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
 }
