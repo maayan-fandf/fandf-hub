@@ -314,7 +314,7 @@ const getCrmFunnelTool: Tool = {
       company: match.company,
       platform: funnel.platform,
       crmAccount: funnel.crmAccount,
-      monthFilter: funnel.monthFilter || "(all available data)",
+      monthFilter: funnel.monthFilter || funnel.windowLabel || "(all available data)",
       dateRange: funnel.dateRange,
       totals: {
         leads: funnel.leads,

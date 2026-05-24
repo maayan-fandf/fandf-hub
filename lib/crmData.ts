@@ -144,10 +144,14 @@ export type CrmFunnel = {
     oldestDays: number;
     byStage: { stage: string; count: number }[];
   };
-  /** When the caller passed a monthFilter, this is the exact "YYYY-MM"
-   *  used to filter rows. Empty string means no filter was applied (all
-   *  available data shown). UI uses this to render the filter chip. */
+  /** When the cohort is filtered to a single calendar month, this is the
+   *  exact "YYYY-MM". Empty in project-window or no-filter mode. UI uses
+   *  it to render the "חודש: …" filter chip. */
   monthFilter: string;
+  /** Human label of the active date window when it's a project-flight-
+   *  date range (dd/MM/yyyy–dd/MM/yyyy) rather than a single month.
+   *  Empty in month / no-filter mode. */
+  windowLabel: string;
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -383,6 +387,39 @@ const SALESFORCE_EARLY_FUNNEL_STAGES = new Set<string>([
 ]);
 const STALE_LEAD_DAYS = 14;
 
+/* ── Date-window filter ─────────────────────────────────────────────── */
+
+/**
+ * The active date filter applied to a funnel cohort.
+ *   - `month`: a single "YYYY-MM" — the dashboard's month-rewind view.
+ *   - `range`: an inclusive [from,to] ISO window — the project's flight
+ *     dates (התחלה→סיום from ALL CLIENTS). This is the DEFAULT so the CRM
+ *     card matches the report header's date envelope instead of the bare
+ *     calendar month.
+ * `label` is the human string shown on the section chip.
+ */
+type DateWindow =
+  | { kind: "month"; month: string; label: string }
+  | { kind: "range"; from: string; to: string; label: string };
+
+/**
+ * Whether a row's (already date-only "YYYY-MM-DD") entry date falls in
+ * the window. Undated rows are excluded whenever a window is active —
+ * matches the prior month-filter behavior, where "".startsWith(month)
+ * evaluated false.
+ */
+function rowInWindow(d: string, w: DateWindow | null): boolean {
+  if (!w) return true;
+  if (!d) return false;
+  return w.kind === "month" ? d.startsWith(w.month) : d >= w.from && d <= w.to;
+}
+
+/** ISO "YYYY-MM-DD" → "dd/MM/yyyy" for the window chip label. */
+function ddmmyyyy(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
 /**
  * Convert the per-day per-source matrix into the flat, sorted array
  * shape the trendline component consumes. Dates ascending so the chart
@@ -473,7 +510,7 @@ function horizonIso(): string {
 async function computeBmbyFunnel(
   subjectEmail: string,
   crmAccount: string,
-  monthFilter: string,
+  window: DateWindow | null,
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readBmby(subjectEmail);
   if (!rows.length) return null;
@@ -585,11 +622,10 @@ async function computeBmbyFunnel(
       }
     }
 
-    // Month filter — apply before everything else so KPIs, status,
+    // Date-window filter — apply before everything else so KPIs, status,
     // objections, etc. are all consistent against the same row cohort.
-    if (monthFilter && iEntry >= 0) {
-      const d = dateOnly(arr[iEntry]);
-      if (!d.startsWith(monthFilter)) continue;
+    if (window && iEntry >= 0) {
+      if (!rowInWindow(dateOnly(arr[iEntry]), window)) continue;
     }
     leads++;
     // Two meeting metrics (per Maayan, 2026-05-12):
@@ -697,7 +733,8 @@ async function computeBmbyFunnel(
         .sort((a, b) => b[1] - a[1])
         .map(([stage, count]) => ({ stage, count })),
     },
-    monthFilter,
+    monthFilter: window?.kind === "month" ? window.month : "",
+    windowLabel: window?.kind === "range" ? window.label : "",
   };
 }
 
@@ -706,7 +743,7 @@ async function computeBmbyFunnel(
 async function computeSehelFunnel(
   subjectEmail: string,
   crmAccount: string,
-  monthFilter: string,
+  window: DateWindow | null,
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readSehel(subjectEmail);
   if (!rows.length) return null;
@@ -793,11 +830,10 @@ async function computeSehelFunnel(
       }
     }
 
-    // Month filter — applied against תאריך רישום, same field we use for
-    // the displayed dateRange.
-    if (monthFilter && iRegDate >= 0) {
-      const d = dateOnly(arr[iRegDate]);
-      if (!d.startsWith(monthFilter)) continue;
+    // Date-window filter — applied against תאריך רישום, same field we
+    // use for the displayed dateRange.
+    if (window && iRegDate >= 0) {
+      if (!rowInWindow(dateOnly(arr[iRegDate]), window)) continue;
     }
     leads++;
     const st = String(arr[iStage] ?? "").trim();
@@ -909,7 +945,8 @@ async function computeSehelFunnel(
         .sort((a, b) => b[1] - a[1])
         .map(([stage, count]) => ({ stage, count })),
     },
-    monthFilter,
+    monthFilter: window?.kind === "month" ? window.month : "",
+    windowLabel: window?.kind === "range" ? window.label : "",
   };
 }
 
@@ -918,7 +955,7 @@ async function computeSehelFunnel(
 async function computeSalesforceFunnel(
   subjectEmail: string,
   crmAccount: string,
-  monthFilter: string,
+  window: DateWindow | null,
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readSalesforce(subjectEmail);
   if (!rows.length) return null;
@@ -986,10 +1023,10 @@ async function computeSalesforceFunnel(
       }
     }
 
-    // Month filter — applied against תאריך יצירה, same field as dateRange.
-    if (monthFilter && iEntry >= 0) {
-      const d = dateOnly(arr[iEntry]);
-      if (!d.startsWith(monthFilter)) continue;
+    // Date-window filter — applied against תאריך יצירה, same field as
+    // dateRange.
+    if (window && iEntry >= 0) {
+      if (!rowInWindow(dateOnly(arr[iEntry]), window)) continue;
     }
     leads++;
     const st = String(arr[iStatus] ?? "").trim();
@@ -1068,7 +1105,8 @@ async function computeSalesforceFunnel(
         .sort((a, b) => b[1] - a[1])
         .map(([stage, count]) => ({ stage, count })),
     },
-    monthFilter,
+    monthFilter: window?.kind === "month" ? window.month : "",
+    windowLabel: window?.kind === "range" ? window.label : "",
   };
 }
 
@@ -1148,12 +1186,19 @@ function currentMonthIL(): string {
  *   - the source tab has zero rows matching that CRM account (or the
  *     effective month filter has zero rows)
  *
- * `monthFilter`, when provided as "YYYY-MM", restricts rows to that
- * calendar month against BMBY's תאריך כניסה or Sehel's תאריך רישום.
- * When omitted, defaults to the **current Asia/Jerusalem calendar
- * month** so the CRM numbers match the dashboard's default view
- * (which renders current-month in "live" mode). Pass an explicit ""
- * via the `noFilter` escape hatch if you ever need all-time data.
+ * Date-window resolution (highest priority first):
+ *   1. explicit `monthFilter` "YYYY-MM" → that calendar month (the
+ *      dashboard's month-rewind view; user explicitly picked a month).
+ *   2. `projectWindow` {from,to} → the project's flight-date envelope
+ *      (התחלה→סיום from ALL CLIENTS). This is the DEFAULT the CRM card
+ *      passes, so the funnel matches the report header's date range
+ *      instead of the bare calendar month.
+ *   3. otherwise → current Asia/Jerusalem calendar month (back-compat
+ *      default for callers that pass neither, e.g. the morning feed).
+ *   `noFilter` overrides everything → all available rows.
+ *
+ * Rows are filtered against BMBY's תאריך כניסה / Sehel's תאריך רישום /
+ * Salesforce's תאריך יצירה.
  *
  * Caller wraps in <Suspense fallback={null}>; null return collapses
  * the card cleanly.
@@ -1161,10 +1206,15 @@ function currentMonthIL(): string {
 export async function getCrmFunnelForProject(args: {
   company: string;
   project: string;
-  /** "YYYY-MM". Empty/undefined → defaults to the current calendar
-   *  month in Asia/Jerusalem (matches the dashboard's default view). */
+  /** "YYYY-MM". When set, pins the cohort to that calendar month
+   *  (the dashboard's month-rewind view). Takes priority over
+   *  projectWindow. */
   monthFilter?: string;
-  /** Explicit escape hatch: set true to disable the month filter and
+  /** The project's flight-date envelope (ISO from/to). Used as the
+   *  default window when no explicit `monthFilter` is set, so the CRM
+   *  funnel matches the report header's date range. */
+  projectWindow?: { from: string; to: string };
+  /** Explicit escape hatch: set true to disable all date filtering and
    *  return all available rows (~60 days). Use for admin/debug
    *  surfaces; not exposed in the UI. */
   noFilter?: boolean;
@@ -1174,11 +1224,19 @@ export async function getCrmFunnelForProject(args: {
   const rawMonthFilter = (args.monthFilter || "").trim();
   // Validate format defensively — caller may pass URL search-param string.
   const explicitMonth = /^\d{4}-\d{2}$/.test(rawMonthFilter) ? rawMonthFilter : "";
-  // Default behavior: if no explicit month was passed AND noFilter
-  // wasn't requested, fall back to current calendar month.
-  const validMonthFilter = args.noFilter
-    ? ""
-    : (explicitMonth || currentMonthIL());
+  // Resolve the active date window (see the priority list in the doc).
+  let window: DateWindow | null = null;
+  if (!args.noFilter) {
+    if (explicitMonth) {
+      window = { kind: "month", month: explicitMonth, label: explicitMonth };
+    } else if (args.projectWindow?.from && args.projectWindow?.to) {
+      const { from, to } = args.projectWindow;
+      window = { kind: "range", from, to, label: `${ddmmyyyy(from)}–${ddmmyyyy(to)}` };
+    } else {
+      const m = currentMonthIL();
+      window = m ? { kind: "month", month: m, label: m } : null;
+    }
+  }
   if (!company || !project) return null;
 
   // Read Keys to find this project's CRM mapping. readKeysCached is
@@ -1213,10 +1271,10 @@ export async function getCrmFunnelForProject(args: {
   }
 
   if (platform === "bmby") {
-    return computeBmbyFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
+    return computeBmbyFunnel(driveFolderOwner(), crmAccount, window);
   }
   if (platform === "salesforce") {
-    return computeSalesforceFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
+    return computeSalesforceFunnel(driveFolderOwner(), crmAccount, window);
   }
-  return computeSehelFunnel(driveFolderOwner(), crmAccount, validMonthFilter);
+  return computeSehelFunnel(driveFolderOwner(), crmAccount, window);
 }

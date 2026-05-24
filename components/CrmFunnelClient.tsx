@@ -328,6 +328,13 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             >
               חודש: {funnel.monthFilter}
             </span>
+          ) : funnel.windowLabel ? (
+            <span
+              className="crm-filter-chip"
+              title="תקופת הפעילות של הפרויקט (תאריכי התחלה–סיום) — מסונכרן עם תאריכי הדוח למעלה"
+            >
+              📅 {funnel.windowLabel}
+            </span>
           ) : null}
           <span className="crm-date-range" title="טווח התאריכים של הנתונים בקבוצה המסוננת">
             {funnel.dateRange.from} → {funnel.dateRange.to}
