@@ -7,6 +7,23 @@ import type { PricingLogRow } from "@/lib/pricingLog";
 const fmtILS = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
 const fmtInt = (n: number) => n.toLocaleString("he-IL");
 const ALL = "__all__";
+// Synthetic taskId prefix for manual (not-task-backed) ledger rows.
+// Mirrors MANUAL_TASK_PREFIX in lib/pricingLog.ts (inlined to avoid
+// pulling the server lib into the client bundle).
+const MANUAL_PREFIX = "manual:";
+
+/** Today's date (Asia/Jerusalem) as YYYY-MM-DD — default for the
+ *  manual-entry date picker. */
+function todayIL(): string {
+  const p = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  return `${g("year")}-${g("month")}-${g("day")}`;
+}
 
 /**
  * Month-end billing report + workbench. Reads the PricingLog ledger and
@@ -31,12 +48,17 @@ const tokensOf = (s: string | undefined): string[] =>
     .filter(Boolean);
 
 export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
+  // Manually-added rows (this session) are merged ahead of the
+  // server-rendered ledger so they show without a full reload.
+  const [extraRows, setExtraRows] = useState<PricingLogRow[]>([]);
+  const allRows = useMemo(() => [...extraRows, ...rows], [extraRows, rows]);
+
   const months = useMemo(
     () =>
-      Array.from(new Set(rows.map((r) => r.month).filter(Boolean))).sort(
+      Array.from(new Set(allRows.map((r) => r.month).filter(Boolean))).sort(
         (a, b) => b.localeCompare(a),
       ),
-    [rows],
+    [allRows],
   );
 
   // ── Filter state ──────────────────────────────────────────────────
@@ -64,6 +86,16 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
   const [busyNoteId, setBusyNoteId] = useState<string>("");
   const [actionErr, setActionErr] = useState<string>("");
 
+  // ── Manual-entry form ─────────────────────────────────────────────
+  const [showAdd, setShowAdd] = useState(false);
+  const [addCompany, setAddCompany] = useState("");
+  const [addProject, setAddProject] = useState("");
+  const [addAmount, setAddAmount] = useState("");
+  const [addNote, setAddNote] = useState("");
+  const [addDate, setAddDate] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addErr, setAddErr] = useState("");
+
   // Effective billed override / amount for a row.
   const overrideOf = (r: PricingLogRow): number | null =>
     Object.prototype.hasOwnProperty.call(edited, r.taskId)
@@ -81,8 +113,18 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
 
   // Rows in the chosen month (drives the dependent filter option lists).
   const monthRows = useMemo(
-    () => (month === ALL ? rows : rows.filter((r) => r.month === month)),
-    [rows, month],
+    () => (month === ALL ? allRows : allRows.filter((r) => r.month === month)),
+    [allRows, month],
+  );
+
+  // Every company ever seen (for the manual-entry datalist), independent
+  // of the month filter.
+  const allCompanies = useMemo(
+    () =>
+      Array.from(new Set(allRows.map((r) => r.company).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b, "he"),
+      ),
+    [allRows],
   );
 
   const companies = useMemo(
@@ -299,6 +341,57 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
     }
   }
 
+  function openAddForm() {
+    setAddErr("");
+    setAddDate(todayIL());
+    setShowAdd(true);
+  }
+
+  async function submitAdd() {
+    setAddErr("");
+    const company = addCompany.trim();
+    const amt = Number(addAmount.replace(",", "."));
+    if (!company) {
+      setAddErr("יש לבחור/להזין חברה");
+      return;
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setAddErr("יש להזין סכום תקין");
+      return;
+    }
+    setAddBusy(true);
+    try {
+      const res = await fetch("/api/admin/billing/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company,
+          project: addProject.trim(),
+          amount: amt,
+          note: addNote,
+          date: addDate,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok || !data.row) throw new Error(data.error || "save failed");
+      const row = data.row as PricingLogRow;
+      setExtraRows((prev) => [row, ...prev]);
+      // Make sure the new row is visible: jump to its month, clear the
+      // company filter (it may have been narrowed elsewhere).
+      setMonth(row.month);
+      setCompany(ALL);
+      setShowAdd(false);
+      setAddCompany("");
+      setAddProject("");
+      setAddAmount("");
+      setAddNote("");
+    } catch (e) {
+      setAddErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
   function exportCsv() {
     const head = [
       "month",
@@ -358,12 +451,37 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
     URL.revokeObjectURL(a.href);
   }
 
-  if (rows.length === 0) {
+  if (allRows.length === 0) {
     return (
-      <div className="billing-empty">
-        אין עדיין חיובים. ה־ledger מתמלא אוטומטית עם כל משימה חדשה
-        שנוצרת עם מחיר (כולל כל שלב בשרשרת). חזור/י לכאן אחרי שייווצרו
-        משימות עם תמחור.
+      <div className="billing-report">
+        <div className="billing-empty">
+          אין עדיין חיובים. ה־ledger מתמלא אוטומטית עם כל משימה חדשה
+          שנוצרת עם מחיר (כולל כל שלב בשרשרת). אפשר גם להוסיף חיוב ידני.
+        </div>
+        <div className="billing-controls" style={{ marginTop: "1em" }}>
+          <button type="button" className="btn-primary btn-sm" onClick={openAddForm}>
+            ➕ הוסף חיוב ידני
+          </button>
+        </div>
+        {showAdd && (
+          <ManualAddForm
+            companies={allCompanies}
+            company={addCompany}
+            setCompany={setAddCompany}
+            project={addProject}
+            setProject={setAddProject}
+            amount={addAmount}
+            setAmount={setAddAmount}
+            note={addNote}
+            setNote={setAddNote}
+            date={addDate}
+            setDate={setAddDate}
+            busy={addBusy}
+            err={addErr}
+            onSubmit={submitAdd}
+            onCancel={() => setShowAdd(false)}
+          />
+        )}
       </div>
     );
   }
@@ -405,6 +523,14 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
         </label>
         <button
           type="button"
+          className="btn-primary btn-sm"
+          onClick={openAddForm}
+          title="הוסף שורת חיוב ידנית — לא קשורה למשימה"
+        >
+          ➕ הוסף חיוב ידני
+        </button>
+        <button
+          type="button"
           className="btn-ghost btn-sm"
           onClick={exportCsv}
           disabled={filtered.length === 0}
@@ -416,6 +542,26 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
           <b>{fmtILS(grandTotal)}</b>
         </span>
       </div>
+
+      {showAdd && (
+        <ManualAddForm
+          companies={allCompanies}
+          company={addCompany}
+          setCompany={setAddCompany}
+          project={addProject}
+          setProject={setAddProject}
+          amount={addAmount}
+          setAmount={setAddAmount}
+          note={addNote}
+          setNote={setAddNote}
+          date={addDate}
+          setDate={setAddDate}
+          busy={addBusy}
+          err={addErr}
+          onSubmit={submitAdd}
+          onCancel={() => setShowAdd(false)}
+        />
+      )}
 
       {/* Advanced filters */}
       <div className="billing-filters">
@@ -567,6 +713,7 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
                 const note = noteOf(r);
                 const isEditing = editing === r.taskId;
                 const isEditingNote = editingNote === r.taskId;
+                const isManual = r.taskId.startsWith(MANUAL_PREFIX);
                 return (
                   <div
                     className="billing-row bill-row"
@@ -574,8 +721,13 @@ export default function BillingReport({ rows }: { rows: PricingLogRow[] }) {
                     key={r.taskId}
                   >
                     <span title={r.createdAt}>{r.createdAt.slice(0, 10)}</span>
-                    <span className="time-task-cell" title={r.title || r.taskId}>
-                      {r.taskId ? (
+                    <span
+                      className="time-task-cell"
+                      title={isManual ? "חיוב ידני (לא קשור למשימה)" : r.title || r.taskId}
+                    >
+                      {isManual ? (
+                        <span className="billing-manual-name">✍️ חיוב ידני</span>
+                      ) : r.taskId ? (
                         <Link
                           href={`/tasks/${encodeURIComponent(r.taskId)}`}
                           className="time-task-link"
@@ -787,6 +939,132 @@ function SummaryTile({
       <div className="billing-stat-value">{value}</div>
       <div className="billing-stat-label">{label}</div>
       {sub ? <div className="billing-stat-sub">{sub}</div> : null}
+    </div>
+  );
+}
+
+function ManualAddForm({
+  companies,
+  company,
+  setCompany,
+  project,
+  setProject,
+  amount,
+  setAmount,
+  note,
+  setNote,
+  date,
+  setDate,
+  busy,
+  err,
+  onSubmit,
+  onCancel,
+}: {
+  companies: string[];
+  company: string;
+  setCompany: (v: string) => void;
+  project: string;
+  setProject: (v: string) => void;
+  amount: string;
+  setAmount: (v: string) => void;
+  note: string;
+  setNote: (v: string) => void;
+  date: string;
+  setDate: (v: string) => void;
+  busy: boolean;
+  err: string;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="billing-add" role="form" aria-label="הוספת חיוב ידני">
+      <div className="billing-add-title">➕ חיוב ידני חדש</div>
+      <div className="billing-add-grid">
+        <label>
+          חברה *
+          <input
+            type="text"
+            list="billing-add-companies"
+            value={company}
+            placeholder="שם החברה"
+            onChange={(e) => setCompany(e.target.value)}
+            autoFocus
+          />
+          <datalist id="billing-add-companies">
+            {companies.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </label>
+        <label>
+          פרויקט
+          <input
+            type="text"
+            value={project}
+            placeholder="(לא חובה)"
+            onChange={(e) => setProject(e.target.value)}
+          />
+        </label>
+        <label>
+          סכום *
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="any"
+            value={amount}
+            placeholder="₪"
+            onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSubmit();
+            }}
+          />
+        </label>
+        <label>
+          תאריך
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <label className="billing-add-note">
+          תיאור / הערה
+          <input
+            type="text"
+            value={note}
+            maxLength={2000}
+            placeholder="על מה החיוב (יופיע בעמודת ההערה)"
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSubmit();
+            }}
+          />
+        </label>
+      </div>
+      {err && (
+        <div className="time-tracker-error" role="alert">
+          {err}
+        </div>
+      )}
+      <div className="billing-add-actions">
+        <button
+          type="button"
+          className="btn-primary btn-sm"
+          disabled={busy}
+          onClick={onSubmit}
+        >
+          {busy ? "שומר…" : "הוסף חיוב"}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost btn-sm"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          ביטול
+        </button>
+      </div>
     </div>
   );
 }

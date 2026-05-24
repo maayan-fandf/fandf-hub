@@ -11998,6 +11998,56 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   font-size: .88em;
 }
 
+/* Manual (not-task-backed) billing rows */
+.billing-manual-name {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* "➕ הוסף חיוב ידני" form panel */
+.billing-add {
+  border: 1px solid var(--accent, #6366f1);
+  border-radius: 10px;
+  padding: .8em .9em;
+  margin-bottom: 1em;
+  background: var(--surface-soft, rgba(99, 102, 241, .05));
+}
+.billing-add-title {
+  font-size: .9em;
+  font-weight: 700;
+  color: var(--accent, #6366f1);
+  margin-bottom: .7em;
+}
+.billing-add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9em, 1fr));
+  gap: .6em .9em;
+  align-items: end;
+}
+.billing-add-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+  font-size: .8em;
+  color: var(--muted);
+}
+.billing-add-grid input {
+  padding: .4em .6em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-size: .9em;
+}
+.billing-add-note { grid-column: 1 / -1; }
+.billing-add-actions {
+  display: flex;
+  gap: .5em;
+  margin-top: .8em;
+}
+
 /* Per-task time tracker — side-panel block on the task detail page. */
 .time-tracker {
   display: flex;

@@ -178,6 +178,114 @@ export async function logTaskPricing(entry: TaskPricingEntry): Promise<void> {
   }
 }
 
+/* ── Manual billing entries ────────────────────────────────────────── */
+
+export type ManualPricingEntry = {
+  subjectEmail: string;
+  company: string;
+  project: string;
+  amount: number;
+  note: string;
+  /** "YYYY-MM-DD" — which day/month the charge bills to. Empty → today. */
+  date?: string;
+  createdBy: string;
+};
+
+/** Marker `kind` for manually-added (not-task-backed) ledger rows. */
+export const MANUAL_KIND = "חיוב ידני";
+/** A ledger row is a manual entry when its taskId carries this prefix. */
+export const MANUAL_TASK_PREFIX = "manual:";
+
+/** Compose a createdAtIl ("YYYY-MM-DD HH:MM:SS", Asia/Jerusalem) for a
+ *  manual entry — the chosen date with the current time-of-day so month
+ *  grouping + ordering behave. Falls back to now when no/invalid date. */
+function manualCreatedAt(dateIso: string): string {
+  const now = nowIsraelString();
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? `${dateIso} ${now.slice(11)}` : now;
+}
+
+/**
+ * Add a standalone, NOT-task-backed billing line to the ledger (the
+ * "➕ הוסף חיוב ידני" action on /admin/billing). A one-off/ad-hoc charge
+ * — retainer, external expense, manual adjustment — that has no task.
+ *
+ * Gets a synthetic unique taskId (`manual:…`) so the per-entry billed /
+ * note edits (keyed by taskId) work on it like any other row, and
+ * `kind = MANUAL_KIND` so the report + the kind filter can recognize it.
+ * Awaited (not fire-and-forget) and surfaces errors — this is a
+ * deliberate admin action. Returns the created row for optimistic UI.
+ */
+export async function addManualPricingEntry(
+  e: ManualPricingEntry,
+): Promise<PricingLogRow> {
+  const createdAtIl = manualCreatedAt(String(e.date || "").trim());
+  const taskId = `${MANUAL_TASK_PREFIX}${Date.now().toString(36)}:${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+  const company = String(e.company || "").trim();
+  const project = String(e.project || "").trim();
+  const note = String(e.note || "").trim();
+  const price = Math.round(Number(e.amount) || 0);
+  const row: PricingLogRow = {
+    createdAt: createdAtIl,
+    month: createdAtIl.slice(0, 7),
+    taskId,
+    company,
+    project,
+    departments: "",
+    kind: MANUAL_KIND,
+    price,
+    createdBy: e.createdBy,
+    note: note || undefined,
+  };
+  const mirror = {
+    createdAtIl,
+    taskId,
+    company,
+    project,
+    departments: "",
+    kind: MANUAL_KIND,
+    price,
+    createdBy: e.createdBy,
+    billed: null as number | null,
+    note,
+  };
+  if (useFirestoreWrites()) {
+    const { writePricingEntry } = await import("@/lib/firestoreSync");
+    await writePricingEntry(mirror);
+    return row;
+  }
+  const spreadsheetId = envOrThrow("SHEET_ID_COMMENTS");
+  const sheets = sheetsClient(e.subjectEmail);
+  const values = [
+    [createdAtIl, taskId, company, project, "", MANUAL_KIND, price, e.createdBy, "", note],
+  ];
+  const doAppend = () =>
+    sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${TAB}!A:J`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values },
+    });
+  try {
+    await doAppend();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!tabEnsured && /Unable to parse range|not found/i.test(msg)) {
+      const created = await ensureTab(sheets, spreadsheetId);
+      if (created) await doAppend();
+      else throw err;
+    } else {
+      throw err;
+    }
+  }
+  void import("@/lib/firestoreSync")
+    .then((m) => m.mirrorPricingEntry(mirror))
+    .catch(() => {});
+  return row;
+}
+
 export type PricingLogRow = {
   /** "YYYY-MM-DD HH:MM:SS" Asia/Jerusalem (as written by the appender). */
   createdAt: string;

@@ -340,6 +340,10 @@ export type PricingMirror = {
   price: number;
   createdBy: string;
   billed: number | null;
+  /** Optional free-text note. Used by manual billing entries (added from
+   *  /admin/billing); blank for auto-logged task rows. Not part of
+   *  pricingDocId, so it never affects idempotency. */
+  note?: string;
 };
 
 /** Phase 4 — AUTHORITATIVE single ledger-entry write. Un-gated body of
@@ -362,6 +366,7 @@ export async function writePricingEntry(e: PricingMirror): Promise<void> {
       price: typeof e.price === "number" ? e.price : 0,
       createdBy: e.createdBy,
       billed: typeof e.billed === "number" ? e.billed : null,
+      note: typeof e.note === "string" ? e.note : "",
     });
 }
 
