@@ -117,6 +117,7 @@ const ADMIN_LINKS: { href: string; label: string; emoji: string }[] = [
   { href: "/admin/task-form-schema", label: "סכמת טופס משימה", emoji: "📐" },
   { href: "/admin/keys", label: "Keys", emoji: "🔑" },
   { href: "/admin/pricing", label: "תמחור", emoji: "💰" },
+  { href: "/admin/billing", label: "חיובי לקוח", emoji: "🧾" },
   { href: "/admin/time", label: "מעקב זמן", emoji: "⏱️" },
 ];
 
