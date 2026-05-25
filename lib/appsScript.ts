@@ -467,10 +467,23 @@ export type CommentReplies = {
   me: { email: string; isAdmin: boolean };
 };
 
-export function getCommentReplies(
+export async function getCommentReplies(
   parentCommentId: string,
   project: string,
 ): Promise<CommentReplies> {
+  // Feature-flagged direct path — MUST mirror the other comment readers.
+  // Without it this proxies to Apps Script, which reads the now-stale
+  // Comments sheet (Phase-4: writes go to Firestore), so replies written
+  // to Firestore came back empty and the thread chip showed
+  // "אין תגובות עדיין" even when a reply existed.
+  const { useSACommentsReads } = await import("@/lib/sa");
+  if (useSACommentsReads()) {
+    const { projectCommentRepliesDirect } = await import(
+      "@/lib/commentsDirect"
+    );
+    const user = await currentUserEmail();
+    return projectCommentRepliesDirect(user, parentCommentId, project);
+  }
   return callApi<CommentReplies>("commentReplies", {
     parentCommentId,
     project,

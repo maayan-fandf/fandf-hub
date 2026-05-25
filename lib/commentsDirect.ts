@@ -26,6 +26,7 @@ import type {
   ProjectTasks,
   MyMentions,
   CommentItem,
+  CommentReplies,
   MentionItem,
   TaskItem,
 } from "@/lib/appsScript";
@@ -454,6 +455,86 @@ export async function projectCommentsDirect(
     project,
     comments,
     total: topLevel.length,
+    me: { email: subjectEmail, isAdmin: scope.isAdmin },
+  };
+}
+
+/* ── projectCommentRepliesDirect ───────────────────────────────────── */
+
+/**
+ * Replies under one parent comment (oldest-first), for the inline
+ * thread-expansion chip (ThreadReplies → /api/comments/replies).
+ *
+ * This is the Firestore-direct twin of the Apps Script `commentReplies`
+ * action. It was the LAST comment reader still proxying to Apps Script,
+ * which since the Phase-4 storage migration reads the now-stale Comments
+ * sheet — so a reply written to Firestore (every reply now) came back
+ * empty, and the chip showed "אין תגובות עדיין" even though the reply
+ * existed. Reading Firestore here (same source as projectCommentsDirect)
+ * fixes that. Internal-scoped replies stay hidden from non-F&F callers
+ * via the same hard invariant as every other reader.
+ */
+export async function projectCommentRepliesDirect(
+  subjectEmail: string,
+  parentCommentId: string,
+  project: string,
+): Promise<CommentReplies> {
+  const [{ rows, headerIdx }, scope] = await Promise.all([
+    readCommentsOnce(subjectEmail, project),
+    getAccessScope(subjectEmail),
+  ]);
+
+  if (!scope.isAdmin && !scope.accessibleProjects.has(project)) {
+    throw new Error("Access denied to project: " + project);
+  }
+
+  const callerInternal = isInternalEmail(subjectEmail);
+  const rowKindIdx = headerIdx.get("row_kind");
+  const target = String(parentCommentId || "").trim();
+
+  const replies: CommentItem[] = [];
+  for (const row of rows) {
+    const rk = rowKindIdx == null ? "" : String(row[rowKindIdx] ?? "").trim();
+    if (rk === "task") continue;
+    const cell = cellGetter(row, headerIdx);
+    if (String(cell("parent_id") ?? "").trim() !== target) continue;
+    const proj = String(cell("project") ?? "").trim();
+    if (proj !== project) continue;
+    // Hard invariant: a non-F&F caller never sees an internal row.
+    const rowScope = rowScopeOf(cell);
+    if (!callerInternal && rowScope === "internal") continue;
+    const id = String(cell("id") ?? "");
+    const mentionsRaw = String(cell("mentions") ?? "");
+    replies.push({
+      comment_id: id,
+      project: proj,
+      anchor: String(cell("anchor") ?? ""),
+      parent_id: target,
+      author_email: String(cell("author_email") ?? ""),
+      author_name: String(cell("author_name") ?? ""),
+      body: String(cell("body") ?? ""),
+      mentions: mentionsRaw
+        .split(/[,;]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+      timestamp: toIsoDate(cell("timestamp")),
+      resolved: Boolean(cell("resolved")),
+      reply_count: 0,
+      edited_at: toIsoDate(cell("edited_at")) || undefined,
+      scope: rowScope,
+      deep_link: hubCommentUrl(proj, id),
+    });
+  }
+
+  // Oldest-first — replies read top-to-bottom like a chat log (matches
+  // the Apps Script `commentReplies` ordering).
+  replies.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  return {
+    project,
+    parent_id: target,
+    replies,
+    total: replies.length,
     me: { email: subjectEmail, isAdmin: scope.isAdmin },
   };
 }
