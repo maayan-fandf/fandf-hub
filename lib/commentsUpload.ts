@@ -1,23 +1,22 @@
 /**
  * Upload arbitrary file bytes into a project's comment-attachments
- * folder.
+ * folder. The destination depends on the comment's AUDIENCE:
  *
- * Folder hierarchy:
- *     <Shared Drive>/<company>/<project>/שיתוף עם הלקוח/<file>
+ *   shared (client tab) → <Shared Drive>/<company>/<project>/שיתוף עם הלקוח/
+ *   internal (F&F tab)  → <Shared Drive>/<company>/<project>/קבצים פנימיים (צוות בלבד)/
  *
- * The `שיתוף עם הלקוח` subfolder name is deliberately role-explicit:
- * when an admin browses Drive, the name immediately answers "is this
- * client-visible?" — yes, it's the bucket for client-tab attachments.
- * Internal-only chatter happens in Google Chat (per project space),
- * which manages its own Drive area, so internal attachments live
- * there, not here. Two folders per project, each obviously-named.
+ * Both subfolder names are deliberately role-explicit so an admin
+ * browsing Drive can tell at a glance who can see a file. Since the
+ * Google Chat migration, internal-tab chatter lives in the hub (not a
+ * Chat space), so internal attachments must NOT land in the client
+ * bucket — they go to a clearly-internal sibling folder instead
+ * (2026-05-25). The route resolves the audience from the parent
+ * comment's scope.
  *
- * The subfolder is lazy-created the first time someone attaches a
- * file from a הערה / reply on the client tab. Sibling to the per-task
- * / per-campaign folders the tasks pipeline creates, but global-per-
- * project — there's no per-comment subfolder, since comments are
- * short-lived chat-style notes and splitting attachments by comment
- * ID would just clutter Drive.
+ * The subfolder is lazy-created the first time someone attaches a file
+ * on that tab. Global-per-project (no per-comment subfolder) — comments
+ * are short-lived chat-style notes; splitting by comment id would just
+ * clutter Drive.
  *
  * Drive impersonation uses DRIVE_FOLDER_OWNER (same as the tasks
  * upload path), so the folder + uploaded file are owned by the team
@@ -38,7 +37,14 @@ export type CommentUploadResult = {
   embedUrl: string;
 };
 
+/** Client-visible attachments bucket (shared / client tab). */
 const COMMENTS_SUBFOLDER_NAME = "שיתוף עם הלקוח";
+/** Internal-only attachments bucket (F&F tab) — NOT shared with the
+ *  client. Sibling of the client bucket under the project folder; the
+ *  project root lives in an internal-only Shared Drive, and (unlike the
+ *  `<project> תיקיה משותפת` folder) this one is never granted client
+ *  permissions. */
+const INTERNAL_SUBFOLDER_NAME = "קבצים פנימיים (צוות בלבד)";
 
 // In-process cache: project name → comments-attachments folder id.
 // Drive lookups are slow; the folder name never moves once created.
@@ -59,14 +65,15 @@ async function ensureCommentsSubfolder(
   drive: drive_v3.Drive,
   parentFolderId: string,
   project: string,
+  subfolderName: string,
 ): Promise<string> {
-  const cacheKey = project.toLowerCase().trim();
+  const cacheKey = `${project.toLowerCase().trim()}|${subfolderName}`;
   const cached = COMMENTS_FOLDER_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.id;
 
-  // Look up an existing client-attachments subfolder first.
+  // Look up an existing attachments subfolder first.
   const listed = await drive.files.list({
-    q: `'${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${escapeDriveQuery(COMMENTS_SUBFOLDER_NAME)}' and trashed=false`,
+    q: `'${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${escapeDriveQuery(subfolderName)}' and trashed=false`,
     fields: "files(id, name)",
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
@@ -77,7 +84,7 @@ async function ensureCommentsSubfolder(
   if (!folderId) {
     const created = await drive.files.create({
       requestBody: {
-        name: COMMENTS_SUBFOLDER_NAME,
+        name: subfolderName,
         mimeType: "application/vnd.google-apps.folder",
         parents: [parentFolderId],
       },
@@ -129,6 +136,10 @@ export async function uploadToProjectCommentsFolder(
   fileName: string,
   mimeType: string,
   bytes: Buffer,
+  /** When true, store under the internal (team-only) bucket instead of
+   *  the client-share bucket. Resolved from the parent comment's scope
+   *  at the route. Defaults false (client bucket) for back-compat. */
+  internal = false,
 ): Promise<CommentUploadResult> {
   const company = await lookupCompanyForProject(subjectEmail, project);
   // Use ensureCampaignFolderId (campaign="") so the company + project
@@ -144,6 +155,7 @@ export async function uploadToProjectCommentsFolder(
     drive,
     projectFolder.folderId,
     project,
+    internal ? INTERNAL_SUBFOLDER_NAME : COMMENTS_SUBFOLDER_NAME,
   );
   const created = await drive.files.create({
     requestBody: {

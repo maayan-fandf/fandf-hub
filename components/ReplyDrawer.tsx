@@ -108,6 +108,9 @@ export default function ReplyDrawer({
     const form = new FormData();
     form.set("project", project);
     form.set("file", file, file.name || "pasted-image.png");
+    // Lets the route route internal-comment attachments to the team-only
+    // folder (replies inherit the parent comment's scope).
+    if (parentCommentId) form.set("parentCommentId", parentCommentId);
     setUploading((n) => n + 1);
     setUploadError(null);
     try {

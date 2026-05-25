@@ -40,6 +40,26 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+
+  // Audience routing: an attachment on an INTERNAL (F&F-only) comment must
+  // NOT land in the client-share folder. Resolve from the parent comment's
+  // scope (replies inherit their root's scope), with an explicit `internal`
+  // form field as an override for non-reply callers. Default shared.
+  const parentCommentId = String(form.get("parentCommentId") || "").trim();
+  const explicitInternal = /^(1|true|internal)$/i.test(
+    String(form.get("internal") || "").trim(),
+  );
+  let internal = explicitInternal;
+  if (!internal && parentCommentId) {
+    try {
+      const { getCommentScopeById } = await import("@/lib/commentsDirect");
+      internal =
+        (await getCommentScopeById(session.user.email, parentCommentId)) ===
+        "internal";
+    } catch {
+      internal = false; // unknown → client bucket (current behavior)
+    }
+  }
   if (fileEntry.size > MAX_BYTES) {
     return NextResponse.json(
       { ok: false, error: `File too large (max ${MAX_BYTES / 1024 / 1024}MB)` },
@@ -61,6 +81,7 @@ export async function POST(req: Request) {
       fileName,
       mimeType,
       bytes,
+      internal,
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {

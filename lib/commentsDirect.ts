@@ -187,6 +187,30 @@ export async function getCommentByIdDirect(
   return null;
 }
 
+/**
+ * The audience scope ("internal" | "shared") of one comment, by id —
+ * used by the attachment-upload route to route a reply's file into the
+ * internal folder vs the client-share folder. Returns null when the
+ * comment isn't found (caller falls back to "shared"). No access-scope
+ * gate: the value is just internal/shared, not content, and a client
+ * could only ever reference a shared comment anyway (they never see
+ * internal ones).
+ */
+export async function getCommentScopeById(
+  subjectEmail: string,
+  commentId: string,
+): Promise<"internal" | "shared" | null> {
+  const { rows, headerIdx } = await readCommentsOnce(subjectEmail);
+  const idIdx = headerIdx.get("id");
+  if (idIdx == null) return null;
+  const target = String(commentId || "").trim();
+  for (const row of rows) {
+    if (String(row[idIdx] ?? "").trim() !== target) continue;
+    return rowScopeOf(cellGetter(row, headerIdx));
+  }
+  return null;
+}
+
 /* ── migrateCommentThreadDirect ────────────────────────────────────── */
 
 function columnLetter(colNumber: number): string {

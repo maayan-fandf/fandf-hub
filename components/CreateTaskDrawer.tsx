@@ -150,6 +150,9 @@ export default function CreateTaskDrawer({
     const form = new FormData();
     form.set("project", project);
     form.set("file", file, file.name || "pasted-image.png");
+    // Tasks are F&F-internal (clients never see them), so their
+    // attachments go to the team-only bucket, not the client-share one.
+    form.set("internal", "1");
     setUploading((n) => n + 1);
     setUploadError(null);
     try {
