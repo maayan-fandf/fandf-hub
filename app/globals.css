@@ -13892,14 +13892,18 @@ html[data-theme="dark"] .tasks-dept-chip {
   padding: 0;
   user-select: none;
 }
-/* Per-row quick-open icons: 🗂️ Explorer/Finder · 🌐 Drive web · 🔍 Picker.
-   The .drive-folder-name flex:1 above pushes this group to the row end. */
+/* Per-row quick-open icons: 🗂️ Explorer/Finder · Drive web · 🔍 Picker.
+   The .drive-folder-name flex:1 above pushes this group to the row end.
+   Shown only on the currently-selected row to keep the tree uncluttered. */
 .drive-folder-row-actions {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: .1em;
   margin-inline-start: .35em;
   flex: 0 0 auto;
+}
+.drive-folder-row.is-selected .drive-folder-row-actions {
+  display: inline-flex;
 }
 .drive-folder-icon-btn {
   display: inline-flex;
@@ -13932,6 +13936,25 @@ html[data-theme="dark"] .tasks-dept-chip {
 .drive-folder-row-actions .copy-local-path-btn:hover {
   background: var(--accent-soft, #e7f0ff);
   opacity: 1;
+}
+
+/* Google Drive Picker dialog positions itself absolutely and does NOT
+   account for page scroll — opened from a scrolled-down form it renders
+   ABOVE the viewport (off-screen) and looks broken. Pin the dialog +
+   backdrop to the viewport center so it's always visible, for every
+   picker in the Hub (the standalone "עיון ב-Drive" button + the per-row
+   folder icons). */
+.picker-dialog-bg {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 11000 !important;
+}
+.picker-dialog {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 11001 !important;
 }
 .drive-folder-new-name {
   flex: 1;
