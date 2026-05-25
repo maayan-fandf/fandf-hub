@@ -13938,6 +13938,40 @@ html[data-theme="dark"] .tasks-dept-chip {
   opacity: 1;
 }
 
+/* Option B — once a folder is chosen the tree collapses to this one-line
+   summary and the files/upload panel renders right beneath it. */
+.drive-folder-collapsed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6em;
+  padding: .5em .2em;
+}
+.drive-folder-collapsed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  font-weight: 600;
+  background: var(--accent-soft, #e7f0ff);
+  border: 1px solid var(--accent, #2a66d9);
+  border-radius: 999px;
+  padding: .35em .85em;
+  font-size: .92em;
+}
+.drive-folder-change-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent, #2a66d9);
+  font: inherit;
+  font-size: .85em;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.drive-folder-inline-files {
+  margin-top: .5em;
+}
+
 /* Google Drive Picker dialog positions itself absolutely and does NOT
    account for page scroll — opened from a scrolled-down form it renders
    ABOVE the viewport (off-screen) and looks broken. Pin the dialog +

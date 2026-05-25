@@ -37,6 +37,14 @@ type Props = {
    *  a "open in Drive Picker" icon rooted at that folder. */
   accessToken?: string | null;
   apiKey?: string | null;
+  /** Render-prop for the files/upload panel shown INLINE directly under
+   *  the currently-selected folder row (Option A). Keeps the heavy
+   *  TaskFilesPanel + its data in the parent form while letting the
+   *  picker control its position in the tree. */
+  renderSelectedFolderPanel?: (
+    folderId: string,
+    folderName: string,
+  ) => React.ReactNode;
 };
 
 type Child = {
@@ -62,6 +70,7 @@ export default function DriveFolderPicker({
   userEmail = "",
   accessToken,
   apiKey,
+  renderSelectedFolderPanel,
 }: Props) {
   type CampaignState =
     | null
@@ -94,6 +103,10 @@ export default function DriveFolderPicker({
     | { items: Child[] };
   const [siblingsOpen, setSiblingsOpen] = useState(false);
   const [siblings, setSiblings] = useState<Siblings>(null);
+  // Option B — once a folder is selected the tree collapses to a single
+  // "נבחר: <name> · שנה תיקייה" line with the files panel right below;
+  // "שנה תיקייה" reopens the full tree to pick a different folder.
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const loadSiblings = useCallback(async () => {
     if (!project) return;
@@ -265,6 +278,14 @@ export default function DriveFolderPicker({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignFolder]);
+
+  // Collapse the tree to its one-line summary whenever a folder becomes
+  // selected (auto-select on load, a sibling re-anchor, or a tree pick).
+  // "שנה תיקייה" sets pickerOpen back to true to reopen it.
+  useEffect(() => {
+    const sel = value.mode === "existing" ? value.folderId : "";
+    if (sel) setPickerOpen(false);
+  }, [value]);
 
   function toggleExpanded(id: string) {
     setExpanded((s) => {
@@ -472,7 +493,24 @@ export default function DriveFolderPicker({
               ✅ תיקיית הבריף תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
             </div>
           )}
-          {rootId && (
+          {/* Collapsed summary (Option B): once a folder is selected the
+              tree folds to one line; the files panel renders right below. */}
+          {rootId && !pickerOpen && selectedExistingId && (
+            <div className="drive-folder-collapsed">
+              <span className="drive-folder-collapsed-chip">
+                <span className="drive-folder-icon">📁</span>
+                נבחר: {selectedExistingName || campaign || project || "תיקייה"}
+              </span>
+              <button
+                type="button"
+                className="drive-folder-change-btn"
+                onClick={() => setPickerOpen(true)}
+              >
+                שנה תיקייה
+              </button>
+            </div>
+          )}
+          {rootId && (pickerOpen || !selectedExistingId) && (
             <>
               <div className="drive-folder-breadcrumb">
                 <span className="drive-folder-breadcrumb-root">📂 Drive</span>
@@ -624,13 +662,14 @@ export default function DriveFolderPicker({
                   className={`drive-folder-row drive-folder-root-row${
                     selectedExistingId === rootId ? " is-selected" : ""
                   }`}
-                  onClick={() =>
+                  onClick={() => {
                     onChange({
                       mode: "existing",
                       folderId: rootId,
                       folderName: campaign || project || "תיקייה",
-                    })
-                  }
+                    });
+                    setPickerOpen(false);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
@@ -664,9 +703,27 @@ export default function DriveFolderPicker({
                 <div className="drive-folder-selected-pill">
                   <span className="drive-folder-icon">📁</span>
                   <span>נבחרה: {selectedExistingName || campaign || "תיקייה"}</span>
+                  <button
+                    type="button"
+                    className="drive-folder-change-btn"
+                    onClick={() => setPickerOpen(false)}
+                  >
+                    ✓ סיום
+                  </button>
                 </div>
               )}
             </>
+          )}
+          {/* Files / upload panel — rendered inline directly under the
+              selected folder (collapsed chip or the tree), via the
+              parent's render-prop. */}
+          {rootId && selectedExistingId && renderSelectedFolderPanel && (
+            <div className="drive-folder-inline-files">
+              {renderSelectedFolderPanel(
+                selectedExistingId,
+                selectedExistingName || campaign || project || "תיקייה",
+              )}
+            </div>
           )}
         </div>
     </div>
@@ -777,13 +834,14 @@ export default function DriveFolderPicker({
                 role="button"
                 tabIndex={0}
                 className={`drive-folder-row${isSelected ? " is-selected" : ""}`}
-                onClick={() =>
+                onClick={() => {
                   onChange({
                     mode: "existing",
                     folderId: f.id,
                     folderName: f.name,
-                  })
-                }
+                  });
+                  setPickerOpen(false);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();

@@ -1666,6 +1666,19 @@ export default function TaskCreateForm({
             userEmail={currentUserEmail}
             accessToken={driveAccessToken}
             apiKey={drivePickerApiKey}
+            // Option B — the files/upload panel renders INLINE right under
+            // the selected folder (collapsed chip), via this render-prop.
+            renderSelectedFolderPanel={(folderId) => (
+              <TaskFilesPanel
+                taskId=""
+                folderId={folderId}
+                company={company}
+                project={project}
+                campaign={campaign}
+                taskTitle={title}
+                fileOrder=""
+              />
+            )}
           />
           {/* Test-drive sibling — Google's official Drive Picker SDK,
               mounted alongside the custom picker so we can compare both
@@ -1687,28 +1700,9 @@ export default function TaskCreateForm({
               });
             }}
           />
-          {/* Files panel — same component as /tasks/[id], in
-              "preview" mode (taskId="" disables tile reorder since
-              there's no row to persist file_order to yet). Drag-drop
-              upload from desktop still works; files land in the
-              currently selected folder via SA. Once the user submits
-              and the task exists, the live-task page picks up where
-              this leaves off. Hidden until the user has actually
-              picked an existing folder — `mode: "new"` means the
-              folder doesn't exist in Drive yet so there's nothing to
-              upload INTO. */}
-          {folderSelection.mode === "existing" &&
-            !!folderSelection.folderId && (
-              <TaskFilesPanel
-                taskId=""
-                folderId={folderSelection.folderId}
-                company={company}
-                project={project}
-                campaign={campaign}
-                taskTitle={title}
-                fileOrder=""
-              />
-            )}
+          {/* Files panel now renders INLINE under the selected folder
+              inside DriveFolderPicker (Option B) — see
+              renderSelectedFolderPanel above. */}
         </>
       )}
 
