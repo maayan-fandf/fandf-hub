@@ -594,20 +594,18 @@ function PlatformDrillGroups({
                   amount={String(reqVal)}
                   variant="ghost"
                   url={showAdLinks ? url : undefined}
-                  // Google: copy the required NUMBER (for the daily-budget
-                  // field) AND the slug — the slug is written last so it's the
-                  // current clipboard for the campaign-name filter, with the
-                  // number one back in clipboard history (two separate items).
-                  // Facebook's deep-link opens already campaign-scoped, so the
-                  // open button just opens — no number to clobber the clipboard.
-                  // The no-url fallback stays a plain "copy the number" button.
+                  // Always copy the required NUMBER (for the daily-budget
+                  // field) on every platform. Google ALSO copies the slug
+                  // (written last, so the slug is the current clipboard for the
+                  // campaign-name filter, with the number one back in clipboard
+                  // history). Facebook's deep-link is already campaign-scoped,
+                  // so it needs no slug — just the number to paste into the
+                  // budget field. (Previously FB was open-only and copied
+                  // nothing, which the user flagged 2026-05-25.)
                   copyId={g.platform === "facebook" ? undefined : p.tab}
-                  copyAmount={!(g.platform === "facebook" && showAdLinks && url)}
                   label={
                     showAdLinks && url
-                      ? g.platform === "facebook"
-                        ? `⧉ פתח · נדרש ${cur}${reqVal}/יום`
-                        : `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
+                      ? `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
                       : `📋 נדרש ${cur}${reqVal}/יום`
                   }
                 />
