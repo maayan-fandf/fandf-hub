@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { BN_OPTIN_KEY, BN_SINCE_KEY, bnSetOptedIn } from "@/lib/browserNotify";
+import {
+  subscribeBackgroundPush,
+  unsubscribeBackgroundPush,
+} from "@/lib/pushClient";
 
 /**
  * Gear-menu toggle to enable/disable native desktop notifications on
@@ -36,6 +40,7 @@ export default function BrowserNotifToggle() {
   async function toggle() {
     if (state === "on") {
       bnSetOptedIn(false);
+      void unsubscribeBackgroundPush(); // drop background push too
       setState("off");
       return;
     }
@@ -64,6 +69,11 @@ export default function BrowserNotifToggle() {
       localStorage.setItem(BN_SINCE_KEY, new Date().toISOString());
     }
     bnSetOptedIn(true);
+    // Also subscribe to BACKGROUND push (alerts when the Hub is closed).
+    // Best-effort: no-ops when VAPID keys aren't wired yet or the browser
+    // can't do push — foreground polling still covers the tab-open case,
+    // and the shared notification `tag` dedups if both ever fire.
+    void subscribeBackgroundPush();
     setState("on");
     try {
       new Notification("F&F Hub", { body: "התראות דפדפן הופעלו ✅" });

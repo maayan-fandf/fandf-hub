@@ -241,6 +241,40 @@ export async function notifyOnce(opts: {
       insertDataOption: "INSERT_ROWS",
       requestBody: { values: [row as unknown[]] },
     });
+
+    // Background Web Push (fire-and-forget) — same content as the bell
+    // row, tagged with the notification id so it dedups with the
+    // foreground toast. Entirely DORMANT until VAPID keys are wired
+    // (webPushConfigured() === false → instant no-op). Never blocks or
+    // throws — telemetry-grade like the email path above.
+    void (async () => {
+      try {
+        const { webPushConfigured, sendWebPush } = await import("@/lib/webPush");
+        if (!webPushConfigured()) return;
+        const { listPushSubscriptions, prunePushSubscriptionById } =
+          await import("@/lib/pushSubscriptions");
+        const subs = await listPushSubscriptions(forEmail);
+        if (!subs.length) return;
+        const payload = {
+          title: opts.title || "התראה חדשה",
+          body: opts.body || "",
+          url: opts.link || "/notifications",
+          tag: String(cells.id || ""),
+        };
+        for (const s of subs) {
+          const r = await sendWebPush(
+            { endpoint: s.endpoint, keys: s.keys },
+            payload,
+          );
+          if (r.gone) await prunePushSubscriptionById(s.id);
+        }
+      } catch (e) {
+        console.log(
+          "[notifications] web push failed (non-fatal):",
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    })();
   } catch (e) {
     console.log(
       "[notifications] notifyOnce failed (non-fatal):",

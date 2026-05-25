@@ -78,6 +78,10 @@ export const FS_COLLECTIONS = {
    *  next day if the budget didn't actually change after Supermetrics ran
    *  overnight. */
   alertDismissals: "alertDismissals",
+  /** Web Push subscriptions for background browser notifications. doc id
+   *  = sha1 of the endpoint (one per browser/device), field `user_email`
+   *  + the PushSubscription JSON. Pruned on 404/410 send failures. */
+  pushSubscriptions: "pushSubscriptions",
 } as const;
 
 type SAKey = {
