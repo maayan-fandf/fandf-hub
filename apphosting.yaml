@@ -381,3 +381,29 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  # ─── Web Push (background browser notifications) ──────────────────
+  # Activates the background-push half of browser notifications. The
+  # PUBLIC key is inlined into the client bundle (NEXT_PUBLIC_) so the
+  # PushManager can subscribe — safe to expose. The PRIVATE key is the
+  # VAPID signing secret, used only server-side by lib/webPush.ts at send
+  # time (RUNTIME only). Created + granted to the backend SA via
+  # `firebase apphosting:secrets:set VAPID_PRIVATE_KEY` (2026-05-25).
+  # When these are unset the whole feature is dormant and foreground
+  # notifications keep working alone (webPushConfigured() === false).
+  - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    value: BDFIsy8aowEYA-A95a7VyWwrwIZdqm4RTOAKtidb5PVLKt8HRKlveh4Qa8HwmUZWIVb-B0x-Fx6-JduCXOXI_Vc
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: VAPID_SUBJECT
+    value: mailto:maayan@fandf.co.il
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: VAPID_PRIVATE_KEY
+    secret: VAPID_PRIVATE_KEY
+    availability:
+      - RUNTIME

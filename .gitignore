@@ -13,3 +13,7 @@ next-env.d.ts
 # Claude Code local config (may contain Bash-permission allowlists with
 # inline API tokens — must NEVER be committed).
 .claude/
+# Temp VAPID private-key file from the web-push key-generation step.
+# The private key belongs in Secret Manager, NEVER in the repo.
+.vapid_private.txt
+vapid_private.txt
