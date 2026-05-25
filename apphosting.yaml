@@ -355,6 +355,18 @@ env:
       - BUILD
       - RUNTIME
 
+  # Drive folder ("profile images") holding the curated team avatars,
+  # one image per person named by email local-part (maayan.png ↔
+  # maayan@fandf.co.il). Primary avatar source via /api/avatar/<email>
+  # (lib/driveAvatars.ts); falls back to the Workspace profile photo.
+  # Must be readable by the impersonated DRIVE_FOLDER_OWNER. Change this
+  # to point the whole site at a different avatar folder.
+  - variable: AVATARS_FOLDER_ID
+    value: 1K1f9toK7kwL_t1sCDruEIbn9Wm4En27p
+    availability:
+      - BUILD
+      - RUNTIME
+
   # ─── Clarity + Claude landing-page insights section ──────────────
   # Anthropic API key for the per-project Hebrew narrative on
   # /projects/[name]. Per-project Clarity API tokens themselves are

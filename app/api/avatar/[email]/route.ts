@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { getUserPhoto } from "@/lib/userAvatar";
+import { getDriveAvatar } from "@/lib/driveAvatars";
 
 /**
- * Proxy a Workspace user's profile photo bytes through the hub. The
- * Avatar component (`components/Avatar.tsx`) loads this URL as an
- * `<img>` overlay — when the user has a photo it shows over the
- * initials, otherwise the response is a transparent 1×1 GIF and the
- * initials underneath remain visible.
+ * Proxy a team member's avatar bytes through the hub. The Avatar
+ * component (`components/Avatar.tsx`) loads this URL as an `<img>`
+ * overlay — when there's a photo it shows over the initials, otherwise
+ * the response is a transparent 1×1 GIF and the initials underneath
+ * remain visible.
+ *
+ * Source priority:
+ *   1. the shared "profile images" Drive folder (lib/driveAvatars) —
+ *      the curated team avatars, keyed by email local-part;
+ *   2. the user's Workspace profile photo (lib/userAvatar) as a
+ *      fallback for anyone without a file in the folder.
  *
  * No auth gate here on purpose: the response only contains bytes
- * already destined for someone's avatar circle, the lib gates by
- * `@fandf.co.il` domain (so external addresses never hit the
- * Directory API), and Cache-Control means each unique avatar costs at
- * most one request per browser per day.
+ * already destined for someone's avatar circle, the libs gate by
+ * `@fandf.co.il` domain / folder membership, and Cache-Control means
+ * each unique avatar costs at most one request per browser per day.
  */
 export const dynamic = "force-dynamic";
 
@@ -49,7 +55,9 @@ export async function GET(
     return transparentResponse();
   }
 
-  const photo = await getUserPhoto(email);
+  // Curated Drive-folder avatar first; Workspace profile photo as the
+  // fallback for anyone without a file in the folder.
+  const photo = (await getDriveAvatar(email)) || (await getUserPhoto(email));
   if (!photo) return transparentResponse();
 
   return new NextResponse(new Uint8Array(photo.bytes), {
