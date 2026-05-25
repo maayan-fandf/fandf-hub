@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { upsertAlertDismissal } from "@/lib/alertDismissals";
-import { pacingPlatformKey, type Platform } from "@/lib/budgetTypes";
+import {
+  pacingPlatformKey,
+  pacingChannelKey,
+  type Platform,
+} from "@/lib/budgetTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +39,7 @@ export async function POST(req: Request) {
   let body: {
     slug?: unknown;
     platform?: unknown;
+    channel?: unknown;
     baselineDaily?: unknown;
     restore?: unknown;
   };
@@ -46,13 +51,18 @@ export async function POST(req: Request) {
 
   const slug = String(body.slug || "").trim();
   const platform = String(body.platform || "").trim().toLowerCase();
-  if (!slug || !platform) {
-    return NextResponse.json({ ok: false, error: "slug + platform required" }, { status: 400 });
+  const channel = String(body.channel || "").trim();
+  if (!slug || (!channel && !platform)) {
+    return NextResponse.json({ ok: false, error: "slug + channel required" }, { status: 400 });
   }
   const baseline = Number(body.baselineDaily);
   const restore = body.restore === true;
 
-  const signalKey = pacingPlatformKey(slug, platform as Platform | "other");
+  // Per-channel snooze (2026-05-25). The legacy per-platform key is kept
+  // as a fallback for any caller that still sends only `platform`.
+  const signalKey = channel
+    ? pacingChannelKey(slug, channel)
+    : pacingPlatformKey(slug, platform as Platform | "other");
 
   // Pacing spend swings daily — snooze ~1 day (matches the morning feed's
   // pacing-variance default) so an unhandled alert resurfaces tomorrow.

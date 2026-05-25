@@ -10,7 +10,7 @@ import {
   MANAGER_ORDER,
   PLATFORM_LABELS,
   UNASSIGNED_MANAGER,
-  pacingPlatformKey,
+  pacingChannelKey,
   type BudgetProject,
   type MediaPlanRow,
   type Platform,
@@ -645,7 +645,6 @@ function PlatformDrillGroups({
                       key={r.row}
                       tab={p.tab}
                       r={r}
-                      platActual={g.agg.actualDaily}
                       canEdit={canEdit}
                       onEdit={onEdit}
                       dismissals={dismissals}
@@ -666,11 +665,6 @@ function PlatformDrillGroups({
 
 type FadeState = "active" | "dismissed" | "resurfaced";
 
-function parseBaseline(reason: string): number | null {
-  const m = (reason || "").match(/baseline=(-?\d+(?:\.\d+)?)/);
-  return m ? Number(m[1]) : null;
-}
-
 /** A dismissal's `dismissed_at` (ISO/UTC) → its calendar date in Asia/
  *  Jerusalem, so it compares apples-to-apples with `today` (also Jerusalem).
  *  A raw .slice(0,10) would be the UTC date and trip the overnight check a
@@ -687,23 +681,25 @@ function jeruDateOf(iso: string): string {
 }
 
 /**
- * Whether a "טיפלתי"-snoozed row should stay faded or resurface. The
- * snooze self-resurfaces the next day if the platform's actual daily
- * budget didn't actually change after Supermetrics ran overnight (the
- * baseline recorded at snooze time still matches the current value).
+ * Whether a "טיפלתי"-snoozed row should stay faded or resurface. A snooze
+ * stays faded the day it was made, then the next Asia/Jerusalem day it
+ * self-resurfaces IF the alert is still firing — i.e. the configured-vs-
+ * required daily gap is still significant (`gapStillOff`). If the gap has
+ * since closed, it stays 'dismissed' (resolved). Replaces the old
+ * "baseline daily unchanged" check (2026-05-25): a budget that changed
+ * but is still off should come back; one that was fixed should not.
  */
 function computeFadeState(
-  actualDaily: number,
   dismissal: BudgetDismissal | undefined,
   today: string,
   local: "on" | "off" | null,
+  gapStillOff: boolean,
 ): FadeState {
   if (local === "off") return "active";
   if (local === "on") return "dismissed";
   if (!dismissal) return "active";
   const until = (dismissal.snooze_until || "").slice(0, 10);
   if (!until || until < today) return "active"; // expired / cleared
-  const baseline = parseBaseline(dismissal.reason);
   // Compare the dismissal day in Asia/Jerusalem (same tz as `today`). A raw
   // .slice(0,10) is the UTC date, which for an evening-Israel dismissal is
   // already "yesterday" vs the Jerusalem "today" — flipping overnightPassed
@@ -711,22 +707,22 @@ function computeFadeState(
   // "doesn't stick on reload" bug).
   const dDate = jeruDateOf(dismissal.dismissed_at);
   const overnightPassed = !!dDate && dDate < today;
-  const unchanged =
-    baseline != null && Math.round(actualDaily) === Math.round(baseline);
-  if (overnightPassed && unchanged) return "resurfaced";
+  if (overnightPassed && gapStillOff) return "resurfaced";
   return "dismissed";
 }
 
-/** The shared per-platform pacing key for a project row's platform. */
+/** The per-CHANNEL pacing key for a budget row (2026-05-25 — was per
+ *  platform, so dismissing one channel no longer fades its siblings). */
 function rowKey(tab: string, r: BudgetProject["rows"][number]): string {
-  return pacingPlatformKey(tab, r.platform);
+  return pacingChannelKey(tab, r.channel);
 }
 
 /**
  * A platform's summary cell is "handled" (dimmed) when it has off-pace
- * channels and the platform's shared pacing snooze is active (dismissed).
- * If the snooze expired or resurfaced (the pacing problem persists / the
- * budget wasn't actually changed), the cell stays lit.
+ * channels and EVERY one of them is individually snoozed (dismissed).
+ * Per-channel since 2026-05-25 — a single channel's snooze no longer dims
+ * the whole platform; only when all its off-pace rows are handled. A row
+ * that resurfaced (gap still open next day) keeps the cell lit.
  */
 function platformDimmed(
   p: BudgetProject,
@@ -735,27 +731,29 @@ function platformDimmed(
   localDismiss: Record<string, "on" | "off">,
   today: string,
 ): boolean {
-  const hasOffPace = p.rows.some((r) => {
-    if (r.platform !== pl || r.ended) return false;
-    const t = paceTone(r.pacingRatio);
-    return t === "over" || t === "under";
-  });
-  if (!hasOffPace) return false;
-  const key = pacingPlatformKey(p.tab, pl);
-  return (
-    computeFadeState(
-      p.platforms[pl].actualDaily,
-      dismissals[key],
-      today,
-      localDismiss[key] ?? null,
-    ) === "dismissed"
+  const offPaceRows = p.rows.filter(
+    (r) =>
+      r.platform === pl &&
+      !r.ended &&
+      needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio),
   );
+  if (offPaceRows.length === 0) return false;
+  return offPaceRows.every((r) => {
+    const key = pacingChannelKey(p.tab, r.channel);
+    return (
+      computeFadeState(
+        dismissals[key],
+        today,
+        localDismiss[key] ?? null,
+        true, // these rows are off-pace by construction
+      ) === "dismissed"
+    );
+  });
 }
 
 function CampaignRow({
   tab,
   r,
-  platActual,
   canEdit,
   onEdit,
   dismissals,
@@ -765,9 +763,6 @@ function CampaignRow({
 }: {
   tab: string;
   r: BudgetProject["rows"][number];
-  /** The platform's summed actual daily budget — the shared snooze
-   *  baseline, so every row of a platform fades/resurfaces together. */
-  platActual: number;
   canEdit: boolean;
   onEdit: (tab: string, row: number, value: number) => void;
   dismissals: Record<string, BudgetDismissal>;
@@ -830,14 +825,16 @@ function CampaignRow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slug: tab,
+          channel: r.channel,
           platform: r.platform,
-          baselineDaily: platActual,
+          baselineDaily: r.actualDaily,
           restore,
         }),
       });
       const d = (await res.json()) as { ok?: boolean };
-      // Lift to the grid so every row of this platform + the project's
-      // platform-summary cell fade together (shared per-platform key).
+      // Lift to the grid so this channel's row fades immediately (per-
+      // channel key); the platform-summary cell dims only once all its
+      // off-pace rows are handled (see platformDimmed).
       if (res.ok && d.ok) onSnooze(signalKey, restore ? "off" : "on");
     } catch {
       /* best-effort; leave state as-is */
@@ -846,12 +843,6 @@ function CampaignRow({
     }
   }
 
-  const state = computeFadeState(
-    platActual,
-    dismissals[signalKey],
-    today,
-    localDismiss[signalKey] ?? null,
-  );
   const dailyReq = Math.max(0, Math.round(r.dailyRequired));
   // Action is needed only when the configured daily is materially off the
   // required daily — not merely because the historical קצב deviates.
@@ -862,6 +853,14 @@ function CampaignRow({
     isProgrammatic &&
     !r.ended &&
     needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio);
+  // Fade state: a snooze resurfaces next day only if THIS row's gap is
+  // still open (needsAction), not on a budget-unchanged baseline.
+  const state = computeFadeState(
+    dismissals[signalKey],
+    today,
+    localDismiss[signalKey] ?? null,
+    needsAction,
+  );
   // Arrow direction: by the configured-vs-required gap when we know the
   // configured daily; else by the historical pacing tone.
   const actionTone: "over" | "under" | "ok" | "none" = !needsAction

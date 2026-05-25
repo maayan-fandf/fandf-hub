@@ -77,6 +77,19 @@ export function pacingPlatformKey(
   return `${s}|pacing-variance|platform|${p}`;
 }
 
+/**
+ * Per-ROW (per-channel) pacing key (2026-05-25) — each channel row
+ * snoozes independently, so dismissing facebook-israel no longer fades
+ * facebook-ashdod. Shared across all three surfaces: the morning feed
+ * (Apps Script `channel|<channel>`), this budget desk, and the dashboard
+ * pacing cell (`_pacingChannelKey`). Must stay byte-identical to those.
+ */
+export function pacingChannelKey(slug: string, channel: string): string {
+  const s = String(slug || "").toLowerCase().trim() || "(no-slug)";
+  const c = String(channel || "").toLowerCase().trim() || "(no-channel)";
+  return `${s}|pacing-variance|channel|${c}`;
+}
+
 /** Display order for the budget desk's manager grouping. */
 export const MANAGER_ORDER = ["Maayan Sachs", "Nadav Eedelman"];
 export const UNASSIGNED_MANAGER = "ללא מנהל";
