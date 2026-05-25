@@ -7,6 +7,18 @@ import Avatar from "@/components/Avatar";
 import RoleChip from "@/components/RoleChip";
 
 const MAX = 4000;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+type UploadResponse =
+  | {
+      ok: true;
+      fileId: string;
+      name: string;
+      mimeType: string;
+      viewUrl: string;
+      embedUrl: string;
+    }
+  | { ok: false; error: string };
 
 // `@email@host.tld` — the SAME token shape CommentBody renders as an
 // avatar + Hebrew-name chip and commentsWriteDirect parses. Keeping the
@@ -85,7 +97,11 @@ export default function ClientChatComposer({
   const [picker, setPicker] = useState<PickerState>(CLOSED);
   const [assignees, setAssignees] = useState<Assignee[] | null>(null);
   const [loadingAssignees, setLoadingAssignees] = useState(false);
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const isInternal = scope === "internal";
   const audience = isInternal ? "פנימית" : isClientUser ? "לצוות" : "ללקוח";
@@ -214,6 +230,103 @@ export default function ClientChatComposer({
     updatePickerFromCursor(v, e.target);
   }
 
+  /* ── File attachments ──────────────────────────────────────────────
+   * Mirrors ReplyDrawer: paste / drag-drop / 📎 upload to
+   * /api/comments/upload, insert a markdown link/image at the cursor.
+   * The `internal` flag routes the file to the team-only Drive folder
+   * for the F&F tab (vs the client-share folder for the shared tab). */
+  function insertAtCursor(text: string) {
+    setBody((prev) => {
+      const ta = textareaRef.current;
+      if (!ta) return prev + text;
+      const start = ta.selectionStart ?? prev.length;
+      const end = ta.selectionEnd ?? prev.length;
+      const next = prev.slice(0, start) + text + prev.slice(end);
+      requestAnimationFrame(() => {
+        const pos = start + text.length;
+        ta.setSelectionRange(pos, pos);
+        ta.focus();
+      });
+      return next;
+    });
+  }
+
+  async function uploadFile(file: File): Promise<void> {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadError(
+        `הקובץ גדול מדי (${Math.round(file.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    const form = new FormData();
+    form.set("project", project);
+    form.set("file", file, file.name || "pasted-image.png");
+    // Internal-tab attachments land in the team-only folder, not the
+    // client-share one (the route also honors this explicit flag).
+    if (isInternal) form.set("internal", "1");
+    setUploading((n) => n + 1);
+    setUploadError(null);
+    try {
+      const res = await fetch("/api/comments/upload", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as UploadResponse;
+      if (!res.ok || !("ok" in data) || !data.ok) {
+        const msg =
+          ("error" in data && data.error) || `העלאה נכשלה (${res.status})`;
+        throw new Error(msg);
+      }
+      const safeName = (data.name || file.name || "file").replace(
+        /[\[\]()]/g,
+        "",
+      );
+      const mimeType = (file.type || data.mimeType || "").toLowerCase();
+      const isImage =
+        mimeType.startsWith("image/") ||
+        /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(safeName);
+      const token = isImage
+        ? `\n![${safeName}](${data.viewUrl})\n`
+        : `\n[📎 ${safeName}](${data.viewUrl})\n`;
+      insertAtCursor(token);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading((n) => Math.max(0, n - 1));
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    imgs.forEach((f) => void uploadFile(f));
+  }
+
+  function onDrop(e: React.DragEvent<HTMLTextAreaElement>) {
+    setDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    e.preventDefault();
+    Array.from(files).forEach((f) => void uploadFile(f));
+  }
+
+  function onDragOver(e: React.DragEvent<HTMLTextAreaElement>) {
+    if (e.dataTransfer?.types?.includes("Files")) {
+      e.preventDefault();
+      if (!dragOver) setDragOver(true);
+    }
+  }
+
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((f) => void uploadFile(f));
+    e.target.value = "";
+  }
+
   async function submit() {
     const text = body.trim();
     if (!text) {
@@ -222,6 +335,10 @@ export default function ClientChatComposer({
     }
     if (text.length > MAX) {
       setError(`ארוך מדי (${text.length}/${MAX}).`);
+      return;
+    }
+    if (uploading > 0) {
+      setError("ממתינים להעלאת קבצים…");
       return;
     }
     setError(null);
@@ -310,7 +427,9 @@ export default function ClientChatComposer({
   const pickerOpen = picker.queryStart >= 0 && results.length > 0;
 
   return (
-    <div className="client-chat-composer">
+    <div
+      className={"client-chat-composer" + (dragOver ? " is-dragover" : "")}
+    >
       <textarea
         ref={textareaRef}
         className="reply-textarea client-chat-composer-input"
@@ -319,11 +438,43 @@ export default function ClientChatComposer({
         placeholder={placeholder}
         onChange={onChange}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+        onDragLeave={() => setDragOver(false)}
         disabled={sending}
         maxLength={MAX + 1}
         aria-label={`הודעה חדשה ${audience}`}
       />
       <div className="client-chat-composer-foot">
+        <button
+          type="button"
+          className="create-task-attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          title={
+            isInternal
+              ? "צרף קובץ — נשמר בתיקייה פנימית (צוות בלבד) של הפרויקט ב-Drive"
+              : "צרף קובץ — נשמר בתיקיית 'שיתוף עם הלקוח' של הפרויקט ב-Drive"
+          }
+        >
+          📎 צרף קובץ
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={onPickFiles}
+        />
+        {uploading > 0 && (
+          <span className="create-task-upload-status">מעלה… ({uploading})</span>
+        )}
+        {uploadError && (
+          <span className="reply-error" role="alert">
+            {uploadError}
+          </span>
+        )}
         {error && (
           <span className="reply-error" role="alert">
             {error}

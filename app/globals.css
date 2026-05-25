@@ -3561,6 +3561,12 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
+  transition: border-color 0.12s, background 0.12s;
+}
+/* Drag-a-file-over highlight — mirrors the reply drawer's dropzone cue. */
+.client-chat-composer.is-dragover {
+  border-color: var(--accent, #6366f1);
+  background: var(--surface-soft, rgba(99, 102, 241, 0.06));
 }
 .client-chat-composer-input {
   resize: vertical;
