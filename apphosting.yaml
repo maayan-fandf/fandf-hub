@@ -406,4 +406,5 @@ env:
   - variable: VAPID_PRIVATE_KEY
     secret: VAPID_PRIVATE_KEY
     availability:
+      - BUILD
       - RUNTIME
