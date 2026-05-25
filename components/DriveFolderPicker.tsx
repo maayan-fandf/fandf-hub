@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import CopyLocalPathButton from "./CopyLocalPathButton";
+import GoogleDriveIcon from "./GoogleDriveIcon";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import { openDrivePicker } from "@/lib/drivePicker";
 
@@ -398,9 +399,10 @@ export default function DriveFolderPicker({
           target="_blank"
           rel="noreferrer"
           title="פתח ב-Drive (דפדפן)"
+          aria-label="פתח ב-Drive (דפדפן)"
           onClick={(e) => e.stopPropagation()}
         >
-          🌐
+          <GoogleDriveIcon size="1em" title="פתח ב-Drive (דפדפן)" />
         </a>
         {canPick && (
           <button
