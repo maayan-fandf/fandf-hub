@@ -13892,6 +13892,47 @@ html[data-theme="dark"] .tasks-dept-chip {
   padding: 0;
   user-select: none;
 }
+/* Per-row quick-open icons: 🗂️ Explorer/Finder · 🌐 Drive web · 🔍 Picker.
+   The .drive-folder-name flex:1 above pushes this group to the row end. */
+.drive-folder-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: .1em;
+  margin-inline-start: .35em;
+  flex: 0 0 auto;
+}
+.drive-folder-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: .9em;
+  line-height: 1;
+  padding: .2em .3em;
+  border-radius: 5px;
+  text-decoration: none;
+  opacity: .75;
+}
+.drive-folder-icon-btn:hover {
+  background: var(--accent-soft, #e7f0ff);
+  opacity: 1;
+}
+/* Compact the reused CopyLocalPathButton (🗂️) so it sits flush with the
+   two lightweight icon buttons rather than as a bordered ghost button. */
+.drive-folder-row-actions .copy-local-path-btn {
+  border: none;
+  background: transparent;
+  padding: .2em .3em;
+  font-size: .9em;
+  line-height: 1;
+  opacity: .75;
+}
+.drive-folder-row-actions .copy-local-path-btn:hover {
+  background: var(--accent-soft, #e7f0ff);
+  opacity: 1;
+}
 .drive-folder-new-name {
   flex: 1;
   font: inherit;

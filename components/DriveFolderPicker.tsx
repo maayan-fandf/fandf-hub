@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import CopyLocalPathButton from "./CopyLocalPathButton";
+import { buildLocalDrivePaths } from "@/lib/localDrivePath";
+import { openDrivePicker } from "@/lib/drivePicker";
 
 export type FolderPickerValue =
   | { mode: "new"; name: string }
@@ -23,6 +26,16 @@ type Props = {
   onCampaignChange?: (newCampaign: string) => void;
   disabled?: boolean;
   compact?: boolean;
+  /** Shared-drive name + current user email — used to build the local
+   *  "open in Explorer/Finder" path for each folder row (the fandfopen:
+   *  scheme via CopyLocalPathButton). When driveName is empty the
+   *  per-row Explorer icon is hidden. */
+  driveName?: string;
+  userEmail?: string;
+  /** Google Drive Picker auth — when both present, each folder row gets
+   *  a "open in Drive Picker" icon rooted at that folder. */
+  accessToken?: string | null;
+  apiKey?: string | null;
 };
 
 type Child = {
@@ -44,6 +57,10 @@ export default function DriveFolderPicker({
   onCampaignChange,
   disabled,
   compact,
+  driveName = "",
+  userEmail = "",
+  accessToken,
+  apiKey,
 }: Props) {
   type CampaignState =
     | null
@@ -334,6 +351,84 @@ export default function DriveFolderPicker({
     ? `תחת בריף: ${campaign}`
     : `תחת פרויקט: ${project || "—"}`;
 
+  // Base local path down to the campaign/project folder; per-row paths
+  // append the in-tree ancestor chain. Empty when driveName/project is
+  // missing → the per-row "open in Explorer" icon is hidden.
+  const basePaths = buildLocalDrivePaths({
+    driveName,
+    company,
+    project,
+    campaign,
+    userEmail,
+  });
+  // Per-row "open in Drive Picker" icon only when Picker auth is present.
+  const canPick = !!accessToken && !!apiKey;
+
+  /** The 1·2·3 quick-open icons for a folder row: open locally
+   *  (Explorer/Finder), open in Drive web, open in the Drive Picker
+   *  rooted at this folder. `segs` is the folder name chain BELOW the
+   *  campaign/project root (inclusive of this folder). */
+  function rowActions(folderId: string, segs: string[]): React.ReactNode {
+    return (
+      <span
+        className="drive-folder-row-actions"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {basePaths.windows && (
+          <CopyLocalPathButton
+            path={
+              segs.length
+                ? `${basePaths.windows}\\${segs.join("\\")}`
+                : basePaths.windows
+            }
+            pathMac={
+              basePaths.mac
+                ? segs.length
+                  ? `${basePaths.mac}/${segs.join("/")}`
+                  : basePaths.mac
+                : ""
+            }
+            label="🗂️"
+            title="פתח בסייר הקבצים (Explorer/Finder)"
+          />
+        )}
+        <a
+          className="drive-folder-icon-btn"
+          href={`https://drive.google.com/drive/folders/${folderId}`}
+          target="_blank"
+          rel="noreferrer"
+          title="פתח ב-Drive (דפדפן)"
+          onClick={(e) => e.stopPropagation()}
+        >
+          🌐
+        </a>
+        {canPick && (
+          <button
+            type="button"
+            className="drive-folder-icon-btn"
+            title="פתח את התיקייה ב-Drive Picker"
+            onClick={(e) => {
+              e.stopPropagation();
+              void openDrivePicker({
+                accessToken: accessToken as string,
+                apiKey: apiKey as string,
+                parentFolderId: folderId,
+                onFolderPick: (p) =>
+                  onChange({
+                    mode: "existing",
+                    folderId: p.id,
+                    folderName: p.name,
+                  }),
+              });
+            }}
+          >
+            🔍
+          </button>
+        )}
+      </span>
+    );
+  }
+
   return (
     <div className={`drive-folder-picker${compact ? " is-compact" : ""}`}>
       {!compact && (
@@ -554,6 +649,7 @@ export default function DriveFolderPicker({
                   <span className="drive-folder-root-tag">
                     {campaign ? "תיקיית בריף" : "תיקיית פרויקט"}
                   </span>
+                  {rowActions(rootId, [])}
                 </div>
                 <div className="drive-folder-sub">
                   {renderBranch(rootId, 1, campaign || project || "תיקייה")}
@@ -578,6 +674,7 @@ export default function DriveFolderPicker({
     parentId: string,
     depth: number,
     parentName: string,
+    ancestorSegs: string[] = [],
   ): React.ReactNode {
     const state = children[parentId];
     if (state === "loading") {
@@ -671,6 +768,7 @@ export default function DriveFolderPicker({
         {items.map((f) => {
           const isSelected = selectedExistingId === f.id;
           const isOpen = expanded.has(f.id);
+          const fullSegs = [...ancestorSegs, f.name];
           return (
             <li key={f.id} className="drive-folder-li" data-depth={depth}>
               <div
@@ -709,10 +807,11 @@ export default function DriveFolderPicker({
                 </button>
                 <span className="drive-folder-icon">📁</span>
                 <span className="drive-folder-name">{f.name}</span>
+                {rowActions(f.id, fullSegs)}
               </div>
               {isOpen && (
                 <div className="drive-folder-sub">
-                  {renderBranch(f.id, depth + 1, f.name)}
+                  {renderBranch(f.id, depth + 1, f.name, fullSegs)}
                 </div>
               )}
             </li>

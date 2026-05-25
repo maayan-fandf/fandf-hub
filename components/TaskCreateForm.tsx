@@ -74,10 +74,12 @@ export default function TaskCreateForm({
   fromComment = "",
   cleanupGmailTaskId = "",
   people,
+  currentUserEmail,
   formSchema = null,
   chainTemplates,
   driveAccessToken,
   drivePickerApiKey,
+  driveName = "",
   editingTask = null,
   pricing = [],
   showPricing = false,
@@ -136,6 +138,9 @@ export default function TaskCreateForm({
    *  `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`. Empty disables the
    *  experimental button without breaking the rest of the form. */
   drivePickerApiKey?: string;
+  /** Shared-drive name — forwarded to the folder picker so each folder
+   *  row can build its local "open in Explorer/Finder" path. */
+  driveName?: string;
   /** When supplied, the form switches to EDIT mode: every initial state
    *  is seeded from the existing task, the chain / multi-mode UI is
    *  hidden, and submit POSTs to /api/worktasks/update with a patch
@@ -1657,6 +1662,10 @@ export default function TaskCreateForm({
             onChange={handleFolderChange}
             onCampaignChange={setCampaign}
             disabled={!project}
+            driveName={driveName}
+            userEmail={currentUserEmail}
+            accessToken={driveAccessToken}
+            apiKey={drivePickerApiKey}
           />
           {/* Test-drive sibling — Google's official Drive Picker SDK,
               mounted alongside the custom picker so we can compare both

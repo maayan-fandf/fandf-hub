@@ -11,6 +11,7 @@ import { CHAIN_TEMPLATES } from "@/lib/chainTemplates";
 import { getCommentByIdDirect } from "@/lib/commentsDirect";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { readPricingSetup } from "@/lib/pricing";
+import { getSharedDriveName } from "@/lib/driveFolders";
 import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +65,7 @@ export default async function NewTaskPage({
     formSchema,
     chainTemplatesFromSheet,
     pricing,
+    driveName,
   ] =
     await Promise.all([
       getMyProjects().catch(() => null),
@@ -100,6 +102,13 @@ export default async function NewTaskPage({
           email ? readPricingSetup(email).catch(() => []) : Promise.resolve([]),
         )
         .catch(() => []),
+      // Shared-drive name — lets the folder picker build each folder
+      // row's local "open in Explorer/Finder" path (fandfopen scheme).
+      currentUserEmail()
+        .then((email) =>
+          email ? getSharedDriveName(email).catch(() => "") : Promise.resolve(""),
+        )
+        .catch(() => ""),
     ]);
   // Use the sheet-backed templates when present; otherwise fall back
   // to the hardcoded defaults so chain mode works out-of-box even
@@ -209,6 +218,7 @@ export default async function NewTaskPage({
         showPricing
         driveAccessToken={session?.user?.accessToken}
         drivePickerApiKey={process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY}
+        driveName={driveName}
       />
     </main>
   );
