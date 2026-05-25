@@ -39,6 +39,20 @@ const KINDS = [
   { val: "other", label: "אחר" },
 ];
 
+/** Tomorrow's calendar date (YYYY-MM-DD) in Asia/Jerusalem — the
+ *  default due date for new tasks + chain steps. Computed as a plain
+ *  calendar date (today-in-Jerusalem + 1 day) so it's DST-safe and
+ *  matches every other Asia/Jerusalem date compare in the app. */
+function tomorrowJerusalem(): string {
+  const todayJ = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+  const [y, m, d] = todayJ.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 type ProjectOption = {
   name: string;
   company: string;
@@ -57,7 +71,6 @@ export default function TaskCreateForm({
   fromComment = "",
   cleanupGmailTaskId = "",
   people,
-  currentUserEmail,
   formSchema = null,
   chainTemplates,
   driveAccessToken,
@@ -145,6 +158,9 @@ export default function TaskCreateForm({
   // state, hide create-only UI sections, and route the submit handler.
   const isEditing = !!editingTask;
   const router = useRouter();
+  // Default due date for new tasks + chain steps = tomorrow (Asia/
+  // Jerusalem). Computed once per mount.
+  const tomorrowIso = useMemo(() => tomorrowJerusalem(), []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Tracks which submit button the user pressed last. The form only has
@@ -173,6 +189,18 @@ export default function TaskCreateForm({
     for (const p of people) {
       const k = String(p.name || "").trim().toLowerCase();
       if (k && !m.has(k)) m.set(k, p.email);
+    }
+    return m;
+  }, [people]);
+
+  // Email → role (department), for auto-deriving a chain step's מחלקה
+  // from its picked assignee — the person already implies their
+  // department, so the user shouldn't have to pick it too.
+  const emailToRole = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of people) {
+      const e = String(p.email || "").trim().toLowerCase();
+      if (e) m.set(e, String(p.role || "").trim());
     }
     return m;
   }, [people]);
@@ -265,10 +293,13 @@ export default function TaskCreateForm({
      *  priceTouched pins the manual value even as dept/kind change. */
     price?: string;
     priceTouched?: boolean;
+    /** Optional per-step due date (YYYY-MM-DD). Defaults to tomorrow
+     *  for new steps; the chain create endpoint applies it per child. */
+    requested_date?: string;
   };
   const [steps, setSteps] = useState<ChainStep[]>([
-    { title: "", assignees: "" },
-    { title: "", assignees: "" },
+    { title: "", assignees: "", requested_date: tomorrowIso },
+    { title: "", assignees: "", requested_date: tomorrowIso },
   ]);
   // Phase 8 polish — chain template picker. Selecting a template
   // pre-fills the umbrella title + step rows so users only need to
@@ -293,6 +324,7 @@ export default function TaskCreateForm({
         assignees: "",
         assigneeHint: s.assigneeHint,
         department: s.department,
+        requested_date: tomorrowIso,
       })),
     );
   }
@@ -863,6 +895,7 @@ export default function TaskCreateForm({
             department: (s.department || "").trim(),
             kind: (s.kind || "").trim(),
             price: eff && Number.isFinite(priceNum) ? priceNum : undefined,
+            requested_date: (s.requested_date || "").trim() || undefined,
           };
         })
         .filter((s) => s.title); // drop blank rows
@@ -900,6 +933,9 @@ export default function TaskCreateForm({
           departments: s.department ? [s.department] : departments,
           kind: s.kind || undefined,
           price: s.price,
+          // Per-step due date (optional) — the orchestrator applies it
+          // to each child row.
+          requested_date: s.requested_date,
         })),
       };
       try {
@@ -1264,7 +1300,10 @@ export default function TaskCreateForm({
           relevant when picking more than one assignee". */}
       {chainMode && !isEditing && (
         <div className="task-form-chain-bar is-on">
-          <label className="task-form-chain-toggle">
+          <label
+            className="task-form-chain-toggle"
+            title="סר את הסימון כדי לחזור למשימה רגילה"
+          >
             <input
               type="checkbox"
               checked={chainMode}
@@ -1273,19 +1312,17 @@ export default function TaskCreateForm({
             <span className="task-form-chain-toggle-label">
               📦 מצב שרשרת פעיל
             </span>
-            <span className="task-form-chain-toggle-hint">
-              סר את הסימון כדי לחזור למשימה רגילה
-            </span>
           </label>
-          <label className="task-form-chain-umbrella-toggle">
+          <label
+            className="task-form-chain-umbrella-toggle"
+            title="משימת־על שמרכזת את כל השלבים"
+          >
             <input
               type="checkbox"
               checked={withUmbrella}
               onChange={(e) => setWithUmbrella(e.target.checked)}
             />
-            <span>
-              🔝 צור עטיפה (משימת־על שמרכזת את כל השלבים)
-            </span>
+            <span>🔝 צור עטיפה (משימת־על)</span>
           </label>
         </div>
       )}
@@ -1559,7 +1596,7 @@ export default function TaskCreateForm({
                     ? (editingTask!.requested_date || "").match(
                         /^\d{4}-\d{2}-\d{2}/,
                       )?.[0]
-                    : undefined
+                    : tomorrowIso
                 }
               />
               {/* Native <input type="time"> replaced with the M3
@@ -1689,8 +1726,39 @@ export default function TaskCreateForm({
                   type="text"
                   value={s.assignees}
                   onChange={(e) => {
+                    const val = e.target.value;
                     const next = [...steps];
-                    next[i] = { ...next[i], assignees: e.target.value };
+                    next[i] = { ...next[i], assignees: val };
+                    // Auto-derive the step's מחלקה from the FIRST picked
+                    // assignee's role — but only when no department has
+                    // been chosen yet, so a manual pick is never clobbered.
+                    // The person already implies their department, so the
+                    // user shouldn't have to pick it separately.
+                    if (!next[i].department) {
+                      const firstEmail = val
+                        .split(/[,;\n]/)
+                        .map((x) => x.trim())
+                        .filter(Boolean)[0];
+                      const role = firstEmail
+                        ? emailToRole.get(firstEmail.toLowerCase()) || ""
+                        : "";
+                      const matchDept = role
+                        ? departmentOptions.find(
+                            (d) => d.toLowerCase() === role.toLowerCase(),
+                          )
+                        : undefined;
+                      if (matchDept) {
+                        next[i] = {
+                          ...next[i],
+                          department: matchDept,
+                          // Department drives kind/price scoping — reset
+                          // them so the new department's rate resolves.
+                          kind: "",
+                          priceTouched: false,
+                          price: undefined,
+                        };
+                      }
+                    }
                     setSteps(next);
                   }}
                   placeholder={
@@ -1721,6 +1789,19 @@ export default function TaskCreateForm({
                     </option>
                   ))}
                 </datalist>
+                {/* Optional per-step due date — defaults to tomorrow,
+                    applied to this child row by the chain orchestrator. */}
+                <DatePicker
+                  value={s.requested_date || ""}
+                  onChange={(iso) => {
+                    const next = [...steps];
+                    next[i] = { ...next[i], requested_date: iso };
+                    setSteps(next);
+                  }}
+                  ariaLabel={`תאריך יעד לשלב ${i + 1}`}
+                  className="task-form-chain-step-date"
+                  placeholder="תאריך יעד"
+                />
                 <button
                   type="button"
                   className="btn-ghost btn-sm"
@@ -1799,7 +1880,10 @@ export default function TaskCreateForm({
             type="button"
             className="btn-ghost btn-sm"
             onClick={() =>
-              setSteps([...steps, { title: "", assignees: "" }])
+              setSteps([
+                ...steps,
+                { title: "", assignees: "", requested_date: tomorrowIso },
+              ])
             }
           >
             + הוסף שלב
@@ -1973,12 +2057,27 @@ export default function TaskCreateForm({
                     const chainSteps = picked.map((email) => ({
                       title: title.trim() || "",
                       assignees: email,
+                      // Auto-derive each step's מחלקה from the picked
+                      // person's role (the assignee already implies it).
+                      department:
+                        departmentOptions.find(
+                          (d) =>
+                            d.toLowerCase() ===
+                            (emailToRole.get(email.trim().toLowerCase()) || "")
+                              .toLowerCase(),
+                        ) || undefined,
+                      requested_date: tomorrowIso,
                     }));
                     // Chain UI requires at least 2 step rows visually;
                     // pad with blanks if only 2 picked but the user
                     // wants to add more.
                     while (chainSteps.length < 2) {
-                      chainSteps.push({ title: "", assignees: "" });
+                      chainSteps.push({
+                        title: "",
+                        assignees: "",
+                        department: undefined,
+                        requested_date: tomorrowIso,
+                      });
                     }
                     setSteps(chainSteps);
                     setChainMode(true);
@@ -2013,74 +2112,55 @@ export default function TaskCreateForm({
         </label>
       )}
 
-      {currentUserEmail && (
-        <div className="task-form-author-line">
-          כותב המשימה: <b dir="ltr">{currentUserEmail}</b>
-        </div>
-      )}
-
-      {showPricing && (
-      <div className="task-pricing-panel" aria-live="polite">
-        <div className="task-pricing-head">
-          <span>💰 תמחור</span>
-          {pricingResult.hasAny && (
-            <span className="task-pricing-total">
-              סה״כ משוער: {fmtILS(pricingResult.total)}
-            </span>
-          )}
-        </div>
-        {departments.length === 0 || !kind ? (
-          <div className="task-pricing-empty">
-            בחר/י מחלקה וסוג כדי לראות תמחור.
-          </div>
-        ) : (
-          <ul className="task-pricing-lines">
-            {pricingResult.lines.map((l) => (
-              <li key={l.department}>
-                <span className="task-pricing-dept">
-                  {l.department} · {kind}
-                </span>
-                {l.unitPrice == null ? (
-                  <span className="task-pricing-na">אין תמחור מוגדר</span>
-                ) : (
-                  <span className="task-pricing-val">
-                    {fmtILS(l.unitPrice)}
-                    <span className="task-pricing-basis">
-                      {l.basis === "project"
-                        ? "לפי פרוייקט"
-                        : "לפי חברה"}
-                    </span>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {pricingResult.anyMissing && departments.length > 0 && kind && (
-          <div className="task-pricing-note">
-            שילובים ללא מחיר אינם נכללים בסכום (אפשר להזין מחיר ידני
-            למטה). הגדרת מחירים בלשונית Pricingsetup.
-          </div>
-        )}
-        <label className="task-pricing-field">
-          <span>מחיר המשימה (₪)</span>
+      {/* תמחור — single compact row (chain mode uses per-step pricing
+          instead, so the single-task field is hidden there). The full
+          per-department breakdown is surfaced in the input's tooltip. */}
+      {showPricing && !chainMode && (
+        <div className="task-pricing-row" aria-live="polite">
+          <span className="task-pricing-row-label">💰 מחיר המשימה (₪)</span>
           <input
             type="number"
             inputMode="decimal"
             min="0"
             step="1"
             name="price"
+            className="task-pricing-row-input"
             value={priceInput}
             onChange={(e) => {
               priceTouched.current = true;
               setPriceInput(e.target.value);
             }}
             placeholder={
-              pricingResult.hasAny
-                ? String(pricingResult.total)
-                : "אין תמחור מוגדר — הזן/י מחיר"
+              pricingResult.hasAny ? String(pricingResult.total) : "הזן/י מחיר"
+            }
+            title={
+              pricingResult.lines.length
+                ? pricingResult.lines
+                    .map(
+                      (l) =>
+                        `${l.department} · ${kind}: ${
+                          l.unitPrice == null
+                            ? "אין תמחור מוגדר"
+                            : `${fmtILS(l.unitPrice)} (${
+                                l.basis === "project"
+                                  ? "לפי פרוייקט"
+                                  : "לפי חברה"
+                              })`
+                        }`,
+                    )
+                    .join("\n")
+                : undefined
             }
           />
+          <span className="task-pricing-row-hint">
+            {departments.length === 0 || !kind
+              ? "בחר/י מחלקה + סוג לתמחור אוטומטי"
+              : pricingResult.hasAny
+                ? priceTouched.current
+                  ? "מחיר ידני"
+                  : `מהמחירון · סה״כ ${fmtILS(pricingResult.total)}`
+                : "אין במחירון — הזן/י ידנית"}
+          </span>
           {priceTouched.current && pricingResult.hasAny && (
             <button
               type="button"
@@ -2093,8 +2173,7 @@ export default function TaskCreateForm({
               איפוס למחירון
             </button>
           )}
-        </label>
-      </div>
+        </div>
       )}
 
       <div className="task-form-actions">

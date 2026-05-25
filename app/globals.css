@@ -11480,6 +11480,38 @@ html[data-theme="dark"] .chat-spaces-howto { color: #fecaca; }
   text-decoration: underline;
 }
 
+/* Compact single-row תמחור (replaces the old multi-line panel). The
+   per-department breakdown lives in the input's title tooltip. */
+.task-pricing-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6em;
+  margin-top: .6em;
+  padding: .55em .9em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, rgba(99,102,241,.04));
+  font-size: .9em;
+  color: var(--text);
+}
+.task-pricing-row-label { font-weight: 600; white-space: nowrap; }
+.task-pricing-row-input {
+  width: 8.5em;
+  padding: .35em .55em;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.task-pricing-row-input:focus {
+  outline: 2px solid var(--accent-soft, rgba(99,102,241,.25));
+  border-color: var(--accent, #6366f1);
+}
+.task-pricing-row-hint { font-size: .82em; color: var(--muted); }
+
 /* /admin/pricing — rate-card editor */
 .pricing-editor-hint {
   font-size: .88em;
@@ -12314,13 +12346,16 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
    so the UI reads correctly in both light + dark modes. */
 .task-form-chain-bar {
   margin: 1em 0 .5em;
-  padding: .8em 1em;
+  padding: .6em 1em;
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 8px;
   background: var(--surface-soft, var(--surface, #fff));
   display: flex;
-  flex-direction: column;
-  gap: .5em;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 1.4em;
+  row-gap: .4em;
 }
 .task-form-chain-bar.is-on {
   border-color: var(--accent, #6366f1);
@@ -12353,7 +12388,6 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   cursor: pointer;
   font-size: .9em;
   color: var(--text-muted, #475569);
-  padding-inline-start: 1.7em; /* indent under the parent toggle */
 }
 .task-form-chain-umbrella-toggle input[type="checkbox"] {
   width: 1.05em;
@@ -12379,13 +12413,17 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .task-form-chain-step-row {
   display: grid;
-  /* num · title · מחלקה · עובד · ✕  — dept sits BEFORE the assignee so
-     picking it narrows the עובד autocomplete. */
-  grid-template-columns: 1.6em 1fr minmax(7em, .9fr) 1fr 2em;
+  /* num · title · מחלקה · עובד · תאריך יעד · ✕  — dept sits BEFORE the
+     assignee so picking it narrows the עובד autocomplete; the optional
+     due date sits just before the remove button. */
+  grid-template-columns: 1.6em 1fr minmax(7em, .9fr) 1fr minmax(8em, auto) 2em;
   gap: .5em;
   align-items: center;
   margin-bottom: .4em;
 }
+.task-form-chain-step-date { font-size: .85em; }
+.task-form-chain-step-date,
+.task-form-chain-step-date .date-range-trigger { width: 100%; }
 .task-form-chain-step-dept {
   padding: .4em .5em;
   border: 1px solid var(--border);
@@ -12449,7 +12487,8 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
     grid-template-columns: 1.6em 1fr 1fr;
   }
   .task-form-chain-step-row .task-form-chain-step-dept,
-  .task-form-chain-step-row .task-form-chain-step-assignee {
+  .task-form-chain-step-row .task-form-chain-step-assignee,
+  .task-form-chain-step-row .task-form-chain-step-date {
     grid-column: 2 / -1;
   }
   .task-form-chain-step-pricing {
