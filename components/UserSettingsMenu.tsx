@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDateTimeIso } from "@/lib/dateFormat";
+import BrowserNotifToggle from "@/components/BrowserNotifToggle";
 
 type Prefs = {
   email_notifications: boolean;
@@ -321,6 +322,7 @@ export default function UserSettingsMenu({
                     <small>הצמדות במשימות + ממתין לאישור + סיכום יומי</small>
                   </span>
                 </label>
+                <BrowserNotifToggle />
                 {!isClientUser && (
                   <>
                     <label className="settings-menu-toggle">

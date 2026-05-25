@@ -27,6 +27,7 @@ import KeyboardHelp from "@/components/KeyboardHelp";
 import QuickNoteModal from "@/components/QuickNoteModal";
 import QuickTaskFAB from "@/components/QuickTaskFAB";
 import NavBellBadge from "@/components/NavBellBadge";
+import BrowserNotifier from "@/components/BrowserNotifier";
 import NavGmailTasks from "@/components/NavGmailTasks";
 import NavCustomerEmails from "@/components/NavCustomerEmails";
 import NavCampaignsLink from "@/components/NavCampaignsLink";
@@ -335,6 +336,10 @@ export default async function RootLayout({
         </LightboxProvider>
         {/* Global overlays — mounted once, listen for their own key combos. */}
         {email && <CommandPalette />}
+        {/* Foreground browser notifications — polls the bell feed + pops a
+            native desktop toast when the user is looking away. Opt-in via
+            the gear menu (BrowserNotifToggle). Renders nothing. */}
+        {email && <BrowserNotifier />}
         {email && !isClientUser && <QuickNoteModal />}
         {email && !isClientUser && <QuickTaskFAB />}
         <KeyboardHelp />
