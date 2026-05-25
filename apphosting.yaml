@@ -382,31 +382,33 @@ env:
       - BUILD
       - RUNTIME
 
-  # ─── Web Push (background browser notifications) — DORMANT ─────────
-  # The push CODE is shipped + live, but the 3 env entries are REMOVED so
-  # the rollout stays GREEN. Every rollout that referenced
-  # VAPID_PRIVATE_KEY failed at the preparer with "Error resolving secret
-  # version …/versions/latest" EVEN THOUGH the secret exists (version 1,
-  # enabled, automatic replication) and 3 SAs were granted secretAccessor
-  # + fully propagated: firebase-app-hosting-compute@, the App Hosting
-  # service agent service-641824414643@gcp-sa-firebaseapphosting, and
-  # 641824414643-compute@developer. So it is NOT an IAM grant problem.
-  # Suspected cause: App Hosting only resolves a secret that was
-  # associated with the backend via the firebase CLI (the secret was
-  # created with `apphosting:secrets:set --data-file`, which ran
-  # non-interactively and skipped that association).
-  #
-  # TO ACTIVATE (next session) — in the OWNER's REAL shell (firebase-tools
-  # must be installed THERE: `npm i -g firebase-tools`; the agent's copy
-  # is in its sandboxed %APPDATA%, not on the user's PATH):
-  #   firebase login
+  # ─── Web Push (background browser notifications) — ACTIVE ─────────
+  # Activated 2026-05-25. Rollouts referencing VAPID_PRIVATE_KEY had been
+  # fast-failing at the preparer with "Error resolving secret version
+  # …/versions/latest" even though the secret existed (v1, enabled,
+  # automatic replication) and 3 SAs held secretAccessor (granted via raw
+  # gcloud). The fix was NOT another IAM grant — it was running, from the
+  # OWNER's shell (firebase-tools installed there via `npm i -g`):
   #   firebase apphosting:secrets:grantaccess VAPID_PRIVATE_KEY --backend fandf-hub --project fandf-dashboard
-  # If that no-ops (IAM already set) and a re-trigger still fails, do a
-  # clean re-set: regenerate keys, then INTERACTIVE
-  #   firebase apphosting:secrets:set VAPID_PRIVATE_KEY --backend fandf-hub
-  # (paste the private key — do NOT use --data-file), update the public
-  # key below to the new pair. Then re-add these 3 entries + push:
-  #   - NEXT_PUBLIC_VAPID_PUBLIC_KEY (value: …, BUILD+RUNTIME)
-  #       BDFIsy8aowEYA-A95a7VyWwrwIZdqm4RTOAKtidb5PVLKt8HRKlveh4Qa8HwmUZWIVb-B0x-Fx6-JduCXOXI_Vc
-  #   - VAPID_SUBJECT (value: mailto:maayan@fandf.co.il, BUILD+RUNTIME)
-  #   - VAPID_PRIVATE_KEY (secret: VAPID_PRIVATE_KEY, RUNTIME)
+  # which reported "Successfully set IAM bindings on secret
+  # VAPID_PRIVATE_KEY" — i.e. the firebase CLI writes the backend↔secret
+  # binding/association that the raw gcloud grants missed. If the backend
+  # is ever recreated, re-run that grantaccess.
+  # The NEXT_PUBLIC_ public key is safe to expose (client-side VAPID key).
+  # The private key stays in Secret Manager and is read LAZILY at RUNTIME
+  # only (lib/webPush.ts vapid()/ensureVapid(), when signing a push), so
+  # RUNTIME availability is enough — the build never needs it.
+  - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    value: BDFIsy8aowEYA-A95a7VyWwrwIZdqm4RTOAKtidb5PVLKt8HRKlveh4Qa8HwmUZWIVb-B0x-Fx6-JduCXOXI_Vc
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: VAPID_SUBJECT
+    value: mailto:maayan@fandf.co.il
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: VAPID_PRIVATE_KEY
+    secret: VAPID_PRIVATE_KEY
+    availability:
+      - RUNTIME
