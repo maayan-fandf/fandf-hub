@@ -22,9 +22,22 @@ import CrmFunnelTrendline from "./CrmFunnelTrendline";
 
 type StackedSource = { source: string; count: number; isOther?: boolean };
 
-const PALETTE = [
+// Media-channel colors — large + well-separated so channels don't recycle
+// the same hue. (Was a 10-color palette → the 11th channel collided with
+// the 1st, and objections reused these same colors. A project here can
+// have ~13+ sources.)
+const CHANNEL_PALETTE = [
   "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9",
-  "#8b5cf6", "#14b8a6", "#ef4444", "#a3a3a3", "#84cc16",
+  "#8b5cf6", "#14b8a6", "#ef4444", "#84cc16", "#f97316",
+  "#06b6d4", "#d946ef", "#22c55e", "#eab308", "#3b82f6",
+  "#fb7185", "#a855f7", "#0d9488", "#65a30d", "#e11d48",
+];
+// Objection colors — a SEPARATE set sharing no hex with CHANNEL_PALETTE,
+// so an objection slice/dot never reads the same color as a media channel
+// (deeper jewel tones read as their own family vs the brighter channels).
+const OBJECTION_PALETTE = [
+  "#9333ea", "#0891b2", "#ca8a04", "#be123c", "#15803d",
+  "#b45309", "#1d4ed8", "#a21caf",
 ];
 
 const TOP_STATUSES = 8;
@@ -113,7 +126,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   // color across every view + the chip's own dot.
   const palette = useMemo(() => {
     const m = new Map<string, string>();
-    sm.allSources.forEach((s, i) => m.set(s, PALETTE[i % PALETTE.length]));
+    sm.allSources.forEach((s, i) => m.set(s, CHANNEL_PALETTE[i % CHANNEL_PALETTE.length]));
     return m;
   }, [sm.allSources]);
 
@@ -263,7 +276,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     const head = sorted.slice(0, TOP_OBJECTIONS_IN_PIE);
     const tail = sorted.slice(TOP_OBJECTIONS_IN_PIE).reduce((n, [, c]) => n + c, 0);
     const slices: { label: string; count: number; isOther?: boolean; color: string }[] =
-      head.map(([label, count], i) => ({ label, count, color: PALETTE[i % PALETTE.length] }));
+      head.map(([label, count], i) => ({ label, count, color: OBJECTION_PALETTE[i % OBJECTION_PALETTE.length] }));
     if (tail > 0) slices.push({ label: "אחר", count: tail, isOther: true, color: "#d1d5db" });
     return { slices, total: grandTotal };
   }, [selected, sm]);
