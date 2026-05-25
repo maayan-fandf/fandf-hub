@@ -109,21 +109,62 @@ export default function NavCampaignsLink() {
   // Don't include `clear` in the badge — those are already tidy.
   const openCount = counts.severe + counts.warn + counts.info;
 
+  const badgeText = openCount > 99 ? "99+" : String(openCount);
+  const badgeLabel = `${openCount} פרויקטים עם התראות`;
+
   return (
-    <ActiveLink
-      href="/morning"
-      className="topnav-link topnav-link-with-badge"
-      title={tooltip}
-    >
-      📢 קמפיינים
-      {openCount > 0 && (
-        <span
-          className="nav-badge"
-          aria-label={`${openCount} פרויקטים עם התראות`}
-        >
-          {openCount > 99 ? "99+" : openCount}
+    // Mirrors the פרויקטים pattern: the trigger is a real link (click →
+    // /morning, the alerts feed) and HOVER reveals a submenu offering
+    // התראות + תקציבים. Reuses the projects-nav-* shell classes so it
+    // inherits the same hover/focus-within dropdown behavior and the same
+    // mobile graceful-degradation (on touch / ≤640px the dropdown is
+    // suppressed and the trigger acts as a plain link to /morning).
+    <div className="projects-nav-menu campaigns-nav-menu">
+      <ActiveLink
+        href="/morning"
+        className="topnav-link projects-nav-trigger topnav-link-with-badge"
+        aria-haspopup="menu"
+        title={tooltip}
+      >
+        📢 קמפיינים
+        <span className="projects-nav-chev" aria-hidden>
+          ▾
         </span>
-      )}
-    </ActiveLink>
+        {openCount > 0 && (
+          <span className="nav-badge" aria-label={badgeLabel}>
+            {badgeText}
+          </span>
+        )}
+      </ActiveLink>
+      <div className="projects-nav-dropdown campaigns-nav-dropdown" role="menu">
+        <ActiveLink
+          href="/morning"
+          match="exact"
+          className="campaigns-nav-item"
+          role="menuitem"
+        >
+          <span className="campaigns-nav-item-icon" aria-hidden>
+            🔔
+          </span>
+          <span className="campaigns-nav-item-label">התראות</span>
+          {openCount > 0 && (
+            <span className="nav-badge" aria-label={badgeLabel}>
+              {badgeText}
+            </span>
+          )}
+        </ActiveLink>
+        <ActiveLink
+          href="/morning/budgets"
+          match="exact"
+          className="campaigns-nav-item"
+          role="menuitem"
+        >
+          <span className="campaigns-nav-item-icon" aria-hidden>
+            💰
+          </span>
+          <span className="campaigns-nav-item-label">תקציבים</span>
+        </ActiveLink>
+      </div>
+    </div>
   );
 }

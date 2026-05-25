@@ -2371,6 +2371,31 @@ html[data-theme="dark"] .topnav-fandf-logo img {
   text-decoration: none;
 }
 
+/* Campaigns nav submenu rows (התראות / תקציבים). Reuse the projects-nav
+   dropdown shell (.projects-nav-menu/-trigger/-chev/-dropdown); these are
+   the flat menu items inside it. */
+.campaigns-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.campaigns-nav-item:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.campaigns-nav-item.is-active {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.campaigns-nav-item-label {
+  flex: 1;
+}
+
 .projects-nav-empty {
   padding: 0.6rem 0.7rem;
   color: var(--muted);
