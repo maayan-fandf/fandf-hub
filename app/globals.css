@@ -12344,6 +12344,23 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
    sits in a dedicated bar above the title field; the step picker
    replaces the per-task fields when active. Theme-variable colors
    so the UI reads correctly in both light + dark modes. */
+/* Resume-draft banner — shown at the top of a NEW task form when a
+   locally-saved draft exists. */
+.task-draft-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6em;
+  margin-bottom: .9em;
+  padding: .55em .9em;
+  border: 1px solid var(--accent, #6366f1);
+  border-radius: 10px;
+  background: var(--accent-soft, color-mix(in srgb, var(--accent, #6366f1) 8%, var(--surface, #fff)));
+  font-size: .9em;
+  color: var(--text);
+}
+.task-draft-banner > span { font-weight: 600; margin-inline-end: auto; }
+
 .task-form-chain-bar {
   margin: 1em 0 .5em;
   padding: .6em 1em;

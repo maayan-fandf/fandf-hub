@@ -53,6 +53,9 @@ function tomorrowJerusalem(): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/** localStorage key for the resumable new-task draft (per browser). */
+const TASK_DRAFT_KEY = "fandf:newTaskDraft";
+
 type ProjectOption = {
   name: string;
   company: string;
@@ -251,6 +254,11 @@ export default function TaskCreateForm({
   );
   const [title, setTitle] = useState(
     isEditing ? editingTask!.title || "" : defaultTitle,
+  );
+  // Controlled so a saved draft can restore it (and so the draft
+  // snapshot can read it without poking the DOM).
+  const [description, setDescription] = useState(
+    isEditing ? editingTask!.description || "" : defaultDescription,
   );
   // Phase 5b — chain mode. When the user opts in, the form switches
   // to a multi-step picker: the title is the umbrella's title, and
@@ -807,7 +815,7 @@ export default function TaskCreateForm({
 
       const patch: Record<string, unknown> = {
         title,
-        description: String(fd.get("description") || ""),
+        description: description,
         brief: String(fd.get("brief") || editingTask.brief || ""),
         departments,
         kind: String(fd.get("kind") || editingTask.kind || "other"),
@@ -921,7 +929,7 @@ export default function TaskCreateForm({
         withUmbrella,
         umbrella: {
           title: title.trim(),
-          description: String(fd.get("description") || ""),
+          description: description,
         },
         steps: trimmedSteps.map((s) => ({
           title: s.title,
@@ -957,6 +965,7 @@ export default function TaskCreateForm({
         // Land on the umbrella detail page when there is one;
         // otherwise (flat-linked mode), land on the first child so
         // the user sees the start of the chain.
+        clearDraft();
         const dest = data.umbrella?.id ?? data.children[0]?.id ?? "";
         if (dest) router.push(`/tasks/${encodeURIComponent(dest)}`);
         else router.push("/tasks");
@@ -1006,7 +1015,7 @@ export default function TaskCreateForm({
         withUmbrella: true,
         umbrella: {
           title: title.trim(),
-          description: String(fd.get("description") || ""),
+          description: description,
         },
         // One step per assignee — same title, single-email assignees.
         // Parallel children replicate the SAME task per person, so each
@@ -1045,6 +1054,7 @@ export default function TaskCreateForm({
             "error" in data ? data.error : "Failed to create parallel umbrella",
           );
         }
+        clearDraft();
         const dest = data.umbrella?.id ?? data.children[0]?.id ?? "";
         if (dest) router.push(`/tasks/${encodeURIComponent(dest)}`);
         else router.push("/tasks");
@@ -1060,7 +1070,7 @@ export default function TaskCreateForm({
       company: company, // falls back to Keys lookup server-side if empty
       brief: String(fd.get("brief") || ""),
       title: title,
-      description: String(fd.get("description") || ""),
+      description: description,
       departments,
       kind: String(fd.get("kind") || ""),
       priority: Number(fd.get("priority") || "2"),
@@ -1138,6 +1148,7 @@ export default function TaskCreateForm({
           /* navigate anyway */
         }
       }
+      clearDraft();
       router.push(`/tasks/${encodeURIComponent(data.task.id)}`);
     } catch (e) {
       // Restore the draft ref on failure so a subsequent (dept, kind)
@@ -1214,9 +1225,137 @@ export default function TaskCreateForm({
     setPriceInput(pricingResult.hasAny ? String(pricingResult.total) : "");
   }, [pricingResult.hasAny, pricingResult.total]);
 
+  // ── Draft (save & resume) ─────────────────────────────────────────
+  // A local snapshot of the form so a half-filled NEW task can be
+  // resumed later (same browser). Saved on demand via "שמור טיוטה",
+  // offered for restore via a banner on the next visit, and cleared on
+  // a successful create. Edit / comment-convert / gmail-convert flows
+  // opt out (they carry their own seeded context).
+  const draftEligible = !isEditing && !fromComment && !cleanupGmailTaskId;
+  type TaskDraft = {
+    savedAt: string;
+    company: string;
+    project: string;
+    campaign: string;
+    title: string;
+    description: string;
+    departments: string[];
+    kind: string;
+    approver: string;
+    projectManager: string;
+    assignees: string;
+    chainMode: boolean;
+    withUmbrella: boolean;
+    multiMode: "joined" | "parallel";
+    steps: ChainStep[];
+    priceInput: string;
+  };
+  const [pendingDraft, setPendingDraft] = useState<TaskDraft | null>(null);
+  const [draftFlash, setDraftFlash] = useState(false);
+
+  // Offer restore on mount when a saved draft exists. Reading
+  // localStorage in an effect (not in a useState initializer) keeps
+  // the server render and the first client render identical — no
+  // hydration mismatch.
+  useEffect(() => {
+    if (!draftEligible) return;
+    try {
+      const raw = localStorage.getItem(TASK_DRAFT_KEY);
+      if (raw) setPendingDraft(JSON.parse(raw) as TaskDraft);
+    } catch {
+      /* ignore a malformed/blocked draft */
+    }
+  }, [draftEligible]);
+
+  function saveDraft() {
+    const draft: TaskDraft = {
+      savedAt: new Date().toISOString(),
+      company,
+      project,
+      campaign,
+      title,
+      description,
+      departments,
+      kind,
+      approver,
+      projectManager,
+      assignees,
+      chainMode,
+      withUmbrella,
+      multiMode,
+      steps,
+      priceInput,
+    };
+    try {
+      localStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(draft));
+      setError(null);
+      setDraftFlash(true);
+      setTimeout(() => setDraftFlash(false), 1800);
+      // A freshly-saved draft shouldn't also prompt to restore itself.
+      setPendingDraft(null);
+    } catch {
+      setError("שמירת הטיוטה נכשלה (אחסון מקומי חסום בדפדפן)");
+    }
+  }
+  function clearDraft() {
+    try {
+      localStorage.removeItem(TASK_DRAFT_KEY);
+    } catch {
+      /* best-effort */
+    }
+  }
+  function applyDraft(d: TaskDraft) {
+    setCompany(d.company || "");
+    setProject(d.project || "");
+    setCampaign(d.campaign || "");
+    setTitle(d.title || "");
+    setDescription(d.description || "");
+    setDepartments(Array.isArray(d.departments) ? d.departments : []);
+    if (d.kind) setKind(d.kind);
+    setApprover(d.approver || "");
+    setProjectManager(d.projectManager || "");
+    setAssignees(d.assignees || "");
+    setChainMode(!!d.chainMode);
+    setWithUmbrella(d.withUmbrella !== false);
+    setMultiMode(d.multiMode === "parallel" ? "parallel" : "joined");
+    if (Array.isArray(d.steps) && d.steps.length > 0) setSteps(d.steps);
+    setPriceInput(d.priceInput || "");
+    priceTouched.current = !!(d.priceInput && d.priceInput.trim());
+    setPendingDraft(null);
+  }
+
   return (
     <form className="task-form" onSubmit={onSubmit}>
       {error && <div className="error">{error}</div>}
+
+      {pendingDraft && (
+        <div className="task-draft-banner" role="status">
+          <span>
+            📝 נמצאה טיוטה שמורה מ־
+            {new Date(pendingDraft.savedAt).toLocaleString("he-IL", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })}
+          </span>
+          <button
+            type="button"
+            className="btn-primary btn-sm"
+            onClick={() => applyDraft(pendingDraft)}
+          >
+            ↩︎ שחזר טיוטה
+          </button>
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={() => {
+              clearDraft();
+              setPendingDraft(null);
+            }}
+          >
+            מחק טיוטה
+          </button>
+        </div>
+      )}
 
       <div className="task-form-row">
         <label>
@@ -1350,9 +1489,8 @@ export default function TaskCreateForm({
           name="description"
           rows={5}
           placeholder="מה צריך לעשות, מה הקונטקסט, קישורים רלוונטיים…"
-          defaultValue={
-            isEditing ? editingTask!.description || "" : defaultDescription
-          }
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
         />
       </label>
 
@@ -2191,6 +2329,17 @@ export default function TaskCreateForm({
               ? chainMode ? "יוצר שרשרת…" : "יוצר…"
               : chainMode ? "📦 צור שרשרת" : "צור משימה"}
         </button>
+        {!isEditing && (
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={saving}
+            onClick={saveDraft}
+            title="שמירת הטופס כטיוטה מקומית — אפשר לחזור ולהמשיך מאוחר יותר"
+          >
+            {draftFlash ? "✓ נשמרה טיוטה" : "📝 שמור טיוטה"}
+          </button>
+        )}
         {isEditing && editingTask && (
           <button
             type="button"
