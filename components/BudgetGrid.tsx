@@ -850,6 +850,7 @@ function CampaignRow({
   const needsAction =
     isProgrammatic &&
     !r.ended &&
+    !budgetEssentiallySpent(r.budget, r.spend) &&
     needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio);
   // Fade state: a snooze resurfaces next day only if THIS row's gap is
   // still open (needsAction), not on a budget-unchanged baseline.
@@ -1162,6 +1163,18 @@ function needsBudgetAction(
   }
   const t = paceTone(pacingRatio);
   return t === "over" || t === "under";
+}
+
+/**
+ * A channel whose budget is essentially spent (≥90%) has no remaining
+ * runway to pace, so a daily-budget ⚠️ is just noise — e.g. a channel that
+ * over-paced and used up its budget early (TikTok at Essence, flagged
+ * 2026-05-25): the alert says "lower the daily" but there's nothing left
+ * to spend at any daily. Suppress the budget-action alert there, same
+ * spirit as suppressing it for an ended channel.
+ */
+function budgetEssentiallySpent(budget: number, spend: number): boolean {
+  return budget > 0 && spend >= budget * 0.9;
 }
 
 function FilterChip({
@@ -1512,6 +1525,7 @@ function hasChannelAlert(
 ): boolean {
   return p.rows.some((r) => {
     if (r.platform === "other" || r.ended) return false;
+    if (budgetEssentiallySpent(r.budget, r.spend)) return false;
     const needsAction = needsBudgetAction(
       r.actualDaily,
       r.dailyRequired,
