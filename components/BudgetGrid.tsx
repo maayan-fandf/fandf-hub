@@ -364,7 +364,7 @@ function ProjectRow({
         <span className={`budget-caret ${open ? "open" : ""}`}>▸</span>
         <span className="budget-proj">
           <span className="budget-proj-name">
-            {hasChannelAlert(p) && (
+            {hasChannelAlert(p, dismissals, localDismiss, today) && (
               <span
                 className="budget-alert"
                 title="יש ערוץ אחד או יותר שהתקציב היומי בו לא תואם את הנדרש — נדרש עדכון"
@@ -1498,13 +1498,35 @@ function hasPacingIssue(p: BudgetProject): boolean {
  * programmatic) channels are excluded by design: they're outside the E3
  * budget, so they never raise a budget-action alert.
  */
-function hasChannelAlert(p: BudgetProject): boolean {
-  return p.rows.some(
-    (r) =>
-      r.platform !== "other" &&
-      !r.ended &&
-      needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio),
-  );
+// Project-row ⚠️ — shows only while at least one programmatic channel
+// needs a budget change AND is NOT currently handled (טיפלתי-snoozed).
+// Dismissal-aware so clicking טיפלתי on the alerting channels clears the
+// project ⚠️ too; a snooze that lapses with the gap still open returns to
+// 'resurfaced' (counts as unhandled) → the ⚠️ comes back. Same per-row
+// computeFadeState the channel rows use, so header + rows stay in sync.
+function hasChannelAlert(
+  p: BudgetProject,
+  dismissals: Record<string, BudgetDismissal>,
+  localDismiss: Record<string, "on" | "off">,
+  today: string,
+): boolean {
+  return p.rows.some((r) => {
+    if (r.platform === "other" || r.ended) return false;
+    const needsAction = needsBudgetAction(
+      r.actualDaily,
+      r.dailyRequired,
+      r.pacingRatio,
+    );
+    if (!needsAction) return false;
+    const key = pacingChannelKey(p.tab, r.channel);
+    const state = computeFadeState(
+      dismissals[key],
+      today,
+      localDismiss[key] ?? null,
+      needsAction,
+    );
+    return state !== "dismissed";
+  });
 }
 
 function needsAttention(p: BudgetProject): boolean {
