@@ -649,6 +649,7 @@ function PlatformDrillGroups({
                       today={today}
                       localDismiss={localDismiss}
                       onSnooze={onSnooze}
+                      platformUrl={showAdLinks ? url : undefined}
                     />
                   ))}
                 </tbody>
@@ -758,6 +759,7 @@ function CampaignRow({
   today,
   localDismiss,
   onSnooze,
+  platformUrl,
 }: {
   tab: string;
   r: BudgetProject["rows"][number];
@@ -767,6 +769,11 @@ function CampaignRow({
   today: string;
   localDismiss: Record<string, "on" | "off">;
   onSnooze: (key: string, val: "on" | "off") => void;
+  /** "Open in ad platform" deep-link for THIS row's platform (FB/Google
+   *  account URL), already gated by showAdLinks. When set, the per-row
+   *  copy button also opens the platform and copies the row's campaign
+   *  filter token (FB) / project slug (Google) for the native search. */
+  platformUrl?: string;
 }) {
   const [draft, setDraft] = useState(String(Math.round(r.budget)));
   const [saving, setSaving] = useState(false);
@@ -949,7 +956,22 @@ function CampaignRow({
             <CopyAmountButton
               amount={String(dailyReq)}
               variant="ghost"
-              label="📋"
+              // When this row's platform has an "open account" deep-link,
+              // the button ALSO opens the platform and copies a filter
+              // token for the native campaign search (the budget number
+              // stays one back in clipboard history). FB → this row's
+              // campaign type (the account is project-scoped, so the סוג
+              // narrows to THIS campaign); Google → the project slug.
+              // Falls back to plain copy-number when no link is available.
+              url={platformUrl}
+              copyId={
+                platformUrl
+                  ? r.platform === "facebook"
+                    ? r.campaignType?.trim() || tab
+                    : tab
+                  : undefined
+              }
+              label={platformUrl ? "⧉" : "📋"}
             />
           </span>
         )}
