@@ -666,8 +666,12 @@ export async function postReplyDirect(
   // Walk up the parent chain to find the root, then collect any row
   // whose id===root or parent_id===root. The `mentions` cell is comma-
   // separated emails per row; union and lower-case them.
-  const threadEarlierMentions = (function collectThreadMentions(): Set<string> {
-    const out = new Set<string>();
+  const { threadEarlierMentions, threadParticipants } = (function collectThread(): {
+    threadEarlierMentions: Set<string>;
+    threadParticipants: Set<string>;
+  } {
+    const mentions = new Set<string>();
+    const participants = new Set<string>();
     let rootId = parentCommentId;
     let cursor: typeof parentRow | undefined = parentRow;
     let safety = 20;
@@ -689,10 +693,17 @@ export async function postReplyDirect(
       const cell = String(r[idx.get("mentions") ?? -1] ?? "");
       for (const m of cell.split(",")) {
         const e = m.trim().toLowerCase();
-        if (e && e !== me) out.add(e);
+        if (e && e !== me) mentions.add(e);
       }
+      // Every author who has posted in this thread (root + any reply) is
+      // a participant — they get pinged on a new reply even if it didn't
+      // @-tag them (a reply IS a "comment on their message").
+      const a = String(r[idx.get("author_email") ?? -1] ?? "")
+        .trim()
+        .toLowerCase();
+      if (a && a !== me) participants.add(a);
     }
-    return out;
+    return { threadEarlierMentions: mentions, threadParticipants: participants };
   })();
 
   // Notifications run after the response is flushed — they're best-effort
@@ -739,7 +750,7 @@ export async function postReplyDirect(
         deferEmailUntil: Date.now() + 30_000,
       });
     }
-    // Thread-participant fan-out → anyone @-mentioned earlier in the
+    // Thread-mention fan-out → anyone @-mentioned earlier in the
     // thread who isn't already covered by the explicit mention list,
     // the parent author, or the actor themselves.
     for (const recipient of threadEarlierMentions) {
@@ -748,6 +759,32 @@ export async function postReplyDirect(
       if (recipient === parentAuthor) continue;
       await notifyOnce({
         kind: "mention",
+        forEmail: recipient,
+        actorEmail: me,
+        taskId: parentIsTask ? parentCommentId : "",
+        commentId: id,
+        project: parentProject,
+        title: parentBodyShort,
+        body: trimmedBody.slice(0, 280),
+        link: replyLink,
+        // 30s grace — flusher (poll-tasks) sends after the window, or
+        // cancels if this reply is deleted within it.
+        deferEmailUntil: Date.now() + 30_000,
+      });
+    }
+    // Thread-PARTICIPANT fan-out → anyone who has POSTED in this thread
+    // (the root author or any earlier replier) who isn't already covered
+    // above. This is what makes "reply to a thread" notify the people
+    // actually in the conversation — e.g. A replies, B replies, then A
+    // replies again: B is notified even though A never @-tagged them.
+    // kind=comment_reply ("replied to the thread"), not mention.
+    for (const recipient of threadParticipants) {
+      if (recipient === me) continue;
+      if (recipient === parentAuthor) continue; // got comment_reply above
+      if (explicitMentionSet.has(recipient)) continue; // got mention above
+      if (threadEarlierMentions.has(recipient)) continue; // got mention above
+      await notifyOnce({
+        kind: "comment_reply",
         forEmail: recipient,
         actorEmail: me,
         taskId: parentIsTask ? parentCommentId : "",

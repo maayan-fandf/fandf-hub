@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import CommentBody from "./CommentBody";
 import type { CommentItem, TasksPerson } from "@/lib/appsScript";
@@ -66,6 +66,22 @@ export default function ThreadReplies({
     setOpen(next);
     if (next && !loaded && !loading) fetchReplies();
   }
+
+  // Keep the inline list in sync with the server reply count. After you
+  // post a reply, ReplyDrawer calls router.refresh() → the server
+  // re-renders with a new `count`, but THIS client component keeps its
+  // useState across the refresh, so a once-loaded list would otherwise
+  // stay stale (chip says "💬 2" while the list still shows 1). When the
+  // count changes: if we're open, re-fetch now; if closed, drop the
+  // cache so the next open fetches fresh.
+  const prevCountRef = useRef(count);
+  useEffect(() => {
+    if (count === prevCountRef.current) return;
+    prevCountRef.current = count;
+    if (!loaded) return;
+    if (open) fetchReplies();
+    else setLoaded(false);
+  }, [count, loaded, open, fetchReplies]);
 
   if (!count || count <= 0) return null;
 

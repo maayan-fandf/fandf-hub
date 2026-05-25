@@ -1286,12 +1286,6 @@ function CommentsPreview({
                 <span className="chat-message-time" title={c.timestamp}>
                   {formatRelative(c.timestamp)}
                 </span>
-                <ThreadReplies
-                  parentCommentId={c.comment_id}
-                  project={c.project}
-                  count={c.reply_count}
-                  people={people}
-                />
                 {c.edited_at && (
                   <span
                     className="chip chip-muted"
@@ -1305,6 +1299,15 @@ function CommentsPreview({
                 body={c.body}
                 truncateChars={220}
                 className="chat-message-text"
+                people={people}
+              />
+              {/* Replies render BELOW the comment body (chat order: the
+                  message first, then the thread under it), not in the
+                  header. */}
+              <ThreadReplies
+                parentCommentId={c.comment_id}
+                project={c.project}
+                count={c.reply_count}
                 people={people}
               />
               <div className="discussion-client-actions">
@@ -1409,17 +1412,18 @@ function MentionsPreview({
                 <span className="chat-message-time" title={m.timestamp}>
                   {formatRelative(m.timestamp)}
                 </span>
-                <ThreadReplies
-                  parentCommentId={actionTarget}
-                  project={m.project}
-                  count={m.reply_count ?? 0}
-                  people={people}
-                />
               </div>
               <CommentBody
                 body={m.body}
                 truncateChars={200}
                 className="chat-message-text"
+                people={people}
+              />
+              {/* Replies under the body, not in the header (chat order). */}
+              <ThreadReplies
+                parentCommentId={actionTarget}
+                project={m.project}
+                count={m.reply_count ?? 0}
                 people={people}
               />
               <div className="discussion-client-actions">
