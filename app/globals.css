@@ -12410,7 +12410,32 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .uhc-role {
   font-size: 12px;
   color: var(--muted, #64748b);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
 }
+.uhc-role-sep { opacity: .5; }
+/* Phone block (v2): mobile + work. Each row is a tel: link + copy btn. */
+.uhc-phones {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+.uhc-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.uhc-phone-label { font-size: 13px; opacity: .8; }
+.uhc-phone a {
+  color: var(--accent, #2a66d9);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.uhc-phone a:hover { text-decoration: underline; }
 .uhc-email {
   display: inline-flex;
   align-items: center;
@@ -12475,6 +12500,23 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   background: var(--surface-soft, #f6f7fb);
 }
 .uhc-action-hub:hover { background: var(--accent-soft, #eef2ff); }
+/* WhatsApp-brand green pill — stands out among the Google-action row. */
+.uhc-action-whatsapp {
+  background: #d9f5e2;
+  color: #075e54;
+}
+.uhc-action-whatsapp:hover {
+  background: #b9ecca;
+  border-color: #25d366;
+}
+html[data-theme="dark"] .uhc-action-whatsapp {
+  background: rgba(37, 211, 102, .22);
+  color: #c4f5d6;
+}
+html[data-theme="dark"] .uhc-action-whatsapp:hover {
+  background: rgba(37, 211, 102, .32);
+  border-color: #25d366;
+}
 
 /* Resume-draft banner — shown at the top of a NEW task form when a
    locally-saved draft exists. */

@@ -354,7 +354,7 @@ export default async function RootLayout({
             whenever the mouse hovers an element with data-user-email.
             <Avatar> emits the attribute; other chip surfaces can opt in
             by setting it on their trigger element. */}
-        {email && <UserHoverCard />}
+        {email && <UserHoverCard viewerEmail={email} />}
       </body>
     </html>
   );

@@ -3,6 +3,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+/** Workspace enrichment fetched lazily on first open (mirrors the
+ *  server-side `DirectoryUser` shape — kept inline so the client bundle
+ *  doesn't import the server lib). */
+type EnrichedUser = {
+  email: string;
+  fullName: string;
+  jobTitle: string;
+  department: string;
+  mobilePhone: string;
+  mobilePhoneE164: string;
+  workPhone: string;
+};
+type CardData = EnrichedUser | null;
+
+// Per-session client cache so re-hovers don't re-hit the API.
+const enrichCache = new Map<string, CardData>();
+const inFlight = new Map<string, Promise<CardData>>();
+
+async function fetchEnriched(email: string): Promise<CardData> {
+  const key = email.toLowerCase().trim();
+  if (enrichCache.has(key)) return enrichCache.get(key) ?? null;
+  if (inFlight.has(key)) return inFlight.get(key)!;
+  const p = (async () => {
+    try {
+      const r = await fetch(`/api/user-card/${encodeURIComponent(key)}`);
+      if (!r.ok) return null;
+      const j = (await r.json()) as { ok?: boolean; user?: CardData };
+      const user = (j && j.ok && j.user) || null;
+      enrichCache.set(key, user);
+      return user;
+    } catch {
+      enrichCache.set(key, null);
+      return null;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+  inFlight.set(key, p);
+  return p;
+}
+
 /**
  * Global hover card for user chips across the Hub. Mount ONCE in the
  * root layout — it attaches a single document-level listener that pops
@@ -47,9 +88,17 @@ function isEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
 
-export default function UserHoverCard() {
+export default function UserHoverCard({
+  viewerEmail = "",
+}: {
+  /** Currently-signed-in Hub user's email. Used to set `authuser=` on
+   *  Google action links so the right Workspace account opens for users
+   *  with multiple Google accounts in Chrome. */
+  viewerEmail?: string;
+}) {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number; placement: "below" | "above" } | null>(null);
+  const [enriched, setEnriched] = useState<CardData>(null);
   // Mount guard for portal — render nothing on the SSR pass; the card
   // only ever appears after a hover, which is client-only anyway.
   const [mounted, setMounted] = useState(false);
@@ -187,6 +236,31 @@ export default function UserHoverCard() {
     };
   }, [openFor, scheduleClose, cancelOpen, cancelClose]);
 
+  // Lazy-fetch the Workspace enrichment whenever the open anchor changes.
+  // Cache hits resolve synchronously; misses kick off one API call per
+  // email per session. Card renders immediately with cheap data and the
+  // enriched fields appear when the fetch lands.
+  useEffect(() => {
+    if (!anchor) {
+      setEnriched(null);
+      return;
+    }
+    let cancelled = false;
+    const key = anchor.email.toLowerCase().trim();
+    const cached = enrichCache.get(key);
+    if (cached !== undefined) {
+      setEnriched(cached);
+      return;
+    }
+    setEnriched(null);
+    fetchEnriched(anchor.email).then((d) => {
+      if (!cancelled) setEnriched(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [anchor]);
+
   // Reposition on scroll/resize while open.
   useEffect(() => {
     if (!anchor) return;
@@ -226,14 +300,40 @@ export default function UserHoverCard() {
     ? `/api/avatar/${encodeURIComponent(email.toLowerCase().trim())}`
     : "";
 
-  const calendarUrl = `https://calendar.google.com/calendar/u/0/r/eventedit?add=${encodeURIComponent(email)}`;
-  const contactsUrl = `https://contacts.google.com/${encodeURIComponent(email)}`;
+  // `authuser=<viewerEmail>` makes Google honor the *signed-in account*
+  // that matches our Hub user — fixes the multi-account Chrome bug where
+  // contacts.google.com/<email> (or any Google action URL) opened under
+  // the wrong account. Without it, Google defaults to /u/0/ which may
+  // not be the user's fandf account.
+  const authQ = viewerEmail
+    ? `&authuser=${encodeURIComponent(viewerEmail)}`
+    : "";
+  const authQ1 = viewerEmail
+    ? `?authuser=${encodeURIComponent(viewerEmail)}`
+    : "";
+  const calendarUrl = `https://calendar.google.com/calendar/u/0/r/eventedit?add=${encodeURIComponent(email)}${authQ}`;
+  const contactsUrl = `https://contacts.google.com/${encodeURIComponent(email)}${authQ1}`;
   const tasksUrl = `/tasks?assignee=${encodeURIComponent(email)}`;
   const newTaskUrl = `/tasks/new?assignees=${encodeURIComponent(email)}`;
+
+  // Enriched bits — appear once the API resolves (or stay hidden if the
+  // user has no Workspace phone / isn't in the directory).
+  const jobTitle = enriched?.jobTitle || "";
+  const mobileDisplay = enriched?.mobilePhone || "";
+  const mobileE164 = enriched?.mobilePhoneE164 || "";
+  const workDisplay = enriched?.workPhone || "";
+  const whatsappUrl = mobileE164 ? `https://wa.me/${mobileE164}` : "";
 
   async function copyEmail() {
     try {
       await navigator.clipboard.writeText(email);
+    } catch {
+      /* best-effort */
+    }
+  }
+  async function copyPhone(p: string) {
+    try {
+      await navigator.clipboard.writeText(p);
     } catch {
       /* best-effort */
     }
@@ -264,7 +364,20 @@ export default function UserHoverCard() {
           <div className="uhc-name" dir="auto">
             {name}
           </div>
-          {role && <div className="uhc-role">{role}</div>}
+          {/* Two separate lines when both are set: Workspace jobTitle
+              (e.g., "Account Manager") + Hub role/department (e.g.,
+              "Media"). One subtitle line when only one is set. */}
+          {(jobTitle || role) && (
+            <div className="uhc-role">
+              {jobTitle && <span dir="auto">{jobTitle}</span>}
+              {jobTitle && role && (
+                <span className="uhc-role-sep" aria-hidden>
+                  ·
+                </span>
+              )}
+              {role && <span dir="auto">{role}</span>}
+            </div>
+          )}
           <div className="uhc-email">
             <a href={`mailto:${email}`} dir="ltr">
               {email}
@@ -282,6 +395,52 @@ export default function UserHoverCard() {
         </div>
       </div>
 
+      {/* Phone numbers row (mobile + work). Hidden when the directory
+          has nothing — pure progressive enhancement on top of the v1
+          layout. Each number is a tel: link with a copy button beside it. */}
+      {(mobileDisplay || workDisplay) && (
+        <div className="uhc-phones">
+          {mobileDisplay && (
+            <div className="uhc-phone">
+              <span className="uhc-phone-label" aria-hidden>
+                📱
+              </span>
+              <a href={`tel:${mobileE164 ? "+" + mobileE164 : mobileDisplay}`} dir="ltr">
+                {mobileDisplay}
+              </a>
+              <button
+                type="button"
+                className="uhc-copy-btn"
+                onClick={() => copyPhone(mobileDisplay)}
+                title="העתק מספר נייד"
+                aria-label="העתק מספר נייד"
+              >
+                📋
+              </button>
+            </div>
+          )}
+          {workDisplay && (
+            <div className="uhc-phone">
+              <span className="uhc-phone-label" aria-hidden>
+                ☎️
+              </span>
+              <a href={`tel:${workDisplay}`} dir="ltr">
+                {workDisplay}
+              </a>
+              <button
+                type="button"
+                className="uhc-copy-btn"
+                onClick={() => copyPhone(workDisplay)}
+                title="העתק מספר עבודה"
+                aria-label="העתק מספר עבודה"
+              >
+                📋
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="uhc-actions">
         <a
           className="uhc-action"
@@ -291,6 +450,18 @@ export default function UserHoverCard() {
           <span aria-hidden>✉️</span>
           <span>אימייל</span>
         </a>
+        {whatsappUrl && (
+          <a
+            className="uhc-action uhc-action-whatsapp"
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`פתח שיחת WhatsApp · ${mobileDisplay}`}
+          >
+            <span aria-hidden>💬</span>
+            <span>WhatsApp</span>
+          </a>
+        )}
         <a
           className="uhc-action"
           href={calendarUrl}
