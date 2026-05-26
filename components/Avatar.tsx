@@ -47,12 +47,21 @@ export default function Avatar({ name, title, role, size = 28 }: Props) {
     ? `/api/avatar/${encodeURIComponent(name.toLowerCase().trim())}`
     : null;
   const hover = avatarHoverText(title, name, role);
+  // Hover-card trigger attributes — picked up by the global
+  // <UserHoverCard> listener mounted in app/layout.tsx. We only set
+  // them when `name` looks like an email (so the card has someone to
+  // open Google/Hub actions for); plain-display-name avatars
+  // (e.g., "צוות") get no card.
+  const isUserEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name);
   return (
     <span
       className="avatar"
       title={hover}
       aria-label={hover}
       dir="ltr"
+      data-user-email={isUserEmail ? name : undefined}
+      data-user-name={isUserEmail ? title || name : undefined}
+      data-user-role={isUserEmail && role ? role : undefined}
       style={{
         position: "relative",
         width: px,
