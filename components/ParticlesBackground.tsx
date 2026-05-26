@@ -204,28 +204,61 @@ function loadParticlesScript(): Promise<void> {
 }
 
 // Destroy every pJS instance whose canvas lives inside the given
-// wrapper. particles.js v2 exposes its instances on window.pJSDom but
-// its own destroypJS() does `pJSDom = null` against a local — so we
-// also splice the global array ourselves. Reliably tearing every
-// instance down is critical because the lib caches stale canvas refs
-// internally; re-init on the SAME element id silently produces a
-// blank canvas in v2 (see issue #97). Our fix is to always pair this
-// with a fresh inner div id (see renderCurrent below).
-function destroyInstancesInside(wrapper: HTMLElement) {
-  const w = window as unknown as {
-    pJSDom?: Array<{ pJS?: { canvas?: { el?: HTMLCanvasElement }; fn?: { vendors?: { destroypJS?: () => void } } } }>;
+// wrapper.
+//
+// IMPORTANT: do NOT call particles.js's own `destroypJS()` — it has a
+// long-standing bug where the function body contains an unscoped
+// assignment `pJSDom = null` (no `var`/`let`/`const`, no
+// `window.` prefix). In sloppy mode that implicitly assigns to the
+// global, so calling destroypJS once nukes `window.pJSDom` for the
+// whole page and every subsequent `particlesJS()` call throws when
+// it tries to push onto an array that's been replaced with null.
+// That's exactly what was breaking the theme toggle live: first
+// toggle nulled pJSDom, re-init crashed, canvas stayed blank, manual
+// refresh fixed it because the lib re-initialised pJSDom = [].
+//
+// We instead reach into the instance, cancel the RAF directly, drop
+// the canvas element from the DOM, and splice the entry out of
+// pJSDom ourselves. No mystery globals get clobbered.
+type PJSInstance = {
+  pJS?: {
+    canvas?: { el?: HTMLCanvasElement };
+    fn?: { drawAnimFrame?: number };
   };
-  if (!Array.isArray(w.pJSDom)) return;
-  for (let i = w.pJSDom.length - 1; i >= 0; i--) {
-    const inst = w.pJSDom[i];
+};
+type WindowWithPJS = Window & {
+  pJSDom?: PJSInstance[] | null;
+  particlesJS?: (id: string, cfg: object) => void;
+};
+
+function ensurePJSDom(w: WindowWithPJS): PJSInstance[] {
+  // If a previous destroypJS-style bug elsewhere on the page nulled
+  // the global, restore it before we touch it.
+  if (!Array.isArray(w.pJSDom)) w.pJSDom = [];
+  return w.pJSDom;
+}
+
+function destroyInstancesInside(wrapper: HTMLElement) {
+  const w = window as WindowWithPJS;
+  const arr = ensurePJSDom(w);
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const inst = arr[i];
     const canvasEl = inst?.pJS?.canvas?.el;
     if (canvasEl && wrapper.contains(canvasEl)) {
-      try {
-        inst?.pJS?.fn?.vendors?.destroypJS?.();
-      } catch {
-        // best-effort
+      const rafId = inst?.pJS?.fn?.drawAnimFrame;
+      if (typeof rafId === "number") {
+        try {
+          cancelAnimationFrame(rafId);
+        } catch {
+          // best-effort
+        }
       }
-      w.pJSDom.splice(i, 1);
+      try {
+        canvasEl.remove();
+      } catch {
+        // canvas already detached — fine
+      }
+      arr.splice(i, 1);
     }
   }
 }
@@ -313,21 +346,25 @@ export default function ParticlesBackground() {
       function renderCurrent() {
         const wrapper = containerRef.current;
         if (!wrapper) return;
-        const w = window as unknown as { particlesJS?: (id: string, cfg: object) => void };
+        const w = window as WindowWithPJS;
         if (typeof w.particlesJS !== "function") return;
+        // Restore window.pJSDom if any prior code path (in this app or
+        // a third-party script) clobbered it. particlesJS() pushes to
+        // this array internally, so it MUST be an array before we call.
+        ensurePJSDom(w);
 
         // Step 1 — tear down every pJS instance bound to our wrapper.
         destroyInstancesInside(wrapper);
 
         // Step 2 — completely empty the wrapper. Belt-and-suspenders
-        // for any orphaned canvas elements destroypJS missed.
+        // for any orphaned children we didn't track.
         wrapper.innerHTML = "";
 
         // Step 3 — create a brand-new inner div with a UNIQUE id and
-        // run particles.js against it. The unique id is the heart of
-        // the fix: particles.js v2's internal state caches the target
-        // element ref, so reusing the same id on re-init produces a
-        // blank canvas. A fresh id forces a clean init every time.
+        // run particles.js against it. The unique id matters because
+        // particles.js v2 internally caches the target element ref;
+        // reusing the same id on re-init produces a blank canvas.
+        // Fresh id = clean init every time.
         const innerId = `particles-bg-inner-${++innerIdCounter}`;
         const inner = document.createElement("div");
         inner.id = innerId;
