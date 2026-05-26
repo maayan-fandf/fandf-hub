@@ -203,10 +203,15 @@ function loadParticlesScript(): Promise<void> {
   });
 }
 
-// Destroy any prior instance bound to our container so re-init doesn't
-// leak canvases + RAF loops. particles.js exposes its instances in
-// window.pJSDom — we filter the array in place to drop ours.
-function destroyExisting() {
+// Destroy every pJS instance whose canvas lives inside the given
+// wrapper. particles.js v2 exposes its instances on window.pJSDom but
+// its own destroypJS() does `pJSDom = null` against a local — so we
+// also splice the global array ourselves. Reliably tearing every
+// instance down is critical because the lib caches stale canvas refs
+// internally; re-init on the SAME element id silently produces a
+// blank canvas in v2 (see issue #97). Our fix is to always pair this
+// with a fresh inner div id (see renderCurrent below).
+function destroyInstancesInside(wrapper: HTMLElement) {
   const w = window as unknown as {
     pJSDom?: Array<{ pJS?: { canvas?: { el?: HTMLCanvasElement }; fn?: { vendors?: { destroypJS?: () => void } } } }>;
   };
@@ -214,7 +219,7 @@ function destroyExisting() {
   for (let i = w.pJSDom.length - 1; i >= 0; i--) {
     const inst = w.pJSDom[i];
     const canvasEl = inst?.pJS?.canvas?.el;
-    if (canvasEl && canvasEl.parentElement?.id === CONTAINER_ID) {
+    if (canvasEl && wrapper.contains(canvasEl)) {
       try {
         inst?.pJS?.fn?.vendors?.destroypJS?.();
       } catch {
@@ -223,13 +228,10 @@ function destroyExisting() {
       w.pJSDom.splice(i, 1);
     }
   }
-  // Also wipe any orphaned canvas children just in case destroypJS
-  // didn't fully clean up.
-  const container = document.getElementById(CONTAINER_ID);
-  if (container) {
-    container.querySelectorAll("canvas").forEach((c) => c.remove());
-  }
 }
+
+// Monotonic counter so each re-init gets a never-before-used DOM id.
+let innerIdCounter = 0;
 
 function currentMode(): "dark" | "light" {
   const t = document.documentElement.dataset.theme;
@@ -301,18 +303,43 @@ export default function ParticlesBackground() {
       // Stash on the closure so cleanup can disconnect.
       cleanupRef.current = () => {
         obs.disconnect();
-        destroyExisting();
+        const wrapper = containerRef.current;
+        if (wrapper) {
+          destroyInstancesInside(wrapper);
+          wrapper.innerHTML = "";
+        }
       };
 
       function renderCurrent() {
+        const wrapper = containerRef.current;
+        if (!wrapper) return;
         const w = window as unknown as { particlesJS?: (id: string, cfg: object) => void };
         if (typeof w.particlesJS !== "function") return;
-        destroyExisting();
+
+        // Step 1 — tear down every pJS instance bound to our wrapper.
+        destroyInstancesInside(wrapper);
+
+        // Step 2 — completely empty the wrapper. Belt-and-suspenders
+        // for any orphaned canvas elements destroypJS missed.
+        wrapper.innerHTML = "";
+
+        // Step 3 — create a brand-new inner div with a UNIQUE id and
+        // run particles.js against it. The unique id is the heart of
+        // the fix: particles.js v2's internal state caches the target
+        // element ref, so reusing the same id on re-init produces a
+        // blank canvas. A fresh id forces a clean init every time.
+        const innerId = `particles-bg-inner-${++innerIdCounter}`;
+        const inner = document.createElement("div");
+        inner.id = innerId;
+        inner.style.cssText =
+          "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
+        wrapper.appendChild(inner);
+
         const pair = PAIRS[pairIdxRef.current];
         const cfg = lastModeRef.current === "dark" ? pair.dark : pair.light;
-        w.particlesJS(CONTAINER_ID, buildParticlesConfig(cfg));
+        w.particlesJS(innerId, buildParticlesConfig(cfg));
         // Fade in once initialized.
-        containerRef.current?.classList.add("ready");
+        wrapper.classList.add("ready");
       }
     }
 
