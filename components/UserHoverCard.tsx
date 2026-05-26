@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import WhatsAppIcon from "./WhatsAppIcon";
+import GmailIcon from "./GmailIcon";
 
 /** Workspace enrichment fetched lazily on first open (mirrors the
  *  server-side `DirectoryUser` shape — kept inline so the client bundle
@@ -324,20 +326,6 @@ export default function UserHoverCard({
   const workDisplay = enriched?.workPhone || "";
   const whatsappUrl = mobileE164 ? `https://wa.me/${mobileE164}` : "";
 
-  async function copyEmail() {
-    try {
-      await navigator.clipboard.writeText(email);
-    } catch {
-      /* best-effort */
-    }
-  }
-  async function copyPhone(p: string) {
-    try {
-      await navigator.clipboard.writeText(p);
-    } catch {
-      /* best-effort */
-    }
-  }
 
   return createPortal(
     <div
@@ -364,9 +352,9 @@ export default function UserHoverCard({
           <div className="uhc-name" dir="auto">
             {name}
           </div>
-          {/* Two separate lines when both are set: Workspace jobTitle
-              (e.g., "Account Manager") + Hub role/department (e.g.,
-              "Media"). One subtitle line when only one is set. */}
+          {/* One subtitle line combining Workspace jobTitle + Hub role
+              (e.g., "Account Manager · Media"). Either side may be
+              empty; the separator is only rendered when both are set. */}
           {(jobTitle || role) && (
             <div className="uhc-role">
               {jobTitle && <span dir="auto">{jobTitle}</span>}
@@ -382,73 +370,34 @@ export default function UserHoverCard({
             <a href={`mailto:${email}`} dir="ltr">
               {email}
             </a>
-            <button
-              type="button"
-              className="uhc-copy-btn"
-              onClick={copyEmail}
-              title="העתק כתובת"
-              aria-label="העתק כתובת"
-            >
-              📋
-            </button>
           </div>
+          {/* Phone INLINE in the head, under the email — mobile
+              preferred, work as fallback. The number itself is a `tel:`
+              link; copy is via the OS context menu / select-and-copy. */}
+          {(mobileDisplay || workDisplay) && (
+            <div className="uhc-phone-line">
+              <span aria-hidden>{mobileDisplay ? "📱" : "☎️"}</span>
+              <a
+                className="uhc-phone-link"
+                href={`tel:${mobileDisplay ? (mobileE164 ? "+" + mobileE164 : mobileDisplay) : workDisplay}`}
+                dir="ltr"
+              >
+                {mobileDisplay || workDisplay}
+              </a>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Phone numbers row (mobile + work). Hidden when the directory
-          has nothing — pure progressive enhancement on top of the v1
-          layout. Each number is a tel: link with a copy button beside it. */}
-      {(mobileDisplay || workDisplay) && (
-        <div className="uhc-phones">
-          {mobileDisplay && (
-            <div className="uhc-phone">
-              <span className="uhc-phone-label" aria-hidden>
-                📱
-              </span>
-              <a href={`tel:${mobileE164 ? "+" + mobileE164 : mobileDisplay}`} dir="ltr">
-                {mobileDisplay}
-              </a>
-              <button
-                type="button"
-                className="uhc-copy-btn"
-                onClick={() => copyPhone(mobileDisplay)}
-                title="העתק מספר נייד"
-                aria-label="העתק מספר נייד"
-              >
-                📋
-              </button>
-            </div>
-          )}
-          {workDisplay && (
-            <div className="uhc-phone">
-              <span className="uhc-phone-label" aria-hidden>
-                ☎️
-              </span>
-              <a href={`tel:${workDisplay}`} dir="ltr">
-                {workDisplay}
-              </a>
-              <button
-                type="button"
-                className="uhc-copy-btn"
-                onClick={() => copyPhone(workDisplay)}
-                title="העתק מספר עבודה"
-                aria-label="העתק מספר עבודה"
-              >
-                📋
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* External actions row (Google / WhatsApp). Vertical icon-over-
+          label layout (Variant B) — same buttons fit in a tighter
+          single row regardless of label length. */}
       <div className="uhc-actions">
-        <a
-          className="uhc-action"
-          href={`mailto:${email}`}
-          title="שלח אימייל"
-        >
-          <span aria-hidden>✉️</span>
-          <span>אימייל</span>
+        <a className="uhc-action" href={`mailto:${email}`} title="שלח אימייל">
+          <span className="uhc-action-icon" aria-hidden>
+            <GmailIcon size="18" />
+          </span>
+          <span className="uhc-action-label">Gmail</span>
         </a>
         {whatsappUrl && (
           <a
@@ -458,8 +407,10 @@ export default function UserHoverCard({
             rel="noopener noreferrer"
             title={`פתח שיחת WhatsApp · ${mobileDisplay}`}
           >
-            <span aria-hidden>💬</span>
-            <span>WhatsApp</span>
+            <span className="uhc-action-icon" aria-hidden>
+              <WhatsAppIcon size="18" />
+            </span>
+            <span className="uhc-action-label">WhatsApp</span>
           </a>
         )}
         <a
@@ -469,8 +420,10 @@ export default function UserHoverCard({
           rel="noopener noreferrer"
           title="קבע פגישה ב-Calendar (האדם נוסף כאורח)"
         >
-          <span aria-hidden>📅</span>
-          <span>פגישה</span>
+          <span className="uhc-action-icon" aria-hidden>
+            📅
+          </span>
+          <span className="uhc-action-label">פגישה</span>
         </a>
         {isFandf && (
           <a
@@ -480,25 +433,37 @@ export default function UserHoverCard({
             rel="noopener noreferrer"
             title="פתח ב-Google Contacts"
           >
-            <span aria-hidden>👤</span>
-            <span>איש קשר</span>
+            <span className="uhc-action-icon" aria-hidden>
+              👤
+            </span>
+            <span className="uhc-action-label">איש קשר</span>
           </a>
         )}
       </div>
 
+      {/* Hub-internal actions row — visually grouped separately so it's
+          clear these stay in the Hub, the row above leaves it. */}
       {isFandf && (
         <div className="uhc-actions uhc-actions-hub">
-          <a className="uhc-action uhc-action-hub" href={tasksUrl} title="המשימות שלו/ה">
-            <span aria-hidden>📋</span>
-            <span>המשימות שלו/ה</span>
+          <a
+            className="uhc-action uhc-action-hub"
+            href={tasksUrl}
+            title="המשימות שלו/ה"
+          >
+            <span className="uhc-action-icon" aria-hidden>
+              📋
+            </span>
+            <span className="uhc-action-label">המשימות שלו/ה</span>
           </a>
           <a
             className="uhc-action uhc-action-hub"
             href={newTaskUrl}
             title="הקצה משימה חדשה"
           >
-            <span aria-hidden>➕</span>
-            <span>הקצה משימה</span>
+            <span className="uhc-action-icon" aria-hidden>
+              ➕
+            </span>
+            <span className="uhc-action-label">הקצה משימה</span>
           </a>
         </div>
       )}

@@ -12356,10 +12356,10 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(15, 23, 42, .14), 0 2px 6px rgba(15, 23, 42, .08);
-  padding: 14px 14px 12px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   font-size: 13.5px;
   animation: uhc-fade-in .12s ease-out;
 }
@@ -12373,7 +12373,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   align-items: center;
 }
 .uhc-avatar {
-  width: 52px; height: 52px;
+  width: 44px; height: 44px;
   border-radius: 999px;
   overflow: hidden;
   background: var(--accent-soft, #e7f0ff);
@@ -12388,7 +12388,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   display: block;
 }
 .uhc-initials {
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--accent, #4338ca);
 }
@@ -12400,7 +12400,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   gap: 2px;
 }
 .uhc-name {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--text);
   overflow: hidden;
@@ -12415,27 +12415,22 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
   gap: 6px;
 }
 .uhc-role-sep { opacity: .5; }
-/* Phone block (v2): mobile + work. Each row is a tel: link + copy btn. */
-.uhc-phones {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 0 0;
-  border-top: 1px solid var(--border, #e5e7eb);
-}
-.uhc-phone {
+/* Phone-line (v3, Variant B): inline in the head, under the email.
+   One line — mobile preferred, work fallback. No separate phones block
+   and no copy button (right-click → copy still works on the tel: link). */
+.uhc-phone-line {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   font-size: 12.5px;
+  color: var(--muted, #475569);
 }
-.uhc-phone-label { font-size: 13px; opacity: .8; }
-.uhc-phone a {
+.uhc-phone-link {
   color: var(--accent, #2a66d9);
   text-decoration: none;
   font-variant-numeric: tabular-nums;
 }
-.uhc-phone a:hover { text-decoration: underline; }
+.uhc-phone-link:hover { text-decoration: underline; }
 .uhc-email {
   display: inline-flex;
   align-items: center;
@@ -12475,17 +12470,17 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .uhc-action {
   flex: 1;
-  min-width: 84px;
+  min-width: 0;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 7px 10px;
-  border-radius: 8px;
+  gap: 2px;
+  padding: 6px 4px;
+  height: 50px;
+  border-radius: 9px;
   background: var(--accent-soft, #eef2ff);
   color: var(--text, #1f2430);
-  font-size: 12.5px;
-  font-weight: 500;
   text-decoration: none;
   border: 1px solid transparent;
   transition: background .12s, border-color .12s;
@@ -12493,6 +12488,16 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .uhc-action:hover {
   background: var(--accent-soft, #dbe4ff);
   border-color: var(--accent, #6366f1);
+}
+.uhc-action-icon { font-size: 16px; line-height: 1; }
+.uhc-action-label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .uhc-action-hub {
   /* Slightly lighter to visually echo "this stays in the Hub" vs the

@@ -85,6 +85,19 @@ function pickPrimaryByType(
   return String((primary || matches[0]).value || "").trim();
 }
 
+/** Does this phone-number string look like an Israeli mobile? Used as a
+ *  fallback when no explicitly Mobile-typed phone is on the Workspace
+ *  profile but a "Work"-typed one is actually a mobile number (very
+ *  common at F&F — most teammates have their cellphone filed as Work).
+ *  Israeli mobile shapes: 10 digits "05X-XXX-XXXX" (local) or 12 digits
+ *  "+972 5X-XXX-XXXX" (intl). */
+function looksLikeIsraeliMobile(raw: string): boolean {
+  const d = digitsOnly(raw);
+  if (/^972[5][0-9]{8}$/.test(d)) return true;   // +972-5X-XXXXXXX
+  if (/^05[0-9]{8}$/.test(d)) return true;       // 05X-XXXXXXX local
+  return false;
+}
+
 export async function getDirectoryUser(
   email: string,
 ): Promise<DirectoryUser | null> {
@@ -106,8 +119,26 @@ export async function getDirectoryUser(
       return null;
     }
     const phonesArr = Array.isArray(u.phones) ? u.phones : [];
-    const mobileRaw = pickPrimaryByType(phonesArr, "mobile");
-    const workRaw = pickPrimaryByType(phonesArr, "work");
+    const mobileExplicit = pickPrimaryByType(phonesArr, "mobile");
+    const workExplicit = pickPrimaryByType(phonesArr, "work");
+    // Fallback: if there's no explicit Mobile-typed phone but ANY phone
+    // on the profile is shaped like an Israeli mobile (+972 5… / 05…),
+    // treat IT as the mobile. Necessary because the F&F team typically
+    // files their cellphone under "Work" type.
+    let mobileRaw = mobileExplicit;
+    if (!mobileRaw) {
+      const m = phonesArr.find((p) =>
+        looksLikeIsraeliMobile(String((p && p.value) || "")),
+      );
+      mobileRaw = m ? String((m && m.value) || "").trim() : "";
+    }
+    // If we "promoted" a work-typed number to mobile (same digits), drop
+    // it from the workPhone field so the card doesn't show the same
+    // number twice.
+    const workRaw =
+      workExplicit && digitsOnly(workExplicit) !== digitsOnly(mobileRaw)
+        ? workExplicit
+        : "";
     const orgs = Array.isArray(u.organizations) ? u.organizations : [];
     const primaryOrg =
       orgs.find((o) => o && o.primary) || orgs[0] || ({} as { title?: string; department?: string });
