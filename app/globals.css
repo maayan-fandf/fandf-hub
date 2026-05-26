@@ -12350,7 +12350,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 .user-hover-card {
   position: fixed;
   z-index: 1200;
-  width: 340px;
+  width: 360px;
   background: var(--surface, #fff);
   color: var(--text, #1f2430);
   border: 1px solid var(--border, #e5e7eb);

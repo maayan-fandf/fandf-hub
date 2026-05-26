@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import WhatsAppIcon from "./WhatsAppIcon";
 import GmailIcon from "./GmailIcon";
+import { roleEmoji } from "./RoleChip";
 
 /** Workspace enrichment fetched lazily on first open (mirrors the
  *  server-side `DirectoryUser` shape — kept inline so the client bundle
@@ -143,9 +144,9 @@ export default function UserHoverCard({
     const r = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    // Card is ~340 wide × ~280 tall in v1.
-    const cw = 340;
-    const ch = 280;
+    // Card is ~360 wide × ~260 tall in v3 (Variant B).
+    const cw = 360;
+    const ch = 260;
     const margin = 8;
     // Default: open BELOW the trigger, RIGHT-aligned in LTR, LEFT-
     // aligned in RTL. Flip above if it would overflow the viewport.
@@ -315,6 +316,11 @@ export default function UserHoverCard({
     : "";
   const calendarUrl = `https://calendar.google.com/calendar/u/0/r/eventedit?add=${encodeURIComponent(email)}${authQ}`;
   const contactsUrl = `https://contacts.google.com/${encodeURIComponent(email)}${authQ1}`;
+  // Open Gmail's compose UI directly (not `mailto:` — that handed the
+  // click to the OS default mail handler, which often isn't Gmail, so
+  // the button looked broken vs. the plain email link). `view=cm fs=1`
+  // is Google's documented "open a fullscreen compose window" combo.
+  const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}${authQ}`;
   const tasksUrl = `/tasks?assignee=${encodeURIComponent(email)}`;
   const newTaskUrl = `/tasks/new?assignees=${encodeURIComponent(email)}`;
 
@@ -352,9 +358,10 @@ export default function UserHoverCard({
           <div className="uhc-name" dir="auto">
             {name}
           </div>
-          {/* One subtitle line combining Workspace jobTitle + Hub role
-              (e.g., "Account Manager · Media"). Either side may be
-              empty; the separator is only rendered when both are set. */}
+          {/* Subtitle: Workspace jobTitle + Hub role/department (with
+              role's emoji from RoleChip). Email + phone removed from the
+              head — they're redundant with the Gmail / 📞 / WhatsApp
+              action buttons below. */}
           {(jobTitle || role) && (
             <div className="uhc-role">
               {jobTitle && <span dir="auto">{jobTitle}</span>}
@@ -363,27 +370,14 @@ export default function UserHoverCard({
                   ·
                 </span>
               )}
-              {role && <span dir="auto">{role}</span>}
-            </div>
-          )}
-          <div className="uhc-email">
-            <a href={`mailto:${email}`} dir="ltr">
-              {email}
-            </a>
-          </div>
-          {/* Phone INLINE in the head, under the email — mobile
-              preferred, work as fallback. The number itself is a `tel:`
-              link; copy is via the OS context menu / select-and-copy. */}
-          {(mobileDisplay || workDisplay) && (
-            <div className="uhc-phone-line">
-              <span aria-hidden>{mobileDisplay ? "📱" : "☎️"}</span>
-              <a
-                className="uhc-phone-link"
-                href={`tel:${mobileDisplay ? (mobileE164 ? "+" + mobileE164 : mobileDisplay) : workDisplay}`}
-                dir="ltr"
-              >
-                {mobileDisplay || workDisplay}
-              </a>
+              {role && (
+                <>
+                  {roleEmoji(role) && (
+                    <span aria-hidden>{roleEmoji(role)}</span>
+                  )}
+                  <span dir="auto">{role}</span>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -393,7 +387,13 @@ export default function UserHoverCard({
           label layout (Variant B) — same buttons fit in a tighter
           single row regardless of label length. */}
       <div className="uhc-actions">
-        <a className="uhc-action" href={`mailto:${email}`} title="שלח אימייל">
+        <a
+          className="uhc-action"
+          href={gmailComposeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`פתח Gmail עם ${email}`}
+        >
           <span className="uhc-action-icon" aria-hidden>
             <GmailIcon size="18" />
           </span>
@@ -411,6 +411,18 @@ export default function UserHoverCard({
               <WhatsAppIcon size="18" />
             </span>
             <span className="uhc-action-label">WhatsApp</span>
+          </a>
+        )}
+        {(mobileDisplay || workDisplay) && (
+          <a
+            className="uhc-action"
+            href={`tel:${mobileDisplay ? (mobileE164 ? "+" + mobileE164 : mobileDisplay) : workDisplay}`}
+            title={`חייג ${mobileDisplay || workDisplay}`}
+          >
+            <span className="uhc-action-icon" aria-hidden>
+              📞
+            </span>
+            <span className="uhc-action-label">חיוג</span>
           </a>
         )}
         <a
