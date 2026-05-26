@@ -18980,8 +18980,14 @@ button.budget-need:focus-visible {
    and z-index:-1 so it can never intercept clicks meant for the
    content above. A slow opacity-pulse adds a subtle living quality
    without burning CPU on per-star canvas animation. */
-html[data-theme="dark"] body {
+/* Deep-navy lives on <html> (not <body>) so the body::before pseudo at
+   z-index:-1 paints ABOVE the base color rather than behind it. Body
+   stays transparent so the starfield is actually visible. */
+html[data-theme="dark"] {
   background-color: #0a0a1a;
+}
+html[data-theme="dark"] body {
+  background-color: transparent;
 }
 html[data-theme="dark"] body::before {
   content: "";
