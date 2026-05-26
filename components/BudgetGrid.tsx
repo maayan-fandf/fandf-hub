@@ -778,6 +778,19 @@ function CampaignRow({
   const [draft, setDraft] = useState(String(Math.round(r.budget)));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  // Click-to-copy on the colored daily-required badge (just the number,
+  // no slug, no platform open — the heavier "⧉ open + copy slug" button
+  // beside it covers that workflow).
+  const [numCopied, setNumCopied] = useState(false);
+  async function copyDailyNumber() {
+    try {
+      await navigator.clipboard.writeText(String(Math.max(0, Math.round(r.dailyRequired))));
+      setNumCopied(true);
+      setTimeout(() => setNumCopied(false), 1500);
+    } catch {
+      /* best-effort */
+    }
+  }
   const [savedFlash, setSavedFlash] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
 
@@ -949,10 +962,18 @@ function CampaignRow({
             {/* Action arrow by the configured-vs-required gap: ⬆ raise when
                 the platform daily is below נדרש, ⬇ lower when above. No
                 arrow / neutral when it's already set right. */}
-            <span className={`budget-need pace-${actionTone}`}>
+            <button
+              type="button"
+              className={`budget-need pace-${actionTone} budget-need-copy${
+                numCopied ? " is-copied" : ""
+              }`}
+              onClick={copyDailyNumber}
+              title={numCopied ? "✓ הועתק" : "לחץ להעתקת הסכום"}
+              aria-label={`העתק ₪${dailyReq.toLocaleString("he-IL")}`}
+            >
               ₪{dailyReq.toLocaleString("he-IL")}
               {actionTone === "over" ? " ⬇" : actionTone === "under" ? " ⬆" : ""}
-            </span>
+            </button>
             <CopyAmountButton
               amount={String(dailyReq)}
               variant="ghost"
@@ -1297,13 +1318,42 @@ function groupAccountUrl(
   adLinks: Record<string, ProjLinks>,
   platform: "google" | "facebook",
 ): string | undefined {
-  const set = new Set<string>();
+  // Identify the ACCOUNT for each project by stripping the per-project
+  // `filter_set` from its URL — so projects sharing a single FB/Google
+  // account collate to one key. When the whole group resolves to one
+  // account, return an ACCOUNT-level URL (filter_set stripped): the
+  // manager/company button intent is "open the account", not "filter
+  // to the first project's campaigns".
+  //
+  // (Before this strip, restoring per-project filter_set made every
+  // project's URL unique → set.size > 1 → undefined → the icon
+  // degraded to a non-clickable placeholder. 2026-05-25.)
+  const accountKeys = new Set<string>();
+  let firstUrl: string | undefined;
   for (const p of projects) {
     const a = adLinks[p.tab.toLowerCase()];
     const u = platform === "google" ? a?.gAdsUrl : a?.fbAdsUrl;
-    if (u) set.add(u);
+    if (!u) continue;
+    let key = u;
+    try {
+      const parsed = new URL(u);
+      parsed.searchParams.delete("filter_set");
+      parsed.searchParams.sort();
+      key = parsed.toString();
+    } catch {
+      /* unparseable — fall back to full-URL identity */
+    }
+    accountKeys.add(key);
+    if (!firstUrl) firstUrl = u;
   }
-  return set.size === 1 ? [...set][0] : undefined;
+  if (accountKeys.size !== 1 || !firstUrl) return undefined;
+  try {
+    const parsed = new URL(firstUrl);
+    parsed.searchParams.delete("filter_set");
+    return parsed.toString();
+  } catch {
+    return firstUrl;
+  }
 }
 
 /** Active/paused dot for a row's matched FB/Google campaigns. */

@@ -18642,6 +18642,24 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-need.pace-under { background: rgba(245,158,11,.18); color: #fcd34d; }
 .budget-need.pace-ok    { background: rgba(34,197,94,.15);  color: #86efac; }
 .budget-need.pace-none  { color: var(--text); }
+/* When rendered as a <button> (the click-to-copy variant), reset the
+   browser's button chrome so the colored pill looks identical to its
+   pre-click span form, just clickable. */
+button.budget-need {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+button.budget-need:hover { filter: brightness(1.08); }
+button.budget-need:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 1px;
+}
+.budget-need-copy.is-copied {
+  background: rgba(34,197,94,.32) !important;
+  color: #d1fae5 !important;
+  transition: background .15s, color .15s;
+}
 
 .pace-val { font-weight: 700; }
 .pace-val.pace-under { color: #f59e0b; }
