@@ -42,6 +42,7 @@ import UserSettingsMenu from "@/components/UserSettingsMenu";
 import TopnavUserMenu from "@/components/TopnavUserMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
+import ParticlesBackground from "@/components/ParticlesBackground";
 import TopProgressBar from "@/components/TopProgressBar";
 import AgendaPanel from "@/components/AgendaPanel";
 import LightboxProvider from "@/components/LightboxProvider";
@@ -204,6 +205,12 @@ export default async function RootLayout({
         />
       </head>
       <body>
+        {/* Ambient particles backdrop — first in body so it sits behind
+            every other element (also z-index:-1 in CSS as belt-and-
+            suspenders). Renders nothing for prefers-reduced-motion
+            users; otherwise rotates through 4 dark/light pairs on
+            each theme toggle. */}
+        <ParticlesBackground />
         {/* Suspense boundary required by Next.js 15 for any client component
             that reads useSearchParams (TopProgressBar uses it to detect
             navigation completion on ?-param changes). */}

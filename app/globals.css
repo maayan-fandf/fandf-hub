@@ -442,7 +442,6 @@ body {
   line-height: var(--md-sys-typescale-body-large-line-height);
   font-weight: var(--md-sys-typescale-body-large-weight);
   letter-spacing: var(--md-sys-typescale-body-large-tracking);
-  background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   /* Prevent any single element (esp. the topnav before wrap kicks in)
@@ -454,6 +453,53 @@ body {
      reason for existing on long-scroll pages. `clip` is supported in
      all evergreen browsers (Chrome 90+, Firefox 81+, Safari 16+). */
   overflow-x: clip;
+}
+
+/* Solid page bg lives on <html> only — body is transparent so the
+   particles canvas (mounted as a body child at z-index:-1) can show
+   through. Without this split, body's bg would paint over the
+   negative-z canvas and the particles would be invisible. */
+html {
+  background: var(--bg);
+}
+body {
+  background: transparent;
+}
+
+/* ParticlesBackground container — animated ambient backdrop behind
+   every page. Position:fixed inset:0 keeps the canvas glued to the
+   viewport regardless of scroll. z-index:-1 puts it behind all
+   in-flow body content (which paints in stacking-order step 3, ahead
+   of negative-z descendants in step 2). pointer-events:none means it
+   never intercepts clicks. Fade-in on `.ready` masks the moment when
+   particles.js is still loading from the CDN. The component itself
+   handles theme-pair rotation — see components/ParticlesBackground.tsx
+   for the four-pair scheme and the toggle rule. */
+#particles-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+#particles-bg.ready {
+  opacity: 1;
+}
+#particles-bg canvas {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+/* Respect users who've asked the OS for reduced motion — kill the
+   particles entirely (don't load the canvas content). Cheaper than
+   trying to "still show, but static" because particles.js relies on
+   constant RAF; the simpler path is a clean hide. */
+@media (prefers-reduced-motion: reduce) {
+  #particles-bg {
+    display: none;
+  }
 }
 
 /* ─── M3 typescale on global headings ──────────────────────────────
@@ -18972,69 +19018,7 @@ button.budget-need:focus-visible {
 .prisa-thumb-wrap { display: flex; justify-content: center; }
 .prisa-thumb-wrap img { max-width: 100%; height: auto; border-radius: 8px; }
 
-/* ── Dark-theme starfield background (aitool.co.il-inspired) ────────
-   Deep-navy base + two soft radial-gradient glows + a tiled SVG
-   starfield, fixed to the viewport so it stays put while content
-   scrolls. Light theme is untouched — the whole block is gated on
-   html[data-theme="dark"]. The pseudo-element gets pointer-events:none
-   and z-index:-1 so it can never intercept clicks meant for the
-   content above. A slow opacity-pulse adds a subtle living quality
-   without burning CPU on per-star canvas animation. */
-/* Deep-navy lives on <html> (not <body>) so the body::before pseudo at
-   z-index:-1 paints ABOVE the base color rather than behind it. Body
-   stays transparent so the starfield is actually visible. */
-html[data-theme="dark"] {
-  background-color: #0a0a1a;
-}
-html[data-theme="dark"] body {
-  background-color: transparent;
-}
-/* Layered pseudos for a real per-tile twinkle effect: ::before holds
-   the nebula glow + one set of stars on a 380px tile fading in;
-   ::after holds a SECOND star set on a 420px tile fading the OPPOSITE
-   way. With different periods (5s vs 7s) and opposite-phase
-   keyframes, stars from the two layers brighten and dim out of sync,
-   so the eye reads it as individual stars twinkling at different
-   rates — closer to aitool's per-star canvas animation, but pure CSS. */
-html[data-theme="dark"] body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    /* Upper purple glow (gentler than v1) */
-    radial-gradient(ellipse 70% 50% at 50% 25%, rgba(124, 58, 237, 0.13), transparent 65%) center / cover no-repeat,
-    /* Lower violet glow */
-    radial-gradient(ellipse 55% 35% at 50% 95%, rgba(99, 102, 241, 0.09), transparent 70%) center / cover no-repeat,
-    /* Star tile A — 12 stars in a 200×200 viewBox, tiled at 380px. */
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><g fill='%23ffffff'><circle cx='25' cy='18' r='1.2'/><circle cx='80' cy='32' r='1.5'/><circle cx='155' cy='22' r='1'/><circle cx='190' cy='60' r='1.2'/><circle cx='45' cy='80' r='1.5'/><circle cx='115' cy='95' r='1.2'/><circle cx='30' cy='130' r='1'/><circle cx='88' cy='145' r='1.5'/><circle cx='185' cy='175' r='1'/></g><g fill='%2367e8f9'><circle cx='175' cy='110' r='1.4'/><circle cx='140' cy='155' r='1.2'/><circle cx='60' cy='188' r='1.4'/></g></svg>")
-      0 0 / 380px 380px repeat;
-  animation: starfield-twinkle-a 5s ease-in-out infinite alternate;
-}
-html[data-theme="dark"] body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  /* Star tile B — different 12 stars in a 200×200 viewBox, tiled at
-     a slightly different size (420px) so the two tiles never line up. */
-  background:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><g fill='%23ffffff'><circle cx='12' cy='50' r='1'/><circle cx='60' cy='12' r='1.3'/><circle cx='105' cy='50' r='1.1'/><circle cx='170' cy='75' r='1.3'/><circle cx='8' cy='95' r='1'/><circle cx='75' cy='65' r='1.2'/><circle cx='52' cy='110' r='1'/><circle cx='95' cy='170' r='1'/><circle cx='118' cy='192' r='1.1'/></g><g fill='%2367e8f9'><circle cx='130' cy='122' r='1.4'/><circle cx='162' cy='140' r='1.2'/><circle cx='15' cy='165' r='1.3'/></g></svg>")
-      0 0 / 420px 420px repeat;
-  animation: starfield-twinkle-b 7s ease-in-out infinite alternate;
-}
-@keyframes starfield-twinkle-a {
-  from { opacity: 0.3; }
-  to   { opacity: 1; }
-}
-@keyframes starfield-twinkle-b {
-  from { opacity: 1; }
-  to   { opacity: 0.3; }
-}
-/* Respect users with reduced-motion preference. */
-@media (prefers-reduced-motion: reduce) {
-  html[data-theme="dark"] body::before,
-  html[data-theme="dark"] body::after { animation: none; opacity: 0.85; }
-}
+/* Legacy CSS starfield removed 2026-05-27 — replaced by particles.js
+   ambient background (see #particles-bg + ParticlesBackground.tsx).
+   The particles canvas covers both dark + light themes and rotates
+   through four palette pairs on every theme toggle. */
