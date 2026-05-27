@@ -977,20 +977,28 @@ function CampaignRow({
             <CopyAmountButton
               amount={String(dailyReq)}
               variant="ghost"
-              // When this row's platform has an "open account" deep-link,
-              // the button ALSO opens the platform and copies a filter
-              // token for the native campaign search (the budget number
-              // stays one back in clipboard history). FB → this row's
-              // campaign type (the account is project-scoped, so the סוג
-              // narrows to THIS campaign); Google → the project slug.
-              // Falls back to plain copy-number when no link is available.
-              url={platformUrl}
+              // FB row: open Ads Manager already filtered for BOTH the
+              // project slug (already in the base fbAdsUrl) AND this
+              // row's type slug — both as CONTAINS_ALL terms in the
+              // filter_set, so FB shows only campaigns whose name
+              // contains both. The clipboard then only needs the daily
+              // number (no campaign identifier to paste). Owner asked
+              // 2026-05-27.
+              // Google row: unchanged — opens the account and copies
+              // the project slug so the user can paste it into FB-
+              // -style search inside Google's UI (which doesn't take
+              // a slug filter via URL). Budget number stays one back
+              // in clipboard history.
+              url={
+                r.platform === "facebook" && platformUrl
+                  ? fbUrlWithExtraFilter(
+                      platformUrl,
+                      r.campaignType?.trim() || "",
+                    )
+                  : platformUrl
+              }
               copyId={
-                platformUrl
-                  ? r.platform === "facebook"
-                    ? r.campaignType?.trim() || tab
-                    : tab
-                  : undefined
+                platformUrl && r.platform !== "facebook" ? tab : undefined
               }
               label={platformUrl ? "⧉" : "📋"}
             />
@@ -1353,6 +1361,65 @@ function groupAccountUrl(
     return parsed.toString();
   } catch {
     return firstUrl;
+  }
+}
+
+/**
+ * Take a project-scoped FB Ads Manager URL (built by Apps Script with
+ * filter_set = CONTAINS_ALL(["project-slug-1", "project-slug-2", ...]))
+ * and add the per-row type slug (e.g. "wl") to the same CONTAINS_ALL
+ * list. Result: FB now shows only campaigns whose name contains BOTH
+ * the project slug AND the type slug.
+ *
+ * filter_set format (from Apps Script Code.js, verified against a
+ * working captured URL): the param value is
+ *     <FIELD>-STRING<OP><wrapped>
+ * where the third part is JSON.stringify(JSON.stringify([...])) —
+ * a double-stringified array so the inner JSON survives a round trip
+ * through FB's quirky parser.
+ *
+ * Best-effort: any parse failure returns the input URL unchanged so
+ * we never break the "open" behavior, only the extra filter. Returns
+ * the input when typeSlug is empty (caller usually passes
+ * r.campaignType?.trim() || "").
+ */
+function fbUrlWithExtraFilter(fbAdsUrl: string, typeSlug: string): string {
+  if (!fbAdsUrl || !typeSlug) return fbAdsUrl;
+  const RS = "";
+  try {
+    const u = new URL(fbAdsUrl);
+    const fsRaw = u.searchParams.get("filter_set");
+    if (!fsRaw) {
+      // No existing filter_set (= account-level URL) — build a fresh
+      // CONTAINS_ALL with just the type slug. Unlikely on the per-row
+      // surface (rows live under a project-scoped fbAdsUrl) but
+      // handled for completeness.
+      const inner = JSON.stringify([typeSlug]);
+      const wrapped = JSON.stringify(inner);
+      u.searchParams.set(
+        "filter_set",
+        "SEARCH_BY_CAMPAIGN_GROUP_NAME-STRING" + RS + "CONTAINS_ALL" + RS + wrapped,
+      );
+      return u.toString();
+    }
+    const parts = fsRaw.split(RS);
+    if (parts.length !== 3) return fbAdsUrl;
+    const field = parts[0];
+    const op = parts[1];
+    const wrapped = parts[2];
+    const inner = JSON.parse(wrapped) as string;
+    const arr = JSON.parse(inner) as unknown;
+    if (!Array.isArray(arr)) return fbAdsUrl;
+    const lc = typeSlug.toLowerCase();
+    if (!arr.some((v) => String(v).toLowerCase() === lc)) {
+      arr.push(typeSlug);
+    }
+    const newInner = JSON.stringify(arr);
+    const newWrapped = JSON.stringify(newInner);
+    u.searchParams.set("filter_set", field + RS + op + RS + newWrapped);
+    return u.toString();
+  } catch {
+    return fbAdsUrl;
   }
 }
 
