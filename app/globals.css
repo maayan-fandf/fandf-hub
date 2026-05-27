@@ -11199,6 +11199,49 @@ html[data-theme="dark"] .tasks-substatus-rejected {
   background: var(--surface-soft);
   border-color: var(--accent);
 }
+/* Pause/resume time-tracker variant — green when the timer is
+   running (= the visible signal "this is what's eating your hours
+   right now"), amber when paused. Coloring the whole icon (vs.
+   leaving it neutral) so a busy queue row makes the running task
+   obvious without needing to read the icon glyph. */
+button.tasks-row-icon-timer {
+  font-family: inherit;
+  font-size: 1.05em;
+  cursor: pointer;
+  padding: 0;
+}
+button.tasks-row-icon-timer:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+.tasks-row-icon-timer.is-running {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #047857;
+}
+.tasks-row-icon-timer.is-running:hover {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: rgba(16, 185, 129, 0.55);
+}
+[data-theme="dark"] .tasks-row-icon-timer.is-running {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+.tasks-row-icon-timer.is-paused {
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #92400e;
+}
+.tasks-row-icon-timer.is-paused:hover {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.55);
+}
+[data-theme="dark"] .tasks-row-icon-timer.is-paused {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fcd34d;
+}
 /* Comment-count badge — overlays top-right of the 💬 icon when the
    task has at least one comment. Position matches standard
    notification-chip conventions. */

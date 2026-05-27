@@ -39,6 +39,7 @@ export type TasksSortOrder = "asc" | "desc";
 import TaskStatusCell, { STATUS_EMOJIS } from "@/components/TaskStatusCell";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
+import TaskTimePauseIcon from "@/components/TaskTimePauseIcon";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import TasksBulkBar from "@/components/TasksBulkBar";
 import {
@@ -1818,6 +1819,13 @@ function TaskRow({
           {/* Edit shortcut — author-only OR admin. Mirrors the
               server-side gate in lib/tasksWriteDirect.ts so a user
               who can't actually save isn't shown the affordance. */}
+          {/* Pause/resume time-tracking — only renders for in_progress
+              tasks without a manual override. Wired to the same
+              /api/tasks/time-pause backend as TaskTimeTracker. Sits
+              first in the action row so it's reachable without
+              scanning past other icons; component self-hides for
+              every other status so the row chrome doesn't shift. */}
+          <TaskTimePauseIcon task={task} />
           {(isAdmin ||
             (task.author_email &&
               userEmail &&
