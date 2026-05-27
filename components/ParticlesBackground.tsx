@@ -43,6 +43,11 @@ type ParticlesCfg = {
   speed: number;
   direction?: "none" | "top" | "bottom" | "left" | "right";
   mode?: "grab" | "bubble";
+  /** Full CSS `background` value applied to the canvas wrapper.
+   *  Combines a soft radial glow + a vertical linear gradient — gives
+   *  each pair its own scene rather than a flat M3 surface. Ported
+   *  1:1 from the localhost:4321 mockup the owner approved. */
+  bg: string;
 };
 
 type Pair = { name: string; dark: ParticlesCfg; light: ParticlesCfg };
@@ -56,6 +61,7 @@ const PAIRS: Pair[] = [
       opacity: 0.55, opacityMin: 0.15, size: 2.5,
       linkColor: "#3b82f6", linkOpacity: 0.15, linkOpacityHover: 0.4,
       speed: 0.6, direction: "none", mode: "grab",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 30%, rgba(59,130,246,.06), transparent 70%), linear-gradient(180deg, #060916 0%, #0b1430 50%, #060916 100%)",
     },
     light: {
       count: 70, area: 900,
@@ -63,6 +69,7 @@ const PAIRS: Pair[] = [
       opacity: 0.7, opacityMin: 0.25, size: 2.8,
       linkColor: "#8b5cf6", linkOpacity: 0.22, linkOpacityHover: 0.5,
       speed: 0.6, direction: "none", mode: "grab",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 30%, rgba(167,139,250,.10), transparent 70%), linear-gradient(180deg, #faf5ff 0%, #f3e8ff 50%, #faf5ff 100%)",
     },
   },
   {
@@ -76,12 +83,14 @@ const PAIRS: Pair[] = [
       colors: ["#ffffff"],
       opacity: 0.55, opacityMin: 0.15, size: 2.6, link: false,
       speed: 1.1, direction: "bottom", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 35%, rgba(100,150,220,.08), transparent 70%), linear-gradient(180deg, #020617 0%, #0f172a 50%, #020617 100%)",
     },
     light: {
       count: 90, area: 800,
       colors: ["#bfdbfe", "#dbeafe", "#ffffff"],
       opacity: 0.85, opacityMin: 0.4, size: 3.5, link: false,
       speed: 1.5, direction: "bottom", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 35%, rgba(147,197,253,.10), transparent 70%), linear-gradient(180deg, #f8fafc 0%, #e0f2fe 50%, #f8fafc 100%)",
     },
   },
   {
@@ -92,12 +101,14 @@ const PAIRS: Pair[] = [
       opacity: 0.7, opacityMin: 0.2, size: 4.5,
       linkColor: "#a855f7", linkOpacity: 0.18, linkOpacityHover: 0.5,
       speed: 0.5, direction: "none", mode: "grab",
+      bg: "radial-gradient(ellipse 70% 60% at 50% 45%, rgba(168,85,247,.10), transparent 65%), linear-gradient(180deg, #0a0915 0%, #15102a 50%, #0a0915 100%)",
     },
     light: {
       count: 60, area: 900,
       colors: ["#fbcfe8", "#f9a8d4", "#fda4af", "#fecdd3"],
       opacity: 0.85, opacityMin: 0.35, size: 4, link: false,
       speed: 1.2, direction: "bottom", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 30%, rgba(244,114,182,.12), transparent 70%), linear-gradient(180deg, #fdf2f8 0%, #fce7f3 50%, #fdf2f8 100%)",
     },
   },
   {
@@ -108,6 +119,7 @@ const PAIRS: Pair[] = [
       opacity: 0.6, opacityMin: 0.2, size: 2.8,
       linkColor: "#10b981", linkOpacity: 0.15, linkOpacityHover: 0.4,
       speed: 0.5, direction: "none", mode: "grab",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 35%, rgba(34,211,238,.08), transparent 70%), linear-gradient(180deg, #050e15 0%, #0a1820 50%, #050e15 100%)",
     },
     light: {
       count: 75, area: 800,
@@ -115,6 +127,7 @@ const PAIRS: Pair[] = [
       opacity: 0.7, opacityMin: 0.25, size: 2.6,
       linkColor: "#2563eb", linkOpacity: 0.22, linkOpacityHover: 0.5,
       speed: 0.6, direction: "none", mode: "grab",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 30%, rgba(59,130,246,.10), transparent 70%), linear-gradient(180deg, #f0f9ff 0%, #dbeafe 50%, #eff6ff 100%)",
     },
   },
 ];
@@ -374,6 +387,12 @@ export default function ParticlesBackground() {
 
         const pair = PAIRS[pairIdxRef.current];
         const cfg = lastModeRef.current === "dark" ? pair.dark : pair.light;
+        // Per-pair scenery bg (radial glow + vertical linear gradient).
+        // Applied to the wrapper so it sits behind the canvas but
+        // above the html `var(--bg)` fallback. Transitions smoothly
+        // because globals.css gives the wrapper a `transition: opacity`
+        // — we add a bg transition too via inline style below.
+        wrapper.style.background = cfg.bg;
         w.particlesJS(innerId, buildParticlesConfig(cfg));
         // Fade in once initialized.
         wrapper.classList.add("ready");
