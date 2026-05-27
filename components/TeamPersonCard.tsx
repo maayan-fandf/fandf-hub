@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import GmailIcon from "@/components/GmailIcon";
 import WhatsAppIcon from "@/components/WhatsAppIcon";
+import TeamActiveTaskChip from "@/components/TeamActiveTaskChip";
 import { roleEmoji } from "@/components/RoleChip";
 import type { TeamMember } from "@/lib/teamData";
 
@@ -165,6 +166,15 @@ export default function TeamPersonCard({
           </div>
         )}
       </Link>
+
+      {/* Live "currently working on" chip — kept OUTSIDE the outer
+          profile Link because it has its own <Link> to the specific
+          task, and nesting anchors is invalid HTML. Sits between the
+          profile click area and the action row so it reads as a
+          status indicator, not an action button. */}
+      {person.activeTask && (
+        <TeamActiveTaskChip task={person.activeTask} variant="card" />
+      )}
 
       <div className="team-card-actions" role="group" aria-label="פעולות">
         <a

@@ -22,6 +22,7 @@
 
 import { tasksListDirect, tasksPeopleListDirect } from "@/lib/tasksDirect";
 import { getDirectoryUser } from "@/lib/userDirectory";
+import { deriveInProgressTime } from "@/lib/inProgressTime";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 
 export type TeamMember = {
@@ -62,6 +63,34 @@ export type TeamMember = {
 
   /** Top 5 projects they have open tasks in, ranked by count. */
   topProjects: string[];
+
+  /** The task this person is ACTIVELY working on right now: status
+   *  is `in_progress`, they're an assignee, and the in-progress timer
+   *  isn't paused. Powers the "🟢 בעבודה על X · Y דק'" live chip on
+   *  their card. Null when nothing's running.
+   *
+   *  If they have multiple concurrent in-progress tasks (rare — usually
+   *  means they forgot to pause or move one), the one that started its
+   *  current active stretch most recently wins. The chip is meant as
+   *  "what are they on RIGHT NOW," so the freshest signal is right.
+   */
+  activeTask: ActiveTask | null;
+};
+
+export type ActiveTask = {
+  id: string;
+  title: string;
+  project: string;
+  /** Total active minutes accumulated so far on this in_progress
+   *  stretch (excludes paused time). Use as the initial value on the
+   *  client; the chip ticks it up locally each minute. */
+  minutes: number;
+  /** ISO timestamp the current active (non-paused) stretch began.
+   *  The client computes live elapsed time as (now - runningSinceIso)
+   *  added to `minutes` at SSR time — but actually we just hand the
+   *  client `runningSinceIso` and let it derive everything from that,
+   *  so a long-lived render doesn't drift. */
+  runningSinceIso: string;
 };
 
 const ROLE_CLIENT = /^client$|לקוח/i;
@@ -130,6 +159,11 @@ export async function getTeamRoster(
   const workload = new Map<string, ReturnType<typeof emptyWorkload>>();
   // Per-person project-count tallies — converted to ranked topProjects at the end.
   const projectCounts = new Map<string, Map<string, number>>();
+  // Per-person currently-running task. When a person has multiple
+  // in_progress assignments running concurrently, we keep the one
+  // that started its current ACTIVE stretch most recently (so the
+  // chip reflects "what they're on right now").
+  const activeByEmail = new Map<string, ActiveTask>();
 
   const bump = (email: string, key: keyof ReturnType<typeof emptyWorkload>) => {
     const lc = email.toLowerCase().trim();
@@ -164,6 +198,36 @@ export async function getTeamRoster(
       for (const a of t.assignees || []) {
         bump(a, "openTasks");
         bumpProject(a, t.project);
+      }
+    }
+
+    // Live "currently working on" — only meaningful for in_progress
+    // tasks where the time-tracker says we're actively running (not
+    // paused). deriveInProgressTime is cheap (pure data math, no I/O)
+    // so calling it per-task here is fine.
+    if (status === "in_progress") {
+      const ip = deriveInProgressTime(
+        t.status_history || [],
+        t.status,
+        t.time_pauses || [],
+      );
+      if (ip.isRunning && ip.runningSinceIso) {
+        for (const a of t.assignees || []) {
+          const lc = String(a).toLowerCase().trim();
+          if (!staffEmails.has(lc)) continue;
+          const prev = activeByEmail.get(lc);
+          // Most-recently-started active stretch wins. Compare ISO
+          // strings lexicographically — works for ISO timestamps.
+          if (!prev || prev.runningSinceIso < ip.runningSinceIso) {
+            activeByEmail.set(lc, {
+              id: t.id,
+              title: t.title || t.id,
+              project: t.project || "",
+              minutes: ip.minutes,
+              runningSinceIso: ip.runningSinceIso,
+            });
+          }
+        }
       }
     }
 
@@ -216,6 +280,7 @@ export async function getTeamRoster(
         workPhone: dir?.workPhone || "",
         ...w,
         topProjects,
+        activeTask: activeByEmail.get(lc) ?? null,
       } satisfies TeamMember;
     }),
   );

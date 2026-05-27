@@ -18,25 +18,62 @@ export const dynamic = "force-dynamic";
  * Grouped by company × month with sub-totals + a grand total + CSV.
  * Informational only: time does NOT drive a charge; client invoicing
  * stays on the flat Pricingsetup price (/admin/billing).
+ *
+ * Access model (2026-05-27):
+ *   - Admins (HUB_ADMIN_EMAILS) → see EVERY row, manage everyone's
+ *     time-tracking from one screen.
+ *   - Any other @fandf.co.il staff → see only THEIR rows (manual
+ *     entries they logged + status-time on tasks where they're an
+ *     assignee). They can still pause / edit those task times from
+ *     this surface — TimeReport's per-row override + pause buttons
+ *     hit the same /api/tasks/* endpoints the per-task detail page
+ *     uses, so the gate is the same (author/assignee/admin on the
+ *     write side; this read just shows them their own slice).
+ *   - Clients / external → bounced to home, same as before.
+ *
+ * URL is still /admin/time for now (alias deferred). The nav surfaces
+ * it as "מעקב זמן" so the URL is incidental for staff users.
  */
 export default async function TimeAdminPage() {
   let isAdmin = false;
+  let isStaffOrInternal = false;
   try {
     const me = await getMyProjects();
-    isAdmin = me.isAdmin;
+    isAdmin = !!me.isAdmin;
+    isStaffOrInternal = !!(me.isInternal || me.isStaff || me.isAdmin);
   } catch {
     isAdmin = false;
+    isStaffOrInternal = false;
   }
-  if (!isAdmin) redirect("/");
+  if (!isStaffOrInternal) redirect("/");
 
   const adminEmail = await currentUserEmail();
+  const myEmail = (adminEmail || "").toLowerCase().trim();
 
-  const [ledger, taskRows] = await Promise.all([
+  const [ledger, taskRowsAll] = await Promise.all([
     readTimeLog(adminEmail).catch(() => [] as TimeLogRow[]),
     tasksList()
       .then((r) => r.tasks ?? [])
       .catch(() => []),
   ]);
+
+  // Scope tasks for non-admins: only include tasks where the viewer is
+  // the author, approver, project_manager, or in `assignees`. Same
+  // "is-relevant-to-me" rule the /tasks queue uses by default — the
+  // user only sees time on work they're involved in. Admins skip this
+  // filter and see every task.
+  const myEmailLc = myEmail;
+  const involves = (
+    t: { author_email?: string; approver_email?: string; project_manager_email?: string; assignees?: string[] },
+  ): boolean => {
+    if ((t.author_email || "").toLowerCase() === myEmailLc) return true;
+    if ((t.approver_email || "").toLowerCase() === myEmailLc) return true;
+    if ((t.project_manager_email || "").toLowerCase() === myEmailLc) return true;
+    return (t.assignees || []).some(
+      (a) => String(a).toLowerCase().trim() === myEmailLc,
+    );
+  };
+  const taskRows = isAdmin ? taskRowsAll : taskRowsAll.filter(involves);
 
   // taskId → task, for joining the task name / brief / worker onto
   // every row (the ledger tab doesn't store those). Worker = the
@@ -103,8 +140,22 @@ export default async function TimeAdminPage() {
     });
   }
 
+  // Scope manual ledger entries the same way: non-admins see only the
+  // rows they logged themselves OR rows attached to tasks they're
+  // involved in. Admins see every ledger row.
+  const scopedLedger = isAdmin
+    ? ledger
+    : ledger.filter((r) => {
+        if ((r.loggedBy || "").toLowerCase() === myEmailLc) return true;
+        // Also include entries on tasks they're involved in — handles
+        // a manager who didn't log the time but owns the task and
+        // wants to see how much was billed against it.
+        const t = taskById.get(r.taskId);
+        return t ? involves(t) : false;
+      });
+
   // Join task name / brief / worker onto the manual ledger rows too.
-  const enrichedLedger = ledger.map((r) => {
+  const enrichedLedger = scopedLedger.map((r) => {
     const t = taskById.get(r.taskId);
     return t
       ? {
@@ -127,11 +178,27 @@ export default async function TimeAdminPage() {
             מעקב זמן
           </h1>
           <div className="subtitle">
-            <Link href="/admin">→ ניהול</Link> ·{" "}
-            <Link href="/admin/billing">🧾 חיובים ללקוח</Link> · תיעוד ידני
-            (<code>TimeLog</code>) + זמן אוטומטי בסטטוס ״בעבודה״ לכל משימה
-            (גובר עליו ערך שנערך ידנית). סינון לפי חודש + חברה, סכום זמן,
-            וייצוא CSV. הזמן הוא מידע בלבד — אינו משפיע על החיוב ללקוח.
+            {isAdmin && (
+              <>
+                <Link href="/admin">→ ניהול</Link> ·{" "}
+                <Link href="/admin/billing">🧾 חיובים ללקוח</Link> ·{" "}
+              </>
+            )}
+            {isAdmin ? (
+              <>
+                תיעוד ידני (<code>TimeLog</code>) + זמן אוטומטי בסטטוס
+                ״בעבודה״ לכל משימה (גובר עליו ערך שנערך ידנית). סינון לפי
+                חודש + חברה, סכום זמן, וייצוא CSV. הזמן הוא מידע בלבד —
+                אינו משפיע על החיוב ללקוח.
+              </>
+            ) : (
+              <>
+                הזמן שלך — זמן שנרשם ידנית + זמן אוטומטי בסטטוס ״בעבודה״
+                על משימות שאת/ה מעורב/ת בהן. אפשר לערוך זמן או להשהות
+                ספירה ישירות מכאן. הזמן הוא מידע בלבד — אינו משפיע על
+                החיוב ללקוח.
+              </>
+            )}
           </div>
         </div>
       </header>

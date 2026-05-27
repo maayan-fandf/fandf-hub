@@ -44,6 +44,7 @@ import UmbrellaDetailMain from "@/components/UmbrellaDetailMain";
 import TaskDependencyLinks from "@/components/TaskDependencyLinks";
 import TaskTemplatePreview from "@/components/TaskTemplatePreview";
 import TaskTimeTracker from "@/components/TaskTimeTracker";
+import TaskTimePauseQuick from "@/components/TaskTimePauseQuick";
 import { deriveInProgressTime } from "@/lib/inProgressTime";
 import { linkifyParagraphs } from "@/lib/linkify";
 
@@ -303,6 +304,31 @@ export default async function TaskDetailPage({
                 Renders null in every other (role × status) combo,
                 falling through to the pill's own dropdown. */}
             {myEmail && <TaskActionPrompt task={t} myEmail={myEmail} />}
+            {/* Quick pause/play time-tracker — companion to the side-
+                panel TaskTimeTracker block. Only renders when the
+                task is in_progress AND there's no manual minute
+                override on the row (override takes the auto value out
+                of the equation; pausing it is meaningless). One-click
+                pause/resume while you're deep in the task body. */}
+            {!t.is_umbrella &&
+              t.status === "in_progress" &&
+              (t.inprogress_minutes ?? null) === null &&
+              (() => {
+                const ip = deriveInProgressTime(
+                  t.status_history || [],
+                  t.status,
+                  t.time_pauses || [],
+                );
+                return (
+                  <TaskTimePauseQuick
+                    taskId={t.id}
+                    isRunning={ip.isRunning}
+                    isPaused={ip.isPaused}
+                    autoMinutes={ip.minutes}
+                    runningSinceIso={ip.runningSinceIso}
+                  />
+                );
+              })()}
           </div>
           <div className="subtitle task-detail-meta">
             <span className={`tasks-priority-pill p${t.priority}`} title="דחיפות">

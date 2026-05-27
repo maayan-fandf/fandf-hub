@@ -54,6 +54,13 @@ export default function TasksNavMenu() {
           👥 צוות
         </Link>
         <Link
+          href="/admin/time"
+          className="tasks-nav-item"
+          role="menuitem"
+        >
+          ⏱️ מעקב זמן
+        </Link>
+        <Link
           href="/tasks/new"
           className="tasks-nav-item"
           role="menuitem"

@@ -6,7 +6,10 @@ import { tasksPeopleListDirect } from "@/lib/tasksDirect";
 import { getDirectoryUser } from "@/lib/userDirectory";
 import GmailIcon from "@/components/GmailIcon";
 import WhatsAppIcon from "@/components/WhatsAppIcon";
+import TeamActiveTaskChip from "@/components/TeamActiveTaskChip";
 import { roleEmoji } from "@/components/RoleChip";
+import { deriveInProgressTime } from "@/lib/inProgressTime";
+import type { ActiveTask } from "@/lib/teamData";
 import type { WorkTask } from "@/lib/appsScript";
 
 export const dynamic = "force-dynamic";
@@ -160,6 +163,30 @@ export default async function TeamPersonPage({
   const totalStuck =
     byStatus.get("awaiting_clarification")?.length ?? 0;
 
+  // Live "currently working on" — same derivation as the team-grid
+  // aggregator in lib/teamData.ts: pick the in_progress task whose
+  // current un-paused stretch started most recently. The detail page
+  // builds its data independently (so it can show the full kanban),
+  // so we redo this lookup here instead of plumbing it through.
+  let activeTask: ActiveTask | null = null;
+  for (const t of byStatus.get("in_progress") || []) {
+    const ip = deriveInProgressTime(
+      t.status_history || [],
+      t.status,
+      t.time_pauses || [],
+    );
+    if (!ip.isRunning || !ip.runningSinceIso) continue;
+    if (!activeTask || activeTask.runningSinceIso < ip.runningSinceIso) {
+      activeTask = {
+        id: t.id,
+        title: t.title || t.id,
+        project: t.project || "",
+        minutes: ip.minutes,
+        runningSinceIso: ip.runningSinceIso,
+      };
+    }
+  }
+
   return (
     <main className="container team-detail-page">
       <div className="team-detail-crumbs">
@@ -259,6 +286,10 @@ export default async function TeamPersonPage({
           <span>הקצה משימה</span>
         </a>
       </div>
+
+      {activeTask && (
+        <TeamActiveTaskChip task={activeTask} variant="detail" />
+      )}
 
       <div className="team-detail-summary" aria-label="סיכום עומס">
         <span className="team-card-chip team-card-chip-open">

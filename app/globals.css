@@ -18506,6 +18506,74 @@ html[data-theme="dark"] .task-approval-banner-rejection .task-approval-banner-ch
   font-size: 0.82em;
   padding-inline: 0.4em;
 }
+/* Inline pause/play time-tracker chip — mounts alongside the action
+   prompt buttons. Compact pill: small icon button + live minute
+   counter. Color comes from the running/paused state on the wrapper:
+   green border + pulsing background when running, amber when paused.
+   Companion to the side-panel TaskTimeTracker (same /api/tasks/time-
+   pause endpoint), so deep-in-the-task pause/resume doesn't need a
+   scroll to the side panel. */
+.task-time-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.82em;
+}
+.task-time-quick.is-running {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #065f46;
+}
+[data-theme="dark"] .task-time-quick.is-running {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+.task-time-quick.is-paused {
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.32);
+  color: #92400e;
+}
+[data-theme="dark"] .task-time-quick.is-paused {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+}
+.task-time-quick-btn {
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid currentColor;
+  border-color: transparent;
+  padding: 2px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.12s, transform 0.12s;
+}
+.task-time-quick-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.85);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .task-time-quick-btn {
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .task-time-quick-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+.task-time-quick-btn:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+.task-time-quick-counter {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  padding-inline-end: 4px;
+  white-space: nowrap;
+}
 /* Success chip — shown briefly after a transition completes, before
    router.refresh() pulls in the new task state. Same compact shape
    as the error chip, just with a positive palette. The chip fades
@@ -19278,6 +19346,84 @@ button.budget-need:focus-visible {
 [data-theme="dark"] .team-card-chip-stuck { color: #c4b5fd; background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.35); }
 .team-card-chip-done { background: rgba(16, 185, 129, 0.12); color: #047857; border-color: rgba(16, 185, 129, 0.25); }
 [data-theme="dark"] .team-card-chip-done { color: #6ee7b7; background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.35); }
+
+/* "Currently working on" live chip — green dot + bold "בעבודה" label +
+   minutes counter that ticks client-side. Compact `card` variant for
+   the grid; expanded `detail` variant on /team/[email]. */
+.team-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: inherit;
+  font-size: 12.5px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+  direction: rtl;
+}
+.team-active-chip:hover {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.45);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .team-active-chip {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #d1fae5;
+}
+.team-active-chip-card {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.team-active-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  animation: team-active-pulse 1.6s ease-out infinite;
+}
+@keyframes team-active-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-active-dot { animation: none; }
+}
+.team-active-text {
+  white-space: nowrap;
+  color: #065f46;
+}
+[data-theme="dark"] .team-active-text { color: #6ee7b7; }
+.team-active-text b { font-weight: 700; }
+.team-active-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+  font-size: 11.5px;
+  padding-inline-start: 2px;
+}
+.team-active-project {
+  font-size: 11px;
+  opacity: 0.7;
+  padding-inline: 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  white-space: nowrap;
+}
+[data-theme="dark"] .team-active-project { background: rgba(255, 255, 255, 0.06); }
+.team-active-chip-detail {
+  padding: 8px 14px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
 
 .team-card-projects {
   display: flex;
