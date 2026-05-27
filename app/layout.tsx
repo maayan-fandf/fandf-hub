@@ -32,10 +32,10 @@ import BrowserNotifier from "@/components/BrowserNotifier";
 import NavGmailTasks from "@/components/NavGmailTasks";
 import NavCustomerEmails from "@/components/NavCustomerEmails";
 import NavCampaignsLink from "@/components/NavCampaignsLink";
+import TasksNavMenu from "@/components/TasksNavMenu";
 import NavInboxLink from "@/components/NavInboxLink";
 import ViewAsBanner from "@/components/ViewAsBanner";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
-import NavTasksBadge from "@/components/NavTasksBadge";
 import ProjectsNavMenu from "@/components/ProjectsNavMenu";
 import TopnavLinks from "@/components/TopnavLinks";
 import UserSettingsMenu from "@/components/UserSettingsMenu";
@@ -260,21 +260,8 @@ export default async function RootLayout({
                   📂 פרויקטים
                 </Link>
               )}
-              {email && !isClientUser && (
-                <ActiveLink
-                  href="/tasks"
-                  className="topnav-link topnav-link-with-badge"
-                >
-                  📋 משימות
-                  <NavTasksBadge />
-                </ActiveLink>
-              )}
+              {email && !isClientUser && <TasksNavMenu />}
               {email && !isClientUser && <NavCampaignsLink />}
-              {email && !isClientUser && (
-                <ActiveLink href="/team" className="topnav-link">
-                  👥 צוות
-                </ActiveLink>
-              )}
               {email && !isClientUser && (
                 <ActiveLink
                   href="/notifications"

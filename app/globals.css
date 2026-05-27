@@ -2412,6 +2412,29 @@ html[data-theme="dark"] .topnav-fandf-logo img {
   margin-bottom: 0.3rem;
 }
 
+/* ─── /tasks dropdown overrides ────────────────────────────────────
+ * Reuses .projects-nav-* dropdown chrome (positioning + visibility +
+ * hover bridge). Narrower (we only show 3 items, no nested
+ * sub-menus) and the inner items use .tasks-nav-item — a plain row
+ * style without the company-group affordances. */
+.tasks-nav-dropdown {
+  width: 220px;
+}
+.tasks-nav-item {
+  display: block;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.92rem;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.tasks-nav-item:hover,
+.tasks-nav-item:focus-visible {
+  background: var(--md-sys-color-surface-container-high, rgba(99, 102, 241, 0.1));
+  outline: none;
+}
+
 .projects-nav-all:hover {
   background: var(--accent-soft);
   text-decoration: none;
@@ -19137,6 +19160,16 @@ button.budget-need:focus-visible {
   border-radius: 14px;
   background: var(--md-sys-color-surface-container, rgba(255, 255, 255, 0.72));
   border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.08));
+  /* Heatmap accent — promoted to a real start-edge border on the card
+     itself (vs. the old positioned ::before, which left a thin gray
+     bar floating in the gutter between cards for cool/0-active
+     teammates). With this approach the accent is part of the card's
+     own outline, so it follows the rounded corners cleanly and only
+     visually exists when the data warrants it. `--heat` defaults to
+     the regular outline color so "cool" cards look like every other
+     card; warm/hot override it to amber/red. */
+  border-inline-start: 3px solid
+    var(--heat, var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.08)));
   backdrop-filter: blur(10px) saturate(140%);
   -webkit-backdrop-filter: blur(10px) saturate(140%);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -19149,18 +19182,9 @@ button.budget-need:focus-visible {
   transform: translateY(-1px);
   box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.18);
 }
-/* Heatmap left-edge accent — quick "is this person slammed" cue. */
-.team-card::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: 0;
-  top: 16px;
-  bottom: 16px;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--heat, #94a3b8);
-}
-.team-card[data-heat="cool"] { --heat: #94a3b8; }
+/* `cool` cards stay neutral — no accent. The signal-to-noise win:
+   "no stripe" reads as "this person is fine," which is the right
+   default for most of the grid. */
 .team-card[data-heat="warm"] { --heat: #f59e0b; }
 .team-card[data-heat="hot"]  { --heat: #ef4444; }
 
