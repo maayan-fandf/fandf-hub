@@ -81,8 +81,17 @@ export default async function TaskDetailPage({
   const [res, peopleRes, accessRes, formSchemaRes, bannerComments] =
     await Promise.all([
       tasksGet(decodedId).catch((e: unknown) => {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.toLowerCase().includes("not found")) return null;
+        const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+        // Both "task not found" and "access denied" collapse to the
+        // same notFound() page below — we don't want either case to
+        // bubble up as a server-side 500 with a digest, which is what
+        // Omer hit (issue 2026-05-27). A user without access shouldn't
+        // be able to tell the difference between "this id doesn't
+        // exist" and "you can't see it" anyway, so a 404 is the right
+        // shape.
+        if (msg.includes("not found") || msg.includes("access denied")) {
+          return null;
+        }
         throw e;
       }),
       tasksPeopleList().catch(() => ({ ok: false, people: [] })),

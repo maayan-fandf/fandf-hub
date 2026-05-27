@@ -18483,6 +18483,30 @@ html[data-theme="dark"] .task-approval-banner-rejection .task-approval-banner-ch
   font-size: 0.82em;
   padding-inline: 0.4em;
 }
+/* Success chip — shown briefly after a transition completes, before
+   router.refresh() pulls in the new task state. Same compact shape
+   as the error chip, just with a positive palette. The chip fades
+   itself when the page re-renders with the new status (the parent
+   component remounts), so no explicit dismiss timer is needed. */
+.task-action-prompt-success {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 999px;
+  font-size: 0.82em;
+  padding: 0.15em 0.7em;
+  font-weight: 600;
+  animation: task-action-prompt-success-in 0.18s ease-out;
+}
+[data-theme="dark"] .task-action-prompt-success {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+@keyframes task-action-prompt-success-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
 
 /* ─── "Wants something from you" row/card highlights on /tasks ─────
    Three states (computed by lib/taskUserState):

@@ -43,6 +43,7 @@ export default function TaskActionPrompt({
   const router = useRouter();
   const [busy, setBusy] = useState<ActionKind | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [modalTarget, setModalTarget] = useState<WorkTaskStatus | null>(null);
 
   const lc = (myEmail || "").toLowerCase();
@@ -63,6 +64,19 @@ export default function TaskActionPrompt({
 
   if (!showStart && !showSubmit && !showApprover) return null;
 
+  // User-visible success copy per action — surfaces inline so the
+  // user sees an immediate "✓ ..." chip after clicking, instead of
+  // having to notice that the original button silently disappeared.
+  // Reported by Maayan 2026-05-27: clicked "התחל לעבוד" and "nothing
+  // happens" — even though the server-side update went through.
+  const SUCCESS_COPY: Record<ActionKind, string> = {
+    start: "✓ עבר לסטטוס בעבודה",
+    submit: "✓ הוגש לאישור",
+    approve: "✓ המשימה אושרה",
+    return: "✓ הוחזרה לטיפול",
+    reject: "✓ נדחתה",
+  };
+
   async function transition(
     kind: ActionKind,
     to: PromptTargetStatus,
@@ -71,6 +85,7 @@ export default function TaskActionPrompt({
   ) {
     setBusy(kind);
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch("/api/worktasks/update", {
         method: "POST",
@@ -81,7 +96,7 @@ export default function TaskActionPrompt({
         }),
       });
       const data = (await res.json().catch(() => ({}))) as
-        | { ok: true }
+        | { ok: true; changed?: boolean }
         | { ok: false; error: string };
       if (!res.ok || !("ok" in data) || !data.ok) {
         const msg =
@@ -91,7 +106,20 @@ export default function TaskActionPrompt({
         throw new Error(msg);
       }
       if (options.confetti) fireConfetti();
-      router.refresh();
+      // Show success chip immediately so the user has a clear
+      // "yes it worked" cue even before the page re-renders.
+      const okCopy =
+        "changed" in data && data.changed === false
+          ? "✓ כבר היה בסטטוס הזה"
+          : SUCCESS_COPY[kind];
+      setSuccess(okCopy);
+      // router.refresh() asks Next.js to re-fetch SSR — but the
+      // process-local Comments-tab cache has a 5s TTL, and on a
+      // multi-instance App Hosting deploy the refresh may land on a
+      // SIBLING instance whose cache wasn't invalidated by our
+      // write. Give that cache a beat to expire before refreshing,
+      // so the user reliably sees the new state in one tick.
+      setTimeout(() => router.refresh(), 350);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -196,6 +224,9 @@ export default function TaskActionPrompt({
         )}
 
         {error && <span className="task-action-prompt-error">{error}</span>}
+        {success && !error && (
+          <span className="task-action-prompt-success">{success}</span>
+        )}
       </div>
 
       {modalTarget && (

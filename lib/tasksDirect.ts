@@ -776,7 +776,39 @@ export async function tasksGetDirect(
     const t = rowToTask(row, headerIdx);
     t.comments_count = commentsCount;
     const scope = await getAccessScope(subjectEmail);
-    if (!scope.isAdmin && !scope.accessibleProjects.has(t.project)) {
+    // Access check, in order of permissiveness:
+    //   1. admins always pass
+    //   2. internal @fandf.co.il users always pass — mirrors the
+    //      "domain blanket" intent already documented in
+    //      getAccessScope(). The blanket there only applies to projects
+    //      that have a Keys-sheet row; tasks tied to projects WITHOUT a
+    //      Keys row (e.g. `__personal__` notes, brand-new projects, or
+    //      projects where the Keys row was deleted) used to 500
+    //      internal users with "Access denied". This explicit subject-
+    //      level check makes the blanket actually blanket.
+    //   3. the task's author / approver / assignee always pass — same
+    //      principle as Gmail: if you're on the thread, you can read
+    //      the message regardless of what folder it lives in.
+    //   4. otherwise the project must be in accessibleProjects.
+    // Project string is trimmed on both sides — Sheets cells sometimes
+    // carry trailing whitespace, and the access scope already trims its
+    // side, so without this normalization a 1-char delta would 500.
+    const lc = subjectEmail.toLowerCase().trim();
+    const isInternal = lc.endsWith("@fandf.co.il");
+    const proj = t.project.trim();
+    const onTask =
+      (t.author_email || "").toLowerCase().trim() === lc ||
+      (t.approver_email || "").toLowerCase().trim() === lc ||
+      (t.assignees || []).some(
+        (a) => String(a).toLowerCase().trim() === lc,
+      );
+    const allowed =
+      scope.isAdmin ||
+      isInternal ||
+      onTask ||
+      scope.accessibleProjects.has(proj) ||
+      scope.accessibleProjects.has(t.project);
+    if (!allowed) {
       throw new Error("Access denied");
     }
     return { ok: true, task: t };

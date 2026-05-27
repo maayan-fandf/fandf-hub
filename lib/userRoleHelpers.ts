@@ -25,9 +25,9 @@ export const CANONICAL_ROLE_OPTIONS: ReadonlyArray<{
   hint: string;
   classification: UserRole;
 }> = [
-  { value: "מנהל", hint: "ברירת מחדל: ממתין לאישורי", classification: "manager" },
-  { value: "קריאייטיב", hint: "ברירת מחדל: משימות שמשובצות אצלי", classification: "creative" },
-  { value: "מדיה", hint: "ברירת מחדל: משימות שמשובצות אצלי", classification: "creative" },
+  { value: "מנהל", hint: "ברירת מחדל: משימות שאני מעורב/ת בהן", classification: "manager" },
+  { value: "קריאייטיב", hint: "ברירת מחדל: משימות שאני מעורב/ת בהן", classification: "creative" },
+  { value: "מדיה", hint: "ברירת מחדל: משימות שאני מעורב/ת בהן", classification: "creative" },
   { value: "לקוח", hint: "ברירת מחדל: בלי סינון אישי", classification: "client" },
 ];
 
@@ -68,17 +68,21 @@ export function classifyRoleText(roleText: string): UserRole {
 
 /** UI label for "what default filter will this user see on /tasks?". */
 export function defaultViewLabel(role: UserRole): string {
+  // Default scope unified 2026-05-27: relevant_to_me (OR across
+  // author/approver/PM/assignee) for every internal role. Previously
+  // creatives got a narrower assignee-only filter that hid their
+  // authored briefs — see app/tasks/page.tsx for the fix rationale.
   switch (role) {
     case "admin":
-      return "אדמין · ברירת מחדל: משימות שיצרת";
+      return "אדמין · ברירת מחדל: משימות שאני מעורב/ת בהן";
     case "manager":
-      return "מנהל · ברירת מחדל: משימות שמחכות לאישורך";
+      return "מנהל · ברירת מחדל: משימות שאני מעורב/ת בהן";
     case "creative":
-      return "קריאייטיב · ברירת מחדל: משימות שמשובצות אצלך";
+      return "קריאייטיב · ברירת מחדל: משימות שאני מעורב/ת בהן";
     case "client":
       return "לקוח · ברירת מחדל: ללא סינון אישי";
     case "unknown":
     default:
-      return "לא מזוהה — ברירת מחדל: משימות שיצרת";
+      return "לא מזוהה — ברירת מחדל: משימות שאני מעורב/ת בהן";
   }
 }

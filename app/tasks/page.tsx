@@ -140,16 +140,18 @@ export default async function TasksPage({
   const effectiveAuthor = sp.author !== undefined ? sp.author : "";
   const effectiveApprover = sp.approver !== undefined ? sp.approver : "";
   const effectiveAssignee =
-    sp.assignee !== undefined
-      ? sp.assignee
-      : mineOptIn && role === "creative"
-        ? effectiveMe
-        : "";
+    sp.assignee !== undefined ? sp.assignee : "";
+  // Single OR-filter for the "רק שלי" default, regardless of role.
+  // Previously creatives (designers, copywriters, media buyers, etc.)
+  // got a narrower `assignee=me` filter that hid tasks they AUTHORED
+  // — Omer (a media buyer) reported 2026-05-27 that his own briefs
+  // didn't appear under רק שלי. The toggle tooltip already promises
+  // "יוצר/ת, מאשר/ת, מבצע/ת" (author / approver / assignee), so the
+  // role-specific narrowing was a stealth lie. relevant_to_me is the
+  // OR-match across author/approver/PM/assignee that the tooltip
+  // describes.
   const relevantToMe =
-    !userSetExplicitMineFilter &&
-    mineOptIn &&
-    effectiveMe &&
-    (role === "manager" || role === "admin" || role === "unknown")
+    !userSetExplicitMineFilter && mineOptIn && effectiveMe
       ? effectiveMe
       : "";
 
