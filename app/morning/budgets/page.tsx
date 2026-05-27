@@ -1,6 +1,7 @@
 import {
   currentUserEmail,
   getMorningFeed,
+  getMyProjects,
   tasksPeopleList,
 } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
@@ -9,6 +10,7 @@ import { canViewAdLinks } from "@/lib/adLinkAccess";
 import { driveFolderOwner } from "@/lib/sa";
 import { getBudgetMaster } from "@/lib/budgetMaster";
 import { isProjectEndedByIso } from "@/lib/projectEnded";
+import { isRealEstateType } from "@/lib/keys";
 import { listAlertDismissals } from "@/lib/alertDismissals";
 import { getUsdIlsRate } from "@/lib/fxRate";
 import BudgetGrid, { type BudgetDismissal } from "@/components/BudgetGrid";
@@ -47,13 +49,14 @@ export default async function BudgetsPage() {
     );
   }
 
-  const [budgetRes, feedRes, peopleRes, dismissRes, rateRes] =
+  const [budgetRes, feedRes, peopleRes, dismissRes, rateRes, projectsRes] =
     await Promise.allSettled([
       getBudgetMaster(driveFolderOwner()),
       getMorningFeed({ scope: "all", overrideEmail }),
       tasksPeopleList(),
       listAlertDismissals(),
       getUsdIlsRate(),
+      getMyProjects(overrideEmail),
     ]);
 
   const master = budgetRes.status === "fulfilled" ? budgetRes.value : null;
@@ -151,18 +154,37 @@ export default async function BudgetsPage() {
         </div>
       )}
 
-      {master && (
-        <BudgetGrid
-          projects={master.projects}
-          adLinks={adLinks}
-          inactiveProjects={inactiveProjects}
-          showAdLinks={showAdLinks}
-          canEdit={roleEligible}
-          dismissals={budgetDismissals}
-          today={today}
-          usdIlsRate={usdIlsRate}
-        />
-      )}
+      {master && (() => {
+        // Project-type filter (2026-05-27): the budget desk is a
+        // real-estate-only surface — non-real-estate projects (like
+        // the internal צוות F&F row) have no media spend / pacing
+        // concept, so showing them in the grid would mean a row of
+        // zeros polluting the view. Build a projectName→type map
+        // from the live Project[] (already type-aware via Keys'
+        // `project type` column) and filter the master roster.
+        const projectsData =
+          projectsRes.status === "fulfilled" ? projectsRes.value : null;
+        const typeByName = new Map<string, string>();
+        for (const p of projectsData?.projects ?? []) {
+          typeByName.set(p.name, p.projectType);
+        }
+        const filtered = master.projects.filter((p) => {
+          const type = typeByName.get(p.tab) || typeByName.get(p.name);
+          return isRealEstateType(type);
+        });
+        return (
+          <BudgetGrid
+            projects={filtered}
+            adLinks={adLinks}
+            inactiveProjects={inactiveProjects}
+            showAdLinks={showAdLinks}
+            canEdit={roleEligible}
+            dismissals={budgetDismissals}
+            today={today}
+            usdIlsRate={usdIlsRate}
+          />
+        );
+      })()}
     </main>
   );
 }

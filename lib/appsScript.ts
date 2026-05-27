@@ -153,6 +153,14 @@ export type Project = {
   company: string; // "" when the Keys tab has no company for this project
   chatSpaceUrl: string; // "" when no Chat webhook is configured for the project
   roster: ProjectRoster;
+  /** Tag from the Keys sheet's `project type` column. Drives which
+   *  real-estate-only surfaces (morning alerts, budget desk, ad-
+   *  platform deep links, the Apps Script dashboard report) apply to
+   *  this project. Falls back to "real estate" when the cell is
+   *  empty — see lib/keys.ts `getProjectTypeFromRow` for why. Any
+   *  non-"real estate" tag (e.g. "general") gets the slim
+   *  tasks-+-chat-+-files experience. Added 2026-05-27. */
+  projectType: string;
 };
 
 /** Project name reserved for "general / non-project work for this company".
@@ -251,7 +259,13 @@ const fetchMyProjectsCached = unstable_cache(
     const raw = await callApiAs<MyProjectsRaw>(email, "myProjects");
     const projects: Project[] = (raw.projects ?? []).map((p) =>
       typeof p === "string"
-        ? { name: p, company: "", chatSpaceUrl: "", roster: EMPTY_ROSTER }
+        ? {
+            name: p,
+            company: "",
+            chatSpaceUrl: "",
+            roster: EMPTY_ROSTER,
+            projectType: "real estate",
+          }
         : {
             name: p.name,
             company: p.company ?? "",
@@ -263,6 +277,17 @@ const fetchMyProjectsCached = unstable_cache(
               internalOnly: p.roster?.internalOnly ?? [],
               clientFacing: p.roster?.clientFacing ?? [],
             },
+            // Apps Script `myProjects` endpoint doesn't surface
+            // project_type yet (the column was added 2026-05-27 on
+            // the hub side first). Fall back to "real estate" until
+            // Apps Script's side is rolled out too — preserves all
+            // pre-tag behavior. The direct-SA path
+            // (getMyProjectsDirect) already reads the column.
+            projectType:
+              (p as { project_type?: string; projectType?: string })
+                .project_type ||
+              (p as { projectType?: string }).projectType ||
+              "real estate",
           },
     );
     return {

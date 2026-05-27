@@ -19,6 +19,7 @@ import { getAllClientsCurrentForProject } from "@/lib/allClients";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
 import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismissals";
 import { driveFolderOwner } from "@/lib/sa";
+import { isRealEstateType } from "@/lib/keys";
 import MorningSignalRow from "@/components/MorningSignalRow";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 import GoogleAdsIcon from "@/components/GoogleAdsIcon";
@@ -136,6 +137,22 @@ export default async function MorningPage({
     r.status === "fulfilled" ? r.value : rawProjects[i],
   );
 
+  // Project-type filter (2026-05-27): /morning is a real-estate-only
+  // surface — its alerts are all media/pacing/funnel-shaped. Non-
+  // real-estate projects (e.g. צוות F&F's כללי) have no spend, no
+  // funnel, no creative — surfacing them here would mean rows that
+  // are always "all clear" and just pollute the count. Drop them
+  // before any further processing. The projectType lookup comes
+  // from getMyProjects (Keys-backed); fallback to "real estate" so
+  // a project the feed has but Keys doesn't keeps its old behavior.
+  const projectTypeByName = new Map<string, string>();
+  for (const p of projectsData?.projects ?? []) {
+    projectTypeByName.set(p.name, p.projectType);
+  }
+  const typeFiltered = allProjects.filter((p) =>
+    isRealEstateType(projectTypeByName.get(p.name)),
+  );
+
   // Narrow to projects where the scoped person is on the roster. Null set
   // = stale cookie (person no longer on any project), fall back to full
   // feed so the page doesn't go empty — same pattern as app/layout.tsx.
@@ -143,8 +160,8 @@ export default async function MorningPage({
     ? scopedProjectNames(projectsData.projects, scopedPerson)
     : null;
   const projects = scopedSet
-    ? allProjects.filter((p) => scopedSet.has(p.name))
-    : allProjects;
+    ? typeFiltered.filter((p) => scopedSet.has(p.name))
+    : typeFiltered;
 
   // Recompute severity counts from the final (post-CRM-merge) project
   // list — both the scoped and unscoped cases need this, since the

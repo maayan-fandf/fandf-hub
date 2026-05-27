@@ -28,7 +28,11 @@ import { cache } from "react";
 import type { MyProjects, Project, ProjectRoster } from "@/lib/appsScript";
 import { sheetsClient } from "@/lib/sa";
 import { readKeysRows, HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
-import { findChatSpaceColumnIndex } from "@/lib/keys";
+import {
+  findChatSpaceColumnIndex,
+  findProjectTypeColumnIndex,
+  getProjectTypeFromRow,
+} from "@/lib/keys";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -320,6 +324,7 @@ export async function getMyProjectsDirect(
   const iInternal = headers.indexOf("Access — internal only");
   const iCf = headers.indexOf("Client-facing");
   const iWebhook = findChatSpaceColumnIndex(headers);
+  const iProjectType = findProjectTypeColumnIndex(headers);
 
   if (iProj < 0) {
     // Keys tab is unreadable — fail closed like the Apps Script handler.
@@ -387,6 +392,7 @@ export async function getMyProjectsDirect(
       chatSpaceUrl:
         iWebhook >= 0 ? chatSpaceUrlFromWebhook(String(row[iWebhook] ?? "")) : "",
       roster,
+      projectType: getProjectTypeFromRow(row, iProjectType),
     });
   }
 

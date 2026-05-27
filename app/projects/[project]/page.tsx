@@ -18,6 +18,7 @@ import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import { getCrmFunnelForProject } from "@/lib/crmData";
+import { isRealEstateType } from "@/lib/keys";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
 import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismissals";
 import { getAllClientsCurrentForProject, type AllClientsRow } from "@/lib/allClients";
@@ -220,6 +221,16 @@ export default async function ProjectOverviewPage({
   const companyForDashboard =
     projectMeta?.company ?? (companyScope || "");
   const userEmail = projectsData?.email ?? "";
+
+  // Project-type gate (2026-05-27). All real-estate-only surfaces on
+  // this page — the Apps Script dashboard iframe, the CRM funnel
+  // card, the Clarity insights, the FB/Google Ads deep-link buttons,
+  // any pacing chrome — collapse to nothing for non-real-estate
+  // projects (e.g. the internal צוות F&F's כללי). Tasks, comments,
+  // files, the chat space stay because they're universal. Empty /
+  // missing project_type falls back to "real estate" so existing
+  // projects keep behaving as before. See lib/keys.ts for details.
+  const isRealEstateProject = isRealEstateType(projectMeta?.projectType);
 
   // Resolve the project's Drive folder URL — the Drive lookup itself
   // ran in parallel with the data batch above (chained off projectsP),
@@ -456,7 +467,7 @@ export default async function ProjectOverviewPage({
               section all at once). Hidden for client users to keep
               the chrome minimal — they don't have month-toggle
               workflows on the iframe today. */}
-          {!isClientUser && dashboardEmbedUrl && (
+          {!isClientUser && dashboardEmbedUrl && isRealEstateProject && (
             <Suspense fallback={null}>
               <DashboardMonthOverrideSlot current={monthOverride} />
             </Suspense>
@@ -591,7 +602,7 @@ export default async function ProjectOverviewPage({
           Streamed via <Suspense> so the slow Apps-Script-backed
           getMorningFeed call (~1–3s cold) doesn't block the משימות /
           תיוגים / הערות sections above from rendering. */}
-      {!isClientUser && (
+      {!isClientUser && isRealEstateProject && (
         <Suspense fallback={null}>
           <ProjectAlertsSection
             projectName={projectName}
@@ -608,8 +619,9 @@ export default async function ProjectOverviewPage({
           Renders as null when the folder doesn't exist or has no
           sheets, so projects that don't follow the convention silently
           degrade. Suspense keeps the Drive lookup off the critical
-          render path. */}
-      {!isClientUser && (
+          render path.
+          Project-type gate: only real-estate projects have פריסות. */}
+      {!isClientUser && isRealEstateProject && (
         <Suspense fallback={null}>
           <LatestPrisotCard
             subjectEmail={userEmail}
@@ -623,8 +635,11 @@ export default async function ProjectOverviewPage({
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
-          heading is enough. */}
-      {dashboardEmbedUrl && (
+          heading is enough.
+          Project-type gate: only render for real-estate projects.
+          Non-real-estate (e.g. צוות F&F) has no campaign/funnel data
+          and the iframe would show an empty Apps Script report. */}
+      {isRealEstateProject && dashboardEmbedUrl && (
         <section className="project-section project-section-metrics">
           {/* Section head is absolutely positioned over the iframe's
               top-left corner. The iframe's own header lives directly
@@ -663,14 +678,18 @@ export default async function ProjectOverviewPage({
           funnel and the card shows downstream-of-our-ads activity,
           not internal F&F performance signals.
           Renders null when the project's Keys row has no `CRM` mapping
-          or the source tab has no matching rows. */}
-      <Suspense fallback={null}>
-        <CrmFunnelCard
-          company={companyForDashboard}
-          project={projectName}
-          monthFilter={monthOverride}
-        />
-      </Suspense>
+          or the source tab has no matching rows.
+          Project-type gate: only real-estate projects have a CRM
+          funnel concept; non-real-estate (e.g. internal F&F) skips. */}
+      {isRealEstateProject && (
+        <Suspense fallback={null}>
+          <CrmFunnelCard
+            company={companyForDashboard}
+            project={projectName}
+            monthFilter={monthOverride}
+          />
+        </Suspense>
+      )}
 
       {/* Landing-page behavior insights — Clarity API + Claude-generated
           Hebrew narrative. Internal-only (mirrors the LatestPrisotCard
@@ -681,8 +700,10 @@ export default async function ProjectOverviewPage({
           month — Clarity's API only returns the trailing 3 days
           (numOfDays=3 hardcoded in lib/clarity.ts), so we can't
           honestly show "April 2026 Clarity data" — hiding the section
-          is the truthful UX. */}
-      {!isClientUser && (
+          is the truthful UX.
+          Project-type gate: real-estate landing pages only; nothing
+          to analyze on an internal-discussions project. */}
+      {isRealEstateProject && !isClientUser && (
         <Suspense fallback={null}>
           <ClarityInsightsSection
             subjectEmail={userEmail}

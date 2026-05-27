@@ -96,6 +96,75 @@ export function invalidateKeysCache(): void {
 }
 
 /**
+ * Find the index of the project-type column in a Keys headers array.
+ * Accepts a few common spellings since the column was added later
+ * (2026-05-27) and editors may rename it freely without a sync code
+ * deploy. Returns -1 when none of the variants exist.
+ */
+export function findProjectTypeColumnIndex(headers: string[]): number {
+  const candidates = [
+    "project type",
+    "Project Type",
+    "סוג פרויקט",
+    "סוג פרוייקט",
+    "type",
+  ];
+  for (const c of candidates) {
+    const i = headers.indexOf(c);
+    if (i >= 0) return i;
+  }
+  // Loose fallback: any header containing both "project"/"פרוי" and "type"/"סוג".
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i].toLowerCase();
+    if (
+      (h.includes("project") || h.includes("פרוי")) &&
+      (h.includes("type") || h.includes("סוג"))
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/** Canonical project-type values the rest of the app branches on. */
+export const PROJECT_TYPE_REAL_ESTATE = "real estate";
+export const PROJECT_TYPE_GENERAL = "general";
+
+/**
+ * Resolve a Keys row's `project type` value. Returns the lowercased
+ * trimmed cell, falling back to "real estate" when:
+ *   - the column is missing (sheet hasn't been updated yet), OR
+ *   - the cell is empty (an existing row hasn't been backfilled).
+ *
+ * "real estate" is the default because every existing row at the time
+ * this column was introduced represented a real-estate project — so
+ * empty cells preserve existing behavior. New non-real-estate rows
+ * (like the internal `צוות F&F` row added 2026-05-27) must set the
+ * column explicitly to "general" (or any other tag) to opt out of the
+ * real-estate-only surfaces.
+ */
+export function getProjectTypeFromRow(
+  row: unknown[],
+  projectTypeColIndex: number,
+): string {
+  if (projectTypeColIndex < 0) return PROJECT_TYPE_REAL_ESTATE;
+  const raw = String(row[projectTypeColIndex] ?? "").trim().toLowerCase();
+  if (!raw) return PROJECT_TYPE_REAL_ESTATE;
+  return raw;
+}
+
+/** True when this project should get real-estate-specific surfaces
+ *  (morning alerts, budget desk, ad-platform deep links, the Apps
+ *  Script dashboard report). Any non-"real estate" tag (incl. the
+ *  new "general") gets the slim "tasks + chat + files" experience. */
+export function isRealEstateType(projectType: string | undefined | null): boolean {
+  return (
+    String(projectType || PROJECT_TYPE_REAL_ESTATE).trim().toLowerCase() ===
+    PROJECT_TYPE_REAL_ESTATE
+  );
+}
+
+/**
  * Find the index of the Chat-space column in a Keys headers array.
  *
  * The header was historically named `Chat Webhook` (back when it
