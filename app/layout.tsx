@@ -271,6 +271,11 @@ export default async function RootLayout({
               )}
               {email && !isClientUser && <NavCampaignsLink />}
               {email && !isClientUser && (
+                <ActiveLink href="/team" className="topnav-link">
+                  👥 צוות
+                </ActiveLink>
+              )}
+              {email && !isClientUser && (
                 <ActiveLink
                   href="/notifications"
                   className="topnav-link topnav-link-with-badge"
