@@ -319,6 +319,14 @@ export default async function TaskDetailPage({
                   t.status,
                   t.time_pauses || [],
                 );
+                // Assignee-only gate. Mirrors the server-side check
+                // in /api/tasks/time-pause: only people on the task
+                // (plus admins) can fiddle with its timer.
+                const lcMe = myEmail.toLowerCase().trim();
+                const isAssignee = (t.assignees || []).some(
+                  (a) => String(a).toLowerCase().trim() === lcMe,
+                );
+                const canPause = isAssignee || !!accessRes?.isAdmin;
                 return (
                   <TaskTimePauseQuick
                     taskId={t.id}
@@ -326,6 +334,7 @@ export default async function TaskDetailPage({
                     isPaused={ip.isPaused}
                     autoMinutes={ip.minutes}
                     runningSinceIso={ip.runningSinceIso}
+                    canPause={canPause}
                   />
                 );
               })()}
@@ -662,6 +671,15 @@ export default async function TaskDetailPage({
               t.status,
               t.time_pauses || [],
             );
+            // Assignee/admin gate — same as the inline pause button.
+            // Non-assignees see the counter + override controls but
+            // not the live pause/resume affordance.
+            const lcMe = myEmail.toLowerCase().trim();
+            const canPause =
+              !!accessRes?.isAdmin ||
+              (t.assignees || []).some(
+                (a) => String(a).toLowerCase().trim() === lcMe,
+              );
             return (
               <SideBlock title="מעקב זמן">
                 <TaskTimeTracker
@@ -670,6 +688,7 @@ export default async function TaskDetailPage({
                   isRunning={ip.isRunning}
                   isPaused={ip.isPaused}
                   overrideMinutes={t.inprogress_minutes ?? null}
+                  canPause={canPause}
                 />
               </SideBlock>
             );

@@ -21,9 +21,16 @@ import type { WorkTask } from "@/lib/appsScript";
  */
 export default function TaskTimePauseIcon({
   task,
+  myEmail,
   onChanged,
 }: {
   task: WorkTask;
+  /** Viewer's email — required for the assignee check. The icon
+   *  hides entirely when the viewer isn't on the task's assignees
+   *  list (or an admin). Mirrors the API-side gate at
+   *  /api/tasks/time-pause so the affordance never appears to
+   *  someone who'd get a 403 anyway. */
+  myEmail: string;
   /** Optional callback the parent can use to refresh derived UI state
    *  (e.g. the live-time chip elsewhere on the page) once the pause
    *  state flips. Receives the new isRunning/isPaused booleans. */
@@ -38,6 +45,17 @@ export default function TaskTimePauseIcon({
   const [paused, setPaused] = useState(ip.isPaused);
   const [running, setRunning] = useState(ip.isRunning);
   const [busy, setBusy] = useState(false);
+
+  // Assignee-only gate (with admins implicitly allowed because the
+  // /api/tasks/time-pause route checks HUB_ADMIN_EMAILS server-side;
+  // for the icon, hiding it from non-assignees is the right default —
+  // admins are admins, they can use the side-panel TaskTimeTracker or
+  // the API directly when they need to).
+  const lc = (myEmail || "").toLowerCase().trim();
+  const isAssignee = (task.assignees || []).some(
+    (a) => String(a).toLowerCase().trim() === lc,
+  );
+  if (!isAssignee) return null;
 
   // Same gate as TaskTimePauseQuick: in_progress only, AND no
   // manual override (override takes the auto value out of the

@@ -29,6 +29,7 @@ export default function TaskTimeTracker({
   isRunning,
   isPaused,
   overrideMinutes,
+  canPause = true,
 }: {
   taskId: string;
   /** Status-derived active in-progress minutes (computed server-side
@@ -42,6 +43,14 @@ export default function TaskTimeTracker({
   /** Manual override persisted on the task row, or null when unset
    *  (→ show the auto value). */
   overrideMinutes: number | null;
+  /** Whether the viewer is allowed to pause/resume — caller passes
+   *  `isAssignee || isAdmin`. When false, the ⏸/▶ button is hidden;
+   *  the live counter and "edit time" override controls still show
+   *  (any project member can correct the recorded time, but only
+   *  assignees can manipulate the live counter). Mirrors the
+   *  API-side gate at /api/tasks/time-pause. Defaults to true for
+   *  back-compat with callers that haven't been updated yet. */
+  canPause?: boolean;
 }) {
   const [override, setOverride] = useState<number | null>(overrideMinutes);
   const [auto, setAuto] = useState(autoMinutes);
@@ -56,7 +65,11 @@ export default function TaskTimeTracker({
 
   const effective = override != null ? override : auto;
   const inProgress = running || paused;
-  const showPausePlay = override == null && inProgress;
+  // Pause/play visible only to the assignee (or admin) — caller
+  // computes `canPause`. Non-assignees still see the timer + "edit
+  // time" override so they can correct recorded time, just not flip
+  // the live state.
+  const showPausePlay = canPause && override == null && inProgress;
 
   function openEdit() {
     setEditAmount(String(effective));

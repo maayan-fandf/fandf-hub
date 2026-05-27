@@ -1820,12 +1820,13 @@ function TaskRow({
               server-side gate in lib/tasksWriteDirect.ts so a user
               who can't actually save isn't shown the affordance. */}
           {/* Pause/resume time-tracking — only renders for in_progress
-              tasks without a manual override. Wired to the same
+              tasks without a manual override, AND only when the
+              viewer is one of the task's assignees. Wired to the same
               /api/tasks/time-pause backend as TaskTimeTracker. Sits
               first in the action row so it's reachable without
-              scanning past other icons; component self-hides for
-              every other status so the row chrome doesn't shift. */}
-          <TaskTimePauseIcon task={task} />
+              scanning past other icons; component self-hides in any
+              non-eligible scenario so the row chrome doesn't shift. */}
+          <TaskTimePauseIcon task={task} myEmail={userEmail} />
           {(isAdmin ||
             (task.author_email &&
               userEmail &&

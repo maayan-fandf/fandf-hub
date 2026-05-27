@@ -13,8 +13,16 @@ export const dynamic = "force-dynamic";
  * user ⏸/▶ it WITHOUT changing status (a break, lunch, context-switch).
  * Each click appends one {at,action,by} event to the task row's
  * `time_pauses` column (atomic under the task lock); lib/inProgressTime
- * subtracts paused stretches. NOT author-gated — any task participant
- * with project access may toggle it, like a status change.
+ * subtracts paused stretches.
+ *
+ * Access (tightened 2026-05-27 after Omer was observed pausing Maayan's
+ * task): callers must be an ADMIN or one of the task's ASSIGNEES.
+ * Project access alone isn't enough — only the people on the hook for
+ * the work should be able to manipulate its time counter. The check
+ * happens HERE at the API surface (so the 403 returns immediately) AND
+ * the pause buttons in the UI hide for non-assignees (TaskTimeTracker,
+ * TaskTimePauseQuick, TaskTimePauseIcon) so the affordance never even
+ * appears to someone who can't use it. Belt-and-suspenders.
  *
  * POST body: { taskId, action: "pause" | "resume" }
  * → { ok, minutes, isRunning, isPaused }  (recomputed auto value; the
@@ -54,6 +62,48 @@ export async function POST(req: Request) {
       { ok: false, error: "Pause/resume requires the direct-SA write path" },
       { status: 503 },
     );
+  }
+
+  // Assignee/admin gate. Read the task first to check assignees; if
+  // the caller can't even read the task, the read itself throws
+  // "Access denied" which we convert to a 403 below.
+  const lc = email.toLowerCase().trim();
+  try {
+    const { tasksGetDirect, HUB_ADMIN_EMAILS } = await import("@/lib/tasksDirect");
+    const isAdmin = HUB_ADMIN_EMAILS.has(lc);
+    if (!isAdmin) {
+      const res = await tasksGetDirect(email, taskId);
+      const assignees = (res.task.assignees || []).map((a) =>
+        String(a).toLowerCase().trim(),
+      );
+      if (!assignees.includes(lc)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "רק עובדים המשובצים על המשימה יכולים להשהות/לחדש את ספירת הזמן",
+          },
+          { status: 403 },
+        );
+      }
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    if (lower.includes("access denied")) {
+      return NextResponse.json(
+        { ok: false, error: "Access denied" },
+        { status: 403 },
+      );
+    }
+    if (lower.includes("not found")) {
+      return NextResponse.json(
+        { ok: false, error: "Task not found" },
+        { status: 404 },
+      );
+    }
+    console.log("[/api/tasks/time-pause assignee-gate] failed:", msg);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
   try {

@@ -36,6 +36,7 @@ export default function TaskTimePauseQuick({
   isPaused,
   autoMinutes,
   runningSinceIso,
+  canPause,
 }: {
   taskId: string;
   isRunning: boolean;
@@ -46,7 +47,18 @@ export default function TaskTimePauseQuick({
    *  derive the live counter without a re-fetch. Empty string when
    *  paused (no active stretch right now). */
   runningSinceIso: string;
+  /** Caller-computed gate: viewer is the task assignee (or admin).
+   *  Component renders null when false — mirrors the API-side gate
+   *  at /api/tasks/time-pause so we never present a button that
+   *  would 403. The page passes
+   *  `task.assignees.includes(myEmail) || HUB_ADMIN_EMAILS.has(...)`. */
+  canPause: boolean;
 }) {
+  // Early-return BEFORE useState — keeps hook count stable across
+  // re-renders even when the prop flips (which it can't really, but
+  // belt-and-suspenders). React allows zero-hook returns above the
+  // first useState call.
+  if (!canPause) return null;
   const [paused, setPaused] = useState(isPaused);
   const [running, setRunning] = useState(isRunning);
   const [toggling, setToggling] = useState(false);
