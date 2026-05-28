@@ -15,237 +15,181 @@ import CampaignsTabs from "@/components/CampaignsTabs";
 export const dynamic = "force-dynamic";
 
 /**
- * /morning/forecast — admin-only month-end spend prediction.
+ * /morning/forecast — admin-only month-end spend snapshot.
  *
- * Data source: ALL CLIENTS rows with `rowType === "חודשי"` whose
- * window contains today. For each (project, channel) row we project
- * month-end spend by scaling spend-to-date by (days-in-window /
- * days-elapsed). Variance vs the row's `תקציב חודשי מאושר` (budget)
- * tells us who's tracking to over- or under-spend the month.
+ * Iteration 2 (2026-05-27): owner wanted a simpler view —
+ * just budget vs spend, no extrapolated forecast / variance chrome.
+ * Grouped by `מנהל קמפיינים` (Keys' campaign-manager column), with
+ * filters for company / project / channel. Project name pulled from
+ * Keys' `פרוייקט` column (joined via slug since ALL CLIENTS' project
+ * column is often blank post-XLOOKUP migration).
  *
- * Grouping: company → project → channel rows. The (project → company)
- * lookup goes through the Keys sheet (cached) since ALL CLIENTS
- * doesn't carry company directly. Projects whose company can't be
- * resolved get bucketed under "(לא מזוהה)" so they don't silently
- * drop.
- *
- * Owner request 2026-05-27.
+ * Data source: ALL CLIENTS rows with rowType="חודשי" whose window
+ * contains today.
  */
 
-type Row = {
+type EnrichedRow = {
+  slug: string;
+  projectName: string;
+  company: string;
+  campaignManager: string;
   channel: string;
   spend: number;
   budget: number;
-  startIso: string;
-  endIso: string;
-  daysElapsed: number;
-  daysInWindow: number;
-  predictedSpend: number;
-  variance: number; // predictedSpend - budget
-  variancePct: number; // variance / budget (NaN-safe)
 };
-
-type ProjectGroup = {
-  project: string;
-  projectSlug: string;
-  rows: Row[];
-  totalSpend: number;
-  totalBudget: number;
-  totalPredicted: number;
-  totalVariance: number;
-};
-
-type CompanyGroup = {
-  company: string;
-  projects: ProjectGroup[];
-  totalSpend: number;
-  totalBudget: number;
-  totalPredicted: number;
-  totalVariance: number;
-};
-
-function daysBetweenInclusive(startIso: string, endIso: string): number {
-  if (!startIso || !endIso) return 0;
-  const s = Date.parse(startIso + "T00:00:00Z");
-  const e = Date.parse(endIso + "T00:00:00Z");
-  if (!Number.isFinite(s) || !Number.isFinite(e)) return 0;
-  return Math.max(0, Math.round((e - s) / 86400000) + 1);
-}
-
-function buildRow(r: AllClientsRow, todayIso: string): Row {
-  const daysInWindow = daysBetweenInclusive(r.startIso, r.endIso);
-  const daysElapsed = Math.max(
-    0,
-    Math.min(daysInWindow, daysBetweenInclusive(r.startIso, todayIso)),
-  );
-  const safeDaysElapsed = Math.max(1, daysElapsed);
-  const predictedSpend = (r.spend * daysInWindow) / safeDaysElapsed;
-  const variance = predictedSpend - r.budget;
-  const variancePct = r.budget > 0 ? variance / r.budget : 0;
-  return {
-    channel: r.channel || "(ללא ערוץ)",
-    spend: r.spend,
-    budget: r.budget,
-    startIso: r.startIso,
-    endIso: r.endIso,
-    daysElapsed,
-    daysInWindow,
-    predictedSpend,
-    variance,
-    variancePct,
-  };
-}
 
 function fmtIls(n: number): string {
   const v = Math.round(n);
   return `₪${v.toLocaleString("he-IL")}`;
 }
-function fmtPct(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  const sign = n > 0 ? "+" : "";
-  return `${sign}${Math.round(n * 100)}%`;
-}
 
-function varianceTone(variancePct: number): "ok" | "warn" | "alert" {
-  // Tighter band than the dashboard pacing chips (±10% vs ±15%) —
-  // this is a predictive view, so flag earlier.
-  const abs = Math.abs(variancePct);
-  if (abs < 0.1) return "ok";
-  if (abs < 0.2) return "warn";
-  return "alert";
-}
+const UNASSIGNED = "(ללא מנהל)";
+const UNKNOWN_COMPANY = "(לא מזוהה)";
 
-export default async function ForecastPage() {
+export default async function ForecastPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    company?: string;
+    project?: string;
+    channel?: string;
+  }>;
+}) {
   const me = await currentUserEmail().catch(() => "");
   if (!me) redirect("/signin?next=/morning/forecast");
 
   const projectsData = await getMyProjects().catch(() => null);
   if (!projectsData?.isAdmin) redirect("/morning");
 
+  const sp = await searchParams;
+  const fCompany = (sp.company || "").trim();
+  const fProject = (sp.project || "").trim();
+  const fChannel = (sp.channel || "").trim();
+
   const subjectEmail = driveFolderOwner();
   const todayIso = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
 
-  // Two parallel reads: the monthly rows we'll project from, and
-  // the Keys sheet for the project→company join (ALL CLIENTS doesn't
-  // carry company directly). Both are cached, so this is cheap on
-  // warm cache.
   const [monthlyRows, keys] = await Promise.all([
     getCurrentMonthlyRows(subjectEmail, todayIso).catch(
       () => [] as AllClientsRow[],
     ),
-    // Explicit type-cast on the fallback so TS doesn't infer never[]
-    // (which makes `headers.indexOf("…")` require `never` arg type,
-    // breaking the build).
     readKeysCached(subjectEmail).catch(
       () => ({ headers: [] as string[], rows: [] as unknown[][] }),
     ),
   ]);
 
-  // Build a (slug → company) and (project → company) map from Keys.
-  // The slug is the canonical join because ALL CLIENTS rows often have
-  // an empty `פרוייקט` column (XLOOKUP migration 2026-05-01).
-  const companyBySlug = new Map<string, string>();
-  const companyByProject = new Map<string, string>();
+  // slug → { projectName, company, campaignManager } from Keys.
+  // The slug ("campaign ID" column) is the canonical join because
+  // ALL CLIENTS' Hebrew name column is often blank post-XLOOKUP
+  // migration (2026-05-01). Keys carries the authoritative name in
+  // `פרוייקט`, the company in `חברה`, and the manager in
+  // `מנהל קמפיינים`.
+  type KeyMeta = { projectName: string; company: string; campaignManager: string };
+  const metaBySlug = new Map<string, KeyMeta>();
+  const metaByProjectName = new Map<string, KeyMeta>();
   {
     const headers = keys.headers || [];
     const iProj = headers.indexOf("פרוייקט");
     const iCo = headers.indexOf("חברה");
     const iSlug = headers.indexOf("campaign ID");
-    if (iProj >= 0 && iCo >= 0) {
-      for (const row of keys.rows || []) {
-        const proj = String(row[iProj] ?? "").trim();
-        const co = String(row[iCo] ?? "").trim();
-        if (proj && co) companyByProject.set(proj.toLowerCase(), co);
-        if (iSlug >= 0) {
-          const slug = String(row[iSlug] ?? "").trim();
-          if (slug && co) companyBySlug.set(slug.toLowerCase(), co);
-        }
-      }
+    const iMgr = headers.indexOf("מנהל קמפיינים");
+    for (const row of keys.rows || []) {
+      const proj = String(row[iProj] ?? "").trim();
+      const co = String(row[iCo] ?? "").trim();
+      const slug = iSlug >= 0 ? String(row[iSlug] ?? "").trim() : "";
+      const mgr = iMgr >= 0 ? String(row[iMgr] ?? "").trim() : "";
+      if (!proj && !slug) continue;
+      const meta: KeyMeta = {
+        projectName: proj || slug,
+        company: co,
+        campaignManager: mgr,
+      };
+      if (slug) metaBySlug.set(slug.toLowerCase(), meta);
+      if (proj) metaByProjectName.set(proj.toLowerCase(), meta);
     }
   }
 
-  // Group rows: company → project → channel rows.
-  const companyMap = new Map<string, CompanyGroup>();
-  for (const r of monthlyRows) {
+  // Enrich every monthly row with Keys-derived metadata. Rows whose
+  // slug doesn't resolve in Keys fall back to whatever ALL CLIENTS
+  // gave us (slug as the displayed name, unknown company / unassigned
+  // manager). Better than silently dropping.
+  const enriched: EnrichedRow[] = monthlyRows.map((r) => {
     const slugKey = (r.projectSlug || "").toLowerCase();
     const projKey = (r.project || "").toLowerCase();
-    const company =
-      companyBySlug.get(slugKey) ||
-      companyByProject.get(projKey) ||
-      "(לא מזוהה)";
-    const projectName = r.project || r.projectSlug || "(ללא שם)";
+    const meta =
+      metaBySlug.get(slugKey) ||
+      metaByProjectName.get(projKey) ||
+      ({
+        projectName: r.project || r.projectSlug || "(ללא שם)",
+        company: UNKNOWN_COMPANY,
+        campaignManager: UNASSIGNED,
+      } satisfies KeyMeta);
+    return {
+      slug: r.projectSlug,
+      projectName: meta.projectName,
+      company: meta.company || UNKNOWN_COMPANY,
+      campaignManager: meta.campaignManager || UNASSIGNED,
+      channel: r.channel || "(ללא ערוץ)",
+      spend: r.spend,
+      budget: r.budget,
+    };
+  });
 
-    let cg = companyMap.get(company);
-    if (!cg) {
-      cg = {
-        company,
-        projects: [],
-        totalSpend: 0,
-        totalBudget: 0,
-        totalPredicted: 0,
-        totalVariance: 0,
-      };
-      companyMap.set(company, cg);
-    }
+  // Distinct filter options derived from the enriched rows — so the
+  // dropdowns only ever list values that actually exist in the
+  // current-month data set. (Avoids dead options that always return
+  // 0 results.)
+  const collator = new Intl.Collator("he");
+  const distinctCompanies = Array.from(
+    new Set(enriched.map((r) => r.company).filter(Boolean)),
+  ).sort(collator.compare);
+  const distinctProjects = Array.from(
+    new Set(enriched.map((r) => r.projectName).filter(Boolean)),
+  ).sort(collator.compare);
+  const distinctChannels = Array.from(
+    new Set(enriched.map((r) => r.channel).filter(Boolean)),
+  ).sort(collator.compare);
 
-    let pg = cg.projects.find(
-      (p) => p.projectSlug === r.projectSlug || p.project === projectName,
-    );
-    if (!pg) {
-      pg = {
-        project: projectName,
-        projectSlug: r.projectSlug,
-        rows: [],
-        totalSpend: 0,
-        totalBudget: 0,
-        totalPredicted: 0,
-        totalVariance: 0,
-      };
-      cg.projects.push(pg);
-    }
+  const filtered = enriched.filter((r) => {
+    if (fCompany && r.company !== fCompany) return false;
+    if (fProject && r.projectName !== fProject) return false;
+    if (fChannel && r.channel !== fChannel) return false;
+    return true;
+  });
 
-    const built = buildRow(r, todayIso);
-    pg.rows.push(built);
-    pg.totalSpend += built.spend;
-    pg.totalBudget += built.budget;
-    pg.totalPredicted += built.predictedSpend;
-    pg.totalVariance += built.variance;
-
-    cg.totalSpend += built.spend;
-    cg.totalBudget += built.budget;
-    cg.totalPredicted += built.predictedSpend;
-    cg.totalVariance += built.variance;
+  // Group: campaign manager → rows. Sorted: managers by total spend
+  // desc; rows inside each manager by project name → channel.
+  const byManager = new Map<string, EnrichedRow[]>();
+  for (const r of filtered) {
+    const k = r.campaignManager;
+    if (!byManager.has(k)) byManager.set(k, []);
+    byManager.get(k)!.push(r);
   }
+  const managers = Array.from(byManager.entries())
+    .map(([name, rows]) => {
+      rows.sort(
+        (a, b) =>
+          collator.compare(a.projectName, b.projectName) ||
+          collator.compare(a.channel, b.channel),
+      );
+      const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
+      const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
+      return { name, rows, totalSpend, totalBudget };
+    })
+    .sort((a, b) => b.totalSpend - a.totalSpend);
 
-  // Sort: companies by total predicted spend desc (biggest outlay
-  // first); projects within each company by predicted desc; rows
-  // within each project by predicted desc.
-  const companies = Array.from(companyMap.values()).sort(
-    (a, b) => b.totalPredicted - a.totalPredicted,
-  );
-  for (const c of companies) {
-    c.projects.sort((a, b) => b.totalPredicted - a.totalPredicted);
-    for (const p of c.projects) {
-      p.rows.sort((a, b) => b.predictedSpend - a.predictedSpend);
-    }
-  }
-
-  // Grand totals across all rows — pinned at the top so the user gets
-  // a single-screen "is the whole portfolio over- or under-spending
-  // the month" read before drilling into specifics.
-  const grand = companies.reduce(
-    (acc, c) => ({
-      spend: acc.spend + c.totalSpend,
-      budget: acc.budget + c.totalBudget,
-      predicted: acc.predicted + c.totalPredicted,
-      variance: acc.variance + c.totalVariance,
+  // Grand totals across visible rows.
+  const grand = filtered.reduce(
+    (acc, r) => ({
+      spend: acc.spend + r.spend,
+      budget: acc.budget + r.budget,
     }),
-    { spend: 0, budget: 0, predicted: 0, variance: 0 },
+    { spend: 0, budget: 0 },
   );
-  const grandPct = grand.budget > 0 ? grand.variance / grand.budget : 0;
-  const grandTone = varianceTone(grandPct);
+
+  const hasFilter = !!(fCompany || fProject || fChannel);
 
   return (
     <main className="container forecast-page">
@@ -256,133 +200,134 @@ export default async function ForecastPage() {
             תחזית הוצאה — חודש נוכחי
           </h1>
           <div className="subtitle">
-            מבוסס על שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את
-            היום ({todayIso}). הוצאה צפויה ={" "}
-            <code>spend × (days-in-window ÷ days-elapsed)</code>. סטייה נמדדת
-            מול התקציב החודשי המאושר של אותה שורה.
+            שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את היום
+            ({todayIso}), מקובצות לפי מנהל/ת קמפיינים.
           </div>
         </div>
       </header>
 
       <CampaignsTabs active="forecast" showForecast />
 
-      {companies.length === 0 ? (
+      {/* Filter bar — three uncontrolled <select>s submitted as a
+          GET form so the URL carries the state (shareable, back-
+          button friendly, no client JS). Each <select> lists the
+          live distinct values; "הכל" is the no-filter option. */}
+      <form className="forecast-filterbar" action="/morning/forecast" method="get">
+        <label className="forecast-filter">
+          <span>חברה</span>
+          <select name="company" defaultValue={fCompany}>
+            <option value="">הכל</option>
+            {distinctCompanies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="forecast-filter">
+          <span>פרויקט</span>
+          <select name="project" defaultValue={fProject}>
+            <option value="">הכל</option>
+            {distinctProjects.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="forecast-filter">
+          <span>ערוץ</span>
+          <select name="channel" defaultValue={fChannel}>
+            <option value="">הכל</option>
+            {distinctChannels.map((ch) => (
+              <option key={ch} value={ch}>
+                {ch}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="btn-primary btn-sm">
+          סנן
+        </button>
+        {hasFilter && (
+          <Link href="/morning/forecast" className="btn-ghost btn-sm">
+            נקה
+          </Link>
+        )}
+      </form>
+
+      <section className="forecast-grand">
+        <div className="forecast-grand-row">
+          <span className="forecast-grand-label">
+            {hasFilter ? "סך תיק לפי הסינון" : "סך תיק נוכחי"}
+          </span>
+          <span className="forecast-grand-num">
+            <b>{fmtIls(grand.spend)}</b> בפועל
+          </span>
+          <span className="forecast-grand-num">
+            <b>{fmtIls(grand.budget)}</b> תקציב
+          </span>
+          <span className="forecast-grand-num">
+            ({filtered.length} שורות)
+          </span>
+        </div>
+      </section>
+
+      {managers.length === 0 ? (
         <div className="empty">
           <span className="emoji" aria-hidden>🌥️</span>
-          לא נמצאו שורות חודשי שחלונן כולל את היום ({todayIso}).
+          {hasFilter
+            ? "אין תוצאות לסינון הנוכחי."
+            : `לא נמצאו שורות חודשי שחלונן כולל את היום (${todayIso}).`}
         </div>
       ) : (
-        <>
-          <section className={`forecast-grand forecast-grand-${grandTone}`}>
-            <div className="forecast-grand-row">
-              <span className="forecast-grand-label">סך תיק נוכחי</span>
-              <span className="forecast-grand-num">
-                <b>{fmtIls(grand.spend)}</b> בפועל
+        managers.map((m) => (
+          <section key={m.name} className="forecast-manager">
+            <h2 className="forecast-manager-head">
+              <span dir="auto">{m.name}</span>
+              <span className="forecast-manager-totals">
+                <span>בפועל: <b>{fmtIls(m.totalSpend)}</b></span>
+                <span>תקציב: <b>{fmtIls(m.totalBudget)}</b></span>
+                <span>{m.rows.length} שורות</span>
               </span>
-              <span className="forecast-grand-num">
-                <b>{fmtIls(grand.budget)}</b> תקציב
-              </span>
-              <span className="forecast-grand-num forecast-grand-predicted">
-                <b>{fmtIls(grand.predicted)}</b> צפי לסוף החודש
-              </span>
-              <span
-                className={`forecast-grand-variance is-${grandTone}`}
-                title="(צפי − תקציב)"
-              >
-                <b>{fmtIls(grand.variance)}</b> ({fmtPct(grandPct)})
-              </span>
-            </div>
-          </section>
-
-          {companies.map((c) => {
-            const coPct =
-              c.totalBudget > 0 ? c.totalVariance / c.totalBudget : 0;
-            const coTone = varianceTone(coPct);
-            return (
-              <section key={c.company} className="forecast-company">
-                <h2 className="forecast-company-head">
-                  <span dir="auto">{c.company}</span>
-                  <span className="forecast-company-totals">
-                    <span>{fmtIls(c.totalSpend)} ⇒ {fmtIls(c.totalPredicted)}</span>
-                    <span className={`forecast-pill is-${coTone}`}>
-                      {fmtPct(coPct)}
-                    </span>
-                  </span>
-                </h2>
-                {c.projects.map((p) => {
-                  const pPct =
-                    p.totalBudget > 0 ? p.totalVariance / p.totalBudget : 0;
-                  const pTone = varianceTone(pPct);
-                  return (
-                    <div key={p.project + p.projectSlug} className="forecast-project">
-                      <h3 className="forecast-project-head">
+            </h2>
+            <div className="forecast-table-wrap">
+              <table className="forecast-table">
+                <thead>
+                  <tr>
+                    <th>פרויקט</th>
+                    <th>חברה</th>
+                    <th>ערוץ</th>
+                    <th>בפועל</th>
+                    <th>תקציב</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {m.rows.map((r, i) => (
+                    <tr key={`${r.slug}-${r.channel}-${i}`}>
+                      <td className="c-project" dir="auto">
                         <Link
-                          href={`/projects/${encodeURIComponent(p.project)}`}
+                          href={`/projects/${encodeURIComponent(r.projectName)}`}
                           className="forecast-project-link"
                         >
-                          <span dir="auto">{p.project}</span>
+                          {r.projectName}
                         </Link>
-                        <span className="forecast-project-totals">
-                          <span>{fmtIls(p.totalSpend)} ⇒ {fmtIls(p.totalPredicted)}</span>
-                          <span
-                            className={`forecast-pill is-${pTone}`}
-                            title={`תקציב: ${fmtIls(p.totalBudget)}`}
-                          >
-                            {fmtPct(pPct)}
-                          </span>
-                        </span>
-                      </h3>
-                      <div className="forecast-table-wrap">
-                        <table className="forecast-table">
-                          <thead>
-                            <tr>
-                              <th>ערוץ</th>
-                              <th>בפועל</th>
-                              <th>תקציב</th>
-                              <th>ימים</th>
-                              <th>צפי</th>
-                              <th>סטייה</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {p.rows.map((r, i) => {
-                              const tone = varianceTone(r.variancePct);
-                              return (
-                                <tr
-                                  key={r.channel + i}
-                                  data-tone={tone}
-                                  className="forecast-row"
-                                >
-                                  <td className="c-channel" dir="auto">
-                                    {r.channel}
-                                  </td>
-                                  <td className="c-num">{fmtIls(r.spend)}</td>
-                                  <td className="c-num">{fmtIls(r.budget)}</td>
-                                  <td className="c-num">
-                                    {r.daysElapsed}/{r.daysInWindow}
-                                  </td>
-                                  <td className="c-num c-predicted">
-                                    {fmtIls(r.predictedSpend)}
-                                  </td>
-                                  <td className={`c-num c-variance is-${tone}`}>
-                                    <b>{fmtIls(r.variance)}</b>
-                                    <span className="forecast-pct">
-                                      {fmtPct(r.variancePct)}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-              </section>
-            );
-          })}
-        </>
+                      </td>
+                      <td className="c-company" dir="auto">
+                        {r.company}
+                      </td>
+                      <td className="c-channel" dir="auto">
+                        {r.channel}
+                      </td>
+                      <td className="c-num">{fmtIls(r.spend)}</td>
+                      <td className="c-num">{fmtIls(r.budget)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))
       )}
     </main>
   );

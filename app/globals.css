@@ -19181,12 +19181,11 @@ button.budget-need:focus-visible {
    The particles canvas covers both dark + light themes and rotates
    through four palette pairs on every theme toggle. */
 
-/* ─── /morning/forecast — month-end spend prediction ──────────────────
- * Three-level grouping (company → project → channel rows). Cards have
- * subtle tone-coded variance pills: green (within ±10% of budget),
- * amber (10-20%), red (>20%). Same tone language as the budget desk
- * but tightened bands since this is forward-looking — flag earlier
- * than reactive pacing.
+/* ─── /morning/forecast — simple spend snapshot ───────────────────────
+ * Iteration 2 (2026-05-27): just budget + spend, grouped by campaign
+ * manager, with company/project/channel filters. The variance-pill
+ * chrome from the first version is gone — owner found the
+ * extrapolated forecast noisy and asked for the raw cut.
  * ─────────────────────────────────────────────────────────────────── */
 .forecast-page { max-width: 1200px; }
 
@@ -19231,6 +19230,88 @@ button.budget-need:focus-visible {
 [data-theme="dark"] .forecast-grand-variance.is-ok    { background: rgba(16,185,129,.22); color: #6ee7b7; }
 [data-theme="dark"] .forecast-grand-variance.is-warn  { background: rgba(245,158,11,.22); color: #fcd34d; }
 [data-theme="dark"] .forecast-grand-variance.is-alert { background: rgba(239,68,68,.22);  color: #fca5a5; }
+
+/* Filter bar — three dropdowns + submit/clear buttons. GET form so
+   the URL carries state (shareable + back-button friendly). */
+.forecast-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin: 14px 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container-low, rgba(255, 255, 255, 0.45));
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.06));
+}
+[data-theme="dark"] .forecast-filterbar {
+  background: rgba(20, 30, 50, 0.4);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.forecast-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  min-width: 160px;
+}
+.forecast-filter > span {
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  font-weight: 600;
+}
+.forecast-filter select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  background: var(--md-sys-color-surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+[data-theme="dark"] .forecast-filter select {
+  background: rgba(20, 30, 50, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Manager group — one section per מנהל קמפיינים. */
+.forecast-manager {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container-low, rgba(255, 255, 255, 0.45));
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.06));
+}
+[data-theme="dark"] .forecast-manager {
+  background: rgba(20, 30, 50, 0.4);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.forecast-manager-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  direction: rtl;
+}
+.forecast-manager-totals {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+}
+.forecast-manager-totals b {
+  color: var(--text);
+}
+
+.forecast-table .c-project,
+.forecast-table .c-company { font-weight: 500; }
+.forecast-table .c-project a { color: inherit; text-decoration: none; }
+.forecast-table .c-project a:hover { text-decoration: underline; }
 
 .forecast-company {
   margin-bottom: 16px;
