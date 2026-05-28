@@ -19312,6 +19312,55 @@ button.budget-need:focus-visible {
 .forecast-table .c-company { font-weight: 500; }
 .forecast-table .c-project a { color: inherit; text-decoration: none; }
 .forecast-table .c-project a:hover { text-decoration: underline; }
+
+/* Sortable column header. The whole cell is a Link so the entire
+   chip is clickable, not just the label text. Active column gets
+   a subtle accent + an arrow indicating current direction. */
+.forecast-th-sort { padding: 0; }
+.forecast-th-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  width: 100%;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s;
+}
+.forecast-th-link:hover {
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--md-sys-color-on-surface, inherit);
+}
+.forecast-th-sort.is-active .forecast-th-link {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--md-sys-color-primary, #4f46e5);
+}
+[data-theme="dark"] .forecast-th-sort.is-active .forecast-th-link {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+}
+.forecast-th-arrow {
+  font-size: 0.75em;
+  opacity: 0.9;
+}
+
+/* Three-level nesting: manager (h2) → company (h3, .forecast-company)
+   → project (h4, .forecast-project). The existing .forecast-company
+   + .forecast-project styles supply the cards; tweak the project
+   block to nest visually inside the company block. */
+.forecast-manager > .forecast-company {
+  /* Already has its own padding/border from the legacy iter-1 styles
+     — that's the per-company card. Slim it a touch and shift the
+     project cards inside. */
+  margin: 10px 0;
+  padding: 10px 12px;
+}
+.forecast-company > .forecast-project {
+  margin: 8px 0;
+}
 .forecast-table .c-fee { text-align: end; }
 
 /* Editable management-fee cell. Read state = pill-shaped button;

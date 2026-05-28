@@ -65,6 +65,8 @@ export default async function ForecastPage({
     company?: string;
     project?: string;
     channel?: string;
+    sort?: string;
+    dir?: string;
   }>;
 }) {
   const me = await currentUserEmail().catch(() => "");
@@ -77,6 +79,26 @@ export default async function ForecastPage({
   const fCompany = (sp.company || "").trim();
   const fProject = (sp.project || "").trim();
   const fChannel = (sp.channel || "").trim();
+
+  // Sort state. Valid columns: channel, spend, budget, feePct, feeIls.
+  // Falls back to "spend / desc" so the busiest row is first when the
+  // user lands without a sort param. Project / company are
+  // intentionally NOT sortable on a row — they're grouping keys, all
+  // rows inside one group share the same value.
+  type SortCol = "channel" | "spend" | "budget" | "feePct" | "feeIls";
+  type SortDir = "asc" | "desc";
+  const ALLOWED_SORTS: ReadonlySet<SortCol> = new Set<SortCol>([
+    "channel",
+    "spend",
+    "budget",
+    "feePct",
+    "feeIls",
+  ]);
+  const rawSort = String(sp.sort || "").trim();
+  const sortCol: SortCol = (ALLOWED_SORTS.has(rawSort as SortCol)
+    ? rawSort
+    : "spend") as SortCol;
+  const sortDir: SortDir = sp.dir === "asc" ? "asc" : "desc";
 
   const subjectEmail = driveFolderOwner();
   const todayIso = new Intl.DateTimeFormat("en-CA", {
@@ -177,25 +199,110 @@ export default async function ForecastPage({
     return true;
   });
 
-  // Group: campaign manager → rows. Sorted: managers by total spend
-  // desc; rows inside each manager by project name → channel.
-  const byManager = new Map<string, EnrichedRow[]>();
+  // Three-level grouping: campaign manager → company → project → rows.
+  // Within each project, channel rows sort by the URL-selected column.
+  // Companies within a manager and projects within a company always
+  // sort by their accumulated totalSpend desc (most-active group first
+  // — same convention used elsewhere in the app, e.g. /team grid).
+  type ProjectGroup = {
+    project: string;
+    slug: string;
+    rows: EnrichedRow[];
+    totalSpend: number;
+    totalBudget: number;
+    totalFee: number;
+  };
+  type CompanyGroup = {
+    company: string;
+    projects: ProjectGroup[];
+    totalSpend: number;
+    totalBudget: number;
+    totalFee: number;
+  };
+  type ManagerGroup = {
+    name: string;
+    companies: CompanyGroup[];
+    totalSpend: number;
+    totalBudget: number;
+    totalFee: number;
+  };
+
+  // Build the nested structure first; sort + roll up totals second.
+  const managerMap = new Map<string, Map<string, Map<string, EnrichedRow[]>>>();
   for (const r of filtered) {
-    const k = r.campaignManager;
-    if (!byManager.has(k)) byManager.set(k, []);
-    byManager.get(k)!.push(r);
+    let coMap = managerMap.get(r.campaignManager);
+    if (!coMap) {
+      coMap = new Map();
+      managerMap.set(r.campaignManager, coMap);
+    }
+    let projMap = coMap.get(r.company);
+    if (!projMap) {
+      projMap = new Map();
+      coMap.set(r.company, projMap);
+    }
+    // Group by projectName as well as slug to keep "(ללא שם)"-style
+    // dupes separated when slug is empty.
+    const projKey = `${r.projectName} ${r.slug}`;
+    let rows = projMap.get(projKey);
+    if (!rows) {
+      rows = [];
+      projMap.set(projKey, rows);
+    }
+    rows.push(r);
   }
-  const managers = Array.from(byManager.entries())
-    .map(([name, rows]) => {
-      rows.sort(
-        (a, b) =>
-          collator.compare(a.projectName, b.projectName) ||
-          collator.compare(a.channel, b.channel),
-      );
-      const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
-      const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
-      const totalFee = rows.reduce((s, r) => s + r.feeIls, 0);
-      return { name, rows, totalSpend, totalBudget, totalFee };
+
+  // Channel-row comparator based on URL sort. Falls back to alpha
+  // channel sort when the chosen column ties (so the order is stable
+  // across re-renders even when many rows share, say, 0 spend).
+  const sortMul = sortDir === "asc" ? 1 : -1;
+  const compareRows = (a: EnrichedRow, b: EnrichedRow): number => {
+    let primary = 0;
+    if (sortCol === "channel") {
+      primary = collator.compare(a.channel, b.channel) * sortMul;
+    } else if (sortCol === "spend") {
+      primary = (a.spend - b.spend) * sortMul;
+    } else if (sortCol === "budget") {
+      primary = (a.budget - b.budget) * sortMul;
+    } else if (sortCol === "feePct") {
+      primary = (a.feePercent - b.feePercent) * sortMul;
+    } else if (sortCol === "feeIls") {
+      primary = (a.feeIls - b.feeIls) * sortMul;
+    }
+    if (primary !== 0) return primary;
+    return collator.compare(a.channel, b.channel);
+  };
+
+  const managers: ManagerGroup[] = Array.from(managerMap.entries())
+    .map(([mgrName, coMap]) => {
+      const companies: CompanyGroup[] = Array.from(coMap.entries())
+        .map(([coName, projMap]) => {
+          const projects: ProjectGroup[] = Array.from(projMap.entries())
+            .map(([projKey, rows]) => {
+              const [project] = projKey.split(" ");
+              const slug = rows[0]?.slug ?? "";
+              rows.sort(compareRows);
+              const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
+              const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
+              const totalFee = rows.reduce((s, r) => s + r.feeIls, 0);
+              return { project, slug, rows, totalSpend, totalBudget, totalFee };
+            })
+            .sort((a, b) => b.totalSpend - a.totalSpend);
+          return {
+            company: coName,
+            projects,
+            totalSpend: projects.reduce((s, p) => s + p.totalSpend, 0),
+            totalBudget: projects.reduce((s, p) => s + p.totalBudget, 0),
+            totalFee: projects.reduce((s, p) => s + p.totalFee, 0),
+          };
+        })
+        .sort((a, b) => b.totalSpend - a.totalSpend);
+      return {
+        name: mgrName,
+        companies,
+        totalSpend: companies.reduce((s, c) => s + c.totalSpend, 0),
+        totalBudget: companies.reduce((s, c) => s + c.totalBudget, 0),
+        totalFee: companies.reduce((s, c) => s + c.totalFee, 0),
+      };
     })
     .sort((a, b) => b.totalSpend - a.totalSpend);
 
@@ -312,57 +419,171 @@ export default async function ForecastPage({
                 <span>בפועל: <b>{fmtIls(m.totalSpend)}</b></span>
                 <span>תקציב: <b>{fmtIls(m.totalBudget)}</b></span>
                 <span>דמי ניהול: <b>{fmtIls(m.totalFee)}</b></span>
-                <span>{m.rows.length} שורות</span>
               </span>
             </h2>
-            <div className="forecast-table-wrap">
-              <table className="forecast-table">
-                <thead>
-                  <tr>
-                    <th>פרויקט</th>
-                    <th>חברה</th>
-                    <th>ערוץ</th>
-                    <th>בפועל</th>
-                    <th>תקציב</th>
-                    <th>% ניהול</th>
-                    <th>₪ ניהול</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {m.rows.map((r, i) => (
-                    <tr key={`${r.slug}-${r.channel}-${i}`}>
-                      <td className="c-project" dir="auto">
-                        <Link
-                          href={`/projects/${encodeURIComponent(r.projectName)}`}
-                          className="forecast-project-link"
-                        >
-                          {r.projectName}
-                        </Link>
-                      </td>
-                      <td className="c-company" dir="auto">
-                        {r.company}
-                      </td>
-                      <td className="c-channel" dir="auto">
-                        {r.channel}
-                      </td>
-                      <td className="c-num">{fmtIls(r.spend)}</td>
-                      <td className="c-num">{fmtIls(r.budget)}</td>
-                      <td className="c-fee">
-                        <ManagementFeeCell
-                          slug={r.slug}
-                          channel={r.channel}
-                          initialPercent={r.feePercent}
-                        />
-                      </td>
-                      <td className="c-num">{fmtIls(r.feeIls)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {m.companies.map((c) => (
+              <div key={c.company} className="forecast-company">
+                <h3 className="forecast-company-head">
+                  <span dir="auto">{c.company}</span>
+                  <span className="forecast-company-totals">
+                    <span>בפועל: <b>{fmtIls(c.totalSpend)}</b></span>
+                    <span>תקציב: <b>{fmtIls(c.totalBudget)}</b></span>
+                    <span>דמי ניהול: <b>{fmtIls(c.totalFee)}</b></span>
+                  </span>
+                </h3>
+                {c.projects.map((p) => (
+                  <div key={p.project + p.slug} className="forecast-project">
+                    <h4 className="forecast-project-head">
+                      <Link
+                        href={`/projects/${encodeURIComponent(p.project)}`}
+                        className="forecast-project-link"
+                      >
+                        <span dir="auto">{p.project}</span>
+                      </Link>
+                      <span className="forecast-project-totals">
+                        <span>בפועל: <b>{fmtIls(p.totalSpend)}</b></span>
+                        <span>תקציב: <b>{fmtIls(p.totalBudget)}</b></span>
+                        <span>דמי ניהול: <b>{fmtIls(p.totalFee)}</b></span>
+                      </span>
+                    </h4>
+                    <div className="forecast-table-wrap">
+                      <table className="forecast-table">
+                        <thead>
+                          <tr>
+                            <SortHeader
+                              col="channel"
+                              label="ערוץ"
+                              currentCol={sortCol}
+                              currentDir={sortDir}
+                              sp={sp}
+                              align="start"
+                            />
+                            <SortHeader
+                              col="spend"
+                              label="בפועל"
+                              currentCol={sortCol}
+                              currentDir={sortDir}
+                              sp={sp}
+                            />
+                            <SortHeader
+                              col="budget"
+                              label="תקציב"
+                              currentCol={sortCol}
+                              currentDir={sortDir}
+                              sp={sp}
+                            />
+                            <SortHeader
+                              col="feePct"
+                              label="% ניהול"
+                              currentCol={sortCol}
+                              currentDir={sortDir}
+                              sp={sp}
+                            />
+                            <SortHeader
+                              col="feeIls"
+                              label="₪ ניהול"
+                              currentCol={sortCol}
+                              currentDir={sortDir}
+                              sp={sp}
+                            />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {p.rows.map((r, i) => (
+                            <tr key={`${r.slug}-${r.channel}-${i}`}>
+                              <td className="c-channel" dir="auto">
+                                {r.channel}
+                              </td>
+                              <td className="c-num">{fmtIls(r.spend)}</td>
+                              <td className="c-num">{fmtIls(r.budget)}</td>
+                              <td className="c-fee">
+                                <ManagementFeeCell
+                                  slug={r.slug}
+                                  channel={r.channel}
+                                  initialPercent={r.feePercent}
+                                />
+                              </td>
+                              <td className="c-num">{fmtIls(r.feeIls)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
           </section>
         ))
       )}
     </main>
+  );
+}
+
+/**
+ * Clickable column header. Builds a URL that toggles direction when
+ * clicking the active column, or sets `?sort=col&dir=desc` when
+ * switching to a different column (start newcomers at desc — most
+ * useful for ₪ columns; alpha columns default to asc instead).
+ */
+function SortHeader({
+  col,
+  label,
+  currentCol,
+  currentDir,
+  sp,
+  align = "end",
+}: {
+  col: "channel" | "spend" | "budget" | "feePct" | "feeIls";
+  label: string;
+  currentCol: string;
+  currentDir: "asc" | "desc";
+  sp: {
+    company?: string;
+    project?: string;
+    channel?: string;
+    sort?: string;
+    dir?: string;
+  };
+  align?: "start" | "end";
+}) {
+  const isActive = currentCol === col;
+  const isAlpha = col === "channel";
+  // Toggle direction when re-clicking the active column. When
+  // switching columns, default to asc for alpha cols (A→Z reads
+  // naturally) and desc for numeric (₪ desc surfaces the largest
+  // first, which is what people usually want).
+  const nextDir = isActive
+    ? currentDir === "asc"
+      ? "desc"
+      : "asc"
+    : isAlpha
+      ? "asc"
+      : "desc";
+  const params = new URLSearchParams();
+  if (sp.company) params.set("company", sp.company);
+  if (sp.project) params.set("project", sp.project);
+  if (sp.channel) params.set("channel", sp.channel);
+  params.set("sort", col);
+  params.set("dir", nextDir);
+  const href = `/morning/forecast?${params.toString()}`;
+  const arrow = isActive ? (currentDir === "asc" ? "▲" : "▼") : "";
+  return (
+    <th
+      className={`forecast-th-sort${isActive ? " is-active" : ""}`}
+      style={{ textAlign: align === "end" ? "end" : "start" }}
+      aria-sort={
+        isActive
+          ? currentDir === "asc"
+            ? "ascending"
+            : "descending"
+          : "none"
+      }
+    >
+      <Link href={href} prefetch={false} className="forecast-th-link">
+        {label}
+        {arrow && <span className="forecast-th-arrow"> {arrow}</span>}
+      </Link>
+    </th>
   );
 }
