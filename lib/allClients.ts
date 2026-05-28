@@ -331,6 +331,45 @@ export async function getCurrentMonthlyRows(
 }
 
 /**
+ * Return every "חודשי" (monthly) row whose `startIso` falls within
+ * the given calendar year-month (e.g. "2026-04" matches every monthly
+ * row that starts on 2026-04-01, regardless of how long its window
+ * runs). Used by /morning/forecast's "חודש קודם" toggle.
+ *
+ * The prefix-match is intentional — monthly rows in ALL CLIENTS are
+ * always aligned to calendar months (startIso === first day of the
+ * month), so a substring check on YYYY-MM is the most stable test.
+ * Rows with empty/invalid startIso are silently dropped.
+ */
+export async function getMonthlyRowsForYearMonth(
+  subjectEmail: string,
+  yearMonth: string,
+): Promise<AllClientsRow[]> {
+  const all = await readAllClientsRows(subjectEmail);
+  if (!yearMonth) return [];
+  return all.filter((r) => r.rowType === "חודשי" && r.startIso.startsWith(yearMonth));
+}
+
+/**
+ * Compute the YYYY-MM string for the calendar month *before* the
+ * given todayIso, in Asia/Jerusalem semantics. Pure function, exported
+ * so the forecast page can reuse the same calculation for both data
+ * fetch + UI labelling.
+ *
+ *   previousYearMonth("2026-05-28") === "2026-04"
+ *   previousYearMonth("2026-01-15") === "2025-12"
+ */
+export function previousYearMonth(todayIso: string): string {
+  const [yStr, mStr] = todayIso.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return "";
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  return `${prevY}-${String(prevM).padStart(2, "0")}`;
+}
+
+/**
  * Force the next read to bypass the cross-request cache. Call after
  * the ALL CLIENTS tab is mutated upstream. No hub-side path mutates
  * the tab today, but exposed so the admin endpoint can wire it in if

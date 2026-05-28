@@ -7,6 +7,8 @@ import {
 } from "@/lib/appsScript";
 import {
   getCurrentMonthlyRows,
+  getMonthlyRowsForYearMonth,
+  previousYearMonth,
   type AllClientsRow,
 } from "@/lib/allClients";
 import { readKeysCached } from "@/lib/keys";
@@ -35,6 +37,19 @@ export const dynamic = "force-dynamic";
  * contains today.
  */
 
+/** Aggregated metrics across a slice of EnrichedRows. Mirrored on
+ *  every rollup level (project / company / manager / grand total) so
+ *  the rendering surface only ever pulls from this consistent shape. */
+type GroupTotals = {
+  totalSpend: number;
+  totalBudget: number;
+  totalFeeActual: number;
+  totalFeeBudget: number;
+  totalLeads: number;
+  totalScheduled: number;
+  totalMeetings: number;
+};
+
 type EnrichedRow = {
   slug: string;
   projectName: string;
@@ -43,16 +58,27 @@ type EnrichedRow = {
   channel: string;
   spend: number;
   budget: number;
+  /** Lead-count from ALL CLIENTS' `לידים CRM` column. Used by the
+   *  "חודש קודם" view's optional metrics toggle, otherwise 0 / unused. */
+  leads: number;
+  /** תיאומים — meeting tie-ups + cancellations (`תיאום וביטול`). */
+  scheduled: number;
+  /** ביצועים — meetings actually held (`ביצוע פגישות`). */
+  meetings: number;
   /** Spend ÷ budget × 100. Returns null when budget is 0 — we
    *  render "—" in that case rather than a misleading 0% or ∞. */
   utilizationPct: number | null;
   /** Management-fee percent for this (slug, channel). Server-
    *  resolved with the 15% default when no Firestore override exists. */
   feePercent: number;
-  /** Computed fee in ILS = spend × feePercent / 100. Server-side so
-   *  the per-manager + grand totals can include it without
-   *  re-deriving on the client. */
-  feeIls: number;
+  /** Computed fee in ILS based on ACTUAL spend = spend × feePercent / 100.
+   *  Server-side so the per-manager + grand totals can include it
+   *  without re-deriving on the client. */
+  feeIlsActual: number;
+  /** Computed fee in ILS based on the APPROVED BUDGET = budget × fee%.
+   *  Pairs with feeIlsActual so the forecast view can show
+   *  "expected fee at month-end" alongside "fee earned so far." */
+  feeIlsBudget: number;
 };
 
 function fmtIls(n: number): string {
@@ -62,6 +88,17 @@ function fmtIls(n: number): string {
 function fmtPct(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "—";
   return `${Math.round(n)}%`;
+}
+/** Plain integer formatter (Hebrew thousands separators), no ₪ prefix.
+ *  Used for the metrics columns (leads / scheduled / meetings counts). */
+function fmtNum(n: number): string {
+  return Math.round(n).toLocaleString("he-IL");
+}
+/** ₪-formatted value or "—" when the underlying ratio was 0-divided.
+ *  Used by the cost-per-result columns in the prev-month metrics view. */
+function fmtIlsNullable(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return "—";
+  return fmtIls(n);
 }
 
 /** Split a comma-separated multi-select param into a Set of trimmed,
@@ -85,6 +122,14 @@ type SpShape = {
   dir?: string;
   grouping?: string;
   q?: string;
+  /** "current" (default — month windows containing today, full forecast
+   *  columns) or "previous" (previous-calendar-month monthly rows,
+   *  spend-only columns + optional metrics). */
+  view?: string;
+  /** "1" → render the leads/scheduled/meetings columns (with
+   *  ₪/result cost columns next to each) in previous-month view.
+   *  No-op in current-month view. */
+  metrics?: string;
 };
 
 /** Build an URLSearchParams string that preserves the current sp +
@@ -116,6 +161,8 @@ export default async function ForecastPage({
     dir?: string;
     grouping?: string;
     q?: string;
+    view?: string;
+    metrics?: string;
   }>;
 }) {
   const me = await currentUserEmail().catch(() => "");
@@ -141,6 +188,17 @@ export default async function ForecastPage({
   // runs it." Default (any other value) keeps the nested view.
   const groupingMode = sp.grouping === "flat" ? "flat" : "default";
 
+  // View toggle (2026-05-28). "current" = month-in-progress windows
+  // (existing forecast view, full column set). "previous" = the
+  // immediately-prior calendar month's monthly rows, spend-only by
+  // default. The metrics toggle below adds לידים / תיאומים / ביצועים
+  // + ₪/result cost columns for the retrospective view; it's a no-op
+  // in current-month mode (those metrics aren't part of the forecast
+  // story).
+  const viewMode: "current" | "previous" =
+    sp.view === "previous" ? "previous" : "current";
+  const showMetrics = sp.metrics === "1";
+
   // Sort state. The alpha columns (project / company / manager) only
   // show in flat mode — in grouped mode they're grouping keys, not
   // columns — but the type union covers both modes so the URL state
@@ -151,7 +209,14 @@ export default async function ForecastPage({
     | "budget"
     | "utilizationPct"
     | "feePct"
-    | "feeIls"
+    | "feeIlsBudget"
+    | "feeIlsActual"
+    | "leads"
+    | "scheduled"
+    | "meetings"
+    | "costPerLead"
+    | "costPerScheduled"
+    | "costPerMeeting"
     | "project"
     | "company"
     | "manager";
@@ -162,7 +227,14 @@ export default async function ForecastPage({
     "budget",
     "utilizationPct",
     "feePct",
-    "feeIls",
+    "feeIlsBudget",
+    "feeIlsActual",
+    "leads",
+    "scheduled",
+    "meetings",
+    "costPerLead",
+    "costPerScheduled",
+    "costPerMeeting",
     "project",
     "company",
     "manager",
@@ -177,11 +249,18 @@ export default async function ForecastPage({
   const todayIso = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
+  // YYYY-MM for the prev-calendar-month — used both to fetch rows
+  // (when viewMode === "previous") and to render the header label.
+  const prevYm = previousYearMonth(todayIso);
 
   const [monthlyRows, keys, feeMap, morning] = await Promise.all([
-    getCurrentMonthlyRows(subjectEmail, todayIso).catch(
-      () => [] as AllClientsRow[],
-    ),
+    viewMode === "previous"
+      ? getMonthlyRowsForYearMonth(subjectEmail, prevYm).catch(
+          () => [] as AllClientsRow[],
+        )
+      : getCurrentMonthlyRows(subjectEmail, todayIso).catch(
+          () => [] as AllClientsRow[],
+        ),
     readKeysCached(subjectEmail).catch(
       () => ({ headers: [] as string[], rows: [] as unknown[][] }),
     ),
@@ -250,7 +329,8 @@ export default async function ForecastPage({
       } satisfies KeyMeta);
     const channel = r.channel || "(ללא ערוץ)";
     const feePercent = getFeePercentForRow(feeMap, r.projectSlug, channel);
-    const feeIls = (r.spend * feePercent) / 100;
+    const feeIlsActual = (r.spend * feePercent) / 100;
+    const feeIlsBudget = (r.budget * feePercent) / 100;
     const utilizationPct = r.budget > 0 ? (r.spend / r.budget) * 100 : null;
     return {
       slug: r.projectSlug,
@@ -260,9 +340,13 @@ export default async function ForecastPage({
       channel,
       spend: r.spend,
       budget: r.budget,
+      leads: r.leads,
+      scheduled: r.scheduled,
+      meetings: r.meetings,
       utilizationPct,
       feePercent,
-      feeIls,
+      feeIlsActual,
+      feeIlsBudget,
     };
   });
 
@@ -304,28 +388,21 @@ export default async function ForecastPage({
   // Companies within a manager and projects within a company always
   // sort by their accumulated totalSpend desc (most-active group first
   // — same convention used elsewhere in the app, e.g. /team grid).
-  type ProjectGroup = {
+  // `GroupTotals` lives at module scope (next to EnrichedRow) so the
+  // GroupTotalsStrip renderer can pull from it without a re-declaration.
+  type ProjectGroup = GroupTotals & {
     project: string;
     slug: string;
     sheetTabUrl: string;
     rows: EnrichedRow[];
-    totalSpend: number;
-    totalBudget: number;
-    totalFee: number;
   };
-  type CompanyGroup = {
+  type CompanyGroup = GroupTotals & {
     company: string;
     projects: ProjectGroup[];
-    totalSpend: number;
-    totalBudget: number;
-    totalFee: number;
   };
-  type ManagerGroup = {
+  type ManagerGroup = GroupTotals & {
     name: string;
     companies: CompanyGroup[];
-    totalSpend: number;
-    totalBudget: number;
-    totalFee: number;
   };
 
   // Build the nested structure first; sort + roll up totals second.
@@ -354,6 +431,16 @@ export default async function ForecastPage({
     rows.push(r);
   }
 
+  // Per-row cost-per-result helpers (used by both sort comparator +
+  // the previous-month metrics table cells). Return null when the
+  // denominator is 0/missing — rendered as "—" instead of ∞ / NaN.
+  const costPerLead = (r: EnrichedRow): number | null =>
+    r.leads > 0 ? r.spend / r.leads : null;
+  const costPerScheduled = (r: EnrichedRow): number | null =>
+    r.scheduled > 0 ? r.spend / r.scheduled : null;
+  const costPerMeeting = (r: EnrichedRow): number | null =>
+    r.meetings > 0 ? r.spend / r.meetings : null;
+
   // Channel-row comparator based on URL sort. Falls back to alpha
   // channel sort when the chosen column ties (so the order is stable
   // across re-renders even when many rows share, say, 0 spend).
@@ -380,12 +467,61 @@ export default async function ForecastPage({
       primary = (av - bv) * sortMul;
     } else if (sortCol === "feePct") {
       primary = (a.feePercent - b.feePercent) * sortMul;
-    } else if (sortCol === "feeIls") {
-      primary = (a.feeIls - b.feeIls) * sortMul;
+    } else if (sortCol === "feeIlsActual") {
+      primary = (a.feeIlsActual - b.feeIlsActual) * sortMul;
+    } else if (sortCol === "feeIlsBudget") {
+      primary = (a.feeIlsBudget - b.feeIlsBudget) * sortMul;
+    } else if (sortCol === "leads") {
+      primary = (a.leads - b.leads) * sortMul;
+    } else if (sortCol === "scheduled") {
+      primary = (a.scheduled - b.scheduled) * sortMul;
+    } else if (sortCol === "meetings") {
+      primary = (a.meetings - b.meetings) * sortMul;
+    } else if (
+      sortCol === "costPerLead" ||
+      sortCol === "costPerScheduled" ||
+      sortCol === "costPerMeeting"
+    ) {
+      // Null cost-per-result rows sink to the bottom regardless of
+      // direction — same convention as utilizationPct above.
+      const getter =
+        sortCol === "costPerLead"
+          ? costPerLead
+          : sortCol === "costPerScheduled"
+            ? costPerScheduled
+            : costPerMeeting;
+      const av = getter(a) ?? (sortDir === "asc" ? -Infinity : Infinity);
+      const bv = getter(b) ?? (sortDir === "asc" ? -Infinity : Infinity);
+      primary = (av - bv) * sortMul;
     }
     if (primary !== 0) return primary;
     return collator.compare(a.channel, b.channel);
   };
+
+  // Sum every numeric axis for a slice of rows in a single pass. Used
+  // at every level of the rollup so totals stay consistent (manager
+  // total === Σ company totals === Σ project totals === Σ row values).
+  const sumRows = (rows: EnrichedRow[]): GroupTotals =>
+    rows.reduce<GroupTotals>(
+      (acc, r) => ({
+        totalSpend: acc.totalSpend + r.spend,
+        totalBudget: acc.totalBudget + r.budget,
+        totalFeeActual: acc.totalFeeActual + r.feeIlsActual,
+        totalFeeBudget: acc.totalFeeBudget + r.feeIlsBudget,
+        totalLeads: acc.totalLeads + r.leads,
+        totalScheduled: acc.totalScheduled + r.scheduled,
+        totalMeetings: acc.totalMeetings + r.meetings,
+      }),
+      {
+        totalSpend: 0,
+        totalBudget: 0,
+        totalFeeActual: 0,
+        totalFeeBudget: 0,
+        totalLeads: 0,
+        totalScheduled: 0,
+        totalMeetings: 0,
+      },
+    );
 
   const managers: ManagerGroup[] = Array.from(managerMap.entries())
     .map(([mgrName, coMap]) => {
@@ -398,48 +534,32 @@ export default async function ForecastPage({
               const sheetTabUrl =
                 sheetUrlBySlug.get(slug.toLowerCase().trim()) || "";
               rows.sort(compareRows);
-              const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
-              const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
-              const totalFee = rows.reduce((s, r) => s + r.feeIls, 0);
               return {
                 project,
                 slug,
                 sheetTabUrl,
                 rows,
-                totalSpend,
-                totalBudget,
-                totalFee,
+                ...sumRows(rows),
               };
             })
             .sort((a, b) => b.totalSpend - a.totalSpend);
           return {
             company: coName,
             projects,
-            totalSpend: projects.reduce((s, p) => s + p.totalSpend, 0),
-            totalBudget: projects.reduce((s, p) => s + p.totalBudget, 0),
-            totalFee: projects.reduce((s, p) => s + p.totalFee, 0),
+            ...sumRows(projects.flatMap((p) => p.rows)),
           };
         })
         .sort((a, b) => b.totalSpend - a.totalSpend);
       return {
         name: mgrName,
         companies,
-        totalSpend: companies.reduce((s, c) => s + c.totalSpend, 0),
-        totalBudget: companies.reduce((s, c) => s + c.totalBudget, 0),
-        totalFee: companies.reduce((s, c) => s + c.totalFee, 0),
+        ...sumRows(companies.flatMap((c) => c.projects.flatMap((p) => p.rows))),
       };
     })
     .sort((a, b) => b.totalSpend - a.totalSpend);
 
   // Grand totals across visible rows.
-  const grand = filtered.reduce(
-    (acc, r) => ({
-      spend: acc.spend + r.spend,
-      budget: acc.budget + r.budget,
-      fee: acc.fee + r.feeIls,
-    }),
-    { spend: 0, budget: 0, fee: 0 },
-  );
+  const grand = sumRows(filtered);
 
   const hasFilter =
     fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0 || !!fQuery;
@@ -450,11 +570,12 @@ export default async function ForecastPage({
         <div>
           <h1>
             <span className="emoji" aria-hidden>🔮</span>
-            תחזית הוצאה — חודש נוכחי
+            תחזית הוצאה — {viewMode === "previous" ? `חודש קודם (${prevYm})` : "חודש נוכחי"}
           </h1>
           <div className="subtitle">
-            שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את היום
-            ({todayIso}), מקובצות לפי מנהל/ת קמפיינים.
+            {viewMode === "previous"
+              ? `שורות חודשי ב־ALL CLIENTS שמתחילות ב־${prevYm}, מקובצות לפי מנהל/ת קמפיינים.`
+              : `שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את היום (${todayIso}), מקובצות לפי מנהל/ת קמפיינים.`}
           </div>
         </div>
       </header>
@@ -525,6 +646,49 @@ export default async function ForecastPage({
             📋 שורות
           </Link>
         </div>
+        {/* View toggle (current vs previous month). Switching to the
+            previous-month view clears the metrics toggle on every link
+            click — the metrics columns are only meaningful retrospectively
+            so we don't want them re-appearing when the user flips back
+            and forth quickly. Sort/filter params survive though. */}
+        <div className="forecast-grouping-toggle" role="tablist" aria-label="תקופה">
+          <Link
+            href={`/morning/forecast?${buildHref(sp, { view: "" })}`}
+            className={`forecast-grouping-btn${viewMode === "current" ? " is-active" : ""}`}
+            prefetch={false}
+          >
+            📅 חודש נוכחי
+          </Link>
+          <Link
+            href={`/morning/forecast?${buildHref(sp, { view: "previous" })}`}
+            className={`forecast-grouping-btn${viewMode === "previous" ? " is-active" : ""}`}
+            prefetch={false}
+          >
+            ⏪ חודש קודם
+          </Link>
+        </div>
+        {/* Metrics toggle — only meaningful in previous-month view. In
+            current-month view the columns wouldn't add value (the
+            partial-month ₪/result numbers are misleading mid-pace), so
+            the toggle is hidden entirely. */}
+        {viewMode === "previous" && (
+          <div className="forecast-grouping-toggle" role="tablist" aria-label="מדדים">
+            <Link
+              href={`/morning/forecast?${buildHref(sp, { metrics: "" })}`}
+              className={`forecast-grouping-btn${!showMetrics ? " is-active" : ""}`}
+              prefetch={false}
+            >
+              💰 הוצאה בלבד
+            </Link>
+            <Link
+              href={`/morning/forecast?${buildHref(sp, { metrics: "1" })}`}
+              className={`forecast-grouping-btn${showMetrics ? " is-active" : ""}`}
+              prefetch={false}
+            >
+              📈 כולל מדדים
+            </Link>
+          </div>
+        )}
         <div className="forecast-filter-actions">
           <button type="submit" className="btn-primary btn-sm">
             סנן
@@ -535,32 +699,60 @@ export default async function ForecastPage({
             </Link>
           )}
         </div>
-        {/* Preserve sort + grouping params across the GET submit so
-            picking new filter values doesn't reset the user's column
-            sort or grouping mode. The searchable multi-select itself
-            writes a single hidden input per filter name — no submit-
-            interceptor script needed anymore. */}
+        {/* Preserve sort + grouping + view + metrics params across the
+            GET submit so picking new filter values doesn't reset the
+            user's column sort, grouping mode, or view choice. The
+            searchable multi-select itself writes a single hidden input
+            per filter name — no submit-interceptor script needed anymore. */}
         {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
         {sp.dir && <input type="hidden" name="dir" value={sp.dir} />}
         {groupingMode === "flat" && (
           <input type="hidden" name="grouping" value="flat" />
         )}
+        {viewMode === "previous" && (
+          <input type="hidden" name="view" value="previous" />
+        )}
+        {showMetrics && <input type="hidden" name="metrics" value="1" />}
       </form>
 
       <section className="forecast-grand">
         <div className="forecast-grand-row">
           <span className="forecast-grand-label">
-            {hasFilter ? "סך תיק לפי הסינון" : "סך תיק נוכחי"}
+            {hasFilter
+              ? "סך תיק לפי הסינון"
+              : viewMode === "previous"
+                ? "סך החודש הקודם"
+                : "סך תיק נוכחי"}
           </span>
           <span className="forecast-grand-num">
-            <b>{fmtIls(grand.spend)}</b> בפועל
+            <b>{fmtIls(grand.totalSpend)}</b> בפועל
           </span>
-          <span className="forecast-grand-num">
-            <b>{fmtIls(grand.budget)}</b> תקציב
-          </span>
-          <span className="forecast-grand-num">
-            <b>{fmtIls(grand.fee)}</b> דמי ניהול
-          </span>
+          {viewMode === "current" && (
+            <>
+              <span className="forecast-grand-num">
+                <b>{fmtIls(grand.totalBudget)}</b> תקציב
+              </span>
+              <span className="forecast-grand-num">
+                <b>{fmtIls(grand.totalFeeBudget)}</b> דמי ניהול (תקציב)
+              </span>
+              <span className="forecast-grand-num">
+                <b>{fmtIls(grand.totalFeeActual)}</b> דמי ניהול (בפועל)
+              </span>
+            </>
+          )}
+          {viewMode === "previous" && showMetrics && (
+            <>
+              <span className="forecast-grand-num">
+                <b>{grand.totalLeads.toLocaleString("he-IL")}</b> לידים
+              </span>
+              <span className="forecast-grand-num">
+                <b>{grand.totalScheduled.toLocaleString("he-IL")}</b> תיאומים
+              </span>
+              <span className="forecast-grand-num">
+                <b>{grand.totalMeetings.toLocaleString("he-IL")}</b> ביצועים
+              </span>
+            </>
+          )}
           <span className="forecast-grand-num">
             ({filtered.length} שורות)
           </span>
@@ -591,11 +783,31 @@ export default async function ForecastPage({
                     <SortHeader col="company" label="חברה" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
                     <SortHeader col="manager" label="מנהל קמפיינים" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
                     <SortHeader col="channel" label="ערוץ" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
-                    <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                    <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                    <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                    <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                    <SortHeader col="feeIls" label="₪ ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                    {viewMode === "current" && (
+                      <>
+                        <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                        <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                        <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                        <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                        <SortHeader col="feeIlsBudget" label="דמי ניהול תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                        <SortHeader col="feeIlsActual" label="דמי ניהול בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                      </>
+                    )}
+                    {viewMode === "previous" && (
+                      <>
+                        <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                        {showMetrics && (
+                          <>
+                            <SortHeader col="leads" label="לידים" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="costPerLead" label="₪ / ליד" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="scheduled" label="תיאומים" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="costPerScheduled" label="₪ / תיאום" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="meetings" label="ביצועים" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="costPerMeeting" label="₪ / ביצוע" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                          </>
+                        )}
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -616,17 +828,37 @@ export default async function ForecastPage({
                         <td className="c-company" dir="auto">{r.company}</td>
                         <td className="c-manager" dir="auto">{r.campaignManager}</td>
                         <td className="c-channel" dir="auto">{r.channel}</td>
-                        <td className="c-num">{fmtIls(r.spend)}</td>
-                        <td className="c-num">{fmtIls(r.budget)}</td>
-                        <td className="c-num">{fmtPct(r.utilizationPct)}</td>
-                        <td className="c-fee">
-                          <ManagementFeeCell
-                            slug={r.slug}
-                            channel={r.channel}
-                            initialPercent={r.feePercent}
-                          />
-                        </td>
-                        <td className="c-num">{fmtIls(r.feeIls)}</td>
+                        {viewMode === "current" && (
+                          <>
+                            <td className="c-num">{fmtIls(r.budget)}</td>
+                            <td className="c-num">{fmtIls(r.spend)}</td>
+                            <td className="c-num">{fmtPct(r.utilizationPct)}</td>
+                            <td className="c-fee">
+                              <ManagementFeeCell
+                                slug={r.slug}
+                                channel={r.channel}
+                                initialPercent={r.feePercent}
+                              />
+                            </td>
+                            <td className="c-num">{fmtIls(r.feeIlsBudget)}</td>
+                            <td className="c-num">{fmtIls(r.feeIlsActual)}</td>
+                          </>
+                        )}
+                        {viewMode === "previous" && (
+                          <>
+                            <td className="c-num">{fmtIls(r.spend)}</td>
+                            {showMetrics && (
+                              <>
+                                <td className="c-num">{fmtNum(r.leads)}</td>
+                                <td className="c-num">{fmtIlsNullable(costPerLead(r))}</td>
+                                <td className="c-num">{fmtNum(r.scheduled)}</td>
+                                <td className="c-num">{fmtIlsNullable(costPerScheduled(r))}</td>
+                                <td className="c-num">{fmtNum(r.meetings)}</td>
+                                <td className="c-num">{fmtIlsNullable(costPerMeeting(r))}</td>
+                              </>
+                            )}
+                          </>
+                        )}
                       </tr>
                     );
                   })}
@@ -640,21 +872,23 @@ export default async function ForecastPage({
           <details key={m.name} className="forecast-manager" open>
             <summary className="forecast-manager-head">
               <span dir="auto">{m.name}</span>
-              <span className="forecast-manager-totals">
-                <span>בפועל: <b>{fmtIls(m.totalSpend)}</b></span>
-                <span>תקציב: <b>{fmtIls(m.totalBudget)}</b></span>
-                <span>דמי ניהול: <b>{fmtIls(m.totalFee)}</b></span>
-              </span>
+              <GroupTotalsStrip
+                totals={m}
+                viewMode={viewMode}
+                showMetrics={showMetrics}
+                className="forecast-manager-totals"
+              />
             </summary>
             {m.companies.map((c) => (
               <details key={c.company} className="forecast-company">
                 <summary className="forecast-company-head">
                   <span dir="auto">{c.company}</span>
-                  <span className="forecast-company-totals">
-                    <span>בפועל: <b>{fmtIls(c.totalSpend)}</b></span>
-                    <span>תקציב: <b>{fmtIls(c.totalBudget)}</b></span>
-                    <span>דמי ניהול: <b>{fmtIls(c.totalFee)}</b></span>
-                  </span>
+                  <GroupTotalsStrip
+                    totals={c}
+                    viewMode={viewMode}
+                    showMetrics={showMetrics}
+                    className="forecast-company-totals"
+                  />
                 </summary>
                 {c.projects.map((p) => (
                   <details key={p.project + p.slug} className="forecast-project" open>
@@ -666,22 +900,43 @@ export default async function ForecastPage({
                           sheetTabUrl={p.sheetTabUrl}
                         />
                       </span>
-                      <span className="forecast-project-totals">
-                        <span>בפועל: <b>{fmtIls(p.totalSpend)}</b></span>
-                        <span>תקציב: <b>{fmtIls(p.totalBudget)}</b></span>
-                        <span>דמי ניהול: <b>{fmtIls(p.totalFee)}</b></span>
-                      </span>
+                      <GroupTotalsStrip
+                        totals={p}
+                        viewMode={viewMode}
+                        showMetrics={showMetrics}
+                        className="forecast-project-totals"
+                      />
                     </summary>
                     <div className="forecast-table-wrap">
                       <table className="forecast-table">
                         <thead>
                           <tr>
                             <SortHeader col="channel" label="ערוץ" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
-                            <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                            <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                            <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                            <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
-                            <SortHeader col="feeIls" label="₪ ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            {viewMode === "current" && (
+                              <>
+                                <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                <SortHeader col="feeIlsBudget" label="דמי ניהול תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                <SortHeader col="feeIlsActual" label="דמי ניהול בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                              </>
+                            )}
+                            {viewMode === "previous" && (
+                              <>
+                                <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                {showMetrics && (
+                                  <>
+                                    <SortHeader col="leads" label="לידים" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                    <SortHeader col="costPerLead" label="₪ / ליד" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                    <SortHeader col="scheduled" label="תיאומים" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                    <SortHeader col="costPerScheduled" label="₪ / תיאום" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                    <SortHeader col="meetings" label="ביצועים" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                    <SortHeader col="costPerMeeting" label="₪ / ביצוע" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                                  </>
+                                )}
+                              </>
+                            )}
                           </tr>
                         </thead>
                         <tbody>
@@ -690,17 +945,37 @@ export default async function ForecastPage({
                               <td className="c-channel" dir="auto">
                                 {r.channel}
                               </td>
-                              <td className="c-num">{fmtIls(r.budget)}</td>
-                              <td className="c-num">{fmtIls(r.spend)}</td>
-                              <td className="c-num">{fmtPct(r.utilizationPct)}</td>
-                              <td className="c-fee">
-                                <ManagementFeeCell
-                                  slug={r.slug}
-                                  channel={r.channel}
-                                  initialPercent={r.feePercent}
-                                />
-                              </td>
-                              <td className="c-num">{fmtIls(r.feeIls)}</td>
+                              {viewMode === "current" && (
+                                <>
+                                  <td className="c-num">{fmtIls(r.budget)}</td>
+                                  <td className="c-num">{fmtIls(r.spend)}</td>
+                                  <td className="c-num">{fmtPct(r.utilizationPct)}</td>
+                                  <td className="c-fee">
+                                    <ManagementFeeCell
+                                      slug={r.slug}
+                                      channel={r.channel}
+                                      initialPercent={r.feePercent}
+                                    />
+                                  </td>
+                                  <td className="c-num">{fmtIls(r.feeIlsBudget)}</td>
+                                  <td className="c-num">{fmtIls(r.feeIlsActual)}</td>
+                                </>
+                              )}
+                              {viewMode === "previous" && (
+                                <>
+                                  <td className="c-num">{fmtIls(r.spend)}</td>
+                                  {showMetrics && (
+                                    <>
+                                      <td className="c-num">{fmtNum(r.leads)}</td>
+                                      <td className="c-num">{fmtIlsNullable(costPerLead(r))}</td>
+                                      <td className="c-num">{fmtNum(r.scheduled)}</td>
+                                      <td className="c-num">{fmtIlsNullable(costPerScheduled(r))}</td>
+                                      <td className="c-num">{fmtNum(r.meetings)}</td>
+                                      <td className="c-num">{fmtIlsNullable(costPerMeeting(r))}</td>
+                                    </>
+                                  )}
+                                </>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -783,7 +1058,14 @@ function SortHeader({
     | "budget"
     | "utilizationPct"
     | "feePct"
-    | "feeIls"
+    | "feeIlsBudget"
+    | "feeIlsActual"
+    | "leads"
+    | "scheduled"
+    | "meetings"
+    | "costPerLead"
+    | "costPerScheduled"
+    | "costPerMeeting"
     | "project"
     | "company"
     | "manager";
@@ -837,3 +1119,48 @@ function SortHeader({
 // `FilterDropdown` removed (iter 8) — replaced by
 // SearchableMultiSelectFilter for a search-driven UX that matches
 // the CRM funnel filter pattern.
+
+/**
+ * Inline summary strip used on every level of the nested view
+ * (manager / company / project headings). Switches columns by view:
+ *
+ *   current  — בפועל / תקציב / דמי ניהול (תקציב) / דמי ניהול (בפועל)
+ *   previous — בפועל only, + לידים / תיאומים / ביצועים when the
+ *              metrics toggle is on.
+ *
+ * Kept thin on purpose — every label is a literal, the totals come
+ * from a shared GroupTotals shape, and the wrapper className lets the
+ * three call-sites keep their existing CSS hooks
+ * (.forecast-manager-totals / -company-totals / -project-totals).
+ */
+function GroupTotalsStrip({
+  totals,
+  viewMode,
+  showMetrics,
+  className,
+}: {
+  totals: GroupTotals;
+  viewMode: "current" | "previous";
+  showMetrics: boolean;
+  className: string;
+}) {
+  return (
+    <span className={className}>
+      <span>בפועל: <b>{fmtIls(totals.totalSpend)}</b></span>
+      {viewMode === "current" && (
+        <>
+          <span>תקציב: <b>{fmtIls(totals.totalBudget)}</b></span>
+          <span>דמי ניהול (תקציב): <b>{fmtIls(totals.totalFeeBudget)}</b></span>
+          <span>דמי ניהול (בפועל): <b>{fmtIls(totals.totalFeeActual)}</b></span>
+        </>
+      )}
+      {viewMode === "previous" && showMetrics && (
+        <>
+          <span>לידים: <b>{fmtNum(totals.totalLeads)}</b></span>
+          <span>תיאומים: <b>{fmtNum(totals.totalScheduled)}</b></span>
+          <span>ביצועים: <b>{fmtNum(totals.totalMeetings)}</b></span>
+        </>
+      )}
+    </span>
+  );
+}
