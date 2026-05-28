@@ -46,6 +46,10 @@ const ZERO: MorningCounts = {
 export default function NavCampaignsLink() {
   const [show, setShow] = useState<boolean | null>(null);
   const [counts, setCounts] = useState<MorningCounts>(ZERO);
+  // Admin-gated 3rd menu item (🔮 תחזית חודש → /morning/forecast).
+  // Same /api/me payload that decides whether to show the link at
+  // all also carries isAdmin, so we don't pay for a second round-trip.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +70,7 @@ export default function NavCampaignsLink() {
         if (cancelled) return;
         const eligible = !!meData.canSeeCampaigns;
         setShow(eligible);
+        setIsAdmin(!!meData.isAdmin);
         if (!eligible) return;
 
         const countRes = await fetch("/api/morning/count", {
@@ -164,6 +169,23 @@ export default function NavCampaignsLink() {
           </span>
           <span className="campaigns-nav-item-label">תקציבים</span>
         </ActiveLink>
+        {/* Admin-only forecast entry — month-end spend prediction.
+            Hidden for managers / media without admin so the dropdown
+            stays tight for the people who don't need the predictive
+            view. Same gate the page server-side enforces. */}
+        {isAdmin && (
+          <ActiveLink
+            href="/morning/forecast"
+            match="exact"
+            className="campaigns-nav-item"
+            role="menuitem"
+          >
+            <span className="campaigns-nav-item-icon" aria-hidden>
+              🔮
+            </span>
+            <span className="campaigns-nav-item-label">תחזית חודש</span>
+          </ActiveLink>
+        )}
       </div>
     </div>
   );
