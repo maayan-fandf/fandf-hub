@@ -41,6 +41,9 @@ type EnrichedRow = {
   channel: string;
   spend: number;
   budget: number;
+  /** Spend ÷ budget × 100. Returns null when budget is 0 — we
+   *  render "—" in that case rather than a misleading 0% or ∞. */
+  utilizationPct: number | null;
   /** Management-fee percent for this (slug, channel). Server-
    *  resolved with the 15% default when no Firestore override exists. */
   feePercent: number;
@@ -53,6 +56,23 @@ type EnrichedRow = {
 function fmtIls(n: number): string {
   const v = Math.round(n);
   return `₪${v.toLocaleString("he-IL")}`;
+}
+function fmtPct(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return "—";
+  return `${Math.round(n)}%`;
+}
+
+/** Split a comma-separated multi-select param into a Set of trimmed,
+ *  non-empty values. Empty string / missing param → empty Set (which
+ *  semantically means "no filter — accept everything"). */
+function parseMultiSelect(raw: string | undefined): Set<string> {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
 }
 
 const UNASSIGNED = "(ללא מנהל)";
@@ -76,21 +96,28 @@ export default async function ForecastPage({
   if (!projectsData?.isAdmin) redirect("/morning");
 
   const sp = await searchParams;
-  const fCompany = (sp.company || "").trim();
-  const fProject = (sp.project || "").trim();
-  const fChannel = (sp.channel || "").trim();
+  // Multi-select filters (2026-05-27 iter 4) — URL carries
+  // comma-separated values, e.g. `?company=A,B&channel=facebook,google`.
+  // Empty Set = "no filter".
+  const fCompany = parseMultiSelect(sp.company);
+  const fProject = parseMultiSelect(sp.project);
+  const fChannel = parseMultiSelect(sp.channel);
 
-  // Sort state. Valid columns: channel, spend, budget, feePct, feeIls.
-  // Falls back to "spend / desc" so the busiest row is first when the
-  // user lands without a sort param. Project / company are
-  // intentionally NOT sortable on a row — they're grouping keys, all
-  // rows inside one group share the same value.
-  type SortCol = "channel" | "spend" | "budget" | "feePct" | "feeIls";
+  // Sort state. Valid columns: channel, spend, budget, utilizationPct,
+  // feePct, feeIls. Falls back to "spend / desc".
+  type SortCol =
+    | "channel"
+    | "spend"
+    | "budget"
+    | "utilizationPct"
+    | "feePct"
+    | "feeIls";
   type SortDir = "asc" | "desc";
   const ALLOWED_SORTS: ReadonlySet<SortCol> = new Set<SortCol>([
     "channel",
     "spend",
     "budget",
+    "utilizationPct",
     "feePct",
     "feeIls",
   ]);
@@ -164,6 +191,7 @@ export default async function ForecastPage({
     const channel = r.channel || "(ללא ערוץ)";
     const feePercent = getFeePercentForRow(feeMap, r.projectSlug, channel);
     const feeIls = (r.spend * feePercent) / 100;
+    const utilizationPct = r.budget > 0 ? (r.spend / r.budget) * 100 : null;
     return {
       slug: r.projectSlug,
       projectName: meta.projectName,
@@ -172,6 +200,7 @@ export default async function ForecastPage({
       channel,
       spend: r.spend,
       budget: r.budget,
+      utilizationPct,
       feePercent,
       feeIls,
     };
@@ -193,9 +222,9 @@ export default async function ForecastPage({
   ).sort(collator.compare);
 
   const filtered = enriched.filter((r) => {
-    if (fCompany && r.company !== fCompany) return false;
-    if (fProject && r.projectName !== fProject) return false;
-    if (fChannel && r.channel !== fChannel) return false;
+    if (fCompany.size > 0 && !fCompany.has(r.company)) return false;
+    if (fProject.size > 0 && !fProject.has(r.projectName)) return false;
+    if (fChannel.size > 0 && !fChannel.has(r.channel)) return false;
     return true;
   });
 
@@ -263,6 +292,12 @@ export default async function ForecastPage({
       primary = (a.spend - b.spend) * sortMul;
     } else if (sortCol === "budget") {
       primary = (a.budget - b.budget) * sortMul;
+    } else if (sortCol === "utilizationPct") {
+      // null (no budget) is treated as -Infinity asc / +Infinity desc
+      // so "no budget" rows sink to the bottom regardless of direction.
+      const av = a.utilizationPct ?? (sortDir === "asc" ? -Infinity : Infinity);
+      const bv = b.utilizationPct ?? (sortDir === "asc" ? -Infinity : Infinity);
+      primary = (av - bv) * sortMul;
     } else if (sortCol === "feePct") {
       primary = (a.feePercent - b.feePercent) * sortMul;
     } else if (sortCol === "feeIls") {
@@ -316,7 +351,7 @@ export default async function ForecastPage({
     { spend: 0, budget: 0, fee: 0 },
   );
 
-  const hasFilter = !!(fCompany || fProject || fChannel);
+  const hasFilter = fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0;
 
   return (
     <main className="container forecast-page">
@@ -335,17 +370,21 @@ export default async function ForecastPage({
 
       <CampaignsTabs active="forecast" showForecast />
 
-      {/* Filter bar — three uncontrolled <select>s submitted as a
-          GET form so the URL carries the state (shareable, back-
-          button friendly, no client JS). Each <select> lists the
-          live distinct values; "הכל" is the no-filter option. */}
+      {/* Filter bar — three NATIVE multi-selects (Ctrl/Cmd+click to
+          add to selection). Form submits as GET; the page reads each
+          param as comma-separated. Native <select multiple> isn't
+          pretty but it's accessible + works without client JS — same
+          philosophy as the rest of this surface. The hidden helper
+          script below intercepts submit to flatten multi-values into
+          a single comma-separated string per param, so the URL stays
+          readable (?company=A,B) instead of repeating (?company=A&
+          company=B). */}
       <form className="forecast-filterbar" action="/morning/forecast" method="get">
         <label className="forecast-filter">
-          <span>חברה</span>
-          <select name="company" defaultValue={fCompany}>
-            <option value="">הכל</option>
+          <span>חברה (אפשר לסמן כמה — Ctrl/⌘ + לחיצה)</span>
+          <select name="company" multiple size={Math.min(6, Math.max(3, distinctCompanies.length))}>
             {distinctCompanies.map((c) => (
-              <option key={c} value={c}>
+              <option key={c} value={c} selected={fCompany.has(c)}>
                 {c}
               </option>
             ))}
@@ -353,10 +392,9 @@ export default async function ForecastPage({
         </label>
         <label className="forecast-filter">
           <span>פרויקט</span>
-          <select name="project" defaultValue={fProject}>
-            <option value="">הכל</option>
+          <select name="project" multiple size={Math.min(6, Math.max(3, distinctProjects.length))}>
             {distinctProjects.map((p) => (
-              <option key={p} value={p}>
+              <option key={p} value={p} selected={fProject.has(p)}>
                 {p}
               </option>
             ))}
@@ -364,23 +402,58 @@ export default async function ForecastPage({
         </label>
         <label className="forecast-filter">
           <span>ערוץ</span>
-          <select name="channel" defaultValue={fChannel}>
-            <option value="">הכל</option>
+          <select name="channel" multiple size={Math.min(6, Math.max(3, distinctChannels.length))}>
             {distinctChannels.map((ch) => (
-              <option key={ch} value={ch}>
+              <option key={ch} value={ch} selected={fChannel.has(ch)}>
                 {ch}
               </option>
             ))}
           </select>
         </label>
-        <button type="submit" className="btn-primary btn-sm">
-          סנן
-        </button>
-        {hasFilter && (
-          <Link href="/morning/forecast" className="btn-ghost btn-sm">
-            נקה
-          </Link>
-        )}
+        <div className="forecast-filter-actions">
+          <button type="submit" className="btn-primary btn-sm">
+            סנן
+          </button>
+          {hasFilter && (
+            <Link href="/morning/forecast" className="btn-ghost btn-sm">
+              נקה
+            </Link>
+          )}
+        </div>
+        {/* Inline script: collapse the multi-select's repeated params
+            into ONE comma-separated value per name BEFORE submit, so
+            the URL stays readable (?company=A,B instead of
+            ?company=A&company=B). Disables the original <select> so
+            it doesn't add its own repeated values to the submission,
+            then writes a single hidden input with the joined value.
+            Pure DOM, no React. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function(){
+                var f = document.currentScript && document.currentScript.parentElement;
+                if (!f) return;
+                f.addEventListener('submit', function(){
+                  ['company','project','channel'].forEach(function(name){
+                    var sel = f.querySelector('select[name="'+name+'"]');
+                    if (!sel) return;
+                    var vals = Array.from(sel.selectedOptions).map(function(o){return o.value;}).filter(Boolean);
+                    var hid = f.querySelector('input[type="hidden"][data-flat="'+name+'"]');
+                    if (!hid) {
+                      hid = document.createElement('input');
+                      hid.type = 'hidden';
+                      hid.name = name;
+                      hid.setAttribute('data-flat', name);
+                      f.appendChild(hid);
+                    }
+                    hid.value = vals.join(',');
+                    sel.disabled = true; // suppress its own param emission
+                  });
+                });
+              })();
+            `,
+          }}
+        />
       </form>
 
       <section className="forecast-grand">
@@ -412,28 +485,28 @@ export default async function ForecastPage({
         </div>
       ) : (
         managers.map((m) => (
-          <section key={m.name} className="forecast-manager">
-            <h2 className="forecast-manager-head">
+          <details key={m.name} className="forecast-manager" open>
+            <summary className="forecast-manager-head">
               <span dir="auto">{m.name}</span>
               <span className="forecast-manager-totals">
                 <span>בפועל: <b>{fmtIls(m.totalSpend)}</b></span>
                 <span>תקציב: <b>{fmtIls(m.totalBudget)}</b></span>
                 <span>דמי ניהול: <b>{fmtIls(m.totalFee)}</b></span>
               </span>
-            </h2>
+            </summary>
             {m.companies.map((c) => (
-              <div key={c.company} className="forecast-company">
-                <h3 className="forecast-company-head">
+              <details key={c.company} className="forecast-company">
+                <summary className="forecast-company-head">
                   <span dir="auto">{c.company}</span>
                   <span className="forecast-company-totals">
                     <span>בפועל: <b>{fmtIls(c.totalSpend)}</b></span>
                     <span>תקציב: <b>{fmtIls(c.totalBudget)}</b></span>
                     <span>דמי ניהול: <b>{fmtIls(c.totalFee)}</b></span>
                   </span>
-                </h3>
+                </summary>
                 {c.projects.map((p) => (
-                  <div key={p.project + p.slug} className="forecast-project">
-                    <h4 className="forecast-project-head">
+                  <details key={p.project + p.slug} className="forecast-project" open>
+                    <summary className="forecast-project-head">
                       <Link
                         href={`/projects/${encodeURIComponent(p.project)}`}
                         className="forecast-project-link"
@@ -445,47 +518,17 @@ export default async function ForecastPage({
                         <span>תקציב: <b>{fmtIls(p.totalBudget)}</b></span>
                         <span>דמי ניהול: <b>{fmtIls(p.totalFee)}</b></span>
                       </span>
-                    </h4>
+                    </summary>
                     <div className="forecast-table-wrap">
                       <table className="forecast-table">
                         <thead>
                           <tr>
-                            <SortHeader
-                              col="channel"
-                              label="ערוץ"
-                              currentCol={sortCol}
-                              currentDir={sortDir}
-                              sp={sp}
-                              align="start"
-                            />
-                            <SortHeader
-                              col="spend"
-                              label="בפועל"
-                              currentCol={sortCol}
-                              currentDir={sortDir}
-                              sp={sp}
-                            />
-                            <SortHeader
-                              col="budget"
-                              label="תקציב"
-                              currentCol={sortCol}
-                              currentDir={sortDir}
-                              sp={sp}
-                            />
-                            <SortHeader
-                              col="feePct"
-                              label="% ניהול"
-                              currentCol={sortCol}
-                              currentDir={sortDir}
-                              sp={sp}
-                            />
-                            <SortHeader
-                              col="feeIls"
-                              label="₪ ניהול"
-                              currentCol={sortCol}
-                              currentDir={sortDir}
-                              sp={sp}
-                            />
+                            <SortHeader col="channel" label="ערוץ" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
+                            <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="feeIls" label="₪ ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                           </tr>
                         </thead>
                         <tbody>
@@ -496,6 +539,7 @@ export default async function ForecastPage({
                               </td>
                               <td className="c-num">{fmtIls(r.spend)}</td>
                               <td className="c-num">{fmtIls(r.budget)}</td>
+                              <td className="c-num">{fmtPct(r.utilizationPct)}</td>
                               <td className="c-fee">
                                 <ManagementFeeCell
                                   slug={r.slug}
@@ -509,11 +553,11 @@ export default async function ForecastPage({
                         </tbody>
                       </table>
                     </div>
-                  </div>
+                  </details>
                 ))}
-              </div>
+              </details>
             ))}
-          </section>
+          </details>
         ))
       )}
     </main>
@@ -534,7 +578,13 @@ function SortHeader({
   sp,
   align = "end",
 }: {
-  col: "channel" | "spend" | "budget" | "feePct" | "feeIls";
+  col:
+    | "channel"
+    | "spend"
+    | "budget"
+    | "utilizationPct"
+    | "feePct"
+    | "feeIls";
   label: string;
   currentCol: string;
   currentDir: "asc" | "desc";

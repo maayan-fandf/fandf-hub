@@ -19272,6 +19272,24 @@ button.budget-need:focus-visible {
   background: rgba(20, 30, 50, 0.7);
   border-color: rgba(255, 255, 255, 0.15);
 }
+.forecast-filter select[multiple] {
+  padding: 4px;
+  min-width: 180px;
+}
+.forecast-filter select[multiple] option {
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.forecast-filter select[multiple] option:checked {
+  background: rgba(99, 102, 241, 0.2);
+  color: inherit;
+}
+.forecast-filter-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-inline-start: auto;
+}
 
 /* Manager group — one section per מנהל קמפיינים. */
 .forecast-manager {
@@ -19360,6 +19378,46 @@ button.budget-need:focus-visible {
 }
 .forecast-company > .forecast-project {
   margin: 8px 0;
+}
+
+/* ── Collapsible <details> styling (iter 4) ─────────────────────────
+ * All three levels (manager, company, project) use native
+ * <details>/<summary> for accessibility + zero-JS state. Companies
+ * default closed (no `open` attr), managers + projects default open.
+ * Custom marker so the disclosure triangle reads with the level —
+ * larger arrow on manager, subtler on project.
+ */
+.forecast-manager,
+.forecast-company,
+.forecast-project { list-style: none; }
+.forecast-manager > summary,
+.forecast-company > summary,
+.forecast-project > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  position: relative;
+  padding-inline-start: 1.4em;
+}
+.forecast-manager > summary::-webkit-details-marker,
+.forecast-company > summary::-webkit-details-marker,
+.forecast-project > summary::-webkit-details-marker { display: none; }
+.forecast-manager > summary::before,
+.forecast-company > summary::before,
+.forecast-project > summary::before {
+  content: "▸";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.1em;
+  font-size: 0.85em;
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+  transform-origin: center;
+}
+.forecast-manager[open] > summary::before,
+.forecast-company[open] > summary::before,
+.forecast-project[open] > summary::before {
+  transform: rotate(-90deg);
 }
 .forecast-table .c-fee { text-align: end; }
 
@@ -19515,11 +19573,18 @@ button.budget-need:focus-visible {
 
 .forecast-table-wrap { overflow-x: auto; }
 .forecast-table {
-  width: 100%;
+  /* Iter 4 fix (2026-05-27): table no longer stretches to fill the
+     container — that left huge gaps between columns when content was
+     narrow (e.g. "facebook" channel name). `width: auto` sizes to
+     content; `min-width: 100%` keeps the header tone-bar full-width
+     so the table still reads as a band, not a floating chip. */
+  width: auto;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
   direction: rtl;
 }
+.forecast-table th, .forecast-table td { white-space: nowrap; }
 .forecast-table thead th {
   text-align: right;
   font-weight: 600;
