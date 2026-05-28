@@ -1058,8 +1058,18 @@ export type WorkTask = {
 };
 
 export type TasksListFilters = {
-  company?: string;
-  project?: string;
+  /** Single company name OR array of company names — multi-select on
+   *  /tasks. When an array, a task passes if its company matches ANY
+   *  entry (OR semantics). Empty string / empty array = no filter.
+   *  String inputs from the URL come as comma-separated; the /tasks
+   *  page splits before calling. */
+  company?: string | string[];
+  /** Single project name OR array of project names — see `company`
+   *  above for semantics. The single-string path keeps the Firestore
+   *  read scoped to that one project (§11 optimization in
+   *  tasksListDirect); multi-value reads fall back to the whole
+   *  collection but still filter correctly. */
+  project?: string | string[];
   brief?: string;
   status?: WorkTaskStatus | "";
   priority?: string; // "1" | "2" | "3" | ""
@@ -1113,8 +1123,22 @@ export async function tasksList(
     return tasksListDirect(user, filters);
   }
   const params: Record<string, string> = {};
-  if (filters.company) params.company = filters.company;
-  if (filters.project) params.project = filters.project;
+  // Legacy Apps Script proxy doesn't support multi-value filters;
+  // join with commas so at least the URL is shaped consistently with
+  // the direct path. The proxy will exact-match the joined string and
+  // typically return nothing — acceptable since the direct path is the
+  // default for production (USE_SA_TASKS_READS=1) and this branch is
+  // an emergency fallback.
+  if (filters.company) {
+    params.company = Array.isArray(filters.company)
+      ? filters.company.join(",")
+      : filters.company;
+  }
+  if (filters.project) {
+    params.project = Array.isArray(filters.project)
+      ? filters.project.join(",")
+      : filters.project;
+  }
   if (filters.brief) params.brief = filters.brief;
   if (filters.status) params.status = filters.status;
   if (filters.priority) params.priority = filters.priority;

@@ -25,7 +25,7 @@ import TasksViewToggle from "@/components/TasksViewToggle";
 import TasksArchiveToggle from "@/components/TasksArchiveToggle";
 import TasksUmbrellaToggle from "@/components/TasksUmbrellaToggle";
 import TasksScopeToggle from "@/components/TasksScopeToggle";
-import TasksFilterCompanyProject from "@/components/TasksFilterCompanyProject";
+import SearchableMultiSelectFilter from "@/components/SearchableMultiSelectFilter";
 import DateRangePicker from "@/components/DateRangePicker";
 import FilterPersonInput from "@/components/FilterPersonInput";
 import { kindLabel } from "@/lib/kindLabel";
@@ -155,11 +155,26 @@ export default async function TasksPage({
       ? effectiveMe
       : "";
 
+  // Multi-select on /tasks: company + project come from the URL as
+  // comma-separated lists (matching how SearchableMultiSelectFilter
+  // serialises selections). Empty → no filter on that axis. Single
+  // value → identical to the legacy single-select behaviour (and the
+  // §11 Firestore project-scope optimization in tasksListDirect still
+  // kicks in for that case).
+  const companyFilter = (sp.company || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const projectFilter = (sp.project || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const [tasksRes, projectsRes, peopleRes, driveName, myMentionsRes] =
     await Promise.all([
       tasksList({
-        company: sp.company || "",
-        project: sp.project || "",
+        company: companyFilter,
+        project: projectFilter,
         brief: sp.brief || "",
         status: (sp.status as WorkTaskStatus) || "",
         priority: sp.priority || "",
@@ -600,12 +615,16 @@ function TasksFilterBar({
   };
   companies: string[];
   /** All project names (deduped, sorted) — used as the project-list
-   *  fallback when no company is selected. Client component narrows
-   *  this to the selected company via companyToProjects below. */
+   *  pool for the multi-select. The previous single-select cascaded
+   *  project options to the selected company; the multi-select doesn't
+   *  cascade (users would lose cross-company filtering) but offers
+   *  search-as-you-type instead — which is just as fast for "I want
+   *  the Sapir project" once you start typing. */
   allProjectNames: string[];
-  /** company name → its project names (sorted, deduped). Drives the
-   *  live narrowing in TasksFilterCompanyProject without requiring a
-   *  form submit between picking a company and picking a project. */
+  /** company name → its project names — no longer used by the
+   *  multi-select filter (the picker shows the full pool with search),
+   *  but kept on the props so legacy / future cascading uses stay
+   *  cheap to wire back in. */
   companyToProjects: Record<string, string[]>;
   departments: string[];
   people: TasksPerson[];
@@ -699,20 +718,35 @@ function TasksFilterBar({
           CSS uses it to tint the field with --accent-soft so users can
           scan at a glance which filters are narrowing the result set
           (otherwise it's easy to miss e.g. a stuck חברה filter). */}
-      {/* Key the child on the URL params so a hard "נקה" navigation
-          (which goes to /tasks?mine=0 and clears every server-rendered
-          uncontrolled <select defaultValue=…>) also remounts this
-          client component, re-seeding its useState from the new — now
-          empty — defaults. Without the key the old company/project
-          selections survive the navigation because useState only
-          initializes on first mount. */}
-      <TasksFilterCompanyProject
-        key={`${current.company}|${current.project}`}
-        defaultCompany={current.company}
-        defaultProject={current.project}
-        companies={companies}
-        allProjects={allProjectNames}
-        companyToProjects={companyToProjects}
+      {/* Company + project are searchable multi-selects (same UX as
+          /morning/forecast and the CRM funnel source filter). The
+          component writes its selection as a comma-separated value
+          into a hidden input under the given `name`, which this form
+          picks up on submit. Page.tsx splits the URL value back into an
+          array before passing it to tasksList — so single-value selects
+          stay byte-identical to the legacy single-select behaviour and
+          multi-value selects OR-match across companies / projects.
+          Key on URL params so a hard "נקה" navigation also resets the
+          internal Set state to the (now empty) default. */}
+      <SearchableMultiSelectFilter
+        key={`company|${current.company}`}
+        name="company"
+        label="חברה"
+        options={companies.map((c) => ({ value: c }))}
+        defaultSelected={current.company
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)}
+      />
+      <SearchableMultiSelectFilter
+        key={`project|${current.project}`}
+        name="project"
+        label="פרויקט"
+        options={allProjectNames.map((p) => ({ value: p }))}
+        defaultSelected={current.project
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)}
       />
       <label>
         בריף

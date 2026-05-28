@@ -451,8 +451,12 @@ async function getDisplayNamesForEmailLazy(email: string): Promise<string[]> {
 export async function tasksListDirect(
   subjectEmail: string,
   filters: {
-    company?: string;
-    project?: string;
+    /** Single company name OR array of company names. OR-match: a task
+     *  passes if its company equals ANY entry. Empty string / empty
+     *  array = no filter. Same semantics for `project` below.
+     *  Multi-select on /tasks pipes its comma-split values through here. */
+    company?: string | string[];
+    project?: string | string[];
     brief?: string;
     status?: WorkTaskStatus | "";
     priority?: string;
@@ -495,16 +499,35 @@ export async function tasksListDirect(
     include_umbrellas?: boolean;
   },
 ): Promise<{ ok: true; tasks: WorkTask[]; count: number }> {
-  // §11 — when the caller filters by a single project (e.g. the
-  // project page's tasksList({project})), scope the Firestore read to
-  // that project. Behavior-identical: the access gate, every filter,
-  // the comment-count / involved_with pass, and the umbrella-sibling
-  // 2nd pass are all project-local (chain siblings + a task's comments
-  // share the task's project — see commentsWriteDirect / tasksCreate
-  // Chain). Unfiltered /tasks queue (no filters.project) → undefined →
-  // whole-collection read, unchanged.
+  // Normalize company/project to arrays of trimmed names once, here, so
+  // every filter check downstream is a `.includes()` lookup instead of
+  // re-parsing per row. Empty array = no filter on that axis.
+  const companyFilters = (() => {
+    const v = filters.company;
+    if (!v) return [] as string[];
+    const list = Array.isArray(v) ? v : [v];
+    return list.map((c) => c.trim()).filter(Boolean);
+  })();
+  const projectFilters = (() => {
+    const v = filters.project;
+    if (!v) return [] as string[];
+    const list = Array.isArray(v) ? v : [v];
+    return list.map((p) => p.trim()).filter(Boolean);
+  })();
+
+  // §11 — when the caller filters by EXACTLY ONE project (e.g. the
+  // project page's tasksList({project: "..."})), scope the Firestore
+  // read to that project. Behavior-identical: the access gate, every
+  // filter, the comment-count / involved_with pass, and the umbrella-
+  // sibling 2nd pass are all project-local (chain siblings + a task's
+  // comments share the task's project — see commentsWriteDirect /
+  // tasksCreate Chain). When the caller multi-selects 2+ projects we
+  // fall back to the whole-collection read (still correct — the per-
+  // row filter below catches it — just no scope optimization).
+  const scopedProject =
+    projectFilters.length === 1 ? projectFilters[0] : undefined;
   const [{ rows, headerIdx }, scope] = await Promise.all([
-    readCommentsTab(subjectEmail, filters.project),
+    readCommentsTab(subjectEmail, scopedProject),
     getAccessScope(subjectEmail),
   ]);
 
@@ -580,8 +603,8 @@ export async function tasksListDirect(
       continue;
     }
 
-    if (filters.company && t.company.trim() !== filters.company.trim()) continue;
-    if (filters.project && t.project.trim() !== filters.project.trim()) continue;
+    if (companyFilters.length > 0 && !companyFilters.includes(t.company.trim())) continue;
+    if (projectFilters.length > 0 && !projectFilters.includes(t.project.trim())) continue;
     if (filters.status && t.status !== filters.status) continue;
     if (filters.priority) {
       const pr = parseInt(filters.priority, 10);
@@ -705,8 +728,11 @@ export async function tasksListDirect(
         // relevance: relevant_to_me / assignee / author / approver /
         // project_manager / involved_with — and status, which we
         // relax so done/blocked siblings appear).
-        if (filters.company && t.company.trim() !== filters.company.trim()) continue;
-        if (filters.project && t.project.trim() !== filters.project.trim()) continue;
+        // Multi-value company/project filters — same OR semantics as the
+        // first pass. companyFilters / projectFilters are normalized
+        // arrays computed at the top of the function.
+        if (companyFilters.length > 0 && !companyFilters.includes(t.company.trim())) continue;
+        if (projectFilters.length > 0 && !projectFilters.includes(t.project.trim())) continue;
         if (filters.priority) {
           const pr = parseInt(filters.priority, 10);
           if (pr && t.priority !== pr) continue;
