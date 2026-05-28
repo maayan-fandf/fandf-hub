@@ -135,7 +135,12 @@ export default async function ForecastPage() {
     getCurrentMonthlyRows(subjectEmail, todayIso).catch(
       () => [] as AllClientsRow[],
     ),
-    readKeysCached(subjectEmail).catch(() => ({ headers: [], rows: [] })),
+    // Explicit type-cast on the fallback so TS doesn't infer never[]
+    // (which makes `headers.indexOf("…")` require `never` arg type,
+    // breaking the build).
+    readKeysCached(subjectEmail).catch(
+      () => ({ headers: [] as string[], rows: [] as unknown[][] }),
+    ),
   ]);
 
   // Build a (slug → company) and (project → company) map from Keys.
