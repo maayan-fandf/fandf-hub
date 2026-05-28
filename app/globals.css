@@ -19324,6 +19324,245 @@ button.budget-need:focus-visible {
   -webkit-appearance: none;
 }
 
+/* ─── Searchable multi-select filter — reusable component ─────────
+ * Used on /morning/forecast + /tasks. UX mirrors the CRM funnel
+ * source filter: trigger pill → click reveals a floating popover
+ * with search input, "סמן הכל" toggle, scrollable checkbox list,
+ * and a clear-all footer when anything's selected. */
+.sms-filter {
+  position: relative;
+  display: inline-block;
+}
+.sms-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  background: var(--md-sys-color-surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.sms-filter-trigger:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+.sms-filter-trigger.is-active {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.45);
+  color: var(--md-sys-color-primary, #4f46e5);
+}
+.sms-filter-trigger.is-open {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+[data-theme="dark"] .sms-filter-trigger {
+  background: rgba(20, 30, 50, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+[data-theme="dark"] .sms-filter-trigger.is-active {
+  background: rgba(99, 102, 241, 0.28);
+  border-color: rgba(99, 102, 241, 0.55);
+  color: #a5b4fc;
+}
+.sms-filter-chev { font-size: 0.8em; opacity: 0.7; }
+
+.sms-filter-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 50;
+  width: 280px;
+  background: var(--md-sys-color-surface, #fff);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  border-radius: 12px;
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+[data-theme="dark"] .sms-filter-popover {
+  background: rgba(18, 26, 44, 0.98);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.6);
+}
+.sms-filter-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.12));
+  background: var(--md-sys-color-surface-container-low, rgba(0, 0, 0, 0.03));
+}
+[data-theme="dark"] .sms-filter-search {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.sms-filter-search-icon { opacity: 0.55; font-size: 0.95em; }
+.sms-filter-search-input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  outline: none;
+  font-size: 13px;
+  min-width: 0;
+}
+.sms-filter-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.sms-filter-search-clear:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.sms-filter-toggle-all {
+  border: 0;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--md-sys-color-primary, #4f46e5);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: center;
+  transition: background 0.12s;
+}
+.sms-filter-toggle-all:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+[data-theme="dark"] .sms-filter-toggle-all {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+}
+
+.sms-filter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  /* Custom thin scrollbar — same idiom as the forecast page panels. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.35) transparent;
+}
+.sms-filter-list::-webkit-scrollbar {
+  width: 6px;
+}
+.sms-filter-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sms-filter-list::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 999px;
+}
+.sms-filter-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.55);
+}
+.sms-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sms-filter-row:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+.sms-filter-row.is-active {
+  background: rgba(99, 102, 241, 0.12);
+}
+[data-theme="dark"] .sms-filter-row.is-active {
+  background: rgba(99, 102, 241, 0.22);
+}
+.sms-filter-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.25));
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--md-sys-color-primary, #4f46e5);
+  font-weight: 700;
+  background: transparent;
+  flex-shrink: 0;
+}
+.sms-filter-check.is-checked {
+  background: var(--md-sys-color-primary, #4f46e5);
+  border-color: var(--md-sys-color-primary, #4f46e5);
+  color: #fff;
+}
+.sms-filter-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sms-filter-row-count {
+  font-size: 11.5px;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.05);
+}
+[data-theme="dark"] .sms-filter-row-count {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sms-filter-empty {
+  padding: 16px;
+  font-size: 12.5px;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  text-align: center;
+}
+.sms-filter-footer {
+  border-top: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.08));
+  padding-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+.sms-filter-clear-all {
+  border: 0;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.sms-filter-clear-all:hover {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+}
+
 /* Custom thin scrollbar — applied to filter panels and the table
    wrap so long lists / wide tables look intentional, not OS-default
    chrome. Webkit-only but degrades cleanly on Firefox (uses

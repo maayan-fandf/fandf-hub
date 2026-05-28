@@ -17,6 +17,7 @@ import {
 } from "@/lib/managementFees";
 import CampaignsTabs from "@/components/CampaignsTabs";
 import ManagementFeeCell from "@/components/ManagementFeeCell";
+import SearchableMultiSelectFilter from "@/components/SearchableMultiSelectFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -479,23 +480,26 @@ export default async function ForecastPage({
             autoComplete="off"
           />
         </label>
-        <FilterDropdown
+        <SearchableMultiSelectFilter
           label="חברה"
           name="company"
-          options={distinctCompanies}
-          selected={fCompany}
+          options={distinctCompanies.map((v) => ({ value: v }))}
+          defaultSelected={Array.from(fCompany)}
+          placeholder="חפש חברה…"
         />
-        <FilterDropdown
+        <SearchableMultiSelectFilter
           label="פרויקט"
           name="project"
-          options={distinctProjects}
-          selected={fProject}
+          options={distinctProjects.map((v) => ({ value: v }))}
+          defaultSelected={Array.from(fProject)}
+          placeholder="חפש פרויקט…"
         />
-        <FilterDropdown
+        <SearchableMultiSelectFilter
           label="ערוץ"
           name="channel"
-          options={distinctChannels}
-          selected={fChannel}
+          options={distinctChannels.map((v) => ({ value: v }))}
+          defaultSelected={Array.from(fChannel)}
+          placeholder="חפש ערוץ…"
         />
         {/* Grouping toggle. Keep the current sort param when
             switching so the user doesn't lose their column choice. */}
@@ -533,46 +537,14 @@ export default async function ForecastPage({
         </div>
         {/* Preserve sort + grouping params across the GET submit so
             picking new filter values doesn't reset the user's column
-            sort or grouping mode. */}
+            sort or grouping mode. The searchable multi-select itself
+            writes a single hidden input per filter name — no submit-
+            interceptor script needed anymore. */}
         {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
         {sp.dir && <input type="hidden" name="dir" value={sp.dir} />}
         {groupingMode === "flat" && (
           <input type="hidden" name="grouping" value="flat" />
         )}
-        {/* Inline script: gather checked checkboxes per filter name
-            into a single comma-separated hidden input. Then disable
-            the checkboxes so they don't add their own params. Pure
-            DOM, no React state. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function(){
-                var f = document.currentScript && document.currentScript.parentElement;
-                if (!f) return;
-                f.addEventListener('submit', function(){
-                  ['company','project','channel'].forEach(function(name){
-                    var boxes = f.querySelectorAll('input[type="checkbox"][data-filter="'+name+'"]');
-                    if (!boxes.length) return;
-                    var vals = [];
-                    boxes.forEach(function(b){
-                      if (b.checked) vals.push(b.value);
-                      b.disabled = true;
-                    });
-                    var hid = f.querySelector('input[type="hidden"][data-flat="'+name+'"]');
-                    if (!hid) {
-                      hid = document.createElement('input');
-                      hid.type = 'hidden';
-                      hid.name = name;
-                      hid.setAttribute('data-flat', name);
-                      f.appendChild(hid);
-                    }
-                    hid.value = vals.join(',');
-                  });
-                });
-              })();
-            `,
-          }}
-        />
       </form>
 
       <section className="forecast-grand">
@@ -862,57 +834,6 @@ function SortHeader({
   );
 }
 
-/**
- * Click-to-open filter dropdown. Trigger pill shows the label + a
- * "(N)" badge when anything's selected. Click → reveals a panel of
- * checkboxes. Native <details>/<summary> — no React state. The
- * checkboxes' `name=*` is NOT set on the checkbox itself; the
- * parent form intercepts submit and collects checked values into a
- * comma-separated hidden input (see the inline script in the form).
- * That keeps URLs as ?company=A,B instead of repeating ?company=A&
- * company=B for every checked option.
- */
-function FilterDropdown({
-  label,
-  name,
-  options,
-  selected,
-}: {
-  label: string;
-  name: "company" | "project" | "channel";
-  options: string[];
-  selected: Set<string>;
-}) {
-  const count = selected.size;
-  const summaryText =
-    count > 0 ? `${label} · ${count}` : label;
-  return (
-    <details className="forecast-filter forecast-filter-dropdown">
-      <summary className="forecast-filter-summary">
-        <span>{summaryText}</span>
-        <span className="forecast-filter-chev" aria-hidden>▾</span>
-      </summary>
-      <div className="forecast-filter-panel">
-        {options.length === 0 ? (
-          <div className="forecast-filter-empty">אין ערכים</div>
-        ) : (
-          <ul className="forecast-filter-list">
-            {options.map((opt) => (
-              <li key={opt}>
-                <label className="forecast-filter-option">
-                  <input
-                    type="checkbox"
-                    data-filter={name}
-                    value={opt}
-                    defaultChecked={selected.has(opt)}
-                  />
-                  <span dir="auto">{opt}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </details>
-  );
-}
+// `FilterDropdown` removed (iter 8) — replaced by
+// SearchableMultiSelectFilter for a search-driven UX that matches
+// the CRM funnel filter pattern.
