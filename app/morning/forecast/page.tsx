@@ -757,13 +757,17 @@ export default async function ForecastPage({
                 ? "סך החודש הקודם"
                 : "סך תיק נוכחי"}
           </span>
-          <span className="forecast-grand-num">
-            <b>{fmtIls(grand.totalSpend)}</b> בפועל
-          </span>
+          {/* Order mirrors the table columns + the per-group summary
+              strip: תקציב → בפועל → דמי ניהול (תקציב) → דמי ניהול
+              (בפועל) in the forecast view, and just בפועל (+ metrics
+              when toggled) in the retrospective view. */}
           {viewMode === "current" && (
             <>
               <span className="forecast-grand-num">
                 <b>{fmtIls(grand.totalBudget)}</b> תקציב
+              </span>
+              <span className="forecast-grand-num">
+                <b>{fmtIls(grand.totalSpend)}</b> בפועל
               </span>
               <span className="forecast-grand-num">
                 <b>{fmtIls(grand.totalFeeBudget)}</b> דמי ניהול (תקציב)
@@ -773,17 +777,24 @@ export default async function ForecastPage({
               </span>
             </>
           )}
-          {viewMode === "previous" && showMetrics && (
+          {viewMode === "previous" && (
             <>
               <span className="forecast-grand-num">
-                <b>{grand.totalLeads.toLocaleString("he-IL")}</b> לידים
+                <b>{fmtIls(grand.totalSpend)}</b> בפועל
               </span>
-              <span className="forecast-grand-num">
-                <b>{grand.totalScheduled.toLocaleString("he-IL")}</b> תיאומים
-              </span>
-              <span className="forecast-grand-num">
-                <b>{grand.totalMeetings.toLocaleString("he-IL")}</b> ביצועים
-              </span>
+              {showMetrics && (
+                <>
+                  <span className="forecast-grand-num">
+                    <b>{grand.totalLeads.toLocaleString("he-IL")}</b> לידים
+                  </span>
+                  <span className="forecast-grand-num">
+                    <b>{grand.totalScheduled.toLocaleString("he-IL")}</b> תיאומים
+                  </span>
+                  <span className="forecast-grand-num">
+                    <b>{grand.totalMeetings.toLocaleString("he-IL")}</b> ביצועים
+                  </span>
+                </>
+              )}
             </>
           )}
           <span className="forecast-grand-num">
@@ -1177,21 +1188,30 @@ function GroupTotalsStrip({
   showMetrics: boolean;
   className: string;
 }) {
+  // Order mirrors the table columns: תקציב → בפועל → דמי ניהול (תקציב)
+  // → דמי ניהול (בפועל). Prev-month view doesn't have a budget column,
+  // so the strip starts with בפועל there. Keeps the user's eye flowing
+  // through the row in the same order as the table cells below.
   return (
     <span className={className}>
-      <span>בפועל: <b>{fmtIls(totals.totalSpend)}</b></span>
       {viewMode === "current" && (
         <>
           <span>תקציב: <b>{fmtIls(totals.totalBudget)}</b></span>
+          <span>בפועל: <b>{fmtIls(totals.totalSpend)}</b></span>
           <span>דמי ניהול (תקציב): <b>{fmtIls(totals.totalFeeBudget)}</b></span>
           <span>דמי ניהול (בפועל): <b>{fmtIls(totals.totalFeeActual)}</b></span>
         </>
       )}
-      {viewMode === "previous" && showMetrics && (
+      {viewMode === "previous" && (
         <>
-          <span>לידים: <b>{fmtNum(totals.totalLeads)}</b></span>
-          <span>תיאומים: <b>{fmtNum(totals.totalScheduled)}</b></span>
-          <span>ביצועים: <b>{fmtNum(totals.totalMeetings)}</b></span>
+          <span>בפועל: <b>{fmtIls(totals.totalSpend)}</b></span>
+          {showMetrics && (
+            <>
+              <span>לידים: <b>{fmtNum(totals.totalLeads)}</b></span>
+              <span>תיאומים: <b>{fmtNum(totals.totalScheduled)}</b></span>
+              <span>ביצועים: <b>{fmtNum(totals.totalMeetings)}</b></span>
+            </>
+          )}
         </>
       )}
     </span>
