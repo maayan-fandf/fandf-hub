@@ -19312,6 +19312,77 @@ button.budget-need:focus-visible {
 .forecast-table .c-company { font-weight: 500; }
 .forecast-table .c-project a { color: inherit; text-decoration: none; }
 .forecast-table .c-project a:hover { text-decoration: underline; }
+.forecast-table .c-fee { text-align: end; }
+
+/* Editable management-fee cell. Read state = pill-shaped button;
+   edit state = number input + suffix. Designed to feel clickable
+   (dashed underline + cursor) but not noisy when scanning. */
+.mgmt-fee-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+.mgmt-fee-cell.is-busy { opacity: 0.65; }
+.mgmt-fee-btn {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  padding: 2px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.12s, border-color 0.12s;
+}
+.mgmt-fee-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+[data-theme="dark"] .mgmt-fee-btn {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+[data-theme="dark"] .mgmt-fee-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+.mgmt-fee-cell.is-editing {
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.mgmt-fee-input {
+  width: 4.5em;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: transparent;
+  color: inherit;
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+}
+.mgmt-fee-input:focus { border-color: rgba(99, 102, 241, 0.7); }
+.mgmt-fee-suffix {
+  opacity: 0.7;
+  font-size: 0.9em;
+}
+.mgmt-fee-err {
+  position: absolute;
+  top: 100%;
+  inset-inline-end: 0;
+  font-size: 11px;
+  color: #b91c1c;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
 
 .forecast-company {
   margin-bottom: 16px;

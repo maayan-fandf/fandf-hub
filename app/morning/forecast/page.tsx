@@ -10,7 +10,12 @@ import {
 } from "@/lib/allClients";
 import { readKeysCached } from "@/lib/keys";
 import { driveFolderOwner } from "@/lib/sa";
+import {
+  readAllManagementFees,
+  getFeePercentForRow,
+} from "@/lib/managementFees";
 import CampaignsTabs from "@/components/CampaignsTabs";
+import ManagementFeeCell from "@/components/ManagementFeeCell";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +41,13 @@ type EnrichedRow = {
   channel: string;
   spend: number;
   budget: number;
+  /** Management-fee percent for this (slug, channel). Server-
+   *  resolved with the 15% default when no Firestore override exists. */
+  feePercent: number;
+  /** Computed fee in ILS = spend × feePercent / 100. Server-side so
+   *  the per-manager + grand totals can include it without
+   *  re-deriving on the client. */
+  feeIls: number;
 };
 
 function fmtIls(n: number): string {
@@ -71,13 +83,14 @@ export default async function ForecastPage({
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
 
-  const [monthlyRows, keys] = await Promise.all([
+  const [monthlyRows, keys, feeMap] = await Promise.all([
     getCurrentMonthlyRows(subjectEmail, todayIso).catch(
       () => [] as AllClientsRow[],
     ),
     readKeysCached(subjectEmail).catch(
       () => ({ headers: [] as string[], rows: [] as unknown[][] }),
     ),
+    readAllManagementFees().catch(() => new Map<string, number>()),
   ]);
 
   // slug → { projectName, company, campaignManager } from Keys.
@@ -126,14 +139,19 @@ export default async function ForecastPage({
         company: UNKNOWN_COMPANY,
         campaignManager: UNASSIGNED,
       } satisfies KeyMeta);
+    const channel = r.channel || "(ללא ערוץ)";
+    const feePercent = getFeePercentForRow(feeMap, r.projectSlug, channel);
+    const feeIls = (r.spend * feePercent) / 100;
     return {
       slug: r.projectSlug,
       projectName: meta.projectName,
       company: meta.company || UNKNOWN_COMPANY,
       campaignManager: meta.campaignManager || UNASSIGNED,
-      channel: r.channel || "(ללא ערוץ)",
+      channel,
       spend: r.spend,
       budget: r.budget,
+      feePercent,
+      feeIls,
     };
   });
 
@@ -176,7 +194,8 @@ export default async function ForecastPage({
       );
       const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
       const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
-      return { name, rows, totalSpend, totalBudget };
+      const totalFee = rows.reduce((s, r) => s + r.feeIls, 0);
+      return { name, rows, totalSpend, totalBudget, totalFee };
     })
     .sort((a, b) => b.totalSpend - a.totalSpend);
 
@@ -185,8 +204,9 @@ export default async function ForecastPage({
     (acc, r) => ({
       spend: acc.spend + r.spend,
       budget: acc.budget + r.budget,
+      fee: acc.fee + r.feeIls,
     }),
-    { spend: 0, budget: 0 },
+    { spend: 0, budget: 0, fee: 0 },
   );
 
   const hasFilter = !!(fCompany || fProject || fChannel);
@@ -268,6 +288,9 @@ export default async function ForecastPage({
             <b>{fmtIls(grand.budget)}</b> תקציב
           </span>
           <span className="forecast-grand-num">
+            <b>{fmtIls(grand.fee)}</b> דמי ניהול
+          </span>
+          <span className="forecast-grand-num">
             ({filtered.length} שורות)
           </span>
         </div>
@@ -288,6 +311,7 @@ export default async function ForecastPage({
               <span className="forecast-manager-totals">
                 <span>בפועל: <b>{fmtIls(m.totalSpend)}</b></span>
                 <span>תקציב: <b>{fmtIls(m.totalBudget)}</b></span>
+                <span>דמי ניהול: <b>{fmtIls(m.totalFee)}</b></span>
                 <span>{m.rows.length} שורות</span>
               </span>
             </h2>
@@ -300,6 +324,8 @@ export default async function ForecastPage({
                     <th>ערוץ</th>
                     <th>בפועל</th>
                     <th>תקציב</th>
+                    <th>% ניהול</th>
+                    <th>₪ ניהול</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -321,6 +347,14 @@ export default async function ForecastPage({
                       </td>
                       <td className="c-num">{fmtIls(r.spend)}</td>
                       <td className="c-num">{fmtIls(r.budget)}</td>
+                      <td className="c-fee">
+                        <ManagementFeeCell
+                          slug={r.slug}
+                          channel={r.channel}
+                          initialPercent={r.feePercent}
+                        />
+                      </td>
+                      <td className="c-num">{fmtIls(r.feeIls)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -82,6 +82,13 @@ export const FS_COLLECTIONS = {
    *  = sha1 of the endpoint (one per browser/device), field `user_email`
    *  + the PushSubscription JSON. Pruned on 404/410 send failures. */
   pushSubscriptions: "pushSubscriptions",
+  /** Per-(project-slug, channel) management-fee overrides for the
+   *  /morning/forecast page. Doc id = sha1(`${slug}__${channel}`) so
+   *  Hebrew channel names don't break Firestore's id charset.
+   *  Fields: { slug, channel, percent (number, e.g. 15 for 15%),
+   *  updatedAt (ISO), updatedBy (email) }. Default percent when no
+   *  doc exists is 15 — applied client/server-side. */
+  managementFees: "managementFees",
 } as const;
 
 type SAKey = {
