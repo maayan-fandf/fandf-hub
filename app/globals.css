@@ -19272,23 +19272,134 @@ button.budget-need:focus-visible {
   background: rgba(20, 30, 50, 0.7);
   border-color: rgba(255, 255, 255, 0.15);
 }
-.forecast-filter select[multiple] {
-  padding: 4px;
-  min-width: 180px;
-}
-.forecast-filter select[multiple] option {
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.forecast-filter select[multiple] option:checked {
-  background: rgba(99, 102, 241, 0.2);
-  color: inherit;
-}
 .forecast-filter-actions {
   display: flex;
   gap: 6px;
   align-items: center;
   margin-inline-start: auto;
+}
+
+/* Click-to-open filter dropdown. Trigger pill on its own — list of
+   checkboxes appears in a floating panel when expanded. */
+.forecast-filter-dropdown {
+  position: relative;
+  min-width: 0;
+}
+.forecast-filter-dropdown > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  background: var(--md-sys-color-surface, #fff);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.forecast-filter-dropdown > summary:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+.forecast-filter-dropdown[open] > summary {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.45);
+  color: var(--md-sys-color-primary, #4f46e5);
+}
+[data-theme="dark"] .forecast-filter-dropdown > summary {
+  background: rgba(20, 30, 50, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+[data-theme="dark"] .forecast-filter-dropdown[open] > summary {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #a5b4fc;
+}
+.forecast-filter-dropdown > summary::-webkit-details-marker { display: none; }
+.forecast-filter-chev { font-size: 0.8em; opacity: 0.7; }
+.forecast-filter-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 30;
+  min-width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--md-sys-color-surface, #fff);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  border-radius: 10px;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.2);
+  padding: 6px;
+}
+[data-theme="dark"] .forecast-filter-panel {
+  background: rgba(20, 30, 50, 0.97);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.forecast-filter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.forecast-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.forecast-filter-option:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+.forecast-filter-option input[type="checkbox"] {
+  cursor: pointer;
+}
+.forecast-filter-empty {
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  text-align: center;
+}
+
+/* Grouping toggle — segmented pill pair. */
+.forecast-grouping-toggle {
+  display: inline-flex;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  padding: 2px;
+  gap: 2px;
+}
+[data-theme="dark"] .forecast-grouping-toggle {
+  background: rgba(20, 30, 50, 0.5);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.forecast-grouping-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+}
+.forecast-grouping-btn:hover { color: var(--text); }
+.forecast-grouping-btn.is-active {
+  background: var(--md-sys-color-surface, #fff);
+  color: var(--md-sys-color-primary, #4f46e5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+[data-theme="dark"] .forecast-grouping-btn.is-active {
+  background: rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
 }
 
 /* Manager group — one section per מנהל קמפיינים. */
@@ -19599,7 +19710,15 @@ button.budget-need:focus-visible {
 }
 .forecast-table tbody tr:last-child td { border-bottom: 0; }
 .forecast-table .c-channel { font-weight: 500; }
-.forecast-table .c-num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.forecast-table .c-num {
+  /* In RTL, `text-align: start` = physical right. Numbers like
+     "₪21,601" stick to the right edge of the cell so the column
+     scans cleanly. Was `end` (= LEFT in RTL) which left the values
+     floating mid-cell with awkward gaps next to the channel name. */
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .forecast-table .c-predicted { font-weight: 600; }
 .forecast-table .c-variance.is-ok    { color: #047857; }
 .forecast-table .c-variance.is-warn  { color: #b45309; }

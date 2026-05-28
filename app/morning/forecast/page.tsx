@@ -75,6 +75,30 @@ function parseMultiSelect(raw: string | undefined): Set<string> {
   );
 }
 
+type SpShape = {
+  company?: string;
+  project?: string;
+  channel?: string;
+  sort?: string;
+  dir?: string;
+  grouping?: string;
+};
+
+/** Build an URLSearchParams string that preserves the current sp +
+ *  applies overrides (empty string overrides DROP the param). Used
+ *  by the grouping toggle + (indirectly) by SortHeader. */
+function buildHref(sp: SpShape, overrides: Partial<SpShape>): string {
+  const merged: Record<string, string> = {};
+  for (const [k, v] of Object.entries(sp)) {
+    if (v) merged[k] = String(v);
+  }
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === "" || v == null) delete merged[k];
+    else merged[k] = String(v);
+  }
+  return new URLSearchParams(merged).toString();
+}
+
 const UNASSIGNED = "(ללא מנהל)";
 const UNKNOWN_COMPANY = "(לא מזוהה)";
 
@@ -87,6 +111,7 @@ export default async function ForecastPage({
     channel?: string;
     sort?: string;
     dir?: string;
+    grouping?: string;
   }>;
 }) {
   const me = await currentUserEmail().catch(() => "");
@@ -102,6 +127,11 @@ export default async function ForecastPage({
   const fCompany = parseMultiSelect(sp.company);
   const fProject = parseMultiSelect(sp.project);
   const fChannel = parseMultiSelect(sp.channel);
+  // Grouping mode (iter 5). `flat` collapses the manager → company →
+  // project nesting into a single sortable table so the user can,
+  // e.g. "show me every channel sorted by spend regardless of who
+  // runs it." Default (any other value) keeps the nested view.
+  const groupingMode = sp.grouping === "flat" ? "flat" : "default";
 
   // Sort state. Valid columns: channel, spend, budget, utilizationPct,
   // feePct, feeIls. Falls back to "spend / desc".
@@ -370,46 +400,56 @@ export default async function ForecastPage({
 
       <CampaignsTabs active="forecast" showForecast />
 
-      {/* Filter bar — three NATIVE multi-selects (Ctrl/Cmd+click to
-          add to selection). Form submits as GET; the page reads each
-          param as comma-separated. Native <select multiple> isn't
-          pretty but it's accessible + works without client JS — same
-          philosophy as the rest of this surface. The hidden helper
-          script below intercepts submit to flatten multi-values into
-          a single comma-separated string per param, so the URL stays
-          readable (?company=A,B) instead of repeating (?company=A&
-          company=B). */}
+      {/* Filter bar (iter 5). Each filter is a click-to-open dropdown
+          (<details>/<summary>) with a checkbox list inside. Server-
+          rendered: checkbox-state is the initial selection from the
+          URL; on form submit a tiny inline script collects the
+          checked values into a comma-separated string per filter so
+          the URL stays readable (?company=A,B). Native dropdown
+          open/close — no React state. */}
       <form className="forecast-filterbar" action="/morning/forecast" method="get">
-        <label className="forecast-filter">
-          <span>חברה (אפשר לסמן כמה — Ctrl/⌘ + לחיצה)</span>
-          <select name="company" multiple size={Math.min(6, Math.max(3, distinctCompanies.length))}>
-            {distinctCompanies.map((c) => (
-              <option key={c} value={c} selected={fCompany.has(c)}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="forecast-filter">
-          <span>פרויקט</span>
-          <select name="project" multiple size={Math.min(6, Math.max(3, distinctProjects.length))}>
-            {distinctProjects.map((p) => (
-              <option key={p} value={p} selected={fProject.has(p)}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="forecast-filter">
-          <span>ערוץ</span>
-          <select name="channel" multiple size={Math.min(6, Math.max(3, distinctChannels.length))}>
-            {distinctChannels.map((ch) => (
-              <option key={ch} value={ch} selected={fChannel.has(ch)}>
-                {ch}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FilterDropdown
+          label="חברה"
+          name="company"
+          options={distinctCompanies}
+          selected={fCompany}
+        />
+        <FilterDropdown
+          label="פרויקט"
+          name="project"
+          options={distinctProjects}
+          selected={fProject}
+        />
+        <FilterDropdown
+          label="ערוץ"
+          name="channel"
+          options={distinctChannels}
+          selected={fChannel}
+        />
+        {/* Grouping toggle. Keep the current sort param when
+            switching so the user doesn't lose their column choice. */}
+        <div className="forecast-grouping-toggle" role="tablist" aria-label="קיבוץ">
+          <Link
+            href={(() => {
+              const params = buildHref(sp, { grouping: "" });
+              return `/morning/forecast?${params}`;
+            })()}
+            className={`forecast-grouping-btn${groupingMode === "default" ? " is-active" : ""}`}
+            prefetch={false}
+          >
+            🗂️ מקובץ
+          </Link>
+          <Link
+            href={(() => {
+              const params = buildHref(sp, { grouping: "flat" });
+              return `/morning/forecast?${params}`;
+            })()}
+            className={`forecast-grouping-btn${groupingMode === "flat" ? " is-active" : ""}`}
+            prefetch={false}
+          >
+            📋 שורות
+          </Link>
+        </div>
         <div className="forecast-filter-actions">
           <button type="submit" className="btn-primary btn-sm">
             סנן
@@ -420,13 +460,18 @@ export default async function ForecastPage({
             </Link>
           )}
         </div>
-        {/* Inline script: collapse the multi-select's repeated params
-            into ONE comma-separated value per name BEFORE submit, so
-            the URL stays readable (?company=A,B instead of
-            ?company=A&company=B). Disables the original <select> so
-            it doesn't add its own repeated values to the submission,
-            then writes a single hidden input with the joined value.
-            Pure DOM, no React. */}
+        {/* Preserve sort + grouping params across the GET submit so
+            picking new filter values doesn't reset the user's column
+            sort or grouping mode. */}
+        {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
+        {sp.dir && <input type="hidden" name="dir" value={sp.dir} />}
+        {groupingMode === "flat" && (
+          <input type="hidden" name="grouping" value="flat" />
+        )}
+        {/* Inline script: gather checked checkboxes per filter name
+            into a single comma-separated hidden input. Then disable
+            the checkboxes so they don't add their own params. Pure
+            DOM, no React state. */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -435,9 +480,13 @@ export default async function ForecastPage({
                 if (!f) return;
                 f.addEventListener('submit', function(){
                   ['company','project','channel'].forEach(function(name){
-                    var sel = f.querySelector('select[name="'+name+'"]');
-                    if (!sel) return;
-                    var vals = Array.from(sel.selectedOptions).map(function(o){return o.value;}).filter(Boolean);
+                    var boxes = f.querySelectorAll('input[type="checkbox"][data-filter="'+name+'"]');
+                    if (!boxes.length) return;
+                    var vals = [];
+                    boxes.forEach(function(b){
+                      if (b.checked) vals.push(b.value);
+                      b.disabled = true;
+                    });
                     var hid = f.querySelector('input[type="hidden"][data-flat="'+name+'"]');
                     if (!hid) {
                       hid = document.createElement('input');
@@ -447,7 +496,6 @@ export default async function ForecastPage({
                       f.appendChild(hid);
                     }
                     hid.value = vals.join(',');
-                    sel.disabled = true; // suppress its own param emission
                   });
                 });
               })();
@@ -476,13 +524,69 @@ export default async function ForecastPage({
         </div>
       </section>
 
-      {managers.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="empty">
           <span className="emoji" aria-hidden>🌥️</span>
           {hasFilter
             ? "אין תוצאות לסינון הנוכחי."
             : `לא נמצאו שורות חודשי שחלונן כולל את היום (${todayIso}).`}
         </div>
+      ) : groupingMode === "flat" ? (
+        // Flat single-table view. Every row from `filtered` sorted by
+        // the URL-selected column, with project + company surfaced
+        // as additional columns (since the grouping isn't doing that
+        // job anymore). Same channel-row comparator as the grouped
+        // view → flipping the toggle preserves the user's sort.
+        (() => {
+          const flatRows = filtered.slice().sort(compareRows);
+          return (
+            <div className="forecast-table-wrap">
+              <table className="forecast-table forecast-table-flat">
+                <thead>
+                  <tr>
+                    <th>פרויקט</th>
+                    <th>חברה</th>
+                    <th>מנהל קמפיינים</th>
+                    <SortHeader col="channel" label="ערוץ" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
+                    <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                    <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                    <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                    <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                    <SortHeader col="feeIls" label="₪ ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {flatRows.map((r, i) => (
+                    <tr key={`${r.slug}-${r.channel}-${i}`}>
+                      <td className="c-project" dir="auto">
+                        <Link
+                          href={`/projects/${encodeURIComponent(r.projectName)}`}
+                          className="forecast-project-link"
+                        >
+                          {r.projectName}
+                        </Link>
+                      </td>
+                      <td className="c-company" dir="auto">{r.company}</td>
+                      <td className="c-manager" dir="auto">{r.campaignManager}</td>
+                      <td className="c-channel" dir="auto">{r.channel}</td>
+                      <td className="c-num">{fmtIls(r.spend)}</td>
+                      <td className="c-num">{fmtIls(r.budget)}</td>
+                      <td className="c-num">{fmtPct(r.utilizationPct)}</td>
+                      <td className="c-fee">
+                        <ManagementFeeCell
+                          slug={r.slug}
+                          channel={r.channel}
+                          initialPercent={r.feePercent}
+                        />
+                      </td>
+                      <td className="c-num">{fmtIls(r.feeIls)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()
       ) : (
         managers.map((m) => (
           <details key={m.name} className="forecast-manager" open>
@@ -576,7 +680,7 @@ function SortHeader({
   currentCol,
   currentDir,
   sp,
-  align = "end",
+  align = "start",
 }: {
   col:
     | "channel"
@@ -588,13 +692,7 @@ function SortHeader({
   label: string;
   currentCol: string;
   currentDir: "asc" | "desc";
-  sp: {
-    company?: string;
-    project?: string;
-    channel?: string;
-    sort?: string;
-    dir?: string;
-  };
+  sp: SpShape;
   align?: "start" | "end";
 }) {
   const isActive = currentCol === col;
@@ -610,13 +708,9 @@ function SortHeader({
     : isAlpha
       ? "asc"
       : "desc";
-  const params = new URLSearchParams();
-  if (sp.company) params.set("company", sp.company);
-  if (sp.project) params.set("project", sp.project);
-  if (sp.channel) params.set("channel", sp.channel);
-  params.set("sort", col);
-  params.set("dir", nextDir);
-  const href = `/morning/forecast?${params.toString()}`;
+  // Preserve every other URL param (filters, grouping) so clicking a
+  // header doesn't reset the user's other state.
+  const href = `/morning/forecast?${buildHref(sp, { sort: col, dir: nextDir })}`;
   const arrow = isActive ? (currentDir === "asc" ? "▲" : "▼") : "";
   return (
     <th
@@ -635,5 +729,60 @@ function SortHeader({
         {arrow && <span className="forecast-th-arrow"> {arrow}</span>}
       </Link>
     </th>
+  );
+}
+
+/**
+ * Click-to-open filter dropdown. Trigger pill shows the label + a
+ * "(N)" badge when anything's selected. Click → reveals a panel of
+ * checkboxes. Native <details>/<summary> — no React state. The
+ * checkboxes' `name=*` is NOT set on the checkbox itself; the
+ * parent form intercepts submit and collects checked values into a
+ * comma-separated hidden input (see the inline script in the form).
+ * That keeps URLs as ?company=A,B instead of repeating ?company=A&
+ * company=B for every checked option.
+ */
+function FilterDropdown({
+  label,
+  name,
+  options,
+  selected,
+}: {
+  label: string;
+  name: "company" | "project" | "channel";
+  options: string[];
+  selected: Set<string>;
+}) {
+  const count = selected.size;
+  const summaryText =
+    count > 0 ? `${label} · ${count}` : label;
+  return (
+    <details className="forecast-filter forecast-filter-dropdown">
+      <summary className="forecast-filter-summary">
+        <span>{summaryText}</span>
+        <span className="forecast-filter-chev" aria-hidden>▾</span>
+      </summary>
+      <div className="forecast-filter-panel">
+        {options.length === 0 ? (
+          <div className="forecast-filter-empty">אין ערכים</div>
+        ) : (
+          <ul className="forecast-filter-list">
+            {options.map((opt) => (
+              <li key={opt}>
+                <label className="forecast-filter-option">
+                  <input
+                    type="checkbox"
+                    data-filter={name}
+                    value={opt}
+                    defaultChecked={selected.has(opt)}
+                  />
+                  <span dir="auto">{opt}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
   );
 }
