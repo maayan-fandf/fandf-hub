@@ -19532,6 +19532,44 @@ button.budget-need:focus-visible {
 }
 .forecast-table .c-fee { text-align: end; }
 
+/* Quick-open icons next to each project name. Icon-only — verbose
+   labels live in title= tooltips per the owner's "minimal labeling"
+   spec. Subtle hover bump + slight tint so they feel pressable
+   without competing with the project name. */
+.forecast-project-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.forecast-quick-actions {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.forecast-project-name:hover .forecast-quick-actions,
+.forecast-quick-actions:hover { opacity: 1; }
+.forecast-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 13px;
+  line-height: 1;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s;
+}
+.forecast-quick-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+[data-theme="dark"] .forecast-quick-btn:hover {
+  background: rgba(99, 102, 241, 0.28);
+}
+
 /* Editable management-fee cell. Read state = pill-shaped button;
    edit state = number input + suffix. Designed to feel clickable
    (dashed underline + cursor) but not noisy when scanning. */

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   currentUserEmail,
+  getMorningFeed,
   getMyProjects,
 } from "@/lib/appsScript";
 import {
@@ -162,7 +163,7 @@ export default async function ForecastPage({
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
 
-  const [monthlyRows, keys, feeMap] = await Promise.all([
+  const [monthlyRows, keys, feeMap, morning] = await Promise.all([
     getCurrentMonthlyRows(subjectEmail, todayIso).catch(
       () => [] as AllClientsRow[],
     ),
@@ -170,7 +171,21 @@ export default async function ForecastPage({
       () => ({ headers: [] as string[], rows: [] as unknown[][] }),
     ),
     readAllManagementFees().catch(() => new Map<string, number>()),
+    // Pull morning feed once to get per-project sheetTabUrl (the
+    // hyperlink on Keys' `campaign ID` column → the project's tab
+    // in the master sheet). Cheap on warm cache; soft-fail to empty
+    // so the page still renders if the feed is unreachable.
+    getMorningFeed({ scope: "all" }).catch(() => null),
   ]);
+  // slug → tab URL. Empty when the feed is unreachable; the
+  // sheet icon then simply doesn't render for that row.
+  const sheetUrlBySlug = new Map<string, string>();
+  if (morning?.projects) {
+    for (const p of morning.projects) {
+      const key = (p.slug || "").toLowerCase().trim();
+      if (key && p.sheetTabUrl) sheetUrlBySlug.set(key, p.sheetTabUrl);
+    }
+  }
 
   // slug → { projectName, company, campaignManager } from Keys.
   // The slug ("campaign ID" column) is the canonical join because
@@ -266,6 +281,7 @@ export default async function ForecastPage({
   type ProjectGroup = {
     project: string;
     slug: string;
+    sheetTabUrl: string;
     rows: EnrichedRow[];
     totalSpend: number;
     totalBudget: number;
@@ -300,8 +316,10 @@ export default async function ForecastPage({
       coMap.set(r.company, projMap);
     }
     // Group by projectName as well as slug to keep "(ללא שם)"-style
-    // dupes separated when slug is empty.
-    const projKey = `${r.projectName} ${r.slug}`;
+    // dupes separated when slug is empty. Joined with "__" so projects
+    // whose names contain spaces still round-trip cleanly through
+    // split("__") below.
+    const projKey = `${r.projectName}__${r.slug}`;
     let rows = projMap.get(projKey);
     if (!rows) {
       rows = [];
@@ -343,13 +361,23 @@ export default async function ForecastPage({
         .map(([coName, projMap]) => {
           const projects: ProjectGroup[] = Array.from(projMap.entries())
             .map(([projKey, rows]) => {
-              const [project] = projKey.split(" ");
+              const [project] = projKey.split("__");
               const slug = rows[0]?.slug ?? "";
+              const sheetTabUrl =
+                sheetUrlBySlug.get(slug.toLowerCase().trim()) || "";
               rows.sort(compareRows);
               const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
               const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
               const totalFee = rows.reduce((s, r) => s + r.feeIls, 0);
-              return { project, slug, rows, totalSpend, totalBudget, totalFee };
+              return {
+                project,
+                slug,
+                sheetTabUrl,
+                rows,
+                totalSpend,
+                totalBudget,
+                totalFee,
+              };
             })
             .sort((a, b) => b.totalSpend - a.totalSpend);
           return {
@@ -556,32 +584,37 @@ export default async function ForecastPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {flatRows.map((r, i) => (
-                    <tr key={`${r.slug}-${r.channel}-${i}`}>
-                      <td className="c-project" dir="auto">
-                        <Link
-                          href={`/projects/${encodeURIComponent(r.projectName)}`}
-                          className="forecast-project-link"
-                        >
-                          {r.projectName}
-                        </Link>
-                      </td>
-                      <td className="c-company" dir="auto">{r.company}</td>
-                      <td className="c-manager" dir="auto">{r.campaignManager}</td>
-                      <td className="c-channel" dir="auto">{r.channel}</td>
-                      <td className="c-num">{fmtIls(r.spend)}</td>
-                      <td className="c-num">{fmtIls(r.budget)}</td>
-                      <td className="c-num">{fmtPct(r.utilizationPct)}</td>
-                      <td className="c-fee">
-                        <ManagementFeeCell
-                          slug={r.slug}
-                          channel={r.channel}
-                          initialPercent={r.feePercent}
-                        />
-                      </td>
-                      <td className="c-num">{fmtIls(r.feeIls)}</td>
-                    </tr>
-                  ))}
+                  {flatRows.map((r, i) => {
+                    const flatSheetUrl =
+                      sheetUrlBySlug.get(r.slug.toLowerCase().trim()) || "";
+                    return (
+                      <tr key={`${r.slug}-${r.channel}-${i}`}>
+                        <td className="c-project" dir="auto">
+                          <span className="forecast-project-name">
+                            {r.projectName}
+                            <ProjectQuickOpen
+                              projectName={r.projectName}
+                              sheetTabUrl={flatSheetUrl}
+                            />
+                          </span>
+                        </td>
+                        <td className="c-company" dir="auto">{r.company}</td>
+                        <td className="c-manager" dir="auto">{r.campaignManager}</td>
+                        <td className="c-channel" dir="auto">{r.channel}</td>
+                        <td className="c-num">{fmtIls(r.spend)}</td>
+                        <td className="c-num">{fmtIls(r.budget)}</td>
+                        <td className="c-num">{fmtPct(r.utilizationPct)}</td>
+                        <td className="c-fee">
+                          <ManagementFeeCell
+                            slug={r.slug}
+                            channel={r.channel}
+                            initialPercent={r.feePercent}
+                          />
+                        </td>
+                        <td className="c-num">{fmtIls(r.feeIls)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -611,12 +644,13 @@ export default async function ForecastPage({
                 {c.projects.map((p) => (
                   <details key={p.project + p.slug} className="forecast-project" open>
                     <summary className="forecast-project-head">
-                      <Link
-                        href={`/projects/${encodeURIComponent(p.project)}`}
-                        className="forecast-project-link"
-                      >
-                        <span dir="auto">{p.project}</span>
-                      </Link>
+                      <span className="forecast-project-name" dir="auto">
+                        {p.project}
+                        <ProjectQuickOpen
+                          projectName={p.project}
+                          sheetTabUrl={p.sheetTabUrl}
+                        />
+                      </span>
                       <span className="forecast-project-totals">
                         <span>בפועל: <b>{fmtIls(p.totalSpend)}</b></span>
                         <span>תקציב: <b>{fmtIls(p.totalBudget)}</b></span>
@@ -665,6 +699,52 @@ export default async function ForecastPage({
         ))
       )}
     </main>
+  );
+}
+
+/**
+ * Two quick-open icons rendered next to each project name:
+ *   📊  → opens the project's master-sheet tab (the hyperlink on
+ *        Keys' `campaign ID` column rich-text). Only renders when a
+ *        URL exists — projects whose Keys cell isn't hyperlinked
+ *        skip the icon instead of rendering a dead button.
+ *   🔗  → opens the project's hub page (/projects/[name]). Always
+ *        renders since every row has a project name.
+ *
+ * Minimal labeling per the owner's spec: icon-only, title tooltips
+ * carry the verbose label.
+ */
+function ProjectQuickOpen({
+  projectName,
+  sheetTabUrl,
+}: {
+  projectName: string;
+  sheetTabUrl: string;
+}) {
+  return (
+    <span className="forecast-quick-actions">
+      {sheetTabUrl && (
+        <a
+          className="forecast-quick-btn"
+          href={sheetTabUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="פתח את לשונית הגיליון של הפרויקט"
+          aria-label="פתח גיליון"
+        >
+          📊
+        </a>
+      )}
+      <Link
+        href={`/projects/${encodeURIComponent(projectName)}`}
+        className="forecast-quick-btn"
+        title="פתח את עמוד הפרויקט בהאב"
+        aria-label="פתח עמוד פרויקט"
+        prefetch={false}
+      >
+        🔗
+      </Link>
+    </span>
   );
 }
 
