@@ -287,6 +287,50 @@ function dateOnlyFromSerial(v: unknown): string {
 }
 
 /**
+ * Read EVERY ALL CLIENTS row (both "current" and "חודשי" types) for
+ * callers that need both — e.g. the spend-forecast page, which uses
+ * monthly windows to predict month-end totals.
+ *
+ * Exposed at module scope (instead of being kept private like
+ * `readAllClientsRows`) so the forecast page can do its own filtering
+ * without forcing a "current"-only contract on the shared helper.
+ * Cached the same way as every other reader through `readAllClientsCached`.
+ */
+export async function getAllClientsAllRows(
+  subjectEmail: string,
+): Promise<AllClientsRow[]> {
+  return readAllClientsRows(subjectEmail);
+}
+
+/**
+ * Return every "חודשי" (monthly) row whose window contains today.
+ *
+ * `todayIso` defaults to the Asia/Jerusalem calendar day in YYYY-MM-DD.
+ * Inclusive on both sides: a row with endIso === today still counts as
+ * "current month."
+ *
+ * Used by /morning/forecast to project month-end spend from partial-
+ * month actuals. Caller groups by (company, project) downstream — this
+ * helper just narrows the row set.
+ */
+export async function getCurrentMonthlyRows(
+  subjectEmail: string,
+  todayIso?: string,
+): Promise<AllClientsRow[]> {
+  const today =
+    todayIso ??
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(
+      new Date(),
+    );
+  const all = await readAllClientsRows(subjectEmail);
+  return all.filter((r) => {
+    if (r.rowType !== "חודשי") return false;
+    if (!r.startIso || !r.endIso) return false;
+    return r.startIso <= today && today <= r.endIso;
+  });
+}
+
+/**
  * Force the next read to bypass the cross-request cache. Call after
  * the ALL CLIENTS tab is mutated upstream. No hub-side path mutates
  * the tab today, but exposed so the admin endpoint can wire it in if

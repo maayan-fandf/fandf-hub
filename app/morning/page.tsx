@@ -219,7 +219,12 @@ export default async function MorningPage({
         </div>
       </header>
 
-      {roleEligible && <CampaignsTabs active="alerts" />}
+      {roleEligible && (
+        <CampaignsTabs
+          active="alerts"
+          showForecast={!!projectsData?.isAdmin}
+        />
+      )}
 
       {error && (
         <div className="error">

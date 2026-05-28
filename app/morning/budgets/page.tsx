@@ -144,7 +144,12 @@ export default async function BudgetsPage() {
         </div>
       </header>
 
-      <CampaignsTabs active="budgets" />
+      <CampaignsTabs
+        active="budgets"
+        showForecast={
+          projectsRes.status === "fulfilled" ? !!projectsRes.value.isAdmin : false
+        }
+      />
 
       {error && (
         <div className="error">
