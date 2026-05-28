@@ -83,6 +83,7 @@ type SpShape = {
   sort?: string;
   dir?: string;
   grouping?: string;
+  q?: string;
 };
 
 /** Build an URLSearchParams string that preserves the current sp +
@@ -113,6 +114,7 @@ export default async function ForecastPage({
     sort?: string;
     dir?: string;
     grouping?: string;
+    q?: string;
   }>;
 }) {
   const me = await currentUserEmail().catch(() => "");
@@ -128,21 +130,30 @@ export default async function ForecastPage({
   const fCompany = parseMultiSelect(sp.company);
   const fProject = parseMultiSelect(sp.project);
   const fChannel = parseMultiSelect(sp.channel);
+  // Free-text search (iter 7). Matches case-insensitively against
+  // project / company / channel / manager names — substring match,
+  // no fuzzy fancy stuff. Empty string = no search filter.
+  const fQuery = (sp.q || "").trim().toLowerCase();
   // Grouping mode (iter 5). `flat` collapses the manager → company →
   // project nesting into a single sortable table so the user can,
   // e.g. "show me every channel sorted by spend regardless of who
   // runs it." Default (any other value) keeps the nested view.
   const groupingMode = sp.grouping === "flat" ? "flat" : "default";
 
-  // Sort state. Valid columns: channel, spend, budget, utilizationPct,
-  // feePct, feeIls. Falls back to "spend / desc".
+  // Sort state. The alpha columns (project / company / manager) only
+  // show in flat mode — in grouped mode they're grouping keys, not
+  // columns — but the type union covers both modes so the URL state
+  // is shareable across the toggle. Falls back to "spend / desc".
   type SortCol =
     | "channel"
     | "spend"
     | "budget"
     | "utilizationPct"
     | "feePct"
-    | "feeIls";
+    | "feeIls"
+    | "project"
+    | "company"
+    | "manager";
   type SortDir = "asc" | "desc";
   const ALLOWED_SORTS: ReadonlySet<SortCol> = new Set<SortCol>([
     "channel",
@@ -151,6 +162,9 @@ export default async function ForecastPage({
     "utilizationPct",
     "feePct",
     "feeIls",
+    "project",
+    "company",
+    "manager",
   ]);
   const rawSort = String(sp.sort || "").trim();
   const sortCol: SortCol = (ALLOWED_SORTS.has(rawSort as SortCol)
@@ -270,6 +284,17 @@ export default async function ForecastPage({
     if (fCompany.size > 0 && !fCompany.has(r.company)) return false;
     if (fProject.size > 0 && !fProject.has(r.projectName)) return false;
     if (fChannel.size > 0 && !fChannel.has(r.channel)) return false;
+    if (fQuery) {
+      const hay = [
+        r.projectName,
+        r.company,
+        r.channel,
+        r.campaignManager,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(fQuery)) return false;
+    }
     return true;
   });
 
@@ -336,6 +361,12 @@ export default async function ForecastPage({
     let primary = 0;
     if (sortCol === "channel") {
       primary = collator.compare(a.channel, b.channel) * sortMul;
+    } else if (sortCol === "project") {
+      primary = collator.compare(a.projectName, b.projectName) * sortMul;
+    } else if (sortCol === "company") {
+      primary = collator.compare(a.company, b.company) * sortMul;
+    } else if (sortCol === "manager") {
+      primary = collator.compare(a.campaignManager, b.campaignManager) * sortMul;
     } else if (sortCol === "spend") {
       primary = (a.spend - b.spend) * sortMul;
     } else if (sortCol === "budget") {
@@ -409,7 +440,8 @@ export default async function ForecastPage({
     { spend: 0, budget: 0, fee: 0 },
   );
 
-  const hasFilter = fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0;
+  const hasFilter =
+    fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0 || !!fQuery;
 
   return (
     <main className="container forecast-page">
@@ -436,6 +468,17 @@ export default async function ForecastPage({
           the URL stays readable (?company=A,B). Native dropdown
           open/close — no React state. */}
       <form className="forecast-filterbar" action="/morning/forecast" method="get">
+        <label className="forecast-search">
+          <span className="forecast-search-icon" aria-hidden>🔍</span>
+          <input
+            type="search"
+            name="q"
+            placeholder="חפש פרויקט, חברה, ערוץ, מנהל…"
+            defaultValue={sp.q || ""}
+            dir="auto"
+            autoComplete="off"
+          />
+        </label>
         <FilterDropdown
           label="חברה"
           name="company"
@@ -572,12 +615,12 @@ export default async function ForecastPage({
               <table className="forecast-table forecast-table-flat">
                 <thead>
                   <tr>
-                    <th>פרויקט</th>
-                    <th>חברה</th>
-                    <th>מנהל קמפיינים</th>
+                    <SortHeader col="project" label="פרויקט" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
+                    <SortHeader col="company" label="חברה" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
+                    <SortHeader col="manager" label="מנהל קמפיינים" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
                     <SortHeader col="channel" label="ערוץ" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
-                    <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                     <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                    <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                     <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                     <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                     <SortHeader col="feeIls" label="₪ ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
@@ -662,8 +705,8 @@ export default async function ForecastPage({
                         <thead>
                           <tr>
                             <SortHeader col="channel" label="ערוץ" currentCol={sortCol} currentDir={sortDir} sp={sp} align="start" />
-                            <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                             <SortHeader col="budget" label="תקציב" currentCol={sortCol} currentDir={sortDir} sp={sp} />
+                            <SortHeader col="spend" label="בפועל" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                             <SortHeader col="utilizationPct" label="% ניצול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                             <SortHeader col="feePct" label="% ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
                             <SortHeader col="feeIls" label="₪ ניהול" currentCol={sortCol} currentDir={sortDir} sp={sp} />
@@ -675,8 +718,8 @@ export default async function ForecastPage({
                               <td className="c-channel" dir="auto">
                                 {r.channel}
                               </td>
-                              <td className="c-num">{fmtIls(r.spend)}</td>
                               <td className="c-num">{fmtIls(r.budget)}</td>
+                              <td className="c-num">{fmtIls(r.spend)}</td>
                               <td className="c-num">{fmtPct(r.utilizationPct)}</td>
                               <td className="c-fee">
                                 <ManagementFeeCell
@@ -742,7 +785,7 @@ function ProjectQuickOpen({
         aria-label="פתח עמוד פרויקט"
         prefetch={false}
       >
-        🔗
+        🏢
       </Link>
     </span>
   );
@@ -768,7 +811,10 @@ function SortHeader({
     | "budget"
     | "utilizationPct"
     | "feePct"
-    | "feeIls";
+    | "feeIls"
+    | "project"
+    | "company"
+    | "manager";
   label: string;
   currentCol: string;
   currentDir: "asc" | "desc";
@@ -776,7 +822,11 @@ function SortHeader({
   align?: "start" | "end";
 }) {
   const isActive = currentCol === col;
-  const isAlpha = col === "channel";
+  const isAlpha =
+    col === "channel" ||
+    col === "project" ||
+    col === "company" ||
+    col === "manager";
   // Toggle direction when re-clicking the active column. When
   // switching columns, default to asc for alpha cols (A→Z reads
   // naturally) and desc for numeric (₪ desc surfaces the largest

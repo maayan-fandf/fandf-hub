@@ -19279,6 +19279,79 @@ button.budget-need:focus-visible {
   margin-inline-start: auto;
 }
 
+/* Free-text search box in the forecast filter bar. Same pill chrome
+   as the dropdown filters for a coherent control row, with a search
+   icon prepended. Type → Enter to submit (the form is GET, so the
+   page re-renders with ?q=value in the URL). Consistent with other
+   search inputs across the hub (BillingReport, TasksQueue, etc.) —
+   same rounded shape, same focus ring, same typography. */
+.forecast-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  background: var(--md-sys-color-surface, #fff);
+  font-size: 13px;
+  min-width: 260px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.forecast-search:focus-within {
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+[data-theme="dark"] .forecast-search {
+  background: rgba(20, 30, 50, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.forecast-search-icon { opacity: 0.55; font-size: 0.95em; }
+.forecast-search input[type="search"] {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  padding: 7px 0;
+  outline: none;
+}
+.forecast-search input[type="search"]::placeholder {
+  color: var(--md-sys-color-on-surface-variant, #94a3b8);
+}
+/* Strip the browser's default "clear" button so the chrome stays
+   consistent — there's already a "נקה" link in the filter actions. */
+.forecast-search input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* Custom thin scrollbar — applied to filter panels and the table
+   wrap so long lists / wide tables look intentional, not OS-default
+   chrome. Webkit-only but degrades cleanly on Firefox (uses
+   scrollbar-width: thin instead). */
+.forecast-filter-panel,
+.forecast-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.35) transparent;
+}
+.forecast-filter-panel::-webkit-scrollbar,
+.forecast-table-wrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.forecast-filter-panel::-webkit-scrollbar-track,
+.forecast-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.forecast-filter-panel::-webkit-scrollbar-thumb,
+.forecast-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 999px;
+}
+.forecast-filter-panel::-webkit-scrollbar-thumb:hover,
+.forecast-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
 /* Click-to-open filter dropdown. Trigger pill on its own — list of
    checkboxes appears in a floating panel when expanded. */
 .forecast-filter-dropdown {
