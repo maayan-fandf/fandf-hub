@@ -19324,6 +19324,44 @@ button.budget-need:focus-visible {
   -webkit-appearance: none;
 }
 
+/* ForecastMonthPicker — sibling of the view toggle (חודש נוכחי /
+   חודש קודם). Same pill chrome as .forecast-grouping-toggle so the
+   row of toggles reads as one cohesive band. Native <input type="month">
+   is hidden-ish: we leave the OS calendar picker on the right but
+   strip the default border + give it our font. */
+.forecast-month-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  background: var(--md-sys-color-surface, #fff);
+  font-size: 12.5px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.forecast-month-picker:focus-within {
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+[data-theme="dark"] .forecast-month-picker {
+  background: rgba(20, 30, 50, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.forecast-month-picker-icon { opacity: 0.55; }
+.forecast-month-picker input[type="month"] {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  padding: 5px 0;
+  outline: none;
+  min-width: 130px;
+  /* Webkit hides the indicator if there's no value, which can confuse —
+     keep it always visible. */
+  color-scheme: light dark;
+}
+
 /* ─── Searchable multi-select filter — reusable component ─────────
  * Used on /morning/forecast + /tasks. UX mirrors the CRM funnel
  * source filter: trigger pill → click reveals a floating popover

@@ -20,6 +20,7 @@ import {
 import CampaignsTabs from "@/components/CampaignsTabs";
 import ManagementFeeCell from "@/components/ManagementFeeCell";
 import SearchableMultiSelectFilter from "@/components/SearchableMultiSelectFilter";
+import ForecastMonthPicker from "@/components/ForecastMonthPicker";
 
 export const dynamic = "force-dynamic";
 
@@ -123,13 +124,17 @@ type SpShape = {
   grouping?: string;
   q?: string;
   /** "current" (default — month windows containing today, full forecast
-   *  columns) or "previous" (previous-calendar-month monthly rows,
-   *  spend-only columns + optional metrics). */
+   *  columns) or "previous" (historical monthly rows, spend-only
+   *  columns + optional metrics). */
   view?: string;
   /** "1" → render the leads/scheduled/meetings columns (with
    *  ₪/result cost columns next to each) in previous-month view.
    *  No-op in current-month view. */
   metrics?: string;
+  /** YYYY-MM. When `view=previous`, this is the month to load. Falls
+   *  back to the immediately-prior calendar month when missing or
+   *  malformed. No-op in current-month view (which always reads "today"). */
+  month?: string;
 };
 
 /** Build an URLSearchParams string that preserves the current sp +
@@ -163,6 +168,7 @@ export default async function ForecastPage({
     q?: string;
     view?: string;
     metrics?: string;
+    month?: string;
   }>;
 }) {
   const me = await currentUserEmail().catch(() => "");
@@ -249,13 +255,26 @@ export default async function ForecastPage({
   const todayIso = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
-  // YYYY-MM for the prev-calendar-month — used both to fetch rows
-  // (when viewMode === "previous") and to render the header label.
+  // YYYY-MM for the prev-calendar-month — the natural default + the
+  // picker's upper bound (no point showing "current month or future"
+  // in the prev-month view).
   const prevYm = previousYearMonth(todayIso);
+  // User-selected target month for `view=previous`. Accepts any well-
+  // formed YYYY-MM; rejects today / future months by clamping to
+  // prevYm (otherwise prev-month view would double up with the
+  // current-month view). Malformed → default to prevYm.
+  const MONTH_RX = /^\d{4}-(0[1-9]|1[0-2])$/;
+  const rawMonth = (sp.month || "").trim();
+  const selectedMonth =
+    viewMode === "previous"
+      ? rawMonth && MONTH_RX.test(rawMonth) && rawMonth <= prevYm
+        ? rawMonth
+        : prevYm
+      : prevYm;
 
   const [monthlyRows, keys, feeMap, morning] = await Promise.all([
     viewMode === "previous"
-      ? getMonthlyRowsForYearMonth(subjectEmail, prevYm).catch(
+      ? getMonthlyRowsForYearMonth(subjectEmail, selectedMonth).catch(
           () => [] as AllClientsRow[],
         )
       : getCurrentMonthlyRows(subjectEmail, todayIso).catch(
@@ -570,11 +589,11 @@ export default async function ForecastPage({
         <div>
           <h1>
             <span className="emoji" aria-hidden>🔮</span>
-            תחזית הוצאה — {viewMode === "previous" ? `חודש קודם (${prevYm})` : "חודש נוכחי"}
+            תחזית הוצאה — {viewMode === "previous" ? `חודש ${selectedMonth}` : "חודש נוכחי"}
           </h1>
           <div className="subtitle">
             {viewMode === "previous"
-              ? `שורות חודשי ב־ALL CLIENTS שמתחילות ב־${prevYm}, מקובצות לפי מנהל/ת קמפיינים.`
+              ? `שורות חודשי ב־ALL CLIENTS שמתחילות ב־${selectedMonth}, מקובצות לפי מנהל/ת קמפיינים.`
               : `שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את היום (${todayIso}), מקובצות לפי מנהל/ת קמפיינים.`}
           </div>
         </div>
@@ -647,13 +666,14 @@ export default async function ForecastPage({
           </Link>
         </div>
         {/* View toggle (current vs previous month). Switching to the
-            previous-month view clears the metrics toggle on every link
-            click — the metrics columns are only meaningful retrospectively
-            so we don't want them re-appearing when the user flips back
-            and forth quickly. Sort/filter params survive though. */}
+            previous-month view defaults to the immediately-prior
+            calendar month; the picker right next to it lets the user
+            scrub to any historical month. Switching back to "current"
+            drops the ?month param so the next prev-month flip resumes
+            the default. Sort/filter params survive across both. */}
         <div className="forecast-grouping-toggle" role="tablist" aria-label="תקופה">
           <Link
-            href={`/morning/forecast?${buildHref(sp, { view: "" })}`}
+            href={`/morning/forecast?${buildHref(sp, { view: "", month: "" })}`}
             className={`forecast-grouping-btn${viewMode === "current" ? " is-active" : ""}`}
             prefetch={false}
           >
@@ -667,6 +687,19 @@ export default async function ForecastPage({
             ⏪ חודש קודם
           </Link>
         </div>
+        {/* Native month picker — only useful when looking at a prior
+            month. Defaults to the URL value (= previousYearMonth when
+            no explicit month is set) and auto-submits the form on
+            change. Capped at prevYm so the user can't roll forward
+            into the current/future month from this view (current-
+            month view is the other toggle). */}
+        {viewMode === "previous" && (
+          <ForecastMonthPicker
+            key={selectedMonth}
+            defaultValue={selectedMonth}
+            max={prevYm}
+          />
+        )}
         {/* Metrics toggle — only meaningful in previous-month view. In
             current-month view the columns wouldn't add value (the
             partial-month ₪/result numbers are misleading mid-pace), so
