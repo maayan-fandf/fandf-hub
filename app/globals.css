@@ -6866,6 +6866,23 @@ html[data-theme="dark"] .crm-source-search-row:hover {
      between the label and the count. */
   margin-inline-start: auto;
 }
+/* Sum row at the bottom of the legend — visually separated as a
+   footer-style row with a top border + bolder text + a hollow dot
+   so it reads as "this isn't a category, it's the total." */
+.crm-pie-legend .crm-pie-legend-row-sum {
+  margin-top: 0.35rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+.crm-pie-legend .crm-pie-legend-row-sum .crm-legend-count {
+  color: var(--text);
+}
+.crm-pie-legend .crm-legend-dot-sum {
+  background: transparent;
+  border: 1.5px solid var(--muted);
+  border-radius: 999px;
+}
 /* Embedded stacked-source bar inside the pie legend rows. Replaces
    the standalone "התנגדויות לפי מקור הגעה" block — bar width is
    proportional to that slice's count (set inline), segments inside

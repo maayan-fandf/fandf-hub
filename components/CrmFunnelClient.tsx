@@ -747,6 +747,24 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                     );
                   })
                 )}
+                {/* Sum row — total objections across the displayed slices.
+                    Sits at the bottom of the legend with a top border so
+                    it reads as the column footer. Percentages always
+                    total 100% so we hardcode it (avoids the harmless
+                    "99.9%" / "100.1%" rounding drift that would happen
+                    if we summed the per-slice rounded percentages). */}
+                {pieData.slices.length > 0 && pieData.total > 0 && (
+                  <li className="crm-pie-legend-row crm-pie-legend-row-sum">
+                    <span
+                      className="crm-legend-dot crm-legend-dot-sum"
+                      aria-hidden
+                    />
+                    <span className="crm-legend-label">סה״כ</span>
+                    <span className="crm-legend-count">
+                      {pieData.total} (100%)
+                    </span>
+                  </li>
+                )}
               </ul>
             </div>
           </div>
