@@ -6036,7 +6036,14 @@ html[data-theme="dark"] .crm-kpi-value {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 30;
+  /* z-index needs to clear every painted element in the same stacking
+     context — the next section's stacked bars, matrix-bar rows, and the
+     pie-legend's embedded source bars all paint after the KPI row in
+     document order, so a low z-index lets them visually bleed over the
+     popover where it extends below its KPI tile. Bumped from 30 to 200
+     2026-05-31 — Maayan's screenshot of תיאומי פגישה's popover with the
+     next section's bars overlapping it. */
+  z-index: 200;
   min-width: 260px;
   max-width: 340px;
   background: #ffffff;
@@ -6070,6 +6077,17 @@ html[data-theme="dark"] .crm-channel-tooltip {
 .crm-pie-legend-row-has-popover {
   cursor: help;
   position: relative;
+}
+/* While the popover is open, lift the parent into its own stacking
+   context above the next sibling section. Without this, painting
+   order alone gave the next section's bars priority over the
+   popover, even with the popover's higher z-index — because the
+   parent KPI tile was at z=auto in the outer stacking context. */
+.crm-kpi-tile-has-popover:hover,
+.crm-kpi-tile-has-popover:focus-within,
+.crm-pie-legend-row-has-popover:hover,
+.crm-pie-legend-row-has-popover:focus-within {
+  z-index: 100;
 }
 /* When the controlled tooltip is rendered as a sibling of the pie
    (SVG slice hover), the positioning context is .crm-pie-row. The pie
