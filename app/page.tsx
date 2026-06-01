@@ -85,17 +85,25 @@ export default async function HomePage() {
     : new Set<string>();
 
   // endIso map from the morning feed — powers the hide-ended filter.
-  // inactiveByProject — projects with no current-month media spend.
-  // morning.spend is summed from the master tab's `current` rows only,
-  // so spend === 0 means "not running a budget this month". Powers the
-  // hide-inactive filter (mirrors hide-ended). General (כללי) is never
-  // marked inactive — the page/menu stamp data-inactive="0" on it.
+  // inactiveByProject — projects with no current-month media activity.
+  //
+  // morning.spend + morning.budget are summed from the master tab's
+  // `current` rows. A project is "inactive" only when BOTH are zero —
+  // meaning no spend has landed AND no budget is planned for the period.
+  // Spend-alone was too strict: on the 1st of each month the freshly-
+  // rolled current rows naturally have spend=0 because the month just
+  // started, which incorrectly hid every project that had been pre-
+  // rolled. Maayan flagged 2026-06-01: גיא ודורון's 6 projects all
+  // showed inactive on the morning of June 1 even though their June
+  // budgets were set. Adding the budget check fixes the day-1 case.
+  // General (כללי) is never marked inactive — the page/menu stamp
+  // data-inactive="0" on it.
   const endIsoByProject = new Map<string, string>();
   const inactiveByProject = new Set<string>();
   if (morning) {
     for (const p of morning.projects) {
       if (p.endIso) endIsoByProject.set(p.name, p.endIso);
-      if (!(p.spend > 0)) {
+      if (!(p.spend > 0) && !(p.budget > 0)) {
         inactiveByProject.add(p.name);
       }
     }
