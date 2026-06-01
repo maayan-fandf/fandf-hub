@@ -1,3 +1,12 @@
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}) {
+  const { project } = await params;
+  return { title: `משימות · ${decodeURIComponent(project)}` };
+}
+
 import Link from "next/link";
 import { getProjectTasks, type TaskItem } from "@/lib/appsScript";
 import Board from "@/components/Board";

@@ -4,6 +4,8 @@ import { getMyProjects, currentUserEmail } from "@/lib/appsScript";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import TaskFormSchemaViewer from "@/components/TaskFormSchemaEditor";
 
+export const metadata = { title: "סכמת טופס משימה" };
+
 export const dynamic = "force-dynamic";
 
 export default async function TaskFormSchemaAdminPage() {

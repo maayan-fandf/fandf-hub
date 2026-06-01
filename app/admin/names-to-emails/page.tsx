@@ -1,3 +1,5 @@
+export const metadata = { title: "מיפוי שמות ומיילים" };
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {

@@ -6,6 +6,8 @@ import {
 } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { canSeeCampaigns } from "@/lib/userRole";
+
+export const metadata = { title: "תקציבים" };
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import { driveFolderOwner } from "@/lib/sa";
 import { getBudgetMaster } from "@/lib/budgetMaster";

@@ -1,5 +1,6 @@
 import { auth, signOut } from "@/auth";
 
+export const metadata = { title: "אין הרשאה" };
 export const dynamic = "force-dynamic";
 
 export default async function UnauthorizedPage() {

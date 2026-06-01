@@ -77,7 +77,16 @@ const THEME_INIT_SCRIPT = `
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hub",
+  // Title template applies whenever a child page sets `metadata.title` —
+  // e.g. /morning/forecast exports `title: "תחזית הוצאה"`, which renders
+  // in the browser tab as "תחזית הוצאה · Hub". Pages with no metadata
+  // fall through to `default: "Hub"`. Maayan asked 2026-06-01 for
+  // descriptive per-page tab titles so multiple open tabs are
+  // distinguishable in the Chrome tab bar.
+  title: {
+    default: "Hub",
+    template: "%s · Hub",
+  },
   description: "Client & project hub",
 };
 

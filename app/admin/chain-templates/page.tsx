@@ -4,6 +4,8 @@ import {
   getMyProjects,
   currentUserEmail,
 } from "@/lib/appsScript";
+
+export const metadata = { title: "תבניות שרשרת" };
 import { listChainTemplates } from "@/lib/chainTemplatesStore";
 import { CHAIN_TEMPLATES } from "@/lib/chainTemplates";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";

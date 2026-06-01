@@ -4,6 +4,8 @@ import { currentUserEmail, getMyProjects } from "@/lib/appsScript";
 import { getTeamRoster } from "@/lib/teamData";
 import TeamPersonCard from "@/components/TeamPersonCard";
 
+export const metadata = { title: "צוות" };
+
 export const dynamic = "force-dynamic";
 
 /**

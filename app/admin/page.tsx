@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMyProjects } from "@/lib/appsScript";
 
+export const metadata = { title: "ניהול" };
 export const dynamic = "force-dynamic";
 
 /**

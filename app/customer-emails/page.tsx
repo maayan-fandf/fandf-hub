@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getUserPrefs } from "@/lib/userPrefs";
+
+export const metadata = { title: "מיילים מלקוחות" };
 import {
   listCustomerEmails,
   type CustomerEmailItem,

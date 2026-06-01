@@ -6,6 +6,8 @@ import {
   currentUserEmail,
 } from "@/lib/appsScript";
 import TaskCreateForm from "@/components/TaskCreateForm";
+
+export const metadata = { title: "משימה חדשה" };
 import { listChainTemplates } from "@/lib/chainTemplatesStore";
 import { CHAIN_TEMPLATES } from "@/lib/chainTemplates";
 import { getCommentByIdDirect } from "@/lib/commentsDirect";

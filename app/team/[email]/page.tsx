@@ -1,3 +1,19 @@
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ email: string }>;
+}) {
+  const { email } = await params;
+  const decoded = decodeURIComponent(email);
+  // Try the person's display name; fall back to their email local part.
+  try {
+    const { getDirectoryUser } = await import("@/lib/userDirectory");
+    const u = await getDirectoryUser(decoded);
+    if (u?.fullName) return { title: u.fullName };
+  } catch {}
+  return { title: decoded.split("@")[0] };
+}
+
 import Link from "next/link";
 import Image from "next/image";
 import { notFound, redirect } from "next/navigation";

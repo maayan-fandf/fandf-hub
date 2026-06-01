@@ -4,6 +4,8 @@ import { listNotifications, type NotificationRow } from "@/lib/notifications";
 import { tasksPeopleList } from "@/lib/appsScript";
 import NotificationsList from "@/components/NotificationsList";
 
+export const metadata = { title: "התראות" };
+
 export const dynamic = "force-dynamic";
 
 type Search = { unread?: string };

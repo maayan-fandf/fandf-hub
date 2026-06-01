@@ -1,3 +1,12 @@
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>;
+}) {
+  const { project } = await params;
+  return { title: decodeURIComponent(project) };
+}
+
 import Link from "next/link";
 import { Suspense } from "react";
 import {

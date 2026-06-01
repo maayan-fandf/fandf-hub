@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getMyProjects, currentUserEmail, tasksList } from "@/lib/appsScript";
 import { readTimeLog, type TimeLogRow } from "@/lib/timeLog";
 import { deriveInProgressTime } from "@/lib/inProgressTime";
+
+export const metadata = { title: "מעקב זמן" };
 import TimeReport from "@/components/TimeReport";
 
 export const dynamic = "force-dynamic";

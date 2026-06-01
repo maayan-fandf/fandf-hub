@@ -1,3 +1,5 @@
+export const metadata = { title: "העדפות משתמשים" };
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {

@@ -1,5 +1,6 @@
 import { signIn } from "@/auth";
 
+export const metadata = { title: "כניסה" };
 export const dynamic = "force-dynamic";
 
 export default async function SignInPage({

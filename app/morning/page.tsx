@@ -10,6 +10,8 @@ import {
   type MorningSeverity,
 } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
+
+export const metadata = { title: "סיכום בוקר" };
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import { canViewAdLinks } from "@/lib/adLinkAccess";

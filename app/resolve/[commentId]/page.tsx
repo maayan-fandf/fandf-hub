@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { resolveCommentDirect } from "@/lib/commentsWriteDirect";
 
+export const metadata = { title: "סימון תגובה כטופלה" };
 export const dynamic = "force-dynamic";
 
 type Params = { commentId: string };

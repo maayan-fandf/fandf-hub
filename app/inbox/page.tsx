@@ -7,6 +7,8 @@ import {
   type TasksPerson,
 } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
+
+export const metadata = { title: "תיבת תיוגים" };
 import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import InboxFilterBar from "@/components/InboxFilterBar";

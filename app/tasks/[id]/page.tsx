@@ -1,3 +1,20 @@
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  // Look up the task title for the tab; falls back to the id if the
+  // fetch fails (don't want the metadata path to crash the page render).
+  try {
+    const { tasksGet } = await import("@/lib/appsScript");
+    const res = await tasksGet(id);
+    const t = res?.task;
+    if (t?.title) return { title: `משימה: ${t.title}` };
+  } catch {}
+  return { title: `משימה ${id.slice(0, 7)}` };
+}
+
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";

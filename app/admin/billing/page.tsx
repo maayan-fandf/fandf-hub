@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMyProjects, currentUserEmail, tasksList } from "@/lib/appsScript";
 import { readPricingLog, type PricingLogRow } from "@/lib/pricingLog";
+
+export const metadata = { title: "חיובים" };
 import BillingReport from "@/components/BillingReport";
 
 export const dynamic = "force-dynamic";

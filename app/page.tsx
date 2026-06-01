@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import HomeFilterBar from "@/components/HomeFilterBar";
+
+export const metadata = { title: "פרויקטים" };
 import {
   getMyProjects,
   getMyCounts,

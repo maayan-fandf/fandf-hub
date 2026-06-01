@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getMyProjects, currentUserEmail } from "@/lib/appsScript";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { readPricingSetup } from "@/lib/pricing";
+
+export const metadata = { title: "תמחורים" };
 import PricingEditor from "@/components/PricingEditor";
 
 export const dynamic = "force-dynamic";
