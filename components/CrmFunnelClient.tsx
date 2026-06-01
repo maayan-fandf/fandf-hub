@@ -1,9 +1,63 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
+
+/**
+ * Hover-anchored popover that renders into document.body via portal,
+ * so it escapes every ancestor stacking context (CSS-only z-index
+ * couldn't reliably beat the next section's stacked bars — Maayan
+ * reported repeatedly that the bars painted over the popover's
+ * lower half). Position is computed from the trigger's bounding
+ * rect on mouseenter/focus, and re-cleared on mouseleave/blur with
+ * a small delay so the user can cross the 6px gap from trigger to
+ * popover without the card snapping shut.
+ */
+function useHoverPopover<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearHide() {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }
+  function show() {
+    clearHide();
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({
+      top: rect.bottom + 6,
+      left: rect.left + rect.width / 2,
+    });
+    setOpen(true);
+  }
+  function scheduleHide() {
+    clearHide();
+    hideTimer.current = setTimeout(() => setOpen(false), 80);
+  }
+  useEffect(() => () => clearHide(), []);
+
+  const triggerProps = {
+    ref: ref as React.RefObject<T>,
+    onMouseEnter: show,
+    onMouseLeave: scheduleHide,
+    onFocus: show,
+    onBlur: scheduleHide,
+  };
+  const popoverProps = {
+    onMouseEnter: clearHide,
+    onMouseLeave: scheduleHide,
+  };
+  return { open, pos, triggerProps, popoverProps };
+}
 
 /**
  * Master-filter client wrapper for the CRM funnel section. Owns the
@@ -704,46 +758,18 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                     ) || 1;
                     const barWidthPct = (s.count / maxSliceCount) * 100;
                     return (
-                      <li
+                      <PieLegendRow
                         key={s.label}
-                        className={hasPopover ? "crm-pie-legend-row crm-pie-legend-row-has-popover" : "crm-pie-legend-row"}
-                      >
-                        <span
-                          className={"crm-legend-dot" + (s.isOther ? " crm-legend-dot-rest" : "")}
-                          style={s.isOther ? undefined : { background: s.color }}
-                        />
-                        <span className="crm-legend-label" title={s.label}>{s.label}</span>
-                        {breakdown && breakdown.length > 0 && objTotal > 0 ? (
-                          <span
-                            className="crm-legend-bar"
-                            style={{ width: `${barWidthPct}%` }}
-                            aria-hidden
-                          >
-                            {breakdown.map((b) => {
-                              const w = (b.count / objTotal) * 100;
-                              if (w < 0.5) return null;
-                              return (
-                                <span
-                                  key={b.source}
-                                  className="crm-legend-bar-seg"
-                                  style={{ width: `${w}%`, background: palette.get(b.source) }}
-                                  title={`${channelIcon(b.source)} ${b.source} — ${b.count} (${pct(b.count, objTotal)})`.trim()}
-                                />
-                              );
-                            })}
-                          </span>
-                        ) : null}
-                        <span className="crm-legend-count">
-                          {s.count} ({((s.count / pieData.total) * 100).toFixed(1)}%)
-                        </span>
-                        {hasPopover ? (
-                          <ChannelMiniPie
-                            data={breakdown!}
-                            palette={palette}
-                            metric={s.label}
-                          />
-                        ) : null}
-                      </li>
+                        label={s.label}
+                        count={s.count}
+                        pctOfTotal={(s.count / pieData.total) * 100}
+                        color={s.color}
+                        isOther={!!s.isOther}
+                        breakdown={breakdown}
+                        objTotal={objTotal}
+                        barWidthPct={barWidthPct}
+                        palette={palette}
+                      />
                     );
                   })
                 )}
@@ -806,15 +832,127 @@ function KpiTile({
   palette?: Map<string, string>;
 }) {
   const hasPopover = !!breakdown && breakdown.length > 0 && !!palette;
+  const { open, pos, triggerProps, popoverProps } = useHoverPopover<HTMLDivElement>();
   return (
-    <div className={"crm-kpi-tile" + (hasPopover ? " crm-kpi-tile-has-popover" : "")}>
+    <div
+      {...(hasPopover ? triggerProps : {})}
+      className={"crm-kpi-tile" + (hasPopover ? " crm-kpi-tile-has-popover" : "")}
+    >
       <div className="crm-kpi-value">{value}</div>
       <div className="crm-kpi-label">{label}</div>
       {sub ? <div className="crm-kpi-sub">{sub}</div> : null}
-      {hasPopover ? (
-        <ChannelMiniPie data={breakdown!} palette={palette!} metric={label} />
-      ) : null}
+      {hasPopover && open && pos
+        ? createPortal(
+            <div
+              {...popoverProps}
+              className="crm-channel-tooltip is-visible crm-channel-tooltip-portal"
+              role="tooltip"
+              style={{
+                position: "fixed",
+                top: pos.top,
+                left: pos.left,
+                transform: "translateX(-50%)",
+                zIndex: 9999,
+                pointerEvents: "auto",
+                opacity: 1,
+                visibility: "visible",
+              }}
+            >
+              <ChannelMiniPieContent data={breakdown!} palette={palette!} metric={label} />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
+  );
+}
+
+/**
+ * Single row of the objections-pie legend, with its own portal-anchored
+ * popover (per-objection × source breakdown). Extracted from the inline
+ * .map so each row owns its own ref + hover state — needed for the
+ * portal positioning, which has to compute coordinates from THIS row's
+ * bounding rect, not the parent list's.
+ */
+function PieLegendRow({
+  label,
+  count,
+  pctOfTotal,
+  color,
+  isOther,
+  breakdown,
+  objTotal,
+  barWidthPct,
+  palette,
+}: {
+  label: string;
+  count: number;
+  pctOfTotal: number;
+  color: string;
+  isOther: boolean;
+  breakdown: { source: string; count: number }[] | null;
+  objTotal: number;
+  barWidthPct: number;
+  palette: Map<string, string>;
+}) {
+  const hasPopover = !!breakdown && breakdown.length > 0;
+  const { open, pos, triggerProps, popoverProps } = useHoverPopover<HTMLLIElement>();
+  return (
+    <li
+      {...(hasPopover ? triggerProps : {})}
+      className={hasPopover ? "crm-pie-legend-row crm-pie-legend-row-has-popover" : "crm-pie-legend-row"}
+    >
+      <span
+        className={"crm-legend-dot" + (isOther ? " crm-legend-dot-rest" : "")}
+        style={isOther ? undefined : { background: color }}
+      />
+      <span className="crm-legend-label" title={label}>{label}</span>
+      {breakdown && breakdown.length > 0 && objTotal > 0 ? (
+        <span
+          className="crm-legend-bar"
+          style={{ width: `${barWidthPct}%` }}
+          aria-hidden
+        >
+          {breakdown.map((b) => {
+            const w = (b.count / objTotal) * 100;
+            if (w < 0.5) return null;
+            return (
+              <span
+                key={b.source}
+                className="crm-legend-bar-seg"
+                style={{ width: `${w}%`, background: palette.get(b.source) }}
+                title={`${channelIcon(b.source)} ${b.source} — ${b.count} (${pct(b.count, objTotal)})`.trim()}
+              />
+            );
+          })}
+        </span>
+      ) : null}
+      <span className="crm-legend-count">
+        {count} ({pctOfTotal.toFixed(1)}%)
+      </span>
+      {hasPopover && open && pos && breakdown
+        ? createPortal(
+            <div
+              {...popoverProps}
+              className="crm-channel-tooltip is-visible crm-channel-tooltip-portal"
+              role="tooltip"
+              style={{
+                position: "fixed",
+                top: pos.top,
+                left: pos.left,
+                transform: "translateX(-50%)",
+                zIndex: 9999,
+                pointerEvents: "auto",
+                opacity: 1,
+                visibility: "visible",
+              }}
+            >
+              <ChannelMiniPieContent data={breakdown} palette={palette} metric={label} />
+            </div>,
+            document.body,
+          )
+        : null}
+    </li>
   );
 }
 
@@ -848,6 +986,33 @@ function ChannelMiniPie({
 }) {
   const total = data.reduce((n, s) => n + s.count, 0);
   if (total === 0) return null;
+  return (
+    <div
+      className={"crm-channel-tooltip" + (visible ? " is-visible" : "")}
+      role="tooltip"
+    >
+      <ChannelMiniPieContent data={data} palette={palette} metric={metric} />
+    </div>
+  );
+}
+
+/**
+ * Inner content of the channel mini-pie popover (title + pie + legend) —
+ * extracted from ChannelMiniPie so the portal-anchored KpiTile / legend-
+ * row popovers can render the same body without duplicating the
+ * conic-gradient + legend markup.
+ */
+function ChannelMiniPieContent({
+  data,
+  palette,
+  metric,
+}: {
+  data: { source: string; count: number }[];
+  palette: Map<string, string>;
+  metric: string;
+}) {
+  const total = data.reduce((n, s) => n + s.count, 0);
+  if (total === 0) return null;
   // Build conic-gradient stops in the legend's natural order so the
   // pie's colors visually align with the rows below.
   let cum = 0;
@@ -865,10 +1030,7 @@ function ChannelMiniPie({
     ? { background: `conic-gradient(${stops.join(", ")})` }
     : { background: "#f3f4f6" };
   return (
-    <div
-      className={"crm-channel-tooltip" + (visible ? " is-visible" : "")}
-      role="tooltip"
-    >
+    <>
       <div className="crm-channel-tooltip-title">{metric} — לפי מקור הגעה</div>
       <div className="crm-channel-tooltip-body">
         <div className="crm-channel-tooltip-pie" style={pieStyle} />
@@ -893,7 +1055,7 @@ function ChannelMiniPie({
           })}
         </ul>
       </div>
-    </div>
+    </>
   );
 }
 
