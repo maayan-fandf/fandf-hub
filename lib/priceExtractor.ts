@@ -95,6 +95,24 @@ export type DetectedPrice = {
 const HEADLINE_ANCHOR_RE = /(?:החל\s*מ|מחיר\s*התחלתי|מחיר:?|^)\s*[-־]?\s*$/;
 
 /**
+ * Anti-anchor markers — phrases that, when they appear right before
+ * an otherwise-anchored price, mean the price is a payment-plan
+ * figure (down payment / first payment / equity requirement /
+ * remaining balance), NOT the apartment's "starting from" price.
+ *
+ * Yad2 project pages often carry both — e.g. a project sells at
+ * "החל מ-3,199,000" AND offers financing with "מקדמה החל מ-500,000".
+ * Without this filter the lowest-anchored rule picks the smaller
+ * payment-plan figure and the alert fires a false positive against
+ * the website's real headline.
+ *
+ * Matched in the ~30 chars BEFORE the anchor regex's start. Match
+ * → strip the `anchored` flag from this DetectedPrice.
+ */
+const ANTI_ANCHOR_RE = /(?:מקדמה|תשלום\s*ראשון|הון\s*עצמי|הלוואת\s*יזם|הלוואה|היתרה|מימון|תשלומים)/;
+const ANTI_ANCHOR_WINDOW = 30;
+
+/**
  * Extract every plausible price from the given text. Order: as they
  * appear in the input (top-to-bottom for landing-page HTML). De-duped
  * by normalised value to avoid the same headline price counting twice
@@ -130,7 +148,14 @@ export function extractPrices(text: string): DetectedPrice[] {
     // somewhere within range.
     const prefixStart = Math.max(0, m.index - 12);
     const prefix = text.slice(prefixStart, m.index);
-    const anchored = HEADLINE_ANCHOR_RE.test(prefix);
+    let anchored = HEADLINE_ANCHOR_RE.test(prefix);
+    // Anti-anchor pass: even if the immediate prefix looks like
+    // "החל מ-", a payment-plan keyword in the broader 30-char window
+    // (e.g. "מקדמה החל מ-X") flips the anchored bit back off.
+    if (anchored) {
+      const wide = text.slice(Math.max(0, m.index - ANTI_ANCHOR_WINDOW), m.index);
+      if (ANTI_ANCHOR_RE.test(wide)) anchored = false;
+    }
     found.push({
       value,
       matched: m[0].trim(),
