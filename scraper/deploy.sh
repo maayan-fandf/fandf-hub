@@ -52,27 +52,43 @@ if ! gcloud iam service-accounts describe "$RUNTIME_SA" --project="$PROJECT_ID" 
   gcloud iam service-accounts create price-scraper \
     --display-name="F&F price scraper Cloud Run runtime" \
     --project="$PROJECT_ID"
-  echo "→ granting secret read"
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:$RUNTIME_SA" \
-    --role="roles/secretmanager.secretAccessor" \
-    --condition=None > /dev/null
+  # IAM propagation is eventually consistent — the SA may not show up
+  # in policy operations for a few seconds. Poll until it's visible
+  # before continuing so the binding below doesn't 404.
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if gcloud iam service-accounts describe "$RUNTIME_SA" --project="$PROJECT_ID" > /dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
 else
   echo "✓ runtime SA $RUNTIME_SA exists"
 fi
+# IAM bindings are idempotent — re-applying is a no-op, so they run on
+# every invocation regardless of whether the SA was just created or has
+# existed for ages. Catches the case where an earlier run partially
+# succeeded (SA created, binding failed).
+echo "→ ensuring secret-accessor binding"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$RUNTIME_SA" \
+  --role="roles/secretmanager.secretAccessor" \
+  --condition=None > /dev/null
 
 # ── 3. Build the image via Cloud Build ───────────────────────────────
+# `--config` + `--substitutions` (NOT --tag, they're mutually exclusive).
+# The yaml step uses the scraper/Dockerfile against a build context of
+# the fandf-hub root so the Dockerfile can COPY lib/ + scripts/. The
+# scraper/.dockerignore at the repo root trims that context to just the
+# scraper-needed files so the upload stays fast.
 echo "→ building $IMAGE_URI"
-# Build context = the fandf-hub root (so Dockerfile can COPY lib/ + scripts/).
-# Use the scraper/.dockerignore + scraper/Dockerfile explicitly.
 (
   cd "$(dirname "$0")/.." && \
   gcloud builds submit \
     --project="$PROJECT_ID" \
     --region="$REGION" \
-    --tag="$IMAGE_URI" \
-    --gcs-source-staging-dir="gs://${PROJECT_ID}_cloudbuild/source" \
     --config=scraper/cloudbuild.yaml \
+    --substitutions="_IMAGE_URI=$IMAGE_URI" \
+    --gcs-source-staging-dir="gs://${PROJECT_ID}_cloudbuild/source" \
     .
 )
 
