@@ -143,6 +143,14 @@ function PriceCheckCard({
     }
     if (surface.status === "fetch-error") return "שגיאת קריאה — בדוק ידנית";
     if (surface.status === "skipped") return "המתנה לסריקה הבאה";
+    if (surface.status === "organic-no-anchor") {
+      // Yad2-specific: the page IS a listing but it's the generic
+      // aggregator format (per-apartment-type table) without a
+      // marketing 'החל מ-' headline. Comparing its smallest row
+      // against landing/FB/Google would be apples-to-oranges, so we
+      // deliberately skip the value. Explain that to the reader.
+      return "רישום גנרי ביד2 — אין כותרת מחיר";
+    }
     return "לא זוהה מחיר";
   })();
 

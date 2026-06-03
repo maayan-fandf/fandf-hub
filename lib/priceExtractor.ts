@@ -187,6 +187,39 @@ export function extractPrices(text: string): DetectedPrice[] {
 }
 
 /**
+ * Yad2 page-type classification — drives whether `startingPrice` trusts
+ * the page enough to emit a value. Two real-world shapes:
+ *
+ *   - SPONSORED — a developer-paid project page on Yad2's "yad1"
+ *     vertical (the same kind of marketing experience as a landing
+ *     page). Carries `החל מ-X` anchors as headline copy. Comparable
+ *     to the landing / FB / Google surfaces because it advertises
+ *     the same "starting from" number.
+ *
+ *   - ORGANIC — an aggregated project listing without a developer-
+ *     curated headline. Renders as a per-apartment-type price table
+ *     (3 חד׳ ₪X, 4 חד׳ ₪Y, …). The smallest row is structurally "the
+ *     cheapest apartment type", NOT the project's headline price —
+ *     it's the wrong thing to compare against a landing-page
+ *     "starting from" anchor (kazar: organic Yad2 surfaced ₪2.65M
+ *     while the landing page advertises ₪3.29M; comparing them
+ *     produces a false drift signal).
+ *
+ *   - UNKNOWN — we couldn't tell (e.g. zero plausible prices).
+ *
+ * The detection rule: presence of any anchored price → sponsored;
+ * absence → organic. It's a heuristic but maps cleanly to how the
+ * two page types differ visually + structurally.
+ */
+export type Yad2PageType = "sponsored" | "organic" | "unknown";
+
+export function classifyYad2Page(text: string): Yad2PageType {
+  const prices = extractPrices(text);
+  if (prices.length === 0) return "unknown";
+  return prices.some((p) => p.anchored) ? "sponsored" : "organic";
+}
+
+/**
  * Pick the headline "starting from" price.
  *
  *   1. If any prices are "anchored" (preceded by `החל מ-` / `מ-` /
@@ -201,14 +234,29 @@ export function extractPrices(text: string): DetectedPrice[] {
  * cheaper than the actual apartment ("דירות 4-6 חד׳ החל מ-3,199,000 ₪")
  * — the anchored ₪3.2M wins over the unanchored ₪500k.
  *
- * Returns null when no plausible price was found.
+ * Yad2 hint (`opts.surface === "yad2"`): the fallback to "lowest
+ * absolute" is DISABLED. If no anchored price is found, returns null
+ * (caller should treat as "no usable price"). Reason: organic Yad2
+ * listing pages have no headline anchor; the lowest-absolute pick
+ * is the smallest apartment type in a price table, not a comparable
+ * "starting from" headline. See classifyYad2Page() doc above.
+ *
+ * Returns null when no plausible (or comparable, for Yad2) price was
+ * found.
  */
-export function startingPrice(text: string): DetectedPrice | null {
+export function startingPrice(
+  text: string,
+  opts: { surface?: "landing" | "yad2" } = {},
+): DetectedPrice | null {
   const all = extractPrices(text);
   if (all.length === 0) return null;
   const anchored = all.filter((p) => p.anchored);
-  const pool = anchored.length > 0 ? anchored : all;
-  return pool.reduce((min, p) => (p.value < min.value ? p : min));
+  if (anchored.length === 0) {
+    // Yad2 organic-page guard — see fn doc + classifyYad2Page() above.
+    if (opts.surface === "yad2") return null;
+    return all.reduce((min, p) => (p.value < min.value ? p : min));
+  }
+  return anchored.reduce((min, p) => (p.value < min.value ? p : min));
 }
 
 /**

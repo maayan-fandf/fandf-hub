@@ -1442,7 +1442,18 @@ export type ProjectPriceSurface = {
   label: string;
   price: number | null;
   url: string;
-  status: "ok" | "no-price" | "no-input" | "fetch-error" | "skipped" | string;
+  status:
+    | "ok"
+    | "no-price"
+    | "no-input"
+    | "fetch-error"
+    | "skipped"
+    /** Yad2-specific: the page rendered but is a generic listing
+     *  (per-apartment-type table) without a marketing `החל מ-`
+     *  anchor — comparing its smallest row would be apples-to-
+     *  oranges, so the surface is intentionally skipped. */
+    | "organic-no-anchor"
+    | string;
   hasInput: boolean;
 };
 

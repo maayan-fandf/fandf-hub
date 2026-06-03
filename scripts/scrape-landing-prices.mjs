@@ -34,6 +34,7 @@ import {
   extractPrices,
   startingPrice,
   htmlToText,
+  classifyYad2Page,
 } from "../lib/priceExtractor.ts";
 
 const env = Object.fromEntries(
@@ -141,9 +142,19 @@ const browser = await puppeteer.launch({
 
 // Shared per-URL fetch+extract — used for both the project's landing
 // page AND its (optional) Yad2 listing. Returns { headline, all, status,
-// notes } so the caller can keep them in separate columns of the row.
+// notes, pageType } so the caller can keep them in separate columns of
+// the row. The `label` param is also a surface hint: "yad2" toggles the
+// startingPrice() Yad2 rule (return null when no anchored price — see
+// classifyYad2Page docs in lib/priceExtractor.ts), and pageType records
+// sponsored/organic/unknown for the LANDING_PRICES schema.
 async function scrapeOne(url, label) {
-  const out = { headline: "", all: "", status: "ok", notes: "" };
+  const out = {
+    headline: "",
+    all: "",
+    status: "ok",
+    notes: "",
+    pageType: "",
+  };
   if (!url) {
     out.status = "skipped";
     return out;
@@ -160,13 +171,28 @@ async function scrapeOne(url, label) {
     await new Promise((r) => setTimeout(r, 1000));
     const text = htmlToText(await page.content());
     const all = extractPrices(text);
-    const headline = startingPrice(text);
+    const isYad2 = label === "yad2";
+    if (isYad2) out.pageType = classifyYad2Page(text);
+    const headline = startingPrice(text, isYad2 ? { surface: "yad2" } : {});
     if (headline) {
       out.headline = String(headline.value);
       out.all = all.map((d) => d.value).join("|");
     } else {
-      out.status = "no-price";
-      out.notes = `${label}: rendered ok but no price matched`;
+      // For Yad2 organic pages, surface a clearer status than the
+      // generic "no-price" so the morning-feed + project page can
+      // explain WHY there's no value to compare (apple-vs-orange
+      // structural mismatch, not a scraper miss).
+      if (isYad2 && out.pageType === "organic") {
+        out.status = "organic-no-anchor";
+        out.notes =
+          "yad2: organic listing without 'החל מ-' anchor — not comparable to a marketing headline";
+        // Keep the all_prices list anyway — surfaces it in the sheet
+        // for spot-checking what the table contains.
+        out.all = all.map((d) => d.value).join("|");
+      } else {
+        out.status = "no-price";
+        out.notes = `${label}: rendered ok but no price matched`;
+      }
     }
   } catch (e) {
     out.status = "fetch-error";
@@ -184,7 +210,9 @@ for (const p of projects) {
   // session so Yad2's bot detection at least sees a single ~steady IP +
   // human-ish cadence rather than 40 parallel hits.
   const landing = await scrapeOne(p.landing, "landing");
-  const yad2 = p.yad2 ? await scrapeOne(p.yad2, "yad2") : { headline: "", all: "", status: "skipped", notes: "" };
+  const yad2 = p.yad2
+    ? await scrapeOne(p.yad2, "yad2")
+    : { headline: "", all: "", status: "skipped", notes: "", pageType: "" };
 
   const row = {
     slug: p.slug,
@@ -195,6 +223,7 @@ for (const p of projects) {
     yad2_url: p.yad2 || "",
     yad2_headline_price: yad2.headline,
     yad2_all_prices: yad2.all,
+    yad2_page_type: yad2.pageType,
     scraped_at_iso: new Date().toISOString(),
     status: landing.status === "ok" || yad2.status === "ok" ? "ok" : landing.status,
     notes: [landing.notes, yad2.notes].filter(Boolean).join(" | "),
@@ -238,6 +267,15 @@ const header = [
   "yad2_url",
   "yad2_headline_price",
   "yad2_all_prices",
+  // sponsored = developer-paid marketing project page on Yad2 (carries
+  // `החל מ-` anchors, comparable to a landing page). organic = generic
+  // listing without a headline anchor (per-apartment-type table) —
+  // the price-mismatch alert should skip Yad2 in that case to avoid
+  // comparing landing's "starting from" against Yad2's smallest unit.
+  // unknown = no plausible prices on the page at all. Blank = no Yad2
+  // URL configured for this project. See classifyYad2Page() in
+  // lib/priceExtractor.ts.
+  "yad2_page_type",
   "scraped_at_iso",
   "status",
   "notes",
@@ -264,28 +302,33 @@ if (onlyProject) {
     })
     .catch(() => ({ data: { values: [] } }));
   const existing = existingValues.data.values || [];
-  // Use the SHEET's header (not ours) so columns line up if the tab was
-  // hand-edited / has a different column order than the current schema.
-  // Falls back to our canonical header on the first run when the tab
-  // doesn't exist yet (or had no header row).
-  const sheetHeader = existing.length ? existing[0] : header;
-  const sheetSlugIdx = sheetHeader.indexOf("slug");
+  // Header strategy: take our canonical `header` as the authoritative
+  // schema (so newly-added columns like `yad2_page_type` LAND on every
+  // run, not just on full-portfolio rewrites), then map the preserved
+  // rows from the SHEET's column order onto OUR column order so the
+  // columns line up correctly. Preserved rows whose value is missing
+  // (column didn't exist on the prior run) come through as "".
+  const existingHeader = existing.length ? existing[0] : header;
+  const existingSlugIdx = existingHeader.indexOf("slug");
   const updatedSlugs = new Set(rows.map((r) => String(r.slug).toLowerCase()));
-  // Preserve every row whose slug WASN'T scraped this run.
+  // Preserve every row whose slug WASN'T scraped this run, reshaping
+  // each to OUR canonical column order so any newly-added columns
+  // appear as empty in the legacy row and any reordering is corrected.
   const preserved = [];
   for (let i = 1; i < existing.length; i++) {
     const row = existing[i];
-    const slug = sheetSlugIdx >= 0
-      ? String(row[sheetSlugIdx] ?? "").toLowerCase().trim()
+    const slug = existingSlugIdx >= 0
+      ? String(row[existingSlugIdx] ?? "").toLowerCase().trim()
       : "";
-    if (!slug || !updatedSlugs.has(slug)) preserved.push(row);
+    if (!slug || updatedSlugs.has(slug)) continue;
+    const reshaped = header.map((colName) => {
+      const idx = existingHeader.indexOf(colName);
+      return idx >= 0 ? (row[idx] ?? "") : "";
+    });
+    preserved.push(reshaped);
   }
-  // Re-shape new rows to match the SHEET's column order (not our header
-  // order) so the splice doesn't reorder columns on rows we preserve.
-  const reshapedNew = rows.map((r) =>
-    sheetHeader.map((h) => (h in r ? r[h] : "")),
-  );
-  finalRows = [sheetHeader, ...preserved, ...reshapedNew];
+  const reshapedNew = rows.map((r) => header.map((c) => r[c] ?? ""));
+  finalRows = [header, ...preserved, ...reshapedNew];
 } else {
   // Whole-portfolio mode — full rewrite is fine.
   finalRows = [header, ...rows.map((r) => header.map((c) => r[c] ?? ""))];
