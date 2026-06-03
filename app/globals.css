@@ -1448,19 +1448,23 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   padding: 1rem 0.5rem;
 }
 .loading-video {
-  /* Round + soft shadow so the video reads as a deliberate visual
-     element rather than a raw embed. Aspect-ratio left to the file
-     itself; max dimensions keep it from dominating large viewports. */
-  width: min(420px, 80vw);
-  max-height: 60vh;
+  /* Circular crop — the source video has a logo circle centered in a
+     square frame, so a 1:1 aspect + border-radius:50% removes the
+     square chrome and lets the inner circle read as the whole element.
+     `object-fit: cover` keeps the centered subject filling the crop
+     even if the file's aspect drifts slightly. Soft shadow for depth
+     against light/dark surfaces. */
+  width: min(320px, 70vw);
+  aspect-ratio: 1 / 1;
   height: auto;
-  border-radius: 16px;
+  max-height: 60vh;
+  border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--surface);
   object-fit: cover;
 }
 .loading-video-wrap.is-compact .loading-video {
-  width: min(240px, 60vw);
+  width: min(180px, 50vw);
   max-height: 30vh;
 }
 .loading-video-label {

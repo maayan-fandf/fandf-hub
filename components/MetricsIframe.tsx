@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import LoadingVideo from "./LoadingVideo";
 
 type Props = {
   src: string;
@@ -245,8 +246,10 @@ export default function MetricsIframe({ src, projectName }: Props) {
       >
         {(!loaded || !themedSrc) && (
           <div className="metrics-loading">
-            <span className="emoji" aria-hidden>📊</span>
-            <span>טוען את הדוח…</span>
+            {/* Same animation as every other loading boundary on the hub
+                (app/.../loading.tsx). Compact + circular crop so it sits
+                inside the iframe overlay without dominating it. */}
+            <LoadingVideo compact label="טוען את הדוח…" />
           </div>
         )}
         {themedSrc && (
