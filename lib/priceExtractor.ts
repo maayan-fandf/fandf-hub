@@ -113,6 +113,23 @@ const ANTI_ANCHOR_RE = /(?:מקדמה|תשלום\s*ראשון|הון\s*עצמי|
 const ANTI_ANCHOR_WINDOW = 30;
 
 /**
+ * Invisible Unicode "format" / direction characters that real-world
+ * HTML pages (Yad2, Hebrew CMSes, Google Docs paste output) sprinkle
+ * between characters to control bidi rendering. Invisible to humans
+ * but break the anchor regex — Yad2's `החל מ-3,199,000` actually
+ * carries U+200F RLM marks between `מ`/`-` and `-`/`3`, so the literal
+ * substring is `החל מ‏-‏3,199,000`, which never matches
+ * `החל\s*מ\s*[-־]?\s*\d`. Strip them before extraction.
+ *
+ *   U+200B–U+200F  zero-width space/joiner/non-joiner + LRM/RLM
+ *   U+202A–U+202E  directional embeddings/overrides + PDF
+ *   U+2066–U+2069  bidi isolates (LRI/RLI/FSI/PDI)
+ *   U+061C         Arabic letter mark
+ *   U+FEFF         BOM / zero-width non-breaking space
+ */
+const BIDI_MARKS_RE = /[​-‏‪-‮⁦-⁩؜﻿]/g;
+
+/**
  * Extract every plausible price from the given text. Order: as they
  * appear in the input (top-to-bottom for landing-page HTML). De-duped
  * by normalised value to avoid the same headline price counting twice
@@ -120,6 +137,9 @@ const ANTI_ANCHOR_WINDOW = 30;
  */
 export function extractPrices(text: string): DetectedPrice[] {
   if (!text) return [];
+  // Strip invisible bidi marks up-front so anchor detection works on
+  // bidi-decorated text like Yad2's `החל מ‏-‏3,199,000`.
+  text = text.replace(BIDI_MARKS_RE, "");
   const found: DetectedPrice[] = [];
   const seen = new Set<number>();
 
