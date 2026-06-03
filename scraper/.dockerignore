@@ -1,0 +1,9 @@
+# Only the scraper script + its single import are needed in the image.
+# Everything else from the hub repo (Next.js app, dashboard, tests,
+# build artifacts) just bloats the build context and slows pushes.
+*
+!scraper/Dockerfile
+!scraper/package.json
+!scraper/package-lock.json
+!lib/priceExtractor.ts
+!scripts/scrape-landing-prices.mjs

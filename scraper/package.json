@@ -1,0 +1,12 @@
+{
+  "name": "fandf-price-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nightly Puppeteer scraper for landing-page + Yad2 prices. Runs on Cloud Run Jobs, triggered by Cloud Scheduler at 03:00 IL. Writes LANDING_PRICES tab on the dashboard-comments spreadsheet.",
+  "dependencies": {
+    "google-auth-library": "^10.0.0",
+    "googleapis": "^144.0.0",
+    "puppeteer": "^23.0.0"
+  }
+}

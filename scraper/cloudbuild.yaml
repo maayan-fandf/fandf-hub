@@ -1,0 +1,30 @@
+# Cloud Build steps for the scraper image. Called from deploy.sh with
+# the build context set to the fandf-hub root, so paths here are
+# relative to that root (e.g. `scraper/Dockerfile`, `lib/...`).
+#
+# Single step — build + push the image to Artifact Registry. The .dockerignore
+# (also at scraper/.dockerignore) limits the build context to just the
+# scraper's needed files, so the build is fast even though the context
+# is the whole repo.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=scraper/Dockerfile
+      - --tag=$_IMAGE_URI
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args: [push, $_IMAGE_URI]
+
+# `_IMAGE_URI` is supplied via --tag on `gcloud builds submit`; the
+# substitution lookup happens at build time.
+substitutions:
+  _IMAGE_URI: ""
+
+# Image manifest reported back to gcloud builds submit — keeps the
+# build's images list populated for `gcloud builds describe`.
+images:
+  - $_IMAGE_URI
+
+options:
+  logging: CLOUD_LOGGING_ONLY

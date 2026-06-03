@@ -37,15 +37,28 @@ import {
   classifyYad2Page,
 } from "../lib/priceExtractor.ts";
 
-const env = Object.fromEntries(
-  readFileSync(".env.local", "utf8")
-    .split("\n")
-    .filter((l) => l.includes("=") && !l.startsWith("#"))
-    .map((l) => {
-      const [k, ...rest] = l.split("=");
-      return [k.trim(), rest.join("=").trim().replace(/^["']|["']$/g, "")];
-    }),
-);
+// Env resolution. Two run modes:
+//   - Local dev → `.env.local` exists, file values take precedence so
+//     a shell `export` doesn't accidentally override the curated file.
+//   - Cloud Run job → no `.env.local`; everything comes from process.env
+//     (Secret Manager mounts + plain env vars set at deploy time).
+const env = (() => {
+  const fromProcess = { ...process.env };
+  try {
+    const fileEnv = Object.fromEntries(
+      readFileSync(".env.local", "utf8")
+        .split("\n")
+        .filter((l) => l.includes("=") && !l.startsWith("#"))
+        .map((l) => {
+          const [k, ...rest] = l.split("=");
+          return [k.trim(), rest.join("=").trim().replace(/^["']|["']$/g, "")];
+        }),
+    );
+    return { ...fromProcess, ...fileEnv };
+  } catch {
+    return fromProcess;
+  }
+})();
 
 const onlyProject = (process.argv[2] || "").trim();
 const TAB = "LANDING_PRICES";
@@ -135,8 +148,13 @@ for (const r of keys.data.values.slice(1)) {
 console.log(`Scraping ${projects.length} project(s) at ${new Date().toISOString()}`);
 
 // ── 2. Launch one browser, scrape all pages ─────────────────────────
+// `PUPPETEER_EXECUTABLE_PATH` is set in the Cloud Run container's
+// Dockerfile to point at the system `chromium` (avoids the ~150MB
+// puppeteer-bundled download in the image). Locally it's unset, so
+// puppeteer falls back to its own bundled binary.
 const browser = await puppeteer.launch({
   headless: "new",
+  executablePath: env.PUPPETEER_EXECUTABLE_PATH || undefined,
   args: ["--no-sandbox", "--disable-setuid-sandbox", "--lang=he-IL"],
 });
 
