@@ -1429,6 +1429,53 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   .skeleton { animation: none; }
 }
 
+/* Loading-video wrap — used by every app/.../loading.tsx fallback.
+   Centers the video on the viewport and stacks an optional label
+   under it. The video itself is autoplay-muted-looped (set on the
+   element); CSS handles sizing + a soft rounded card surrounding it
+   so it doesn't bleed into the page chrome. */
+.loading-video-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  min-height: 60vh;
+  padding: 2rem 1rem;
+}
+.loading-video-wrap.is-compact {
+  min-height: 0;
+  padding: 1rem 0.5rem;
+}
+.loading-video {
+  /* Round + soft shadow so the video reads as a deliberate visual
+     element rather than a raw embed. Aspect-ratio left to the file
+     itself; max dimensions keep it from dominating large viewports. */
+  width: min(420px, 80vw);
+  max-height: 60vh;
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
+  background: var(--surface);
+  object-fit: cover;
+}
+.loading-video-wrap.is-compact .loading-video {
+  width: min(240px, 60vw);
+  max-height: 30vh;
+}
+.loading-video-label {
+  font-size: 0.95rem;
+  color: var(--ink-soft, var(--muted));
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+/* Honour reduced-motion: pause the video for users who opt out of
+   animation. Browsers will still render the first frame as a poster. */
+@media (prefers-reduced-motion: reduce) {
+  .loading-video { animation-play-state: paused; }
+}
+
 /* ─── M3 state-layer utility ───────────────────────────────────────
  * Reusable state-layer pattern for interactive surfaces that don't
  * already inline a color-mix() hover (the M3 button family, chips,
