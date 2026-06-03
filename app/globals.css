@@ -1449,22 +1449,26 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 }
 .loading-video {
   /* Circular crop — the source video has a logo circle centered in a
-     square frame, so a 1:1 aspect + border-radius:50% removes the
-     square chrome and lets the inner circle read as the whole element.
-     `object-fit: cover` keeps the centered subject filling the crop
-     even if the file's aspect drifts slightly. Soft shadow for depth
-     against light/dark surfaces. */
-  width: min(320px, 70vw);
+     near-square frame. `object-fit: contain` keeps the WHOLE frame
+     visible inside the rounded box (so the gear in the top-left, the
+     paperclip endcaps, and the bottom motifs all read), and the
+     border-radius: 50% mask hides the empty corners. With `cover` the
+     subject was being trimmed on the sides when the source aspect was
+     slightly portrait — switched 2026-06-03 after seeing the top-left
+     gear clipped on the live page. Size bumped to ~360px so the
+     inscribed content reads at the same weight even though contain
+     letterboxes inside the box. */
+  width: min(360px, 75vw);
   aspect-ratio: 1 / 1;
   height: auto;
   max-height: 60vh;
   border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--surface);
-  object-fit: cover;
+  object-fit: contain;
 }
 .loading-video-wrap.is-compact .loading-video {
-  width: min(180px, 50vw);
+  width: min(200px, 55vw);
   max-height: 30vh;
 }
 .loading-video-label {
