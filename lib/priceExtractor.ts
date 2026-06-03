@@ -71,7 +71,28 @@ export type DetectedPrice = {
   matched: string;
   /** Char offset of the match in the original text. */
   index: number;
+  /** True when the price is immediately preceded by a "headline
+   *  marketing anchor" — `החל מ-` / `מ-` / `מחיר:` / `מחיר התחלתי`
+   *  within ~12 chars. The whole point of this feature is comparing
+   *  the "החל מ-X" advertised price across surfaces; loan balances
+   *  / down payments / extras live in unanchored text and shouldn't
+   *  steal the headline. See `startingPrice` for how this drives
+   *  pick order. */
+  anchored: boolean;
 };
+
+/**
+ * Positive marker that this number is the project's "starting from"
+ * marketing price (vs. a loan balance / down payment / random other
+ * figure). Matched within ~12 chars before the number.
+ *
+ *   "החל מ-3,199,000"       → anchored ✓
+ *   "מ-2,175,000 ₪"        → anchored ✓
+ *   "מחיר: 1,800,000 ₪"     → anchored ✓
+ *   "מחיר התחלתי 2.5 מיליון" → anchored ✓
+ *   "ע״ס כ-500,000 ₪"       → NOT anchored — anti-pattern wins
+ */
+const HEADLINE_ANCHOR_RE = /(?:החל\s*מ|מחיר\s*התחלתי|מחיר:?|^)\s*[-־]?\s*$/;
 
 /**
  * Extract every plausible price from the given text. Order: as they
@@ -103,23 +124,46 @@ export function extractPrices(text: string): DetectedPrice[] {
     if (!CURRENCY_RE.test(ctx)) continue;
     if (seen.has(value)) continue;
     seen.add(value);
+    // Check the ~12 chars immediately before the number for a headline-
+    // marketing anchor. We trim the prefix to its tail because the
+    // anchor's important position is "right next to the number", not
+    // somewhere within range.
+    const prefixStart = Math.max(0, m.index - 12);
+    const prefix = text.slice(prefixStart, m.index);
+    const anchored = HEADLINE_ANCHOR_RE.test(prefix);
     found.push({
       value,
       matched: m[0].trim(),
       index: m.index,
+      anchored,
     });
   }
   return found;
 }
 
 /**
- * Pick the headline "starting from" price — the lowest detected price.
+ * Pick the headline "starting from" price.
+ *
+ *   1. If any prices are "anchored" (preceded by `החל מ-` / `מ-` /
+ *      `מחיר:` etc.), the lowest of THOSE wins. This is the deliberate
+ *      marketing pattern across every surface — comparing them is the
+ *      whole point of the price-mismatch alert.
+ *
+ *   2. Otherwise fall back to the lowest absolute price.
+ *
+ * The 2-tier rule catches the קנקו case where the page also shows a
+ * developer-loan figure ("היתרה בהלוואת יזם ע״ס כ-500,000 ₪") that's
+ * cheaper than the actual apartment ("דירות 4-6 חד׳ החל מ-3,199,000 ₪")
+ * — the anchored ₪3.2M wins over the unanchored ₪500k.
+ *
  * Returns null when no plausible price was found.
  */
 export function startingPrice(text: string): DetectedPrice | null {
   const all = extractPrices(text);
   if (all.length === 0) return null;
-  return all.reduce((min, p) => (p.value < min.value ? p : min));
+  const anchored = all.filter((p) => p.anchored);
+  const pool = anchored.length > 0 ? anchored : all;
+  return pool.reduce((min, p) => (p.value < min.value ? p : min));
 }
 
 /**

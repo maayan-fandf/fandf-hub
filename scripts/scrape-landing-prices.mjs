@@ -48,6 +48,15 @@ const env = Object.fromEntries(
 
 const onlyProject = (process.argv[2] || "").trim();
 const TAB = "LANDING_PRICES";
+// Output lives in the ops / dashboard-comments spreadsheet (alongside
+// names-to-emails, webhooks, user prefs, etc.) — not the master
+// "דוח ביצועים" performance sheet — so the perf sheet stays focused
+// on media data. Maayan picked the location 2026-06-03.
+const OUTPUT_SHEET_ID = env.SHEET_ID_COMMENTS;
+if (!OUTPUT_SHEET_ID) {
+  console.error("Missing SHEET_ID_COMMENTS in .env.local");
+  process.exit(1);
+}
 
 const auth = new GoogleAuth({
   credentials: JSON.parse(env.TASKS_SA_KEY_JSON),
@@ -162,14 +171,14 @@ await browser.close();
 // ── 3. Write to LANDING_PRICES tab ───────────────────────────────────
 // Ensure the tab exists; create it the first time the script runs.
 const meta = await sh.spreadsheets.get({
-  spreadsheetId: env.SHEET_ID_MAIN,
+  spreadsheetId: OUTPUT_SHEET_ID,
   fields: "sheets.properties(sheetId,title)",
 });
 const existing = meta.data.sheets?.find((s) => s.properties?.title === TAB);
 if (!existing) {
   console.log(`Creating tab "${TAB}"…`);
   await sh.spreadsheets.batchUpdate({
-    spreadsheetId: env.SHEET_ID_MAIN,
+    spreadsheetId: OUTPUT_SHEET_ID,
     requestBody: {
       requests: [{ addSheet: { properties: { title: TAB } } }],
     },
@@ -191,11 +200,11 @@ const values = [
   ...rows.map((r) => header.map((c) => r[c] ?? "")),
 ];
 await sh.spreadsheets.values.clear({
-  spreadsheetId: env.SHEET_ID_MAIN,
+  spreadsheetId: OUTPUT_SHEET_ID,
   range: TAB,
 });
 await sh.spreadsheets.values.update({
-  spreadsheetId: env.SHEET_ID_MAIN,
+  spreadsheetId: OUTPUT_SHEET_ID,
   range: `${TAB}!A1`,
   valueInputOption: "RAW",
   requestBody: { values },
