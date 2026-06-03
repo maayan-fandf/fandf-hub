@@ -93,17 +93,37 @@ const iLanding = (() => {
   }
   return -1;
 })();
+// Optional second column for the project's Yad2 page URL. Maayan fills
+// this in manually per project after looking up the URL via the
+// YAD2_CANDIDATES tab (Yad2 auto-discovery hits anti-bot fast). When
+// the column doesn't exist or the cell is empty for a project, the
+// scraper simply omits the Yad2 price from that project's output.
+const iYad2 = (() => {
+  const lc = kHdr.map((h) => h.toLowerCase());
+  for (const c of ["yad2 url", "yad2", "יד2", "יד 2", "יד2 url"]) {
+    const i = lc.indexOf(c);
+    if (i >= 0) return i;
+  }
+  return -1;
+})();
+console.log(
+  `Landing col: ${iLanding} ("${iLanding >= 0 ? kHdr[iLanding] : "(missing)"}")  ` +
+    `Yad2 col: ${iYad2} ("${iYad2 >= 0 ? kHdr[iYad2] : "(missing — add to Keys to enable)"}")`,
+);
 
 const projects = [];
 for (const r of keys.data.values.slice(1)) {
   const project = String(r[iProj] ?? "").trim();
   const slug = String(r[iSlug] ?? "").trim();
   const landing = String(r[iLanding] ?? "").trim();
+  const yad2 = iYad2 >= 0 ? String(r[iYad2] ?? "").trim() : "";
   const type = iType >= 0 ? String(r[iType] ?? "").trim().toLowerCase() : "";
-  if (!project || !landing) continue;
+  // Skip a row only when both surfaces are missing — having just a Yad2
+  // URL (no landing) is a legit case for some projects.
+  if (!project || (!landing && !yad2)) continue;
   if (type && !type.includes("real")) continue;
   if (onlyProject && project !== onlyProject) continue;
-  projects.push({ project, slug, landing });
+  projects.push({ project, slug, landing, yad2 });
 }
 console.log(`Scraping ${projects.length} project(s) at ${new Date().toISOString()}`);
 
@@ -113,19 +133,15 @@ const browser = await puppeteer.launch({
   args: ["--no-sandbox", "--disable-setuid-sandbox", "--lang=he-IL"],
 });
 
-const rows = [];
-for (const p of projects) {
-  const startedAt = Date.now();
-  const row = {
-    slug: p.slug,
-    project: p.project,
-    landing_url: p.landing,
-    scraped_at_iso: new Date().toISOString(),
-    headline_price: "",
-    all_prices: "",
-    status: "ok",
-    notes: "",
-  };
+// Shared per-URL fetch+extract — used for both the project's landing
+// page AND its (optional) Yad2 listing. Returns { headline, all, status,
+// notes } so the caller can keep them in separate columns of the row.
+async function scrapeOne(url, label) {
+  const out = { headline: "", all: "", status: "ok", notes: "" };
+  if (!url) {
+    out.status = "skipped";
+    return out;
+  }
   let page;
   try {
     page = await browser.newPage();
@@ -134,34 +150,56 @@ for (const p of projects) {
     );
     await page.setExtraHTTPHeaders({ "Accept-Language": "he,en;q=0.8" });
     await page.setViewport({ width: 1280, height: 800 });
-    // networkidle2 waits for the page to settle (≤2 in-flight requests
-    // for 500ms). SPAs typically render the price area by then.
-    // 25s ceiling so a slow page doesn't block the whole run.
-    await page.goto(p.landing, { waitUntil: "networkidle2", timeout: 25_000 });
-    // Some pages set the price via React after networkidle — give the
-    // hydration phase one more second to finish populating.
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 25_000 });
     await new Promise((r) => setTimeout(r, 1000));
     const text = htmlToText(await page.content());
     const all = extractPrices(text);
     const headline = startingPrice(text);
     if (headline) {
-      row.headline_price = String(headline.value);
-      row.all_prices = all.map((d) => d.value).join("|");
+      out.headline = String(headline.value);
+      out.all = all.map((d) => d.value).join("|");
     } else {
-      row.status = "no-price";
-      row.notes = "the renderer ran fine but no price matched the regex";
+      out.status = "no-price";
+      out.notes = `${label}: rendered ok but no price matched`;
     }
   } catch (e) {
-    row.status = "fetch-error";
-    row.notes = String(e.message || e).slice(0, 200);
+    out.status = "fetch-error";
+    out.notes = `${label}: ${String(e.message || e).slice(0, 180)}`;
   } finally {
     if (page) await page.close();
   }
+  return out;
+}
+
+const rows = [];
+for (const p of projects) {
+  const startedAt = Date.now();
+  // Scrape landing + Yad2 sequentially within one project. Same browser
+  // session so Yad2's bot detection at least sees a single ~steady IP +
+  // human-ish cadence rather than 40 parallel hits.
+  const landing = await scrapeOne(p.landing, "landing");
+  const yad2 = p.yad2 ? await scrapeOne(p.yad2, "yad2") : { headline: "", all: "", status: "skipped", notes: "" };
+
+  const row = {
+    slug: p.slug,
+    project: p.project,
+    landing_url: p.landing,
+    headline_price: landing.headline,
+    all_prices: landing.all,
+    yad2_url: p.yad2 || "",
+    yad2_headline_price: yad2.headline,
+    yad2_all_prices: yad2.all,
+    scraped_at_iso: new Date().toISOString(),
+    status: landing.status === "ok" || yad2.status === "ok" ? "ok" : landing.status,
+    notes: [landing.notes, yad2.notes].filter(Boolean).join(" | "),
+  };
   const ms = Date.now() - startedAt;
+  const fmtPrice = (v) => (v ? "₪" + Number(v).toLocaleString("he-IL") : "—");
   console.log(
-    `  ${row.status.padEnd(12)} ${p.project.padEnd(30)} ` +
-      (row.headline_price ? "₪" + Number(row.headline_price).toLocaleString("he-IL") : "—") +
-      `   (${ms}ms)`,
+    `  ${row.status.padEnd(12)} ${p.project.padEnd(28)} ` +
+      `web=${fmtPrice(row.headline_price).padEnd(11)} ` +
+      `yad2=${fmtPrice(row.yad2_headline_price).padEnd(11)} ` +
+      `(${ms}ms)`,
   );
   rows.push(row);
 }
@@ -189,9 +227,12 @@ const header = [
   "slug",
   "project",
   "landing_url",
-  "scraped_at_iso",
   "headline_price",
   "all_prices",
+  "yad2_url",
+  "yad2_headline_price",
+  "yad2_all_prices",
+  "scraped_at_iso",
   "status",
   "notes",
 ];
