@@ -62,19 +62,18 @@ warnings, ignore them; the actual install must finish cleanly. If
 
 ## Step 3 — credentials (`.env.local`)
 
-The scraper needs four secrets to read/write the sheets. **Do not invent
+The scraper needs three secrets to read/write the sheet. **Do not invent
 values — ask the user to paste them.** Tell the user verbatim:
 
 > "Open the `.env.local` file from your main dev machine
-> (`fandf-hub/.env.local`), copy the lines for `SHEET_ID_MAIN`,
-> `SHEET_ID_COMMENTS`, `TASKS_SA_KEY_JSON`, and `DRIVE_FOLDER_OWNER`,
-> and paste them here. I'll save them to the right place on this PC."
+> (`fandf-hub/.env.local`), copy the lines for `SHEET_ID_COMMENTS`,
+> `TASKS_SA_KEY_JSON`, and `DRIVE_FOLDER_OWNER`, and paste them here.
+> I'll save them to the right place on this PC."
 
 When the user provides them, write them to `$Env:SCRAPER_HOME\.env.local`:
 
 ```powershell
 @"
-SHEET_ID_MAIN=<paste>
 SHEET_ID_COMMENTS=<paste>
 TASKS_SA_KEY_JSON=<paste, the whole JSON on one line>
 DRIVE_FOLDER_OWNER=<paste, e.g. maayan@fandf.co.il>
@@ -111,12 +110,13 @@ fine, you're verifying plumbing, not data quality. What you need:
 
 - No exception thrown
 - The "Landing col" / "Yad2 col" log line near the top shows non-`-1`
-  column indices (means Keys is readable)
+  column indices (means Keysimp is readable)
 - A new row written to the LANDING_PRICES tab
 
 If any of those fail: read the actual error, don't guess. Auth errors →
 `.env.local` is wrong. Tab-not-found errors → `SHEET_ID_COMMENTS` is
-wrong. Browser launch errors → re-run `npm install puppeteer`.
+wrong, or the `Keysimp` tab on that sheet has been renamed. Browser
+launch errors → re-run `npm install puppeteer`.
 
 ---
 

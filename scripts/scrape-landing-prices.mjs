@@ -18,7 +18,7 @@
 //   - Prices on landing pages change very rarely; a nightly snapshot
 //     is more than fresh enough for an alert.
 //
-// Output tab schema (LANDING_PRICES on SHEET_ID_MAIN):
+// Output tab schema (LANDING_PRICES on SHEET_ID_COMMENTS):
 //
 //   slug | project | landing_url | scraped_at_iso | headline_price |
 //   all_prices | status | notes
@@ -65,10 +65,16 @@ const auth = new GoogleAuth({
 });
 const sh = google.sheets({ version: "v4", auth: await auth.getClient() });
 
-// ── 1. Read Keys → projects to scrape ────────────────────────────────
+// ── 1. Read Keysimp → projects to scrape ─────────────────────────────
+// We read from the `Keysimp` tab on the dashboard-comments sheet — a
+// mirror of the master sheet's `Keys` tab that Maayan keeps synced via
+// IMPORTRANGE/sync. Keeping the scraper's input on the SAME spreadsheet
+// it writes to (LANDING_PRICES) means the dedicated scraper PC only
+// needs access to ONE sheet ID, not two — `SHEET_ID_MAIN` isn't
+// required on the scraper host. (Maayan moved the source 2026-06-03.)
 const keys = await sh.spreadsheets.values.get({
-  spreadsheetId: env.SHEET_ID_MAIN,
-  range: "Keys",
+  spreadsheetId: OUTPUT_SHEET_ID,
+  range: "Keysimp",
   valueRenderOption: "UNFORMATTED_VALUE",
 });
 const HEADER_NORMALIZE = /[​-‏‪-‮⁠­﻿]/g;
@@ -236,10 +242,55 @@ const header = [
   "status",
   "notes",
 ];
-const values = [
-  header,
-  ...rows.map((r) => header.map((c) => r[c] ?? "")),
-];
+
+// Two write modes:
+//   - Full portfolio scrape (no `onlyProject` filter) → REWRITE the
+//     whole tab. Removes stale rows for projects that have rotated out
+//     of Keys / Keysimp.
+//   - Single-project run (`onlyProject` set, e.g. `node ... "kenko"`)
+//     → MERGE: read existing rows, replace only the scraped slugs,
+//     leave everything else untouched. Without this, a one-off check
+//     on a single project would clobber the other 38 rows. (Hit this
+//     2026-06-03 — Maayan asked "where did the data go" after a
+//     dry-run wiped the tab. Now safe to spot-check anytime.)
+let finalRows;
+if (onlyProject) {
+  // Read existing rows so we can splice rather than overwrite.
+  const existingValues = await sh.spreadsheets.values
+    .get({
+      spreadsheetId: OUTPUT_SHEET_ID,
+      range: TAB,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    })
+    .catch(() => ({ data: { values: [] } }));
+  const existing = existingValues.data.values || [];
+  // Use the SHEET's header (not ours) so columns line up if the tab was
+  // hand-edited / has a different column order than the current schema.
+  // Falls back to our canonical header on the first run when the tab
+  // doesn't exist yet (or had no header row).
+  const sheetHeader = existing.length ? existing[0] : header;
+  const sheetSlugIdx = sheetHeader.indexOf("slug");
+  const updatedSlugs = new Set(rows.map((r) => String(r.slug).toLowerCase()));
+  // Preserve every row whose slug WASN'T scraped this run.
+  const preserved = [];
+  for (let i = 1; i < existing.length; i++) {
+    const row = existing[i];
+    const slug = sheetSlugIdx >= 0
+      ? String(row[sheetSlugIdx] ?? "").toLowerCase().trim()
+      : "";
+    if (!slug || !updatedSlugs.has(slug)) preserved.push(row);
+  }
+  // Re-shape new rows to match the SHEET's column order (not our header
+  // order) so the splice doesn't reorder columns on rows we preserve.
+  const reshapedNew = rows.map((r) =>
+    sheetHeader.map((h) => (h in r ? r[h] : "")),
+  );
+  finalRows = [sheetHeader, ...preserved, ...reshapedNew];
+} else {
+  // Whole-portfolio mode — full rewrite is fine.
+  finalRows = [header, ...rows.map((r) => header.map((c) => r[c] ?? ""))];
+}
+
 await sh.spreadsheets.values.clear({
   spreadsheetId: OUTPUT_SHEET_ID,
   range: TAB,
@@ -248,7 +299,7 @@ await sh.spreadsheets.values.update({
   spreadsheetId: OUTPUT_SHEET_ID,
   range: `${TAB}!A1`,
   valueInputOption: "RAW",
-  requestBody: { values },
+  requestBody: { values: finalRows },
 });
 
 const okCount = rows.filter((r) => r.status === "ok").length;
