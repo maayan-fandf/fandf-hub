@@ -1425,6 +1425,55 @@ export async function getProjectAdLinks(
   return callApi<ProjectAdLinks>("projectAdLinks", { project });
 }
 
+/** Per-surface price snapshot returned by `getProjectPriceCheck`.
+ *  - `name` is the stable surface key (used for CSS classes / per-surface
+ *    icons), `label` is the Hebrew display string.
+ *  - `price` is the headline "starting from" price in NIS, or null when
+ *    no plausible price was extracted from the source.
+ *  - `url` deep-links to the source: the landing page itself, the Yad2
+ *    listing, the Google Ads campaigns view, or the Facebook Ads view.
+ *  - `status` differentiates "no source to check" (`no-input`) from
+ *    "we checked and found nothing" (`no-price`) / "the scraper failed"
+ *    (`fetch-error`). Drives the empty-state copy.
+ *  - `hasInput` is true when SOME source content was available — even if
+ *    the extractor couldn't pull a price. */
+export type ProjectPriceSurface = {
+  name: "landing" | "yad2" | "google" | "facebook";
+  label: string;
+  price: number | null;
+  url: string;
+  status: "ok" | "no-price" | "no-input" | "fetch-error" | "skipped" | string;
+  hasInput: boolean;
+};
+
+/** 4-surface advertised-price snapshot for one project. `comparison` is
+ *  null when fewer than 2 surfaces had a detected price (need at least
+ *  2 to disagree). When present, `driftPct` is the (max-min)/min spread
+ *  and `severe` flags drift > 5% — the same thresholds the morning-feed
+ *  price-mismatch signal uses. */
+export type ProjectPriceCheck = {
+  ok: boolean;
+  error?: string;
+  project: string;
+  slug: string;
+  surfaces: ProjectPriceSurface[];
+  comparison: {
+    mismatched: boolean;
+    driftPct: number;
+    severe: boolean;
+    surfaces: ProjectPriceSurface[];
+  } | null;
+  /** ISO timestamp of the most recent successful landing-page scrape.
+   *  Empty when the scraper hasn't visited this project yet. */
+  scrapedAt: string;
+};
+
+export async function getProjectPriceCheck(
+  project: string,
+): Promise<ProjectPriceCheck> {
+  return callApi<ProjectPriceCheck>("projectPriceCheck", { project });
+}
+
 /** Per-channel performance for a project — same shape the dashboard
  *  iframe renders charts from. Numbers are rounded to 2 decimals on
  *  the Apps Script side. */

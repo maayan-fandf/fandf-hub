@@ -25,6 +25,7 @@ import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePic
 import LatestPrisotCard from "@/components/LatestPrisotCard";
 import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
+import ProjectPriceCheckSection from "@/components/ProjectPriceCheckSection";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { isRealEstateType } from "@/lib/keys";
@@ -719,6 +720,20 @@ export default async function ProjectOverviewPage({
             project={projectName}
             monthFilter={monthOverride}
           />
+        </Suspense>
+      )}
+
+      {/* "מחירים מפורסמים" — 4-surface advertised-price snapshot at the
+          bottom of the page. Internal-only (the data exposes ad-platform
+          deep-links + ad copy presence), real-estate-only (non-real-estate
+          projects don't have a "starting from" price concept). Self-hides
+          when the project has zero surfaces with usable input — so on
+          fresh projects with no scrape + no live ad copy the section
+          stays hidden rather than rendering an empty shelf. Suspense
+          keeps the Apps-Script call off the critical render path. */}
+      {isRealEstateProject && !isClientUser && (
+        <Suspense fallback={null}>
+          <ProjectPriceCheckSection projectName={projectName} />
         </Suspense>
       )}
     </main>
