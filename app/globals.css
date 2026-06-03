@@ -1450,27 +1450,30 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
 .loading-video {
   /* Circular crop — the source video has a logo circle centered in a
      near-square frame. `object-fit: contain` keeps the WHOLE frame
-     visible inside the rounded box (so the gear in the top-left, the
-     paperclip endcaps, and the bottom motifs all read), and the
-     border-radius: 50% mask hides the empty corners. With `cover` the
-     subject was being trimmed on the sides when the source aspect was
-     slightly portrait — switched 2026-06-03 after seeing the top-left
-     gear clipped on the live page. Size bumped to ~360px so the
-     inscribed content reads at the same weight even though contain
-     letterboxes inside the box. */
-  width: min(360px, 75vw);
+     visible inside the rounded box (gear top-left, paperclip endcaps,
+     bottom motifs all read), and the border-radius: 50% mask hides
+     the empty corners. The background is a warm beige tuned to the
+     metallic-tan inner frame in the video so the corners that
+     `contain` letterboxes blend seamlessly into the video's own
+     frame instead of revealing the page background color. Bumped
+     2026-06-04 (360→440) after the first pass landed too small. */
+  width: min(440px, 82vw);
   aspect-ratio: 1 / 1;
   height: auto;
-  max-height: 60vh;
+  max-height: 70vh;
   border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
-  background: var(--surface);
+  background: var(--loading-video-bg);
   object-fit: contain;
 }
 .loading-video-wrap.is-compact .loading-video {
-  width: min(200px, 55vw);
-  max-height: 30vh;
+  width: min(260px, 60vw);
+  max-height: 36vh;
 }
+/* Beige tone matched to the metallic-tan frame in loading.mp4 so the
+   contain-letterboxed corners disappear into the video's own frame. */
+:root { --loading-video-bg: #d4c5a8; }
+html[data-theme="dark"] { --loading-video-bg: #b8a98a; }
 .loading-video-label {
   font-size: 0.95rem;
   color: var(--ink-soft, var(--muted));
