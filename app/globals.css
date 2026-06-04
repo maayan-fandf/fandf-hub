@@ -1448,16 +1448,16 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   padding: 1rem 0.5rem;
 }
 .loading-video {
-  /* Circular crop — `object-fit: cover` scales the video so its smaller
-     dimension fills the circle (no letterbox strips). The source is
-     slightly portrait, so cover zooms ~1.6× and crops a thin band off
-     the top + bottom — but the central metallic-disc + paperclip
-     subject stays comfortably inside the inscribed circle. The mid-
-     gray background only shows in edge cases (slow first-frame paint),
-     and it's tuned to the metallic frame so it disappears into the
-     video. Sizing path: 360→440→520, settled at 520 with cover so the
-     subject reads at the same visual weight as the rest of the hub's
-     glassy "card" chrome. */
+  /* Circular crop. The geometry trap here: in a 1:1 box with a 50%
+     border-radius mask, the inscribed circle bites into ALL four box
+     corners. Any video pixel that sits in a corner gets clipped — and
+     loading.mp4 puts the gear motif right at the top-left corner of
+     its frame, so `object-fit: cover` clips the gear's outer edge.
+     `object-fit: contain` shows the whole video frame and any
+     letterbox shows as the mid-gray background (#848585, matched to
+     the metallic frame) so the strips read as part of the frame.
+     Iteration: 360 → 440 → 520 → contain (which preserves the gear at
+     520). */
   width: min(520px, 86vw);
   aspect-ratio: 1 / 1;
   height: auto;
@@ -1465,7 +1465,7 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--loading-video-bg);
-  object-fit: cover;
+  object-fit: contain;
 }
 .loading-video-wrap.is-compact .loading-video {
   width: min(300px, 65vw);
