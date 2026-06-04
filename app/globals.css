@@ -1471,23 +1471,22 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   max-height: 42vh;
 }
 .loading-video {
-  /* Fills the mask, then scales further to tighten the crop onto the
-     central disc (gear, paperclip, decorative motifs). The scale is
-     applied here on the inner element so the mask's outer circle
-     stays at its declared size — without the wrapper this would
-     enlarge the whole loader. Iteration:
-       1.0  cover only — too much empty margin around the disc
-       1.4  disc filled the inscribed circle BUT the gear at the
-            disc's upper-left clipped past the mask edge
-       1.2  middle ground — disc is tight inside the circle and the
-            gear sits inside the inscribed area. Calibrated to the
-            geometric ceiling: gear's outer ring was at ~80% of the
-            inscribed radius pre-scale, so 1.25 puts it right on the
-            mask edge → use 1.2 for a safety margin. */
+  /* `object-fit: contain` shows the full source frame; transform:
+     scale(1.5) enlarges it inside the mask so the central disc fills
+     the inscribed circle. The mask's overflow:hidden + border-radius
+     clip the parts that overflow the box. Center object-position
+     keeps the disc centered — anchoring top/bottom pushed the gear
+     off-screen or exposed the dark cable section in earlier
+     iterations.
+     History: 1.0 contain (too small) → 1.2 (matched the disc edge,
+     gear visible, but cable + platform showed at the bottom of the
+     visible circle) → 1.5 contain (crops out the source's platform
+     section; disc is the dominant content). */
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  transform: scale(1.2);
+  object-fit: contain;
+  object-position: center;
+  transform: scale(1.5);
 }
 /* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
    in the brief moment before the first video frame paints. Same color
