@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
-import { classifyChannel } from "@/lib/budgetTypes";
+import { classifyChannel, E3_PLATFORMS } from "@/lib/budgetTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -227,15 +227,13 @@ async function readSingleProjectBudget(
         pacingRatio,
         ended,
       });
-      // Mirror the master's reconciliation: sum the four paid platforms
-      // toward `allocated`. "other" channels (פניה טלפונית / שילוט etc.)
-      // are tracked in the rows but don't count toward the E3 balance.
-      if (
-        platform === "google" ||
-        platform === "facebook" ||
-        platform === "taboola" ||
-        platform === "outbrain"
-      ) {
+      // Mirror the master's reconciliation: sum the E3_PLATFORMS toward
+      // `allocated`. E3_PLATFORMS lives in budgetTypes.ts (currently
+      // google / facebook / tiktok / taboola / outbrain). The earlier
+      // hardcoded list left tiktok out, undercounting by ~one tiktok row.
+      // "other" channels (פניה טלפונית / שילוט etc.) are tracked in the
+      // rows but don't count toward the E3 balance.
+      if ((E3_PLATFORMS as string[]).includes(platform)) {
         allocated += budget;
       }
     }
