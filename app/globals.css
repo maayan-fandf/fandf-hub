@@ -1447,31 +1447,43 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   min-height: 0;
   padding: 1rem 0.5rem;
 }
-.loading-video {
-  /* Circular crop. The source video is portrait — the central disc
-     (gear, paperclip, etc.) sits in the middle ~50% of the height
-     with empty/decorative space above and below. `object-fit: cover`
-     scales the video so its narrower dimension fills the box width,
-     and the centered crop window lands on exactly the disc. The
-     border-radius: 50% then masks the box corners so the disc reads
-     as the whole element. The mid-gray background is only visible
-     before the first frame paints; once the video runs it's covered
-     by the actual frame. Iteration history:
-       360→440→520 contain (too small, gray bars on sides)
-       520 cover with prior portrait video (gear corner clipped)
-       520 cover with new video (disc is centered, no corner issue) */
+/* The mask wrapper holds the circle outline + clips the scaled video
+   inside. Sizing here, not on the video, so the visible loader's
+   diameter stays the same across the codebase even when we tighten
+   the inner crop via transform: scale(). */
+.loading-video-mask {
   width: min(520px, 86vw);
   aspect-ratio: 1 / 1;
   height: auto;
   max-height: 75vh;
   border-radius: 50%;
+  overflow: hidden;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--loading-video-bg);
-  object-fit: cover;
+  /* `position: relative` so the inner video can be positioned/scaled
+     deterministically. `display: block` overrides the default inline
+     flow which interacts oddly with aspect-ratio. */
+  position: relative;
+  display: block;
 }
-.loading-video-wrap.is-compact .loading-video {
+.loading-video-wrap.is-compact .loading-video-mask {
   width: min(300px, 65vw);
   max-height: 42vh;
+}
+.loading-video {
+  /* Fills the mask, then scales further to tighten the crop onto the
+     central disc (gear, paperclip, decorative motifs). The scale is
+     applied here on the inner element so the mask's outer circle
+     stays at its declared size — without the wrapper this would
+     enlarge the whole loader. Iteration: 1.0 (cover only) showed the
+     full frame letterboxed; 1.4 zooms in so the disc fills the
+     inscribed circle, matching the green-line crop Maayan drew. */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.4);
+  /* The shadow defined on .loading-video-mask is what we want; the
+     video itself shouldn't carry its own shadow. */
 }
 /* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
    in the brief moment before the first video frame paints. Same color

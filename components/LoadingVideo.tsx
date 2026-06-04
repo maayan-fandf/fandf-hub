@@ -29,16 +29,22 @@ export default function LoadingVideo({
       aria-live="polite"
       aria-label={label || "טוען…"}
     >
-      <video
-        className="loading-video"
-        src="/loading.mp4"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="auto"
-        aria-hidden
-      />
+      {/* Mask wrapper isolates the circular crop + shadow + overflow
+          clipping from the video element. Sizing lives on the mask;
+          the video uses `transform: scale()` to tighten the visible
+          crop onto the central disc without enlarging the outer circle. */}
+      <div className="loading-video-mask">
+        <video
+          className="loading-video"
+          src="/loading.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          aria-hidden
+        />
+      </div>
       {label ? <div className="loading-video-label">{label}</div> : null}
     </div>
   );
