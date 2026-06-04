@@ -164,54 +164,135 @@ export default function MetricsIframe({ src, projectName }: Props) {
     return () => obs.disconnect();
   }, [src]);
 
-  // Iframe → hub budget-save bridge. The dashboard makes the תקציב cell
-  // editable for media-role/Felix users (see Index.html); on save it
-  // posts `fandf-save-budget` here with the project slug, channel name,
-  // new value, and the value it saw before the edit (for drift check).
-  // We POST to /api/campaigns/budget in `lookup mode` — same write path
-  // the קמפיינים → תקציבים grid uses, just with the iframe relieved of
-  // having to know sheet coordinates. The result is posted back so the
-  // iframe can confirm or rollback the cell.
+  // Iframe ↔ hub budget bridge. Three message types flow:
+  //
+  //   fandf-save-budget         — single-cell write (inline edit)
+  //   fandf-get-budget-summary  — fetch the יעד/חולק/per-row data the
+  //                                budgets page uses; used by the drift
+  //                                strip + reallocation suggester
+  //   fandf-apply-budget-batch  — apply N suggested deltas at once,
+  //                                with per-row reply so the iframe can
+  //                                roll back any failures individually
+  //
+  // For all replies we use `iframeRef.current?.contentWindow.postMessage`
+  // — Apps Script's wrapper forwards messages down to the sandboxed
+  // content frame (the theme-sync path proves this works in practice).
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    const reply = (payload: Record<string, unknown>) => {
+      const win = iframeRef.current?.contentWindow;
+      try {
+        win?.postMessage(payload, "*");
+      } catch {
+        /* iframe gone / navigation in progress */
+      }
+    };
+    const saveOne = async (
+      slug: string,
+      channel: string,
+      value: number,
+      expectedBudget: number,
+    ) => {
+      const res = await fetch("/api/campaigns/budget", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug, channel, value, expectedBudget }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      return {
+        ok: !!json.ok,
+        error: json.error || (!res.ok ? `HTTP ${res.status}` : ""),
+      };
+    };
     const onMessage = async (e: MessageEvent) => {
       const data = e.data;
-      if (!data || data.type !== "fandf-save-budget") return;
-      const win = iframeRef.current?.contentWindow;
-      const reply = (payload: Record<string, unknown>) => {
+      if (!data || typeof data !== "object") return;
+      if (data.type === "fandf-save-budget") {
         try {
-          win?.postMessage({ type: "fandf-budget-saved", ...payload }, "*");
-        } catch {
-          /* iframe gone / navigation in progress — drop the reply */
-        }
-      };
-      try {
-        const res = await fetch("/api/campaigns/budget", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            slug: data.slug,
+          const r = await saveOne(
+            String(data.slug),
+            String(data.channel),
+            Number(data.value),
+            Number(data.expectedBudget),
+          );
+          reply({
+            type: "fandf-budget-saved",
+            ok: r.ok,
             channel: data.channel,
+            slug: data.slug,
             value: data.value,
-            expectedBudget: data.expectedBudget,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        reply({
-          ok: !!json.ok,
-          channel: data.channel,
-          slug: data.slug,
-          value: data.value,
-          error: json.error || (!res.ok ? `HTTP ${res.status}` : ""),
-        });
-      } catch (err) {
-        reply({
-          ok: false,
-          channel: data.channel,
-          slug: data.slug,
-          value: data.value,
-          error: err instanceof Error ? err.message : String(err),
-        });
+            error: r.error,
+          });
+        } catch (err) {
+          reply({
+            type: "fandf-budget-saved",
+            ok: false,
+            channel: data.channel,
+            slug: data.slug,
+            value: data.value,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return;
+      }
+      if (data.type === "fandf-get-budget-summary") {
+        try {
+          const slug = String(data.slug || "");
+          const res = await fetch(
+            `/api/campaigns/budget-summary?slug=${encodeURIComponent(slug)}`,
+          );
+          const json = await res.json().catch(() => ({}));
+          reply({ type: "fandf-budget-summary", slug, ...json });
+        } catch (err) {
+          reply({
+            type: "fandf-budget-summary",
+            slug: data.slug,
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return;
+      }
+      if (data.type === "fandf-apply-budget-batch") {
+        const slug = String(data.slug || "");
+        const items = Array.isArray(data.items) ? data.items : [];
+        // Apply sequentially — the endpoint is fast and we want each
+        // result to come back independently so the panel can render
+        // partial-success states (rare but possible: drift / 409).
+        const results: Array<{
+          channel: string;
+          value: number;
+          ok: boolean;
+          error?: string;
+        }> = [];
+        for (const it of items) {
+          try {
+            const r = await saveOne(
+              slug,
+              String(it.channel || ""),
+              Number(it.value),
+              Number(it.expectedBudget),
+            );
+            results.push({
+              channel: it.channel,
+              value: it.value,
+              ok: r.ok,
+              error: r.error,
+            });
+          } catch (err) {
+            results.push({
+              channel: it.channel,
+              value: it.value,
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        reply({ type: "fandf-budget-batch-done", slug, results });
+        return;
       }
     };
     window.addEventListener("message", onMessage);
