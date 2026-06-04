@@ -1451,24 +1451,25 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   /* Circular crop — the source video has a logo circle centered in a
      near-square frame. `object-fit: contain` keeps the WHOLE frame
      visible inside the rounded box (gear top-left, paperclip endcaps,
-     bottom motifs all read), and the border-radius: 50% mask hides
-     the empty corners. The background is a warm beige tuned to the
-     metallic-tan inner frame in the video so the corners that
-     `contain` letterboxes blend seamlessly into the video's own
-     frame instead of revealing the page background color. Bumped
-     2026-06-04 (360→440) after the first pass landed too small. */
-  width: min(440px, 82vw);
+     bottom cable motif all read), and the border-radius: 50% mask
+     hides the empty corners. The background is a warm beige tuned to
+     the metallic-tan inner frame in the video so the contain-
+     letterboxed strips blend into the video's own frame instead of
+     revealing the page background color. Sizes tightened 2026-06-04
+     (440→520) after the previous pass still clipped the gear + cable
+     details that sit near the video's frame edges. */
+  width: min(520px, 86vw);
   aspect-ratio: 1 / 1;
   height: auto;
-  max-height: 70vh;
+  max-height: 75vh;
   border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--loading-video-bg);
   object-fit: contain;
 }
 .loading-video-wrap.is-compact .loading-video {
-  width: min(260px, 60vw);
-  max-height: 36vh;
+  width: min(300px, 65vw);
+  max-height: 42vh;
 }
 /* Beige tone matched to the metallic-tan frame in loading.mp4 so the
    contain-letterboxed corners disappear into the video's own frame. */
