@@ -179,17 +179,28 @@ export default function MetricsIframe({ src, projectName }: Props) {
   // content frame (the theme-sync path proves this works in practice).
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const reply = (payload: Record<string, unknown>) => {
+    // `reply` accepts the original event's source window so the response
+    // goes straight back to the originating frame — that's the only
+    // reliable way to reach the Apps Script sandbox (which lives a
+    // nested level below `iframeRef.current?.contentWindow`). Per the
+    // postMessage spec, `e.source` is the window that called
+    // postMessage; replying through it bypasses the wrapper entirely.
+    // Falls back to the wrapper + child-frame fan-out if e.source is
+    // unavailable (paranoia — shouldn't happen).
+    const reply = (
+      sourceWin: MessageEventSource | null,
+      payload: Record<string, unknown>,
+    ) => {
+      try {
+        if (sourceWin && typeof (sourceWin as Window).postMessage === "function") {
+          (sourceWin as Window).postMessage(payload, "*");
+          return;
+        }
+      } catch {
+        /* fall through to fanout */
+      }
       const win = iframeRef.current?.contentWindow;
       try {
-        // The Apps Script HTML response is a wrapper page at
-        // script.google.com that hosts a sandboxed iframe at
-        // googleusercontent.com (where our dashboard listener lives).
-        // Some Apps Script wrappers forward postMessages through to
-        // the sandbox; others don't. Belt-and-suspenders: post to the
-        // wrapper AND iterate its child frames and post to each.
-        // postMessage is allowed cross-origin even when property access
-        // is blocked, so this Just Works for reaching the sandbox.
         win?.postMessage(payload, "*");
         const frames = win?.frames;
         if (frames) {
@@ -225,6 +236,7 @@ export default function MetricsIframe({ src, projectName }: Props) {
     const onMessage = async (e: MessageEvent) => {
       const data = e.data;
       if (!data || typeof data !== "object") return;
+      const src = e.source;
       if (data.type === "fandf-save-budget") {
         try {
           const r = await saveOne(
@@ -233,7 +245,7 @@ export default function MetricsIframe({ src, projectName }: Props) {
             Number(data.value),
             Number(data.expectedBudget),
           );
-          reply({
+          reply(src, {
             type: "fandf-budget-saved",
             ok: r.ok,
             channel: data.channel,
@@ -242,7 +254,7 @@ export default function MetricsIframe({ src, projectName }: Props) {
             error: r.error,
           });
         } catch (err) {
-          reply({
+          reply(src, {
             type: "fandf-budget-saved",
             ok: false,
             channel: data.channel,
@@ -260,9 +272,9 @@ export default function MetricsIframe({ src, projectName }: Props) {
             `/api/campaigns/budget-summary?slug=${encodeURIComponent(slug)}`,
           );
           const json = await res.json().catch(() => ({}));
-          reply({ type: "fandf-budget-summary", slug, ...json });
+          reply(src, { type: "fandf-budget-summary", slug, ...json });
         } catch (err) {
-          reply({
+          reply(src, {
             type: "fandf-budget-summary",
             slug: data.slug,
             ok: false,
@@ -274,9 +286,6 @@ export default function MetricsIframe({ src, projectName }: Props) {
       if (data.type === "fandf-apply-budget-batch") {
         const slug = String(data.slug || "");
         const items = Array.isArray(data.items) ? data.items : [];
-        // Apply sequentially — the endpoint is fast and we want each
-        // result to come back independently so the panel can render
-        // partial-success states (rare but possible: drift / 409).
         const results: Array<{
           channel: string;
           value: number;
@@ -306,7 +315,7 @@ export default function MetricsIframe({ src, projectName }: Props) {
             });
           }
         }
-        reply({ type: "fandf-budget-batch-done", slug, results });
+        reply(src, { type: "fandf-budget-batch-done", slug, results });
         return;
       }
     };
