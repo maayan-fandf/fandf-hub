@@ -1,13 +1,20 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
-import { getMyProjects, getProjectMetrics } from "@/lib/appsScript";
+import { currentUserEmail, getMyProjects, getProjectMetrics } from "@/lib/appsScript";
 import { getPortfolioBenchmarks } from "@/lib/portfolioBenchmarks";
 import { diagnosePaidChannels } from "@/lib/paidDiagnosis";
-import { channelAlias } from "@/lib/channelAlias";
 import PortfolioBenchmarksTable from "@/components/PortfolioBenchmarksTable";
-import StatsProjectPicker from "@/components/StatsProjectPicker";
+import StatsPicker from "@/components/StatsProjectPicker";
+import StatsPeriodPicker from "@/components/StatsPeriodPicker";
+import StatsMetricPicker from "@/components/StatsMetricPicker";
+import StatsOutliersPanel from "@/components/StatsOutliersPanel";
+import StatsRankings from "@/components/StatsRankings";
+import StatsPortfolioTrend from "@/components/StatsPortfolioTrend";
+import StatsChannelRanking from "@/components/StatsChannelRanking";
+import StatsConsistency from "@/components/StatsConsistency";
+import StatsCorrelations from "@/components/StatsCorrelations";
 import ProjectStatsView from "@/components/ProjectStatsView";
+import GaussianSection from "@/components/GaussianSection";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "סטטיסטיקה" };
@@ -34,16 +41,38 @@ export const metadata = { title: "סטטיסטיקה" };
 export default async function StatsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>;
+  searchParams: Promise<{
+    project?: string;
+    compare?: string;
+    periods?: string;
+    metric?: string;
+  }>;
 }) {
-  const session = await auth();
-  const email = session?.user?.email;
+  // currentUserEmail() honors DEV_USER_EMAIL for local-dev auth bypass
+  // (when AUTH_GOOGLE_ID is commented out in .env.local). In prod the
+  // middleware enforces the NextAuth session before this page renders.
+  const email = await currentUserEmail().catch(() => "");
   if (!email) redirect("/signin");
   const allowed = await canSeeCampaigns(email).catch(() => false);
   if (!allowed) redirect("/unauthorized");
 
   const params = await searchParams;
   const selectedProject = (params.project || "").trim() || null;
+  const compareProject = (params.compare || "").trim() || null;
+  // Periods param is comma-separated. Empty / absent = null (the
+  // server-default "all monthly months" is applied client-side in
+  // the picker so the URL stays clean for the common case).
+  const selectedPeriods = (params.periods || "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  const selectedPeriodsOrNull =
+    selectedPeriods.length > 0 ? selectedPeriods : null;
+  // Metric param — defaults to CPL. Used by both the picker (sticky
+  // bar) and the Gaussian section (renders that metric).
+  const rawMetric = (params.metric || "cpl").trim().toLowerCase();
+  const selectedMetric: "cpl" | "cps" | "cpm" =
+    rawMetric === "cps" || rawMetric === "cpm" ? rawMetric : "cpl";
 
   // Always fetch: portfolio benchmarks + project list. In parallel.
   // Selected project's metrics are an additional fetch (also parallel).
@@ -72,20 +101,10 @@ export default async function StatsPage({
     ),
   ).sort((a, b) => a.localeCompare(b, "he"));
 
-  // For the per-channel benchmarks table, we want a hover tooltip that
-  // shows the raw channel names that normalize into each alias bucket.
-  // Build alias → raw-names map from the diagnosis source we already
-  // have (project metrics aren't loaded for all projects here, so we
-  // derive aliases from what's in benchmarks only — the hover hint will
-  // miss aliases that aren't yet in any project, but that's fine).
-  const aliasToRaw: Record<string, string[]> = {};
-  if (projectRes && projectRes.ok) {
-    for (const c of projectRes.project.channels || []) {
-      const a = channelAlias(c.channel);
-      if (!aliasToRaw[a]) aliasToRaw[a] = [];
-      if (!aliasToRaw[a].includes(c.channel)) aliasToRaw[a].push(c.channel);
-    }
-  }
+  // Portfolio-wide alias → raw-channel-names map comes pre-built off
+  // benchmarks (lib/portfolioBenchmarks.ts:compute). Falls back to an
+  // empty object when benchmarks load fails.
+  const aliasToRaw: Record<string, string[]> = benchmarks?.aliasToRaw || {};
 
   const project =
     projectRes && projectRes.ok ? projectRes.project : null;
@@ -112,6 +131,87 @@ export default async function StatsPage({
         </div>
       </header>
 
+      {/* Sticky context bar — project + period pickers at the top so
+          the user can switch context without scrolling. URL-driven
+          (?project=X&periods=Y,Z) so selections survive reload and
+          are shareable. */}
+      <div className="stats-context-bar">
+        <span className="stats-context-label">📍 הקשר:</span>
+        <StatsPicker
+          paramName="project"
+          items={projectNames}
+          selected={selectedProject}
+          icon="📋"
+          placeholder="בחר פרויקט…"
+          searchPlaceholder="חפש פרויקט…"
+        />
+        {selectedProject && (
+          <StatsPicker
+            paramName="compare"
+            items={projectNames.filter((p) => p !== selectedProject)}
+            selected={compareProject}
+            icon="⚖"
+            placeholder="השווה ל…"
+            searchPlaceholder="חפש פרויקט להשוואה…"
+          />
+        )}
+        {benchmarks && benchmarks.availablePeriods.length > 0 && (
+          <StatsPeriodPicker
+            availablePeriods={benchmarks.availablePeriods}
+            selected={selectedPeriodsOrNull}
+          />
+        )}
+        <StatsMetricPicker selected={selectedMetric} />
+      </div>
+
+      {/* Heads-up — auto-flagged outliers across the portfolio. Sits
+          at the top so the user sees who needs attention before they
+          scroll into the distribution data. */}
+      {benchmarks && (
+        <StatsOutliersPanel benchmarks={benchmarks} metric={selectedMetric} />
+      )}
+
+      {/* Top / Bottom 10 rankings — side-by-side leaderboards driven by
+          the same project-lifetime samples the outliers panel uses. */}
+      {benchmarks && (
+        <StatsRankings benchmarks={benchmarks} metric={selectedMetric} />
+      )}
+
+      {/* Portfolio time-trend — direction-of-travel for the whole
+          book over the past N months. */}
+      {benchmarks && (
+        <StatsPortfolioTrend
+          benchmarks={benchmarks}
+          metric={selectedMetric}
+        />
+      )}
+
+      {/* Project consistency leaderboard — CV (σ/μ of monthly values)
+          per project, surfaced as Most-Stable + Most-Volatile lists. */}
+      {benchmarks && (
+        <StatsConsistency benchmarks={benchmarks} metric={selectedMetric} />
+      )}
+
+      {/* Channel-family ranking — which families deliver best CPL
+          across the portfolio. Bar chart sorted cheap → expensive. */}
+      {benchmarks && (
+        <StatsChannelRanking
+          benchmarks={benchmarks}
+          metric={selectedMetric}
+        />
+      )}
+
+      {/* Funnel correlations — CPL vs CPS and CPL vs CPM. Tells you
+          whether cheap leads also turn into cheap meetings, or whether
+          the funnel breaks somewhere between intake and scheduling. */}
+      {benchmarks && (
+        <StatsCorrelations
+          benchmarks={benchmarks}
+          highlightProject={selectedProject}
+          compareProject={compareProject}
+        />
+      )}
+
       {/* Portfolio stats table — the main star. Always shown. */}
       <section className="stats-section">
         <h2>🏛 התפלגות התיק</h2>
@@ -127,25 +227,36 @@ export default async function StatsPage({
         )}
       </section>
 
-      {/* Project drill-down */}
-      <section className="stats-section">
-        <h2>🔎 ניתוח פר־פרויקט</h2>
-        <StatsProjectPicker
-          projects={projectNames}
-          selected={selectedProject}
+      {/* Gaussian distribution plots — master (project-aggregate) +
+          top channel families. Wrapped in a client component so the
+          metric picker (CPL / CPS / CPM) can swap the grid without a
+          server round-trip. Legend rendered inside. */}
+      {benchmarks && (
+        <GaussianSection
+          benchmarks={benchmarks}
+          selectedProject={selectedProject}
+          compareProject={compareProject}
+          selectedPeriods={selectedPeriodsOrNull}
+          metric={selectedMetric}
         />
-        {projectError && (
-          <div className="stats-error" style={{ marginTop: "1em" }}>
-            טעינת הפרויקט נכשלה: {projectError}
-          </div>
-        )}
-        {!selectedProject && (
-          <div className="stats-empty" style={{ marginTop: "1em" }}>
-            בחר פרויקט מהרשימה כדי לראות מגמה היסטורית + אבחון מדיה.
-          </div>
-        )}
-        {project && <ProjectStatsView project={project} diagnosis={diagnosis} />}
-      </section>
+      )}
+
+      {/* Project drill-down — only shown when a project is picked in
+          the top context bar. Empty state hidden because the picker
+          itself sits at the top with its own placeholder hint. */}
+      {(project || projectError) && (
+        <section className="stats-section">
+          <h2>🔎 ניתוח פרויקט נבחר</h2>
+          {projectError && (
+            <div className="stats-error">
+              טעינת הפרויקט נכשלה: {projectError}
+            </div>
+          )}
+          {project && (
+            <ProjectStatsView project={project} diagnosis={diagnosis} />
+          )}
+        </section>
+      )}
     </main>
   );
 }

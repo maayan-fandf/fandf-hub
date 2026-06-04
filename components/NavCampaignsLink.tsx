@@ -169,6 +169,20 @@ export default function NavCampaignsLink() {
           </span>
           <span className="campaigns-nav-item-label">תקציבים</span>
         </ActiveLink>
+        {/* Stats — portfolio distribution table + per-project drill-down
+            (2026-06-04). Same role gate as the rest of the dropdown
+            (canSeeCampaigns), enforced server-side on the page. */}
+        <ActiveLink
+          href="/stats"
+          match="section"
+          className="campaigns-nav-item"
+          role="menuitem"
+        >
+          <span className="campaigns-nav-item-icon" aria-hidden>
+            📊
+          </span>
+          <span className="campaigns-nav-item-label">סטטיסטיקה</span>
+        </ActiveLink>
         {/* Admin-only forecast entry — month-end spend prediction.
             Hidden for managers / media without admin so the dropdown
             stays tight for the people who don't need the predictive

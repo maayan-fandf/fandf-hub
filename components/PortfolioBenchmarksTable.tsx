@@ -1,4 +1,10 @@
-import type { PortfolioBenchmarks, BenchmarkStats } from "@/lib/portfolioBenchmarks";
+"use client";
+
+import { useState } from "react";
+import type {
+  PortfolioBenchmarks,
+  BenchmarkDistribution,
+} from "@/lib/portfolioBenchmarks";
 
 /**
  * Portfolio benchmarks table — the centerpiece of /stats.
@@ -10,8 +16,10 @@ import type { PortfolioBenchmarks, BenchmarkStats } from "@/lib/portfolioBenchma
  * first). For each row: n / P25 / חציון / P75 for עלות לליד, עלות
  * לתיאום, עלות לביצוע.
  *
- * Static server-rendered table (no client interactivity needed —
- * benchmarks don't change without a page reload).
+ * Client component — drives a hover tooltip on the alias cells that
+ * lists the raw channel labels normalized into each bucket. Native
+ * `title` attribute is slow + plain-text only, so we render a styled
+ * floating panel instead (2026-06-05).
  */
 
 type Props = {
@@ -32,7 +40,8 @@ const METRIC_LABELS: Array<{
   { key: "cpm", label: "עלות לביצוע" },
 ];
 
-function StatsCells({ s }: { s: BenchmarkStats | undefined }) {
+function StatsCells({ d }: { d: BenchmarkDistribution | undefined }) {
+  const s = d?.stats;
   if (!s || !s.n) {
     return (
       <td colSpan={4} className="pb-muted">
@@ -55,10 +64,16 @@ export default function PortfolioBenchmarksTable({
   aliasToRaw,
 }: Props) {
   const aliases = Object.keys(benchmarks.channels).sort((a, b) => {
-    const na = benchmarks.channels[a].cpl?.n || 0;
-    const nb = benchmarks.channels[b].cpl?.n || 0;
+    const na = benchmarks.channels[a].cpl?.stats.n || 0;
+    const nb = benchmarks.channels[b].cpl?.stats.n || 0;
     return nb - na;
   });
+
+  // Hovered alias — drives the floating tooltip listing the raw
+  // channel labels that normalized into that bucket. Position-anchored
+  // to the table row so it doesn't fight with the page layout.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const hoveredRawList = hovered ? aliasToRaw?.[hovered] || [] : [];
 
   return (
     <div className="pb-wrap">
@@ -82,7 +97,8 @@ export default function PortfolioBenchmarksTable({
           </thead>
           <tbody>
             {METRIC_LABELS.map((m) => {
-              const s = benchmarks.project[m.key];
+              const d = benchmarks.project[m.key];
+              const s = d?.stats;
               return (
                 <tr key={m.key}>
                   <td>{m.label}</td>
@@ -110,7 +126,22 @@ export default function PortfolioBenchmarksTable({
         <div className="pb-section-title">
           לפי ערוץ ({aliases.length} קבוצות)
         </div>
-        <div className="pb-table-scroll">
+        <div className="pb-table-scroll pb-channels-wrap">
+          {hovered && hoveredRawList.length > 0 && (
+            <div className="pb-alias-popover" role="tooltip">
+              <div className="pb-alias-popover-head">
+                <strong>{hovered}</strong>
+                <span className="pb-alias-popover-count">
+                  {hoveredRawList.length} ערוצים
+                </span>
+              </div>
+              <ul className="pb-alias-popover-list">
+                {hoveredRawList.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <table className="pb-table pb-table-channels">
             <thead>
               <tr>
@@ -137,18 +168,32 @@ export default function PortfolioBenchmarksTable({
             <tbody>
               {aliases.map((a) => {
                 const c = benchmarks.channels[a];
-                const rawList = aliasToRaw?.[a] || [];
-                const tip = rawList.length
-                  ? `${a} · ${rawList.length} ערוצים:\n${rawList.map((n) => "• " + n).join("\n")}`
-                  : a;
+                const rawCount = aliasToRaw?.[a]?.length || 0;
                 return (
-                  <tr key={a}>
-                    <td className="pb-alias" title={tip}>
-                      {a}
+                  <tr
+                    key={a}
+                    className={
+                      "pb-channel-row" + (hovered === a ? " is-hovered" : "")
+                    }
+                  >
+                    <td
+                      className="pb-alias"
+                      onMouseEnter={() => setHovered(a)}
+                      onMouseLeave={() =>
+                        setHovered((cur) => (cur === a ? null : cur))
+                      }
+                    >
+                      <span className="pb-alias-name">{a}</span>
+                      {rawCount > 0 && (
+                        <span className="pb-alias-count">
+                          {" "}
+                          ({rawCount})
+                        </span>
+                      )}
                     </td>
-                    <StatsCells s={c.cpl} />
-                    <StatsCells s={c.cps} />
-                    <StatsCells s={c.cpm} />
+                    <StatsCells d={c.cpl} />
+                    <StatsCells d={c.cps} />
+                    <StatsCells d={c.cpm} />
                   </tr>
                 );
               })}

@@ -391,13 +391,6 @@ export default function ProjectStatsView({ project, diagnosis }: Props) {
         )}
       </section>
 
-      {/* Phase 3 placeholder */}
-      <section className="stats-section">
-        <h2>יעילות ערוצים</h2>
-        <div className="stats-empty">
-          תרשימי scatter + bar — יוצגו בשלב הבא.
-        </div>
-      </section>
     </div>
   );
 }

@@ -10,22 +10,59 @@
  */
 export function channelAlias(name: string): string {
   const n = String(name || "").toLowerCase().trim();
-  if (/google.*(discover|דיסקובר|דיסקאברי)/.test(n)) return "google-discovery";
-  if (/google.*(search|חיפוש)|google_search/.test(n)) return "google-search";
+  // Discovery — three variants now caught here:
+  //   1. Hebrew גוגל prefix ("גוגל דיסקאברי") — was English-only
+  //   2. Standalone "discover" / "discovery" tokens — the sheet often
+  //      omits the "google" prefix entirely and just says "discover".
+  //      Anchored to the START so a hypothetical "outbrain-discover"
+  //      still routes to outbrain (handled in the outbrain branch).
+  //   3. Common "dicovery" typo
+  // Owner pulled standalone discovery labels in here 2026-06-05.
   if (
-    /^(google|גוגל|goolge|pmax|dv360|gs)([-_\s]|$)/.test(n) ||
-    /גוגל/.test(n) ||
-    /^google/.test(n)
+    /(google|גוגל).*(discover|דיסקובר|דיסקאברי)/.test(n) ||
+    /^(discover|discovery|dicovery)([-_\s]|$)/.test(n)
   )
+    return "google-discovery";
+  // DV360 (Display & Video 360) — own bucket. Distinct platform from
+  // Google Ads (display+video buying tool), so its CPL distribution
+  // shouldn't pollute search/PMax benchmarks. Catches "DV360" /
+  // "dv360" / "dv 360" / "dv-360" / standalone "dv". Owner asked for
+  // this separation 2026-06-05.
+  if (/\bdv[\s-]?360\b|\bdv\b/.test(n)) return "dv360";
+  // google-other: now PMax-only. Checked BEFORE the broad google-search
+  // catch-all so "Google-pmax" doesn't get pulled into search.
+  if (/\bpmax\b/.test(n) || /^pmax([-_\s]|$)/.test(n))
     return "google-other";
+  // YouTube — its own bucket. Owner asked 2026-06-05. Catches the
+  // standalone "youtube" token plus the project-suffix "_yt" / "-yt"
+  // pattern (e.g. "large_apatments_yt"). Placed BEFORE google-search
+  // so YouTube doesn't fall into the broad google catch-all below.
+  if (/\byoutube\b|(?:^|[-_\s])yt(?:[-_\s]|$)/.test(n)) return "youtube";
+  // google-search: anything else Google-flavored. Owner decision
+  // 2026-06-05 — the team's "google" / "גוגל" rows are universally
+  // search campaigns in practice. The broad `/google/` catch at the end
+  // handles project-suffix labels (e.g. "ampa-givat-shmuel-google").
+  if (
+    /google.*(search|seach|serach|חיפוש)|google_search|^gs([-_\s]|$)/.test(n) ||
+    /^(google|גוגל|goolge)([-_\s]|$)/.test(n) ||
+    /גוגל/.test(n) ||
+    /google/.test(n)
+  )
+    return "google-search";
   if (/facebook.*lead.*generation|facebook-lead/.test(n))
     return "facebook-lead-gen";
-  if (/facebook|פייסבוק|(^|[-_\s])fb([-_\s]|$)/.test(n))
+  // Facebook — also catches the standalone "meta" token (the company's
+  // current platform name) so labels like "large_apatments_meta" land
+  // here instead of falling to (other). Owner asked 2026-06-05.
+  if (/facebook|פייסבוק|(^|[-_\s])(fb|meta)([-_\s]|$)/.test(n))
     return "facebook-other";
   if (/yad\s?2|יד\s?2/.test(n)) return "yad2";
   if (/madlan|מדלן/.test(n)) return "madlan";
   if (/onmap|אונמפ/.test(n)) return "onmap";
-  if (/outbrain/.test(n)) return "outbrain";
+  // Outbrain — also catches Teads (rebrand/alias of Outbrain per the
+  // owner's note in lib/budgetTypes.ts:46) and the Hebrew variants,
+  // matching how the budget-side classifyChannel does it.
+  if (/outbrain|אאוטבריין|אאוטברין|teads|טידס/.test(n)) return "outbrain";
   if (/taboola/.test(n)) return "taboola";
   if (/tiktok|טיקטוק/.test(n)) return "tiktok";
   if (/instagram|אינסטגרם/.test(n)) return "instagram";

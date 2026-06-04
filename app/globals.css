@@ -14,6 +14,19 @@
   --text: var(--md-sys-color-on-surface);
   --muted: var(--md-sys-color-on-surface-variant);
 
+  /* Aliases for /stats and related new components (added 2026-06-05).
+     Map the convenience names the stats page CSS uses onto the M3
+     system colors that already exist, so the new components pick up
+     the theme automatically in both light + dark. Without these,
+     properties like `background: var(--brand)` resolve to transparent
+     and the active pills / dot highlights become invisible. */
+  --brand: var(--md-sys-color-primary);
+  --ink: var(--md-sys-color-on-surface);
+  --ink-soft: var(--md-sys-color-on-surface-variant);
+  --surface-alt: var(--md-sys-color-surface-container);
+  --surface-hi: var(--md-sys-color-surface-container-high);
+  --border-soft: var(--md-sys-color-outline-variant);
+
   /* Full palette — used by role chips, company hashing, status tints. */
   --violet: #8b5cf6;
   --purple: #a855f7;
@@ -21220,7 +21233,72 @@ button.budget-need:focus-visible {
   color: var(--ink);
   font-weight: 600;
 }
-.pb-alias { cursor: help; }
+.pb-alias { cursor: help; user-select: none; }
+.pb-alias-name { font-weight: 700; color: var(--ink); }
+.pb-alias-count {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.88em;
+  font-variant-numeric: tabular-nums;
+}
+.pb-channel-row.is-hovered td { background: var(--surface-hi); }
+/* Channels-section wrapper — anchors the alias hover popover. */
+.pb-channels-wrap {
+  position: relative;
+}
+/* Alias hover popover — shows the list of raw channel labels that
+   normalized into the hovered family. Pinned to the top-right of the
+   channels table (RTL inset-inline-end) so it stays put while the
+   user moves between rows; max-height + scroll for big families. */
+.pb-alias-popover {
+  position: absolute;
+  top: 10px;
+  inset-inline-end: 14px;
+  z-index: 6;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 0.7em 0.9em;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  font-size: 0.88em;
+  pointer-events: none;
+}
+.pb-alias-popover-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 0.45em;
+  margin-bottom: 0.5em;
+}
+.pb-alias-popover-head strong {
+  color: var(--brand);
+  font-size: 1em;
+}
+.pb-alias-popover-count {
+  color: var(--muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+.pb-alias-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18em;
+}
+.pb-alias-popover-list li {
+  color: var(--ink-soft);
+  padding: 0.1em 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.9em;
+}
 .pb-muted { color: var(--muted); font-style: italic; }
 .pb-table-channels th[colspan="4"] {
   border-inline-start: 1px solid var(--border-soft);
@@ -21318,3 +21396,558 @@ button.budget-need:focus-visible {
   color: var(--muted);
   font-size: 0.9em;
 }
+
+/* Gaussian distribution plots on /stats — master + per-channel-family.
+   Each plot needs breathing room for the bell shape + reference labels;
+   600px min keeps it at most 2 columns even on wide screens, and
+   single-column under 720px. */
+.gsp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+  gap: 1em;
+}
+@media (max-width: 720px) {
+  .gsp-grid { grid-template-columns: 1fr; }
+}
+.gsp-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45em 0.7em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  font-size: 0.85em;
+}
+.gsp-tooltip strong { color: var(--ink); }
+.gsp-tooltip span { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.gsp-tooltip small { color: var(--muted); font-size: 0.85em; }
+.gsp-tooltip-sub {
+  color: var(--brand) !important;
+  font-size: 0.78em;
+  font-weight: 600;
+  font-variant-numeric: normal !important;
+}
+.gsp-card {
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 0.8em 1em 0.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.gsp-title {
+  font-weight: 700;
+  font-size: 0.95em;
+  color: var(--ink);
+}
+.gsp-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9em;
+  font-size: 0.8em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.gsp-summary-selected {
+  color: var(--brand);
+  font-weight: 700;
+}
+.gsp-summary-selected em {
+  font-style: normal;
+  font-size: 0.9em;
+  opacity: 0.85;
+  margin-inline-start: 0.3em;
+}
+.gsp-summary-compare {
+  color: #d97706;
+  font-weight: 700;
+}
+.gsp-summary-compare em {
+  font-style: normal;
+  font-size: 0.9em;
+  opacity: 0.85;
+  margin-inline-start: 0.3em;
+}
+.gsp-empty {
+  padding: 1.2em;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88em;
+}
+.gsp-chart {
+  margin-top: -0.3em;
+  position: relative; /* anchor for the manual hover panel */
+}
+/* Manual hover panel — replaces Recharts' Tooltip (which kept latching
+   onto the wrong dot under ComposedChart's X-axis snapping). Pinned to
+   the top-left of the chart wrap so it stays put when dots cluster,
+   instead of floating with the cursor. RTL-aware via inset-inline-end. */
+.gsp-hover-panel {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 12px;
+  z-index: 4;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5em 0.8em;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  font-size: 0.85em;
+  pointer-events: none; /* don't intercept mouse leaving the dot */
+}
+.gsp-hover-panel strong { color: var(--ink); font-size: 1.05em; }
+.gsp-hover-panel span { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.gsp-hover-panel small { color: var(--muted); font-size: 0.85em; }
+
+/* Gaussian legend — explains the curve / lines / dots and defines μ + σ
+   in plain Hebrew so non-stats users don't bounce off the symbols. */
+.gsp-legend {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 0.9em 1.1em;
+  margin-bottom: 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+.gsp-legend-title {
+  font-weight: 700;
+  font-size: 0.9em;
+  color: var(--ink);
+}
+.gsp-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9em 1.4em;
+  font-size: 0.85em;
+  color: var(--ink-soft);
+}
+.gsp-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+}
+.gsp-legend-item b { color: var(--ink); }
+.gsp-legend-glossary {
+  font-size: 0.82em;
+  color: var(--muted);
+  line-height: 1.6;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.6em;
+}
+.gsp-legend-glossary b { color: var(--ink-soft); }
+.gsp-legend-glossary em { font-style: normal; color: var(--brand); font-weight: 600; }
+/* Legend swatches — mirror the actual plot colors. */
+.gsp-legend-curve {
+  display: inline-block;
+  width: 22px; height: 10px;
+  background: rgba(67, 56, 202, 0.16);
+  border-top: 2px solid #4338ca;
+  border-radius: 2px;
+}
+.gsp-legend-mu {
+  display: inline-block;
+  width: 22px; height: 0;
+  border-top: 2px dashed #0891b2;
+}
+.gsp-legend-median {
+  display: inline-block;
+  width: 22px; height: 0;
+  border-top: 2px dashed #d97706;
+}
+/* ±1σ — solid indigo, clearly the "normal range" zone. */
+.gsp-legend-band1 {
+  display: inline-block;
+  width: 22px; height: 10px;
+  background: rgba(67, 56, 202, 0.32);
+  border-radius: 2px;
+}
+/* ±2σ boundary — dashed amber line matching the two vertical
+   reference lines at μ±2σ on the chart (filled bands here get
+   erased by the curve's own fill, so we mark only the edges). */
+.gsp-legend-band2 {
+  display: inline-block;
+  width: 22px; height: 0;
+  border-top: 1.8px dashed rgba(217, 119, 6, 0.85);
+}
+.gsp-legend-dot-muted {
+  display: inline-block;
+  width: 11px; height: 11px;
+  background: #94a3b8;
+  border-radius: 50%;
+}
+.gsp-legend-dot-selected {
+  display: inline-block;
+  width: 13px; height: 13px;
+  background: #4338ca;
+  border: 2px solid #4338ca;
+  border-radius: 50%;
+}
+
+/* Sticky context bar at the top of /stats — holds both the project
+   and city pickers so the user can switch context without scrolling
+   back to the bottom of the page. Sticks just below the topnav so the
+   pickers stay reachable while exploring the long lower sections. */
+.stats-context-bar {
+  position: sticky;
+  top: 56px; /* clears the global topnav */
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.7em 0.9em;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-bottom: 1em;
+}
+[data-theme="dark"] .stats-context-bar {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+.stats-context-label {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 0.95em;
+  margin-inline-end: 0.3em;
+}
+.stats-context-bar .stats-picker { margin-bottom: 0; }
+.stats-picker-icon {
+  font-size: 1em;
+  margin-inline-end: 0.2em;
+}
+
+/* Section head with right-aligned controls — used by the Gaussian
+   section to host the CPL / CPS / CPM picker next to the title. */
+.stats-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8em;
+  margin-bottom: 1em;
+}
+.gsp-metric-picker,
+.stats-metric-picker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.1em 0;
+}
+
+/* Period picker preset bar — three quick-shortcut pills above the
+   month checkboxes (כל החודשים / + Current / Current בלבד). */
+.period-picker-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+  padding: 0.55em 0.7em;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+}
+.period-picker-presets .stats-pill {
+  font-size: 0.78em;
+  padding: 0.3em 0.65em;
+}
+/* Period picker item — checkbox + label. Looks like the standard
+   stats-picker-item but supports a checkbox prefix. */
+.period-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  width: 100%;
+  padding: 0.5em 0.85em;
+  text-align: start;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  font-size: 0.92em;
+  cursor: pointer;
+  user-select: none;
+}
+.period-picker-item:hover { background: var(--surface-alt); }
+.period-picker-item.is-active { background: rgba(67, 56, 202, 0.08); }
+.period-picker-item input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Heads-up / outliers panel on /stats — auto-detected project outliers
+   relative to the portfolio mean. Sits at the top of the page for
+   instant "who needs my attention today" scanning. */
+.stats-heads-up { padding: 1em 1.3em; }
+.stats-heads-up-count {
+  font-size: 0.82em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.stats-outlier-group { margin-top: 0.6em; }
+.stats-outlier-group-label {
+  font-size: 0.88em;
+  color: var(--ink-soft);
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+.stats-outlier-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.6em;
+}
+.stats-outlier-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  padding: 0.7em 0.85em;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: start;
+  transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+}
+.stats-outlier-card:hover {
+  background: var(--surface-hi);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.stats-outlier-card.is-expensive {
+  border-inline-start: 3px solid #dc2626;
+}
+.stats-outlier-card.is-winner {
+  border-inline-start: 3px solid #16a34a;
+}
+.stats-outlier-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.stats-outlier-icon { font-size: 0.95em; }
+.stats-outlier-project {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 0.92em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-outlier-value {
+  font-size: 1.15em;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stats-outlier-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  font-size: 0.78em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.stats-outlier-card.is-expensive .stats-outlier-z { color: #dc2626; font-weight: 700; }
+.stats-outlier-card.is-winner .stats-outlier-z { color: #16a34a; font-weight: 700; }
+
+/* Top/Bottom rankings — two leaderboard tables side by side. */
+.stats-rank-grid-wrap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1em;
+}
+@media (max-width: 720px) {
+  .stats-rank-grid-wrap { grid-template-columns: 1fr; }
+}
+.stats-rank-note {
+  font-size: 0.78em;
+  color: var(--muted);
+  font-style: italic;
+}
+.stats-rank-table {
+  background: var(--surface-alt);
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+.stats-rank-table.is-winner {
+  border-top: 3px solid #16a34a;
+}
+.stats-rank-table.is-expensive {
+  border-top: 3px solid #dc2626;
+}
+.stats-rank-head {
+  padding: 0.7em 0.9em;
+  background: var(--surface-hi);
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 0.95em;
+  border-bottom: 1px solid var(--border-soft);
+}
+.stats-rank-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+.stats-rank-grid thead th {
+  padding: 0.5em 0.7em;
+  background: transparent;
+  color: var(--muted);
+  text-align: start;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-soft);
+}
+.stats-rank-grid tbody td {
+  padding: 0.55em 0.7em;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--border-soft);
+  font-variant-numeric: tabular-nums;
+}
+.stats-rank-grid tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.stats-rank-grid tbody tr:hover { background: var(--surface-hi); }
+.stats-rank-grid tbody tr:last-child td { border-bottom: none; }
+.stats-rank-pos {
+  width: 2.2em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.stats-rank-project {
+  color: var(--ink);
+  font-weight: 600;
+}
+.stats-rank-value {
+  font-weight: 700;
+  color: var(--ink);
+}
+.stats-rank-delta.is-up { color: #dc2626; font-weight: 600; }
+.stats-rank-delta.is-down { color: #16a34a; font-weight: 600; }
+.stats-rank-delta.is-neutral { color: var(--muted); }
+
+/* Portfolio time-trend chart on /stats. */
+.stats-trend-badge {
+  font-size: 0.85em;
+  font-weight: 700;
+  padding: 0.25em 0.7em;
+  border-radius: 999px;
+  background: var(--surface-hi);
+  font-variant-numeric: tabular-nums;
+}
+.stats-trend-badge.stats-trend-up { background: rgba(220, 38, 38, 0.1); color: #dc2626; }
+.stats-trend-badge.stats-trend-down { background: rgba(22, 163, 74, 0.12); color: #16a34a; }
+.stats-trend-badge.stats-trend-flat { background: rgba(107, 114, 128, 0.12); color: var(--muted); }
+.stats-trend-meta {
+  font-size: 0.82em;
+  color: var(--muted);
+  margin: 0.5em 0 0.8em;
+}
+.stats-trend-meta b { color: var(--ink-soft); }
+.stats-trend-chart { width: 100%; }
+
+/* Channel-family ranking bar chart on /stats. */
+.stats-channel-ranking-meta {
+  font-size: 0.82em;
+  color: var(--muted);
+  font-style: italic;
+}
+.stats-channel-ranking-chart {
+  width: 100%;
+  margin-top: 0.5em;
+}
+
+/* Project consistency leaderboard CSS — reuses .stats-rank-* shells. */
+.stats-consistency-table { /* same shell as .stats-rank-table */
+  background: var(--surface-alt);
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+.stats-consistency-table.is-stable { border-top: 3px solid #0891b2; }
+.stats-consistency-table.is-volatile { border-top: 3px solid #d97706; }
+.stats-cv-badge {
+  display: inline-block;
+  font-weight: 700;
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+}
+.stats-cv-badge.is-stable { background: rgba(8, 145, 178, 0.15); color: #0891b2; }
+.stats-cv-badge.is-moderate { background: rgba(217, 119, 6, 0.15); color: #d97706; }
+.stats-cv-badge.is-volatile { background: rgba(220, 38, 38, 0.15); color: #dc2626; }
+.stats-cv-tier {
+  margin-inline-start: 0.4em;
+  font-size: 0.78em;
+  color: var(--muted);
+}
+
+/* Significance badge on outlier cards — p-value tiered color. */
+.stats-outlier-sig {
+  font-weight: 700;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+.stats-outlier-sig.is-high { background: rgba(220, 38, 38, 0.15); color: #dc2626; }
+.stats-outlier-sig.is-medium { background: rgba(217, 119, 6, 0.15); color: #d97706; }
+.stats-outlier-sig.is-low { background: rgba(8, 145, 178, 0.15); color: #0891b2; }
+.stats-outlier-sig.is-none { background: var(--surface-hi); color: var(--muted); }
+
+/* Funnel correlation scatters on /stats. Two charts side-by-side. */
+.stats-corr-meta {
+  font-size: 0.82em;
+  color: var(--muted);
+  margin-bottom: 0.8em;
+  font-style: italic;
+}
+.stats-corr-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1em;
+}
+@media (max-width: 720px) {
+  .stats-corr-grid { grid-template-columns: 1fr; }
+}
+.stats-corr-card {
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 0.8em 1em 0.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.stats-corr-head {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 0.95em;
+}
+.stats-corr-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7em;
+  font-size: 0.85em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  align-items: center;
+}
+.stats-corr-stats b { color: var(--ink); font-weight: 700; }
+.stats-corr-strength.is-real { color: var(--brand); font-weight: 700; }
+.stats-corr-strength.is-none { color: var(--muted); font-style: italic; }
+.stats-corr-slope {
+  width: 100%;
+  font-size: 0.82em;
+  color: var(--ink-soft);
+  border-top: 1px dashed var(--border-soft);
+  padding-top: 0.4em;
+  margin-top: 0.2em;
+}
+.stats-corr-chart { width: 100%; }

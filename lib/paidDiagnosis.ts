@@ -107,7 +107,7 @@ export function diagnosePaidChannels(
 
   /* 0.5 — Project-level expensive: aggregate CPL/CPS/CPM exceeds
    *      portfolio P75. Self-calibrating against your own book. */
-  if (projStats && projStats.cpl.p75 > 0 && paidLeads >= PD_ROBUST_LEADS) {
+  if (projStats && projStats.cpl.stats.p75 > 0 && paidLeads >= PD_ROBUST_LEADS) {
     const paidScheduled = paid.reduce(
       (s, c) => s + Number(c.scheduled || 0),
       0,
@@ -123,26 +123,26 @@ export function diagnosePaidChannels(
       p75: number;
       median: number;
     }> = [];
-    if (projCpl > projStats.cpl.p75)
+    if (projCpl > projStats.cpl.stats.p75)
       exceeds.push({
         label: "עלות לליד",
         proj: projCpl,
-        p75: projStats.cpl.p75,
-        median: projStats.cpl.median,
+        p75: projStats.cpl.stats.p75,
+        median: projStats.cpl.stats.median,
       });
-    if (projCps > 0 && projStats.cps.p75 > 0 && projCps > projStats.cps.p75)
+    if (projCps > 0 && projStats.cps.stats.p75 > 0 && projCps > projStats.cps.stats.p75)
       exceeds.push({
         label: "עלות לתיאום",
         proj: projCps,
-        p75: projStats.cps.p75,
-        median: projStats.cps.median,
+        p75: projStats.cps.stats.p75,
+        median: projStats.cps.stats.median,
       });
-    if (projCpm > 0 && projStats.cpm.p75 > 0 && projCpm > projStats.cpm.p75)
+    if (projCpm > 0 && projStats.cpm.stats.p75 > 0 && projCpm > projStats.cpm.stats.p75)
       exceeds.push({
         label: "עלות לביצוע",
         proj: projCpm,
-        p75: projStats.cpm.p75,
-        median: projStats.cpm.median,
+        p75: projStats.cpm.stats.p75,
+        median: projStats.cpm.stats.median,
       });
     if (exceeds.length) {
       const lines = exceeds
@@ -159,7 +159,7 @@ export function diagnosePaidChannels(
         body:
           lines +
           `<br><span style="opacity:.7">כלומר יותר מ-75% מהפרויקטים שלך זולים יותר במטריקות האלה.</span>`,
-        sample: `נמדד מול ${projStats.cpl.n} פרויקטים בתיק`,
+        sample: `נמדד מול ${projStats.cpl.stats.n} פרויקטים בתיק`,
         tip: "הפרויקט יקר ברמת-תיק — לא רק ביחס לערוץ זה או אחר. שאלות לבדיקה: (1) האם מגיעים לידים לא רלוונטיים? (2) האם הקריאייטיב בולט מול התחרות? (3) האם זהו איזור/פלח יקר שמחייב תקציב גבוה יותר? (4) האם משך הפרויקט קצר מידי והאלגוריתמים בלמידה?",
       });
     }
@@ -181,15 +181,15 @@ export function diagnosePaidChannels(
       if (tier !== "robust" && tier !== "robust-cpl") return;
       const alias = channelAlias(c.channel);
       const s = benchmarks.channels[alias];
-      if (!s || !s.cpl || s.cpl.n < 3 || s.cpl.p75 <= 0) return;
+      if (!s || !s.cpl || s.cpl.stats.n < 3 || s.cpl.stats.p75 <= 0) return;
       const cpl = Number(c.costPerLead) || 0;
-      if (cpl > s.cpl.p75) {
+      if (cpl > s.cpl.stats.p75) {
         channelBad.push({
           channel: c.channel,
           cpl,
-          p75: s.cpl.p75,
-          median: s.cpl.median,
-          n: s.cpl.n,
+          p75: s.cpl.stats.p75,
+          median: s.cpl.stats.median,
+          n: s.cpl.stats.n,
         });
       }
     });
@@ -306,10 +306,10 @@ export function diagnosePaidChannels(
   /* 4.5 — Early-warning project: high CPL vs portfolio P75 on small sample */
   if (
     projStats &&
-    projStats.cpl.p75 > 0 &&
+    projStats.cpl.stats.p75 > 0 &&
     paidLeads >= PD_DIR_LEADS &&
     paidLeads < PD_ROBUST_LEADS &&
-    paidAvgCpl > projStats.cpl.p75
+    paidAvgCpl > projStats.cpl.stats.p75
   ) {
     const chBits = paid
       .filter((c) => tierOf(c) === "directional" && Number(c.costPerLead) > 0)
@@ -325,7 +325,7 @@ export function diagnosePaidChannels(
       icon: "⚠️",
       head: "עלות לליד גבוהה — סימן מוקדם",
       body:
-        `CPL נוכחי של המדיה בתשלום: <b>${fmtIls(paidAvgCpl)}</b> — מעל P75 של התיק (${fmtIls(projStats.cpl.p75)}, חציון ${fmtIls(projStats.cpl.median)}).` +
+        `CPL נוכחי של המדיה בתשלום: <b>${fmtIls(paidAvgCpl)}</b> — מעל P75 של התיק (${fmtIls(projStats.cpl.stats.p75)}, חציון ${fmtIls(projStats.cpl.stats.median)}).` +
         (chBits.length ? `<br>${chBits.join("<br>")}` : ""),
       sample: `מדגם קטן: ${paidLeads} לידים בתשלום (פחות מ-${PD_ROBUST_LEADS}) — האות לא יציב, אך גבוה מספיק כדי לבחון.`,
       tip: `לא לסגור מסקנה עדיין, אבל כדאי להציץ עכשיו: (1) האם הלידים רלוונטיים? (2) האם הקריאייטיב/טירגוט דורש רענון? (3) האם הפרויקט בתקופת למידה של האלגוריתמים? אם התמונה נשארת אחרי ${PD_ROBUST_LEADS}+ לידים — נראה כאן התראה חמורה יותר.`,

@@ -4,20 +4,34 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
 /**
- * URL-driven project picker for the /stats page. Selecting a project
- * updates `?project=X` on the URL — the server re-renders that
- * project's metrics + diagnosis below. Searchable input so 40+
- * projects don't turn into an unmanageable native dropdown.
+ * URL-driven searchable single-select picker for the /stats page.
+ * Generic so the same component drives both the project picker
+ * (paramName="project") and the city picker (paramName="city").
  *
- * Pattern matches /morning/forecast's SearchableMultiSelectFilter,
- * trimmed to single-select.
+ * Updating the selection rewrites the search params and triggers a
+ * server re-render — the page-level data fetch keys off the same
+ * params, so the drill-down + highlights update together.
  */
-export default function StatsProjectPicker({
-  projects,
+export default function StatsPicker({
+  paramName,
+  items,
   selected,
+  icon,
+  placeholder,
+  searchPlaceholder,
 }: {
-  projects: string[];
+  /** URL query parameter to read/write — "project" or "city". */
+  paramName: string;
+  /** Available options. Order is preserved; the picker is searchable. */
+  items: string[];
+  /** Currently selected value, or null. */
   selected: string | null;
+  /** Optional icon prefix shown inside the trigger button. */
+  icon?: string;
+  /** Placeholder when nothing is selected. */
+  placeholder: string;
+  /** Placeholder inside the search input when the panel is open. */
+  searchPlaceholder?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,14 +41,14 @@ export default function StatsProjectPicker({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((p) => p.toLowerCase().includes(q));
-  }, [projects, query]);
+    if (!q) return items;
+    return items.filter((p) => p.toLowerCase().includes(q));
+  }, [items, query]);
 
-  const setProject = (name: string | null) => {
+  const setValue = (value: string | null) => {
     const params = new URLSearchParams(searchParams?.toString() || "");
-    if (name) params.set("project", name);
-    else params.delete("project");
+    if (value) params.set(paramName, value);
+    else params.delete(paramName);
     const qs = params.toString();
     setOpen(false);
     setQuery("");
@@ -53,10 +67,11 @@ export default function StatsProjectPicker({
         aria-expanded={open}
         disabled={isPending}
       >
+        {icon && <span className="stats-picker-icon" aria-hidden>{icon}</span>}
         {selected ? (
           <span className="stats-picker-current">{selected}</span>
         ) : (
-          <span className="stats-picker-placeholder">בחר פרויקט…</span>
+          <span className="stats-picker-placeholder">{placeholder}</span>
         )}
         {isPending ? (
           <span className="stats-picker-caret">⏳</span>
@@ -68,7 +83,7 @@ export default function StatsProjectPicker({
         <button
           type="button"
           className="stats-picker-clear"
-          onClick={() => setProject(null)}
+          onClick={() => setValue(null)}
           title="נקה בחירה"
           aria-label="נקה בחירה"
           disabled={isPending}
@@ -81,7 +96,7 @@ export default function StatsProjectPicker({
           <input
             type="search"
             className="stats-picker-search"
-            placeholder="חפש פרויקט…"
+            placeholder={searchPlaceholder || "חפש…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -100,7 +115,7 @@ export default function StatsProjectPicker({
                     "stats-picker-item" +
                     (p === selected ? " is-active" : "")
                   }
-                  onClick={() => setProject(p)}
+                  onClick={() => setValue(p)}
                 >
                   {p}
                 </button>
