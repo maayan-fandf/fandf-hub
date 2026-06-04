@@ -164,6 +164,60 @@ export default function MetricsIframe({ src, projectName }: Props) {
     return () => obs.disconnect();
   }, [src]);
 
+  // Iframe → hub budget-save bridge. The dashboard makes the תקציב cell
+  // editable for media-role/Felix users (see Index.html); on save it
+  // posts `fandf-save-budget` here with the project slug, channel name,
+  // new value, and the value it saw before the edit (for drift check).
+  // We POST to /api/campaigns/budget in `lookup mode` — same write path
+  // the קמפיינים → תקציבים grid uses, just with the iframe relieved of
+  // having to know sheet coordinates. The result is posted back so the
+  // iframe can confirm or rollback the cell.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onMessage = async (e: MessageEvent) => {
+      const data = e.data;
+      if (!data || data.type !== "fandf-save-budget") return;
+      const win = iframeRef.current?.contentWindow;
+      const reply = (payload: Record<string, unknown>) => {
+        try {
+          win?.postMessage({ type: "fandf-budget-saved", ...payload }, "*");
+        } catch {
+          /* iframe gone / navigation in progress — drop the reply */
+        }
+      };
+      try {
+        const res = await fetch("/api/campaigns/budget", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            slug: data.slug,
+            channel: data.channel,
+            value: data.value,
+            expectedBudget: data.expectedBudget,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        reply({
+          ok: !!json.ok,
+          channel: data.channel,
+          slug: data.slug,
+          value: data.value,
+          error: json.error || (!res.ok ? `HTTP ${res.status}` : ""),
+        });
+      } catch (err) {
+        reply({
+          ok: false,
+          channel: data.channel,
+          slug: data.slug,
+          value: data.value,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
   // Hydrate persisted height on mount — separate from the theme effect
   // so it runs exactly once and doesn't re-clamp on every src change.
   useEffect(() => {

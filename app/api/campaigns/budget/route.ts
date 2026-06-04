@@ -53,6 +53,16 @@ export async function POST(req: Request) {
   let body: {
     tab?: unknown;
     row?: unknown;
+    /** Lookup mode (used by the project-page dashboard iframe): when
+     *  `tab`+`row` aren't known to the caller, supply `slug` (the
+     *  project's slug, which is also the project's tab name on
+     *  SHEET_ID_MAIN) and `channel` (the channel name as shown in
+     *  the per-channel table). The handler then scans the project
+     *  tab's col D for the first row whose channel matches, and
+     *  proceeds with the same drift check + write the standard mode
+     *  uses. */
+    slug?: unknown;
+    channel?: unknown;
     value?: unknown;
     expectedChannel?: unknown;
     expectedBudget?: unknown;
@@ -66,16 +76,74 @@ export async function POST(req: Request) {
     );
   }
 
-  const tab = String(body.tab || "").trim();
-  const row = Number(body.row);
+  let tab = String(body.tab || "").trim();
+  let row = Number(body.row);
   const value = Number(body.value);
-  const expectedChannel = clean(body.expectedChannel);
+  let expectedChannel = clean(body.expectedChannel);
   const hasExpectedBudget =
     body.expectedBudget !== undefined && body.expectedBudget !== null;
   const expectedBudget = Number(body.expectedBudget);
+
+  // Lookup mode: resolve tab+row from slug+channel before validating.
+  // Keeps the project-page dashboard iframe out of the sheet-coordinate
+  // business — it only knows the project slug + channel name.
+  const lookupMode = !tab && body.slug && body.channel;
+  if (lookupMode) {
+    const slug = String(body.slug).trim();
+    const channelInput = clean(body.channel);
+    if (!slug || !channelInput) {
+      return NextResponse.json(
+        { ok: false, error: "slug and channel are required for lookup mode" },
+        { status: 400 },
+      );
+    }
+    try {
+      const sheets = sheetsClient(email);
+      const ssId = process.env.SHEET_ID_MAIN;
+      if (!ssId) throw new Error("SHEET_ID_MAIN is not set");
+      // Project tab name == slug. Read D2:G200 once to find the channel
+      // row + drift-check the current budget in the same RPC.
+      const ref = `'${slug.replace(/'/g, "''")}'`;
+      const range = await sheets.spreadsheets.values.get({
+        spreadsheetId: ssId,
+        range: `${ref}!D2:G200`,
+        valueRenderOption: "UNFORMATTED_VALUE",
+      });
+      const rows = range.data.values || [];
+      let matchedRow = -1;
+      for (let i = 0; i < rows.length; i++) {
+        const ch = clean(rows[i][0]);
+        if (ch && ch === channelInput) {
+          matchedRow = i + 2; // values start at row 2
+          break;
+        }
+      }
+      if (matchedRow < 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Channel "${channelInput}" not found in tab "${slug}"`,
+          },
+          { status: 404 },
+        );
+      }
+      tab = slug;
+      row = matchedRow;
+      expectedChannel = channelInput;
+    } catch (e) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Lookup failed: ${e instanceof Error ? e.message : String(e)}`,
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   if (!tab) {
     return NextResponse.json(
-      { ok: false, error: "tab is required" },
+      { ok: false, error: "tab is required (or slug+channel for lookup)" },
       { status: 400 },
     );
   }
