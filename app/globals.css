@@ -20993,3 +20993,128 @@ button.budget-need:focus-visible {
 [data-theme="dark"] .team-detail-project-count {
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* /projects/[project]/stats — internal stats baseline view.
+   Built 2026-06-04 to mirror the bottom-of-dashboard sections at full
+   page height (the dashboard iframe clips them). */
+.stats-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5em;
+  margin-top: 1em;
+}
+.stats-error {
+  margin-top: 1em;
+  padding: 1em;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 8px;
+}
+[data-theme="dark"] .stats-error {
+  background: #450a0a;
+  color: #fecaca;
+}
+.stats-backlink {
+  margin-inline-start: 0.5em;
+  color: var(--brand);
+  text-decoration: none;
+}
+.stats-backlink:hover { text-decoration: underline; }
+.stats-section {
+  padding: 1.2em 1.4em;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+}
+.stats-section h2 {
+  margin: 0 0 0.8em;
+  font-size: 1.1em;
+  color: var(--ink);
+}
+.stats-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.7em;
+}
+.stats-total-card {
+  padding: 0.7em 0.9em;
+  background: var(--surface-alt);
+  border-radius: 8px;
+  text-align: center;
+}
+.stats-total-label {
+  font-size: 0.75em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 0.3em;
+}
+.stats-total-value {
+  font-size: 1.2em;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stats-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  margin-bottom: 1em;
+}
+.stats-controls-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+}
+.stats-controls-label {
+  font-size: 0.85em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-inline-end: 0.4em;
+  min-width: 4em;
+}
+.stats-pill {
+  padding: 0.35em 0.75em;
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.stats-pill:hover { background: var(--surface-hi); }
+.stats-pill.is-active {
+  background: var(--brand);
+  color: white;
+  border-color: var(--brand);
+}
+.stats-chart-wrap {
+  width: 100%;
+  margin-top: 0.5em;
+}
+.stats-empty {
+  padding: 1.5em;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface-alt);
+  border-radius: 6px;
+}
+.stats-metric-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+/* Link FROM the project page to its stats page — sits next to the
+   dashboard iframe's section-head. */
+.stats-section-link {
+  color: var(--brand);
+  text-decoration: none;
+  font-size: 0.9em;
+  margin-inline-start: 0.6em;
+  padding: 0.25em 0.6em;
+  background: var(--surface-alt);
+  border-radius: 999px;
+  font-weight: 600;
+}
+.stats-section-link:hover { background: var(--surface-hi); }

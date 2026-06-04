@@ -639,6 +639,21 @@ export default async function ProjectOverviewPage({
           <div className="section-head" title="📊 מטריקות">
             <h2 aria-label="מטריקות">📊</h2>
             <div className="section-head-actions">
+              {/* Stats page link — internal users only. The /stats route
+                  re-checks canSeeCampaigns server-side, so this is just
+                  a visibility convenience; non-media internals clicking
+                  it get redirected to /unauthorized. Owner asked for
+                  the stats page so the bottom-of-dashboard sections
+                  are accessible at full height (2026-06-04). */}
+              {!isClientUser && (
+                <Link
+                  href={`/projects/${encodeURIComponent(projectName)}/stats`}
+                  className="stats-section-link"
+                  title="סטטיסטיקה מורחבת"
+                >
+                  📈 סטטיסטיקה
+                </Link>
+              )}
               <a
                 className="section-link section-link-icon"
                 href={dashboardOpenUrl}
