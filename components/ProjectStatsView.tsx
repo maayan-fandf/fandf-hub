@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import type { ProjectMetrics } from "@/lib/appsScript";
+import type { DiagnosisCard } from "@/lib/paidDiagnosis";
 
 /**
  * Client-side stats view. Phase 1: historical trend (monthly mini-charts
@@ -24,7 +25,12 @@ import type { ProjectMetrics } from "@/lib/appsScript";
  * channels without a round-trip.
  */
 
-type Props = { project: ProjectMetrics };
+type Props = {
+  project: ProjectMetrics;
+  /** Server-computed paid-channels diagnosis cards (priority-sorted).
+   *  Empty array = no signals fired. */
+  diagnosis: DiagnosisCard[];
+};
 
 type MetricKey = "spend" | "leads" | "scheduled" | "meetings" | "cpl" | "cps";
 
@@ -119,7 +125,7 @@ function metricValue(row: MonthAgg, metric: MetricKey): number | null {
   return row[metric as keyof MonthAgg] as number;
 }
 
-export default function ProjectStatsView({ project }: Props) {
+export default function ProjectStatsView({ project, diagnosis }: Props) {
   // All channels in the project's monthly data — used for the filter
   // checkboxes. Sorted by total spend desc so the heavy hitters are
   // first.
@@ -348,11 +354,44 @@ export default function ProjectStatsView({ project }: Props) {
         </div>
       </section>
 
-      {/* Phase 2 + 3 placeholders */}
+      {/* Phase 2 — paid-channels diagnosis */}
       <section className="stats-section">
-        <h2>אבחון מדיה בתשלום</h2>
-        <div className="stats-empty">בשלב פיתוח — יוצג בקרוב.</div>
+        <h2>🟢 אבחון מדיה בתשלום</h2>
+        {diagnosis.length === 0 ? (
+          <div className="stats-empty">
+            אין מספיק נתונים להפעלת האבחון (נדרשים לפחות 3 לידים בתשלום).
+          </div>
+        ) : (
+          <div className="stats-diag-grid">
+            {diagnosis.map((card, idx) => (
+              <article
+                key={idx}
+                className={`stats-diag-card stats-diag-${card.tone}`}
+              >
+                <header className="stats-diag-head">
+                  <span aria-hidden>{card.icon}</span> {card.head}
+                </header>
+                {/* body is HTML — built from server-controlled fragments
+                    in lib/paidDiagnosis.ts where every user-supplied
+                    value is escaped via esc(). Safe to inject. */}
+                <div
+                  className="stats-diag-body"
+                  dangerouslySetInnerHTML={{ __html: card.body }}
+                />
+                {card.sample && (
+                  <div className="stats-diag-sample">{card.sample}</div>
+                )}
+                <div
+                  className="stats-diag-tip"
+                  dangerouslySetInnerHTML={{ __html: "💡 " + card.tip }}
+                />
+              </article>
+            ))}
+          </div>
+        )}
       </section>
+
+      {/* Phase 3 placeholder */}
       <section className="stats-section">
         <h2>יעילות ערוצים</h2>
         <div className="stats-empty">

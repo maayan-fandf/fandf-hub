@@ -21118,3 +21118,57 @@ button.budget-need:focus-visible {
   font-weight: 600;
 }
 .stats-section-link:hover { background: var(--surface-hi); }
+
+/* Paid-channels diagnosis cards on the stats page (phase 2). Tones
+   borrowed from the dashboard's .paid-diag-card / .pd-* convention so
+   the visual language matches across surfaces. */
+.stats-diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 0.8em;
+}
+.stats-diag-card {
+  padding: 0.9em 1em;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+.stats-diag-head {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 0.95em;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.stats-diag-body {
+  color: var(--ink-soft);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.stats-diag-body b { color: var(--ink); }
+.stats-diag-sample {
+  font-size: 0.78em;
+  color: var(--muted);
+  font-style: italic;
+}
+.stats-diag-tip {
+  font-size: 0.85em;
+  color: var(--ink-soft);
+  padding: 0.5em 0.7em;
+  background: var(--surface);
+  border-radius: 6px;
+  border-inline-start: 2px solid var(--brand);
+  line-height: 1.5;
+}
+.stats-diag-good  { border-color: rgba(22,163,74,0.4); background: #f0fdf4; }
+.stats-diag-warn  { border-color: rgba(217,119,6,0.4); background: #fffbeb; }
+.stats-diag-bad   { border-color: rgba(220,38,38,0.4); background: #fef2f2; }
+.stats-diag-watch { border-color: rgba(59,130,246,0.4); background: #eff6ff; }
+[data-theme="dark"] .stats-diag-good  { background: rgba(22,163,74,0.08); border-color: rgba(22,163,74,0.3); }
+[data-theme="dark"] .stats-diag-warn  { background: rgba(217,119,6,0.08); border-color: rgba(217,119,6,0.3); }
+[data-theme="dark"] .stats-diag-bad   { background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.3); }
+[data-theme="dark"] .stats-diag-watch { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.3); }

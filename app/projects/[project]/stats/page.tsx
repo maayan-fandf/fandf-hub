@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { getProjectMetrics } from "@/lib/appsScript";
+import { getPortfolioBenchmarks } from "@/lib/portfolioBenchmarks";
+import { diagnosePaidChannels } from "@/lib/paidDiagnosis";
 import ProjectStatsView from "@/components/ProjectStatsView";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +49,13 @@ export default async function ProjectStatsPage({
   const allowed = await canSeeCampaigns(email).catch(() => false);
   if (!allowed) redirect("/unauthorized");
 
-  const res = await getProjectMetrics(projectName);
+  // Project metrics + portfolio benchmarks in parallel — benchmarks
+  // are computed off ALL CLIENTS and cached for 10 min, so most calls
+  // hit the unstable_cache layer.
+  const [res, benchmarks] = await Promise.all([
+    getProjectMetrics(projectName),
+    getPortfolioBenchmarks().catch(() => null),
+  ]);
   if (!res.ok) {
     return (
       <main className="container">
@@ -89,7 +97,10 @@ export default async function ProjectStatsPage({
           </div>
         </div>
       </header>
-      <ProjectStatsView project={res.project} />
+      <ProjectStatsView
+        project={res.project}
+        diagnosis={diagnosePaidChannels(res.project.channels, benchmarks)}
+      />
     </main>
   );
 }
