@@ -1448,16 +1448,16 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   padding: 1rem 0.5rem;
 }
 .loading-video {
-  /* Circular crop — the source video has a logo circle centered in a
-     near-square frame. `object-fit: contain` keeps the WHOLE frame
-     visible inside the rounded box (gear top-left, paperclip endcaps,
-     bottom cable motif all read), and the border-radius: 50% mask
-     hides the empty corners. The background is a warm beige tuned to
-     the metallic-tan inner frame in the video so the contain-
-     letterboxed strips blend into the video's own frame instead of
-     revealing the page background color. Sizes tightened 2026-06-04
-     (440→520) after the previous pass still clipped the gear + cable
-     details that sit near the video's frame edges. */
+  /* Circular crop — `object-fit: cover` scales the video so its smaller
+     dimension fills the circle (no letterbox strips). The source is
+     slightly portrait, so cover zooms ~1.6× and crops a thin band off
+     the top + bottom — but the central metallic-disc + paperclip
+     subject stays comfortably inside the inscribed circle. The mid-
+     gray background only shows in edge cases (slow first-frame paint),
+     and it's tuned to the metallic frame so it disappears into the
+     video. Sizing path: 360→440→520, settled at 520 with cover so the
+     subject reads at the same visual weight as the rest of the hub's
+     glassy "card" chrome. */
   width: min(520px, 86vw);
   aspect-ratio: 1 / 1;
   height: auto;
@@ -1465,16 +1465,17 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--loading-video-bg);
-  object-fit: contain;
+  object-fit: cover;
 }
 .loading-video-wrap.is-compact .loading-video {
   width: min(300px, 65vw);
   max-height: 42vh;
 }
-/* Beige tone matched to the metallic-tan frame in loading.mp4 so the
-   contain-letterboxed corners disappear into the video's own frame. */
-:root { --loading-video-bg: #d4c5a8; }
-html[data-theme="dark"] { --loading-video-bg: #b8a98a; }
+/* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
+   in the brief moment before the first video frame paints. Same color
+   in light/dark since the video itself isn't theme-aware. */
+:root { --loading-video-bg: #848585; }
+html[data-theme="dark"] { --loading-video-bg: #848585; }
 .loading-video-label {
   font-size: 0.95rem;
   color: var(--ink-soft, var(--muted));
