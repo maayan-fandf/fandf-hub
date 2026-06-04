@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
-import { getBudgetMaster } from "@/lib/budgetMaster";
-import { driveFolderOwner } from "@/lib/sa";
+import { sheetsClient, driveFolderOwner } from "@/lib/sa";
+import { classifyChannel } from "@/lib/budgetTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -56,43 +56,210 @@ export async function GET(req: Request) {
   }
 
   try {
-    // The master is React-cached per (subjectEmail) within the request,
-    // so multiple lookups on the same page (here, plus the budgets page
-    // if it loads) hit the same single read.
-    const master = await getBudgetMaster(driveFolderOwner());
-    const proj = master.projects.find(
-      (p) => p.tab.toLowerCase() === slug.toLowerCase(),
-    );
-    if (!proj) {
+    const summary = await readSingleProjectBudget(slug);
+    if (!summary) {
       return NextResponse.json(
-        { ok: false, error: `Project tab "${slug}" not found in budget master` },
+        { ok: false, error: `Project tab "${slug}" not found or unreadable` },
         { status: 404 },
       );
     }
-    return NextResponse.json({
-      ok: true,
-      slug: proj.tab,
-      name: proj.name,
-      e3: proj.e3,
-      allocated: proj.allocated,
-      delta: proj.delta,
-      reconStatus: proj.reconStatus,
-      totalDays: proj.totalDays,
-      remainingDays: proj.remainingDays,
-      channels: proj.rows.map((r) => ({
-        row: r.row,
-        channel: r.channel,
-        platform: r.platform,
-        budget: r.budget,
-        spend: r.spend,
-        pacingRatio: r.pacingRatio,
-        ended: r.ended,
-      })),
-    });
+    return NextResponse.json({ ok: true, ...summary });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },
       { status: 500 },
     );
   }
+}
+
+/* ── single-tab fast path ─────────────────────────────────────────────
+   The full master loader (`loadBudgetMaster`) fans out 4-5 parallel
+   queries (Keys, campaigns, media plan, 7-day spend, Google account
+   IDs) + a batchGet across every project tab. Good for the budgets
+   page where the whole portfolio is rendered, terrible for the
+   dashboard strip where we want one project's E3 + activity table.
+   This reader does just that — one Sheets values.get for A1:J60 of
+   the one tab. Same parsing rules as the full loader so the response
+   shape stays compatible. */
+
+type SingleSummary = {
+  slug: string;
+  name: string;
+  e3: number;
+  allocated: number;
+  delta: number;
+  reconStatus: "ok" | "over" | "under" | "no-target";
+  totalDays: number;
+  remainingDays: number;
+  channels: Array<{
+    row: number;
+    channel: string;
+    platform: string;
+    budget: number;
+    spend: number;
+    pacingRatio: number;
+    ended: boolean;
+  }>;
+};
+
+const num = (v: unknown): number => {
+  const n = Number(String(v ?? "").replace(/[₪,\s%]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+const cleanStr = (v: unknown) =>
+  String(v ?? "")
+    .replace(/[​-‏‪-‮⁠­﻿\uD800-\uDFFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+function parseSheetDate(v: unknown): string {
+  if (v == null || v === "") return "";
+  const s = String(v).trim();
+  // ISO-ish first
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  // DD/MM/YYYY (most common in the sheet)
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    const dd = dmy[1].padStart(2, "0");
+    const mm = dmy[2].padStart(2, "0");
+    return `${dmy[3]}-${mm}-${dd}`;
+  }
+  return "";
+}
+
+function todayInIsrael(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  const d = parts.find((p) => p.type === "day")?.value ?? "";
+  return `${y}-${m}-${d}`;
+}
+
+function dayDiff(fromIso: string, toIso: string): number {
+  if (!fromIso || !toIso) return 0;
+  const a = Date.parse(fromIso + "T00:00:00Z");
+  const b = Date.parse(toIso + "T00:00:00Z");
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.round((b - a) / 86400000);
+}
+
+async function readSingleProjectBudget(
+  slug: string,
+): Promise<SingleSummary | null> {
+  const sheets = sheetsClient(driveFolderOwner());
+  const ssId = process.env.SHEET_ID_MAIN;
+  if (!ssId) throw new Error("SHEET_ID_MAIN is not set");
+  const ref = `'${slug.replace(/'/g, "''")}'`;
+  let resp;
+  try {
+    resp = await sheets.spreadsheets.values.get({
+      spreadsheetId: ssId,
+      range: `${ref}!A1:J60`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+  } catch {
+    return null;
+  }
+  const grid = (resp.data.values ?? []) as unknown[][];
+  if (!grid.length) return null;
+
+  const cell = (r: number, c: number) => grid[r]?.[c];
+
+  const e3 = num(cell(2, 4)); // E3
+  const startIso = parseSheetDate(cell(3, 4)); // E4
+  const endIso = parseSheetDate(cell(4, 4)); // E5
+  const totalDays = Math.max(1, dayDiff(startIso, endIso) || 30);
+  const today = todayInIsrael();
+  const remainingDays = Math.max(0, dayDiff(today, endIso));
+
+  // Locate the activity-table header (col B "התחלה" + col D "מזהה BMBY").
+  let headerRow = -1;
+  for (let r = 1; r < grid.length; r++) {
+    if (cleanStr(cell(r, 1)) === "התחלה" && cleanStr(cell(r, 3)) === "מזהה BMBY") {
+      headerRow = r;
+      break;
+    }
+  }
+
+  const channels: SingleSummary["channels"] = [];
+  let allocated = 0;
+  if (headerRow >= 0) {
+    let lastChannel = "";
+    for (let r = headerRow + 1; r < grid.length; r++) {
+      const b = cleanStr(cell(r, 1));
+      if (b === "total") break;
+      let channel = cleanStr(cell(r, 3));
+      const budget = num(cell(r, 6)); // G
+      const spend = num(cell(r, 7)); // H
+      // Forward-fill the channel across merged BMBY label rows.
+      if (!channel) {
+        const hasData =
+          budget !== 0 || spend !== 0 || !!b || !!cleanStr(cell(r, 2));
+        if (lastChannel && hasData) channel = lastChannel;
+        else continue;
+      }
+      lastChannel = channel;
+      const platform = classifyChannel(channel);
+      const rowStart = parseSheetDate(cell(r, 1)) || startIso;
+      const rowEnd = parseSheetDate(cell(r, 2)) || endIso;
+      const rowTotal = Math.max(1, dayDiff(rowStart, rowEnd) || totalDays);
+      const rowRemaining = Math.max(0, dayDiff(today, rowEnd));
+      const rowElapsedFrac = Math.min(
+        1,
+        Math.max(0, rowTotal - rowRemaining) / rowTotal,
+      );
+      const ended = !!rowEnd && rowEnd < today;
+      const expected = budget * rowElapsedFrac;
+      const pacingRatio = expected > 0 ? spend / expected : 0;
+      channels.push({
+        row: r + 1, // 1-based
+        channel,
+        platform,
+        budget,
+        spend,
+        pacingRatio,
+        ended,
+      });
+      // Mirror the master's reconciliation: sum the four paid platforms
+      // toward `allocated`. "other" channels (פניה טלפונית / שילוט etc.)
+      // are tracked in the rows but don't count toward the E3 balance.
+      if (
+        platform === "google" ||
+        platform === "facebook" ||
+        platform === "taboola" ||
+        platform === "outbrain"
+      ) {
+        allocated += budget;
+      }
+    }
+  }
+
+  const delta = allocated - e3;
+  const reconStatus: SingleSummary["reconStatus"] =
+    e3 <= 0
+      ? "no-target"
+      : Math.abs(delta) < 1
+        ? "ok"
+        : delta > 0
+          ? "over"
+          : "under";
+
+  return {
+    slug,
+    name: slug,
+    e3,
+    allocated,
+    delta,
+    reconStatus,
+    totalDays,
+    remainingDays,
+    channels,
+  };
 }
