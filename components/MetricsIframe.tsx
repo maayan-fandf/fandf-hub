@@ -218,11 +218,12 @@ export default function MetricsIframe({ src, projectName }: Props) {
       channel: string,
       value: number,
       expectedBudget: number,
+      distribute: boolean,
     ) => {
       const res = await fetch("/api/campaigns/budget", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug, channel, value, expectedBudget }),
+        body: JSON.stringify({ slug, channel, value, expectedBudget, distribute }),
       });
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -244,6 +245,7 @@ export default function MetricsIframe({ src, projectName }: Props) {
             String(data.channel),
             Number(data.value),
             Number(data.expectedBudget),
+            !!data.distribute,
           );
           reply(src, {
             type: "fandf-budget-saved",
@@ -299,6 +301,7 @@ export default function MetricsIframe({ src, projectName }: Props) {
               String(it.channel || ""),
               Number(it.value),
               Number(it.expectedBudget),
+              !!it.distribute,
             );
             results.push({
               channel: it.channel,

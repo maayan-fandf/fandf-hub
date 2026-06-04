@@ -66,6 +66,21 @@ export async function POST(req: Request) {
     value?: unknown;
     expectedChannel?: unknown;
     expectedBudget?: unknown;
+    /** Distribute mode (project-page dashboard, merged channels only):
+     *  some channel labels (e.g. Facebook on אחוזת אפרידר) span 2+
+     *  merged BMBY rows on the project tab, one per audience/sub-
+     *  campaign. The dashboard collapses them into one aggregated row
+     *  with `c.subCampaigns.length > 1`. A single-row write would
+     *  silently leave the other sub-rows alone and break the total.
+     *  When `distribute: true`, the handler:
+     *    (a) finds ALL matching D rows (not just the first),
+     *    (b) drift-checks expectedBudget against their SUM,
+     *    (c) splits `value` across them proportionally to each row's
+     *        current G, rounded to ₪100; the rounding residual lands
+     *        on the largest sub-row so the sum ties to `value` exactly,
+     *    (d) writes all G values in one batchUpdate.
+     *  When `distribute: false` (or absent), behavior is unchanged. */
+    distribute?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -88,6 +103,7 @@ export async function POST(req: Request) {
   // Keeps the project-page dashboard iframe out of the sheet-coordinate
   // business — it only knows the project slug + channel name.
   const lookupMode = !tab && body.slug && body.channel;
+  const distribute = !!body.distribute;
   if (lookupMode) {
     const slug = String(body.slug).trim();
     const channelInput = clean(body.channel);
@@ -110,15 +126,21 @@ export async function POST(req: Request) {
         valueRenderOption: "UNFORMATTED_VALUE",
       });
       const rows = range.data.values || [];
-      let matchedRow = -1;
+      // Find ALL matching rows in col D (not just the first). For
+      // single-channel rows there's exactly one match → existing
+      // behavior. For merged channels (e.g. Facebook split into
+      // 45-60 / 60+ audiences) there are multiple matches.
+      const matchedRows: Array<{ row: number; budget: number }> = [];
       for (let i = 0; i < rows.length; i++) {
         const ch = clean(rows[i][0]);
         if (ch && ch === channelInput) {
-          matchedRow = i + 2; // values start at row 2
-          break;
+          matchedRows.push({
+            row: i + 2,
+            budget: Number(rows[i][3]) || 0,
+          });
         }
       }
-      if (matchedRow < 0) {
+      if (matchedRows.length === 0) {
         return NextResponse.json(
           {
             ok: false,
@@ -127,8 +149,98 @@ export async function POST(req: Request) {
           { status: 404 },
         );
       }
+
+      // Distribute mode — split `value` proportionally across all
+      // matched sub-rows. Returns its own response and bypasses the
+      // single-row write path below.
+      if (distribute && matchedRows.length > 1) {
+        if (!Number.isFinite(value) || value < 0 || value > 100_000_000) {
+          return NextResponse.json(
+            { ok: false, error: "value out of range" },
+            { status: 400 },
+          );
+        }
+        const currentTotal = matchedRows.reduce((s, r) => s + r.budget, 0);
+        // Drift guard on the SUM. The expected total the client saw
+        // must match what's currently on the sheet — otherwise some
+        // other writer moved a sub-row between page load and apply.
+        if (hasExpectedBudget) {
+          const driftAmt = Math.abs(currentTotal - expectedBudget);
+          if (driftAmt >= 1) {
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `Distributed total changed (expected ₪${Math.round(expectedBudget)}, found ₪${Math.round(currentTotal)} across ${matchedRows.length} sub-rows). Reload and retry.`,
+              },
+              { status: 409 },
+            );
+          }
+        }
+        // Per-row split, rounded to ₪100. If currentTotal is 0 (all
+        // sub-rows blank) we split evenly across N rows.
+        const splits = matchedRows.map((mr) => {
+          const share =
+            currentTotal > 0 ? mr.budget / currentTotal : 1 / matchedRows.length;
+          return {
+            row: mr.row,
+            oldBudget: mr.budget,
+            newBudget: Math.round((value * share) / 100) * 100,
+          };
+        });
+        // Rounding residual lands on the largest sub-row so Σ ties
+        // exactly to `value`.
+        const sumSplits = splits.reduce((s, x) => s + x.newBudget, 0);
+        const residual = Math.round(value - sumSplits);
+        if (Math.abs(residual) >= 1 && splits.length) {
+          let largestIdx = 0;
+          for (let i = 1; i < splits.length; i++) {
+            if (splits[i].newBudget > splits[largestIdx].newBudget) largestIdx = i;
+          }
+          splits[largestIdx].newBudget += residual;
+        }
+        try {
+          await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: ssId,
+            requestBody: {
+              valueInputOption: "RAW",
+              data: splits.map((s) => ({
+                range: `${ref}!G${s.row}`,
+                values: [[s.newBudget]],
+              })),
+            },
+          });
+          revalidateBudgetMaster();
+          return NextResponse.json({
+            ok: true,
+            tab: slug,
+            value,
+            channel: channelInput,
+            distributed: splits.map((s) => ({
+              row: s.row,
+              oldBudget: s.oldBudget,
+              newBudget: s.newBudget,
+            })),
+          });
+        } catch (e) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: e instanceof Error ? e.message : String(e),
+            },
+            { status: 500 },
+          );
+        }
+      }
+
+      // Non-distribute lookup: write to the first match (existing
+      // behavior). If multiple sub-rows exist and the caller didn't
+      // opt into distribute, we keep the historical behavior so
+      // single-channel rows continue to work as before — but the
+      // dashboard's edit handler now sends distribute:true for
+      // merged channels, so this fall-through only fires for true
+      // single-row channels.
       tab = slug;
-      row = matchedRow;
+      row = matchedRows[0].row;
       expectedChannel = channelInput;
     } catch (e) {
       return NextResponse.json(
