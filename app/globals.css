@@ -1471,19 +1471,14 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   max-height: 42vh;
 }
 .loading-video {
-  /* `object-fit: cover` with object-position: 50% 30% — the source
-     video is portrait (720x1280); cover fills the mask's WIDTH at
-     720→520 scale and clips the excess height. With the position
-     biased toward the upper-third (30%), the visible crop is the
-     disc + gear + paperclip section, and the source's dark
-     bottom-frame (cable + platform) gets clipped below the mask edge.
-     Iteration: contain scale 1.5 (gear clipped at corner), cover
-     anchored top (showed too much empty top frame). 50%/30% is the
-     sweet spot. */
+  /* Match Maayan's drawing — full video frame rendered inside the
+     gray circular mask, no cropping, no zoom. The video's natural
+     aspect (portrait, 720x1280) shows at full height; the mask's
+     gray background fills the sides where contain letterboxes. */
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: 50% 30%;
+  object-fit: contain;
+  object-position: center;
 }
 /* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
    in the brief moment before the first video frame paints. Same color
