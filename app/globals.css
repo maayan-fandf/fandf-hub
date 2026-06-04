@@ -1447,37 +1447,37 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   min-height: 0;
   padding: 1rem 0.5rem;
 }
-/* The mask wrapper holds the circle outline + clips the scaled video
-   inside. Sizing here, not on the video, so the visible loader's
-   diameter stays the same across the codebase even when we tighten
-   the inner crop via transform: scale(). */
+/* Mask wrapper — holds the rounded outline + clips the video inside.
+   Sizing lives here, not on the video, so a single class controls the
+   loader's footprint everywhere. */
 .loading-video-mask {
   width: min(520px, 86vw);
-  aspect-ratio: 1 / 1;
+  /* Aspect matches the video's native 4:5 (1080x1350) so cover crops
+     nothing visible. */
+  aspect-ratio: 4 / 5;
   height: auto;
-  max-height: 75vh;
-  border-radius: 50%;
+  max-height: 85vh;
+  /* Pixel value (not %) so the corner radius is uniform horizontally
+     and vertically — % derives separately from width and height and
+     produces visibly elliptical curves on a non-square box. */
+  border-radius: 56px;
   overflow: hidden;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--loading-video-bg);
-  /* `position: relative` so the inner video can be positioned/scaled
-     deterministically. `display: block` overrides the default inline
-     flow which interacts oddly with aspect-ratio. */
   position: relative;
   display: block;
 }
 .loading-video-wrap.is-compact .loading-video-mask {
   width: min(300px, 65vw);
-  max-height: 42vh;
+  max-height: 50vh;
+  border-radius: 32px;
 }
 .loading-video {
-  /* Match Maayan's drawing — full video frame rendered inside the
-     gray circular mask, no cropping, no zoom. The video's natural
-     aspect (portrait, 720x1280) shows at full height; the mask's
-     gray background fills the sides where contain letterboxes. */
+  /* `cover` fills the mask with the video; since the mask's aspect
+     matches the source, no content gets cropped. */
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   object-position: center;
 }
 /* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
