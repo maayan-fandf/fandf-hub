@@ -1471,22 +1471,19 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   max-height: 42vh;
 }
 .loading-video {
-  /* `object-fit: contain` shows the full source frame; transform:
-     scale(1.5) enlarges it inside the mask so the central disc fills
-     the inscribed circle. The mask's overflow:hidden + border-radius
-     clip the parts that overflow the box. Center object-position
-     keeps the disc centered — anchoring top/bottom pushed the gear
-     off-screen or exposed the dark cable section in earlier
-     iterations.
-     History: 1.0 contain (too small) → 1.2 (matched the disc edge,
-     gear visible, but cable + platform showed at the bottom of the
-     visible circle) → 1.5 contain (crops out the source's platform
-     section; disc is the dominant content). */
+  /* `object-fit: cover` with object-position: 50% 30% — the source
+     video is portrait (720x1280); cover fills the mask's WIDTH at
+     720→520 scale and clips the excess height. With the position
+     biased toward the upper-third (30%), the visible crop is the
+     disc + gear + paperclip section, and the source's dark
+     bottom-frame (cable + platform) gets clipped below the mask edge.
+     Iteration: contain scale 1.5 (gear clipped at corner), cover
+     anchored top (showed too much empty top frame). 50%/30% is the
+     sweet spot. */
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  object-position: center;
-  transform: scale(1.5);
+  object-fit: cover;
+  object-position: 50% 30%;
 }
 /* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
    in the brief moment before the first video frame paints. Same color
