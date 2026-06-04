@@ -622,27 +622,6 @@ export default async function ProjectOverviewPage({
         </Suspense>
       )}
 
-      {/* Latest פריסה (spread / deployment sheet) — the most-recently-
-          updated Google Sheet inside `<project>/פריסות/`. Internal-only:
-          clients shouldn't see internal spreads (those are working
-          drafts before they're shared via the customer-emails flow).
-          Renders as null when the folder doesn't exist or has no
-          sheets, so projects that don't follow the convention silently
-          degrade. Suspense keeps the Drive lookup off the critical
-          render path.
-          Project-type gate: only real-estate projects have פריסות. */}
-      {!isClientUser && isRealEstateProject && (
-        <Suspense fallback={null}>
-          <LatestPrisotCard
-            subjectEmail={userEmail}
-            company={companyForDashboard}
-            project={projectName}
-            clientEmails={projectClientEmails}
-            people={peopleData?.ok ? peopleData.people : []}
-          />
-        </Suspense>
-      )}
-
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
           heading is enough.
@@ -719,6 +698,30 @@ export default async function ProjectOverviewPage({
             subjectEmail={userEmail}
             project={projectName}
             monthFilter={monthOverride}
+          />
+        </Suspense>
+      )}
+
+      {/* Latest פריסה (spread / deployment sheet) — the most-recently-
+          updated Google Sheet inside `<project>/פריסות/`. Internal-only:
+          clients shouldn't see internal spreads (those are working
+          drafts before they're shared via the customer-emails flow).
+          Renders as null when the folder doesn't exist or has no
+          sheets, so projects that don't follow the convention silently
+          degrade. Suspense keeps the Drive lookup off the critical
+          render path.
+          Project-type gate: only real-estate projects have פריסות.
+          Owner moved this from above the iframe to right above
+          "מחירים מפורסמים" 2026-06-04 — both are internal-only
+          bottom-of-page reference shelves, makes sense to group them. */}
+      {!isClientUser && isRealEstateProject && (
+        <Suspense fallback={null}>
+          <LatestPrisotCard
+            subjectEmail={userEmail}
+            company={companyForDashboard}
+            project={projectName}
+            clientEmails={projectClientEmails}
+            people={peopleData?.ok ? peopleData.people : []}
           />
         </Suspense>
       )}
