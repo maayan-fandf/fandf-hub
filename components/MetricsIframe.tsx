@@ -182,7 +182,22 @@ export default function MetricsIframe({ src, projectName }: Props) {
     const reply = (payload: Record<string, unknown>) => {
       const win = iframeRef.current?.contentWindow;
       try {
+        // The Apps Script HTML response is a wrapper page at
+        // script.google.com that hosts a sandboxed iframe at
+        // googleusercontent.com (where our dashboard listener lives).
+        // Some Apps Script wrappers forward postMessages through to
+        // the sandbox; others don't. Belt-and-suspenders: post to the
+        // wrapper AND iterate its child frames and post to each.
+        // postMessage is allowed cross-origin even when property access
+        // is blocked, so this Just Works for reaching the sandbox.
         win?.postMessage(payload, "*");
+        const frames = win?.frames;
+        if (frames) {
+          const n = frames.length;
+          for (let i = 0; i < n; i++) {
+            try { frames[i]?.postMessage(payload, "*"); } catch { /* skip */ }
+          }
+        }
       } catch {
         /* iframe gone / navigation in progress */
       }
