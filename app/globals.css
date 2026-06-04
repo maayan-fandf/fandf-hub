@@ -1475,15 +1475,19 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
      central disc (gear, paperclip, decorative motifs). The scale is
      applied here on the inner element so the mask's outer circle
      stays at its declared size — without the wrapper this would
-     enlarge the whole loader. Iteration: 1.0 (cover only) showed the
-     full frame letterboxed; 1.4 zooms in so the disc fills the
-     inscribed circle, matching the green-line crop Maayan drew. */
+     enlarge the whole loader. Iteration:
+       1.0  cover only — too much empty margin around the disc
+       1.4  disc filled the inscribed circle BUT the gear at the
+            disc's upper-left clipped past the mask edge
+       1.2  middle ground — disc is tight inside the circle and the
+            gear sits inside the inscribed area. Calibrated to the
+            geometric ceiling: gear's outer ring was at ~80% of the
+            inscribed radius pre-scale, so 1.25 puts it right on the
+            mask edge → use 1.2 for a safety margin. */
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scale(1.4);
-  /* The shadow defined on .loading-video-mask is what we want; the
-     video itself shouldn't carry its own shadow. */
+  transform: scale(1.2);
 }
 /* Mid-gray tuned to the metallic frame in loading.mp4 — only visible
    in the brief moment before the first video frame paints. Same color
