@@ -647,7 +647,7 @@ export default async function ProjectOverviewPage({
                   are accessible at full height (2026-06-04). */}
               {!isClientUser && (
                 <Link
-                  href={`/projects/${encodeURIComponent(projectName)}/stats`}
+                  href={`/stats?project=${encodeURIComponent(projectName)}`}
                   className="stats-section-link"
                   title="סטטיסטיקה מורחבת"
                 >
