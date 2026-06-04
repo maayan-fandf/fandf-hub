@@ -1448,16 +1448,18 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   padding: 1rem 0.5rem;
 }
 .loading-video {
-  /* Circular crop. The geometry trap here: in a 1:1 box with a 50%
-     border-radius mask, the inscribed circle bites into ALL four box
-     corners. Any video pixel that sits in a corner gets clipped — and
-     loading.mp4 puts the gear motif right at the top-left corner of
-     its frame, so `object-fit: cover` clips the gear's outer edge.
-     `object-fit: contain` shows the whole video frame and any
-     letterbox shows as the mid-gray background (#848585, matched to
-     the metallic frame) so the strips read as part of the frame.
-     Iteration: 360 → 440 → 520 → contain (which preserves the gear at
-     520). */
+  /* Circular crop. The source video is portrait — the central disc
+     (gear, paperclip, etc.) sits in the middle ~50% of the height
+     with empty/decorative space above and below. `object-fit: cover`
+     scales the video so its narrower dimension fills the box width,
+     and the centered crop window lands on exactly the disc. The
+     border-radius: 50% then masks the box corners so the disc reads
+     as the whole element. The mid-gray background is only visible
+     before the first frame paints; once the video runs it's covered
+     by the actual frame. Iteration history:
+       360→440→520 contain (too small, gray bars on sides)
+       520 cover with prior portrait video (gear corner clipped)
+       520 cover with new video (disc is centered, no corner issue) */
   width: min(520px, 86vw);
   aspect-ratio: 1 / 1;
   height: auto;
@@ -1465,7 +1467,7 @@ html[dir="rtl"] .top-progress { --top-progress-origin: right; }
   border-radius: 50%;
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.25);
   background: var(--loading-video-bg);
-  object-fit: contain;
+  object-fit: cover;
 }
 .loading-video-wrap.is-compact .loading-video {
   width: min(300px, 65vw);
