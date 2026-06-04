@@ -471,13 +471,13 @@ export default async function ProjectOverviewPage({
               + משימה חדשה
             </Link>
           )}
-          {/* Month-override picker — promoted from the iframe section
-              header to here so it acts as a page-level filter (it
-              gates the dashboard iframe + CRM funnel card + Clarity
-              section all at once). Hidden for client users to keep
-              the chrome minimal — they don't have month-toggle
-              workflows on the iframe today. */}
-          {!isClientUser && dashboardEmbedUrl && isRealEstateProject && (
+          {/* Month-override picker — page-level filter that gates the
+              dashboard iframe + CRM funnel card + Clarity section all
+              at once. Available to clients too (2026-06-04 per Maayan)
+              — letting them rewind to a past month is a legitimate
+              read use case, and the picker's UI doesn't expose any
+              internal-only data. */}
+          {dashboardEmbedUrl && isRealEstateProject && (
             <Suspense fallback={null}>
               <DashboardMonthOverrideSlot current={monthOverride} />
             </Suspense>
