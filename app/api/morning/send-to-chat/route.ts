@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
-import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
-import { parseSpaceIdFromWebhook, postMessage } from "@/lib/chat";
+import { createMentionDirect } from "@/lib/commentsWriteDirect";
 import { dismissMorningSignal } from "@/lib/appsScript";
 
 export const dynamic = "force-dynamic";
@@ -10,25 +9,33 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/morning/send-to-chat
  *
- * Posts a formatted alert summary into a project's internal Google Chat
- * space (the `Chat Space` column on Keys, col L) and then auto-dismisses
- * the alert with `reason="posted_to_chat"` so it dims for the team and
- * doesn't keep firing.
+ * Posts a formatted alert summary into the project's INTERNAL team
+ * thread (the "פנימי" tab on the project page — Firestore comments
+ * with `scope: "internal"`, NOT the old Google Chat). Then auto-
+ * dismisses the alert with `reason="posted_to_internal_chat:<id>"`
+ * so the row dims for the team and doesn't keep firing.
+ *
+ * Was originally posting to Google Chat via Keys col L's "Chat Space"
+ * link — owner pointed out 2026-06-05 that the Google Chat surface is
+ * dead and the active internal chat is the hub's own Comments-tab on
+ * the project page. This endpoint keeps the route URL for stability
+ * (no frontend change) but swaps the backend.
  *
  * Body:
  *   {
- *     signalKey: string,    // for the auto-dismiss
- *     projectName: string,  // resolves the chat space via Keys
+ *     signalKey: string,
+ *     projectName: string,
  *     severity: "severe"|"warn"|"info",
- *     title: string,        // alert headline
- *     detail: string,       // alert body
- *     url?: string          // optional deep-link the team can click
+ *     title: string,
+ *     detail: string,
+ *     url?: string
  *   }
  *
- * Returns: { ok: true, messageName, spaceId, dismissed }
+ * Returns: { ok, commentId, dismissed }
  *
- * Auth: NextAuth session + canSeeCampaigns. Alerts are an internal-team
- * surface; clients can't fire this.
+ * Auth: NextAuth session + canSeeCampaigns. Alerts are an internal-
+ * team surface; clients can't fire this. createMentionDirect itself
+ * also enforces that only F&F emails may open an internal thread.
  */
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -67,102 +74,63 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Resolve the project's Chat Space (col L, possibly legacy
-  // "Chat Webhook"). Keys row matched by the project name in col A.
-  let spaceId = "";
+  // Format the message — severity emoji + title + detail + deep link.
+  // No "shared by X" line because createMentionDirect stamps the
+  // author automatically (the comment carries `created_by`).
+  const sevEmoji =
+    severity === "severe" ? "🔥" : severity === "warn" ? "⚠️" : "📅";
+  const lines = [
+    `${sevEmoji} ${title}`,
+    detail || "",
+    url ? `🔗 ${url}` : "",
+    "",
+    "_(שותף אוטומטית מההתראות)_",
+  ].filter((s) => s.length > 0);
+  const text = lines.join("\n");
+
+  let commentId = "";
   try {
-    const { headers, rows } = await readKeysCached(email);
-    const iProject = headers.indexOf("פרוייקט");
-    const iChat = findChatSpaceColumnIndex(headers);
-    if (iProject < 0 || iChat < 0) {
+    const result = await createMentionDirect(email, {
+      project: projectName,
+      body: text,
+      assignees: [], // No specific mentions — just a team-wide ping
+      due: "",
+      scope: "internal",
+    });
+    if (!result.ok) {
       return NextResponse.json(
-        { ok: false, error: "Keys: missing פרוייקט or Chat Space column" },
+        { ok: false, error: "createMentionDirect returned not-ok" },
         { status: 500 },
       );
     }
-    const projectRow = rows.find((r) => String(r[iProject] ?? "").trim() === projectName);
-    if (!projectRow) {
-      return NextResponse.json(
-        { ok: false, error: `Project "${projectName}" not found in Keys` },
-        { status: 404 },
-      );
-    }
-    const raw = String(projectRow[iChat] ?? "").trim();
-    if (!raw) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Project has no Chat Space configured. Add a Chat Space link on the Keys sheet.",
-        },
-        { status: 422 },
-      );
-    }
-    spaceId = parseSpaceIdFromWebhook(raw);
-    if (!spaceId) {
-      return NextResponse.json(
-        { ok: false, error: "Could not parse a Chat space id from the Keys row" },
-        { status: 422 },
-      );
-    }
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
-  }
-
-  // Format the chat message — severity emoji + title + detail + a
-  // human-readable "shared by" line + the deep link when present.
-  const sevEmoji =
-    severity === "severe" ? "🔥" : severity === "warn" ? "⚠️" : "📅";
-  const sharedBy = (session?.user?.name || email).split("@")[0];
-  const lines = [
-    `${sevEmoji} ${title}`,
-    detail ? detail : "",
-    url ? `🔗 ${url}` : "",
-    `— שותף ע״י ${sharedBy} מהלוח של ${projectName}`,
-  ].filter(Boolean);
-  const text = lines.join("\n");
-
-  let messageName = "";
-  try {
-    messageName = await postMessage(email, spaceId, text);
+    commentId = result.comment_id;
   } catch (e) {
     return NextResponse.json(
       {
         ok: false,
-        error: `Chat post failed: ${e instanceof Error ? e.message : String(e)}`,
+        error: `Internal chat post failed: ${e instanceof Error ? e.message : String(e)}`,
       },
       { status: 502 },
     );
   }
-  if (!messageName) {
-    return NextResponse.json(
-      { ok: false, error: "Chat post returned empty message id" },
-      { status: 502 },
-    );
-  }
 
-  // Auto-snooze the alert so it dims for the team. Default snooze
-  // duration (no snoozeUntil passed) — Apps Script applies the
-  // per-kind default. Reason tag lets the snoozing flow downstream
-  // attribute the dismissal to the chat post, not a manual click.
+  // Auto-snooze the alert so it dims for the team. Apps Script applies
+  // the per-kind default snooze duration. Reason carries the comment
+  // id so the dismissal can be traced back to the chat post later.
   let dismissed: unknown = null;
   try {
     dismissed = await dismissMorningSignal({
       signalKey,
-      reason: `posted_to_chat:${messageName}`,
+      reason: `posted_to_internal_chat:${commentId}`,
     });
   } catch (e) {
-    // Don't fail the request — the chat message landed. Just surface
-    // the dismiss failure so the UI can show a partial-success state.
+    // Don't fail the request — the chat post landed. Surface partial.
     dismissed = { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 
   return NextResponse.json({
     ok: true,
-    spaceId,
-    messageName,
+    commentId,
     dismissed,
   });
 }

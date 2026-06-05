@@ -118,9 +118,9 @@ export default function MorningAlertActions({
         className="morning-action-chat"
         onClick={sendToChat}
         disabled={busy === "chat"}
-        title="שלח את ההתראה לצ'אט הפנימי של הפרויקט (פינג מהיר לצוות)"
+        title="שלח את ההתראה לטאב פנימי של הפרויקט (פינג מהיר לצוות F&F)"
       >
-        {busy === "chat" ? "…" : "💬 שלח לצ'אט"}
+        {busy === "chat" ? "…" : "💬 שלח לפנימי"}
       </button>
       <Link
         href={taskHref}
