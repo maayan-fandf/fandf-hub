@@ -82,6 +82,30 @@ export async function upsertAlertDismissal(input: {
 }
 
 /**
+ * Hard-delete the dismissal for one signal_key. Returns `removed: true`
+ * when a doc actually existed (lets callers tell "cleared something" from
+ * "no-op").
+ *
+ * Counterpart to upsertAlertDismissal. Needed because the Apps Script
+ * side's `_unsnoozeAlert_` only clears the legacy sheet — without this
+ * the Firestore record survives an unsnooze and the alert keeps reading
+ * as dismissed on the next morning-feed render. So unsnooze paths (the
+ * "↺ בטל טיפול" button → /api/morning/unsnooze) must call this too.
+ */
+export async function removeAlertDismissal(
+  signalKey: string,
+): Promise<{ removed: boolean }> {
+  const key = String(signalKey || "").trim();
+  if (!key) throw new Error("signal_key is required");
+  const db = getDb();
+  const ref = db.collection(FS_COLLECTIONS.alertDismissals).doc(keyToDocId(key));
+  const snap = await ref.get();
+  if (!snap.exists) return { removed: false };
+  await ref.delete();
+  return { removed: true };
+}
+
+/**
  * Apply the dismissal store to hub-generated signals (e.g. crmAlerts),
  * which — unlike the report's own morning signals — don't get dismissal
  * state applied server-side. Mirrors the report's dismissalStateFor:
