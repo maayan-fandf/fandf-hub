@@ -1437,6 +1437,23 @@ export async function getProjectAdLinks(
  *    (`fetch-error`). Drives the empty-state copy.
  *  - `hasInput` is true when SOME source content was available — even if
  *    the extractor couldn't pull a price. */
+/** One row in a surface's inventory of advertised prices. The headline
+ *  pick (the `price` field on `ProjectPriceSurface`) is still ONE of
+ *  these entries — typically the lowest anchored. The rest are the
+ *  other apartment-type / room-count prices the page advertised, kept
+ *  so the campaign manager can see the full picture. */
+export type DetectedPriceShape = {
+  value: number;
+  anchored: boolean;
+  /** Single apartment room count when the page labels this price
+   *  unambiguously (single int). Null when the marker was a range
+   *  ("3-5 חד׳") or no room marker was detected. */
+  rooms: number | null;
+  /** Raw room/apartment-type label for display. Empty string when
+   *  nothing was detected — UI then falls back to value-only. */
+  roomsLabel: string;
+};
+
 export type ProjectPriceSurface = {
   name: "landing" | "yad2" | "google" | "facebook";
   label: string;
@@ -1455,6 +1472,10 @@ export type ProjectPriceSurface = {
     | "organic-no-anchor"
     | string;
   hasInput: boolean;
+  /** Full inventory of advertised prices detected on this surface.
+   *  May be missing for legacy Apps Script versions / pre-2026-06-05
+   *  rows — render headline-only when absent or empty. */
+  inventory?: DetectedPriceShape[];
 };
 
 /** 4-surface advertised-price snapshot for one project. `comparison` is

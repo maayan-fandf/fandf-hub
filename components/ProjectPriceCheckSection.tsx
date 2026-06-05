@@ -92,6 +92,8 @@ export default async function ProjectPriceCheckSection({
       <p className="section-subtitle">
         מחיר ה״החל מ-״ שזוהה בכל מקור פרסומי לפרויקט. כשמופיע פער של מעל
         1%, המקור הנמוך והגבוה ביותר מודגשים — אלו השניים שצריך לתאם.
+        מתחת לכל כרטיס מופיע גם מלאי המחירים המלא לפי חדרים כשמזוהים יותר
+        ממחיר אחד באותו מקור.
       </p>
 
       <div className="price-check-grid">
@@ -195,6 +197,7 @@ function PriceCheckCard({
       {emptyState && (
         <div className="price-check-card-empty-state">{emptyState}</div>
       )}
+      <InventoryRows surface={surface} />
       {surface.url && (
         <a
           className="price-check-card-link"
@@ -206,6 +209,49 @@ function PriceCheckCard({
         </a>
       )}
     </div>
+  );
+}
+
+/**
+ * Renders the per-surface inventory of advertised prices beneath the
+ * headline number. Only kicks in when the surface has MORE THAN ONE
+ * distinct anchored price — otherwise the card would just show the
+ * headline twice. Each row carries the value + the apartment-type
+ * label the page used (`4 חד׳` / `פנטהאוז · 5 חד׳` / `3-5 חד׳` …).
+ * The row matching the headline pick is visually highlighted so the
+ * user knows "this is the number the comparison alert uses".
+ *
+ * No-op (returns null) when the inventory is missing (server-side
+ * legacy Apps Script before 2026-06-05) or carries 0–1 entries.
+ */
+function InventoryRows({ surface }: { surface: ProjectPriceSurface }) {
+  const inv = surface.inventory ?? [];
+  if (inv.length <= 1) return null;
+  // Ascending — pages typically list cheapest first; the user scans
+  // top-to-bottom for the room count they care about.
+  const sorted = [...inv].sort((a, b) => a.value - b.value);
+  return (
+    <ul className="price-check-card-inventory" dir="rtl">
+      {sorted.map((entry, i) => (
+        <li
+          key={`${entry.value}-${i}`}
+          className={[
+            "price-check-card-inventory-row",
+            entry.value === surface.price &&
+              "price-check-card-inventory-row-headline",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <span className="price-check-card-inventory-rooms">
+            {entry.roomsLabel || "—"}
+          </span>
+          <span className="price-check-card-inventory-value">
+            {fmtIls(entry.value)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

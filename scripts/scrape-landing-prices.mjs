@@ -169,6 +169,14 @@ async function scrapeOne(url, label) {
   const out = {
     headline: "",
     all: "",
+    /** Full inventory as a JSON string: `[{value,anchored,rooms,
+     *  roomsLabel}, …]`. Stored in a new `all_prices_json` /
+     *  `yad2_all_prices_json` column so Apps Script's
+     *  _resolveProjectPriceCheck_ can expose the campaign-manager
+     *  "all advertised prices" view on the project page. The legacy
+     *  `all` (pipe-joined values) stays for spot-checking in the
+     *  sheet — see scrape-landing-prices.mjs columns list. */
+    allJson: "[]",
     status: "ok",
     notes: "",
     pageType: "",
@@ -195,6 +203,14 @@ async function scrapeOne(url, label) {
     if (headline) {
       out.headline = String(headline.value);
       out.all = all.map((d) => d.value).join("|");
+      out.allJson = JSON.stringify(
+        all.map((d) => ({
+          value: d.value,
+          anchored: !!d.anchored,
+          rooms: d.rooms ?? null,
+          roomsLabel: d.roomsLabel || "",
+        })),
+      );
     } else {
       // For Yad2 organic pages, surface a clearer status than the
       // generic "no-price" so the morning-feed + project page can
@@ -205,8 +221,19 @@ async function scrapeOne(url, label) {
         out.notes =
           "yad2: organic listing without 'החל מ-' anchor — not comparable to a marketing headline";
         // Keep the all_prices list anyway — surfaces it in the sheet
-        // for spot-checking what the table contains.
+        // for spot-checking what the table contains. Same payload as
+        // the success path so the UI inventory still renders even
+        // when the headline pick was suppressed (organic Yad2 still
+        // shows per-room rows on the project page).
         out.all = all.map((d) => d.value).join("|");
+        out.allJson = JSON.stringify(
+          all.map((d) => ({
+            value: d.value,
+            anchored: !!d.anchored,
+            rooms: d.rooms ?? null,
+            roomsLabel: d.roomsLabel || "",
+          })),
+        );
       } else {
         out.status = "no-price";
         out.notes = `${label}: rendered ok but no price matched`;
@@ -238,9 +265,11 @@ for (const p of projects) {
     landing_url: p.landing,
     headline_price: landing.headline,
     all_prices: landing.all,
+    all_prices_json: landing.allJson,
     yad2_url: p.yad2 || "",
     yad2_headline_price: yad2.headline,
     yad2_all_prices: yad2.all,
+    yad2_all_prices_json: yad2.allJson,
     yad2_page_type: yad2.pageType,
     scraped_at_iso: new Date().toISOString(),
     status: landing.status === "ok" || yad2.status === "ok" ? "ok" : landing.status,
@@ -282,9 +311,17 @@ const header = [
   "landing_url",
   "headline_price",
   "all_prices",
+  // Phase 1 of the price-inventory work — full JSON list per surface
+  // (`[{value, anchored, rooms, roomsLabel}, …]`) so the project page
+  // can render every advertised price + its room label, not just the
+  // single "lowest anchored" headline pick. Added 2026-06-05; Apps
+  // Script's _loadLandingPricesMap_ reads both columns and falls back
+  // to [] when missing (legacy rows pre-dating this addition).
+  "all_prices_json",
   "yad2_url",
   "yad2_headline_price",
   "yad2_all_prices",
+  "yad2_all_prices_json",
   // sponsored = developer-paid marketing project page on Yad2 (carries
   // `החל מ-` anchors, comparable to a landing page). organic = generic
   // listing without a headline anchor (per-apartment-type table) —

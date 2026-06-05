@@ -79,6 +79,20 @@ export type DetectedPrice = {
    *  steal the headline. See `startingPrice` for how this drives
    *  pick order. */
   anchored: boolean;
+  /** Apartment room count, when detectable in the ~120-char window
+   *  before the price. Single integer when the page labels this
+   *  price unambiguously (e.g., "4 חד׳ 116 מ״ר ... החל מ-3,110,000"
+   *  → rooms=4; Yad2 sponsored "חדרים: 3 ... החל מ- 3,320,000" →
+   *  rooms=3). Null when the page only shows a range ("דירות 3-5
+   *  חד׳ ופנטהאוזים יוקרתיים החל מ-X" → rooms=null, but
+   *  `roomsLabel="3-5 חד׳"` captures the raw substring for display)
+   *  or when no room marker is in the window. */
+  rooms?: number | null;
+  /** Raw room/apartment-type label for display — preferred over `rooms`
+   *  for the UI because it carries ranges ("3-5 חד׳"), penthouse
+   *  prefixes ("פנטהאוז · 5 חד׳"), and other natural-language tags
+   *  the page used. Empty string when no marker was detected. */
+  roomsLabel?: string;
 };
 
 /**
@@ -141,6 +155,134 @@ const ANTI_ANCHOR_WINDOW = 30;
 const BIDI_MARKS_RE = /[​-‏‪-‮⁦-⁩؜﻿]/g;
 
 /**
+ * Room-label proximity matching — given a price's char offset, look back
+ * ~120 chars and try to find the apartment-type marker that labels THIS
+ * price. Returns the marker CLOSEST to the price (highest index in the
+ * back window) so that, when a page mixes a wide headline range with a
+ * specific per-apartment table, the table row "wins" for the price it
+ * directly precedes. Patterns supported:
+ *
+ *   - Yad2 sponsored table  → "חדרים: 3 שטח: 80 מ״ר … החל מ- 3,320,000"
+ *   - Landing hero block    → "4 חד׳ 116 מ״ר + 10 מ״ר מרפסת החל מ-3,110,000"
+ *   - Marketing range copy  → "3-5 חד׳ ופנטהאוזים … החל מ-3,320,000"
+ *                             (label kept verbatim, `rooms` left null)
+ *
+ * Penthouse / unique-type keywords in the same window decorate the
+ * label as "פנטהאוז · X חד׳" so the UI can flag the row visually.
+ *
+ * Empty-result fallback: when nothing matches, returns
+ * `{ rooms: null, roomsLabel: "" }` — the price still gets extracted,
+ * just without a label.
+ */
+const ROOMS_BACK_WINDOW = 120;
+/** When a TABLE-form room marker matched (Yad2 sponsored "חדרים: N"),
+ *  look this far back from its position for an apartment-type keyword
+ *  to attach as a decoration. Yad2 lays the table out as "<type>
+ *  חדרים: N שטח: …" — type is the word right before "חדרים:". A
+ *  generous 20 chars covers "גג/פנטהאוז " (10) plus a synonym. */
+const PENTHOUSE_BEFORE_TABLE = 20;
+const ROOMS_TABLE_RE = /חדרים\s*:\s*(\d+)/g;
+const ROOMS_RANGE_RE = /(\d+)\s*[-–—־]\s*(\d+)\s*חד['׳ר]?/g;
+const ROOMS_SINGLE_RE = /(?<!\d)(\d+)\s*חד['׳ר]?/g;
+const PENTHOUSE_KW_RE = /(?:פנטהאוז|דופלקס|גג\s*דירה|מיני\s*פנט|גג\b)/;
+
+function findRoomLabel(
+  text: string,
+  priceIdx: number,
+): { rooms: number | null; roomsLabel: string } {
+  const start = Math.max(0, priceIdx - ROOMS_BACK_WINDOW);
+  const window = text.slice(start, priceIdx);
+  let bestIdx = -1;
+  let rooms: number | null = null;
+  let label = "";
+  let bestSource: "range" | "table" | "single" | null = null;
+  // Position in the FULL text (not the window) where the chosen
+  // table-form match starts — used to anchor the penthouse-prefix
+  // check to the apartment-type cell, not random text upstream.
+  let bestTablePriceAbsIdx = -1;
+
+  // Range pass first — remember each range's char span so we can
+  // suppress the bare-int matches inside it. Without this, "5 חד'"
+  // inside "3-5 חד'" gets picked up by ROOMS_SINGLE_RE as a stronger
+  // closer-to-price match, and the headline ends up labeled "5 חד'"
+  // instead of the proper "3-5 חד׳" range.
+  const rangeSpans: Array<{ start: number; end: number }> = [];
+  {
+    const re = new RegExp(ROOMS_RANGE_RE.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(window)) !== null) {
+      rangeSpans.push({ start: m.index, end: re.lastIndex });
+      if (m.index >= bestIdx) {
+        bestIdx = m.index;
+        rooms = null;
+        label = `${m[1]}-${m[2]} חד׳`;
+        bestSource = "range";
+      }
+    }
+  }
+  const insideAnyRange = (idx: number) =>
+    rangeSpans.some((s) => idx >= s.start && idx < s.end);
+
+  // Table form — Yad2 sponsored "חדרים: N". Most authoritative
+  // because it's a per-apartment-type tag in a structured table row.
+  {
+    const re = new RegExp(ROOMS_TABLE_RE.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(window)) !== null) {
+      if (m.index < bestIdx) continue;
+      bestIdx = m.index;
+      rooms = Number(m[1]);
+      label = `${m[1]} חד׳`;
+      bestSource = "table";
+      bestTablePriceAbsIdx = start + m.index;
+    }
+  }
+
+  // Single int form — "4 חד'" / "5 חדר" / "6 חדרים". Skip anything
+  // sitting inside a previously-detected range span (the range
+  // already labeled that text more meaningfully).
+  {
+    const re = new RegExp(ROOMS_SINGLE_RE.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(window)) !== null) {
+      if (insideAnyRange(m.index)) continue;
+      if (m.index < bestIdx) continue;
+      bestIdx = m.index;
+      rooms = Number(m[1]);
+      label = `${m[1]} חד׳`;
+      bestSource = "single";
+    }
+  }
+
+  // Penthouse decoration — only applied when the table form won AND
+  // the apartment-type keyword sits immediately before "חדרים:" (the
+  // Yad2 sponsored table cell layout: "גג/פנטהאוז חדרים: 5 …").
+  // Marketing narrative pages mention פנטהאוז in nearby copy but
+  // not in this strict "<type-word> חדרים:" structure, so this rule
+  // cleanly rejects the headline-range false positive.
+  if (bestSource === "table" && bestTablePriceAbsIdx >= 0) {
+    const tagWindow = text.slice(
+      Math.max(0, bestTablePriceAbsIdx - PENTHOUSE_BEFORE_TABLE),
+      bestTablePriceAbsIdx,
+    );
+    if (PENTHOUSE_KW_RE.test(tagWindow)) {
+      label = label ? `פנטהאוז · ${label}` : "פנטהאוז";
+    }
+  }
+  return { rooms, roomsLabel: label };
+}
+
+/** Specificity score for a room label — used during dedup promotion to
+ *  prefer a structured label over an ambiguous one when the same value
+ *  reappears with a cleaner tag (Yad2 case: headline says "3-5 חד׳",
+ *  table row beneath says "חדרים: 3" — the second wins). */
+function roomLabelScore(rooms: number | null, label: string): number {
+  if (rooms != null) return 3;
+  if (label) return 1;
+  return 0;
+}
+
+/**
  * Extract every plausible price from the given text. Order: as they
  * appear in the input (top-to-bottom for landing-page HTML). De-duped
  * by normalised value to avoid the same headline price counting twice
@@ -195,15 +337,29 @@ export function extractPrices(text: string): DetectedPrice[] {
       const wide = text.slice(Math.max(0, m.index - ANTI_ANCHOR_WINDOW), m.index);
       if (ANTI_ANCHOR_RE.test(wide)) anchored = false;
     }
+    const { rooms, roomsLabel } = findRoomLabel(text, m.index);
     const existingIdx = byValue.get(value);
     if (existingIdx !== undefined) {
       // Same value seen earlier. If THIS occurrence is anchored and
-      // the stored one wasn't, promote the stored entry. (We leave
-      // index/matched on the first occurrence so debug output still
-      // points at where we first saw the price in the page.)
-      if (anchored && !found[existingIdx].anchored) {
-        found[existingIdx] = { ...found[existingIdx], anchored: true };
+      // the stored one wasn't, promote the stored entry. Likewise for
+      // the room label — a later occurrence with a MORE SPECIFIC label
+      // (single int beats range beats nothing) overrides the earlier
+      // sighting, matching the Yad2 sponsored-page reality where the
+      // marketing headline shows "3-5 חד׳" range but the per-apartment
+      // table row beneath repeats the same price with "חדרים: 3". We
+      // leave index/matched on the first occurrence so debug output
+      // still points at where we first saw the price in the page.
+      const cur = found[existingIdx];
+      const next = { ...cur };
+      if (anchored && !cur.anchored) next.anchored = true;
+      if (
+        roomLabelScore(rooms, roomsLabel) >
+        roomLabelScore(cur.rooms ?? null, cur.roomsLabel ?? "")
+      ) {
+        next.rooms = rooms;
+        next.roomsLabel = roomsLabel;
       }
+      found[existingIdx] = next;
       continue;
     }
     byValue.set(value, found.length);
@@ -212,6 +368,8 @@ export function extractPrices(text: string): DetectedPrice[] {
       matched: m[0].trim(),
       index: m.index,
       anchored,
+      rooms,
+      roomsLabel,
     });
   }
   return found;

@@ -7790,6 +7790,48 @@ html[data-theme="dark"] .price-check-card-badge-min {
 .price-check-card-link:hover {
   text-decoration: underline;
 }
+
+/* "מחירים מפורסמים" — per-surface inventory list under the headline
+   number. Renders when the surface advertises more than one anchored
+   price (apartment-type table on Yad2 sponsored, multi-row landing
+   blocks like Prashkovsky, multiple active ads). One <li> per detected
+   price + its room label. The row matching the headline pick gets a
+   light brand-tinted highlight so the user can tell at a glance "this
+   number is what the comparison alert uses". Built 2026-06-05. */
+.price-check-card-inventory {
+  list-style: none;
+  padding: 0;
+  margin: 0.4em 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  font-size: 0.78rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.4em;
+}
+.price-check-card-inventory-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  padding: 0.15em 0.3em;
+  border-radius: 4px;
+  color: var(--ink-soft);
+}
+.price-check-card-inventory-row-headline {
+  background: rgba(67, 56, 202, 0.08);
+  color: var(--ink);
+  font-weight: 600;
+}
+.price-check-card-inventory-rooms {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.price-check-card-inventory-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 /* Outlier ring — applied to both min and max cards when the comparison
    flagged a mismatch. Inset box-shadow keeps the layout stable. */
 .price-check-card-outlier.price-check-card-max {
