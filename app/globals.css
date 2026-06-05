@@ -21951,3 +21951,53 @@ button.budget-need:focus-visible {
   margin-top: 0.2em;
 }
 .stats-corr-chart { width: 100%; }
+
+/* Morning alert: 💬 send-to-chat + 📋 create-task action buttons that
+   sit alongside the existing "✓ טיפלתי" pill. Same chip shape as the
+   dismiss button so the row reads as one cohesive action group, but
+   different accent colors so each action's purpose is obvious at a
+   glance: chat = teal (quick FYI ping), task = brand purple (real
+   follow-up needed). Built 2026-06-05. */
+.morning-action-chat,
+.morning-action-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.35em 0.7em;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--ink);
+  font-size: 0.85em;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s;
+}
+.morning-action-chat:hover:not(:disabled),
+.morning-action-task:hover {
+  background: var(--surface-hi);
+  transform: translateY(-1px);
+}
+.morning-action-chat {
+  border-color: rgba(8, 145, 178, 0.4);
+  color: #0891b2;
+}
+.morning-action-chat:hover:not(:disabled) {
+  background: #0891b2;
+  color: white;
+  border-color: #0891b2;
+}
+.morning-action-chat:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.morning-action-task {
+  border-color: rgba(67, 56, 202, 0.4);
+  color: var(--brand);
+}
+.morning-action-task:hover {
+  background: var(--brand);
+  color: white;
+  border-color: var(--brand);
+}

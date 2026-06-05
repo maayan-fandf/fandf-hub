@@ -1,13 +1,23 @@
 import { type MorningSignal, type MorningSeverity } from "@/lib/appsScript";
 import CopyAmountButton from "./CopyAmountButton";
+import MorningAlertActions from "./MorningAlertActions";
 import MorningDismissButton from "./MorningDismissButton";
 import FacebookAdsIcon from "./FacebookAdsIcon";
 import GoogleAdsIcon from "./GoogleAdsIcon";
 
 /* Single alert row — used by the morning-dashboard page AND by the
    per-project alert section on the project overview. Keeps visual +
-   behavior parity between the two entry points. */
-export default function MorningSignalRow({ signal }: { signal: MorningSignal }) {
+   behavior parity between the two entry points.
+   `projectName` is required to enable the "💬 שלח לצ׳אט" and
+   "📋 צור משימה" actions; the morning page passes the alert's parent
+   project, the per-project page passes its current project name. */
+export default function MorningSignalRow({
+  signal,
+  projectName,
+}: {
+  signal: MorningSignal;
+  projectName?: string;
+}) {
   const sevEmoji: Record<MorningSeverity, string> = {
     severe: "🔥",
     warn: "⚠️",
@@ -96,6 +106,17 @@ export default function MorningSignalRow({ signal }: { signal: MorningSignal }) 
           >
             🔍 בדוק delivery
           </a>
+        )}
+        {projectName && (
+          <MorningAlertActions
+            signalKey={signal.key}
+            projectName={projectName}
+            severity={signal.severity}
+            title={signal.title}
+            detail={signal.detail}
+            url={signal.url}
+            dismissed={isDismissed}
+          />
         )}
         <MorningDismissButton
           signalKey={signal.key}

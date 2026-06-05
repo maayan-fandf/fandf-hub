@@ -816,7 +816,7 @@ async function ProjectAlertsSection({
       </div>
       <ul className="morning-signal-list">
         {allSignals.map((s, i) => (
-          <MorningSignalRow key={i} signal={s} />
+          <MorningSignalRow key={i} signal={s} projectName={projectName} />
         ))}
       </ul>
     </section>

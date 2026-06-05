@@ -475,7 +475,7 @@ function ProjectCard({
       {!compact && p.signals.length > 0 && (
         <ul className="morning-signal-list">
           {p.signals.map((s, i) => (
-            <MorningSignalRow key={i} signal={s} />
+            <MorningSignalRow key={i} signal={s} projectName={p.name} />
           ))}
         </ul>
       )}
