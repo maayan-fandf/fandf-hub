@@ -226,10 +226,18 @@ function PriceCheckCard({
  */
 function InventoryRows({ surface }: { surface: ProjectPriceSurface }) {
   const inv = surface.inventory ?? [];
-  if (inv.length <= 1) return null;
+  // Only anchored entries are "real" advertised prices. The
+  // unanchored ones are anti-anchor / loan / down-payment figures
+  // (`מקדמה החל מ-500,000`, `יתרת הלוואת יזם 4,123,787` etc.) — the
+  // extractor flags them but they shouldn't pollute the campaign-
+  // manager-facing inventory. Yad2 sponsored pages routinely add 6-10
+  // of these per-apartment-type loan figures and rendering them all
+  // would drown the actual apartment prices.
+  const anchored = inv.filter((e) => e.anchored);
+  if (anchored.length <= 1) return null;
   // Ascending — pages typically list cheapest first; the user scans
   // top-to-bottom for the room count they care about.
-  const sorted = [...inv].sort((a, b) => a.value - b.value);
+  const sorted = [...anchored].sort((a, b) => a.value - b.value);
   return (
     <ul className="price-check-card-inventory" dir="rtl">
       {sorted.map((entry, i) => (
