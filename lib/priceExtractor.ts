@@ -91,8 +91,19 @@ export type DetectedPrice = {
  *   "מחיר: 1,800,000 ₪"     → anchored ✓
  *   "מחיר התחלתי 2.5 מיליון" → anchored ✓
  *   "ע״ס כ-500,000 ₪"       → NOT anchored — anti-pattern wins
+ *
+ * Dash class accepts the whole Unicode dash family — Yad2 sponsored
+ * pages render the headline as `החל מ – 3,320,000` (U+2013 en dash)
+ * while the per-apartment-type table below renders `החל מ- 3,320,000`
+ * (U+002D hyphen-minus). Before this fix the regex matched the second
+ * one only; the FIRST (the actual marketing headline) was lost as
+ * "unanchored", which combined with the value-dedup in extractPrices
+ * meant the real headline price never reached the anchored bucket.
+ * Members: hyphen-minus, Hebrew makaf, Unicode hyphen, non-breaking
+ * hyphen, en dash, em dash, minus sign.
  */
-const HEADLINE_ANCHOR_RE = /(?:החל\s*מ|מחיר\s*התחלתי|מחיר:?|^)\s*[-־]?\s*$/;
+const HEADLINE_ANCHOR_RE =
+  /(?:החל\s*מ|מחיר\s*התחלתי|מחיר:?|^)\s*[-־‐‑–—−]?\s*$/;
 
 /**
  * Anti-anchor markers — phrases that, when they appear right before
@@ -141,7 +152,17 @@ export function extractPrices(text: string): DetectedPrice[] {
   // bidi-decorated text like Yad2's `החל מ‏-‏3,199,000`.
   text = text.replace(BIDI_MARKS_RE, "");
   const found: DetectedPrice[] = [];
-  const seen = new Set<number>();
+  // value → index in `found`. Lets a later occurrence UPGRADE the
+  // stored entry's `anchored` flag without changing iteration order —
+  // important because Yad2 sponsored pages render the marketing
+  // headline `החל מ – 3,320,000` (en dash, easy to miss as an anchor)
+  // BEFORE the per-apartment-type table where the same `3,320,000`
+  // reappears with a clean hyphen anchor `החל מ- 3,320,000`. The old
+  // logic dropped the second occurrence entirely; we'd then pick the
+  // 4-room (3,930,000) as "lowest anchored" because 3,320,000 was
+  // mis-classified as unanchored. The fix is symmetric: any later
+  // occurrence with a stronger anchor promotes the earlier entry.
+  const byValue = new Map<number, number>();
 
   // Walk the text with a global regex that captures a number AND
   // optional million-suffix. We then verify a currency marker is
@@ -160,8 +181,6 @@ export function extractPrices(text: string): DetectedPrice[] {
     const windowEnd = Math.min(text.length, re.lastIndex + CURRENCY_WINDOW);
     const ctx = text.slice(windowStart, windowEnd);
     if (!CURRENCY_RE.test(ctx)) continue;
-    if (seen.has(value)) continue;
-    seen.add(value);
     // Check the ~12 chars immediately before the number for a headline-
     // marketing anchor. We trim the prefix to its tail because the
     // anchor's important position is "right next to the number", not
@@ -176,6 +195,18 @@ export function extractPrices(text: string): DetectedPrice[] {
       const wide = text.slice(Math.max(0, m.index - ANTI_ANCHOR_WINDOW), m.index);
       if (ANTI_ANCHOR_RE.test(wide)) anchored = false;
     }
+    const existingIdx = byValue.get(value);
+    if (existingIdx !== undefined) {
+      // Same value seen earlier. If THIS occurrence is anchored and
+      // the stored one wasn't, promote the stored entry. (We leave
+      // index/matched on the first occurrence so debug output still
+      // points at where we first saw the price in the page.)
+      if (anchored && !found[existingIdx].anchored) {
+        found[existingIdx] = { ...found[existingIdx], anchored: true };
+      }
+      continue;
+    }
+    byValue.set(value, found.length);
     found.push({
       value,
       matched: m[0].trim(),
