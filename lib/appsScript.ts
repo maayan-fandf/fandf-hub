@@ -1476,6 +1476,18 @@ export type ProjectPriceSurface = {
    *  May be missing for legacy Apps Script versions / pre-2026-06-05
    *  rows — render headline-only when absent or empty. */
   inventory?: DetectedPriceShape[];
+  /** Ad-status aggregate for surfaces backed by paid ad copy
+   *  (facebook + google). Counts ads at the row level — one FB / GAds
+   *  row = one ad regardless of how many texts (body / title /
+   *  headline / description) it contributes. Lets the UI flag "all
+   *  ads paused" so the campaign manager knows the price is on the
+   *  shelf but the live audience isn't seeing it. Undefined on the
+   *  landing / yad2 surfaces (no paid-ad concept there). */
+  adStatus?: {
+    active: number;
+    paused: number;
+    total: number;
+  };
 };
 
 /** 4-surface advertised-price snapshot for one project. `comparison` is

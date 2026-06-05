@@ -7791,6 +7791,32 @@ html[data-theme="dark"] .price-check-card-badge-min {
   text-decoration: underline;
 }
 
+/* Ad-status chip on the FB / Google cards. Renders inline in the
+   card head row next to the surface label. Two tones — severe red
+   when all ads are paused (the price is dead in production), warn
+   amber when mixed. All-active surfaces don't render a chip so the
+   common "everything's fine" case stays visually quiet. Built
+   2026-06-05 after owner reported א.שדוד case where all FB ads
+   were paused yet the price-check showed the FB headline number. */
+.price-check-card-ad-status {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15em 0.45em;
+  border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.price-check-card-ad-status-severe {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+.price-check-card-ad-status-warn {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
 /* "מחירים מפורסמים" — per-surface inventory list under the headline
    number. Renders when the surface advertises more than one anchored
    price (apartment-type table on Yad2 sponsored, multi-row landing

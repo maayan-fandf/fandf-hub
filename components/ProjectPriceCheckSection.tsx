@@ -174,6 +174,7 @@ function PriceCheckCard({
           {icon}
         </span>
         <span className="price-check-card-label">{surface.label}</span>
+        <AdStatusChip surface={surface} />
         {isMin && (
           <span
             className="price-check-card-badge price-check-card-badge-min"
@@ -209,6 +210,41 @@ function PriceCheckCard({
         </a>
       )}
     </div>
+  );
+}
+
+/**
+ * Ad-status chip on the FB / Google cards. Shows three states:
+ *   - all paused (active=0, paused>0)  → severe red "⚠ כל המודעות מושהות (N)"
+ *   - mixed (active>0, paused>0)       → warn amber "X פעילות · Y מושהות"
+ *   - all active (paused=0, active>0)  → no chip (the quiet path)
+ *   - empty (total=0)                  → no chip (the empty-state copy
+ *                                        on the card body already
+ *                                        explains "no campaigns")
+ * Tooltip carries the breakdown so the user can hover for detail.
+ * Only renders for surfaces that carry `adStatus` (FB + Google);
+ * landing / yad2 don't have a paid-ad concept.
+ */
+function AdStatusChip({ surface }: { surface: ProjectPriceSurface }) {
+  const s = surface.adStatus;
+  if (!s || s.total === 0) return null;
+  const isAllPaused = s.paused > 0 && s.active === 0;
+  const isMixed = s.paused > 0 && s.active > 0;
+  if (!isAllPaused && !isMixed) return null; // all-active = quiet
+  const tone = isAllPaused ? "severe" : "warn";
+  const text = isAllPaused
+    ? `⚠ כל המודעות מושהות (${s.paused})`
+    : `${s.active} פעילות · ${s.paused} מושהות`;
+  const title = isAllPaused
+    ? `כל ${s.total} המודעות המכילות מחיר בערוץ זה כרגע מושהות — הקהל לא רואה אותן`
+    : `מתוך ${s.total} מודעות עם מחיר: ${s.active} פעילות, ${s.paused} מושהות`;
+  return (
+    <span
+      className={`price-check-card-ad-status price-check-card-ad-status-${tone}`}
+      title={title}
+    >
+      {text}
+    </span>
   );
 }
 
