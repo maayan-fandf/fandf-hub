@@ -22024,3 +22024,115 @@ button.budget-need:focus-visible {
   color: white;
   border-color: var(--brand);
 }
+
+/* "תייג חברי צוות" popover that anchors below the 💬 שלח לפנימי button.
+   Opens on click, shows the project roster, multi-select via click, and
+   posts on the "שלח" button (or with zero picks for a plain channel-
+   wide ping). Built 2026-06-05 — owner asked for the picker after
+   noticing she had no way to tag teammates from the alert row before
+   the message went out. */
+.morning-action-chat-wrap {
+  position: relative;
+  display: block;
+}
+.morning-action-chat-wrap > .morning-action-chat {
+  width: 100%;
+  justify-content: center;
+}
+.morning-action-chat-popover {
+  position: absolute;
+  top: calc(100% + .35em);
+  right: 0;
+  width: 17em;
+  max-width: 22em;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+  padding: .55em .55em .5em;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: .45em;
+  text-align: right;
+}
+.morning-action-chat-popover-head {
+  font-size: .82em;
+  color: var(--ink-soft);
+  padding: 0 .1em;
+}
+.morning-action-chat-popover-search {
+  width: 100%;
+  padding: .35em .55em;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: .85em;
+  outline: none;
+}
+.morning-action-chat-popover-search:focus {
+  border-color: var(--brand);
+}
+.morning-action-chat-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: .15em;
+  max-height: 14em;
+  overflow-y: auto;
+  padding: .1em 0;
+}
+.morning-action-chat-popover-empty {
+  padding: .8em .4em;
+  font-size: .82em;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.morning-action-chat-popover-row {
+  display: flex;
+  align-items: center;
+  gap: .45em;
+  padding: .35em .4em;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: right;
+  color: var(--ink);
+  font-size: .88em;
+}
+.morning-action-chat-popover-row:hover {
+  background: var(--surface-alt);
+}
+.morning-action-chat-popover-row.is-picked {
+  background: rgba(8, 145, 178, 0.12);
+  border-color: rgba(8, 145, 178, 0.4);
+}
+.morning-action-chat-popover-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.morning-action-chat-popover-check {
+  width: 1em;
+  text-align: center;
+  color: #0891b2;
+  font-weight: 600;
+}
+.morning-action-chat-popover-foot {
+  display: flex;
+  align-items: center;
+  gap: .35em;
+  padding-top: .35em;
+  border-top: 1px solid var(--border-soft);
+}
+.morning-action-chat-popover-count {
+  flex: 1;
+  font-size: .78em;
+  color: var(--ink-soft);
+}
+.morning-action-chat-popover-foot .reply-btn {
+  padding: .3em .75em;
+  font-size: .82em;
+}

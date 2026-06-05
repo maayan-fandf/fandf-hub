@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
     title?: unknown;
     detail?: unknown;
     url?: unknown;
+    assignees?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -67,6 +68,20 @@ export async function POST(req: NextRequest) {
   const title = String(body.title || "").trim();
   const detail = String(body.detail || "").trim();
   const url = String(body.url || "").trim();
+  // Picked teammates from the popover (may be empty — empty selection
+  // means a plain channel-wide ping with no specific mentions). De-dup,
+  // lower-case, drop the author themselves (self-mentions never notify
+  // via createMentionDirect anyway), and drop anything that isn't a
+  // valid-looking email — defensive against a malformed client.
+  const me = String(email).toLowerCase().trim();
+  const rawAssignees = Array.isArray(body.assignees) ? body.assignees : [];
+  const assignees = Array.from(
+    new Set(
+      rawAssignees
+        .map((v) => String(v || "").toLowerCase().trim())
+        .filter((v) => v && v !== me && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)),
+    ),
+  );
   if (!signalKey || !projectName || !title) {
     return NextResponse.json(
       { ok: false, error: "signalKey, projectName and title are required" },
@@ -75,11 +90,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Format the message — severity emoji + title + detail + deep link.
+  // When the user picked teammates in the popover, prepend a line of
+  // `@<email>` tokens; CommentBody renders those as avatar chips +
+  // Hebrew names, and createMentionDirect ALSO fans out a real
+  // mention notification per `assignees` entry. The body tokens make
+  // the ping visible at a glance in the rendered comment; the
+  // assignees array drives the actual notification side-channel.
   // No "shared by X" line because createMentionDirect stamps the
   // author automatically (the comment carries `created_by`).
   const sevEmoji =
     severity === "severe" ? "🔥" : severity === "warn" ? "⚠️" : "📅";
+  const mentionLine =
+    assignees.length > 0 ? assignees.map((e) => `@${e}`).join(" ") : "";
   const lines = [
+    mentionLine,
     `${sevEmoji} ${title}`,
     detail || "",
     url ? `🔗 ${url}` : "",
@@ -93,7 +117,7 @@ export async function POST(req: NextRequest) {
     const result = await createMentionDirect(email, {
       project: projectName,
       body: text,
-      assignees: [], // No specific mentions — just a team-wide ping
+      assignees,
       due: "",
       scope: "internal",
     });
