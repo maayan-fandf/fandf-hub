@@ -9370,10 +9370,33 @@ html[data-theme="dark"] .morning-signal-info   { background: #1e3a8a30; border-c
 .morning-clear[open] summary { color: var(--text); }
 .morning-clear summary:hover { color: var(--text); }
 
-/* Dismiss button + snooze menu on morning signals. */
+/* Dismiss button + snooze menu on morning signals. Stack as a vertical
+   column of pills (alert title can wrap to multiple lines, so packing
+   the three actions vertically reads cleaner than wrapping them onto a
+   second row underneath the title). Each pill stretches to a uniform
+   width so the column reads as a tight menu. */
 .morning-signal-actions {
-  display: flex; align-items: center; gap: .4em;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: .35em;
   flex-shrink: 0;
+  min-width: 9.5em;
+}
+.morning-signal-actions > .morning-action-chat,
+.morning-signal-actions > .morning-action-task {
+  justify-content: center;
+  width: 100%;
+}
+.morning-signal-actions > .morning-dismiss {
+  width: 100%;
+}
+/* When the dismiss control sits in the vertical actions column, let the
+   primary "✓ טיפלתי" pill stretch to fill remaining width so the ⋯
+   menu trigger stays right-aligned to the column edge — matching the
+   visual width of the two new chat/task pills above. */
+.morning-signal-actions > .morning-dismiss .morning-dismiss-primary {
+  flex: 1;
 }
 .morning-dismiss {
   position: relative;
