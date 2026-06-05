@@ -71,6 +71,7 @@ export default function CardActions({
         initialBody={body}
         locked={editLocked || resolved}
         iconOnly
+        project={project}
       />
       {canConvertToTask && (
         <ConvertToTaskButton commentId={editCommentId ?? commentId} />
