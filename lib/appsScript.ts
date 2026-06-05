@@ -1506,6 +1506,14 @@ export type ProjectPriceCheck = {
     driftPct: number;
     severe: boolean;
     surfaces: ProjectPriceSurface[];
+    /** Room label that drives the mismatch in the per-room
+     *  comparison path (e.g., "4 חד׳"). Empty string in two
+     *  cases: (a) the comparison used the legacy headline-only
+     *  fallback because no per-room intersection existed across
+     *  surfaces; (b) no mismatch fired at all. The hub UI uses
+     *  this to spell out WHICH room disagrees, which is more
+     *  actionable than the bare drift %. */
+    mismatchRoom?: string;
   } | null;
   /** ISO timestamp of the most recent successful landing-page scrape.
    *  Empty when the scraper hasn't visited this project yet. */

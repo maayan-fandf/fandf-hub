@@ -34,17 +34,23 @@ export default async function ProjectPriceCheckSection({
   const anyInput = data.surfaces.some((s) => s.hasInput);
   if (!anyInput) return null;
 
-  // The mismatch status pill shown next to the section title. Three states:
-  //   - "פערים זוהו · X%" (warn / severe) — driftPct > 1%
+  // The mismatch status pill shown next to the section title. Four states:
+  //   - "פערים בדירת <room> · X%" (warn/severe) — per-room mismatch fired
+  //   - "פערים זוהו · X%" (warn/severe) — headline-fallback mismatch
   //   - "כל המקורות זהים" — at least 2 sources, all within tolerance
   //   - "מקור יחיד" — only 1 source has a price, can't compare
+  // Room-aware path skips the "min/max" outlier highlighting on the
+  // cards because the headline-min/max axis isn't what's mismatched
+  // there — the room-level inventory rows tell that story instead.
   const detectedCount = data.surfaces.filter((s) => s.price != null).length;
   const cmp = data.comparison;
   const statusPill =
     cmp && cmp.mismatched
       ? {
           tone: cmp.severe ? "severe" : "warn",
-          text: `פערים זוהו · ${cmp.driftPct.toFixed(1)}%`,
+          text: cmp.mismatchRoom
+            ? `פערים בדירת ${cmp.mismatchRoom} · ${cmp.driftPct.toFixed(1)}%`
+            : `פערים זוהו · ${cmp.driftPct.toFixed(1)}%`,
         }
       : cmp
         ? { tone: "ok" as const, text: "כל המקורות זהים" }
@@ -52,17 +58,20 @@ export default async function ProjectPriceCheckSection({
           ? { tone: "muted" as const, text: "מקור יחיד" }
           : null;
 
-  // When mismatched, highlight the min/max endpoints — they're the two
-  // surfaces the user needs to reconcile. Other sources fall in the
-  // tolerance band and don't need attention.
+  // Min/max outlier highlighting on the cards — only meaningful in the
+  // legacy headline-fallback path (where the mismatch IS about the
+  // headline picks differing). In the per-room path, the room rows
+  // beneath each card already show the comparison; tinting headline
+  // surfaces with min/max badges would be misleading because the
+  // headlines may differ legitimately (different products per surface).
   const prices = data.surfaces
     .map((s) => s.price)
     .filter((p): p is number => p != null);
   const minPrice = prices.length ? Math.min(...prices) : null;
   const maxPrice = prices.length ? Math.max(...prices) : null;
+  const isHeadlineMismatch = !!cmp && cmp.mismatched && !cmp.mismatchRoom;
   const isOutlier = (s: ProjectPriceSurface) =>
-    !!cmp &&
-    cmp.mismatched &&
+    isHeadlineMismatch &&
     s.price != null &&
     (s.price === minPrice || s.price === maxPrice);
 
