@@ -30,6 +30,11 @@ type Props = {
   /** Server-computed paid-channels diagnosis cards (priority-sorted).
    *  Empty array = no signals fired. */
   diagnosis: DiagnosisCard[];
+  /** Periods (YYYY-MM strings) selected at the page level. null /
+   *  empty = "all months" (the URL-default state). The "סיכום תקופה"
+   *  totals + the historical trend chart respect this filter so
+   *  picking 2 specific months shows just their cumulative. */
+  selectedPeriods?: string[] | null;
 };
 
 type MetricKey = "spend" | "leads" | "scheduled" | "meetings" | "cpl" | "cps";
@@ -125,7 +130,78 @@ function metricValue(row: MonthAgg, metric: MetricKey): number | null {
   return row[metric as keyof MonthAgg] as number;
 }
 
-export default function ProjectStatsView({ project, diagnosis }: Props) {
+export default function ProjectStatsView({
+  project,
+  diagnosis,
+  selectedPeriods,
+}: Props) {
+  // Period summary aggregates from monthlyRaw, NOT project.totals.
+  // project.totals is the campaign's CURRENT-row snapshot (live state
+  // of in-flight channels), which is what the dashboard's old hero
+  // showed — but here the section is labeled "סיכום תקופה" and the
+  // page exposes a multi-month period picker, so the right semantic
+  // is "cumulative across the selected months". For עוז בלנד the
+  // discrepancy was 100× on scheduled (2 vs 111) and 9× on spend
+  // (₪47k vs ₪422k) — diagnosed 2026-06-06 via React fiber probe
+  // when owner circled תיאומים=2 as visibly wrong.
+  //
+  // selectedPeriods=null means "all months in monthlyRaw" (matches
+  // the URL-default "כל החודשים" picker state). selectedPeriods=[]
+  // (explicit empty) also collapses to "all" — there's no UI path
+  // to selecting zero periods.
+  //
+  // Budget falls back to project.totals.budget because monthlyRaw
+  // rows don't carry per-month budget (campaign-life budget is a
+  // property of the campaign, not a period-cumulative count).
+  const periodTotals = useMemo(() => {
+    const rows = project.monthlyRaw || [];
+    const periodSet =
+      selectedPeriods && selectedPeriods.length > 0
+        ? new Set(selectedPeriods)
+        : null;
+    let spend = 0;
+    let leads = 0;
+    let scheduled = 0;
+    let meetings = 0;
+    let relevant = 0;
+    let matchedRows = 0;
+    for (const r of rows) {
+      const month = String(r.month || "").trim();
+      if (periodSet && !periodSet.has(month)) continue;
+      spend += Number(r.spend) || 0;
+      leads += Number(r.leads) || 0;
+      scheduled += Number(r.scheduled) || 0;
+      meetings += Number(r.meetings) || 0;
+      relevant += Number((r as { relevant?: number }).relevant) || 0;
+      matchedRows++;
+    }
+    // No monthlyRaw rows (or none in the picked months) → fall back
+    // to the campaign snapshot so the card doesn't show zeros for a
+    // project that DOES have data, just nothing in the picked range.
+    if (matchedRows === 0) {
+      return {
+        budget: project.totals.budget,
+        spend: project.totals.spend,
+        leads: project.totals.leads,
+        scheduled: project.totals.scheduled,
+        meetings: project.totals.meetings,
+        relevant: project.totals.relevant || 0,
+        costPerLead: project.totals.costPerLead,
+        source: "campaign-snapshot" as const,
+      };
+    }
+    return {
+      budget: project.totals.budget,
+      spend,
+      leads,
+      scheduled,
+      meetings,
+      relevant,
+      costPerLead: leads > 0 ? spend / leads : 0,
+      source: "monthly-cumulative" as const,
+    };
+  }, [project, selectedPeriods]);
+
   // All channels in the project's monthly data — used for the filter
   // checkboxes. Sorted by total spend desc so the heavy hitters are
   // first.
@@ -220,35 +296,48 @@ export default function ProjectStatsView({ project, diagnosis }: Props) {
 
   return (
     <div className="stats-view">
-      {/* Hero — totals summary */}
+      {/* Hero — period totals summary. Aggregated from monthlyRaw so
+          the numbers track the page's period selector (not the
+          campaign-life snapshot, which doesn't reflect "כל החודשים
+          (5)" semantics). */}
       <section className="stats-section">
-        <h2>סיכום תקופה</h2>
+        <h2>
+          סיכום תקופה
+          {periodTotals.source === "campaign-snapshot" && (
+            <span
+              className="stats-total-source-hint"
+              title="אין נתונים חודשיים לתקופה שנבחרה — מוצג סיכום הקמפיין במצב נוכחי"
+            >
+              {" "}· סך הקמפיין
+            </span>
+          )}
+        </h2>
         <div className="stats-totals">
           <div className="stats-total-card">
             <div className="stats-total-label">תקציב</div>
-            <div className="stats-total-value">{fmtIls(project.totals.budget)}</div>
+            <div className="stats-total-value">{fmtIls(periodTotals.budget)}</div>
           </div>
           <div className="stats-total-card">
             <div className="stats-total-label">עלות</div>
-            <div className="stats-total-value">{fmtIls(project.totals.spend)}</div>
+            <div className="stats-total-value">{fmtIls(periodTotals.spend)}</div>
           </div>
           <div className="stats-total-card">
             <div className="stats-total-label">לידים</div>
-            <div className="stats-total-value">{fmtNum(project.totals.leads)}</div>
+            <div className="stats-total-value">{fmtNum(periodTotals.leads)}</div>
           </div>
           <div className="stats-total-card">
             <div className="stats-total-label">תיאומים</div>
-            <div className="stats-total-value">{fmtNum(project.totals.scheduled)}</div>
+            <div className="stats-total-value">{fmtNum(periodTotals.scheduled)}</div>
           </div>
           <div className="stats-total-card">
             <div className="stats-total-label">ביצועים</div>
-            <div className="stats-total-value">{fmtNum(project.totals.meetings)}</div>
+            <div className="stats-total-value">{fmtNum(periodTotals.meetings)}</div>
           </div>
-          {project.totals.costPerLead > 0 && (
+          {periodTotals.costPerLead > 0 && (
             <div className="stats-total-card">
               <div className="stats-total-label">עלות לליד</div>
               <div className="stats-total-value">
-                {fmtIls(project.totals.costPerLead)}
+                {fmtIls(periodTotals.costPerLead)}
               </div>
             </div>
           )}

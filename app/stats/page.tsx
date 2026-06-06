@@ -253,7 +253,11 @@ export default async function StatsPage({
             </div>
           )}
           {project && (
-            <ProjectStatsView project={project} diagnosis={diagnosis} />
+            <ProjectStatsView
+              project={project}
+              diagnosis={diagnosis}
+              selectedPeriods={selectedPeriodsOrNull}
+            />
           )}
         </section>
       )}
