@@ -25,6 +25,7 @@
 
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
+import { readKeysCached } from "@/lib/keys";
 import {
   getAllClientsAllRows,
   type AllClientsRow,
@@ -139,18 +140,42 @@ function distributionOf(samples: BenchmarkSample[]): BenchmarkDistribution {
 }
 
 /* ── Computation ────────────────────────────────────────────────── */
-function compute(rows: AllClientsRow[]): PortfolioBenchmarks {
+
+/** Sheets formula-error literals — `#N/A` from stale XLOOKUPs etc.
+ *  Treat as blank when reading the project name so they don't end up
+ *  as the "resolved" slug→name mapping. Same set Code.js'
+ *  getProjectsData fix uses (2026-06-05). */
+const FORMULA_ERR_RE =
+  /^#(N\/A|REF!|ERROR!|NAME\?|VALUE!|DIV\/0!|NULL!|NUM!)$/i;
+
+function compute(
+  rows: AllClientsRow[],
+  /** Authoritative slug → Hebrew name map built from Keys. Lookup here
+   *  wins over whatever ALL CLIENTS holds because Keys is the
+   *  curated source of truth: every project has a non-blank Hebrew
+   *  name. Without this, projects whose ALL CLIENTS `project` column
+   *  is blank OR `#N/A` (post-XLOOKUP-removal 2026-05-01) end up
+   *  keyed by SLUG in the benchmark samples — and the stats page's
+   *  `highlightProject="ג'ייד"` then fails the `d.project ===
+   *  highlightProject` equality check against a dot keyed
+   *  `"jade"`. */
+  keysSlugToName: Map<string, string> = new Map(),
+): PortfolioBenchmarks {
   // Build a slug → Hebrew-name lookup from ALL rows first. Post-XLOOKUP
   // (2026-05-01) the ALL CLIENTS `project` column is often blank for
   // current rows but populated for monthly rows of the same slug —
   // so we scan everything to recover the Hebrew name. Required for
   // the city section's name-based join with Keys (2026-06-05).
-  const slugToName = new Map<string, string>();
+  // Keys-derived map takes precedence (seeded first); ALL CLIENTS scan
+  // only fills slugs Keys didn't cover (legacy archived projects).
+  const slugToName = new Map<string, string>(keysSlugToName);
   for (const r of rows) {
     if (!r.projectSlug) continue;
-    const name = (r.project || "").trim();
-    if (!name) continue;
-    if (!slugToName.has(r.projectSlug)) slugToName.set(r.projectSlug, name);
+    if (slugToName.has(r.projectSlug)) continue; // Keys already won
+    const raw = (r.project || "").trim();
+    if (!raw) continue;
+    if (FORMULA_ERR_RE.test(raw)) continue; // stale XLOOKUP error
+    slugToName.set(r.projectSlug, raw);
   }
   // Group by (projectSlug, period). Period is YYYY-MM for "חודשי"
   // rows and the literal "current" for rowType=current rows. Including
@@ -312,8 +337,41 @@ function compute(rows: AllClientsRow[]): PortfolioBenchmarks {
 async function fetchBenchmarks(
   subjectEmail: string,
 ): Promise<PortfolioBenchmarks> {
-  const rows = await getAllClientsAllRows(subjectEmail);
-  return compute(rows);
+  const [rows, keysSlugToName] = await Promise.all([
+    getAllClientsAllRows(subjectEmail),
+    loadKeysSlugToName(subjectEmail),
+  ]);
+  return compute(rows, keysSlugToName);
+}
+
+/**
+ * Build slug → Hebrew project-name map from Keys. The "campaign ID"
+ * column is the canonical slug; "פרוייקט" is the curated Hebrew
+ * display name. Both are required — projects missing either are
+ * skipped (the dot couldn't be plotted with a name anyway).
+ * `readKeysCached` already deduplicates the Sheets read at the
+ * cross-request level, so this adds zero overhead in practice.
+ */
+async function loadKeysSlugToName(
+  subjectEmail: string,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const { headers, rows } = await readKeysCached(subjectEmail);
+    const iSlug = headers.indexOf("campaign ID");
+    const iName = headers.indexOf("פרוייקט");
+    if (iSlug < 0 || iName < 0) return out;
+    for (const r of rows) {
+      const slug = String((r as unknown[])[iSlug] ?? "").trim();
+      const name = String((r as unknown[])[iName] ?? "").trim();
+      if (!slug || !name) continue;
+      if (FORMULA_ERR_RE.test(name)) continue; // defensive
+      out.set(slug, name);
+    }
+  } catch {
+    // Read failure → empty map; compute() falls back to ALL CLIENTS.
+  }
+  return out;
 }
 
 const fetchBenchmarksCrossRequest = unstable_cache(
