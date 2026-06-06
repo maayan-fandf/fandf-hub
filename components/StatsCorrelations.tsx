@@ -21,8 +21,8 @@ import {
 } from "@/lib/statsMath";
 
 /**
- * Funnel-correlation scatters — two side-by-side plots showing how the
- * portfolio's per-project CPL relates to the downstream costs:
+ * Funnel-correlation scatters — three side-by-side plots showing how the
+ * portfolio's per-project CPL relates to the downstream funnel:
  *
  *   1. CPL vs CPS — does a cheap lead translate to a cheap scheduled
  *      meeting, or do channels that produce cheap leads bottleneck
@@ -30,19 +30,28 @@ import {
  *
  *   2. CPL vs CPM — same question for actual held meetings.
  *
+ *   3. CPL vs scheduling rate — does paying more per lead actually
+ *      buy higher-quality intent? Plots CPL against the share of
+ *      leads that convert to a scheduled meeting (scheduled/leads).
+ *      Positive r ⇒ "you pay more, you get better-converting leads";
+ *      flat/negative r ⇒ "expensive leads don't earn their cost".
+ *      Owner asked for this third axis 2026-06-05 to test the
+ *      "expensive leads = better leads" hypothesis end-to-end.
+ *
  * Each dot is one PROJECT, plotted at (its lifetime CPL, its lifetime
- * CPS/CPM). Uses period="current" samples — those represent the
+ * CPS/CPM/rate). Uses period="current" samples — those represent the
  * project's full-window aggregation, so one dot per project.
  *
  * The summary line shows Pearson r + significance tier + a regression
- * slope ("for every ₪1 of CPL, CPS rises by ₪X on average"). The
+ * slope (formatted as money or % depending on Y axis kind). The
  * regression line is overlaid on the scatter so the trend is visible
  * even when individual dots scatter.
- *
- * Owner asked 2026-06-05.
  */
 
 const fmtIls = (n: number) => "₪" + Math.round(n).toLocaleString("he-IL");
+const fmtPct = (n: number) => n.toFixed(1) + "%";
+
+type YKind = "money" | "percent";
 
 type ScatterDot = {
   project: string;
@@ -69,6 +78,41 @@ function buildDots(
     const y = yByProject.get(project);
     if (y == null) return; // project has CPL but not CPS/CPM — drop
     dots.push({ project, x, y });
+  });
+  return dots;
+}
+
+/**
+ * CPL ↔ scheduling rate: scheduled/leads, derived from the existing
+ * CPL + CPS benchmarks without any new data fetch. The identity:
+ *
+ *   CPS = spend / scheduled
+ *   CPL = spend / leads
+ *   ⇒ scheduled / leads = CPL / CPS
+ *
+ * Returns rate as a percentage (0–100). Projects with CPS == 0 (no
+ * scheduled meetings at all) are dropped — division by zero, and the
+ * "zero conversion" case is the empty-funnel signal the dashboard
+ * already surfaces elsewhere. Rates outside [0, 100] are also dropped
+ * as sanity guards against data oddities (e.g., CPL > CPS due to
+ * different snapshot windows).
+ */
+function buildSchedRateDots(benchmarks: PortfolioBenchmarks): ScatterDot[] {
+  const cplByProject = new Map<string, number>();
+  for (const s of benchmarks.project.cpl.samples) {
+    if (s.period === "current") cplByProject.set(s.project, s.value);
+  }
+  const cpsByProject = new Map<string, number>();
+  for (const s of benchmarks.project.cps.samples) {
+    if (s.period === "current") cpsByProject.set(s.project, s.value);
+  }
+  const dots: ScatterDot[] = [];
+  cplByProject.forEach((cpl, project) => {
+    const cps = cpsByProject.get(project);
+    if (cps == null || cps <= 0) return;
+    const rate = (cpl / cps) * 100;
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return;
+    dots.push({ project, x: cpl, y: rate });
   });
   return dots;
 }
@@ -104,6 +148,10 @@ function ScatterPanel({
   title,
   xLabel,
   yLabel,
+  /** "money" (default) → ₪-formatted Y axis + ₪-formatted slope.
+   *  "percent" → %-formatted Y axis + percentage-point slope. The X
+   *  axis stays ₪ in both cases (every existing plot has CPL on X). */
+  yKind = "money",
   stats,
   highlightProject,
   compareProject,
@@ -112,11 +160,28 @@ function ScatterPanel({
   title: string;
   xLabel: string;
   yLabel: string;
+  yKind?: YKind;
   stats: Stats;
   highlightProject: string | null;
   compareProject: string | null;
   onDotClick: (project: string) => void;
 }) {
+  const fmtY = yKind === "percent" ? fmtPct : fmtIls;
+  // The slope describes Δy per ₪1 of CPL. For money: "+₪0.42". For
+  // percent: "+0.42 נקודות אחוז" — keeps the unit explicit instead of
+  // a bare "+0.42%" that's easily misread as relative change.
+  const formatSlope = (slope: number) => {
+    const sign = slope >= 0 ? "+" : "−";
+    const abs = Math.abs(slope);
+    if (yKind === "percent") {
+      return `${sign}${abs.toFixed(2)} נקודות אחוז`;
+    }
+    return `${sign}₪${abs.toFixed(2)}`;
+  };
+  // Drop the unit suffix from labels when stating "for every ₪1 in X,
+  // Y rises by Δ" — repeating "(₪)" inside that sentence reads noisy.
+  const stripUnit = (s: string) =>
+    s.replace(" (₪)", "").replace(" (%)", "");
   const { dots, r, p, regression } = stats;
   const sig = describeSignificance(p);
 
@@ -173,9 +238,8 @@ function ScatterPanel({
         </span>
         {regression && (
           <span className="stats-corr-slope">
-            לכל ₪1 ב-{xLabel.replace(" (₪)", "")} · {yLabel.replace(" (₪)", "")} עולה ב-
-            {regression.slope >= 0 ? "+" : "−"}₪
-            {Math.abs(regression.slope).toFixed(2)}
+            לכל ₪1 ב-{stripUnit(xLabel)} · {stripUnit(yLabel)} עולה ב-
+            {formatSlope(regression.slope)}
           </span>
         )}
       </div>
@@ -193,7 +257,7 @@ function ScatterPanel({
             <YAxis
               type="number"
               dataKey="y"
-              tickFormatter={(v) => fmtIls(v)}
+              tickFormatter={(v) => fmtY(v)}
               tick={{ fontSize: 11 }}
               label={{
                 value: yLabel,
@@ -215,10 +279,10 @@ function ScatterPanel({
                   <div className="gsp-tooltip">
                     <strong>{project}</strong>
                     <span>
-                      {xLabel.replace(" (₪)", "")}: {fmtIls(d.x)}
+                      {stripUnit(xLabel)}: {fmtIls(d.x)}
                     </span>
                     <span>
-                      {yLabel.replace(" (₪)", "")}: {fmtIls(d.y)}
+                      {stripUnit(yLabel)}: {fmtY(d.y)}
                     </span>
                   </div>
                 );
@@ -297,6 +361,10 @@ export default function StatsCorrelations({
     () => buildStats(buildDots(benchmarks, "cpl", "cpm")),
     [benchmarks],
   );
+  const cplRateStats = useMemo(
+    () => buildStats(buildSchedRateDots(benchmarks)),
+    [benchmarks],
+  );
 
   const handleDotClick = (project: string) => {
     const params = new URLSearchParams(searchParams?.toString() || "");
@@ -304,7 +372,13 @@ export default function StatsCorrelations({
     router.push(`/stats?${params.toString()}`);
   };
 
-  if (cplCpsStats.dots.length < 3 && cplCpmStats.dots.length < 3) return null;
+  if (
+    cplCpsStats.dots.length < 3 &&
+    cplCpmStats.dots.length < 3 &&
+    cplRateStats.dots.length < 3
+  ) {
+    return null;
+  }
 
   return (
     <section className="stats-section">
@@ -328,6 +402,16 @@ export default function StatsCorrelations({
           xLabel="עלות לליד (₪)"
           yLabel="עלות לביצוע (₪)"
           stats={cplCpmStats}
+          highlightProject={highlightProject}
+          compareProject={compareProject}
+          onDotClick={handleDotClick}
+        />
+        <ScatterPanel
+          title="עלות לליד ↔ אחוז תיאום"
+          xLabel="עלות לליד (₪)"
+          yLabel="אחוז תיאום (%)"
+          yKind="percent"
+          stats={cplRateStats}
           highlightProject={highlightProject}
           compareProject={compareProject}
           onDotClick={handleDotClick}
