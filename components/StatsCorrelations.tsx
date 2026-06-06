@@ -59,74 +59,39 @@ type ScatterDot = {
   project: string;
   x: number;
   y: number;
+  /** Period this sample comes from — YYYY-MM or "current". Lets the
+   *  tooltip explain "פלג · 2026-03" instead of just "פלג", since the
+   *  same project shows up as multiple dots (one per month). */
+  period: string;
 };
 
-/** Per-project aggregated counts over the user-selected period range.
- *  Two modes:
- *
- *  EXPLICIT (`selectedPeriods` is a non-empty list): sum only those
- *  periods per project. No fallback — if the user picked "2026-01"
- *  and a project has no Jan row, it's absent.
- *
- *  DEFAULT (`selectedPeriods` null/empty): prefer monthly history;
- *  if a project has ANY monthly row, sum its monthly rows and skip
- *  its current row (avoids double-counting since current ≈ sum of
- *  recent months for projects with history). If a project has ONLY
- *  a current row (brand-new projects, or campaigns whose monthly
- *  rollup hasn't materialized yet), use the current row instead.
- *  This is what lifetime samples do server-side; replicating here
- *  so n includes projects that would otherwise drop to zero in the
- *  monthly-only sum. */
-type Agg = { spend: number; leads: number; scheduled: number; meetings: number };
-
-function aggregateByProject(
+/** Iterate the period-raw rows in the user-selected range. When
+ *  `selectedPeriods` is null/empty, default to "all monthly months"
+ *  AND fall back to a project's current row if it has no monthly
+ *  history (same per-project preference the aggregate path used).
+ *  When explicit, just yield rows matching the picked periods. */
+function* eligibleRows(
   raw: PortfolioBenchmarks["projectPeriodRaw"],
   selectedPeriods: string[] | null,
-): Map<string, Agg> {
+): Generator<PortfolioBenchmarks["projectPeriodRaw"][number]> {
   const explicit = selectedPeriods && selectedPeriods.length > 0;
   if (explicit) {
     const allowed = new Set(selectedPeriods);
-    const out = new Map<string, Agg>();
     for (const r of raw) {
-      if (!allowed.has(r.period)) continue;
-      const a = out.get(r.project) || {
-        spend: 0,
-        leads: 0,
-        scheduled: 0,
-        meetings: 0,
-      };
-      a.spend += r.spend;
-      a.leads += r.leads;
-      a.scheduled += r.scheduled;
-      a.meetings += r.meetings;
-      out.set(r.project, a);
+      if (allowed.has(r.period)) yield r;
     }
-    return out;
+    return;
   }
-  // Default: per-project fallback. First pass — detect which projects
-  // have any monthly row.
+  // Default: detect which projects have monthly history, then yield
+  // monthly rows for those + current rows for the rest.
   const hasMonthly = new Set<string>();
   for (const r of raw) {
     if (r.period !== "current") hasMonthly.add(r.project);
   }
-  const out = new Map<string, Agg>();
   for (const r of raw) {
-    // For projects with monthly history, skip the current row.
-    // For projects WITHOUT monthly history, use the current row.
     if (r.period === "current" && hasMonthly.has(r.project)) continue;
-    const a = out.get(r.project) || {
-      spend: 0,
-      leads: 0,
-      scheduled: 0,
-      meetings: 0,
-    };
-    a.spend += r.spend;
-    a.leads += r.leads;
-    a.scheduled += r.scheduled;
-    a.meetings += r.meetings;
-    out.set(r.project, a);
+    yield r;
   }
-  return out;
 }
 
 function buildDots(
@@ -134,29 +99,31 @@ function buildDots(
   selectedPeriods: string[] | null,
   metricY: "cps" | "cpm",
 ): ScatterDot[] {
-  // Eligibility floors mirror portfolioBenchmarks per-period samples:
-  // L≥5 for CPL, Sch≥3 for CPS, M≥2 for CPM. Applied on the SUM after
-  // period filtering — a project with 2 leads in Jan + 4 in Feb (sum=6)
-  // passes ≥5 even though no individual month would.
-  const byProject = aggregateByProject(
-    benchmarks.projectPeriodRaw,
-    selectedPeriods,
-  );
+  // One dot per (project, period) — matches the table at the top of
+  // the page (n=232 monthly CPL samples) instead of collapsing to one
+  // dot per project. Owner asked 2026-06-06: "i still only see 37
+  // samples. there are much more available". Per-sample plotting
+  // surfaces month-to-month variation in addition to cross-project
+  // structure; the regression now reads "across every (project,
+  // month) pair, is high CPL associated with high CPS / low rate?"
+  //
+  // Floors L≥5 / Sch≥3 / M≥2 applied PER SAMPLE — same thresholds
+  // portfolioBenchmarks already uses for the table.
   const dots: ScatterDot[] = [];
-  byProject.forEach((a, project) => {
-    if (a.spend <= 0) return;
-    if (a.leads < 5) return; // CPL floor
-    const cpl = a.spend / a.leads;
+  for (const r of eligibleRows(benchmarks.projectPeriodRaw, selectedPeriods)) {
+    if (r.spend <= 0) continue;
+    if (r.leads < 5) continue;
+    const cpl = r.spend / r.leads;
     let y: number;
     if (metricY === "cps") {
-      if (a.scheduled < 3) return; // CPS floor
-      y = a.spend / a.scheduled;
+      if (r.scheduled < 3) continue;
+      y = r.spend / r.scheduled;
     } else {
-      if (a.meetings < 2) return; // CPM floor
-      y = a.spend / a.meetings;
+      if (r.meetings < 2) continue;
+      y = r.spend / r.meetings;
     }
-    dots.push({ project, x: cpl, y });
-  });
+    dots.push({ project: r.project, period: r.period, x: cpl, y });
+  }
   return dots;
 }
 
@@ -179,26 +146,20 @@ function buildSchedRateDots(
   benchmarks: PortfolioBenchmarks,
   selectedPeriods: string[] | null,
 ): ScatterDot[] {
-  // Same aggregation as the CPL↔CPS dots — period-filtered sums per
-  // project — but Y is the scheduling RATE (scheduled / leads × 100).
-  // Floors: L≥5 (for the CPL X axis) AND Sch≥1 (need at least one
-  // scheduled meeting to have a rate at all; the per-period sample's
-  // ≥3 floor is too strict here because a single scheduled meeting
-  // still gives a real "0 to 1" data point on the rate axis).
-  const byProject = aggregateByProject(
-    benchmarks.projectPeriodRaw,
-    selectedPeriods,
-  );
+  // Same per-(project, period) plotting as buildDots — Y is the
+  // scheduling RATE (scheduled/leads × 100). Floors: L≥5 for the CPL
+  // X axis; rate computed regardless of scheduled count since 0% is
+  // a real data point ("we paid for leads, none scheduled"). Sanity
+  // guard drops rates outside [0, 100].
   const dots: ScatterDot[] = [];
-  byProject.forEach((a, project) => {
-    if (a.spend <= 0) return;
-    if (a.leads < 5) return;
-    if (a.scheduled < 1) return;
-    const cpl = a.spend / a.leads;
-    const rate = (a.scheduled / a.leads) * 100;
-    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return;
-    dots.push({ project, x: cpl, y: rate });
-  });
+  for (const r of eligibleRows(benchmarks.projectPeriodRaw, selectedPeriods)) {
+    if (r.spend <= 0) continue;
+    if (r.leads < 5) continue;
+    const cpl = r.spend / r.leads;
+    const rate = (r.scheduled / r.leads) * 100;
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) continue;
+    dots.push({ project: r.project, period: r.period, x: cpl, y: rate });
+  }
   return dots;
 }
 
@@ -360,9 +321,17 @@ function ScatterPanel({
                 const d = payload[0].payload as ScatterDot | { x: number; y: number };
                 const project = "project" in d ? d.project : null;
                 if (!project) return null;
+                const period = "period" in d ? d.period : "";
+                const periodLabel =
+                  period === "current"
+                    ? "תקופת קמפיין נוכחית"
+                    : period;
                 return (
                   <div className="gsp-tooltip">
                     <strong>{project}</strong>
+                    {periodLabel && (
+                      <span className="gsp-tooltip-period">{periodLabel}</span>
+                    )}
                     <span>
                       {stripUnit(xLabel)}: {fmtIls(d.x)}
                     </span>
@@ -475,8 +444,10 @@ export default function StatsCorrelations({
     <section className="stats-section">
       <h2>🔗 קורלציות במשפך — האם זול-בליד = זול-בהמשך?</h2>
       <div className="stats-corr-meta">
-        כל נקודה = פרויקט אחד, מצטבר על פני התקופה הנבחרת בסרגל למעלה.
-        קו ייחוס = רגרסיה לינארית. Pearson r מציין עוצמת הקשר הלינארי,
+        כל נקודה = (פרויקט, חודש). פרויקט שרץ 5 חודשים תורם עד 5
+        נקודות, כך שהרגרסיה משקפת גם שונות חודש-לחודש בתוך אותו
+        פרויקט וגם הבדלים בין פרויקטים. סרגל התקופה למעלה מצמצם את
+        החודשים הנכללים. Pearson r מציין עוצמת הקשר הלינארי,
         p-value את מובהקותו.
       </div>
       <div className="stats-corr-grid">
