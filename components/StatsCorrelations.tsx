@@ -62,13 +62,21 @@ type ScatterDot = {
 };
 
 /** Per-project aggregated counts over the user-selected period range.
- *  When `selectedPeriods` is null or empty, sums ALL monthly periods
- *  per project (the "default = all monthly months" semantic). When
- *  set, sums only the picked periods. Current-row contributions are
- *  excluded from the monthly-default path to avoid double-counting
- *  (a project's current row typically duplicates the latest months);
- *  if the user explicitly picks "current" in the period selector,
- *  it's included. */
+ *  Two modes:
+ *
+ *  EXPLICIT (`selectedPeriods` is a non-empty list): sum only those
+ *  periods per project. No fallback — if the user picked "2026-01"
+ *  and a project has no Jan row, it's absent.
+ *
+ *  DEFAULT (`selectedPeriods` null/empty): prefer monthly history;
+ *  if a project has ANY monthly row, sum its monthly rows and skip
+ *  its current row (avoids double-counting since current ≈ sum of
+ *  recent months for projects with history). If a project has ONLY
+ *  a current row (brand-new projects, or campaigns whose monthly
+ *  rollup hasn't materialized yet), use the current row instead.
+ *  This is what lifetime samples do server-side; replicating here
+ *  so n includes projects that would otherwise drop to zero in the
+ *  monthly-only sum. */
 type Agg = { spend: number; leads: number; scheduled: number; meetings: number };
 
 function aggregateByProject(
@@ -76,16 +84,36 @@ function aggregateByProject(
   selectedPeriods: string[] | null,
 ): Map<string, Agg> {
   const explicit = selectedPeriods && selectedPeriods.length > 0;
-  const allowed = explicit ? new Set(selectedPeriods) : null;
+  if (explicit) {
+    const allowed = new Set(selectedPeriods);
+    const out = new Map<string, Agg>();
+    for (const r of raw) {
+      if (!allowed.has(r.period)) continue;
+      const a = out.get(r.project) || {
+        spend: 0,
+        leads: 0,
+        scheduled: 0,
+        meetings: 0,
+      };
+      a.spend += r.spend;
+      a.leads += r.leads;
+      a.scheduled += r.scheduled;
+      a.meetings += r.meetings;
+      out.set(r.project, a);
+    }
+    return out;
+  }
+  // Default: per-project fallback. First pass — detect which projects
+  // have any monthly row.
+  const hasMonthly = new Set<string>();
+  for (const r of raw) {
+    if (r.period !== "current") hasMonthly.add(r.project);
+  }
   const out = new Map<string, Agg>();
   for (const r of raw) {
-    if (allowed) {
-      if (!allowed.has(r.period)) continue;
-    } else {
-      // Default: monthly history only. Skip "current" to avoid
-      // double-counting (current ≈ sum of recent months).
-      if (r.period === "current") continue;
-    }
+    // For projects with monthly history, skip the current row.
+    // For projects WITHOUT monthly history, use the current row.
+    if (r.period === "current" && hasMonthly.has(r.project)) continue;
     const a = out.get(r.project) || {
       spend: 0,
       leads: 0,
