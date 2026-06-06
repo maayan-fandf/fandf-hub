@@ -221,6 +221,57 @@ function compute(
     byProjectPeriod.set(compositeKey, entry);
   }
 
+  // Project-lifetime totals — sum across ALL monthly rows per project,
+  // falling back to the current row when no monthly data exists. This
+  // is the "one dot per project, full history" aggregate that
+  // StatsCorrelations uses (period="lifetime" samples), giving a much
+  // bigger n than the "current snapshot only" path that previously
+  // dropped projects whose CURRENT row was stale (the עוז בלנד case:
+  // current showed scheduled=2 but monthly cumulative was 111). The
+  // existing per-period samples (period="current" + each YYYY-MM)
+  // stay unchanged so the Gaussian strip-plots + period multi-select
+  // keep their semantics.
+  type LifetimeAgg = {
+    projectName: string;
+    monthlySpend: number; monthlyLeads: number;
+    monthlyScheduled: number; monthlyMeetings: number;
+    currentSpend: number; currentLeads: number;
+    currentScheduled: number; currentMeetings: number;
+    sawMonthly: boolean;
+    sawCurrent: boolean;
+  };
+  const lifetimeBySlug = new Map<string, LifetimeAgg>();
+  for (const r of eligible) {
+    if (!r.projectSlug) continue;
+    if (Number(r.spend) <= 0) continue;
+    const slug = r.projectSlug;
+    const name = slugToName.get(slug) || r.project || slug;
+    const agg = lifetimeBySlug.get(slug) || {
+      projectName: name,
+      monthlySpend: 0, monthlyLeads: 0,
+      monthlyScheduled: 0, monthlyMeetings: 0,
+      currentSpend: 0, currentLeads: 0,
+      currentScheduled: 0, currentMeetings: 0,
+      sawMonthly: false,
+      sawCurrent: false,
+    };
+    if (!agg.projectName && name) agg.projectName = name;
+    if (r.rowType === "current") {
+      agg.sawCurrent = true;
+      agg.currentSpend += Number(r.spend) || 0;
+      agg.currentLeads += Number(r.leads) || 0;
+      agg.currentScheduled += Number(r.scheduled) || 0;
+      agg.currentMeetings += Number(r.meetings) || 0;
+    } else {
+      agg.sawMonthly = true;
+      agg.monthlySpend += Number(r.spend) || 0;
+      agg.monthlyLeads += Number(r.leads) || 0;
+      agg.monthlyScheduled += Number(r.scheduled) || 0;
+      agg.monthlyMeetings += Number(r.meetings) || 0;
+    }
+    lifetimeBySlug.set(slug, agg);
+  }
+
   const projCpls: BenchmarkSample[] = [];
   const projCpss: BenchmarkSample[] = [];
   const projCpms: BenchmarkSample[] = [];
@@ -284,6 +335,45 @@ function compute(
         });
       byChannel[alias] = bucket;
     });
+  });
+
+  // Emit "lifetime" project samples — one per project, computed from
+  // the full-history sums above. Prefer monthly aggregate (sees full
+  // historical record); fall back to the current row when no monthly
+  // data exists (new projects whose only ALL CLIENTS entry is the
+  // live current row). Same eligibility floors as the per-period
+  // samples (L≥5 / Sch≥3 / M≥2) so the lifetime n stays robust.
+  lifetimeBySlug.forEach((agg) => {
+    const useMonthly = agg.sawMonthly;
+    const S = useMonthly ? agg.monthlySpend : agg.currentSpend;
+    const L = useMonthly ? agg.monthlyLeads : agg.currentLeads;
+    const Sch = useMonthly ? agg.monthlyScheduled : agg.currentScheduled;
+    const M = useMonthly ? agg.monthlyMeetings : agg.currentMeetings;
+    if (S <= 0) return;
+    if (L >= 5) {
+      projCpls.push({
+        project: agg.projectName,
+        value: S / L,
+        period: "lifetime",
+        month: "lifetime",
+      });
+    }
+    if (Sch >= 3) {
+      projCpss.push({
+        project: agg.projectName,
+        value: S / Sch,
+        period: "lifetime",
+        month: "lifetime",
+      });
+    }
+    if (M >= 2) {
+      projCpms.push({
+        project: agg.projectName,
+        value: S / M,
+        period: "lifetime",
+        month: "lifetime",
+      });
+    }
   });
 
   const channels: PortfolioBenchmarks["channels"] = {};
