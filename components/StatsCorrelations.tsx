@@ -12,7 +12,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { PortfolioBenchmarks } from "@/lib/portfolioBenchmarks";
+import type {
+  PortfolioBenchmarks,
+} from "@/lib/portfolioBenchmarks";
 import {
   describeSignificance,
   linearRegression,
@@ -59,42 +61,73 @@ type ScatterDot = {
   y: number;
 };
 
-/** Pick the project's most-representative sample value, preferring the
- *  "lifetime" full-history aggregate (emitted by portfolioBenchmarks
- *  for each project) over the live "current" snapshot. Lifetime is
- *  more honest about the project's overall position — current can be
- *  stale (e.g., עוז בלנד's current showed scheduled=2 while monthly
- *  cumulative was 111). Current stays as a fallback for legacy data
- *  shapes / projects only briefly running. */
-function pickProjectValue(
-  samples: { project: string; value: number; period: string }[],
-): Map<string, number> {
-  const lifetime = new Map<string, number>();
-  const current = new Map<string, number>();
-  for (const s of samples) {
-    if (s.period === "lifetime") lifetime.set(s.project, s.value);
-    else if (s.period === "current") current.set(s.project, s.value);
+/** Per-project aggregated counts over the user-selected period range.
+ *  When `selectedPeriods` is null or empty, sums ALL monthly periods
+ *  per project (the "default = all monthly months" semantic). When
+ *  set, sums only the picked periods. Current-row contributions are
+ *  excluded from the monthly-default path to avoid double-counting
+ *  (a project's current row typically duplicates the latest months);
+ *  if the user explicitly picks "current" in the period selector,
+ *  it's included. */
+type Agg = { spend: number; leads: number; scheduled: number; meetings: number };
+
+function aggregateByProject(
+  raw: PortfolioBenchmarks["projectPeriodRaw"],
+  selectedPeriods: string[] | null,
+): Map<string, Agg> {
+  const explicit = selectedPeriods && selectedPeriods.length > 0;
+  const allowed = explicit ? new Set(selectedPeriods) : null;
+  const out = new Map<string, Agg>();
+  for (const r of raw) {
+    if (allowed) {
+      if (!allowed.has(r.period)) continue;
+    } else {
+      // Default: monthly history only. Skip "current" to avoid
+      // double-counting (current ≈ sum of recent months).
+      if (r.period === "current") continue;
+    }
+    const a = out.get(r.project) || {
+      spend: 0,
+      leads: 0,
+      scheduled: 0,
+      meetings: 0,
+    };
+    a.spend += r.spend;
+    a.leads += r.leads;
+    a.scheduled += r.scheduled;
+    a.meetings += r.meetings;
+    out.set(r.project, a);
   }
-  const out = new Map<string, number>();
-  current.forEach((v, k) => out.set(k, v));
-  // Lifetime overrides current when both exist.
-  lifetime.forEach((v, k) => out.set(k, v));
   return out;
 }
 
 function buildDots(
   benchmarks: PortfolioBenchmarks,
-  metricX: "cpl",
+  selectedPeriods: string[] | null,
   metricY: "cps" | "cpm",
 ): ScatterDot[] {
-  // Project → x value (lifetime CPL) and y value (lifetime CPS/CPM).
-  const xByProject = pickProjectValue(benchmarks.project[metricX].samples);
-  const yByProject = pickProjectValue(benchmarks.project[metricY].samples);
+  // Eligibility floors mirror portfolioBenchmarks per-period samples:
+  // L≥5 for CPL, Sch≥3 for CPS, M≥2 for CPM. Applied on the SUM after
+  // period filtering — a project with 2 leads in Jan + 4 in Feb (sum=6)
+  // passes ≥5 even though no individual month would.
+  const byProject = aggregateByProject(
+    benchmarks.projectPeriodRaw,
+    selectedPeriods,
+  );
   const dots: ScatterDot[] = [];
-  xByProject.forEach((x, project) => {
-    const y = yByProject.get(project);
-    if (y == null) return; // project has CPL but not CPS/CPM — drop
-    dots.push({ project, x, y });
+  byProject.forEach((a, project) => {
+    if (a.spend <= 0) return;
+    if (a.leads < 5) return; // CPL floor
+    const cpl = a.spend / a.leads;
+    let y: number;
+    if (metricY === "cps") {
+      if (a.scheduled < 3) return; // CPS floor
+      y = a.spend / a.scheduled;
+    } else {
+      if (a.meetings < 2) return; // CPM floor
+      y = a.spend / a.meetings;
+    }
+    dots.push({ project, x: cpl, y });
   });
   return dots;
 }
@@ -114,17 +147,27 @@ function buildDots(
  * as sanity guards against data oddities (e.g., CPL > CPS due to
  * different snapshot windows).
  */
-function buildSchedRateDots(benchmarks: PortfolioBenchmarks): ScatterDot[] {
-  // Same lifetime-vs-current preference as buildDots — both inputs
-  // come from pickProjectValue so the rate derivation is computed on
-  // the same temporal basis (lifetime CPL / lifetime CPS).
-  const cplByProject = pickProjectValue(benchmarks.project.cpl.samples);
-  const cpsByProject = pickProjectValue(benchmarks.project.cps.samples);
+function buildSchedRateDots(
+  benchmarks: PortfolioBenchmarks,
+  selectedPeriods: string[] | null,
+): ScatterDot[] {
+  // Same aggregation as the CPL↔CPS dots — period-filtered sums per
+  // project — but Y is the scheduling RATE (scheduled / leads × 100).
+  // Floors: L≥5 (for the CPL X axis) AND Sch≥1 (need at least one
+  // scheduled meeting to have a rate at all; the per-period sample's
+  // ≥3 floor is too strict here because a single scheduled meeting
+  // still gives a real "0 to 1" data point on the rate axis).
+  const byProject = aggregateByProject(
+    benchmarks.projectPeriodRaw,
+    selectedPeriods,
+  );
   const dots: ScatterDot[] = [];
-  cplByProject.forEach((cpl, project) => {
-    const cps = cpsByProject.get(project);
-    if (cps == null || cps <= 0) return;
-    const rate = (cpl / cps) * 100;
+  byProject.forEach((a, project) => {
+    if (a.spend <= 0) return;
+    if (a.leads < 5) return;
+    if (a.scheduled < 1) return;
+    const cpl = a.spend / a.leads;
+    const rate = (a.scheduled / a.leads) * 100;
     if (!Number.isFinite(rate) || rate < 0 || rate > 100) return;
     dots.push({ project, x: cpl, y: rate });
   });
@@ -359,25 +402,31 @@ export default function StatsCorrelations({
   benchmarks,
   highlightProject,
   compareProject,
+  selectedPeriods,
 }: {
   benchmarks: PortfolioBenchmarks;
   highlightProject: string | null;
   compareProject: string | null;
+  /** From the page's period multi-select. null/empty = default
+   *  "all monthly months" — the scatters sum every YYYY-MM sample
+   *  per project. When set, the sums are restricted to those
+   *  periods so n + the regression track the picker honestly. */
+  selectedPeriods: string[] | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const cplCpsStats = useMemo(
-    () => buildStats(buildDots(benchmarks, "cpl", "cps")),
-    [benchmarks],
+    () => buildStats(buildDots(benchmarks, selectedPeriods, "cps")),
+    [benchmarks, selectedPeriods],
   );
   const cplCpmStats = useMemo(
-    () => buildStats(buildDots(benchmarks, "cpl", "cpm")),
-    [benchmarks],
+    () => buildStats(buildDots(benchmarks, selectedPeriods, "cpm")),
+    [benchmarks, selectedPeriods],
   );
   const cplRateStats = useMemo(
-    () => buildStats(buildSchedRateDots(benchmarks)),
-    [benchmarks],
+    () => buildStats(buildSchedRateDots(benchmarks, selectedPeriods)),
+    [benchmarks, selectedPeriods],
   );
 
   const handleDotClick = (project: string) => {
@@ -398,8 +447,9 @@ export default function StatsCorrelations({
     <section className="stats-section">
       <h2>🔗 קורלציות במשפך — האם זול-בליד = זול-בהמשך?</h2>
       <div className="stats-corr-meta">
-        כל נקודה = פרויקט אחד (סיכום כל הזמן). קו ייחוס = רגרסיה לינארית.
-        Pearson r מציין עוצמת הקשר הלינארי, p-value את מובהקותו.
+        כל נקודה = פרויקט אחד, מצטבר על פני התקופה הנבחרת בסרגל למעלה.
+        קו ייחוס = רגרסיה לינארית. Pearson r מציין עוצמת הקשר הלינארי,
+        p-value את מובהקותו.
       </div>
       <div className="stats-corr-grid">
         <ScatterPanel

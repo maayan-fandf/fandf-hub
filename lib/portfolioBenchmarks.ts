@@ -69,6 +69,28 @@ export type BenchmarkDistribution = {
   stddev: number;
 };
 
+/** Per-(project, period) raw counts — the underlying data the scatter
+ *  aggregates when the page's period multi-select narrows below the
+ *  default "all monthly months". Lets StatsCorrelations recompute CPL
+ *  / CPS / scheduling-rate on the SUM of the selected periods instead
+ *  of using the precomputed lifetime samples, so n + the regression
+ *  track the picker honestly.
+ *
+ *  No eligibility floor applied here — the floor (L≥5/Sch≥3/M≥2) is
+ *  applied on the SUM after period filtering, so a project with 2
+ *  leads in Jan + 4 leads in Feb (sum=6, passes ≥5) doesn't get
+ *  dropped by a per-month gate that wouldn't be honest about the
+ *  selected window. */
+export type ProjectPeriodRaw = {
+  project: string;
+  /** "current" or YYYY-MM. */
+  period: string;
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+};
+
 export type PortfolioBenchmarks = {
   project: {
     cpl: BenchmarkDistribution;
@@ -93,6 +115,10 @@ export type PortfolioBenchmarks = {
    *  metrics + channels. "current" + sorted YYYY-MM months. Powers the
    *  period multi-select on /stats. */
   availablePeriods: string[];
+  /** Per-(project, period) raw count rows for the correlation scatter's
+   *  range-aware aggregation. ~30 projects × ~6 periods = ~180 entries
+   *  → trivial payload. Built 2026-06-06. */
+  projectPeriodRaw: ProjectPeriodRaw[];
 };
 
 const CACHE_TTL = 600; // 10 min — portfolio shape doesn't shift hourly
@@ -241,11 +267,28 @@ function compute(
     sawCurrent: boolean;
   };
   const lifetimeBySlug = new Map<string, LifetimeAgg>();
+  // Per-(project, period) raw counts. The lifetime aggregate is
+  // derived from these, AND they ship to the client so the scatter
+  // can re-sum on the user-picked period range. Keyed by
+  // slug + "::" + period.
+  const projectPeriodRawMap = new Map<
+    string,
+    {
+      project: string;
+      period: string;
+      spend: number;
+      leads: number;
+      scheduled: number;
+      meetings: number;
+    }
+  >();
   for (const r of eligible) {
     if (!r.projectSlug) continue;
     if (Number(r.spend) <= 0) continue;
     const slug = r.projectSlug;
     const name = slugToName.get(slug) || r.project || slug;
+
+    // Lifetime totals.
     const agg = lifetimeBySlug.get(slug) || {
       projectName: name,
       monthlySpend: 0, monthlyLeads: 0,
@@ -270,7 +313,36 @@ function compute(
       agg.monthlyMeetings += Number(r.meetings) || 0;
     }
     lifetimeBySlug.set(slug, agg);
+
+    // Per-(project, period) raw — same period derivation as the
+    // byProjectPeriod loop above. Skips any row with a malformed
+    // month key.
+    let periodKey: string;
+    if (r.rowType === "current") {
+      periodKey = "current";
+    } else {
+      const m = (r.startIso || "").slice(0, 7);
+      if (!m || !/^\d{4}-\d{2}$/.test(m)) continue;
+      periodKey = m;
+    }
+    const rawKey = slug + "::" + periodKey;
+    const raw = projectPeriodRawMap.get(rawKey) || {
+      project: name,
+      period: periodKey,
+      spend: 0,
+      leads: 0,
+      scheduled: 0,
+      meetings: 0,
+    };
+    raw.spend += Number(r.spend) || 0;
+    raw.leads += Number(r.leads) || 0;
+    raw.scheduled += Number(r.scheduled) || 0;
+    raw.meetings += Number(r.meetings) || 0;
+    projectPeriodRawMap.set(rawKey, raw);
   }
+  const projectPeriodRaw: ProjectPeriodRaw[] = Array.from(
+    projectPeriodRawMap.values(),
+  );
 
   const projCpls: BenchmarkSample[] = [];
   const projCpss: BenchmarkSample[] = [];
@@ -420,6 +492,7 @@ function compute(
     channels,
     aliasToRaw,
     availablePeriods,
+    projectPeriodRaw,
   };
 }
 

@@ -209,6 +209,7 @@ export default async function StatsPage({
           benchmarks={benchmarks}
           highlightProject={selectedProject}
           compareProject={compareProject}
+          selectedPeriods={selectedPeriodsOrNull}
         />
       )}
 
