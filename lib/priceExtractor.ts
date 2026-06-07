@@ -93,6 +93,11 @@ export type DetectedPrice = {
    *  prefixes ("פנטהאוז · 5 חד׳"), and other natural-language tags
    *  the page used. Empty string when no marker was detected. */
   roomsLabel?: string;
+  /** Where the room label came from. Used during value-dedup so a
+   *  table-form match (most structured) can override a single-int
+   *  match that grabbed a digit out of a comma list. Optional —
+   *  consumers that don't care can ignore. */
+  roomSource?: "table" | "single" | "range" | "list" | "none";
 };
 
 /**
@@ -183,13 +188,28 @@ const ROOMS_BACK_WINDOW = 120;
 const PENTHOUSE_BEFORE_TABLE = 20;
 const ROOMS_TABLE_RE = /חדרים\s*:\s*(\d+)/g;
 const ROOMS_RANGE_RE = /(\d+)\s*[-–—־]\s*(\d+)\s*חד['׳ר]?/g;
+/** Comma-list pattern — "3,4,5 חד׳" / "3, 4, 5 חד'" / similar with
+ *  Arabic comma (U+060C). Treat as a multi-value LIST: the marker
+ *  spans the whole pattern and shouldn't be interpreted as a single
+ *  "5 חד'" tag for any specific price. Yad2 marketing headlines
+ *  routinely use this: "דירות 3,4,5 חד' ופנטהאוזים החל מ-2,420,000"
+ *  where ₪2.42M is the 3-room (not 5-room) starting price. */
+const ROOMS_LIST_RE = /(\d+(?:\s*[,،]\s*\d+){1,})\s*חד['׳ר]?/g;
 const ROOMS_SINGLE_RE = /(?<!\d)(\d+)\s*חד['׳ר]?/g;
 const PENTHOUSE_KW_RE = /(?:פנטהאוז|דופלקס|גג\s*דירה|מיני\s*פנט|גג\b)/;
 
 function findRoomLabel(
   text: string,
   priceIdx: number,
-): { rooms: number | null; roomsLabel: string } {
+): {
+  rooms: number | null;
+  roomsLabel: string;
+  /** Provenance of the label — drives dedup priority when the same
+   *  value reappears with a different label kind. Table form (Yad2
+   *  sponsored "חדרים: N") beats single form (which can pick up
+   *  digits from comma lists or marketing copy). */
+  source: "table" | "single" | "range" | "list" | "none";
+} {
   const start = Math.max(0, priceIdx - ROOMS_BACK_WINDOW);
   const window = text.slice(start, priceIdx);
   let bestIdx = -1;
@@ -206,12 +226,12 @@ function findRoomLabel(
   // inside "3-5 חד'" gets picked up by ROOMS_SINGLE_RE as a stronger
   // closer-to-price match, and the headline ends up labeled "5 חד'"
   // instead of the proper "3-5 חד׳" range.
-  const rangeSpans: Array<{ start: number; end: number }> = [];
+  const exclusionSpans: Array<{ start: number; end: number }> = [];
   {
     const re = new RegExp(ROOMS_RANGE_RE.source, "g");
     let m: RegExpExecArray | null;
     while ((m = re.exec(window)) !== null) {
-      rangeSpans.push({ start: m.index, end: re.lastIndex });
+      exclusionSpans.push({ start: m.index, end: re.lastIndex });
       if (m.index >= bestIdx) {
         bestIdx = m.index;
         rooms = null;
@@ -220,8 +240,24 @@ function findRoomLabel(
       }
     }
   }
-  const insideAnyRange = (idx: number) =>
-    rangeSpans.some((s) => idx >= s.start && idx < s.end);
+  // Comma-list pass — same idea: remember the span so the single
+  // pass below skips "5" inside "3,4,5 חד'". Stores the literal as
+  // the label when this becomes the best match.
+  {
+    const re = new RegExp(ROOMS_LIST_RE.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(window)) !== null) {
+      exclusionSpans.push({ start: m.index, end: re.lastIndex });
+      if (m.index >= bestIdx) {
+        bestIdx = m.index;
+        rooms = null;
+        label = `${m[1].replace(/\s*,\s*/g, ",")} חד׳`;
+        bestSource = "list";
+      }
+    }
+  }
+  const insideAnyExcluded = (idx: number) =>
+    exclusionSpans.some((s) => idx >= s.start && idx < s.end);
 
   // Table form — Yad2 sponsored "חדרים: N". Most authoritative
   // because it's a per-apartment-type tag in a structured table row.
@@ -239,13 +275,13 @@ function findRoomLabel(
   }
 
   // Single int form — "4 חד'" / "5 חדר" / "6 חדרים". Skip anything
-  // sitting inside a previously-detected range span (the range
+  // sitting inside a range OR comma-list span (the broader pattern
   // already labeled that text more meaningfully).
   {
     const re = new RegExp(ROOMS_SINGLE_RE.source, "g");
     let m: RegExpExecArray | null;
     while ((m = re.exec(window)) !== null) {
-      if (insideAnyRange(m.index)) continue;
+      if (insideAnyExcluded(m.index)) continue;
       if (m.index < bestIdx) continue;
       bestIdx = m.index;
       rooms = Number(m[1]);
@@ -269,15 +305,38 @@ function findRoomLabel(
       label = label ? `פנטהאוז · ${label}` : "פנטהאוז";
     }
   }
-  return { rooms, roomsLabel: label };
+  return {
+    rooms,
+    roomsLabel: label,
+    source: bestSource ?? "none",
+  };
 }
 
 /** Specificity score for a room label — used during dedup promotion to
  *  prefer a structured label over an ambiguous one when the same value
- *  reappears with a cleaner tag (Yad2 case: headline says "3-5 חד׳",
- *  table row beneath says "חדרים: 3" — the second wins). */
-function roomLabelScore(rooms: number | null, label: string): number {
-  if (rooms != null) return 3;
+ *  reappears with a cleaner tag.
+ *
+ *   table  = 4  (Yad2 sponsored "חדרים: N" — most structured)
+ *   single = 3  (bare "N חד'", as in landing hero blocks)
+ *   range  = 2  ("3-5 חד'", "3,4,5 חד'" — multi-value marker)
+ *   list   = 2  (same as range, just comma-separated)
+ *   none w/ label = 1
+ *   nothing = 0
+ *
+ * Cases this resolves:
+ *   - Yad2 headline "3-5 חד׳" → table row "חדרים: 3" : table beats range
+ *   - אנדה headline "3,4,5 חד'" → table row "חדרים: 3" : table beats list
+ *   - אנדה headline "3,4,5 חד' החל מ-X" : list label beats nothing
+ *     so the user sees "3,4,5 חד'" instead of just the value */
+function roomLabelScore(
+  rooms: number | null,
+  label: string,
+  source: "table" | "single" | "range" | "list" | "none" = "none",
+): number {
+  if (source === "table") return 4;
+  if (source === "single" && rooms != null) return 3;
+  if (source === "range" || source === "list") return 2;
+  if (rooms != null) return 3; // legacy callers without source
   if (label) return 1;
   return 0;
 }
@@ -337,27 +396,36 @@ export function extractPrices(text: string): DetectedPrice[] {
       const wide = text.slice(Math.max(0, m.index - ANTI_ANCHOR_WINDOW), m.index);
       if (ANTI_ANCHOR_RE.test(wide)) anchored = false;
     }
-    const { rooms, roomsLabel } = findRoomLabel(text, m.index);
+    const { rooms, roomsLabel, source } = findRoomLabel(text, m.index);
     const existingIdx = byValue.get(value);
     if (existingIdx !== undefined) {
       // Same value seen earlier. If THIS occurrence is anchored and
       // the stored one wasn't, promote the stored entry. Likewise for
-      // the room label — a later occurrence with a MORE SPECIFIC label
-      // (single int beats range beats nothing) overrides the earlier
-      // sighting, matching the Yad2 sponsored-page reality where the
-      // marketing headline shows "3-5 חד׳" range but the per-apartment
-      // table row beneath repeats the same price with "חדרים: 3". We
-      // leave index/matched on the first occurrence so debug output
-      // still points at where we first saw the price in the page.
+      // the room label — a later occurrence with a STRUCTURALLY
+      // STRONGER source (table beats single beats range/list) overrides
+      // the earlier sighting. Matches the Yad2 sponsored-page reality
+      // where the marketing headline shows "3,4,5 חד׳" (list) but the
+      // per-apartment table beneath repeats the same price with
+      // "חדרים: 3" (table) — אנדה case 2026-06-07: ₪2.42M was
+      // mislabeled as "5 חד'" because ROOMS_SINGLE_RE grabbed the
+      // trailing "5" from the comma list and equal-score dedup
+      // ignored the cleaner table form. We leave index/matched on
+      // the first occurrence so debug output still points at where
+      // we first saw the price in the page.
       const cur = found[existingIdx];
       const next = { ...cur };
       if (anchored && !cur.anchored) next.anchored = true;
       if (
-        roomLabelScore(rooms, roomsLabel) >
-        roomLabelScore(cur.rooms ?? null, cur.roomsLabel ?? "")
+        roomLabelScore(rooms, roomsLabel, source) >
+        roomLabelScore(
+          cur.rooms ?? null,
+          cur.roomsLabel ?? "",
+          cur.roomSource ?? "none",
+        )
       ) {
         next.rooms = rooms;
         next.roomsLabel = roomsLabel;
+        next.roomSource = source;
       }
       found[existingIdx] = next;
       continue;
@@ -370,6 +438,7 @@ export function extractPrices(text: string): DetectedPrice[] {
       anchored,
       rooms,
       roomsLabel,
+      roomSource: source,
     });
   }
   return found;

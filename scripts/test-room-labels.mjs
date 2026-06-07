@@ -43,6 +43,22 @@ const cases = [
     },
   },
   {
+    name: "Yad2 אנדה case: comma-list headline + per-room table",
+    text:
+      "בפרויקט היוקרתי בבאר יעקב. דירות 3,4,5 חד', דירות גן ופנטהאוזים " +
+      "עם מרפסות ענק החל מ- 2,420,000 ₪ ותנאי תשלום ל-15/85. " +
+      "דירה חדרים: 3 שטח: 79.93 מ\"ר קומה: 10 החל מ- 2,420,000 ₪ " +
+      "דירה חדרים: 4 שטח: 107.85 מ\"ר קומה: 1 החל מ- 2,980,000 ₪ " +
+      "דירה חדרים: 5 שטח: 127.79 מ\"ר קומה: 1 החל מ- 3,230,000 ₪",
+    expected: {
+      // Table-form "חדרים: 3" overrides the comma-list grabbing "5"
+      // from "3,4,5 חד'" at the headline (the original bug).
+      2420000: { rooms: 3, roomsLabel: "3 חד׳" },
+      2980000: { rooms: 4, roomsLabel: "4 חד׳" },
+      3230000: { rooms: 5, roomsLabel: "5 חד׳" },
+    },
+  },
+  {
     name: "Plain headline with no room marker at all",
     text: "פרויקט מבטיח. כניסה צפויה 2027. החל מ-3,500,000 ₪.",
     expected: {
