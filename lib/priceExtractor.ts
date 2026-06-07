@@ -215,7 +215,7 @@ function findRoomLabel(
   let bestIdx = -1;
   let rooms: number | null = null;
   let label = "";
-  let bestSource: "range" | "table" | "single" | null = null;
+  let bestSource: "range" | "table" | "single" | "list" | null = null;
   // Position in the FULL text (not the window) where the chosen
   // table-form match starts — used to anchor the penthouse-prefix
   // check to the apartment-type cell, not random text upstream.
