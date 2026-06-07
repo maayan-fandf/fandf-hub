@@ -113,12 +113,15 @@ const iLanding = (() => {
   }
   return -1;
 })();
-// Optional second column for the project's Yad2 page URL. Maayan fills
-// this in manually per project after looking up the URL via the
-// YAD2_CANDIDATES tab (Yad2 auto-discovery hits anti-bot fast). When
-// the column doesn't exist or the cell is empty for a project, the
-// scraper simply omits the Yad2 price from that project's output.
-const iYad2 = (() => {
+// Yad2 source — two-mode resolution. The user used to paste raw Yad2
+// URLs into Keys; as of 2026-06-07 they switched to a "yad2lookup"
+// column that holds the project's name as it appears in the Yad2-
+// provided affiliate sheet. We read that sheet, build a name→URL
+// map (only for rows marked "באוויר" with a real http URL), and
+// resolve each project's Yad2 URL through it. Backward-compatible:
+// if Keys still has a "Yad2 URL" column (legacy schema), that's
+// used as a fallback when no yad2lookup is set or the lookup misses.
+const iYad2Direct = (() => {
   const lc = kHdr.map((h) => h.toLowerCase());
   for (const c of ["yad2 url", "yad2", "יד2", "יד 2", "יד2 url"]) {
     const i = lc.indexOf(c);
@@ -126,9 +129,82 @@ const iYad2 = (() => {
   }
   return -1;
 })();
+const iYad2Lookup = (() => {
+  const lc = kHdr.map((h) => h.toLowerCase());
+  for (const c of ["yad2lookup", "yad2 lookup"]) {
+    const i = lc.indexOf(c);
+    if (i >= 0) return i;
+  }
+  return -1;
+})();
+// Yad2 affiliate sheet — provided by Yad2's account-management team.
+// One row per project across all F&F clients; col C is the project's
+// name (the `yad2lookup` field in Keys matches against this), col D
+// is the Yad2 page URL, col H gates whether the project is currently
+// live ("באוויר" / "לא באוויר" / "בהקפאה"). Frozen / not-live rows
+// are skipped — their URL is "-" or absent anyway.
+const YAD2_AFFILIATE_SHEET_ID = "1ZpdfJhdYa6aD5iftTsGJuVMLTS9WlzHGZMevq5hrxGU";
+const YAD2_AFFILIATE_TAB = "yad2";
+const yad2LookupMap = await (async () => {
+  if (iYad2Lookup < 0) return null;
+  try {
+    const r = await sh.spreadsheets.values.get({
+      spreadsheetId: YAD2_AFFILIATE_SHEET_ID,
+      // Explicit A:Z range — Sheets API rejects bare tab names like
+      // "yad2" (interprets them as the A1 cell of an unnamed range).
+      range: `${YAD2_AFFILIATE_TAB}!A:Z`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const rows = r.data.values || [];
+    const hdr = rows[0] || [];
+    // Tolerant column lookup — Yad2 may rename headers at any point.
+    const findCol = (candidates) => {
+      const lc = hdr.map((h) => String(h || "").trim().toLowerCase());
+      for (const c of candidates) {
+        const i = lc.indexOf(c.toLowerCase());
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    const iName = findCol(["פרויקט", "פרוייקט", "project"]); // col C
+    const iUrl = findCol(["לינק", "url", "link", "yad2 url"]); // col D
+    const iLive = findCol(["באוויר או לא ", "באוויר או לא", "live", "status"]); // col H
+    if (iName < 0 || iUrl < 0) {
+      console.log(
+        `Yad2 affiliate sheet: header mismatch (name=${iName} url=${iUrl}) — falling back to no lookup`,
+      );
+      return null;
+    }
+    const map = new Map();
+    let liveCount = 0;
+    let skippedNotLive = 0;
+    let skippedNoUrl = 0;
+    for (const row of rows.slice(1)) {
+      const name = String(row[iName] || "").trim();
+      const url = String(row[iUrl] || "").trim();
+      const live = iLive >= 0 ? String(row[iLive] || "").trim() : "באוויר";
+      if (!name) continue;
+      // "באוויר" = live. Anything else (בהקפאה / לא באוויר / blank)
+      // is skipped — frozen/inactive projects typically have a "-"
+      // in the URL column too.
+      if (live !== "באוויר") { skippedNotLive++; continue; }
+      if (!/^https?:\/\//i.test(url)) { skippedNoUrl++; continue; }
+      // First match wins if the same name appears twice (unusual).
+      if (!map.has(name)) map.set(name, url);
+      liveCount++;
+    }
+    console.log(
+      `Yad2 affiliate sheet: ${map.size} live URLs loaded (${liveCount} live rows, ${skippedNotLive} not-live, ${skippedNoUrl} no-url)`,
+    );
+    return map;
+  } catch (e) {
+    console.log(`Yad2 affiliate sheet read failed: ${String(e.message || e).slice(0, 200)} — falling back to no lookup`);
+    return null;
+  }
+})();
 console.log(
   `Landing col: ${iLanding} ("${iLanding >= 0 ? kHdr[iLanding] : "(missing)"}")  ` +
-    `Yad2 col: ${iYad2} ("${iYad2 >= 0 ? kHdr[iYad2] : "(missing — add to Keys to enable)"}")`,
+    `Yad2 mode: ${iYad2Lookup >= 0 ? `lookup col ${iYad2Lookup} ("${kHdr[iYad2Lookup]}")` : `direct col ${iYad2Direct} ("${iYad2Direct >= 0 ? kHdr[iYad2Direct] : "(missing)"}")`}`,
 );
 
 const projects = [];
@@ -136,7 +212,22 @@ for (const r of keys.data.values.slice(1)) {
   const project = String(r[iProj] ?? "").trim();
   const slug = String(r[iSlug] ?? "").trim();
   const landing = String(r[iLanding] ?? "").trim();
-  const yad2 = iYad2 >= 0 ? String(r[iYad2] ?? "").trim() : "";
+  // Yad2 URL resolution — prefer the lookup path (Keys "yad2lookup"
+  // value → Yad2 affiliate sheet's "פרויקט" → "לינק"). When the
+  // lookup column is empty, the lookup map is missing, or no name
+  // match is found, fall back to the legacy direct-URL column if
+  // Keys still has one. Yields "" when no Yad2 source can be
+  // resolved — the scraper skips Yad2 cleanly for that project.
+  let yad2 = "";
+  if (iYad2Lookup >= 0 && yad2LookupMap) {
+    const lookupName = String(r[iYad2Lookup] ?? "").trim();
+    if (lookupName) {
+      yad2 = yad2LookupMap.get(lookupName) || "";
+    }
+  }
+  if (!yad2 && iYad2Direct >= 0) {
+    yad2 = String(r[iYad2Direct] ?? "").trim();
+  }
   const type = iType >= 0 ? String(r[iType] ?? "").trim().toLowerCase() : "";
   // Skip a row only when both surfaces are missing — having just a Yad2
   // URL (no landing) is a legit case for some projects.
