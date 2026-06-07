@@ -1488,6 +1488,21 @@ export type ProjectPriceSurface = {
     paused: number;
     total: number;
   };
+  /** Yad2 affiliate metadata for the יד2 surface only — package
+   *  details + live status, sourced from the Yad2-provided sheet.
+   *  Resolved server-side via Keys' "yad2lookup" cell → affiliate
+   *  sheet's "פרויקט" row. UI surfaces this as a hover tooltip on
+   *  the יד2 card so the team can see the contract terms without
+   *  opening the sheet. Null when no lookup is configured for the
+   *  project (or no affiliate row matches). */
+  yad2Meta?: {
+    package: string;
+    packageDuration: string;
+    endDate: string;
+    /** "באוויר" = live; "בהקפאה" / "לא באוויר" = inactive (and the
+     *  scraper would have already skipped this surface anyway). */
+    liveStatus: string;
+  } | null;
 };
 
 /** 4-surface advertised-price snapshot for one project. `comparison` is

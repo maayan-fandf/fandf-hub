@@ -7791,6 +7791,32 @@ html[data-theme="dark"] .price-check-card-badge-min {
   text-decoration: underline;
 }
 
+/* Yad2 affiliate-package chip on the יד2 card. Compact "<package> ·
+   <duration>" badge with the full breakdown in a hover title.
+   Live status drives the color (live=blue, paused=muted). The chip
+   sits next to the AdStatusChip in the card head row. Built
+   2026-06-07 — owner asked to surface the Yad2 affiliate sheet's
+   חבילה / זמן חבילה / תאריך סיום / באוויר או לא columns on hover. */
+.price-check-card-yad2-meta {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15em 0.45em;
+  border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1.4;
+  cursor: help;
+}
+.price-check-card-yad2-meta-live {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+.price-check-card-yad2-meta-off {
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border: 1px solid var(--border-soft);
+}
+
 /* Ad-status chip on the FB / Google cards. Renders inline in the
    card head row next to the surface label. Two tones — severe red
    when all ads are paused (the price is dead in production), warn

@@ -184,6 +184,7 @@ function PriceCheckCard({
         </span>
         <span className="price-check-card-label">{surface.label}</span>
         <AdStatusChip surface={surface} />
+        <Yad2MetaChip surface={surface} />
         {isMin && (
           <span
             className="price-check-card-badge price-check-card-badge-min"
@@ -253,6 +254,47 @@ function AdStatusChip({ surface }: { surface: ProjectPriceSurface }) {
       title={title}
     >
       {text}
+    </span>
+  );
+}
+
+/**
+ * Yad2 affiliate-package chip on the יד2 card. Hover shows the full
+ * package details Yad2's account team set in their sheet — חבילה /
+ * זמן חבילה / תאריך סיום / באוויר או לא. Visible label is a tight
+ * "<package> · <duration>" badge so the head row stays compact;
+ * expanded form is in the tooltip + the hidden multi-line breakdown
+ * the browser surfaces on hover via title.
+ *
+ * Renders only when yad2Meta is present (i.e., the project has a
+ * yad2lookup in Keys that matched a row in the affiliate sheet).
+ * Shows nothing on landing / google / facebook surfaces — the
+ * concept doesn't apply.
+ */
+function Yad2MetaChip({ surface }: { surface: ProjectPriceSurface }) {
+  if (surface.name !== "yad2") return null;
+  const m = surface.yad2Meta;
+  if (!m) return null;
+  const isLive = m.liveStatus === "באוויר";
+  const compact = [m.package, m.packageDuration].filter(Boolean).join(" · ");
+  // Multi-line tooltip — browser title shows each on its own line.
+  const tooltip = [
+    m.package && `חבילה: ${m.package}`,
+    m.packageDuration && `זמן חבילה: ${m.packageDuration}`,
+    m.endDate && `תאריך סיום: ${m.endDate}`,
+    m.liveStatus && `סטטוס: ${m.liveStatus}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (!compact && !m.endDate) return null;
+  return (
+    <span
+      className={`price-check-card-yad2-meta price-check-card-yad2-meta-${
+        isLive ? "live" : "off"
+      }`}
+      title={tooltip}
+    >
+      {compact || m.liveStatus}
     </span>
   );
 }
