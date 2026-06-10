@@ -1381,6 +1381,10 @@ export type TaskCampaignsResult = {
 
 export async function getTaskCampaigns(
   project: string,
+  /** Company context — disambiguates project names shared across
+   *  companies (every company has a כללי project). See
+   *  tasksCampaignsDirect for the filtering semantics. */
+  company = "",
 ): Promise<TaskCampaignsResult> {
   const { useSATasksReads } = await import("@/lib/sa");
   if (!useSATasksReads()) {
@@ -1400,7 +1404,7 @@ export async function getTaskCampaigns(
   }
   const { tasksCampaignsDirect } = await import("@/lib/tasksDirect");
   const user = await currentUserEmail();
-  return tasksCampaignsDirect(user, project);
+  return tasksCampaignsDirect(user, project, company);
 }
 
 /** Resolved "Open in Google Ads / Facebook Ads" deep-links for a single

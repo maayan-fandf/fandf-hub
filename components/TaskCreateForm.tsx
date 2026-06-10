@@ -424,7 +424,14 @@ export default function TaskCreateForm({
       return;
     }
     let cancelled = false;
-    fetch(`/api/tasks/campaigns?project=${encodeURIComponent(project)}`)
+    // company passed alongside project — disambiguates project names
+    // shared across companies (every company has a כללי project).
+    // Without it, briefs from other companies' כללי leaked into this
+    // picker (owner saw "משימות כלליות לאפרידר" on a צרפתי task).
+    fetch(
+      `/api/tasks/campaigns?project=${encodeURIComponent(project)}` +
+        (company ? `&company=${encodeURIComponent(company)}` : ""),
+    )
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled) return;
@@ -437,7 +444,7 @@ export default function TaskCreateForm({
     return () => {
       cancelled = true;
     };
-  }, [project, campaignReloadNonce]);
+  }, [project, company, campaignReloadNonce]);
 
   // Filter projects by selected company, deduped by name. Defensive
   // dedupe protects against the rare case where the source data has

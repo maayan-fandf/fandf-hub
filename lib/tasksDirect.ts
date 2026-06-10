@@ -918,6 +918,14 @@ export async function tasksGetFromSheetsForMirror(
 export async function tasksCampaignsDirect(
   subjectEmail: string,
   project: string,
+  /** Company context from the form. Critical for project names that
+   *  exist under MULTIPLE companies — every company has a "כללי"
+   *  project, and without this the task-orphan merge below leaked
+   *  briefs across companies (owner saw "משימות כלליות לאפרידר"
+   *  suggested on a צרפתי task, 2026-06-10). Optional for backward
+   *  compat: when empty, falls back to scope.projectCompany (which is
+   *  itself ambiguous for כללי, but matches the old behavior). */
+  companyParam = "",
 ): Promise<{ project: string; campaigns: string[] }> {
   // §11 — campaigns are read per-project; scope the Firestore read.
   const [{ rows, headerIdx }, scope] = await Promise.all([
@@ -929,6 +937,9 @@ export async function tasksCampaignsDirect(
     throw new Error("Access denied to project: " + project);
   }
 
+  const company =
+    companyParam.trim() || scope.projectCompany.get(project) || "";
+
   // Collect task-row campaigns first — both for the orphan-merge below
   // AND so we still return something when Drive is misconfigured (no
   // TASKS_SHARED_DRIVE_ID, network blip, scopes off). The picker is too
@@ -936,12 +947,22 @@ export async function tasksCampaignsDirect(
   const rowKindIdx = headerIdx.get("row_kind");
   const projIdx = headerIdx.get("project");
   const campaignIdx = headerIdx.get("campaign");
+  const companyIdx = headerIdx.get("company");
   const tsIdx = headerIdx.get("timestamp");
   const taskCampaigns = new Map<string, string>(); // name → freshest ts
   if (rowKindIdx != null && projIdx != null && campaignIdx != null) {
     for (const row of rows) {
       if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
       if (String(row[projIdx] ?? "").trim() !== project) continue;
+      // Company gate — only when both sides carry a value. Task rows
+      // with an empty company column (legacy rows predating the
+      // company field) stay visible everywhere; rows stamped with a
+      // DIFFERENT company are filtered out so shared project names
+      // (כללי) don't cross-pollinate briefs between companies.
+      if (company && companyIdx != null) {
+        const rowCompany = String(row[companyIdx] ?? "").trim();
+        if (rowCompany && rowCompany !== company) continue;
+      }
       const name = String(row[campaignIdx] ?? "").trim();
       if (!name) continue;
       const ts = tsIdx != null ? toIsoDate(row[tsIdx]) : "";
@@ -953,7 +974,6 @@ export async function tasksCampaignsDirect(
   // Drive list scoped to this project. Empty when the project folder
   // doesn't exist yet (brand-new project). Cheap to call repeatedly —
   // listCampaignFolders is unstable_cache-d at 60s.
-  const company = scope.projectCompany.get(project) || "";
   let driveFolders: { id: string; name: string; modifiedTime: string }[] = [];
   try {
     const { listCampaignFolders } = await import("@/lib/driveCampaigns");

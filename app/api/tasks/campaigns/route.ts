@@ -22,6 +22,11 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const project = (url.searchParams.get("project") || "").trim();
+  // Optional company context — required in practice for project names
+  // shared across companies (every company has a כללי project).
+  // Without it, briefs from other companies' same-named projects leak
+  // into the picker.
+  const company = (url.searchParams.get("company") || "").trim();
   if (!project) {
     return NextResponse.json(
       { ok: false, error: "project is required" },
@@ -30,7 +35,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const result = await getTaskCampaigns(project);
+    const result = await getTaskCampaigns(project, company);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
