@@ -40,10 +40,30 @@ import { isSharedFolderName } from "@/lib/driveSharedFolder";
  * because that one is per-project (project-name-prefixed) and needs the
  * project name in scope to recognize.
  */
-const RESERVED_CAMPAIGN_SUBFOLDER_NAMES = new Set<string>(["פריסות"]);
+const RESERVED_CAMPAIGN_SUBFOLDER_NAMES = new Set<string>([
+  "פריסות",
+  // Pixel-assets utility folder — lives under several projects' trees
+  // (e.g. צרפתי/כללי/פיקסלים). Not a brief; surfacing it in the picker
+  // would invite task attachment into a shared assets folder. Added
+  // 2026-06-10 alongside the task-folder pattern filter below.
+  "פיקסלים",
+]);
+
+/** Task Drive folders — auto-provisioned `T-<id> — <title>` leaf
+ *  folders (see genId + createTaskFolder in tasksWriteDirect). They
+ *  live in the same `<company>/<project>/` level the brief picker
+ *  lists, but they're per-task working folders, not briefs — showing
+ *  them invites nesting a task under another task's folder. The id
+ *  shape is `T-<base36 timestamp>-<4 alphanumerics>`; matching the
+ *  prefix is enough (campaign briefs are human-named and don't start
+ *  with "T-<alnum>-"). 2026-06-10. */
+const TASK_FOLDER_NAME_RE = /^T-[a-z0-9]+-[a-z0-9]+(\s*—|$)/i;
 
 export function isReservedCampaignSubfolderName(name: string): boolean {
-  return RESERVED_CAMPAIGN_SUBFOLDER_NAMES.has((name || "").trim());
+  const trimmed = (name || "").trim();
+  if (RESERVED_CAMPAIGN_SUBFOLDER_NAMES.has(trimmed)) return true;
+  if (TASK_FOLDER_NAME_RE.test(trimmed)) return true;
+  return false;
 }
 
 function tasksSharedDriveId(): string {
