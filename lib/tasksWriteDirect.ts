@@ -1523,7 +1523,9 @@ export async function tasksCreateDirect(
         task.drive_folder_url = folder.folderUrl;
       }
     }
-  } else {
+  } else if (String(payload.drive_folder_name || "").trim()) {
+    // The user explicitly named a folder in the form — they want one
+    // now, so create it eagerly with their chosen name.
     const folder = await createTaskFolder({
       id: task.id,
       title: task.title,
@@ -1536,6 +1538,15 @@ export async function tasksCreateDirect(
       task.drive_folder_id = folder.folderId;
       task.drive_folder_url = folder.folderUrl;
     }
+  } else {
+    // LAZY PATH (2026-06-10, owner request): no brief selected, no
+    // pinned folder, no custom folder name → DON'T create a Drive
+    // folder at task creation. Most tasks never get attachments, and
+    // eagerly creating `T-<id> — <title>` folders was cluttering the
+    // project folders fast. The folder is created on-demand by
+    // lib/taskUpload.ts the first time someone actually uploads a
+    // file to the task. drive_folder_id stays empty until then; the
+    // task page already renders fine without a folder link.
   }
   // Calendar events were creating noise on every assignee's calendar
   // when the Google Tasks due-date already covers the same need with
@@ -1995,36 +2006,13 @@ async function tasksUpdateDirectInner(
         (patch as Record<string, unknown>).company = newCompany;
       }
     }
-    // Drive folder backfill — leaving __personal__ for a real project
-    // AND row has no folder yet → create one under the new project's
-    // company tree. Best-effort; on failure the project move still
-    // lands and the user can pick a folder later via the folder picker.
-    const currentFolderId = String(cell("drive_folder_id") ?? "").trim();
-    if (isPseudoProject(project) && !currentFolderId) {
-      try {
-        const folder = await createTaskFolder({
-          id: taskId,
-          title: String(cell("title") ?? ""),
-          company: String(
-            (patch as Record<string, unknown>).company ?? "",
-          ),
-          project: incomingProject,
-          campaign:
-            typeof patch.campaign === "string" ? patch.campaign : "",
-        });
-        if (folder) {
-          // Set drive_folder_id; the existing folder-repoint block
-          // below reads its webViewLink and persists both id + url.
-          (patch as Record<string, unknown>).drive_folder_id =
-            folder.folderId;
-        }
-      } catch (e) {
-        console.warn(
-          "[tasksUpdateDirect] Drive backfill on project change failed:",
-          e,
-        );
-      }
-    }
+    // Drive folder backfill on personal→project move: REMOVED
+    // 2026-06-10 as part of the lazy-folder change. Folders are now
+    // created on-demand by lib/taskUpload.ts at the first actual
+    // upload, so there's no need to eagerly provision one here —
+    // same clutter rationale as the create path. The task lands on
+    // the new project with empty drive_folder_id; the 📂 link
+    // appears once someone attaches a file.
   }
 
   // Build the changes map, keyed by Comments column names. Special

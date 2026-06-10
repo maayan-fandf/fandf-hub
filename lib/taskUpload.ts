@@ -79,19 +79,54 @@ async function findTaskFolderInfo(
     // from its Firestore doc: one keyed get, far cheaper than the
     // full-tab scan below. Same error semantics as the Sheets path.
     const { getDb, FS_COLLECTIONS } = await import("@/lib/firestore");
-    const snap = await getDb()
-      .collection(FS_COLLECTIONS.tasks)
-      .doc(taskId)
-      .get();
+    const db = getDb();
+    const docRef = db.collection(FS_COLLECTIONS.tasks).doc(taskId);
+    const snap = await docRef.get();
     if (!snap.exists) throw new Error("Task not found: " + taskId);
     const d = snap.data() as Record<string, unknown>;
-    const folderId = String(d.drive_folder_id ?? "").trim();
-    if (!folderId) {
-      throw new Error(
-        "למשימה זו אין עדיין תיקיית Drive. פתח וערוך אותה כדי ליצור תיקייה.",
-      );
-    }
+    let folderId = String(d.drive_folder_id ?? "").trim();
     const title = String(d.title ?? "").trim();
+    if (!folderId) {
+      // LAZY folder creation (2026-06-10): tasks no longer get a Drive
+      // folder at create time (it was cluttering project folders —
+      // most tasks never receive attachments). The first actual upload
+      // creates the folder on-demand here, under the same campaign
+      // hierarchy createTask used to use, then persists the id+url
+      // back onto the task doc so the task page shows the 📂 link
+      // from now on.
+      const { createTaskFolder } = await import("@/lib/tasksWriteDirect");
+      const folder = await createTaskFolder({
+        id: taskId,
+        title,
+        company: String(d.company ?? "").trim(),
+        project: String(d.project ?? "").trim(),
+        campaign: String(d.campaign ?? "").trim(),
+      });
+      if (!folder) {
+        throw new Error(
+          "יצירת תיקיית Drive למשימה נכשלה — נסה/י שוב או בחר/י תיקייה ידנית בעריכת המשימה.",
+        );
+      }
+      folderId = folder.folderId;
+      await docRef
+        .update({
+          drive_folder_id: folder.folderId,
+          drive_folder_url: folder.folderUrl,
+        })
+        .catch((e) => {
+          // Folder exists in Drive but the doc update failed — log and
+          // continue; the upload still lands in the right place, and a
+          // retry next upload will find the folder by id via this same
+          // lazy path (after the cache expires it re-reads the doc,
+          // sees empty id again, and createTaskFolder will create a
+          // SECOND folder — acceptable rare-failure cost vs blocking
+          // the user's upload now).
+          console.log(
+            "[taskUpload] lazy folder persisted to Drive but doc update failed:",
+            e instanceof Error ? e.message : e,
+          );
+        });
+    }
     const info: TaskFolderInfo = { folderId, title };
     FOLDER_INFO_CACHE.set(taskId, {
       info,
