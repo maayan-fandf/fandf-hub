@@ -948,11 +948,29 @@ export async function tasksCampaignsDirect(
   const projIdx = headerIdx.get("project");
   const campaignIdx = headerIdx.get("campaign");
   const companyIdx = headerIdx.get("company");
+  const folderIdIdx = headerIdx.get("drive_folder_id");
   const tsIdx = headerIdx.get("timestamp");
   const taskCampaigns = new Map<string, string>(); // name → freshest ts
+  // Every Drive-folder id that belongs to a TASK (not a brief). Task
+  // folders sit at the same <company>/<project>/ level the picker
+  // lists, and when the folder is named after the task title (the
+  // convert-comment-to-task flow + any drive_folder_name override),
+  // the `T-<id> — …` name filter in driveCampaigns can't catch them.
+  // Excluding by folder ID is naming-agnostic — a folder owned by a
+  // task never appears as a brief regardless of how it's named.
+  // (Diagnosed 2026-06-11: two "TEST: converted from comment …"
+  // folders on צרפתי/לוריא slipped through the name filter.)
+  const taskFolderIds = new Set<string>();
   if (rowKindIdx != null && projIdx != null && campaignIdx != null) {
     for (const row of rows) {
       if (String(row[rowKindIdx] ?? "").trim() !== "task") continue;
+      // Folder-id collection is GLOBAL (any task's folder, any
+      // project/company) — a folder id is globally unique, so any
+      // task-owned folder should be hidden from every picker.
+      if (folderIdIdx != null) {
+        const fid = String(row[folderIdIdx] ?? "").trim();
+        if (fid) taskFolderIds.add(fid);
+      }
       if (String(row[projIdx] ?? "").trim() !== project) continue;
       // Company gate — only when both sides carry a value. Task rows
       // with an empty company column (legacy rows predating the
@@ -986,6 +1004,9 @@ export async function tasksCampaignsDirect(
   const seen = new Set<string>();
   const out: string[] = [];
   for (const f of driveFolders) {
+    // Skip folders that belong to a task — they're working dirs, not
+    // briefs (see taskFolderIds above).
+    if (f.id && taskFolderIds.has(f.id)) continue;
     const n = f.name.trim();
     if (!n || seen.has(n)) continue;
     seen.add(n);
