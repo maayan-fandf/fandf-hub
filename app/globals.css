@@ -9082,8 +9082,12 @@ html[data-theme="dark"] .price-check-card-outlier.price-check-card-min {
      dismiss stacked) eats ~4 rows of vertical space per alert. Flip
      to a single wrapping ROW under the alert text — each pill sizes
      to its label and they share the row, wrapping only when the
-     viewport is truly too narrow. Owner asked 2026-06-11. */
-  .morning-signal-actions {
+     viewport is truly too narrow. Owner asked 2026-06-11.
+     Selector is `.morning-signal .morning-signal-actions` (not the
+     bare class) ON PURPOSE: the base column rule lives LATER in this
+     file (≈line 9400), and with equal specificity the later rule wins
+     even inside a media query — the extra ancestor wins the cascade. */
+  .morning-signal .morning-signal-actions {
     flex-direction: row;
     align-self: stretch;
     width: 100%;
@@ -9093,11 +9097,11 @@ html[data-theme="dark"] .price-check-card-outlier.price-check-card-min {
   }
   /* Neutralize the column layout's width:100% stretch on every pill —
      in row mode each takes its natural width and flexes to fill. */
-  .morning-signal-actions > * {
+  .morning-signal .morning-signal-actions > * {
     width: auto;
     flex: 1 1 auto;
   }
-  .morning-action-chat-wrap > .morning-action-chat {
+  .morning-signal .morning-action-chat-wrap > .morning-action-chat {
     width: 100%;
   }
   .morning-signal-title,
