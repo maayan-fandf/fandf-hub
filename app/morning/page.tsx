@@ -52,21 +52,25 @@ export default async function MorningPage({
   const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
 
-  // Role gate — admins / managers / media only. Designers, copywriters,
-  // and other non-media internal staff (plus clients) get a "not for
-  // your role" empty state instead of the campaign feed. Computed
-  // against the impersonated identity so view-as previews match.
-  const roleEligible = await canSeeCampaigns(overrideEmail || me).catch(
-    () => false,
-  );
-
-  const [feedRes, projectsRes, peopleRes] = await Promise.allSettled([
-    getMorningFeed({ scope, overrideEmail }),
-    scopedPerson || overrideEmail
-      ? getMyProjects(overrideEmail)
-      : Promise.resolve(null),
-    tasksPeopleList(),
-  ]);
+  // Single parallel batch for everything the page needs up-front:
+  //   - role gate (canSeeCampaigns) — previously awaited serially
+  //     BEFORE the batch, pushing the slow feed fetch ~100-200ms later
+  //   - the feed itself + projects + people list
+  //   - the alert-dismissals store — previously awaited serially AFTER
+  //     this batch (blocking the per-project CRM enrichment fan-out by
+  //     a full Firestore round-trip). Speed pass 2026-06-10.
+  const [roleRes, feedRes, projectsRes, peopleRes, dismissalsRes] =
+    await Promise.allSettled([
+      canSeeCampaigns(overrideEmail || me),
+      getMorningFeed({ scope, overrideEmail }),
+      scopedPerson || overrideEmail
+        ? getMyProjects(overrideEmail)
+        : Promise.resolve(null),
+      tasksPeopleList(),
+      listAlertDismissals(),
+    ]);
+  const roleEligible =
+    roleRes.status === "fulfilled" ? roleRes.value : false;
   const data: MorningFeed | null =
     feedRes.status === "fulfilled" ? feedRes.value : null;
   const error =
@@ -100,9 +104,11 @@ export default async function MorningPage({
   // per-request cache()), so on warm cache this is in-memory filter
   // work; on cold cache the slowest underlying read dominates.
   // Promise.allSettled so one stuck project doesn't block the page.
-  // Fetch the dismissal store once (not per project) so the hub-side CRM
-  // alerts can be faded/hidden like the report's own signals.
-  const dismissals = await listAlertDismissals().catch(() => ({}));
+  // Dismissal store fetched once in the initial batch above (not per
+  // project, not serially) so the hub-side CRM alerts can be
+  // faded/hidden like the report's own signals.
+  const dismissals =
+    dismissalsRes.status === "fulfilled" ? dismissalsRes.value : {};
   const enrichedResults = await Promise.allSettled(
     rawProjects.map(async (p) => {
       if (!p.company) return p;

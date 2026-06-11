@@ -97,21 +97,35 @@ export default async function TasksPage({
   // We also hoist `isAdmin` to page scope so the queue's row-level
   // edit-pencil affordance can render for admins on tasks they didn't
   // author.
+  // Phase-A parallel batch: access check + prefs + view-as. These were
+  // previously FOUR serial awaits (getMyProjects → getUserPrefs →
+  // getEffectiveViewAs → getUserRole) before the main data batch even
+  // started — up to 4 sequential round-trips of setup latency on every
+  // /tasks load. getUserRole moved into the main batch below (it
+  // depends on effectiveMe but nothing before the render needs it).
+  // Speed pass 2026-06-10.
+  //
+  // NOTE the old code wrapped `redirect("/")` for clients inside a
+  // try/catch whose catch swallowed everything — including the
+  // NEXT_REDIRECT control-flow error redirect() throws. The client
+  // bounce silently never worked. Restructure moves redirect outside
+  // any catch so it actually redirects.
+  const [accessRes, prefs, viewAs] = me
+    ? await Promise.all([
+        getMyProjects().catch(() => null),
+        getUserPrefs(me).catch(() => null),
+        getEffectiveViewAs(me).catch(() => ""),
+      ])
+    : [null, null, ""];
   let isAdmin = false;
-  if (me) {
-    try {
-      const access = await getMyProjects();
-      isAdmin = !!access.isAdmin;
-      const isClientUser =
-        !!access.isClient &&
-        !access.isAdmin &&
-        !access.isStaff &&
-        !access.isInternal;
-      if (isClientUser) redirect("/");
-    } catch {
-      /* fail-open: if access lookup fails, fall through to the page;
-         tasksList itself enforces project-level access too. */
-    }
+  if (accessRes) {
+    isAdmin = !!accessRes.isAdmin;
+    const isClientUser =
+      !!accessRes.isClient &&
+      !accessRes.isAdmin &&
+      !accessRes.isStaff &&
+      !accessRes.isInternal;
+    if (isClientUser) redirect("/");
   }
   // "View as" support — when the user has set view_as_email in their
   // prefs (gear menu in the topnav), every default filter on this
@@ -119,8 +133,6 @@ export default async function TasksPage({
   // user. Use case: a manager reviewing an employee's queue, or a
   // task manager covering for a peer. Data access is unaffected;
   // this only flips the default filter values.
-  const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
-  const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const effectiveMe = viewAs || me;
   const isViewingAs = !!viewAs && viewAs !== me;
 
@@ -133,7 +145,8 @@ export default async function TasksPage({
   //     in their default view, instead of having to flip filters.
   //   - Clients have no default (already access-gated to their projects).
   // `?mine=0` opts out of all defaults (the "show all" path).
-  const role: UserRole = effectiveMe ? await getUserRole(effectiveMe).catch(() => "unknown") : "unknown";
+  // role is render-only (queue scope hint) — fetched in the main
+  // parallel batch below instead of a serial await here.
   const mineOptIn = sp.mine !== "0";
   const userSetExplicitMineFilter =
     sp.author !== undefined ||
@@ -173,7 +186,7 @@ export default async function TasksPage({
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const [tasksRes, projectsRes, peopleRes, driveName, myMentionsRes] =
+  const [tasksRes, peopleRes, driveName, myMentionsRes, role] =
     await Promise.all([
       tasksList({
         company: companyFilter,
@@ -199,7 +212,6 @@ export default async function TasksPage({
           tasks: [] as WorkTask[],
           error: e instanceof Error ? e.message : String(e),
         })),
-      getMyProjects().catch(() => null),
       tasksPeopleList().catch(() => null),
       me ? getSharedDriveName(me).catch(() => "") : Promise.resolve(""),
       // Per-row "want something from you" state on /tasks needs the
@@ -208,7 +220,16 @@ export default async function TasksPage({
       // best-effort — fall back to empty so the list still renders if
       // the call fails.
       getMyMentions().catch(() => null),
+      // Render-only role (queue scope hint) — joined this batch
+      // instead of a serial pre-batch await.
+      (effectiveMe
+        ? getUserRole(effectiveMe).catch(() => "unknown" as UserRole)
+        : Promise.resolve("unknown" as UserRole)),
     ]);
+  // projectsRes reuses the phase-A access fetch (was a duplicate
+  // getMyProjects() call in this batch — React cache() deduped the
+  // read, but the entry was redundant either way).
+  const projectsRes = accessRes;
   const { tasks, error } = tasksRes;
   // Build the {task_id → userState} map server-side so both the
   // queue + kanban views render the chips identically without

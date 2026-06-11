@@ -773,7 +773,7 @@ async function ProjectAlertsSection({
   // dominance check (one month of CRM rows is too sparse — channel
   // objection profiles are slow-moving characteristics computed over
   // a wider window). Both rely on the same cached raw Sheets read.
-  const [alertsData, crmFunnel, crmFunnelAllTime, allClientsRows] = await Promise.all([
+  const [alertsData, crmFunnel, crmFunnelAllTime, allClientsRows, crmDismissals] = await Promise.all([
     getMorningFeed({ project: projectName }).catch(() => null),
     company
       ? getCrmFunnelForProject({ company, project: projectName, monthFilter: monthOverride })
@@ -787,6 +787,13 @@ async function ProjectAlertsSection({
       subjectEmail: driveFolderOwner(),
       project: projectName,
     }).catch(() => [] as AllClientsRow[]),
+    // Dismissal store joins the parallel batch — it was previously a
+    // serial Firestore round-trip AFTER the batch, delaying alert
+    // render inside this Suspense boundary by ~150-300ms (speed pass
+    // 2026-06-10). Hub-side CRM alerts don't get dismissal state from
+    // the report's feed, so the shared store is applied here
+    // (best-effort — an outage shows them un-dismissed).
+    listAlertDismissals().catch(() => ({})),
   ]);
   const dashboardProject: MorningProject | null = alertsData?.projects[0] ?? null;
   const dashboardSignals = dashboardProject?.signals ?? [];
@@ -796,10 +803,6 @@ async function ProjectAlertsSection({
     allClients: allClientsRows,
     projectSlug: dashboardProject?.slug || projectName,
   });
-  // Hub-side CRM alerts don't get dismissal state from the report's feed,
-  // so apply the shared Firestore dismissal store here (best-effort —
-  // a store outage just shows them un-dismissed).
-  const crmDismissals = await listAlertDismissals().catch(() => ({}));
   const crmSignals = applyDismissalsToSignals(rawCrmSignals, crmDismissals);
   const allSignals = [...dashboardSignals, ...crmSignals];
   if (allSignals.length === 0) return null;

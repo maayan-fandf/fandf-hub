@@ -96,6 +96,12 @@ export default async function TaskDetailPage({
   // large-sheet read off the critical path (it was the main reason
   // this page felt slow). Errors → [] (banner renders null; the
   // discussion section surfaces its own error).
+  // currentUserEmail is hoisted ahead of the batch: it's a cheap
+  // session read needed by the form-schema fetch below AND by the
+  // notification auto-dismiss further down. Hoisting removes the
+  // `.then()` chain that previously serialized the (slow) schema
+  // fetch behind it inside the batch (speed pass 2026-06-10).
+  const myEmail = (await currentUserEmail().catch(() => "")) || "";
   const [res, peopleRes, accessRes, formSchemaRes, bannerComments] =
     await Promise.all([
       tasksGet(decodedId).catch((e: unknown) => {
@@ -114,12 +120,8 @@ export default async function TaskDetailPage({
       }),
       tasksPeopleList().catch(() => ({ ok: false, people: [] })),
       getMyProjects().catch(() => null),
-      editing
-        ? currentUserEmail()
-            .then((email) =>
-              email ? getTaskFormSchema(email).catch(() => null) : null,
-            )
-            .catch(() => null)
+      editing && myEmail
+        ? getTaskFormSchema(myEmail).catch(() => null)
         : Promise.resolve(null),
       getTaskComments(decodedId)
         .then((d) => d.comments)
@@ -141,8 +143,7 @@ export default async function TaskDetailPage({
   // approval banner needs it; getTaskComments is React-cache()-wrapped
   // so the discussion section's TaskComments reuses the same result —
   // no second read within this request). On error it's [] and the
-  // banner renders null.
-  const myEmail = (await currentUserEmail()) || "";
+  // banner renders null. `myEmail` was hoisted above the batch.
 
   // Auto-dismiss bell pings about this task. When the user lands on
   // the detail page, any unread Notifications row whose task_id is

@@ -30,8 +30,14 @@ export default async function HomePage() {
   // fall back to the session user's own identity — view-as is best-effort,
   // not a security gate.
   const me = await currentUserEmail().catch(() => "");
-  const prefs = me ? await getUserPrefs(me).catch(() => null) : null;
-  const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
+  // prefs + view-as fetched in parallel — they were serial awaits
+  // (two stacked round-trips on every home load). Speed pass 2026-06-10.
+  const [prefs, viewAs] = me
+    ? await Promise.all([
+        getUserPrefs(me).catch(() => null),
+        getEffectiveViewAs(me).catch(() => ""),
+      ])
+    : [null, ""];
   const isViewingAs = !!viewAs && viewAs !== me;
   const effectiveMe = viewAs || me;
 
