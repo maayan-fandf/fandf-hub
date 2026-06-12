@@ -455,8 +455,17 @@ function dateOnly(value: unknown): string {
   if (!raw) return "";
   // ISO already
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
-  // dd-mm-yyyy
-  const m = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  // dd-mm-yyyy, dd/mm/yyyy or dd.mm.yyyy (day-first). The Sehel
+  // "מאגר שכל" tab mixes separators — older rows use "-", newer rows
+  // (from ~May 2026) use "/". Because readSehel reads with
+  // dateTimeRenderOption:"FORMATTED_STRING", we get whatever the cell
+  // displays verbatim, so the parser MUST accept both. When it only
+  // matched "-", every slash-formatted row fell through to the raw
+  // "dd/mm/yyyy" string, which fails the window's startsWith("YYYY-MM")
+  // / `>= from` checks → the entire current-month cohort silently
+  // dropped to zero leads and the CRM funnel card collapsed (e.g.
+  // אחוזת אפרידר: 211 June leads counted as 0). See probe-dateonly-fix.
+  const m = raw.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
   if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   // sheets serial (days since 1899-12-30). Convert to YYYY-MM-DD.
   const n = Number(raw);
