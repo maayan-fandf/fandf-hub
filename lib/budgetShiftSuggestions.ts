@@ -583,6 +583,43 @@ export function computeBudgetShiftForProject(args: {
 }
 
 /**
+ * Per-channel performance snapshot for the budget desk's channel table —
+ * leads / scheduled-meetings / held-meetings and their cost-per. Built
+ * from the same ALL CLIENTS "current" rows the suggestions use, keyed by
+ * lowercase channel for the join against BudgetRow.channel.
+ */
+export type ChannelPerf = {
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  cpl: number;
+  cps: number;
+  cpm: number;
+};
+
+/** channel(lowercase) → ChannelPerf for one project. `currentRows` is
+ *  already channel-consolidated by groupAllClientsBySlug, so each
+ *  channel appears once. */
+export function buildChannelPerf(
+  currentRows: AllClientsRow[],
+): Record<string, ChannelPerf> {
+  const out: Record<string, ChannelPerf> = {};
+  for (const c of currentRows) {
+    const key = c.channel.toLowerCase().trim();
+    if (!key) continue;
+    out[key] = {
+      leads: c.leads,
+      scheduled: c.scheduled,
+      meetings: c.meetings,
+      cpl: c.leads > 0 ? c.spend / c.leads : 0,
+      cps: c.scheduled > 0 ? c.spend / c.scheduled : 0,
+      cpm: c.meetings > 0 ? c.spend / c.meetings : 0,
+    };
+  }
+  return out;
+}
+
+/**
  * Cost-chip coloring — port of the iframe's costStyle (#L6106): smooth
  * green→red HSL gradient over the metric's expected range. Null for
  * zero/invalid values (caller omits the chip).

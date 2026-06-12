@@ -20,6 +20,7 @@ import {
 import {
   costChipStyle,
   type ProjectBudgetShift,
+  type ChannelPerf,
 } from "@/lib/budgetShiftSuggestions";
 
 /**
@@ -58,6 +59,7 @@ export default function BudgetGrid({
   today,
   usdIlsRate,
   shifts,
+  perf,
 }: {
   projects: BudgetProject[];
   /** keyed by tab name (lowercased). */
@@ -80,6 +82,9 @@ export default function BudgetGrid({
   /** Budget-shift suggestions (iframe reallocation engine, computed
    *  server-side) keyed by lowercase tab. Absent key = nothing to suggest. */
   shifts: Record<string, ProjectBudgetShift>;
+  /** Per-channel performance (leads/scheduled/meetings + cost-per) keyed
+   *  by lowercase tab → lowercase channel, for the drill-in table. */
+  perf: Record<string, Record<string, ChannelPerf>>;
 }) {
   const [projects, setProjects] = useState<BudgetProject[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -285,6 +290,7 @@ export default function BudgetGrid({
                       localDismiss={localDismiss}
                       onSnooze={onSnooze}
                       shift={shifts[p.tab.toLowerCase()]}
+                      perf={perf[p.tab.toLowerCase()]}
                     />
                   ))}
                 </ul>
@@ -347,6 +353,7 @@ function ProjectRow({
   localDismiss,
   onSnooze,
   shift,
+  perf,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -361,6 +368,8 @@ function ProjectRow({
   localDismiss: Record<string, "on" | "off">;
   onSnooze: (key: string, val: "on" | "off") => void;
   shift?: ProjectBudgetShift;
+  /** channel(lowercase) → performance for this project's channels. */
+  perf?: Record<string, ChannelPerf>;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
@@ -493,6 +502,7 @@ function ProjectRow({
             usdIlsRate={usdIlsRate}
             localDismiss={localDismiss}
             onSnooze={onSnooze}
+            perf={perf}
           />
         </div>
       )}
@@ -804,9 +814,10 @@ function PlatformDrillGroups({
   onEdit,
   dismissals,
   today,
-  usdIlsRate,
+  usdIlsRate: _usdIlsRate,
   localDismiss,
   onSnooze,
+  perf,
 }: {
   p: BudgetProject;
   ad: ProjLinks;
@@ -818,153 +829,90 @@ function PlatformDrillGroups({
   usdIlsRate: number;
   localDismiss: Record<string, "on" | "off">;
   onSnooze: (key: string, val: "on" | "off") => void;
+  perf?: Record<string, ChannelPerf>;
 }) {
-  const groups: { platform: Platform | "other"; label: string; agg: PlatformAgg }[] =
-    [
-      ...E3_PLATFORMS.map((pl) => ({
-        platform: pl as Platform | "other",
-        label: PLATFORM_LABELS[pl],
-        agg: p.platforms[pl],
-      })),
-      { platform: "other" as const, label: "אחר (לא בתקציב הפרוגרמטי)", agg: p.other },
-    ];
+  // One flat table of ALL channels (owner request 2026-06-12 — the
+  // per-platform sub-tables + headers fragmented the view; now every
+  // channel shares one aligned column grid, with the platform shown as
+  // a small logo per row). Rows ordered by platform (E3 order, then
+  // "other"), preserving the sheet order within each platform.
+  const platformOrder: (Platform | "other")[] = [...E3_PLATFORMS, "other"];
+  const ordered = platformOrder.flatMap((pl) =>
+    p.rows.filter((r) => r.platform === pl),
+  );
+  if (ordered.length === 0) return null;
+  // Merged channels span several sheet sub-rows (forward-filled name);
+  // the performance numbers are channel-level, so show them only on the
+  // first sub-row of each channel to avoid duplicate counts.
+  const seenChannel = new Set<string>();
 
   return (
-    <div className="budget-groups">
-      {groups.map((g) => {
-        const rows = p.rows.filter((r) => r.platform === g.platform);
-        if (rows.length === 0 && g.agg.budget === 0) return null;
-        const url =
-          g.platform === "google"
-            ? ad.gAdsUrl
-            : g.platform === "facebook"
-              ? ad.fbAdsUrl
-              : undefined;
-        const isPaid = g.platform !== "other";
-        // Taboola/Outbrain are set in the platform in USD, so the
-        // required-budget copy is converted from the ILS-tracked figure.
-        // TikTok defaults to ILS (like Google/Facebook) — flip it into this
-        // set if the F&F TikTok account is actually billed in USD.
-        const isUsd = g.platform === "taboola" || g.platform === "outbrain";
-        const reqIls = Math.max(0, g.agg.dailyRequired);
-        const reqVal = isUsd
-          ? Math.max(0, Math.round(reqIls / (usdIlsRate || 3.7)))
-          : Math.max(0, Math.round(reqIls));
-        const cur = isUsd ? "$" : "₪";
-        return (
-          <div key={g.platform} className="budget-group">
-            <div className="budget-group-head">
-              <span className="budget-group-title">
-                <PlatformLogoLink
-                  platform={g.platform}
-                  href={showAdLinks ? url : undefined}
-                  copySlug={g.platform === "google" ? p.tab : undefined}
-                  title={
-                    g.platform === "google"
-                      ? "פתח את חשבון Google Ads (המזהה מועתק ללוח לסינון לפי שם קמפיין)"
-                      : g.platform === "facebook"
-                        ? "פתח את חשבון פייסבוק"
-                        : undefined
-                  }
-                />{" "}
-                {g.label}
-              </span>
-              {isPaid && (
-                <span className="budget-group-stats">
-                  {fmt(g.agg.budget)} מאושר · {fmt(g.agg.spend)} בפועל ·{" "}
-                  <span className="budget-pace-diag" title={pacingTooltip(g.agg)}>
-                    <Pacing
-                      ratio={g.agg.pacingRatio}
-                      muted={
-                        !needsBudgetAction(
-                          g.agg.actualDaily,
-                          g.agg.dailyRequired,
-                          g.agg.pacingRatio,
-                        )
-                      }
-                    />{" "}
-                    ⓘ
-                  </span>
-                  {(g.platform === "google" || g.platform === "facebook") && (
-                    <>
-                      {" · "}יומי בפועל:{" "}
-                      <b className="budget-actual-daily">
-                        ₪{Math.round(g.agg.actualDaily).toLocaleString("he-IL")}
-                      </b>
-                    </>
-                  )}
-                </span>
-              )}
-              {isPaid && g.agg.dailyRequired > 0 && (
-                <CopyAmountButton
-                  amount={String(reqVal)}
-                  variant="ghost"
-                  url={showAdLinks ? url : undefined}
-                  // Always copy the required NUMBER (for the daily-budget
-                  // field) on every platform. Google ALSO copies the slug
-                  // (written last, so the slug is the current clipboard for the
-                  // campaign-name filter, with the number one back in clipboard
-                  // history). Facebook's deep-link is already campaign-scoped,
-                  // so it needs no slug — just the number to paste into the
-                  // budget field. (Previously FB was open-only and copied
-                  // nothing, which the user flagged 2026-05-25.)
-                  copyId={g.platform === "facebook" ? undefined : p.tab}
-                  label={
-                    showAdLinks && url
-                      ? `⧉ פתח + העתק נדרש ${cur}${reqVal}/יום`
-                      : `📋 נדרש ${cur}${reqVal}/יום`
-                  }
-                />
-              )}
-            </div>
-            {rows.length > 0 && (
-              <table className="budget-rows">
-                <thead>
-                  <tr>
-                    <th>ערוץ</th>
-                    <th>סוג</th>
-                    <th>תקציב מאושר</th>
-                    <th>בפועל</th>
-                    <th
-                      className="th-help"
-                      title={
-                        "קצב = הוצאה בפועל ÷ ההוצאה הצפויה עד היום " +
-                        "(לפי תאריכי הטיסה של הערוץ עצמו).\n" +
-                        "100% = בדיוק בקצב\n" +
-                        "מתחת ל-85% = מתחת לקצב — התקציב לא ינוצל עד תאריך הסיום (כדאי להעלות את היומי)\n" +
-                        "מעל 110% = חריגה — התקציב ייגמר לפני הסיום (כדאי להוריד)\n" +
-                        "ערוץ שהסתיים מסומן ⛔ ואינו נספר."
-                      }
-                    >
-                      קצב <span aria-hidden>ⓘ</span>
-                    </th>
-                    <th>יומי מוגדר</th>
-                    <th>נדרש ליום</th>
-                    <th aria-label="טיפלתי"> </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <CampaignRow
-                      key={r.row}
-                      tab={p.tab}
-                      r={r}
-                      canEdit={canEdit}
-                      onEdit={onEdit}
-                      dismissals={dismissals}
-                      today={today}
-                      localDismiss={localDismiss}
-                      onSnooze={onSnooze}
-                      platformUrl={showAdLinks ? url : undefined}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <table className="budget-rows">
+      <thead>
+        <tr>
+          <th>ערוץ</th>
+          <th>סוג</th>
+          <th>תקציב מאושר</th>
+          <th>בפועל</th>
+          <th
+            className="th-help"
+            title="תיאומי פגישות שנקבעו (CRM). רחפו על המספר כדי לראות את העלות לתיאום (הוצאה ÷ תיאומים)."
+          >
+            תיאומים <span aria-hidden>ⓘ</span>
+          </th>
+          <th
+            className="th-help"
+            title="פגישות שבוצעו בפועל (CRM). רחפו על המספר כדי לראות את העלות לפגישה (הוצאה ÷ פגישות)."
+          >
+            פגישות <span aria-hidden>ⓘ</span>
+          </th>
+          <th
+            className="th-help"
+            title={
+              "קצב = הוצאה בפועל ÷ ההוצאה הצפויה עד היום " +
+              "(לפי תאריכי הטיסה של הערוץ עצמו).\n" +
+              "100% = בדיוק בקצב\n" +
+              "מתחת ל-85% = מתחת לקצב — התקציב לא ינוצל עד תאריך הסיום (כדאי להעלות את היומי)\n" +
+              "מעל 110% = חריגה — התקציב ייגמר לפני הסיום (כדאי להוריד)\n" +
+              "ערוץ שהסתיים מסומן ⛔ ואינו נספר."
+            }
+          >
+            קצב <span aria-hidden>ⓘ</span>
+          </th>
+          <th>יומי מוגדר</th>
+          <th>נדרש ליום</th>
+          <th aria-label="טיפלתי"> </th>
+        </tr>
+      </thead>
+      <tbody>
+        {ordered.map((r) => {
+          const url =
+            r.platform === "google"
+              ? ad.gAdsUrl
+              : r.platform === "facebook"
+                ? ad.fbAdsUrl
+                : undefined;
+          const chLc = r.channel.toLowerCase().trim();
+          const showPerf = !seenChannel.has(chLc);
+          seenChannel.add(chLc);
+          return (
+            <CampaignRow
+              key={r.row}
+              tab={p.tab}
+              r={r}
+              canEdit={canEdit}
+              onEdit={onEdit}
+              dismissals={dismissals}
+              today={today}
+              localDismiss={localDismiss}
+              onSnooze={onSnooze}
+              platformUrl={showAdLinks ? url : undefined}
+              perf={showPerf ? perf?.[chLc] : undefined}
+            />
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -1066,6 +1014,7 @@ function CampaignRow({
   localDismiss,
   onSnooze,
   platformUrl,
+  perf,
 }: {
   tab: string;
   r: BudgetProject["rows"][number];
@@ -1080,6 +1029,10 @@ function CampaignRow({
    *  copy button also opens the platform and copies the row's campaign
    *  filter token (FB) / project slug (Google) for the native search. */
   platformUrl?: string;
+  /** This channel's CRM performance (leads/scheduled/meetings + cost-per).
+   *  Undefined on merged sub-rows (shown on the channel's first row only)
+   *  or when the channel has no ALL CLIENTS match. */
+  perf?: ChannelPerf;
 }) {
   const [draft, setDraft] = useState(String(Math.round(r.budget)));
   const [saving, setSaving] = useState(false);
@@ -1202,7 +1155,10 @@ function CampaignRow({
     <tr
       className={`${err ? "row-error" : ""} ${state === "dismissed" ? "is-dismissed" : ""}`}
     >
-      <td className="c-channel" title={r.channel}>
+      <td className="c-channel" title={`${PLATFORM_LABELS[r.platform as Platform] ?? "אחר"} · ${r.channel}`}>
+        <span className="c-channel-logo" aria-hidden>
+          <PlatformIcon platform={r.platform} size=".95em" />
+        </span>
         <StatusDot status={r.campaignStatus} />
         {needsAction && (
           <span
@@ -1246,6 +1202,38 @@ function CampaignRow({
         {err && <span className="budget-err" title={err}>⚠️</span>}
       </td>
       <td className="c-spend">{fmt(r.spend)}</td>
+      <td
+        className="c-sched"
+        title={
+          perf
+            ? perf.scheduled > 0
+              ? `עלות לתיאום: ${fmt(Math.round(perf.cps))}`
+              : "אין תיאומים בתקופה"
+            : undefined
+        }
+      >
+        {perf
+          ? perf.scheduled > 0
+            ? perf.scheduled.toLocaleString("he-IL")
+            : "—"
+          : ""}
+      </td>
+      <td
+        className="c-meet"
+        title={
+          perf
+            ? perf.meetings > 0
+              ? `עלות לפגישה: ${fmt(Math.round(perf.cpm))}`
+              : "אין פגישות בתקופה"
+            : undefined
+        }
+      >
+        {perf
+          ? perf.meetings > 0
+            ? perf.meetings.toLocaleString("he-IL")
+            : "—"
+          : ""}
+      </td>
       <td className="c-pace">
         {r.ended ? (
           <span className="pace-val pace-none" title={`הסתיים ${r.endIso}`}>
@@ -1896,46 +1884,6 @@ function paceTone(ratio: number): "none" | "under" | "ok" | "over" {
   if (ratio > 1.1) return "over";
   if (ratio < 0.85) return "under";
   return "ok";
-}
-
-/**
- * Platform pacing diagnosis tooltip — ports the dashboard's three-way
- * logic (plan vs platform-configured vs 7-day actual spend) so the desk
- * tells the manager whether to lower/raise the budget or investigate
- * delivery. מתוכנן = Σ קצב יומי (col J); מוגדר = configured platform
- * budget; ממוצע 7 ימים = actual 7-day avg spend.
- */
-function pacingTooltip(agg: PlatformAgg): string {
-  const ils = (n: number) => "₪" + Math.round(n || 0).toLocaleString("he-IL");
-  const planned = agg.dailyRequired;
-  const configured = agg.actualDaily;
-  const actual7d = agg.actual7d;
-  const lines = [`מתוכנן (קצב יומי): ${ils(planned)}`];
-  if (configured > 0) lines.push(`מוגדר בפלטפורמה: ${ils(configured)}`);
-  if (actual7d > 0) lines.push(`ממוצע 7 ימים בפועל: ${ils(actual7d)}`);
-
-  if (planned > 0 && actual7d > 0) {
-    const variance = (actual7d - planned) / planned;
-    const configVsPlan = configured > 0 ? (configured - planned) / planned : 0;
-    const sign = variance >= 0 ? "+" : "−";
-    lines.push(`סטייה: ${sign}${Math.abs(Math.round(variance * 100))}%`);
-    let action = "";
-    if (variance > 0.1) {
-      if (configured > 0 && configVsPlan > 0.1)
-        action = `💡 הורד את התקציב בפלטפורמה ל־${ils(planned)} (מוגדר ${ils(configured)}, חריגה ${Math.round(configVsPlan * 100)}% מהתכנון)`;
-      else if (configured > 0)
-        action = `🔍 התקציב מוגדר כהלכה (${ils(configured)}) אבל מוציא ${ils(actual7d)}/יום — בדוק CPC / CBO / עונתיות, לא תקציב`;
-      else action = `💡 הורד את התקציב היומי ל־${ils(planned)}`;
-    } else if (variance < -0.1) {
-      if (configured > 0 && configVsPlan < -0.1)
-        action = `💡 העלה את התקציב בפלטפורמה ל־${ils(planned)} (כרגע מוגדר ${ils(configured)})`;
-      else if (configured > 0)
-        action = `🔍 התקציב מוגדר כהלכה (${ils(configured)}) אבל מוציא רק ${ils(actual7d)}/יום — בדוק audience / הצעות מחיר / קריאייטיב, לא תקציב`;
-      else action = `💡 העלה את התקציב היומי ל־${ils(planned)}`;
-    }
-    if (action) lines.push(action);
-  }
-  return lines.join("\n");
 }
 
 function hasPacingIssue(p: BudgetProject): boolean {

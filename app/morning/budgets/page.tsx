@@ -19,7 +19,9 @@ import { getAllClientsAllRows } from "@/lib/allClients";
 import {
   computeBudgetShiftForProject,
   groupAllClientsBySlug,
+  buildChannelPerf,
   type ProjectBudgetShift,
+  type ChannelPerf,
 } from "@/lib/budgetShiftSuggestions";
 import BudgetGrid, { type BudgetDismissal } from "@/components/BudgetGrid";
 import CampaignsTabs from "@/components/CampaignsTabs";
@@ -204,9 +206,14 @@ export default async function BudgetsPage() {
           allClientsRes.status === "fulfilled" ? allClientsRes.value : [];
         const bySlug = groupAllClientsBySlug(allClientsRows);
         const shifts: Record<string, ProjectBudgetShift> = {};
+        // Per-channel leads/scheduled/meetings (+ cost-per) for the
+        // drill-in channel table's תיאומים/פגישות columns. Keyed by
+        // lowercase tab → lowercase channel.
+        const perf: Record<string, Record<string, ChannelPerf>> = {};
         for (const p of filtered) {
           const g = bySlug.get(p.tab.toLowerCase().trim());
           if (!g) continue;
+          perf[p.tab.toLowerCase()] = buildChannelPerf(g.current);
           const shift = computeBudgetShiftForProject({
             project: p,
             currentRows: g.current,
@@ -226,6 +233,7 @@ export default async function BudgetsPage() {
             today={today}
             usdIlsRate={usdIlsRate}
             shifts={shifts}
+            perf={perf}
           />
         );
       })()}
