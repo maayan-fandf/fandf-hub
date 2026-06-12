@@ -5,6 +5,7 @@ import { upsertAlertDismissal } from "@/lib/alertDismissals";
 import {
   pacingPlatformKey,
   pacingChannelKey,
+  budgetShiftKey,
   type Platform,
 } from "@/lib/budgetTypes";
 
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
     slug?: unknown;
     platform?: unknown;
     channel?: unknown;
+    kind?: unknown;
     baselineDaily?: unknown;
     restore?: unknown;
   };
@@ -52,7 +54,10 @@ export async function POST(req: Request) {
   const slug = String(body.slug || "").trim();
   const platform = String(body.platform || "").trim().toLowerCase();
   const channel = String(body.channel || "").trim();
-  if (!slug || (!channel && !platform)) {
+  // kind="budget-shift" → per-PROJECT snooze of the suggestion strip
+  // (no channel/platform needed — the strip is one advisory unit).
+  const isShift = body.kind === "budget-shift";
+  if (!slug || (!isShift && !channel && !platform)) {
     return NextResponse.json({ ok: false, error: "slug + channel required" }, { status: 400 });
   }
   const baseline = Number(body.baselineDaily);
@@ -60,9 +65,11 @@ export async function POST(req: Request) {
 
   // Per-channel snooze (2026-05-25). The legacy per-platform key is kept
   // as a fallback for any caller that still sends only `platform`.
-  const signalKey = channel
-    ? pacingChannelKey(slug, channel)
-    : pacingPlatformKey(slug, platform as Platform | "other");
+  const signalKey = isShift
+    ? budgetShiftKey(slug)
+    : channel
+      ? pacingChannelKey(slug, channel)
+      : pacingPlatformKey(slug, platform as Platform | "other");
 
   // Pacing spend swings daily — snooze ~1 day (matches the morning feed's
   // pacing-variance default) so an unhandled alert resurfaces tomorrow.
@@ -77,7 +84,9 @@ export async function POST(req: Request) {
       snooze_until: restore ? "" : until,
       reason: restore
         ? "restored"
-        : `baseline=${Number.isFinite(baseline) ? Math.round(baseline) : 0}`,
+        : isShift
+          ? `shift=${Number.isFinite(baseline) ? Math.round(baseline) : 0}`
+          : `baseline=${Number.isFinite(baseline) ? Math.round(baseline) : 0}`,
     });
     return NextResponse.json({
       ok: true,

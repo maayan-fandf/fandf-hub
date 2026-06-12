@@ -11,11 +11,16 @@ import {
   PLATFORM_LABELS,
   UNASSIGNED_MANAGER,
   pacingChannelKey,
+  budgetShiftKey,
   type BudgetProject,
   type MediaPlanRow,
   type Platform,
   type PlatformAgg,
 } from "@/lib/budgetTypes";
+import {
+  costChipStyle,
+  type ProjectBudgetShift,
+} from "@/lib/budgetShiftSuggestions";
 
 /**
  * קמפיינים → תקציבים grid. Summary row per project (E3 vs allocated +
@@ -52,6 +57,7 @@ export default function BudgetGrid({
   dismissals,
   today,
   usdIlsRate,
+  shifts,
 }: {
   projects: BudgetProject[];
   /** keyed by tab name (lowercased). */
@@ -71,6 +77,9 @@ export default function BudgetGrid({
   today: string;
   /** USD→ILS rate; Taboola/Outbrain required budgets copy in USD. */
   usdIlsRate: number;
+  /** Budget-shift suggestions (iframe reallocation engine, computed
+   *  server-side) keyed by lowercase tab. Absent key = nothing to suggest. */
+  shifts: Record<string, ProjectBudgetShift>;
 }) {
   const [projects, setProjects] = useState<BudgetProject[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -275,6 +284,7 @@ export default function BudgetGrid({
                       usdIlsRate={usdIlsRate}
                       localDismiss={localDismiss}
                       onSnooze={onSnooze}
+                      shift={shifts[p.tab.toLowerCase()]}
                     />
                   ))}
                 </ul>
@@ -336,6 +346,7 @@ function ProjectRow({
   usdIlsRate,
   localDismiss,
   onSnooze,
+  shift,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -349,10 +360,22 @@ function ProjectRow({
   usdIlsRate: number;
   localDismiss: Record<string, "on" | "off">;
   onSnooze: (key: string, val: "on" | "off") => void;
+  shift?: ProjectBudgetShift;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
     ad.projectHref || `/projects/${encodeURIComponent(p.name)}`;
+  // Budget-shift suggestion fade state — per project, same snooze
+  // semantics as the pacing rows (next Jerusalem day + still-firing →
+  // resurfaced). gapStillOff = the suggestions still compute.
+  const shiftKey = budgetShiftKey(p.tab);
+  const shiftState = computeFadeState(
+    dismissals[shiftKey],
+    today,
+    localDismiss[shiftKey] ?? null,
+    !!shift && shift.suggestions.length > 0,
+  );
+  const showShiftFlag = !!shift && shiftState !== "dismissed";
   return (
     <li className={`budget-card ${needsAttention(p) ? "is-attention" : ""}`}>
       <button
@@ -371,6 +394,15 @@ function ProjectRow({
                 aria-label="נדרש עדכון תקציב באחד הערוצים"
               >
                 ⚠️
+              </span>
+            )}
+            {showShiftFlag && (
+              <span
+                className="budget-shift-flag"
+                title="יש הצעת התאמת תקציב בין ערוצים — פתחו את הפרויקט לפרטים"
+                aria-label="יש הצעת התאמת תקציב"
+              >
+                💡
               </span>
             )}
             {p.name}
@@ -439,6 +471,15 @@ function ProjectRow({
 
           {showPlan && p.plan && <MediaPlanPanel plan={p.plan} />}
 
+          {shift && (
+            <BudgetShiftPanel
+              shift={shift}
+              state={shiftState}
+              signalKey={shiftKey}
+              onSnooze={onSnooze}
+            />
+          )}
+
           <PlatformDrillGroups
             p={p}
             ad={ad}
@@ -487,6 +528,143 @@ function PlanKpi({ label, value }: { label: string; value: string }) {
       <span className="budget-plan-kpi-label">{label}</span>
       <span className="budget-plan-kpi-val">{value}</span>
     </div>
+  );
+}
+
+/**
+ * 💡 הצעת התאמה — budget-shift suggestions (the iframe's reallocation
+ * engine, computed server-side in lib/budgetShiftSuggestions). Advisory
+ * only: shows which channels should give/receive budget and the CPL/
+ * CPS/CPM numbers behind each call; the actual edit stays in the
+ * channel rows below. Snoozes per project via the shared dismissal
+ * store, with the same next-day resurface semantics as pacing rows.
+ */
+function BudgetShiftPanel({
+  shift,
+  state,
+  signalKey,
+  onSnooze,
+}: {
+  shift: ProjectBudgetShift;
+  state: FadeState;
+  signalKey: string;
+  onSnooze: (key: string, val: "on" | "off") => void;
+}) {
+  const [snoozing, setSnoozing] = useState(false);
+  const isRebalance = shift.mode === "rebalance";
+
+  async function snooze(restore: boolean) {
+    setSnoozing(true);
+    try {
+      const res = await fetch("/api/campaigns/budget-dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: shift.slug,
+          kind: "budget-shift",
+          baselineDaily: shift.totalMove,
+          restore,
+        }),
+      });
+      const d = (await res.json()) as { ok?: boolean };
+      if (res.ok && d.ok) onSnooze(signalKey, restore ? "off" : "on");
+    } catch {
+      /* best-effort; leave state as-is */
+    } finally {
+      setSnoozing(false);
+    }
+  }
+
+  // Headline copy ported from the iframe (Index.html#L9305).
+  const headline = isRebalance
+    ? `🔄 איזון מחדש — אין פער, אבל ניתן לשפר ROI · העברה של ${fmt(shift.totalMove)}`
+    : `💡 הצעת התאמה — ${shift.delta < 0 ? "הוספה" : "הפחתה"} של ${fmt(shift.totalMove)} מבוסס ביצועי ערוצים`;
+
+  const dismissed = state === "dismissed";
+  return (
+    <div
+      className={`budget-shift${isRebalance ? " is-rebalance" : ""}${dismissed ? " is-dismissed" : ""}`}
+    >
+      <div className="budget-shift-head">
+        <span className="budget-shift-title">{headline}</span>
+        {dismissed ? (
+          <button
+            type="button"
+            className="budget-handled-btn is-done"
+            disabled={snoozing}
+            onClick={() => snooze(true)}
+            title="בטל טיפול — החזר את ההצעה"
+          >
+            ↩︎ בטל
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="budget-handled-btn"
+            disabled={snoozing}
+            onClick={() => snooze(false)}
+            title="טיפלתי — שקט עד מחר; אם ההצעה עדיין רלוונטית אחרי שהדאטה יתעדכן, היא תחזור"
+          >
+            ✓ טיפלתי{state === "resurfaced" ? " (חזר)" : ""}
+          </button>
+        )}
+      </div>
+      {!dismissed && (
+        <div className="budget-shift-list">
+          {shift.suggestions.map((sg) => (
+            <div
+              key={sg.channel}
+              className={`budget-shift-row ${sg.delta > 0 ? "is-up" : "is-down"}`}
+            >
+              <span className="budget-shift-channel" title={sg.channel}>
+                {sg.channel}
+              </span>
+              <span className="budget-shift-delta">
+                {fmt(sg.currentBudget)} → <b>{fmt(sg.newBudget)}</b>{" "}
+                <span className="budget-shift-arrow">
+                  {sg.delta > 0 ? "↑" : "↓"} {fmt(Math.abs(sg.delta))}
+                </span>
+              </span>
+              <span className="budget-shift-reason">{sg.reason}</span>
+              <span className="budget-shift-chips">
+                <CostChip label="CPL" metric="cpl" value={sg.cpl} />
+                <CostChip label="CPS" metric="cps" value={sg.cps} />
+                <CostChip label="CPM" metric="cpm" value={sg.cpm} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One CPL/CPS/CPM pill, colored on the iframe's costStyle gradient
+ *  (green=cheap → red=expensive). Hidden for zero metrics. */
+function CostChip({
+  label,
+  metric,
+  value,
+}: {
+  label: string;
+  metric: "cpl" | "cps" | "cpm";
+  value: number;
+}) {
+  const style = costChipStyle(metric, value);
+  if (!style) return null;
+  const titles: Record<string, string> = {
+    cpl: "עלות לליד",
+    cps: "עלות לתיאום פגישה",
+    cpm: "עלות לביצוע פגישה",
+  };
+  return (
+    <span
+      className="budget-shift-chip"
+      style={{ background: style.bg, color: style.fg }}
+      title={titles[metric]}
+    >
+      {label} {fmt(Math.round(value))}
+    </span>
   );
 }
 

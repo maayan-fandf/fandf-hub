@@ -19749,6 +19749,56 @@ button.budget-need:focus-visible {
 .budget-plan-kpi-label { color: var(--muted); font-size: .75em; }
 .budget-plan-kpi-val { font-weight: 700; font-size: .95em; }
 
+/* 💡 הצעת התאמה — budget-shift suggestion panel (iframe reallocation
+   engine, lib/budgetShiftSuggestions). Amber accent for the corrective
+   drift mode; blue for the advisory net-zero rebalance. */
+.budget-shift {
+  border: 1px solid color-mix(in srgb, #f59e0b 45%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, #f59e0b 7%, var(--surface));
+  padding: .7em .9em; margin-bottom: 1em;
+}
+.budget-shift.is-rebalance {
+  border-color: color-mix(in srgb, #38bdf8 45%, var(--border));
+  background: color-mix(in srgb, #38bdf8 7%, var(--surface));
+}
+.budget-shift.is-dismissed { opacity: .42; }
+.budget-shift.is-dismissed:hover { opacity: .72; }
+.budget-shift-head {
+  display: flex; align-items: center; gap: .6em; flex-wrap: wrap;
+}
+.budget-shift-title { font-weight: 700; flex: 1; min-width: 12em; }
+.budget-shift-flag { margin-inline-end: .25em; }
+.budget-shift-list {
+  display: flex; flex-direction: column; gap: .35em; margin-top: .55em;
+}
+.budget-shift-row {
+  display: grid;
+  grid-template-columns: minmax(8em, 12em) auto minmax(10em, 1fr) auto;
+  gap: .3em .8em; align-items: center;
+  font-size: .85em;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  padding-top: .35em;
+}
+.budget-shift-channel {
+  font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.budget-shift-delta { white-space: nowrap; }
+.budget-shift-arrow { font-weight: 700; }
+.budget-shift-row.is-up .budget-shift-arrow { color: #22c55e; }
+.budget-shift-row.is-down .budget-shift-arrow { color: #ef4444; }
+.budget-shift-reason { color: var(--muted); }
+.budget-shift-chips { display: inline-flex; gap: .35em; flex-wrap: wrap; }
+.budget-shift-chip {
+  display: inline-block; border-radius: 999px;
+  padding: .1em .6em; font-weight: 600; font-size: .92em;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .budget-shift-row { grid-template-columns: 1fr auto; }
+  .budget-shift-reason, .budget-shift-chips { grid-column: 1 / -1; }
+}
+
 /* פריסה מאושרת modal */
 .prisa-overlay {
   position: fixed; inset: 0; z-index: 1000;

@@ -90,6 +90,18 @@ export function pacingChannelKey(slug: string, channel: string): string {
   return `${s}|pacing-variance|channel|${c}`;
 }
 
+/**
+ * Per-PROJECT budget-shift suggestion snooze key (2026-06-12). One key
+ * per project — the suggestion strip is a single advisory unit (its
+ * moves are interdependent), so it snoozes as a whole rather than per
+ * channel. Same alertDismissals store + computeFadeState semantics as
+ * the pacing keys above.
+ */
+export function budgetShiftKey(slug: string): string {
+  const s = String(slug || "").toLowerCase().trim() || "(no-slug)";
+  return `${s}|budget-shift`;
+}
+
 /** Display order for the budget desk's manager grouping. */
 export const MANAGER_ORDER = ["Maayan Sachs", "Nadav Eedelman"];
 export const UNASSIGNED_MANAGER = "ללא מנהל";

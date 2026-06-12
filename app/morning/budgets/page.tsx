@@ -15,6 +15,12 @@ import { isProjectEndedByIso } from "@/lib/projectEnded";
 import { isRealEstateType } from "@/lib/keys";
 import { listAlertDismissals } from "@/lib/alertDismissals";
 import { getUsdIlsRate } from "@/lib/fxRate";
+import { getAllClientsAllRows } from "@/lib/allClients";
+import {
+  computeBudgetShiftForProject,
+  groupAllClientsBySlug,
+  type ProjectBudgetShift,
+} from "@/lib/budgetShiftSuggestions";
 import BudgetGrid, { type BudgetDismissal } from "@/components/BudgetGrid";
 import CampaignsTabs from "@/components/CampaignsTabs";
 
@@ -51,15 +57,26 @@ export default async function BudgetsPage() {
     );
   }
 
-  const [budgetRes, feedRes, peopleRes, dismissRes, rateRes, projectsRes] =
-    await Promise.allSettled([
-      getBudgetMaster(driveFolderOwner()),
-      getMorningFeed({ scope: "all", overrideEmail }),
-      tasksPeopleList(),
-      listAlertDismissals(),
-      getUsdIlsRate(),
-      getMyProjects(overrideEmail),
-    ]);
+  const [
+    budgetRes,
+    feedRes,
+    peopleRes,
+    dismissRes,
+    rateRes,
+    projectsRes,
+    allClientsRes,
+  ] = await Promise.allSettled([
+    getBudgetMaster(driveFolderOwner()),
+    getMorningFeed({ scope: "all", overrideEmail }),
+    tasksPeopleList(),
+    listAlertDismissals(),
+    getUsdIlsRate(),
+    getMyProjects(overrideEmail),
+    // Per-channel leads/meetings (current) + חודשי history for the
+    // budget-shift suggestions. Same 5-min-cached read the CRM alerts
+    // already share, so this adds no Sheets quota.
+    getAllClientsAllRows(driveFolderOwner()),
+  ]);
 
   const master = budgetRes.status === "fulfilled" ? budgetRes.value : null;
   const error =
@@ -117,7 +134,8 @@ export default async function BudgetsPage() {
     dismissRes.status === "fulfilled" ? dismissRes.value : {};
   const budgetDismissals: Record<string, BudgetDismissal> = {};
   for (const [key, d] of Object.entries(allDismissals)) {
-    if (!key.includes("|pacing-variance|")) continue;
+    if (!key.includes("|pacing-variance|") && !key.endsWith("|budget-shift"))
+      continue;
     budgetDismissals[key] = {
       snooze_until: d.snooze_until || "",
       dismissed_at: d.dismissed_at || "",
@@ -179,6 +197,24 @@ export default async function BudgetsPage() {
           const type = typeByName.get(p.tab) || typeByName.get(p.name);
           return isRealEstateType(type);
         });
+        // Budget-shift suggestions — the iframe's reallocation engine
+        // (scoring + drift/rebalance) running hub-side on the same
+        // ALL CLIENTS data. Keyed by lowercase tab for the grid lookup.
+        const allClientsRows =
+          allClientsRes.status === "fulfilled" ? allClientsRes.value : [];
+        const bySlug = groupAllClientsBySlug(allClientsRows);
+        const shifts: Record<string, ProjectBudgetShift> = {};
+        for (const p of filtered) {
+          const g = bySlug.get(p.tab.toLowerCase().trim());
+          if (!g) continue;
+          const shift = computeBudgetShiftForProject({
+            project: p,
+            currentRows: g.current,
+            monthlyRows: g.monthly,
+            todayIso: today,
+          });
+          if (shift) shifts[p.tab.toLowerCase()] = shift;
+        }
         return (
           <BudgetGrid
             projects={filtered}
@@ -189,6 +225,7 @@ export default async function BudgetsPage() {
             dismissals={budgetDismissals}
             today={today}
             usdIlsRate={usdIlsRate}
+            shifts={shifts}
           />
         );
       })()}

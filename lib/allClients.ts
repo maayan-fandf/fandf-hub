@@ -67,6 +67,11 @@ export type AllClientsRow = {
   /** Meetings that actually took place (ביצוע פגישות). The "held"
    *  side of the noshow gap. */
   meetings: number;
+  /** קצב יומי — the channel's historical daily spend rate. The budget-
+   *  shift scorer uses it only as a gate (dailyRate > 0 ⇒ headroom is
+   *  meaningful), mirroring the dashboard's c.dailyRate (Code.js#L2207).
+   *  0 when the column is absent from the sheet. */
+  dailyRate: number;
   /** Window start (ISO date), formatted from the sheet's date column.
    *  Empty when the cell isn't a valid date. */
   startIso: string;
@@ -133,6 +138,7 @@ async function readAllClientsRows(
   const iLeads = col("לידים CRM");
   const iScheduled = col("תיאום וביטול");
   const iMeetings = col("ביצוע פגישות");
+  const iDailyRate = col("קצב יומי");
   const iRowType = col("סוג שורה");
   const iProject = col("פרוייקט");
 
@@ -170,6 +176,7 @@ async function readAllClientsRows(
     leads: num(row[iLeads]),
     scheduled: num(row[iScheduled]),
     meetings: num(row[iMeetings]),
+    dailyRate: iDailyRate >= 0 ? num(row[iDailyRate]) : 0,
     startIso: dateOnlyFromSerial(row[iStart]),
     endIso: dateOnlyFromSerial(row[iEnd]),
   }));
@@ -235,6 +242,7 @@ export const getAllClientsCurrentForProject = cache(
         existing.leads += r.leads;
         existing.scheduled += r.scheduled;
         existing.meetings += r.meetings;
+        existing.dailyRate += r.dailyRate;
         if (!existing.startIso && r.startIso) existing.startIso = r.startIso;
         if (r.endIso && r.endIso > existing.endIso) existing.endIso = r.endIso;
       }
