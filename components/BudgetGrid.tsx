@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import CopyAmountButton from "./CopyAmountButton";
 import PrisaButton from "./PrisaButton";
 import GoogleAdsIcon from "./GoogleAdsIcon";
@@ -836,15 +836,39 @@ function PlatformDrillGroups({
   // channel shares one aligned column grid, with the platform shown as
   // a small logo per row). Rows ordered by platform (E3 order, then
   // "other"), preserving the sheet order within each platform.
+  const [expandedChannels, setExpandedChannels] = useState<Set<string>>(
+    new Set(),
+  );
+  const toggleChannel = (chLc: string) =>
+    setExpandedChannels((s) => {
+      const n = new Set(s);
+      if (n.has(chLc)) n.delete(chLc);
+      else n.add(chLc);
+      return n;
+    });
   const platformOrder: (Platform | "other")[] = [...E3_PLATFORMS, "other"];
   const ordered = platformOrder.flatMap((pl) =>
     p.rows.filter((r) => r.platform === pl),
   );
   if (ordered.length === 0) return null;
-  // Merged channels span several sheet sub-rows (forward-filled name);
-  // the performance numbers are channel-level, so show them only on the
-  // first sub-row of each channel to avoid duplicate counts.
-  const seenChannel = new Set<string>();
+  // Group consecutive same-channel rows into channels. A channel with
+  // several sheet sub-rows (each a campaign — own סוג + budget) collapses
+  // into ONE summary row that expands to reveal the campaigns inside it
+  // (owner request 2026-06-12). Single-campaign channels render as a
+  // normal row. Channel-level CRM perf shows on the summary / single row.
+  const channelGroups: {
+    chLc: string;
+    channel: string;
+    rows: BudgetProject["rows"];
+  }[] = [];
+  for (const r of ordered) {
+    const chLc = r.channel.toLowerCase().trim();
+    const last = channelGroups[channelGroups.length - 1];
+    if (last && last.chLc === chLc) last.rows.push(r);
+    else channelGroups.push({ chLc, channel: r.channel, rows: [r] });
+  }
+  const platformUrlFor = (pl: Platform | "other") =>
+    pl === "google" ? ad.gAdsUrl : pl === "facebook" ? ad.fbAdsUrl : undefined;
 
   return (
     <table className="budget-rows">
@@ -854,6 +878,12 @@ function PlatformDrillGroups({
           <th>סוג</th>
           <th>תקציב מאושר</th>
           <th>בפועל</th>
+          <th
+            className="th-help"
+            title="לידים שנרשמו ב-CRM. רחפו על המספר כדי לראות את העלות לליד (הוצאה ÷ לידים)."
+          >
+            לידים <span aria-hidden>ⓘ</span>
+          </th>
           <th
             className="th-help"
             title="תיאומי פגישות שנקבעו (CRM). רחפו על המספר כדי לראות את העלות לתיאום (הוצאה ÷ תיאומים)."
@@ -885,34 +915,162 @@ function PlatformDrillGroups({
         </tr>
       </thead>
       <tbody>
-        {ordered.map((r) => {
-          const url =
-            r.platform === "google"
-              ? ad.gAdsUrl
-              : r.platform === "facebook"
-                ? ad.fbAdsUrl
-                : undefined;
-          const chLc = r.channel.toLowerCase().trim();
-          const showPerf = !seenChannel.has(chLc);
-          seenChannel.add(chLc);
+        {channelGroups.map((g) => {
+          const url = platformUrlFor(g.rows[0].platform);
+          const chPerf = perf?.[g.chLc];
+          // Single-campaign channel — a normal row carrying the perf.
+          if (g.rows.length === 1) {
+            const r = g.rows[0];
+            return (
+              <CampaignRow
+                key={r.row}
+                tab={p.tab}
+                r={r}
+                canEdit={canEdit}
+                onEdit={onEdit}
+                dismissals={dismissals}
+                today={today}
+                localDismiss={localDismiss}
+                onSnooze={onSnooze}
+                platformUrl={showAdLinks ? url : undefined}
+                perf={chPerf}
+              />
+            );
+          }
+          // Multi-campaign channel — collapsible summary + the campaigns.
+          const expanded = expandedChannels.has(g.chLc);
           return (
-            <CampaignRow
-              key={r.row}
-              tab={p.tab}
-              r={r}
-              canEdit={canEdit}
-              onEdit={onEdit}
-              dismissals={dismissals}
-              today={today}
-              localDismiss={localDismiss}
-              onSnooze={onSnooze}
-              platformUrl={showAdLinks ? url : undefined}
-              perf={showPerf ? perf?.[chLc] : undefined}
-            />
+            <Fragment key={"grp-" + g.chLc}>
+              <ChannelSummaryRow
+                channel={g.channel}
+                platform={g.rows[0].platform}
+                rows={g.rows}
+                perf={chPerf}
+                expanded={expanded}
+                onToggle={() => toggleChannel(g.chLc)}
+              />
+              {expanded &&
+                g.rows.map((r) => (
+                  <CampaignRow
+                    key={r.row}
+                    tab={p.tab}
+                    r={r}
+                    canEdit={canEdit}
+                    onEdit={onEdit}
+                    dismissals={dismissals}
+                    today={today}
+                    localDismiss={localDismiss}
+                    onSnooze={onSnooze}
+                    platformUrl={showAdLinks ? url : undefined}
+                    indent
+                  />
+                ))}
+            </Fragment>
           );
         })}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Collapsed summary for a channel that holds several campaigns. Shows the
+ * channel totals (budget/spend), its channel-level CRM perf, and an
+ * aggregate pace; click to expand/collapse the campaign rows beneath.
+ * Read-only — budgets are edited on the campaign rows inside.
+ */
+function ChannelSummaryRow({
+  channel,
+  platform,
+  rows,
+  perf,
+  expanded,
+  onToggle,
+}: {
+  channel: string;
+  platform: Platform | "other";
+  rows: BudgetProject["rows"];
+  perf?: ChannelPerf;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const budget = rows.reduce((a, r) => a + r.budget, 0);
+  const spend = rows.reduce((a, r) => a + r.spend, 0);
+  const actualDaily = rows.reduce((a, r) => a + r.actualDaily, 0);
+  const dailyRequired = rows.reduce((a, r) => a + r.dailyRequired, 0);
+  const allEnded = rows.every((r) => r.ended);
+  const anyNeedsAction = rows.some(
+    (r) =>
+      r.platform !== "other" &&
+      !r.ended &&
+      !budgetEssentiallySpent(r.budget, r.spend) &&
+      needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio),
+  );
+  // Channel pace = Σspend ÷ Σexpected over active rows that have an
+  // expected (pacingRatio>0; expected_i = spend_i ÷ ratio_i).
+  let aggSpend = 0;
+  let aggExpected = 0;
+  for (const r of rows) {
+    if (r.ended) continue;
+    aggSpend += r.spend;
+    if (r.pacingRatio > 0) aggExpected += r.spend / r.pacingRatio;
+  }
+  const aggRatio = aggExpected > 0 ? aggSpend / aggExpected : 0;
+  const dailyReq = Math.max(0, Math.round(dailyRequired));
+  return (
+    <tr
+      className="channel-summary"
+      onClick={onToggle}
+      title="לחצו כדי להציג/להסתיר את הקמפיינים בערוץ"
+    >
+      <td
+        className="c-channel"
+        title={`${PLATFORM_LABELS[platform as Platform] ?? "אחר"} · ${channel}`}
+      >
+        <span className={`channel-caret ${expanded ? "open" : ""}`} aria-hidden>
+          ▸
+        </span>
+        <span className="c-channel-logo" aria-hidden>
+          <PlatformIcon platform={platform} size=".95em" />
+        </span>
+        {anyNeedsAction && (
+          <span
+            className="budget-alert"
+            title="יש קמפיין בערוץ שדורש עדכון תקציב יומי"
+            aria-label="נדרש עדכון תקציב"
+          >
+            ⚠️
+          </span>
+        )}
+        {channel}
+      </td>
+      <td className="c-type">
+        <span className="channel-count">{rows.length} קמפיינים</span>
+      </td>
+      <td className="c-budget">
+        <b>{fmt(budget)}</b>
+      </td>
+      <td className="c-spend">{fmt(spend)}</td>
+      <PerfCells perf={perf} />
+      <td className="c-pace">
+        {allEnded ? (
+          <span className="pace-val pace-none">⛔</span>
+        ) : aggRatio > 0 ? (
+          <Pacing ratio={aggRatio} muted />
+        ) : (
+          "—"
+        )}
+      </td>
+      <td className="c-actualdaily">
+        {actualDaily > 0
+          ? `₪${Math.round(actualDaily).toLocaleString("he-IL")}`
+          : "—"}
+      </td>
+      <td className="c-daily">
+        {dailyReq > 0 ? `₪${dailyReq.toLocaleString("he-IL")}` : "—"}
+      </td>
+      <td className="c-handled" />
+    </tr>
   );
 }
 
@@ -1004,6 +1162,40 @@ function platformDimmed(
   });
 }
 
+/**
+ * The three CRM-performance cells shared by the channel rows + the
+ * collapsed channel-summary row: לידים / תיאומים / פגישות, each showing
+ * the count with its cost-per metric (CPL / CPS / CPM) on hover. perf is
+ * channel-level — passed on a single-campaign row or the channel summary,
+ * and omitted (blank cells) on the expanded sub-campaign rows so counts
+ * aren't duplicated.
+ */
+function PerfCells({ perf }: { perf?: ChannelPerf }) {
+  const cell = (
+    cls: string,
+    count: number | undefined,
+    cost: number | undefined,
+    costLabel: string,
+    emptyLabel: string,
+  ) => (
+    <td
+      className={cls}
+      title={
+        perf ? ((count ?? 0) > 0 ? `${costLabel}: ${fmt(Math.round(cost || 0))}` : emptyLabel) : undefined
+      }
+    >
+      {perf ? ((count ?? 0) > 0 ? (count as number).toLocaleString("he-IL") : "—") : ""}
+    </td>
+  );
+  return (
+    <>
+      {cell("c-leads", perf?.leads, perf?.cpl, "עלות לליד", "אין לידים בתקופה")}
+      {cell("c-sched", perf?.scheduled, perf?.cps, "עלות לתיאום", "אין תיאומים בתקופה")}
+      {cell("c-meet", perf?.meetings, perf?.cpm, "עלות לפגישה", "אין פגישות בתקופה")}
+    </>
+  );
+}
+
 function CampaignRow({
   tab,
   r,
@@ -1015,6 +1207,7 @@ function CampaignRow({
   onSnooze,
   platformUrl,
   perf,
+  indent,
 }: {
   tab: string;
   r: BudgetProject["rows"][number];
@@ -1030,9 +1223,12 @@ function CampaignRow({
    *  filter token (FB) / project slug (Google) for the native search. */
   platformUrl?: string;
   /** This channel's CRM performance (leads/scheduled/meetings + cost-per).
-   *  Undefined on merged sub-rows (shown on the channel's first row only)
-   *  or when the channel has no ALL CLIENTS match. */
+   *  Passed on a single-campaign row; omitted on expanded sub-campaign
+   *  rows (the channel summary carries it) or when there's no match. */
   perf?: ChannelPerf;
+  /** True when this row is a sub-campaign under an expanded channel
+   *  summary — indents it and drops the (redundant) channel name/logo. */
+  indent?: boolean;
 }) {
   const [draft, setDraft] = useState(String(Math.round(r.budget)));
   const [saving, setSaving] = useState(false);
@@ -1153,12 +1349,18 @@ function CampaignRow({
 
   return (
     <tr
-      className={`${err ? "row-error" : ""} ${state === "dismissed" ? "is-dismissed" : ""}`}
+      className={`${err ? "row-error" : ""} ${state === "dismissed" ? "is-dismissed" : ""} ${indent ? "is-subcampaign" : ""}`}
     >
-      <td className="c-channel" title={`${PLATFORM_LABELS[r.platform as Platform] ?? "אחר"} · ${r.channel}`}>
-        <span className="c-channel-logo" aria-hidden>
-          <PlatformIcon platform={r.platform} size=".95em" />
-        </span>
+      <td className="c-channel" title={`${PLATFORM_LABELS[r.platform as Platform] ?? "אחר"} · ${r.channel}${r.campaignType ? " · " + r.campaignType : ""}`}>
+        {indent ? (
+          <span className="subcamp-arrow" aria-hidden>
+            ↳
+          </span>
+        ) : (
+          <span className="c-channel-logo" aria-hidden>
+            <PlatformIcon platform={r.platform} size=".95em" />
+          </span>
+        )}
         <StatusDot status={r.campaignStatus} />
         {needsAction && (
           <span
@@ -1169,7 +1371,9 @@ function CampaignRow({
             ⚠️
           </span>
         )}
-        {r.channel}
+        {/* Sub-campaign rows are identified by their סוג column, so the
+            channel name isn't repeated here — keeps the group tidy. */}
+        {!indent && r.channel}
       </td>
       <td className="c-type" title={r.campaignType}>
         {r.campaignType || "—"}
@@ -1202,38 +1406,7 @@ function CampaignRow({
         {err && <span className="budget-err" title={err}>⚠️</span>}
       </td>
       <td className="c-spend">{fmt(r.spend)}</td>
-      <td
-        className="c-sched"
-        title={
-          perf
-            ? perf.scheduled > 0
-              ? `עלות לתיאום: ${fmt(Math.round(perf.cps))}`
-              : "אין תיאומים בתקופה"
-            : undefined
-        }
-      >
-        {perf
-          ? perf.scheduled > 0
-            ? perf.scheduled.toLocaleString("he-IL")
-            : "—"
-          : ""}
-      </td>
-      <td
-        className="c-meet"
-        title={
-          perf
-            ? perf.meetings > 0
-              ? `עלות לפגישה: ${fmt(Math.round(perf.cpm))}`
-              : "אין פגישות בתקופה"
-            : undefined
-        }
-      >
-        {perf
-          ? perf.meetings > 0
-            ? perf.meetings.toLocaleString("he-IL")
-            : "—"
-          : ""}
-      </td>
+      <PerfCells perf={perf} />
       <td className="c-pace">
         {r.ended ? (
           <span className="pace-val pace-none" title={`הסתיים ${r.endIso}`}>

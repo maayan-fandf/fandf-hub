@@ -19535,8 +19535,9 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-detail { border-top: 1px dashed var(--border); padding: .5em 1em 1em; background: var(--surface-soft, rgba(0,0,0,.02)); }
 
 /* One flat table of ALL channels (2026-06-12 — was per-platform sub-
-   tables). table-layout:fixed + explicit widths keep the 10 columns
-   aligned across every channel regardless of platform. */
+   tables). table-layout:fixed + explicit widths keep the 11 columns
+   aligned across every channel regardless of platform. A channel with
+   several campaigns collapses into one summary row that expands. */
 .budget-rows { width: 100%; border-collapse: collapse; font-size: .85em; table-layout: fixed; }
 .budget-rows th {
   text-align: start; color: var(--muted); font-weight: 600;
@@ -19545,27 +19546,42 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-rows th.th-help { cursor: help; }
 .budget-rows th.th-help span { opacity: .55; font-size: .9em; }
 .budget-rows td { padding: .3em .5em; border-bottom: 1px solid var(--border); }
-.budget-rows th:nth-child(1),  .budget-rows td:nth-child(1)  { width: 15%; } /* ערוץ */
-.budget-rows th:nth-child(2),  .budget-rows td:nth-child(2)  { width: 11%; } /* סוג */
-.budget-rows th:nth-child(3),  .budget-rows td:nth-child(3)  { width: 12%; } /* תקציב מאושר */
-.budget-rows th:nth-child(4),  .budget-rows td:nth-child(4)  { width: 9%;  } /* בפועל */
-.budget-rows th:nth-child(5),  .budget-rows td:nth-child(5)  { width: 6%;  } /* תיאומים */
-.budget-rows th:nth-child(6),  .budget-rows td:nth-child(6)  { width: 6%;  } /* פגישות */
-.budget-rows th:nth-child(7),  .budget-rows td:nth-child(7)  { width: 7%;  } /* קצב */
-.budget-rows th:nth-child(8),  .budget-rows td:nth-child(8)  { width: 10%; } /* יומי מוגדר */
-.budget-rows th:nth-child(9),  .budget-rows td:nth-child(9)  { width: 12%; } /* נדרש ליום */
-.budget-rows th:nth-child(10), .budget-rows td:nth-child(10) { width: 12%; } /* טיפלתי */
+.budget-rows th:nth-child(1),  .budget-rows td:nth-child(1)  { width: 14%; } /* ערוץ */
+.budget-rows th:nth-child(2),  .budget-rows td:nth-child(2)  { width: 10%; } /* סוג */
+.budget-rows th:nth-child(3),  .budget-rows td:nth-child(3)  { width: 11%; } /* תקציב מאושר */
+.budget-rows th:nth-child(4),  .budget-rows td:nth-child(4)  { width: 8%;  } /* בפועל */
+.budget-rows th:nth-child(5),  .budget-rows td:nth-child(5)  { width: 6%;  } /* לידים */
+.budget-rows th:nth-child(6),  .budget-rows td:nth-child(6)  { width: 6%;  } /* תיאומים */
+.budget-rows th:nth-child(7),  .budget-rows td:nth-child(7)  { width: 6%;  } /* פגישות */
+.budget-rows th:nth-child(8),  .budget-rows td:nth-child(8)  { width: 7%;  } /* קצב */
+.budget-rows th:nth-child(9),  .budget-rows td:nth-child(9)  { width: 9%;  } /* יומי מוגדר */
+.budget-rows th:nth-child(10), .budget-rows td:nth-child(10) { width: 11%; } /* נדרש ליום */
+.budget-rows th:nth-child(11), .budget-rows td:nth-child(11) { width: 12%; } /* טיפלתי */
 .budget-rows .c-channel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .budget-rows .c-channel-logo {
   display: inline-flex; align-items: center; vertical-align: middle;
   margin-inline-end: .3em;
 }
 .budget-rows .c-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.budget-rows .c-sched, .budget-rows .c-meet { color: var(--text); cursor: help; }
-.budget-rows .c-sched[title]:hover, .budget-rows .c-meet[title]:hover {
+.budget-rows .c-leads, .budget-rows .c-sched, .budget-rows .c-meet { color: var(--text); cursor: help; }
+.budget-rows .c-leads[title]:hover, .budget-rows .c-sched[title]:hover, .budget-rows .c-meet[title]:hover {
   text-decoration: underline dotted; text-underline-offset: 2px;
 }
 .budget-rows .c-actualdaily { color: var(--text); }
+
+/* Collapsible multi-campaign channel — summary row + indented campaigns */
+.budget-rows tr.channel-summary { cursor: pointer; }
+.budget-rows tr.channel-summary:hover { background: var(--surface-hi, rgba(0,0,0,.035)); }
+.budget-rows tr.channel-summary > td { font-weight: 600; }
+.budget-rows .channel-caret {
+  display: inline-block; margin-inline-end: .25em; color: var(--muted);
+  font-size: .85em; transition: transform .15s;
+}
+.budget-rows .channel-caret.open { transform: rotate(90deg); }
+.budget-rows .channel-count { color: var(--muted); font-weight: 500; font-size: .92em; }
+.budget-rows tr.is-subcampaign > td { background: var(--surface-soft, rgba(0,0,0,.02)); }
+.budget-rows tr.is-subcampaign .c-channel { padding-inline-start: 1.8em; }
+.budget-rows .subcamp-arrow { color: var(--muted); margin-inline-end: .3em; }
 
 /* "טיפלתי" snooze + faded row */
 .budget-rows tr.is-dismissed { opacity: .42; }
