@@ -477,6 +477,8 @@ function ProjectRow({
               state={shiftState}
               signalKey={shiftKey}
               onSnooze={onSnooze}
+              canEdit={canEdit}
+              onEdit={onEdit}
             />
           )}
 
@@ -544,14 +546,95 @@ function BudgetShiftPanel({
   state,
   signalKey,
   onSnooze,
+  canEdit,
+  onEdit,
 }: {
   shift: ProjectBudgetShift;
   state: FadeState;
   signalKey: string;
   onSnooze: (key: string, val: "on" | "off") => void;
+  canEdit: boolean;
+  onEdit: (tab: string, row: number, value: number) => void;
 }) {
   const [snoozing, setSnoozing] = useState(false);
   const isRebalance = shift.mode === "rebalance";
+  // Per-channel apply progress. "applied" sticks until reload — the
+  // server recomputes suggestions on the next page load (where a closed
+  // gap makes the whole strip disappear, which is the desired end state).
+  const [applyState, setApplyState] = useState<
+    Record<string, "saving" | "applied" | "error">
+  >({});
+  const [applyErr, setApplyErr] = useState<Record<string, string>>({});
+  const [applyingAll, setApplyingAll] = useState(false);
+
+  /**
+   * Write one suggestion through the SAME endpoint the iframe's apply
+   * button uses — /api/campaigns/budget lookup mode (slug+channel) with
+   * distribute:true, so a channel merged across several sheet sub-rows
+   * splits the new total proportionally server-side, and the drift
+   * guard (expectedBudget vs the sheet's current Σ) rejects stale
+   * applies. On success the optimistic onEdit() updates the channel
+   * rows below instantly, exactly like an inline cell edit.
+   */
+  async function applyOne(sg: ProjectBudgetShift["suggestions"][number]) {
+    setApplyState((m) => ({ ...m, [sg.channel]: "saving" }));
+    try {
+      const res = await fetch("/api/campaigns/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: shift.slug,
+          channel: sg.channel,
+          value: sg.newBudget,
+          expectedBudget: sg.currentBudget,
+          distribute: true,
+        }),
+      });
+      const d = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        row?: number;
+        value?: number;
+        distributed?: Array<{ row: number; newBudget: number }>;
+      };
+      if (!res.ok || !d.ok) {
+        setApplyState((m) => ({ ...m, [sg.channel]: "error" }));
+        setApplyErr((m) => ({ ...m, [sg.channel]: d.error || "שמירה נכשלה" }));
+        return false;
+      }
+      if (Array.isArray(d.distributed)) {
+        for (const part of d.distributed)
+          onEdit(shift.slug, part.row, part.newBudget);
+      } else if (typeof d.row === "number" && typeof d.value === "number") {
+        onEdit(shift.slug, d.row, d.value);
+      }
+      setApplyState((m) => ({ ...m, [sg.channel]: "applied" }));
+      return true;
+    } catch (e) {
+      setApplyState((m) => ({ ...m, [sg.channel]: "error" }));
+      setApplyErr((m) => ({
+        ...m,
+        [sg.channel]: e instanceof Error ? e.message : "שמירה נכשלה",
+      }));
+      return false;
+    }
+  }
+
+  async function applyAll() {
+    setApplyingAll(true);
+    try {
+      for (const sg of shift.suggestions) {
+        if (applyState[sg.channel] === "applied") continue;
+        await applyOne(sg);
+      }
+    } finally {
+      setApplyingAll(false);
+    }
+  }
+
+  const allApplied = shift.suggestions.every(
+    (sg) => applyState[sg.channel] === "applied",
+  );
 
   async function snooze(restore: boolean) {
     setSnoozing(true);
@@ -587,6 +670,23 @@ function BudgetShiftPanel({
     >
       <div className="budget-shift-head">
         <span className="budget-shift-title">{headline}</span>
+        {canEdit && !dismissed && shift.suggestions.length > 1 && (
+          <button
+            type="button"
+            className="budget-shift-apply budget-shift-apply-all"
+            disabled={applyingAll || allApplied}
+            onClick={applyAll}
+            title="כתיבת כל התקציבים המוצעים לגיליון (עמודה G), בדיוק כמו עריכה ידנית בשורות למטה"
+          >
+            {allApplied
+              ? "✓ הוחל"
+              : applyingAll
+                ? "…מחיל"
+                : isRebalance
+                  ? "✓ החל איזון"
+                  : "✓ החל הכל"}
+          </button>
+        )}
         {dismissed ? (
           <button
             type="button"
@@ -611,28 +711,56 @@ function BudgetShiftPanel({
       </div>
       {!dismissed && (
         <div className="budget-shift-list">
-          {shift.suggestions.map((sg) => (
-            <div
-              key={sg.channel}
-              className={`budget-shift-row ${sg.delta > 0 ? "is-up" : "is-down"}`}
-            >
-              <span className="budget-shift-channel" title={sg.channel}>
-                {sg.channel}
-              </span>
-              <span className="budget-shift-delta">
-                {fmt(sg.currentBudget)} → <b>{fmt(sg.newBudget)}</b>{" "}
-                <span className="budget-shift-arrow">
-                  {sg.delta > 0 ? "↑" : "↓"} {fmt(Math.abs(sg.delta))}
+          {shift.suggestions.map((sg) => {
+            const aState = applyState[sg.channel];
+            return (
+              <div
+                key={sg.channel}
+                className={`budget-shift-row ${sg.delta > 0 ? "is-up" : "is-down"}${aState === "applied" ? " is-applied" : ""}`}
+              >
+                <span className="budget-shift-channel" title={sg.channel}>
+                  {sg.channel}
                 </span>
-              </span>
-              <span className="budget-shift-reason">{sg.reason}</span>
-              <span className="budget-shift-chips">
-                <CostChip label="CPL" metric="cpl" value={sg.cpl} />
-                <CostChip label="CPS" metric="cps" value={sg.cps} />
-                <CostChip label="CPM" metric="cpm" value={sg.cpm} />
-              </span>
-            </div>
-          ))}
+                <span className="budget-shift-delta">
+                  {fmt(sg.currentBudget)} → <b>{fmt(sg.newBudget)}</b>{" "}
+                  <span className="budget-shift-arrow">
+                    {sg.delta > 0 ? "↑" : "↓"} {fmt(Math.abs(sg.delta))}
+                  </span>
+                </span>
+                <span className="budget-shift-reason">{sg.reason}</span>
+                <span className="budget-shift-chips">
+                  <CostChip label="CPL" metric="cpl" value={sg.cpl} />
+                  <CostChip label="CPS" metric="cps" value={sg.cps} />
+                  <CostChip label="CPM" metric="cpm" value={sg.cpm} />
+                </span>
+                {canEdit && (
+                  <span className="budget-shift-action">
+                    {aState === "applied" ? (
+                      <span className="budget-shift-applied">✓ הוחל</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="budget-shift-apply"
+                        disabled={aState === "saving" || applyingAll}
+                        onClick={() => applyOne(sg)}
+                        title={
+                          aState === "error"
+                            ? `${applyErr[sg.channel] || "שמירה נכשלה"} — לחצו לניסיון חוזר`
+                            : `עדכון תקציב ${sg.channel} ל-${fmt(sg.newBudget)} בגיליון`
+                        }
+                      >
+                        {aState === "saving"
+                          ? "…"
+                          : aState === "error"
+                            ? "⚠️ נסה שוב"
+                            : "✓ החל"}
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

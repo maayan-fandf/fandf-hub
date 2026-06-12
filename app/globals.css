@@ -19774,12 +19774,24 @@ button.budget-need:focus-visible {
 }
 .budget-shift-row {
   display: grid;
-  grid-template-columns: minmax(8em, 12em) auto minmax(10em, 1fr) auto;
+  grid-template-columns: minmax(8em, 12em) auto minmax(10em, 1fr) auto auto;
   gap: .3em .8em; align-items: center;
   font-size: .85em;
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   padding-top: .35em;
 }
+.budget-shift-row.is-applied { opacity: .55; }
+.budget-shift-apply {
+  display: inline-flex; align-items: center; gap: .3em;
+  padding: .25em .7em; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: .92em; font-weight: 600;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.budget-shift-apply:hover { border-color: #22c55e; color: #22c55e; }
+.budget-shift-apply:disabled { opacity: .55; cursor: default; }
+.budget-shift-apply-all { font-size: .82em; }
+.budget-shift-applied { color: #22c55e; font-weight: 700; white-space: nowrap; }
 .budget-shift-channel {
   font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -19795,7 +19807,7 @@ button.budget-need:focus-visible {
   white-space: nowrap;
 }
 @media (max-width: 700px) {
-  .budget-shift-row { grid-template-columns: 1fr auto; }
+  .budget-shift-row { grid-template-columns: 1fr auto auto; }
   .budget-shift-reason, .budget-shift-chips { grid-column: 1 / -1; }
 }
 
