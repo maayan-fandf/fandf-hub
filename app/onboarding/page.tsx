@@ -410,11 +410,16 @@ export default function OnboardingPage() {
             הסימון האדום; הכל נשאר תחת 🔔.
           </li>
         </ul>
-        <Shot
-          src="palette.png"
-          alt="לוח הפקודות פתוח עם תוצאות חיפוש"
-          caption="לוח הפקודות (Ctrl+K): פעולות, פרויקטים, וחיפוש תוכן בתוך כל הדיונים — הדרך המהירה לכל מקום."
-        />
+        <details className="onb-role">
+          <summary>📸 צילום מסך: לוח הפקודות</summary>
+          <div className="onb-role-body">
+            <Shot
+              src="palette.png"
+              alt="לוח הפקודות פתוח עם תוצאות חיפוש"
+              caption="לוח הפקודות (Ctrl+K): פעולות, פרויקטים, וחיפוש תוכן בתוך כל הדיונים — הדרך המהירה לכל מקום."
+            />
+          </div>
+        </details>
       </section>
 
       {/* ── 5. Shortcuts ──────────────────────────────────────────── */}
