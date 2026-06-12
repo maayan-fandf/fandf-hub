@@ -10013,6 +10013,162 @@ html[data-theme="dark"] .copy-local-path-hint-head { color: #6ee7b7; }
     align-self: flex-start;
   }
 }
+
+/* ── Onboarding guide v2 (2026-06-12 rebuild) ─────────────────────
+   New primitives for the checklist / role-paths / screenshots /
+   warning-callout structure. The older .onboarding-* classes above
+   are still used (status list, tools list, kbd list). */
+
+/* Interactive first-hour checklist (OnboardingChecklist.tsx). */
+.onb-checklist-progress {
+  display: flex;
+  align-items: center;
+  gap: .7em;
+  margin-bottom: .6em;
+}
+.onb-checklist-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent, #6366f1);
+}
+.onb-checklist-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-soft, rgba(120,120,120,.12));
+  overflow: hidden;
+}
+.onb-checklist-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent, #6366f1);
+  transition: width .35s ease;
+}
+.onb-checklist-done-msg {
+  font-weight: 600;
+  color: var(--accent, #6366f1);
+}
+.onb-checklist-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .45em;
+  counter-reset: onb;
+}
+.onb-checklist-items li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .55em .7em;
+  background: var(--surface);
+  transition: opacity .2s, border-color .2s;
+}
+.onb-checklist-items li[data-checked] {
+  opacity: .55;
+  border-color: transparent;
+}
+.onb-checklist-items li[data-checked] .onb-checklist-label {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.onb-checklist-items label {
+  display: flex;
+  align-items: flex-start;
+  gap: .65em;
+  cursor: pointer;
+}
+.onb-checklist-items input[type="checkbox"] {
+  margin-top: .25em;
+  width: 1.05em;
+  height: 1.05em;
+  accent-color: var(--accent, #6366f1);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.onb-checklist-label {
+  line-height: 1.55;
+}
+.onb-checklist-label kbd {
+  font-size: .85em;
+  background: var(--surface-soft, rgba(120,120,120,.12));
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: .05em .35em;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+/* Role-path collapsibles. */
+.onb-role {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: .6em 0;
+  background: var(--surface);
+  overflow: hidden;
+}
+.onb-role > summary {
+  cursor: pointer;
+  padding: .75em 1em;
+  font-weight: 700;
+  font-size: 1.02em;
+  list-style: none;
+  user-select: none;
+}
+.onb-role > summary::-webkit-details-marker { display: none; }
+.onb-role > summary::after {
+  content: "▾";
+  float: left;
+  color: var(--muted);
+  transition: transform .2s;
+}
+.onb-role[open] > summary::after { transform: rotate(180deg); }
+.onb-role[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.onb-role-body {
+  padding: .8em 1em 1em;
+}
+
+/* Mental-model sub-headers. */
+.onb-model-title {
+  margin: 1.1em 0 .35em;
+  font-size: 1.02em;
+}
+
+/* Critical-warning callout (פנימי/משותף). */
+.onb-warn {
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  border-radius: 10px;
+  padding: .7em .9em;
+  margin: .5em 0;
+}
+html[data-theme="dark"] .onb-warn {
+  background: #450a0a30;
+  border-color: #991b1b66;
+}
+
+/* Screenshot figures. */
+.onb-shot {
+  margin: 1em 0 .4em;
+}
+.onb-shot img {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+}
+.onb-shot figcaption {
+  margin-top: .45em;
+  font-size: .85em;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Secrets list — slightly looser rhythm for scanability. */
+.onb-secrets li { margin-bottom: .35em; }
+
 .copy-local-path-hint-install a {
   color: var(--accent, #6366f1);
   text-decoration: none;
