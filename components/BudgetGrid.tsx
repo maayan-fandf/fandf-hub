@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import CopyAmountButton from "./CopyAmountButton";
 import PrisaButton from "./PrisaButton";
 import GoogleAdsIcon from "./GoogleAdsIcon";
@@ -22,6 +22,7 @@ import {
   type ProjectBudgetShift,
   type ChannelPerf,
 } from "@/lib/budgetShiftSuggestions";
+import type { DailySpendSpikes, SpendSpike } from "@/lib/platformDailySpend";
 
 /**
  * קמפיינים → תקציבים grid. Summary row per project (E3 vs allocated +
@@ -60,6 +61,7 @@ export default function BudgetGrid({
   usdIlsRate,
   shifts,
   perf,
+  spikes,
 }: {
   projects: BudgetProject[];
   /** keyed by tab name (lowercased). */
@@ -85,6 +87,9 @@ export default function BudgetGrid({
   /** Per-channel performance (leads/scheduled/meetings + cost-per) keyed
    *  by lowercase tab → lowercase channel, for the drill-in table. */
   perf: Record<string, Record<string, ChannelPerf>>;
+  /** Overspend spikes (latest day ≫ trailing avg) keyed by slug →
+   *  platform. Only spiking platforms are present. */
+  spikes: DailySpendSpikes;
 }) {
   const [projects, setProjects] = useState<BudgetProject[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -111,13 +116,62 @@ export default function BudgetGrid({
       active++;
       const dist = p.reconStatus === "over" || p.reconStatus === "under";
       const pace = hasPacingIssue(p);
+      const stopped = hasStoppedChannel(p);
       if (dist) distribution++;
       if (pace) pacing++;
-      if (dist || pace || (p.reconStatus === "no-target" && p.allocated > 0))
+      if (
+        dist ||
+        pace ||
+        stopped ||
+        (p.reconStatus === "no-target" && p.allocated > 0)
+      )
         attention++;
     }
     return { attention, distribution, pacing, active, total: projects.length };
   }, [projects, inactiveProjects]);
+
+  // Portfolio rollup across the ACTIVE book (independent of the chip
+  // filter — an overview shouldn't shrink when you click "קצב חורג").
+  // Reuses GroupTotals' Σ-budget math + the per-channel perf already
+  // loaded, plus a count of stopped channels / spiking platforms.
+  const portfolio = useMemo(() => {
+    let target = 0,
+      allocated = 0,
+      spend = 0,
+      leads = 0,
+      spendForCpl = 0,
+      notSpending = 0,
+      spikeCount = 0,
+      offPace = 0;
+    for (const p of projects) {
+      if (isInactive(p, inactiveProjects)) continue;
+      target += p.e3;
+      allocated += p.allocated;
+      spend += p.allocatedSpend;
+      if (hasPacingIssue(p)) offPace++;
+      const chPerf = perf[p.tab.toLowerCase()];
+      if (chPerf) {
+        for (const k of Object.keys(chPerf)) {
+          leads += chPerf[k].leads;
+          spendForCpl += chPerf[k].spend;
+        }
+      }
+      for (const r of p.rows) if (isStoppedSpending(r)) notSpending++;
+      const sp = spikes[p.tab.toLowerCase()];
+      if (sp) spikeCount += Object.keys(sp).length;
+    }
+    return {
+      target,
+      allocated,
+      spend,
+      leads,
+      blendedCpl: leads > 0 ? spendForCpl / leads : 0,
+      delta: allocated - target,
+      notSpending,
+      spikeCount,
+      offPace,
+    };
+  }, [projects, inactiveProjects, perf, spikes]);
 
   const visible = useMemo(() => {
     const list = projects.filter((p) => {
@@ -128,7 +182,12 @@ export default function BudgetGrid({
       if (filter === "distribution") return dist;
       if (filter === "pacing") return pace;
       // attention
-      return dist || pace || (p.reconStatus === "no-target" && p.allocated > 0);
+      return (
+        dist ||
+        pace ||
+        hasStoppedChannel(p) ||
+        (p.reconStatus === "no-target" && p.allocated > 0)
+      );
     });
     return list;
   }, [projects, filter, showInactive, inactiveProjects]);
@@ -192,6 +251,8 @@ export default function BudgetGrid({
 
   return (
     <div className="budget-wrap">
+      <PortfolioStrip p={portfolio} activeCount={counts.active} />
+
       <div className="budget-toolbar">
         <div className="budget-filters">
           <FilterChip
@@ -291,6 +352,7 @@ export default function BudgetGrid({
                       onSnooze={onSnooze}
                       shift={shifts[p.tab.toLowerCase()]}
                       perf={perf[p.tab.toLowerCase()]}
+                      spike={spikes[p.tab.toLowerCase()]}
                     />
                   ))}
                 </ul>
@@ -326,6 +388,99 @@ function GroupTotals({ projects }: { projects: BudgetProject[] }) {
   );
 }
 
+/** Top-of-page portfolio overview across the active book — Σ target /
+ *  allocated / spend, blended CPL, and counts of the attention signals
+ *  (off-pace projects, stopped channels, spend spikes). Reuses the same
+ *  Σ-budget math as GroupTotals and the already-loaded per-channel perf. */
+function PortfolioStrip({
+  p,
+  activeCount,
+}: {
+  p: {
+    target: number;
+    allocated: number;
+    spend: number;
+    leads: number;
+    blendedCpl: number;
+    delta: number;
+    notSpending: number;
+    spikeCount: number;
+    offPace: number;
+  };
+  activeCount: number;
+}) {
+  const tone = Math.abs(p.delta) < 1 ? "ok" : p.delta > 0 ? "over" : "under";
+  return (
+    <div className="budget-portfolio">
+      <PortfolioTile label="פרויקטים פעילים" value={String(activeCount)} />
+      <PortfolioTile label="יעד E3" value={fmt(p.target)} />
+      <PortfolioTile
+        label="חולק"
+        value={fmt(p.allocated)}
+        sub={
+          Math.abs(p.delta) >= 1
+            ? `${p.delta > 0 ? "+" : "−"}${fmt(Math.abs(p.delta))}`
+            : "מאוזן"
+        }
+        subTone={tone}
+      />
+      <PortfolioTile label="הוצאה" value={fmt(p.spend)} />
+      <PortfolioTile
+        label="עלות לליד ממוצעת"
+        value={p.blendedCpl > 0 ? fmt(p.blendedCpl) : "—"}
+        sub={p.leads > 0 ? `${p.leads.toLocaleString("he-IL")} לידים` : undefined}
+        title="ממוצע משוקלל על פני כל הערוצים הפעילים (Σהוצאה ÷ Σלידים)"
+      />
+      <PortfolioTile
+        label="קצב חורג"
+        value={String(p.offPace)}
+        tone={p.offPace > 0 ? "warn" : "ok"}
+        title="פרויקטים פעילים שלפחות ערוץ אחד בהם חורג מהקצב"
+      />
+      <PortfolioTile
+        label="ערוצים מושהים"
+        value={String(p.notSpending)}
+        tone={p.notSpending > 0 ? "warn" : "ok"}
+        title="ערוצים עם תקציב שנותר אך כל הקמפיינים מושהים — לא מוציאים"
+      />
+      <PortfolioTile
+        label="חריגות הוצאה"
+        value={String(p.spikeCount)}
+        tone={p.spikeCount > 0 ? "warn" : "ok"}
+        title="פלטפורמות שהוציאו היום הרבה מעל הממוצע השבועי"
+      />
+    </div>
+  );
+}
+
+function PortfolioTile({
+  label,
+  value,
+  sub,
+  subTone,
+  tone,
+  title,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  subTone?: string;
+  tone?: string;
+  title?: string;
+}) {
+  return (
+    <div className={`budget-pf-tile ${tone ? `pf-${tone}` : ""}`} title={title}>
+      <span className="budget-pf-label">{label}</span>
+      <span className="budget-pf-value">{value}</span>
+      {sub && (
+        <span className={`budget-pf-sub ${subTone ? `tone-${subTone}` : ""}`}>
+          {sub}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Sort within a company: attention first, then biggest |delta|, then name. */
 function sortProjects(a: BudgetProject, b: BudgetProject): number {
   const aa = needsAttention(a) ? 0 : 1;
@@ -354,6 +509,7 @@ function ProjectRow({
   onSnooze,
   shift,
   perf,
+  spike,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -370,6 +526,8 @@ function ProjectRow({
   shift?: ProjectBudgetShift;
   /** channel(lowercase) → performance for this project's channels. */
   perf?: Record<string, ChannelPerf>;
+  /** platform → overspend spike for this project (only spiking ones). */
+  spike?: Partial<Record<Platform, SpendSpike>>;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
@@ -439,6 +597,7 @@ function ProjectRow({
               platform={pl}
               agg={p.platforms[pl]}
               dimmed={platformDimmed(p, pl, dismissals, localDismiss, today)}
+              spike={spike?.[pl]}
             />
           ))}
         </span>
@@ -1006,6 +1165,7 @@ function ChannelSummaryRow({
       !budgetEssentiallySpent(r.budget, r.spend) &&
       needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio),
   );
+  const anyStopped = rows.some(isStoppedSpending);
   // Channel pace = Σspend ÷ Σexpected over active rows that have an
   // expected (pacingRatio>0; expected_i = spend_i ÷ ratio_i).
   let aggSpend = 0;
@@ -1042,6 +1202,15 @@ function ChannelSummaryRow({
             ⚠️
           </span>
         )}
+        {anyStopped && (
+          <span
+            className="budget-stopped"
+            title="יש קמפיין בערוץ עם תקציב שנותר אך כל הקמפיינים שלו מושהים — לא מוציא"
+            aria-label="קמפיין מושהה ללא הוצאה"
+          >
+            ⏸
+          </span>
+        )}
         {channel}
       </td>
       <td className="c-type">
@@ -1055,10 +1224,14 @@ function ChannelSummaryRow({
       <td className="c-pace">
         {allEnded ? (
           <span className="pace-val pace-none">⛔</span>
-        ) : aggRatio > 0 ? (
-          <Pacing ratio={aggRatio} muted />
         ) : (
-          "—"
+          <>
+            {aggRatio > 0 ? <Pacing ratio={aggRatio} muted /> : "—"}
+            <RunwayHint
+              remaining={budget - spend}
+              dailyRate={perf?.dailyRate ?? 0}
+            />
+          </>
         )}
       </td>
       <td className="c-actualdaily">
@@ -1177,6 +1350,7 @@ function PerfCells({ perf }: { perf?: ChannelPerf }) {
     cost: number | undefined,
     costLabel: string,
     emptyLabel: string,
+    extra?: ReactNode,
   ) => (
     <td
       className={cls}
@@ -1185,14 +1359,87 @@ function PerfCells({ perf }: { perf?: ChannelPerf }) {
       }
     >
       {perf ? ((count ?? 0) > 0 ? (count as number).toLocaleString("he-IL") : "—") : ""}
+      {extra}
     </td>
   );
   return (
     <>
-      {cell("c-leads", perf?.leads, perf?.cpl, "עלות לליד", "אין לידים בתקופה")}
+      {cell(
+        "c-leads",
+        perf?.leads,
+        perf?.cpl,
+        "עלות לליד",
+        "אין לידים בתקופה",
+        <CplTrend trend={perf?.cplTrend ?? 0} show={!!perf && (perf?.leads ?? 0) > 0} />,
+      )}
       {cell("c-sched", perf?.scheduled, perf?.cps, "עלות לתיאום", "אין תיאומים בתקופה")}
       {cell("c-meet", perf?.meetings, perf?.cpm, "עלות לפגישה", "אין פגישות בתקופה")}
     </>
+  );
+}
+
+/**
+ * CPL direction vs the trailing ~90 days (the value the budget-shift
+ * engine already computes as trendScore). ▼ green = cost-per-lead
+ * improving (cheaper now), ▲ red = worsening. Hidden below ±10% so it's
+ * a real signal, not noise.
+ */
+function CplTrend({ trend, show }: { trend: number; show: boolean }) {
+  if (!show) return null;
+  if (trend <= -0.1)
+    return (
+      <span
+        className="cpl-trend cpl-trend-down"
+        title={`עלות לליד ירדה ~${Math.round(-trend * 100)}% מול 90 הימים האחרונים`}
+        aria-label="עלות לליד משתפרת"
+      >
+        ▼
+      </span>
+    );
+  if (trend >= 0.1)
+    return (
+      <span
+        className="cpl-trend cpl-trend-up"
+        title={`עלות לליד עלתה ~${Math.round(trend * 100)}% מול 90 הימים האחרונים`}
+        aria-label="עלות לליד מתייקרת"
+      >
+        ▲
+      </span>
+    );
+  return null;
+}
+
+/**
+ * Days-of-runway hint for the pace cell: at the channel's recent daily
+ * spend rate (קצב יומי), how long the remaining budget lasts. Amber when
+ * it's about to dry up (≤7 days). Hidden when there's no daily rate or
+ * nothing left to spend.
+ */
+function RunwayHint({
+  remaining,
+  dailyRate,
+}: {
+  remaining: number;
+  dailyRate: number;
+}) {
+  if (!(dailyRate > 0) || remaining <= 0) return null;
+  const days = Math.round(remaining / dailyRate);
+  // Only surface when the budget is actually depleting (≤21 days) — a
+  // healthy channel with months of runway would just clutter the pace
+  // cell (the owner deliberately keeps this table tight).
+  if (days > 21) return null;
+  const tone = days <= 7 ? "soon" : "mid";
+  return (
+    <span
+      className={`runway runway-${tone}`}
+      title={`בקצב היומי הנוכחי (₪${Math.round(dailyRate).toLocaleString(
+        "he-IL",
+      )}/יום) התקציב שנותר (₪${Math.round(remaining).toLocaleString(
+        "he-IL",
+      )}) יספיק לעוד ~${days} ימים`}
+    >
+      ≈{days} ימ׳
+    </span>
   );
 }
 
@@ -1327,13 +1574,18 @@ function CampaignRow({
     !r.ended &&
     !budgetEssentiallySpent(r.budget, r.spend) &&
     needsBudgetAction(r.actualDaily, r.dailyRequired, r.pacingRatio);
-  // Fade state: a snooze resurfaces next day only if THIS row's gap is
-  // still open (needsAction), not on a budget-unchanged baseline.
+  // Stopped-spending: budget left + flight still open, but every matched
+  // campaign is paused → the channel isn't spending (broke overnight /
+  // never relaunched). Shares the per-channel snooze with the pacing ⚠️.
+  const stopped = isStoppedSpending(r);
+  const actionable = needsAction || stopped;
+  // Fade state: a snooze resurfaces next day only if THIS row still needs
+  // attention (off-pace OR stopped), not on a budget-unchanged baseline.
   const state = computeFadeState(
     dismissals[signalKey],
     today,
     localDismiss[signalKey] ?? null,
-    needsAction,
+    actionable,
   );
   // Arrow direction: by the configured-vs-required gap when we know the
   // configured daily; else by the historical pacing tone.
@@ -1344,8 +1596,8 @@ function CampaignRow({
         ? "under"
         : "over"
       : paceTone(r.pacingRatio);
-  // ✓ טיפלתי only where there's actually something to handle.
-  const offPace = needsAction;
+  // ✓ טיפלתי where there's something to handle — off-pace OR stopped.
+  const offPace = actionable;
 
   return (
     <tr
@@ -1362,13 +1614,22 @@ function CampaignRow({
           </span>
         )}
         <StatusDot status={r.campaignStatus} />
-        {needsAction && (
+        {needsAction && !stopped && (
           <span
             className="budget-alert"
             title="התקציב היומי בפלטפורמה לא תואם את הנדרש — נדרש עדכון"
             aria-label="נדרש עדכון תקציב"
           >
             ⚠️
+          </span>
+        )}
+        {stopped && (
+          <span
+            className="budget-stopped"
+            title="כל הקמפיינים בערוץ מושהים אך נותר תקציב — הערוץ לא מוציא. בדקו אם צריך להפעיל מחדש"
+            aria-label="קמפיין מושהה ללא הוצאה"
+          >
+            ⏸
           </span>
         )}
         {/* Sub-campaign rows are identified by their סוג column, so the
@@ -1413,7 +1674,13 @@ function CampaignRow({
             ⛔
           </span>
         ) : (
-          <Pacing ratio={r.pacingRatio} muted={!needsAction} />
+          <>
+            <Pacing ratio={r.pacingRatio} muted={!needsAction} />
+            <RunwayHint
+              remaining={r.budget - r.spend}
+              dailyRate={perf?.dailyRate ?? 0}
+            />
+          </>
         )}
       </td>
       <td className="c-actualdaily" title="תקציב יומי שמוגדר בפלטפורמה">
@@ -1505,10 +1772,13 @@ function PlatformCell({
   platform,
   agg,
   dimmed,
+  spike,
 }: {
   platform: Platform;
   agg: PlatformAgg;
   dimmed?: boolean;
+  /** Overspend spike on this platform (latest day ≫ trailing avg). */
+  spike?: SpendSpike;
 }) {
   const empty = agg.budget === 0 && agg.spend === 0;
   const action =
@@ -1532,6 +1802,17 @@ function PlatformCell({
     >
       <span className="pc-name">
         <PlatformIcon platform={platform} /> {PLATFORM_LABELS[platform]}
+        {spike && (
+          <span
+            className="pc-spike"
+            title={`חריגת הוצאה: ${fmt(spike.latest)} ביום האחרון לעומת ממוצע ${fmt(
+              spike.prevAvg,
+            )} (×${spike.ratio.toFixed(1)}) — בדקו תקרת תקציב/קמפיין שדולף`}
+            aria-label="חריגת הוצאה"
+          >
+            🔥
+          </span>
+        )}
       </span>
       {empty ? (
         <span className="pc-empty">—</span>
@@ -1693,6 +1974,29 @@ function needsBudgetAction(
  */
 function budgetEssentiallySpent(budget: number, spend: number): boolean {
   return budget > 0 && spend >= budget * 0.9;
+}
+
+/**
+ * A channel that's broken/idle: every matched Google/Facebook campaign is
+ * paused, yet the channel still has budget left and its flight hasn't
+ * ended — i.e. it isn't spending when it should be. campaignStatus is
+ * already computed server-side (budgetMaster) by matching the row's סוג
+ * token against the creatives sheet; we just promote the existing
+ * 'paused' state into an actionable alarm. Channels whose budget is
+ * essentially spent are excluded (they did their job).
+ */
+function isStoppedSpending(r: BudgetProject["rows"][number]): boolean {
+  return (
+    (r.platform === "google" || r.platform === "facebook") &&
+    r.campaignStatus === "paused" &&
+    !r.ended &&
+    r.budget > 0 &&
+    !budgetEssentiallySpent(r.budget, r.spend)
+  );
+}
+
+function hasStoppedChannel(p: BudgetProject): boolean {
+  return p.rows.some(isStoppedSpending);
 }
 
 function FilterChip({
@@ -2097,13 +2401,14 @@ function hasChannelAlert(
       r.dailyRequired,
       r.pacingRatio,
     );
-    if (!needsAction) return false;
+    const stopped = isStoppedSpending(r);
+    if (!needsAction && !stopped) return false;
     const key = pacingChannelKey(p.tab, r.channel);
     const state = computeFadeState(
       dismissals[key],
       today,
       localDismiss[key] ?? null,
-      needsAction,
+      needsAction || stopped,
     );
     return state !== "dismissed";
   });
@@ -2112,7 +2417,7 @@ function hasChannelAlert(
 function needsAttention(p: BudgetProject): boolean {
   if (p.reconStatus === "over" || p.reconStatus === "under") return true;
   if (p.reconStatus === "no-target" && p.allocated > 0) return true;
-  return hasPacingIssue(p);
+  return hasPacingIssue(p) || hasStoppedChannel(p);
 }
 
 /**

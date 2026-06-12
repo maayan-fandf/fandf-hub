@@ -19612,6 +19612,47 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-arrow { font-weight: 800; margin-inline-end: .2em; cursor: help; font-size: .9em; }
 .budget-arrow.pace-over { color: #ef4444; }   /* ⬇ lower (overspending) */
 .budget-arrow.pace-under { color: #f59e0b; }  /* ⬆ raise (underspending) */
+/* stopped-spending alarm — paused channel that still has budget left */
+.budget-stopped { font-size: .9em; margin-inline-end: .25em; cursor: help; }
+/* overspend-spike marker on a platform summary cell */
+.pc-spike { margin-inline-start: .3em; cursor: help; font-size: .9em; }
+/* CPL trend arrow on the leads cell — vs the trailing ~90 days */
+.cpl-trend {
+  margin-inline-start: .3em; font-size: .82em; font-weight: 700;
+  cursor: help; vertical-align: middle;
+}
+.cpl-trend-down { color: #16a34a; }  /* ▼ cheaper now — improving */
+.cpl-trend-up { color: #ef4444; }    /* ▲ pricier now — worsening */
+/* days-of-runway hint in the pace cell */
+.runway {
+  margin-inline-start: .4em; font-size: .76em; color: var(--muted);
+  cursor: help; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.runway-soon { color: #ef4444; font-weight: 600; }  /* ≤7 days left */
+.runway-mid { color: #f59e0b; }                     /* ≤21 days left */
+
+/* ── top-of-page portfolio rollup ───────────────────────────────── */
+.budget-portfolio {
+  display: flex; flex-wrap: wrap; gap: .6em; margin: 0 0 1.1em;
+}
+.budget-pf-tile {
+  flex: 1 1 8.5em; min-width: 7.25em;
+  display: flex; flex-direction: column; gap: .1em;
+  padding: .55em .7em; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface);
+}
+.budget-pf-tile.pf-warn {
+  border-color: #f59e0b; background: rgba(245, 158, 11, .07);
+}
+.budget-pf-label { font-size: .72em; color: var(--muted); }
+.budget-pf-value {
+  font-size: 1.18em; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.budget-pf-tile.pf-warn .budget-pf-value { color: #d97706; }
+.budget-pf-sub { font-size: .74em; color: var(--muted); }
+.budget-pf-sub.tone-over { color: #ef4444; }
+.budget-pf-sub.tone-under { color: #f59e0b; }
+.budget-pf-sub.tone-ok { color: #16a34a; }
 /* platform logo that doubles as an "open the ad account" link */
 .budget-logo-link {
   background: none; border: 0; padding: 0; margin: 0;

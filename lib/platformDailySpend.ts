@@ -57,8 +57,25 @@ function parseDate(v: unknown): string {
 /** slug → { google, facebook, taboola, outbrain } 7-day avg daily spend. */
 export type DailySpend7d = Record<string, Record<Plat, number>>;
 
-async function fetchDailySpend7d(subjectEmail: string): Promise<DailySpend7d> {
-  const out: DailySpend7d = {};
+/** Per project×platform daily-spend detail — enough for both the 7-day
+ *  average (pacing tooltip) AND the latest-day-vs-prior spike check. */
+type PlatDetail = {
+  /** Mean daily cost over the most-recent ≤7 distinct dates ("ממוצע 7 ימים"). */
+  avg7d: number;
+  /** Cost on the single most-recent date present. */
+  latest: number;
+  /** That most-recent date (YYYY-MM-DD). */
+  latestDate: string;
+  /** Mean daily cost over the ≤6 dates BEFORE the latest (the baseline a
+   *  spike is measured against). 0 when there's no prior history. */
+  prevAvg: number;
+};
+type DailyDetail = Record<string, Record<Plat, PlatDetail>>;
+
+const EMPTY_DETAIL: PlatDetail = { avg7d: 0, latest: 0, latestDate: "", prevAvg: 0 };
+
+async function fetchDailyDetail(subjectEmail: string): Promise<DailyDetail> {
+  const out: DailyDetail = {};
   try {
     const matchMap = await buildMatchMap(subjectEmail);
     const sheets = sheetsClient(subjectEmail);
@@ -102,28 +119,98 @@ async function fetchDailySpend7d(subjectEmail: string): Promise<DailySpend7d> {
     });
 
     for (const slug of Object.keys(acc)) {
-      out[slug] = { google: 0, facebook: 0, taboola: 0, outbrain: 0 };
+      out[slug] = {
+        google: { ...EMPTY_DETAIL },
+        facebook: { ...EMPTY_DETAIL },
+        taboola: { ...EMPTY_DETAIL },
+        outbrain: { ...EMPTY_DETAIL },
+      };
       for (const plat of PLATS) {
         const m = acc[slug][plat];
         if (!m.size) continue;
         const dates = [...m.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
         const top = dates.slice(0, 7);
         const sum = top.reduce((s, d) => s + (m.get(d) || 0), 0);
-        out[slug][plat] = top.length ? sum / top.length : 0;
+        const prev = dates.slice(1, 7);
+        const prevSum = prev.reduce((s, d) => s + (m.get(d) || 0), 0);
+        out[slug][plat] = {
+          avg7d: top.length ? sum / top.length : 0,
+          latest: m.get(dates[0]) || 0,
+          latestDate: dates[0] || "",
+          prevAvg: prev.length ? prevSum / prev.length : 0,
+        };
       }
     }
   } catch {
-    /* best-effort — pacing tooltip just omits the 7-day avg if this fails */
+    /* best-effort — callers just omit the 7-day avg / spike if this fails */
   }
   return out;
 }
 
-const fetchDailySpend7dCrossRequest = unstable_cache(
-  fetchDailySpend7d,
-  ["platformDailySpend"],
+const fetchDailyDetailCrossRequest = unstable_cache(
+  fetchDailyDetail,
+  ["platformDailyDetail"],
   { revalidate: TTL_SECONDS, tags: [CACHE_TAG] },
 );
 
-export const getDailySpend7d = cache((subjectEmail: string) =>
-  fetchDailySpend7dCrossRequest(subjectEmail),
+const readDailyDetail = cache((subjectEmail: string) =>
+  fetchDailyDetailCrossRequest(subjectEmail),
+);
+
+export const getDailySpend7d = cache(
+  async (subjectEmail: string): Promise<DailySpend7d> => {
+    const detail = await readDailyDetail(subjectEmail);
+    const out: DailySpend7d = {};
+    for (const slug of Object.keys(detail)) {
+      const d = detail[slug];
+      out[slug] = {
+        google: d.google.avg7d,
+        facebook: d.facebook.avg7d,
+        taboola: d.taboola.avg7d,
+        outbrain: d.outbrain.avg7d,
+      };
+    }
+    return out;
+  },
+);
+
+/** One platform's overspend spike — the latest day ran materially above
+ *  the trailing-days baseline (runaway campaign / broken cap). */
+export type SpendSpike = {
+  latest: number;
+  prevAvg: number;
+  /** latest ÷ prevAvg (≥ SPIKE_RATIO when flagged). */
+  ratio: number;
+  latestDate: string;
+};
+/** slug → platform → spike (only platforms that ARE spiking are present). */
+export type DailySpendSpikes = Record<string, Partial<Record<Plat, SpendSpike>>>;
+
+// A spike is the latest day ≥ 1.5× the prior-days average AND at least
+// ₪200 in absolute terms (so a jump from ₪20→₪80 on a tiny account
+// doesn't cry wolf). Shares the same cached read as getDailySpend7d.
+const SPIKE_RATIO = 1.5;
+const SPIKE_MIN_ILS = 200;
+
+export const getDailySpendSpikes = cache(
+  async (subjectEmail: string): Promise<DailySpendSpikes> => {
+    const detail = await readDailyDetail(subjectEmail);
+    const out: DailySpendSpikes = {};
+    for (const slug of Object.keys(detail)) {
+      const d = detail[slug];
+      for (const plat of PLATS) {
+        const p = d[plat];
+        if (p.prevAvg <= 0 || p.latest < SPIKE_MIN_ILS) continue;
+        if (p.latest < p.prevAvg * SPIKE_RATIO) continue;
+        if (!out[slug]) out[slug] = {};
+        out[slug][plat] = {
+          latest: p.latest,
+          prevAvg: p.prevAvg,
+          ratio: p.latest / p.prevAvg,
+          latestDate: p.latestDate,
+        };
+      }
+    }
+    return out;
+  },
 );

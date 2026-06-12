@@ -595,25 +595,58 @@ export type ChannelPerf = {
   cpl: number;
   cps: number;
   cpm: number;
+  /** Spend (NIS) over the current window — lets the portfolio rollup
+   *  blend CPL from the same source as the leads (Σspend ÷ Σleads). */
+  spend: number;
+  /** קצב יומי — the channel's historical daily spend rate (Σ across the
+   *  merged sub-rows). 0 when the column is absent. Drives the
+   *  days-of-runway indicator: (budget − spend) ÷ dailyRate. */
+  dailyRate: number;
+  /** Signed CPL trend vs the trailing ~90 days: (cpl − trailingCpl) ÷
+   *  trailingCpl. Negative = cost-per-lead improving (cheaper now),
+   *  positive = worsening. 0 when there isn't enough trailing volume
+   *  (trailing leads < 5) — same gate as the shift engine's trendScore. */
+  cplTrend: number;
 };
 
 /** channel(lowercase) → ChannelPerf for one project. `currentRows` is
  *  already channel-consolidated by groupAllClientsBySlug, so each
- *  channel appears once. */
+ *  channel appears once. `monthlyRows` + `todayIso` are optional — when
+ *  present, each channel gets a CPL trend vs its trailing ~90 days
+ *  (reusing the shift engine's trailingMonthsByChannel); omit them and
+ *  cplTrend is 0 everywhere (back-compat for callers that don't have the
+ *  monthly history, e.g. the parity probe). */
 export function buildChannelPerf(
   currentRows: AllClientsRow[],
+  monthlyRows: AllClientsRow[] = [],
+  todayIso = "",
 ): Record<string, ChannelPerf> {
+  const trailing =
+    monthlyRows.length && todayIso
+      ? trailingMonthsByChannel(monthlyRows, 3, todayIso)
+      : {};
   const out: Record<string, ChannelPerf> = {};
   for (const c of currentRows) {
     const key = c.channel.toLowerCase().trim();
     if (!key) continue;
+    const cpl = c.leads > 0 ? c.spend / c.leads : 0;
+    // Trailing-90d CPL for the same channel (same lookup the scorer uses).
+    const tr =
+      trailing[c.channel] || trailing[String(c.channel || "").trim()] || null;
+    const trLeads = tr ? tr.leads : 0;
+    const trCpl = tr && trLeads > 0 ? tr.spend / trLeads : 0;
+    const cplTrend =
+      trCpl > 0 && cpl > 0 && trLeads >= 5 ? (cpl - trCpl) / trCpl : 0;
     out[key] = {
       leads: c.leads,
       scheduled: c.scheduled,
       meetings: c.meetings,
-      cpl: c.leads > 0 ? c.spend / c.leads : 0,
+      cpl,
       cps: c.scheduled > 0 ? c.spend / c.scheduled : 0,
       cpm: c.meetings > 0 ? c.spend / c.meetings : 0,
+      spend: c.spend,
+      dailyRate: c.dailyRate || 0,
+      cplTrend,
     };
   }
   return out;

@@ -17,6 +17,10 @@ import { listAlertDismissals } from "@/lib/alertDismissals";
 import { getUsdIlsRate } from "@/lib/fxRate";
 import { getAllClientsAllRows } from "@/lib/allClients";
 import {
+  getDailySpendSpikes,
+  type DailySpendSpikes,
+} from "@/lib/platformDailySpend";
+import {
   computeBudgetShiftForProject,
   groupAllClientsBySlug,
   buildChannelPerf,
@@ -67,6 +71,7 @@ export default async function BudgetsPage() {
     rateRes,
     projectsRes,
     allClientsRes,
+    spikesRes,
   ] = await Promise.allSettled([
     getBudgetMaster(driveFolderOwner()),
     getMorningFeed({ scope: "all", overrideEmail }),
@@ -78,6 +83,10 @@ export default async function BudgetsPage() {
     // budget-shift suggestions. Same 5-min-cached read the CRM alerts
     // already share, so this adds no Sheets quota.
     getAllClientsAllRows(driveFolderOwner()),
+    // Per project×platform spend spikes (latest day vs trailing avg).
+    // Shares the same 30-min-cached daily-spend read budgetMaster already
+    // does for actual7d (driveFolderOwner subject) — no extra Sheets call.
+    getDailySpendSpikes(driveFolderOwner()),
   ]);
 
   const master = budgetRes.status === "fulfilled" ? budgetRes.value : null;
@@ -213,7 +222,9 @@ export default async function BudgetsPage() {
         for (const p of filtered) {
           const g = bySlug.get(p.tab.toLowerCase().trim());
           if (!g) continue;
-          perf[p.tab.toLowerCase()] = buildChannelPerf(g.current);
+          // Pass the חודשי history + today so each channel also gets a
+          // CPL trend vs its trailing ~90 days (▲/▼ on the leads cell).
+          perf[p.tab.toLowerCase()] = buildChannelPerf(g.current, g.monthly, today);
           const shift = computeBudgetShiftForProject({
             project: p,
             currentRows: g.current,
@@ -222,6 +233,8 @@ export default async function BudgetsPage() {
           });
           if (shift) shifts[p.tab.toLowerCase()] = shift;
         }
+        const spikes: DailySpendSpikes =
+          spikesRes.status === "fulfilled" ? spikesRes.value : {};
         return (
           <BudgetGrid
             projects={filtered}
@@ -234,6 +247,7 @@ export default async function BudgetsPage() {
             usdIlsRate={usdIlsRate}
             shifts={shifts}
             perf={perf}
+            spikes={spikes}
           />
         );
       })()}
