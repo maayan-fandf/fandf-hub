@@ -256,14 +256,18 @@ async function fetchBudgetMaster(subjectEmail: string): Promise<BudgetMaster> {
         let activeCount = 0;
         let pausedCount = 0;
         if ((platform === "google" || platform === "facebook") && campaignType) {
-          // Match by ALL tokens of the סוג cell (split on non-alphanumerics)
-          // so separators like the "*" in "israel*fb" don't break the match
-          // against the campaign name "..._israel_..._fb". A "GS" row →
-          // ["gs"] still sums all *_GS campaigns; "israel*fb" → ["israel",
-          // "fb"] matches only the israel FB campaign.
+          // Match by ALL tokens of the סוג cell (split on separators) so
+          // "israel*fb" → ["israel","fb"] matches only the israel FB
+          // campaign, while "GS" → ["gs"] sums all *_GS campaigns.
+          // KEEP "+" and "-" inside tokens (don't split on them): the FB
+          // age audiences "60+" and "45-60" must stay whole — otherwise
+          // "60+" → ["60"] substring-matches "45-60" too and double-counts
+          // the 45-60 campaign's budget into the +60 row (ahuzat-afridar
+          // showed FB ₪1,065 / +60 ₪723 instead of ~₪723 / ~₪380;
+          // 2026-06-13). "*" stays a separator (the sheet's AND operator).
           const tokens = campaignType
             .toLowerCase()
-            .split(/[^a-z0-9֐-׿]+/)
+            .split(/[^a-z0-9֐-׿+\-]+/)
             .filter((t) => t.length >= 2);
           if (tokens.length) {
             for (const c of projCampaigns) {
