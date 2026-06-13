@@ -321,7 +321,10 @@ function computeAllocation(
     if (!s.eligible) return false;
     // Programmatic-only: never move budget into/out of fixed monthly lines.
     if (!(E3_PLATFORMS as string[]).includes(s.platform)) return false;
-    return cuts ? s.score < 0 : s.score > 0;
+    // A cut can't drop the approved budget below what's already been
+    // spent — an over-spent channel has no room to give (spend floor).
+    if (cuts) return s.score < 0 && s.currentBudget - s.currentSpend >= 100;
+    return s.score > 0;
   });
   // Fallback when no strongly-directional candidate exists: concentrate
   // the full drift on the single weakest/strongest eligible programmatic
@@ -329,7 +332,10 @@ function computeAllocation(
   let isFallback = false;
   if (candidates.length === 0) {
     const elig = scored.filter(
-      (s) => s.eligible && (E3_PLATFORMS as string[]).includes(s.platform),
+      (s) =>
+        s.eligible &&
+        (E3_PLATFORMS as string[]).includes(s.platform) &&
+        (!cuts || s.currentBudget - s.currentSpend >= 100),
     );
     if (!elig.length) return [];
     elig.sort((a, b) => (cuts ? a.score - b.score : b.score - a.score));
@@ -339,7 +345,10 @@ function computeAllocation(
   if (isFallback) {
     const s = candidates[0];
     const direction = cuts ? -1 : 1;
-    const cap = s.currentBudget * 0.3;
+    // Cuts also capped by the unspent room so newBudget never < spend.
+    const cap = cuts
+      ? Math.min(s.currentBudget * 0.3, s.currentBudget - s.currentSpend)
+      : s.currentBudget * 0.3;
     const raw = Math.min(amount, cap);
     const delta = Math.round((raw * direction) / 100) * 100;
     if (Math.abs(delta) < 100) return [];
@@ -360,7 +369,9 @@ function computeAllocation(
   return candidates
     .map((s, i) => {
       const share = (weights[i] / total) * amount;
-      const cap = s.currentBudget * 0.3;
+      const cap = cuts
+        ? Math.min(s.currentBudget * 0.3, s.currentBudget - s.currentSpend)
+        : s.currentBudget * 0.3;
       const raw = Math.min(share, cap);
       const direction = cuts ? -1 : 1;
       return { scoreRow: s, delta: Math.round((raw * direction) / 100) * 100 };
@@ -374,13 +385,22 @@ function computeRebalance(scored: ShiftChannelScore[]): RawSuggestion[] {
   const elig = scored.filter(
     (s) => s.eligible && (E3_PLATFORMS as string[]).includes(s.platform),
   );
-  const cuts = elig.filter((s) => s.score <= -0.2);
+  // A cut is bounded by the channel's unspent room (currentBudget −
+  // currentSpend) so a suggested newBudget never lands below spend; a
+  // channel with no room (over-spent) can't be a cut candidate.
+  const cuts = elig.filter(
+    (s) => s.score <= -0.2 && s.currentBudget - s.currentSpend >= 100,
+  );
   const boosts = elig.filter((s) => s.score >= 0.2 && s.headroomRaw > 0);
   if (!cuts.length || !boosts.length) return [];
   const CAP_PCT = 0.15;
   const MIN_TOTAL = 500;
-  // Capacity-constrained: total moved = min(side capacities).
-  const cutCap = cuts.reduce((a, s) => a + s.currentBudget * CAP_PCT, 0);
+  // Capacity-constrained: total moved = min(side capacities). The cut
+  // side's capacity is also bounded by each channel's unspent room.
+  const cutCap = cuts.reduce(
+    (a, s) => a + Math.min(s.currentBudget * CAP_PCT, s.currentBudget - s.currentSpend),
+    0,
+  );
   const boostCap = boosts.reduce((a, s) => a + s.currentBudget * CAP_PCT, 0);
   const amount = Math.min(cutCap, boostCap);
   if (amount < MIN_TOTAL) return [];
@@ -397,7 +417,8 @@ function computeRebalance(scored: ShiftChannelScore[]): RawSuggestion[] {
   if (cutTotal <= 0 || boostTotal <= 0) return [];
   const sgCuts = cuts.map((s, i) => {
     const share = (cutWeights[i] / cutTotal) * amount;
-    const raw = Math.min(share, s.currentBudget * CAP_PCT);
+    const cap = Math.min(s.currentBudget * CAP_PCT, s.currentBudget - s.currentSpend);
+    const raw = Math.min(share, cap);
     return { scoreRow: s, rawDelta: -raw };
   });
   const sgBoosts = boosts.map((s, i) => {

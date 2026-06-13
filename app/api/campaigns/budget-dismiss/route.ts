@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { upsertAlertDismissal } from "@/lib/alertDismissals";
+import { bumpCreativeRefreshTriggers } from "@/lib/platformDailyBudget";
 import {
   pacingPlatformKey,
   pacingChannelKey,
@@ -88,6 +89,14 @@ export async function POST(req: Request) {
           ? `shift=${Number.isFinite(baseline) ? Math.round(baseline) : 0}`
           : `baseline=${Number.isFinite(baseline) ? Math.round(baseline) : 0}`,
     });
+    // Pacing dismissal usually means the user just adjusted the platform
+    // budget — re-pull the creatives daily-budget queries so יומי מוגדר
+    // refreshes (the dashboard did this; hub dismissals bypassed it). Only
+    // for a real pacing snooze (not budget-shift, not a restore). Awaited
+    // but best-effort inside, so it can't fail the dismissal.
+    if (!isShift && !restore) {
+      await bumpCreativeRefreshTriggers(signalKey);
+    }
     return NextResponse.json({
       ok: true,
       signal_key: rec.signal_key,

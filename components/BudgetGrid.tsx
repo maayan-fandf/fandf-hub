@@ -642,6 +642,7 @@ function ProjectRow({
           {shift && (
             <BudgetShiftPanel
               shift={shift}
+              rows={p.rows}
               state={shiftState}
               signalKey={shiftKey}
               onSnooze={onSnooze}
@@ -712,6 +713,7 @@ function PlanKpi({ label, value }: { label: string; value: string }) {
  */
 function BudgetShiftPanel({
   shift,
+  rows,
   state,
   signalKey,
   onSnooze,
@@ -719,6 +721,10 @@ function BudgetShiftPanel({
   onEdit,
 }: {
   shift: ProjectBudgetShift;
+  /** The project's budget rows (from budgetMaster) — carry the sheet's
+   *  OWN channel labels + absolute row numbers, so apply writes by row
+   *  instead of re-looking-up by the ALL CLIENTS channel name. */
+  rows: BudgetProject["rows"];
   state: FadeState;
   signalKey: string;
   onSnooze: (key: string, val: "on" | "off") => void;
@@ -737,45 +743,70 @@ function BudgetShiftPanel({
   const [applyingAll, setApplyingAll] = useState(false);
 
   /**
-   * Write one suggestion through the SAME endpoint the iframe's apply
-   * button uses — /api/campaigns/budget lookup mode (slug+channel) with
-   * distribute:true, so a channel merged across several sheet sub-rows
-   * splits the new total proportionally server-side, and the drift
-   * guard (expectedBudget vs the sheet's current Σ) rejects stale
-   * applies. On success the optimistic onEdit() updates the channel
-   * rows below instantly, exactly like an inline cell edit.
+   * Apply one suggestion. Earlier this POSTed slug+channel+distribute and
+   * let the server re-find the rows by channel NAME — but the suggestion's
+   * channel comes from ALL CLIENTS, whose label can differ in case/spelling
+   * from the budget sheet's col D, and the server's lookup skipped merged
+   * continuation rows (empty D) → 404 / 409-drift on apply. Instead we
+   * resolve the sheet rows here from the project's OWN budget rows (their
+   * channel label + absolute row number come from budgetMaster, so they
+   * match the sheet exactly), split the channel's new total across them,
+   * and write each cell via the SAME tab+row+expectedChannel+expectedBudget
+   * request the inline cell edit uses (a proven path). onEdit() updates the
+   * rows below optimistically, exactly like an inline edit.
    */
   async function applyOne(sg: ProjectBudgetShift["suggestions"][number]) {
+    const chLc = sg.channel.toLowerCase().trim();
+    const subRows = rows.filter((r) => r.channel.toLowerCase().trim() === chLc);
+    if (!subRows.length) {
+      setApplyState((m) => ({ ...m, [sg.channel]: "error" }));
+      setApplyErr((m) => ({ ...m, [sg.channel]: "הערוץ לא נמצא בגיליון" }));
+      return false;
+    }
+    // Split the channel's new total across its sub-rows proportionally to
+    // each row's current budget (₪100 steps; rounding residual onto the
+    // largest), so a channel spread over several campaigns keeps its
+    // internal ratio — the same split the old server distribute mode did.
+    const curTotal = subRows.reduce((a, r) => a + r.budget, 0);
+    const splits = subRows.map((r) => ({
+      row: r.row,
+      channel: r.channel,
+      oldBudget: r.budget,
+      newBudget:
+        curTotal > 0
+          ? Math.round((sg.newBudget * (r.budget / curTotal)) / 100) * 100
+          : Math.round(sg.newBudget / subRows.length / 100) * 100,
+    }));
+    const residual = Math.round(
+      sg.newBudget - splits.reduce((a, s) => a + s.newBudget, 0),
+    );
+    if (Math.abs(residual) >= 1 && splits.length) {
+      let li = 0;
+      for (let i = 1; i < splits.length; i++)
+        if (splits[i].newBudget > splits[li].newBudget) li = i;
+      splits[li].newBudget += residual;
+    }
     setApplyState((m) => ({ ...m, [sg.channel]: "saving" }));
     try {
-      const res = await fetch("/api/campaigns/budget", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slug: shift.slug,
-          channel: sg.channel,
-          value: sg.newBudget,
-          expectedBudget: sg.currentBudget,
-          distribute: true,
-        }),
-      });
-      const d = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        row?: number;
-        value?: number;
-        distributed?: Array<{ row: number; newBudget: number }>;
-      };
-      if (!res.ok || !d.ok) {
-        setApplyState((m) => ({ ...m, [sg.channel]: "error" }));
-        setApplyErr((m) => ({ ...m, [sg.channel]: d.error || "שמירה נכשלה" }));
-        return false;
-      }
-      if (Array.isArray(d.distributed)) {
-        for (const part of d.distributed)
-          onEdit(shift.slug, part.row, part.newBudget);
-      } else if (typeof d.row === "number" && typeof d.value === "number") {
-        onEdit(shift.slug, d.row, d.value);
+      for (const s of splits) {
+        const res = await fetch("/api/campaigns/budget", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tab: shift.slug,
+            row: s.row,
+            value: s.newBudget,
+            expectedChannel: s.channel,
+            expectedBudget: s.oldBudget,
+          }),
+        });
+        const d = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !d.ok) {
+          setApplyState((m) => ({ ...m, [sg.channel]: "error" }));
+          setApplyErr((m) => ({ ...m, [sg.channel]: d.error || "שמירה נכשלה" }));
+          return false;
+        }
+        onEdit(shift.slug, s.row, s.newBudget);
       }
       setApplyState((m) => ({ ...m, [sg.channel]: "applied" }));
       return true;

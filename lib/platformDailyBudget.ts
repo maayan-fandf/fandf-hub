@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
-import { sheetsClient } from "@/lib/sa";
+import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
 
 /**
@@ -227,3 +227,65 @@ const fetchCampaignBudgetsCrossRequest = unstable_cache(
 export const getCampaignBudgets = cache((subjectEmail: string) =>
   fetchCampaignBudgetsCrossRequest(subjectEmail),
 );
+
+/** The creatives-sheet reports whose Supermetrics queries watch the
+ *  `_refresh_triggers_` tab (one row each, col B = timestamp). */
+const REFRESH_TAB = "_refresh_triggers_";
+const REFRESH_REPORTS = ["fb-campaigns", "קמפיין ID גוגל"];
+
+/**
+ * Bump the `_refresh_triggers_` cells on the creatives spreadsheet so the
+ * Supermetrics queries (configured "refresh when the cell value changes")
+ * re-pull the campaign daily budgets — the same mechanism the Apps Script
+ * report's `_writeSupermetricsRefreshTriggers_` uses.
+ *
+ * Why the hub needs its own: pacing dismissals used to go through the
+ * dashboard (which bumped the trigger), but they now write straight to
+ * Firestore from the hub, so the creatives data stopped refreshing and
+ * `יומי מוגדר` went stale (last bump 2026-06-08). Calling this from the
+ * budget-dismiss route restores the "adjust budget → ✓ טיפלתי → re-pull"
+ * flow. A daily scheduled trigger on the report side is the backstop.
+ *
+ * Impersonates the folder owner (guaranteed edit access on the creatives
+ * sheet) and is fully best-effort — any error is swallowed so it can
+ * never block the dismissal that triggered it. Only updates report rows
+ * that already exist (the tab is created/seeded by the Apps Script).
+ */
+export async function bumpCreativeRefreshTriggers(
+  reasonKey: string,
+): Promise<void> {
+  try {
+    const ssId = process.env.SHEET_ID_CREATIVES;
+    if (!ssId) return;
+    const owner = driveFolderOwner();
+    const sheets = sheetsClient(owner);
+    const ref = `'${REFRESH_TAB}'`;
+    const cur = await sheets.spreadsheets.values.get({
+      spreadsheetId: ssId,
+      range: `${ref}!A1:A20`,
+    });
+    const colA = (cur.data.values ?? []) as unknown[][];
+    const rowByName: Record<string, number> = {};
+    for (let i = 0; i < colA.length; i++) {
+      const name = String(colA[i]?.[0] ?? "").trim();
+      if (name) rowByName[name] = i + 1; // 1-based sheet row
+    }
+    const ts = new Date().toISOString();
+    const data: { range: string; values: string[][] }[] = [];
+    for (const name of REFRESH_REPORTS) {
+      const row = rowByName[name];
+      if (!row) continue;
+      data.push({
+        range: `${ref}!B${row}:D${row}`,
+        values: [[ts, reasonKey || "hub", owner]],
+      });
+    }
+    if (!data.length) return;
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: ssId,
+      requestBody: { valueInputOption: "RAW", data },
+    });
+  } catch {
+    /* best-effort — never block the caller's dismissal write */
+  }
+}
