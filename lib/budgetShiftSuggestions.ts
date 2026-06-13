@@ -309,6 +309,18 @@ function computeChannelScores(
 
 type RawSuggestion = { scoreRow: ShiftChannelScore; delta: number; fallback?: boolean };
 
+/**
+ * Largest ₪ a channel can give up without its approved budget dropping
+ * below what it's already spent — FLOORED to ₪100. The floor matters
+ * because deltas round to ₪100: capping the raw cut at the exact room
+ * (e.g. ₪155) then rounding would round 155 → 200 and breach the spend
+ * floor by ₪45. Flooring the cap to 100 keeps the rounded delta ≤ room.
+ * MUST stay identical to Index.html _cutRoom100.
+ */
+function cutRoom100(s: ShiftChannelScore): number {
+  return Math.floor((s.currentBudget - s.currentSpend) / 100) * 100;
+}
+
 function computeAllocation(
   scored: ShiftChannelScore[],
   drift: number,
@@ -347,7 +359,7 @@ function computeAllocation(
     const direction = cuts ? -1 : 1;
     // Cuts also capped by the unspent room so newBudget never < spend.
     const cap = cuts
-      ? Math.min(s.currentBudget * 0.3, s.currentBudget - s.currentSpend)
+      ? Math.min(s.currentBudget * 0.3, cutRoom100(s))
       : s.currentBudget * 0.3;
     const raw = Math.min(amount, cap);
     const delta = Math.round((raw * direction) / 100) * 100;
@@ -370,7 +382,7 @@ function computeAllocation(
     .map((s, i) => {
       const share = (weights[i] / total) * amount;
       const cap = cuts
-        ? Math.min(s.currentBudget * 0.3, s.currentBudget - s.currentSpend)
+        ? Math.min(s.currentBudget * 0.3, cutRoom100(s))
         : s.currentBudget * 0.3;
       const raw = Math.min(share, cap);
       const direction = cuts ? -1 : 1;
@@ -398,7 +410,7 @@ function computeRebalance(scored: ShiftChannelScore[]): RawSuggestion[] {
   // Capacity-constrained: total moved = min(side capacities). The cut
   // side's capacity is also bounded by each channel's unspent room.
   const cutCap = cuts.reduce(
-    (a, s) => a + Math.min(s.currentBudget * CAP_PCT, s.currentBudget - s.currentSpend),
+    (a, s) => a + Math.min(s.currentBudget * CAP_PCT, cutRoom100(s)),
     0,
   );
   const boostCap = boosts.reduce((a, s) => a + s.currentBudget * CAP_PCT, 0);
@@ -417,7 +429,7 @@ function computeRebalance(scored: ShiftChannelScore[]): RawSuggestion[] {
   if (cutTotal <= 0 || boostTotal <= 0) return [];
   const sgCuts = cuts.map((s, i) => {
     const share = (cutWeights[i] / cutTotal) * amount;
-    const cap = Math.min(s.currentBudget * CAP_PCT, s.currentBudget - s.currentSpend);
+    const cap = Math.min(s.currentBudget * CAP_PCT, cutRoom100(s));
     const raw = Math.min(share, cap);
     return { scoreRow: s, rawDelta: -raw };
   });

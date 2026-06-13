@@ -296,6 +296,23 @@ const close = (a: number, b: number) => Math.abs(a - b) < 1e-9;
         }
       }
     }
+    // Correctness check (not just parity): no CUT may land newBudget below
+    // the channel's already-incurred spend (the ₪100-floor clamp).
+    if (tsShift) {
+      const spendByCh: Record<string, number> = {};
+      for (const r of project.rows) {
+        const k = r.channel.toLowerCase().trim();
+        spendByCh[k] = (spendByCh[k] || 0) + r.spend;
+      }
+      for (const sg of tsShift.suggestions) {
+        if (sg.delta >= 0) continue;
+        const sp = spendByCh[sg.channel.toLowerCase().trim()] || 0;
+        if (sg.newBudget < sp - 0.5) {
+          mismatches++;
+          console.log(`✗ ${slug}: BELOW-SPEND ${sg.channel} newBudget=₪${sg.newBudget} < spend=₪${Math.round(sp)}`);
+        }
+      }
+    }
     console.log(`✓ ${slug}: ${tsScored.length} channels, mode=${tsMode}${tsShift ? ` totalMove=₪${tsShift.totalMove}` : ""}`);
   }
   console.log(`\n${projectsTested} projects, ${channelsTested} channel rows compared — ${mismatches === 0 ? "FULL PARITY ✅" : `${mismatches} MISMATCHES ❌`}`);
