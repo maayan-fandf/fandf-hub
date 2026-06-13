@@ -1208,6 +1208,21 @@ function ChannelSummaryRow({
   }
   const aggRatio = aggExpected > 0 ? aggSpend / aggExpected : 0;
   const dailyReq = Math.max(0, Math.round(dailyRequired));
+  // Aggregate action tone for the collapsed נדרש ליום pill — same colors
+  // the campaign rows + platform cells use, so a collapsed channel still
+  // signals raise (⬆ under) / lower (⬇ over) / set-right (green) at a
+  // glance. Direction from Σ configured-daily vs Σ required-daily.
+  const summaryTone: "over" | "under" | "ok" | "none" = allEnded
+    ? "none"
+    : !anyNeedsAction
+      ? "ok"
+      : actualDaily > 0 && dailyRequired > 0
+        ? dailyRequired > actualDaily
+          ? "under"
+          : "over"
+        : paceTone(aggRatio) === "over"
+          ? "over"
+          : "under";
   return (
     <tr
       className="channel-summary"
@@ -1271,7 +1286,17 @@ function ChannelSummaryRow({
           : "—"}
       </td>
       <td className="c-daily">
-        {dailyReq > 0 ? `₪${dailyReq.toLocaleString("he-IL")}` : "—"}
+        {dailyReq > 0 ? (
+          <span
+            className={`budget-need pace-${summaryTone}`}
+            title="סך הנדרש ליום בערוץ (Σ הקמפיינים) — פתחו את הערוץ לפירוט"
+          >
+            ₪{dailyReq.toLocaleString("he-IL")}
+            {summaryTone === "over" ? " ⬇" : summaryTone === "under" ? " ⬆" : ""}
+          </span>
+        ) : (
+          "—"
+        )}
       </td>
       <td className="c-handled" />
     </tr>
