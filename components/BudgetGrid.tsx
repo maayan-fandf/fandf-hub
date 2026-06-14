@@ -20,6 +20,7 @@ import {
 } from "@/lib/budgetTypes";
 import {
   costChipStyle,
+  costMetricColor,
   type ProjectBudgetShift,
   type ChannelPerf,
 } from "@/lib/budgetShiftSuggestions";
@@ -1433,32 +1434,41 @@ function PerfCells({ perf }: { perf?: ChannelPerf }) {
     cls: string,
     count: number | undefined,
     cost: number | undefined,
+    metric: "cpl" | "cps" | "cpm",
     costLabel: string,
     emptyLabel: string,
     extra?: ReactNode,
-  ) => (
-    <td
-      className={cls}
-      title={
-        perf ? ((count ?? 0) > 0 ? `${costLabel}: ${fmt(Math.round(cost || 0))}` : emptyLabel) : undefined
-      }
-    >
-      {perf ? ((count ?? 0) > 0 ? (count as number).toLocaleString("he-IL") : "—") : ""}
-      {extra}
-    </td>
-  );
+  ) => {
+    const has = !!perf && (count ?? 0) > 0;
+    // Tint the count by its cost-per-result on the same green→red scale as
+    // the CPL/CPS chips — cheap = green, expensive = red — so the rows that
+    // need attention pop. Blank/no-data counts keep the default color.
+    const color = has ? costMetricColor(metric, cost ?? 0) : null;
+    return (
+      <td
+        className={cls}
+        title={perf ? (has ? `${costLabel}: ${fmt(Math.round(cost || 0))}` : emptyLabel) : undefined}
+      >
+        <span style={color ? { color, fontWeight: 600 } : undefined}>
+          {perf ? (has ? (count as number).toLocaleString("he-IL") : "—") : ""}
+        </span>
+        {extra}
+      </td>
+    );
+  };
   return (
     <>
       {cell(
         "c-leads",
         perf?.leads,
         perf?.cpl,
+        "cpl",
         "עלות לליד",
         "אין לידים בתקופה",
         <CplTrend trend={perf?.cplTrend ?? 0} show={!!perf && (perf?.leads ?? 0) > 0} />,
       )}
-      {cell("c-sched", perf?.scheduled, perf?.cps, "עלות לתיאום", "אין תיאומים בתקופה")}
-      {cell("c-meet", perf?.meetings, perf?.cpm, "עלות לפגישה", "אין פגישות בתקופה")}
+      {cell("c-sched", perf?.scheduled, perf?.cps, "cps", "עלות לתיאום", "אין תיאומים בתקופה")}
+      {cell("c-meet", perf?.meetings, perf?.cpm, "cpm", "עלות לפגישה", "אין פגישות בתקופה")}
     </>
   );
 }

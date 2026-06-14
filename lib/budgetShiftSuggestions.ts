@@ -690,10 +690,11 @@ export function buildChannelPerf(
  * green→red HSL gradient over the metric's expected range. Null for
  * zero/invalid values (caller omits the chip).
  */
-export function costChipStyle(
-  metric: "cpl" | "cps" | "cpm",
-  value: number,
-): { bg: string; fg: string } | null {
+/** Hue on the green→red cost gradient (140 = green/cheap … 0 = red/
+ *  expensive) for a metric over its expected range; null for zero/invalid.
+ *  Shared by costChipStyle (chip) + costMetricColor (bright text). The
+ *  lo/hi bands mirror the iframe's costStyle (#L6106). */
+function costHue(metric: "cpl" | "cps" | "cpm", value: number): number | null {
   const v = Number(value) || 0;
   if (v <= 0) return null;
   let lo: number, hi: number;
@@ -710,8 +711,31 @@ export function costChipStyle(
   let t = (v - lo) / (hi - lo);
   if (t < 0) t = 0;
   if (t > 1) t = 1;
-  const hue = Math.round(140 - t * 140);
+  return Math.round(140 - t * 140);
+}
+
+export function costChipStyle(
+  metric: "cpl" | "cps" | "cpm",
+  value: number,
+): { bg: string; fg: string } | null {
+  const hue = costHue(metric, value);
+  if (hue === null) return null;
   return { bg: `hsl(${hue},70%,88%)`, fg: `hsl(${hue},70%,26%)` };
+}
+
+/**
+ * Bright text color on the SAME green→red cost gradient as costChipStyle,
+ * but tuned for colored NUMBERS on the dark budget table (high lightness,
+ * readable on dark — the chip's dark fg would vanish). Null for
+ * zero/invalid so the caller leaves the count its default color.
+ */
+export function costMetricColor(
+  metric: "cpl" | "cps" | "cpm",
+  value: number,
+): string | null {
+  const hue = costHue(metric, value);
+  if (hue === null) return null;
+  return `hsl(${hue},78%,64%)`;
 }
 
 /** Export the scorer for the parity probe (scripts/probe-budget-shift.ts). */
