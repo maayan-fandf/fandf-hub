@@ -105,6 +105,20 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(sm.allSources),
   );
+  // Reset the chip selection whenever the funnel's source set changes —
+  // a month-rewind or a project→project navigation reuses THIS component
+  // instance (same `[project]` route), so `selected` would otherwise keep
+  // the PREVIOUS view's sources. Since every KPI re-aggregates the new
+  // `leadsBySource` filtered by `selected`, a stale/disjoint set makes
+  // all KPIs read 0 while the chips (rendered straight from the new
+  // allSources) still show counts. React "adjust state during render"
+  // pattern → no extra render pass, no flash of wrong numbers.
+  const srcSig = sm.allSources.join("|");
+  const [prevSrcSig, setPrevSrcSig] = useState(srcSig);
+  if (srcSig !== prevSrcSig) {
+    setPrevSrcSig(srcSig);
+    setSelected(new Set(sm.allSources));
+  }
   // Which pie slice is currently hovered — drives the channel-breakdown
   // tooltip rendered below the pie. The SVG <path> elements can't host
   // HTML tooltips directly, and the parent `.crm-pie` clips its
