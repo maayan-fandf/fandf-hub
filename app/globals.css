@@ -19541,6 +19541,9 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
    tables). table-layout:fixed + explicit widths keep the 11 columns
    aligned across every channel regardless of platform. A channel with
    several campaigns collapses into one summary row that expands. */
+/* Horizontal-scroll shell for the 11-col channel table — on a phone the
+   fixed columns would otherwise crush to ~30px and overlap. */
+.budget-rows-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .budget-rows { width: 100%; border-collapse: collapse; font-size: .85em; table-layout: fixed; }
 .budget-rows th {
   text-align: start; color: var(--muted); font-weight: 600;
@@ -19732,6 +19735,10 @@ button.budget-need:focus-visible {
   .budget-summary .budget-recon { grid-area: recon; }
   .budget-summary .budget-progress { grid-area: bars; }
   .budget-summary .budget-platcells { grid-area: plat; }
+  /* Keep the channel table legible on mobile — give it a real min-width
+     and let .budget-rows-scroll scroll it horizontally instead of letting
+     the 11 fixed columns collapse into an unreadable overlap. */
+  .budget-rows { min-width: 860px; }
 }
 
 /* manager → company grouping */

@@ -1088,6 +1088,7 @@ function PlatformDrillGroups({
     pl === "google" ? ad.gAdsUrl : pl === "facebook" ? ad.fbAdsUrl : undefined;
 
   return (
+    <div className="budget-rows-scroll">
     <table className="budget-rows">
       <thead>
         <tr>
@@ -1187,6 +1188,7 @@ function PlatformDrillGroups({
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
