@@ -199,6 +199,52 @@ async function readAllClientsRows(
  * consolidated by summing their numeric fields. Same logic the
  * dashboard runs at `Code.js#L1729`.
  */
+/**
+ * Filter the ALL CLIENTS rows to one project (by Hebrew name OR slug —
+ * the project name is blank on many slug-only rows post-XLOOKUP) using
+ * the `keep` predicate (row-type / window), then consolidate duplicate
+ * channels by summing numeric fields (keep first-seen casing + the
+ * widest start/end). Shared by the "current" + "חודשי" readers so the
+ * project-matching can't drift between them.
+ */
+function consolidateForProject(
+  rows: AllClientsRow[],
+  targetProject: string,
+  targetSlug: string,
+  keep: (r: AllClientsRow) => boolean,
+): AllClientsRow[] {
+  const matched = rows.filter((r) => {
+    if (!keep(r)) return false;
+    const proj = r.project.toLowerCase();
+    const slug = r.projectSlug.toLowerCase();
+    if (proj && proj === targetProject) return true;
+    if (targetSlug && slug && slug === targetSlug) return true;
+    // Last-resort: caller passed a slug-looking string as `project`.
+    if (slug && slug === targetProject) return true;
+    return false;
+  });
+  const byChannel = new Map<string, AllClientsRow>();
+  const order: string[] = [];
+  for (const r of matched) {
+    const key = r.channel.toLowerCase();
+    const existing = byChannel.get(key);
+    if (!existing) {
+      byChannel.set(key, { ...r });
+      order.push(key);
+    } else {
+      existing.spend += r.spend;
+      existing.budget += r.budget;
+      existing.leads += r.leads;
+      existing.scheduled += r.scheduled;
+      existing.meetings += r.meetings;
+      existing.dailyRate += r.dailyRate;
+      if (!existing.startIso && r.startIso) existing.startIso = r.startIso;
+      if (r.endIso && r.endIso > existing.endIso) existing.endIso = r.endIso;
+    }
+  }
+  return order.map((k) => byChannel.get(k)!);
+}
+
 export const getAllClientsCurrentForProject = cache(
   async (args: {
     subjectEmail: string;
@@ -213,41 +259,44 @@ export const getAllClientsCurrentForProject = cache(
     ]);
     const targetProject = args.project.toLowerCase().trim();
     const targetSlug = (args.projectSlug || slugFromKeys || "").toLowerCase().trim();
-    const matched = rows.filter((r) => {
-      if (r.rowType !== "current") return false;
-      const proj = r.project.toLowerCase();
-      const slug = r.projectSlug.toLowerCase();
-      if (proj && proj === targetProject) return true;
-      if (targetSlug && slug && slug === targetSlug) return true;
-      // Last-resort: caller passed a slug-looking string as `project`
-      // (no Hebrew name available). Match by slug equality too.
-      if (slug && slug === targetProject) return true;
-      return false;
-    });
-    // Consolidate by channel — sum numeric fields, keep the first
-    // non-empty start/end dates seen. Channels lower-cased for the
-    // dedup key so "Facebook" and "facebook" merge, but the display
-    // channel keeps the first-seen casing.
-    const byChannel = new Map<string, AllClientsRow>();
-    const order: string[] = [];
-    for (const r of matched) {
-      const key = r.channel.toLowerCase();
-      const existing = byChannel.get(key);
-      if (!existing) {
-        byChannel.set(key, { ...r });
-        order.push(key);
-      } else {
-        existing.spend += r.spend;
-        existing.budget += r.budget;
-        existing.leads += r.leads;
-        existing.scheduled += r.scheduled;
-        existing.meetings += r.meetings;
-        existing.dailyRate += r.dailyRate;
-        if (!existing.startIso && r.startIso) existing.startIso = r.startIso;
-        if (r.endIso && r.endIso > existing.endIso) existing.endIso = r.endIso;
-      }
-    }
-    return order.map((k) => byChannel.get(k)!);
+    return consolidateForProject(
+      rows,
+      targetProject,
+      targetSlug,
+      (r) => r.rowType === "current",
+    );
+  },
+);
+
+/**
+ * Like getAllClientsCurrentForProject but returns the project's "חודשי"
+ * (monthly) rows for a single calendar month (`yearMonth` = "YYYY-MM",
+ * matched on the row's startIso) — one consolidated row per channel.
+ * Used by the CRM funnel's month-rewind view to attach that month's
+ * per-channel spend (the "current" rows only cover the flight window).
+ */
+export const getAllClientsMonthlyForProject = cache(
+  async (args: {
+    subjectEmail: string;
+    project: string;
+    projectSlug?: string;
+    yearMonth: string;
+  }): Promise<AllClientsRow[]> => {
+    if (!/^\d{4}-\d{2}$/.test(args.yearMonth)) return [];
+    const [rows, slugFromKeys] = await Promise.all([
+      readAllClientsRows(args.subjectEmail),
+      args.projectSlug
+        ? Promise.resolve(args.projectSlug)
+        : resolveSlugFromKeys(args.subjectEmail, args.project),
+    ]);
+    const targetProject = args.project.toLowerCase().trim();
+    const targetSlug = (args.projectSlug || slugFromKeys || "").toLowerCase().trim();
+    return consolidateForProject(
+      rows,
+      targetProject,
+      targetSlug,
+      (r) => r.rowType === "חודשי" && r.startIso.startsWith(args.yearMonth),
+    );
   },
 );
 

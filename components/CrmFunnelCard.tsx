@@ -3,7 +3,10 @@ import {
   canonicalMediaChannel,
   type CrmFunnel,
 } from "@/lib/crmData";
-import { getAllClientsCurrentForProject } from "@/lib/allClients";
+import {
+  getAllClientsCurrentForProject,
+  getAllClientsMonthlyForProject,
+} from "@/lib/allClients";
 import { driveFolderOwner } from "@/lib/sa";
 import CrmFunnelClient from "./CrmFunnelClient";
 
@@ -59,6 +62,21 @@ export default async function CrmFunnelCard({
       if (ch && r.spend) spend[ch] = (spend[ch] || 0) + r.spend;
     }
     if (from && to) projectWindow = { from, to };
+    if (Object.keys(spend).length) spendByChannel = spend;
+  } else {
+    // Month-rewind view: the "current" rows only cover the flight window,
+    // so pull THAT month's per-channel spend from the ALL CLIENTS monthly
+    // (חודשי) rows instead, keyed the same canonical way.
+    const moRows = await getAllClientsMonthlyForProject({
+      subjectEmail: driveFolderOwner(),
+      project,
+      yearMonth: monthFilter,
+    }).catch(() => []);
+    const spend: Record<string, number> = {};
+    for (const r of moRows) {
+      const ch = canonicalMediaChannel(r.channel);
+      if (ch && r.spend) spend[ch] = (spend[ch] || 0) + r.spend;
+    }
     if (Object.keys(spend).length) spendByChannel = spend;
   }
 
