@@ -10,6 +10,7 @@ import {
   MANAGER_ORDER,
   PLATFORM_LABELS,
   UNASSIGNED_MANAGER,
+  classifyChannel,
   pacingChannelKey,
   budgetShiftKey,
   type BudgetProject,
@@ -543,6 +544,26 @@ function ProjectRow({
     !!shift && shift.suggestions.length > 0,
   );
   const showShiftFlag = !!shift && shiftState !== "dismissed";
+  // Blended CPL / CPS across this project's PROGRAMMATIC channels only
+  // (classifyChannel ≠ "other", so כתבה/article/phone lines are excluded)
+  // — a quick at-a-glance read on the collapsed row of where media cost
+  // sits, without expanding. Aggregates raw spend/leads/scheduled from the
+  // already-loaded per-channel perf so a 0-lead channel's spend still
+  // weighs the blend (Σspend ÷ Σleads), then colored via costChipStyle.
+  let progSpend = 0,
+    progLeads = 0,
+    progSched = 0;
+  if (perf) {
+    for (const ch of Object.keys(perf)) {
+      if (classifyChannel(ch) === "other") continue;
+      const e = perf[ch];
+      progSpend += e.spend;
+      progLeads += e.leads;
+      progSched += e.scheduled;
+    }
+  }
+  const projCpl = progLeads > 0 ? progSpend / progLeads : 0;
+  const projCps = progSched > 0 ? progSpend / progSched : 0;
   return (
     <li className={`budget-card ${needsAttention(p) ? "is-attention" : ""}`}>
       <button
@@ -586,6 +607,12 @@ function ProjectRow({
           </span>
           <span className="budget-recon-alloc">חולק: {fmt(p.allocated)}</span>
           <ReconBadge p={p} />
+          {(projCpl > 0 || projCps > 0) && (
+            <span className="budget-recon-perf">
+              <CostChip label="CPL" metric="cpl" value={projCpl} />
+              <CostChip label="CPS" metric="cps" value={projCps} />
+            </span>
+          )}
         </span>
 
         <ProjectProgress p={p} />

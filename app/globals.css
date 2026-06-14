@@ -19485,6 +19485,9 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-recon { display: flex; flex-direction: column; gap: .2em; font-size: .82em; }
 .budget-recon-target { color: var(--muted); }
 .budget-recon-alloc { font-weight: 600; }
+/* blended programmatic CPL/CPS chips on the collapsed project row */
+.budget-recon-perf { display: inline-flex; gap: .3em; flex-wrap: wrap; margin-top: .1em; }
+.budget-recon-perf .budget-shift-chip { font-size: .92em; }
 
 /* budget-consumed + time-elapsed mini bars on the summary row */
 .budget-progress {
