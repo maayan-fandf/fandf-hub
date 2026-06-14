@@ -153,7 +153,7 @@ env:
   # enrichment runs ONLY for these projects (even with the flag on). Clear
   # the value (value: "") + redeploy to enable all bmby projects.
   - variable: SUPABASE_CRM_PROJECTS
-    value: "נתיבות"
+    value: "נתיבות,רעננה קנקו"
     availability:
       - RUNTIME
 
