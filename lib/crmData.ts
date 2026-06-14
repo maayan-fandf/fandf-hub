@@ -34,7 +34,7 @@ import { sheetsClient } from "@/lib/sa";
 import { driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { computeCrmEnrichment, type CrmEnrichment } from "./crmEnrichment";
-import { useSupabaseCrmEnrichment } from "./supabase";
+import { useSupabaseCrmEnrichment, supabaseCrmProjectAllowed } from "./supabase";
 
 // Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
 // previous "Consolidated" sheet (1YOL2Rry…) to the now-canonical
@@ -1442,7 +1442,12 @@ export async function getCrmFunnelForProject(args: {
   // cost-join, inside try/catch, so a warehouse hiccup never touches the
   // base Sheet funnel. Bounds [from, toExcl) derived from the active
   // window; empty = no date filter. See lib/crmEnrichment.ts / plan §12.5.
-  if (funnel && platform === "bmby" && useSupabaseCrmEnrichment()) {
+  if (
+    funnel &&
+    platform === "bmby" &&
+    useSupabaseCrmEnrichment() &&
+    supabaseCrmProjectAllowed(crmAccount)
+  ) {
     try {
       let from = "";
       let toExcl = "";

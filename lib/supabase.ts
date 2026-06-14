@@ -35,6 +35,20 @@ export function useSupabaseCrmEnrichment(): boolean {
   return String(process.env.SUPABASE_CRM_ENRICHMENT || "").trim() === "1";
 }
 
+/** Optional canary allowlist — comma-separated Keys.CRM account names.
+ *  When non-empty, enrichment runs ONLY for those projects (even with the
+ *  master flag on); empty/unset = all bmby projects. Lets prod ramp one
+ *  project at a time before going portfolio-wide. */
+export function supabaseCrmProjectAllowed(crmAccount: string): boolean {
+  const raw = String(process.env.SUPABASE_CRM_PROJECTS || "").trim();
+  if (!raw) return true;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(crmAccount.trim());
+}
+
 /** True when we have a key to reach the warehouse at all. */
 export function supabaseConfigured(): boolean {
   return !!apiKey();

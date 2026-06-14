@@ -129,6 +129,34 @@ env:
       - BUILD
       - RUNTIME
 
+  # BMBY warehouse (Supabase) — CRM-funnel enrichment (authoritative held
+  # meetings etc.). SUPABASE_SERVICE_ROLE_KEY is a SERVER-ONLY secret — it
+  # never reaches the browser (lib/supabase.ts is server-only; build-verified).
+  # Stopgap; swap to a scoped read-only key later via SUPABASE_CRM_KEY.
+  - variable: SUPABASE_SERVICE_ROLE_KEY
+    secret: SUPABASE_SERVICE_ROLE_KEY
+    availability:
+      - RUNTIME
+
+  - variable: SUPABASE_URL
+    value: https://zkuzyxrkqjtramucjhid.supabase.co/rest/v1/
+    availability:
+      - RUNTIME
+
+  # Master on/off for the CRM enrichment.
+  - variable: SUPABASE_CRM_ENRICHMENT
+    value: "1"
+    availability:
+      - RUNTIME
+
+  # Canary allowlist — comma-separated Keys.CRM names. While set, the
+  # enrichment runs ONLY for these projects (even with the flag on). Clear
+  # the value (value: "") + redeploy to enable all bmby projects.
+  - variable: SUPABASE_CRM_PROJECTS
+    value: "נתיבות"
+    availability:
+      - RUNTIME
+
   # Kill-switch for the קמפיינים → תקציבים inline budget editor. When "1"
   # the /api/campaigns/budget route may write column G (תקציב חודשי
   # מאושר) on project tabs of SHEET_ID_MAIN. Flip to "" to instantly
