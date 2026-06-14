@@ -642,6 +642,39 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
       </div>
 
+      {/* Authoritative held meetings from the BMBY warehouse (Supabase).
+          Whole-window figure (NOT chip-filtered) — the Sheet's פגישות tile
+          above conflates scheduled+held and over-counts; this is the
+          BMBY-confirmed number (appointment_outcome='held'). Additive:
+          collapses to nothing when the warehouse enrichment is absent. */}
+      {funnel.supabaseEnrichment?.held ? (
+        <div
+          className="crm-held-authority"
+          dir="rtl"
+          title="מספר הפגישות שהתקיימו בפועל לפי מערכת BMBY, לכל חלון התאריכים (ללא סינון לפי מקור). הנתון בכרטיס 'פגישות' מעלה הוא הערכה מהגיליון שמערבבת תיאומים והתקיימו."
+        >
+          <span className="crm-held-authority-icon" aria-hidden>✓</span>
+          <span className="crm-held-authority-main">
+            {fmtInt(funnel.supabaseEnrichment.held.authoritative)} פגישות התקיימו בפועל
+            <span className="crm-held-authority-tag">מאומת BMBY</span>
+          </span>
+          <span className="crm-held-authority-sub">
+            כולל משוער: {fmtInt(funnel.supabaseEnrichment.held.estimated)}
+            {funnel.supabaseEnrichment.held.canceled > 0
+              ? ` · בוטלו: ${fmtInt(funnel.supabaseEnrichment.held.canceled)}`
+              : ""}
+          </span>
+          {funnel.supabaseEnrichment.held.asOf ? (
+            <span
+              className="crm-held-authority-fresh"
+              title={`עודכן ${funnel.supabaseEnrichment.held.asOf}`}
+            >
+              עודכן {funnel.supabaseEnrichment.held.asOf.slice(0, 10)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Cost per media channel (anda "Monthly Channel Leads" model):
           channel media spend over the funnel's window attributed to the
           CRM lead sources → cost-per-lead / cost-per-meeting, colored on

@@ -6904,6 +6904,43 @@ html[data-theme="dark"] .crm-source-search-row:hover {
   font-size: 0.82em;
   font-weight: 700;
 }
+/* authoritative held-meetings strip (Supabase BMBY enrichment) under the
+   KPI row — additive; absent unless the warehouse enrichment is present */
+.crm-held-authority {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4em 0.8em;
+  margin-top: 0.6em;
+  padding: 0.5em 0.75em;
+  border-radius: 8px;
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+  border: 1px solid color-mix(in srgb, #22c55e 32%, transparent);
+  font-size: 0.9em;
+}
+.crm-held-authority-icon {
+  color: #16a34a;
+  font-weight: 800;
+}
+.crm-held-authority-main { font-weight: 700; }
+.crm-held-authority-tag {
+  margin-inline-start: 0.45em;
+  padding: 0.05em 0.45em;
+  border-radius: 999px;
+  background: color-mix(in srgb, #16a34a 22%, transparent);
+  color: #15803d;
+  font-size: 0.72em;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.crm-held-authority-sub { color: var(--muted, #6b7280); }
+.crm-held-authority-fresh {
+  margin-inline-start: auto;
+  color: var(--muted, #6b7280);
+  font-size: 0.8em;
+  opacity: 0.85;
+}
+
 /* cost-per-media-channel table under the KPI tiles */
 .crm-cost-block { margin-top: 0.75em; }
 .crm-cost-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }

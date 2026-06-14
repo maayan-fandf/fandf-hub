@@ -33,6 +33,8 @@ import { cache } from "react";
 import { sheetsClient } from "@/lib/sa";
 import { driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
+import { computeCrmEnrichment, type CrmEnrichment } from "./crmEnrichment";
+import { useSupabaseCrmEnrichment } from "./supabase";
 
 // Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
 // previous "Consolidated" sheet (1YOL2Rry…) to the now-canonical
@@ -175,6 +177,13 @@ export type CrmFunnel = {
    *  that map 1:1 to a single paid channel — drives the inline cost on
    *  the source chips. Composite / non-paid sources are omitted. */
   costBySource?: Record<string, { channel: string; cpl: number; cpm: number }>;
+  /** Supabase BMBY warehouse enrichment (ADDITIVE, bmby-platform only,
+   *  flag-gated by SUPABASE_CRM_ENRICHMENT). Authoritative held-meeting
+   *  counts re-derived from the raw v_bmby_* views — see lib/crmEnrichment.ts.
+   *  Absent/null when the flag is off, the project isn't in the warehouse,
+   *  or a fetch failed: the base Sheet funnel is always intact. Whole-window
+   *  figure (NOT chip-filtered). */
+  supabaseEnrichment?: CrmEnrichment;
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -1428,6 +1437,30 @@ export async function getCrmFunnelForProject(args: {
   // was supplied for this window.
   if (funnel && args.spendByChannel && Object.keys(args.spendByChannel).length) {
     attachChannelCosts(funnel, args.spendByChannel);
+  }
+  // Additive Supabase enrichment (bmby only, flag-gated). Runs AFTER the
+  // cost-join, inside try/catch, so a warehouse hiccup never touches the
+  // base Sheet funnel. Bounds [from, toExcl) derived from the active
+  // window; empty = no date filter. See lib/crmEnrichment.ts / plan §12.5.
+  if (funnel && platform === "bmby" && useSupabaseCrmEnrichment()) {
+    try {
+      let from = "";
+      let toExcl = "";
+      if (window?.kind === "month") {
+        from = `${window.month}-01`;
+        const [y, mo] = window.month.split("-").map(Number);
+        toExcl =
+          mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+      } else if (window?.kind === "range") {
+        from = window.from;
+        const d = new Date(`${window.to}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + 1);
+        toExcl = d.toISOString().slice(0, 10);
+      }
+      funnel.supabaseEnrichment = await computeCrmEnrichment(crmAccount, from, toExcl);
+    } catch {
+      /* leave the base Sheet funnel intact */
+    }
   }
   return funnel;
 }
