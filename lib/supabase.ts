@@ -35,14 +35,25 @@ export function useSupabaseCrmEnrichment(): boolean {
   return String(process.env.SUPABASE_CRM_ENRICHMENT || "").trim() === "1";
 }
 
-/** Optional canary allowlist — comma-separated Keys.CRM account names.
- *  When non-empty, enrichment runs ONLY for those projects (even with the
- *  master flag on); empty/unset = all bmby projects. Lets prod ramp one
- *  project at a time before going portfolio-wide. */
+/** Optional canary allowlist — a BASE64-encoded comma-separated list of
+ *  Keys.CRM account names. When non-empty, enrichment runs ONLY for those
+ *  projects (even with the master flag on); empty/unset = all bmby projects.
+ *
+ *  Why base64: the App Hosting → Cloud Run env pipeline corrupts non-ASCII
+ *  values (Hebrew project names came through as "?"), so the list is encoded
+ *  to ASCII and decoded here. Regenerate with:
+ *    node -e "console.log(Buffer.from('נתיבות,רעננה קנקו').toString('base64'))" */
 export function supabaseCrmProjectAllowed(crmAccount: string): boolean {
   const raw = String(process.env.SUPABASE_CRM_PROJECTS || "").trim();
   if (!raw) return true;
-  return raw
+  let list = raw;
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    if (decoded.trim()) list = decoded;
+  } catch {
+    /* fall back to the raw value (plain ASCII list) */
+  }
+  return list
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)

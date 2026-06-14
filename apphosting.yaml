@@ -149,11 +149,13 @@ env:
     availability:
       - RUNTIME
 
-  # Canary allowlist — comma-separated Keys.CRM names. While set, the
-  # enrichment runs ONLY for these projects (even with the flag on). Clear
-  # the value (value: "") + redeploy to enable all bmby projects.
+  # Canary allowlist — BASE64 of a comma-separated list of Keys.CRM names
+  # (base64 because the env pipeline corrupts non-ASCII Hebrew → "?"). While
+  # set, enrichment runs ONLY for these projects. Clear the value (value: "")
+  # + redeploy to enable all bmby projects. Current = "נתיבות,רעננה קנקו".
+  # Regenerate: node -e "console.log(Buffer.from('a,b').toString('base64'))"
   - variable: SUPABASE_CRM_PROJECTS
-    value: "נתיבות,רעננה קנקו"
+    value: "16DXqteZ15HXldeqLNeo16LXoNeg15Qg16fXoNen15U="
     availability:
       - RUNTIME
 
