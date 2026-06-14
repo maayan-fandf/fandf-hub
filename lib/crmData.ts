@@ -152,6 +152,29 @@ export type CrmFunnel = {
    *  date range (dd/MM/yyyy–dd/MM/yyyy) rather than a single month.
    *  Empty in month / no-filter mode. */
   windowLabel: string;
+  /** Per-paid-channel media cost attributed onto this funnel — the
+   *  "Monthly Channel Leads" logic from the anda costs workbook ported
+   *  to the Hub. Channel spend comes from ALL CLIENTS over the SAME
+   *  window; it's attributed to the leads whose `מקור הגעה` token
+   *  canonicalizes to that channel (composite sources count toward each
+   *  channel they name), and CPL / CP-meeting use the funnel's OWN
+   *  per-source counts (the CRM-attribution lens). Sorted by spend desc;
+   *  empty when no spend was supplied (e.g. month-rewind mode). */
+  channelCosts?: {
+    channel: string; // canonical key (google-search / facebook / yad2 …)
+    label: string;
+    spend: number;
+    leads: number;
+    scheduled: number;
+    meetings: number;
+    cpl: number; // spend ÷ leads
+    cps: number; // spend ÷ scheduled (תואמה)
+    cpm: number; // spend ÷ meetings (held)
+  }[];
+  /** raw `מקור הגעה` → its channel's CPL/CP-meeting, ONLY for sources
+   *  that map 1:1 to a single paid channel — drives the inline cost on
+   *  the source chips. Composite / non-paid sources are omitted. */
+  costBySource?: Record<string, { channel: string; cpl: number; cpm: number }>;
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -1165,6 +1188,115 @@ function buildSourceMatrices(args: {
   };
 }
 
+/* ── Cost attribution (ported from the anda "Monthly Channel Leads") ─── */
+
+/** Friendly labels for the canonical cost-join channels. */
+const COST_CHANNEL_LABELS: Record<string, string> = {
+  "google-search": "Google",
+  "google-discovery": "Google Discovery",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+  taboola: "Taboola",
+  outbrain: "Outbrain",
+  yad2: "yad2",
+  madlan: "מדלן",
+  onmap: "onMap",
+  article: "כתבה",
+};
+
+/**
+ * Cost-join canonicalizer: collapse a CRM `מקור הגעה` token OR an
+ * ALL CLIENTS `מזהה BMBY` channel to the SAME paid-media key, so spend
+ * (ALL CLIENTS) and leads (CRM source) join. Unlike crmAlerts'
+ * canonicalChannel, ALL non-discovery Google (search / pmax / youtube /
+ * gs) collapses to ONE "google-search" (GS) bucket — matching the anda
+ * sheet's GS = Google cost EXCLUDING discovery. Returns null for
+ * non-paid sources (phone / own-site / data / sales-office / personal),
+ * which carry no media cost. Exported so CrmFunnelCard can key the
+ * ALL CLIENTS spend the same way.
+ */
+export function canonicalMediaChannel(name: string): string | null {
+  const n = String(name || "").toLowerCase().trim();
+  if (!n) return null;
+  if (/discover|דיסקוב|דיסקאב/.test(n)) return "google-discovery";
+  if (/google|גוגל|goolge|\bgs\b|pmax|dv360|youtube|יוטיוב|\byt\b/.test(n))
+    return "google-search";
+  if (/facebook|פייסבוק|\bfb\b|meta|מטא|instagram|אינסטג|\big\b/.test(n))
+    return "facebook";
+  if (/tiktok|טיקטוק/.test(n)) return "tiktok";
+  if (/taboola|טאבולה/.test(n)) return "taboola";
+  if (/outbrain|אאוטבר|teads|טידס/.test(n)) return "outbrain";
+  if (/yad\s?2|יד\s?2/.test(n)) return "yad2";
+  if (/madlan|מדלן|נדלן/.test(n)) return "madlan";
+  if (/onmap|אונמפ/.test(n)) return "onmap";
+  if (/כתבה|article|ynet|walla|mako|globes|גלובס|הארץ|jerusalempost/.test(n))
+    return "article";
+  return null;
+}
+
+/**
+ * Attribute per-channel media spend onto the funnel's CRM leads — the
+ * anda "Monthly Channel Leads" model. For each canonical paid channel
+ * with spend, sum the funnel's leads / scheduled / meetings over the
+ * `מקור הגעה` sources whose tokens canonicalize to that channel (a
+ * composite source like "facebook, google" counts toward BOTH), then
+ * CPL = spend÷leads, CP-sched = spend÷scheduled, CP-meeting = spend÷
+ * meetings. Also builds a per-raw-source map (atomic single-channel
+ * sources only) for the inline chip cost. Mutates `funnel`.
+ */
+function attachChannelCosts(
+  funnel: CrmFunnel,
+  spendByChannel: Record<string, number>,
+): void {
+  const sm = funnel.sourceMatrices;
+  const agg: Record<
+    string,
+    { leads: number; scheduled: number; meetings: number }
+  > = {};
+  const sourceChannels: Record<string, string[]> = {};
+  for (const src of sm.allSources) {
+    const chans = new Set<string>();
+    for (const tok of src.split(",")) {
+      const c = canonicalMediaChannel(tok);
+      if (c) chans.add(c);
+    }
+    sourceChannels[src] = [...chans];
+    for (const c of chans) {
+      if (!agg[c]) agg[c] = { leads: 0, scheduled: 0, meetings: 0 };
+      agg[c].leads += sm.leadsBySource[src] || 0;
+      agg[c].scheduled += sm.scheduledMeetingsBySource[src] || 0;
+      agg[c].meetings += sm.meetingsBySource[src] || 0;
+    }
+  }
+  const channelCosts: NonNullable<CrmFunnel["channelCosts"]> = [];
+  for (const [channel, spend] of Object.entries(spendByChannel)) {
+    if (!(spend > 0)) continue;
+    const a = agg[channel] || { leads: 0, scheduled: 0, meetings: 0 };
+    channelCosts.push({
+      channel,
+      label: COST_CHANNEL_LABELS[channel] || channel,
+      spend,
+      leads: a.leads,
+      scheduled: a.scheduled,
+      meetings: a.meetings,
+      cpl: a.leads > 0 ? spend / a.leads : 0,
+      cps: a.scheduled > 0 ? spend / a.scheduled : 0,
+      cpm: a.meetings > 0 ? spend / a.meetings : 0,
+    });
+  }
+  channelCosts.sort((x, y) => y.spend - x.spend);
+  funnel.channelCosts = channelCosts;
+  const byChannel = new Map(channelCosts.map((c) => [c.channel, c]));
+  const costBySource: NonNullable<CrmFunnel["costBySource"]> = {};
+  for (const [src, chans] of Object.entries(sourceChannels)) {
+    if (chans.length !== 1) continue; // atomic single-channel sources only
+    const c = byChannel.get(chans[0]);
+    if (c && c.spend > 0)
+      costBySource[src] = { channel: c.channel, cpl: c.cpl, cpm: c.cpm };
+  }
+  funnel.costBySource = costBySource;
+}
+
 /* ── Public entry ──────────────────────────────────────────────────── */
 
 /**
@@ -1227,6 +1359,11 @@ export async function getCrmFunnelForProject(args: {
    *  return all available rows (~60 days). Use for admin/debug
    *  surfaces; not exposed in the UI. */
   noFilter?: boolean;
+  /** Per-channel media spend over the SAME window (canonical-channel
+   *  keyed, e.g. from ALL CLIENTS via canonicalMediaChannel). When given,
+   *  the funnel gets `channelCosts` + `costBySource` (cost/CPL/CP-meeting
+   *  attributed to the CRM lead sources — the anda model). */
+  spendByChannel?: Record<string, number>;
 }): Promise<CrmFunnel | null> {
   const company = args.company.trim();
   const project = args.project.trim();
@@ -1279,11 +1416,18 @@ export async function getCrmFunnelForProject(args: {
     return null;
   }
 
+  let funnel: CrmFunnel | null;
   if (platform === "bmby") {
-    return computeBmbyFunnel(driveFolderOwner(), crmAccount, window);
+    funnel = await computeBmbyFunnel(driveFolderOwner(), crmAccount, window);
+  } else if (platform === "salesforce") {
+    funnel = await computeSalesforceFunnel(driveFolderOwner(), crmAccount, window);
+  } else {
+    funnel = await computeSehelFunnel(driveFolderOwner(), crmAccount, window);
   }
-  if (platform === "salesforce") {
-    return computeSalesforceFunnel(driveFolderOwner(), crmAccount, window);
+  // Attribute media cost onto the lead sources (anda model) when spend
+  // was supplied for this window.
+  if (funnel && args.spendByChannel && Object.keys(args.spendByChannel).length) {
+    attachChannelCosts(funnel, args.spendByChannel);
   }
-  return computeSehelFunnel(driveFolderOwner(), crmAccount, window);
+  return funnel;
 }

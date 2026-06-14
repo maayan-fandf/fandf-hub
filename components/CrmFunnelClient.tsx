@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
+import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
 
 /**
@@ -557,6 +558,15 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             const isActive = selected.has(source);
             const icon = channelIcon(source);
             const total = sm.leadsBySource[source] || 0;
+            // Inline media cost (anda model) — only for sources that map
+            // 1:1 to a single paid channel; composites/non-paid are bare.
+            const cost = funnel.costBySource?.[source];
+            const title =
+              cost && cost.cpl > 0
+                ? `${source} — ${total} לידים · עלות לליד ${fmtILS(cost.cpl)}${
+                    cost.cpm > 0 ? ` · עלות לפגישה ${fmtILS(cost.cpm)}` : ""
+                  }`
+                : `${source} — ${total} לידים`;
             return (
               <button
                 key={source}
@@ -564,7 +574,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                 aria-pressed={isActive}
                 className={"crm-source-chip" + (isActive ? " is-active" : "")}
                 onClick={() => toggle(source)}
-                title={`${source} — ${total} לידים`}
+                title={title}
               >
                 <span
                   className="crm-source-chip-color"
@@ -576,6 +586,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                 ) : null}
                 <span className="crm-source-chip-name">{source}</span>
                 <span className="crm-source-chip-count">{total}</span>
+                {cost && cost.cpl > 0 && (
+                  <span
+                    className="crm-source-chip-cpl"
+                    style={{ color: costMetricColor("cpl", cost.cpl) ?? undefined }}
+                  >
+                    {fmtILS(cost.cpl)}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -609,6 +627,62 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         <KpiTile label="יחס פגישה"
           value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
       </div>
+
+      {/* Cost per media channel (anda "Monthly Channel Leads" model):
+          channel media spend over the funnel's window attributed to the
+          CRM lead sources → cost-per-lead / cost-per-meeting, colored on
+          the same green→red scale as the budget desk. Only renders when
+          spend was supplied (flight-window mode). */}
+      {funnel.channelCosts && funnel.channelCosts.length > 0 && (
+        <div className="crm-block crm-cost-block">
+          <div className="crm-block-title">עלות לפי ערוץ מדיה</div>
+          <div className="crm-cost-scroll">
+            <table className="crm-cost-table">
+              <thead>
+                <tr>
+                  <th>ערוץ</th>
+                  <th>הוצאה</th>
+                  <th>לידים</th>
+                  <th>עלות לליד</th>
+                  <th>פגישות</th>
+                  <th>עלות לפגישה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {funnel.channelCosts.map((c) => {
+                  const ic = channelIcon(c.channel);
+                  return (
+                    <tr key={c.channel}>
+                      <td className="crm-cost-ch">
+                        {ic ? <span aria-hidden="true">{ic}</span> : null} {c.label}
+                      </td>
+                      <td>{fmtILS(c.spend)}</td>
+                      <td>{fmtInt(c.leads)}</td>
+                      <td
+                        style={{
+                          color: costMetricColor("cpl", c.cpl) ?? undefined,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {c.leads > 0 ? fmtILS(c.cpl) : "—"}
+                      </td>
+                      <td>{fmtInt(c.meetings)}</td>
+                      <td
+                        style={{
+                          color: costMetricColor("cpm", c.cpm) ?? undefined,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {c.meetings > 0 ? fmtILS(c.cpm) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Status funnel + trendline — 50/50 grid. Trendline moved up
           here 2026-05-12 (was below the pie before). The objections-
@@ -1061,6 +1135,9 @@ function ChannelMiniPieContent({
 
 function fmtInt(n: number): string {
   return n.toLocaleString("he-IL");
+}
+function fmtILS(n: number): string {
+  return "₪" + Math.round(n || 0).toLocaleString("he-IL");
 }
 function pct(part: number, whole: number): string {
   if (!whole) return "—";

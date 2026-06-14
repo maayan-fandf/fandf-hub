@@ -6897,6 +6897,37 @@ html[data-theme="dark"] .crm-source-search-row:hover {
   font-size: 0.85em;
   opacity: 0.8;
 }
+/* inline media cost-per-lead on a source chip (anda cost model) */
+.crm-source-chip-cpl {
+  margin-inline-start: 0.4em;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82em;
+  font-weight: 700;
+}
+/* cost-per-media-channel table under the KPI tiles */
+.crm-cost-block { margin-top: 0.75em; }
+.crm-cost-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.crm-cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+  min-width: 440px;
+}
+.crm-cost-table th {
+  text-align: start;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.crm-cost-table td {
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.crm-cost-ch { font-weight: 600; }
 .crm-pie-row {
   display: grid;
   grid-template-columns: auto 1fr;

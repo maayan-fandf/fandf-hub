@@ -1,4 +1,8 @@
-import { getCrmFunnelForProject, type CrmFunnel } from "@/lib/crmData";
+import {
+  getCrmFunnelForProject,
+  canonicalMediaChannel,
+  type CrmFunnel,
+} from "@/lib/crmData";
 import { getAllClientsCurrentForProject } from "@/lib/allClients";
 import { driveFolderOwner } from "@/lib/sa";
 import CrmFunnelClient from "./CrmFunnelClient";
@@ -33,6 +37,13 @@ export default async function CrmFunnelCard({
   // month-rewind view takes priority). getAllClientsCurrentForProject is
   // request-cached, so this read is deduped with the alerts section.
   let projectWindow: { from: string; to: string } | undefined;
+  // Per-channel media spend over the flight window — the SAME ALL CLIENTS
+  // rows we read for the window also carry `spend` per `מזהה BMBY`
+  // channel. Canonicalize each to the cost-join key so crmData can
+  // attribute it onto the CRM lead sources (the anda model). Flight-window
+  // mode only; the month-rewind view (monthFilter) shows the funnel
+  // without cost for now.
+  let spendByChannel: Record<string, number> | undefined;
   if (!monthFilter) {
     const acRows = await getAllClientsCurrentForProject({
       subjectEmail: driveFolderOwner(),
@@ -40,11 +51,15 @@ export default async function CrmFunnelCard({
     }).catch(() => []);
     let from = "";
     let to = "";
+    const spend: Record<string, number> = {};
     for (const r of acRows) {
       if (r.startIso && (!from || r.startIso < from)) from = r.startIso;
       if (r.endIso && (!to || r.endIso > to)) to = r.endIso;
+      const ch = canonicalMediaChannel(r.channel);
+      if (ch && r.spend) spend[ch] = (spend[ch] || 0) + r.spend;
     }
     if (from && to) projectWindow = { from, to };
+    if (Object.keys(spend).length) spendByChannel = spend;
   }
 
   const funnel = await getCrmFunnelForProject({
@@ -52,6 +67,7 @@ export default async function CrmFunnelCard({
     project,
     monthFilter,
     projectWindow,
+    spendByChannel,
   }).catch(() => null);
   if (!funnel || funnel.leads === 0) return null;
   return <CrmFunnelClient funnel={funnel} />;
