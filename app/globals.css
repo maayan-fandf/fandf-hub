@@ -4676,6 +4676,31 @@ a.section-link-icon:hover {
   gap: 0.4rem;
   font-size: 0.85rem;
 }
+/* Free date-range inputs (CRM funnel) — sit beside the month select. */
+.dash-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.4rem;
+}
+.dash-range.is-active {
+  border-style: solid;
+  border-color: color-mix(in srgb, #6366f1 55%, transparent);
+  background: color-mix(in srgb, #6366f1 8%, transparent);
+}
+.dash-range input[type="date"] {
+  font-size: 0.78rem;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  padding: 0.15rem 0.3rem;
+  cursor: pointer;
+}
+.dash-range-sep { color: var(--muted); }
 .dash-month-picker label {
   color: var(--muted);
   font-weight: 600;

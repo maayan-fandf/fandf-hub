@@ -85,6 +85,11 @@ type Search = {
    *  triggers a clean page+iframe re-render with month-override
    *  applied at the data layer. Empty/invalid → live mode. */
   monthOverride?: string;
+  /** Free CRM-funnel date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). When
+   *  both are valid it supersedes monthOverride for the CRM funnel card —
+   *  channel cost is pro-rated to the selected days. */
+  from?: string;
+  to?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -296,6 +301,14 @@ export default async function ProjectOverviewPage({
     typeof sp.monthOverride === "string" && /^\d{4}-\d{2}$/.test(sp.monthOverride)
       ? sp.monthOverride
       : "";
+  // Free CRM-funnel date range — both bounds must be valid ISO dates and
+  // from ≤ to, else ignored. Supersedes monthOverride for the funnel card.
+  const isoDate = (v: unknown): string =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+  const crmFrom = isoDate(sp.from);
+  const crmTo = isoDate(sp.to);
+  const crmDateRange =
+    crmFrom && crmTo && crmFrom <= crmTo ? { from: crmFrom, to: crmTo } : undefined;
   // `כללי` (catch-all project) has no campaign-ID slug in Keys, so a
   // regular `project=כללי` filter hits 0 ALL CLIENTS rows and the iframe
   // renders empty. The Apps Script side (doGet / _iframeHandle_ /
@@ -676,6 +689,7 @@ export default async function ProjectOverviewPage({
             company={companyForDashboard}
             project={projectName}
             monthFilter={monthOverride}
+            dateRange={crmDateRange}
           />
         </Suspense>
       )}

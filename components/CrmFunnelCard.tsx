@@ -22,10 +22,53 @@ import CrmFunnelClient from "./CrmFunnelClient";
  * tab has zero matches — caller wraps in <Suspense fallback={null}> so
  * projects without CRM data silently collapse.
  */
+/** Today's calendar month "YYYY-MM" in Asia/Jerusalem. */
+function currentMonthIL(): string {
+  const p = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const y = p.find((x) => x.type === "year")?.value ?? "";
+  const m = p.find((x) => x.type === "month")?.value ?? "";
+  return `${y}-${m}`;
+}
+
+/** Split an inclusive ISO range [from,to] into per-calendar-month segments,
+ *  each carrying how many of its days fall inside the range and how many days
+ *  the whole month has — the basis for pro-rating fixed monthly cost. */
+function monthSegments(
+  from: string,
+  to: string,
+): { month: string; daysInRange: number; daysInMonth: number }[] {
+  const out: { month: string; daysInRange: number; daysInMonth: number }[] = [];
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return out;
+  let y = start.getUTCFullYear();
+  let m = start.getUTCMonth(); // 0-based
+  while (true) {
+    const monthStart = new Date(Date.UTC(y, m, 1));
+    const monthEnd = new Date(Date.UTC(y, m + 1, 0)); // last day of month
+    const daysInMonth = monthEnd.getUTCDate();
+    const segStart = monthStart > start ? monthStart : start;
+    const segEnd = monthEnd < end ? monthEnd : end;
+    const daysInRange =
+      Math.round((segEnd.getTime() - segStart.getTime()) / 86400000) + 1;
+    const month = `${y}-${String(m + 1).padStart(2, "0")}`;
+    if (daysInRange > 0) out.push({ month, daysInRange, daysInMonth });
+    if (y === end.getUTCFullYear() && m === end.getUTCMonth()) break;
+    m += 1;
+    if (m > 11) { m = 0; y += 1; }
+  }
+  return out;
+}
+
 export default async function CrmFunnelCard({
   company,
   project,
   monthFilter,
+  dateRange,
 }: {
   company: string;
   project: string;
@@ -33,6 +76,11 @@ export default async function CrmFunnelCard({
    *  matches whatever month the dashboard iframe is rendering. Empty
    *  means "no filter — show all rows we have." */
   monthFilter?: string;
+  /** Free from–to range (`?from=&to=`) — takes priority over monthFilter.
+   *  Channel cost is pro-rated to the selected days: past months from the
+   *  monthly חודשי spend (÷ days-in-month × days-in-range), the current
+   *  month from the daily budget (קצב יומי × days-in-range). */
+  dateRange?: { from: string; to: string };
 }) {
   // Default the cohort to the project's flight-date window (התחלה→סיום
   // from ALL CLIENTS) so the funnel matches the report header's date
@@ -47,7 +95,42 @@ export default async function CrmFunnelCard({
   // mode only; the month-rewind view (monthFilter) shows the funnel
   // without cost for now.
   let spendByChannel: Record<string, number> | undefined;
-  if (!monthFilter) {
+  if (dateRange?.from && dateRange?.to) {
+    // Free range — pro-rate fixed cost data to the selected days, month by
+    // month: a PAST month contributes its monthly חודשי spend ÷ days-in-month
+    // × days-of-that-month-in-range; the CURRENT month contributes the daily
+    // budget (קצב יומי) × days-in-range (חודשי isn't complete yet).
+    projectWindow = { from: dateRange.from, to: dateRange.to };
+    const curMonth = currentMonthIL();
+    const spend: Record<string, number> = {};
+    for (const seg of monthSegments(dateRange.from, dateRange.to)) {
+      if (seg.month === curMonth) {
+        const cur = await getAllClientsCurrentForProject({
+          subjectEmail: driveFolderOwner(),
+          project,
+        }).catch(() => []);
+        for (const r of cur) {
+          const ch = canonicalMediaChannel(r.channel);
+          if (ch && r.dailyRate)
+            spend[ch] = (spend[ch] || 0) + r.dailyRate * seg.daysInRange;
+        }
+      } else {
+        const mo = await getAllClientsMonthlyForProject({
+          subjectEmail: driveFolderOwner(),
+          project,
+          yearMonth: seg.month,
+        }).catch(() => []);
+        for (const r of mo) {
+          const ch = canonicalMediaChannel(r.channel);
+          if (ch && r.spend)
+            spend[ch] =
+              (spend[ch] || 0) +
+              (r.spend / Math.max(1, seg.daysInMonth)) * seg.daysInRange;
+        }
+      }
+    }
+    if (Object.keys(spend).length) spendByChannel = spend;
+  } else if (!monthFilter) {
     const acRows = await getAllClientsCurrentForProject({
       subjectEmail: driveFolderOwner(),
       project,
@@ -83,7 +166,9 @@ export default async function CrmFunnelCard({
   const funnel = await getCrmFunnelForProject({
     company,
     project,
-    monthFilter,
+    // A free range supersedes the month-rewind filter — the funnel then
+    // windows on projectWindow (the range) for leads/scheduled/held.
+    monthFilter: dateRange?.from && dateRange?.to ? undefined : monthFilter,
     projectWindow,
     spendByChannel,
   }).catch(() => null);

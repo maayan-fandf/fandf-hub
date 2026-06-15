@@ -49,35 +49,55 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  function onChange(value: string) {
+  const curFrom = searchParams?.get("from") ?? "";
+  const curTo = searchParams?.get("to") ?? "";
+  const rangeActive = !!(curFrom && curTo);
+
+  function pushParams(mutate: (p: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (value && /^\d{4}-\d{2}$/.test(value)) {
-      params.set("monthOverride", value);
-    } else {
-      params.delete("monthOverride");
-    }
+    mutate(params);
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
+
+  // Month select — clears any free range (mutually exclusive).
+  function onMonth(value: string) {
+    pushParams((p) => {
+      if (value && /^\d{4}-\d{2}$/.test(value)) p.set("monthOverride", value);
+      else p.delete("monthOverride");
+      p.delete("from");
+      p.delete("to");
+    });
+  }
+
+  // Free range — clears the month override.
+  function onRange(from: string, to: string) {
+    pushParams((p) => {
+      if (from) p.set("from", from); else p.delete("from");
+      if (to) p.set("to", to); else p.delete("to");
+      if (from || to) p.delete("monthOverride");
+    });
+  }
+
+  function clearAll() {
+    pushParams((p) => {
+      p.delete("monthOverride");
+      p.delete("from");
+      p.delete("to");
+    });
   }
 
   if (!months.length) return null;
 
   return (
     <div className="dash-month-picker" dir="rtl">
-      {/* Visual label removed — the picker now lives in the page header
-          next to "+ משימה חדשה" where horizontal real estate is at a
-          premium, and the dropdown's own first-option text + tooltip
-          carry the meaning. We keep a screen-reader-only label for a11y. */}
-      <label
-        htmlFor="dash-month-picker-select"
-        className="sr-only"
-      >
+      <label htmlFor="dash-month-picker-select" className="sr-only">
         סיכום חודשי
       </label>
       <select
         id="dash-month-picker-select"
         value={current}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onMonth(e.target.value)}
         title="צפה בכל הדשבורד עבור חודש בודד"
       >
         <option value="">📅 פריסה נוכחית</option>
@@ -87,11 +107,33 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
           </option>
         ))}
       </select>
-      {current ? (
+      {/* Free date-range — pro-rates the CRM funnel's channel cost to the
+          selected days. Both bounds needed to take effect. */}
+      <span
+        className={"dash-range" + (rangeActive ? " is-active" : "")}
+        title="טווח תאריכים חופשי למשפך ה-CRM — העלות מחושבת יחסית לימים שנבחרו"
+      >
+        <input
+          type="date"
+          aria-label="מתאריך"
+          value={curFrom}
+          max={curTo || undefined}
+          onChange={(e) => onRange(e.target.value, curTo)}
+        />
+        <span className="dash-range-sep">–</span>
+        <input
+          type="date"
+          aria-label="עד תאריך"
+          value={curTo}
+          min={curFrom || undefined}
+          onChange={(e) => onRange(curFrom, e.target.value)}
+        />
+      </span>
+      {current || curFrom || curTo ? (
         <button
           type="button"
           className="dash-month-picker-clear"
-          onClick={() => onChange("")}
+          onClick={clearAll}
           title="חזור לפריסה נוכחית"
           aria-label="חזור לפריסה נוכחית"
         >
