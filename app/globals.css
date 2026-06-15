@@ -4697,6 +4697,36 @@ a.section-link-icon:hover {
   border-color: color-mix(in srgb, #6366f1 55%, transparent);
 }
 .dash-dd-caret { color: var(--muted); font-size: 0.7em; }
+/* Pending cue — while the picked period's page re-render is in flight, the
+   trigger pulses with an accent ring + spinner + "מעדכן…" so it's clear the
+   choice registered and the dashboard is reloading. */
+.dash-dd-trigger.is-pending {
+  border-color: #6366f1;
+  background: color-mix(in srgb, #6366f1 10%, var(--surface));
+  cursor: progress;
+  animation: dashDdPulse 1.1s ease-in-out infinite;
+}
+@keyframes dashDdPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #6366f1 38%, transparent); }
+  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, #6366f1 0%, transparent); }
+}
+.dash-dd-updating {
+  color: #6366f1;
+  font-size: 0.78em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dash-dd-spin {
+  width: 0.82em;
+  height: 0.82em;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, #6366f1 30%, transparent);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  display: inline-block;
+  animation: dashDdSpin 0.7s linear infinite;
+}
+@keyframes dashDdSpin { to { transform: rotate(360deg); } }
 .dash-dd-panel {
   position: absolute;
   inset-inline-end: 0;
@@ -4745,21 +4775,13 @@ a.section-link-icon:hover {
   color: var(--muted);
   margin-bottom: 0.3rem;
 }
-.dash-dd-range-inputs { display: flex; align-items: center; gap: 0.3rem; }
-.dash-dd-rtl-hint {
-  display: block;
-  margin-top: 0.3rem;
-  font-size: 0.68rem;
-  color: var(--muted);
-  letter-spacing: 0.01em;
-}
-.dash-range-sep { font-weight: 700; }
-/* The two calendar DatePickers (same component as the new-task page) sit in
-   the flex row; each takes equal width and shows a compact trigger. */
-.dash-dd-range-inputs .date-picker { flex: 1; min-width: 0; }
-.dash-dd-range-inputs .date-range-trigger {
-  font-size: 0.76rem;
-  padding: 0.2rem 0.34rem;
+/* Single-popover range calendar (same DateRangePicker as the /tasks filter):
+   one trigger, click start→end in one calendar. Full width inside the range
+   section; its popover escapes the panel (overflow:visible above). */
+.dash-dd-range .filter-date-range { display: block; width: 100%; }
+.dash-dd-range .date-range-trigger {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.4rem;
   border-radius: 0.3rem;
   background: var(--surface);
 }

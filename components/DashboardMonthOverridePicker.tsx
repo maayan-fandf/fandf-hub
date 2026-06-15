@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import DatePicker from "./DatePicker";
+import { useEffect, useRef, useState, useTransition } from "react";
+import DateRangePicker from "./DateRangePicker";
 
 type Props = {
   /** Currently-applied month-override, mirrored from `?monthOverride=` in
@@ -61,11 +61,24 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
   const curTo = searchParams?.get("to") ?? "";
   const rangeActive = !!(curFrom && curTo);
 
-  function pushParams(mutate: (p: URLSearchParams) => void) {
+  // Re-rendering the project page server-side (sheet reads + iframe rebuild)
+  // takes several seconds, so wrap every navigation in a transition. `isPending`
+  // drives the "מעדכן…" cue on the trigger so the choice clearly registered and
+  // the user knows the page is reloading with the new period. `pendingLabel`
+  // shows the just-picked period immediately (the URL — and thus the derived
+  // label below — only updates once the transition resolves).
+  const [isPending, startTransition] = useTransition();
+  const [pendingLabel, setPendingLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isPending) setPendingLabel(null);
+  }, [isPending]);
+
+  function pushParams(mutate: (p: URLSearchParams) => void, label: string) {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     mutate(params);
     const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+    setPendingLabel(label);
+    startTransition(() => router.push(qs ? `${pathname}?${qs}` : pathname));
   }
 
   // Month select — clears any free range (mutually exclusive).
@@ -75,23 +88,18 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
       else p.delete("monthOverride");
       p.delete("from");
       p.delete("to");
-    });
+    }, value ? formatMonthLabel(value) : "פריסה נוכחית");
   }
 
-  // Free range — clears the month override. The two single-date pickers have
-  // no native min/max coupling, so guard here: if both bounds are set and
-  // inverted, swap them so the applied range is always start ≤ end.
+  // Free range — clears the month override. DateRangePicker fires onChange only
+  // for a COMPLETE range (both bounds, already start ≤ end) or a clear (both
+  // empty), so the half-range race that silently dropped one bound can't happen.
   function onRange(from: string, to: string) {
-    if (from && to && from > to) {
-      const t = from;
-      from = to;
-      to = t;
-    }
     pushParams((p) => {
       if (from) p.set("from", from); else p.delete("from");
       if (to) p.set("to", to); else p.delete("to");
       if (from || to) p.delete("monthOverride");
-    });
+    }, from && to ? `${ddmm(from)}–${ddmm(to)}` : "פריסה נוכחית");
   }
 
   function clearAll() {
@@ -99,7 +107,7 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
       p.delete("monthOverride");
       p.delete("from");
       p.delete("to");
-    });
+    }, "פריסה נוכחית");
   }
 
   // Custom dropdown (a native <select> can't host the date inputs the owner
@@ -122,24 +130,41 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
 
   if (!months.length) return null;
 
-  const triggerLabel = rangeActive
+  const appliedLabel = rangeActive
     ? `${ddmm(curFrom)}–${ddmm(curTo)}`
     : current
       ? formatMonthLabel(current)
       : "פריסה נוכחית";
+  // While a navigation is in flight show the just-picked period, not the URL's
+  // (stale until the transition resolves).
+  const triggerLabel = isPending && pendingLabel ? pendingLabel : appliedLabel;
 
   return (
     <div className="dash-month-picker" dir="rtl" ref={ref}>
       <button
         type="button"
-        className={"dash-dd-trigger" + (current || rangeActive ? " is-set" : "")}
+        className={
+          "dash-dd-trigger" +
+          (current || rangeActive ? " is-set" : "") +
+          (isPending ? " is-pending" : "")
+        }
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-busy={isPending || undefined}
         title="בחר חודש או טווח תאריכים חופשי"
       >
-        📅 {triggerLabel}
-        <span className="dash-dd-caret" aria-hidden>▾</span>
+        {isPending ? (
+          <span className="dash-dd-spin" aria-hidden />
+        ) : (
+          <span aria-hidden>📅</span>
+        )}{" "}
+        {triggerLabel}
+        {isPending ? (
+          <span className="dash-dd-updating">· מעדכן…</span>
+        ) : (
+          <span className="dash-dd-caret" aria-hidden>▾</span>
+        )}
       </button>
       {open ? (
         <div className="dash-dd-panel" role="listbox">
@@ -173,32 +198,23 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
           </div>
           {/* Nested free range — pro-rates the CRM funnel's channel cost to
               the selected days (programmatic channels use actual spend). Both
-              bounds needed to take effect. Uses the same calendar DatePicker
-              as the new-task page (controlled value/onChange → URL params). */}
+              bounds needed to take effect. Single-popover range calendar (same
+              DateRangePicker as the /tasks filter): click start then end in one
+              calendar, applied atomically via onChange → URL params. `key`
+              re-seeds it from the URL after each apply / external clear. */}
           <div className="dash-dd-sep" />
           <div className={"dash-dd-range" + (rangeActive ? " is-active" : "")}>
             <span className="dash-dd-range-title">🗓️ טווח מותאם</span>
-            <div
-              className="dash-dd-range-inputs"
-              title="הטווח נקרא מימין לשמאל: מימין = התחלה, משמאל = סיום"
-            >
-              <DatePicker
-                value={curFrom}
-                onChange={(iso) => onRange(iso, curTo)}
-                placeholder="התחלה"
-                ariaLabel="מתאריך (התחלה)"
-              />
-              <span className="dash-range-sep" aria-hidden>←</span>
-              <DatePicker
-                value={curTo}
-                onChange={(iso) => onRange(curFrom, iso)}
-                placeholder="סיום"
-                ariaLabel="עד תאריך (סיום)"
-              />
-            </div>
-            <span className="dash-dd-rtl-hint" aria-hidden>
-              ← מימין: התחלה · משמאל: סיום
-            </span>
+            <DateRangePicker
+              key={`${curFrom}|${curTo}`}
+              initialFrom={curFrom}
+              initialTo={curTo}
+              placeholder="בחר/י טווח תאריכים"
+              onChange={(from, to) => {
+                onRange(from, to);
+                if (from && to) setOpen(false);
+              }}
+            />
             {current || curFrom || curTo ? (
               <button
                 type="button"

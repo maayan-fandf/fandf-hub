@@ -33,13 +33,22 @@ export default function DateRangePicker({
   initialFrom,
   initialTo,
   label,
+  onChange,
+  placeholder,
 }: {
-  fromName: string;
-  toName: string;
+  /** Form mode: hidden-input name carried into a surrounding <form> GET. */
+  fromName?: string;
+  toName?: string;
   initialFrom: string;
   initialTo: string;
-  /** Visible label above the trigger (e.g. "תאריך מבוקש"). */
-  label: string;
+  /** Visible label above the trigger (e.g. "תאריך מבוקש"). Omit to render none. */
+  label?: string;
+  /** Controlled mode: fires when a COMPLETE range is picked (both bounds) or
+   *  cleared — lets a router-driven owner apply the range without a form
+   *  submit. Picking just the start does NOT fire (avoids a half-range nav). */
+  onChange?: (from: string, to: string) => void;
+  /** Trigger text when no range is set. Defaults to "כל התאריכים". */
+  placeholder?: string;
 }) {
   const [from, setFrom] = useState<string>(initialFrom);
   const [to, setTo] = useState<string>(initialTo);
@@ -83,25 +92,26 @@ export default function DateRangePicker({
 
   function pick(iso: string) {
     if (!from || (from && to)) {
-      // Start a fresh range.
+      // Start a fresh range — don't fire onChange yet (half a range).
       setFrom(iso);
       setTo("");
       return;
     }
     // We have `from` but no `to` — set the end. Auto-swap if user
-    // clicked an earlier date than start.
-    if (iso < from) {
-      setTo(from);
-      setFrom(iso);
-    } else {
-      setTo(iso);
-    }
+    // clicked an earlier date than start. The range is now complete, so
+    // fire onChange with the resolved (always start ≤ end) bounds.
+    let nf = from, nt = iso;
+    if (iso < from) { nf = iso; nt = from; }
+    setFrom(nf);
+    setTo(nt);
+    onChange?.(nf, nt);
   }
 
   function clear() {
     setFrom("");
     setTo("");
     setHoverDay("");
+    onChange?.("", "");
   }
 
   function shiftMonth(delta: number) {
@@ -115,16 +125,17 @@ export default function DateRangePicker({
   const rangeEnd = to || (from && hoverDay && hoverDay > from ? hoverDay : "");
 
   const triggerLabel = !from && !to
-    ? "כל התאריכים"
+    ? (placeholder ?? "כל התאריכים")
     : `${from || "—"}  עד  ${to || "—"}`;
 
   return (
     <label className="filter-date-range">
       {label}
       {/* Hidden inputs carry the values into the surrounding form's GET
-          submit. Name attributes match the URL params the server reads. */}
-      <input type="hidden" name={fromName} value={from} />
-      <input type="hidden" name={toName} value={to} />
+          submit (form mode only). Name attributes match the URL params the
+          server reads. Omitted in controlled (onChange) mode. */}
+      {fromName ? <input type="hidden" name={fromName} value={from} /> : null}
+      {toName ? <input type="hidden" name={toName} value={to} /> : null}
       <button
         ref={triggerRef}
         type="button"
