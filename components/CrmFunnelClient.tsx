@@ -707,6 +707,8 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                   <th>הוצאה</th>
                   <th>לידים</th>
                   <th>עלות לליד</th>
+                  <th>תיאומי פגישה</th>
+                  <th>עלות לתיאום</th>
                   <th>פגישות</th>
                   <th>עלות לפגישה</th>
                 </tr>
@@ -728,6 +730,15 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                         }}
                       >
                         {c.leads > 0 ? fmtILS(c.cpl) : "—"}
+                      </td>
+                      <td>{fmtInt(c.scheduled)}</td>
+                      <td
+                        style={{
+                          color: costMetricColor("cps", c.cps) ?? undefined,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {c.scheduled > 0 ? fmtILS(c.cps) : "—"}
                       </td>
                       <td>{fmtInt(c.meetings)}</td>
                       <td

@@ -4740,6 +4740,14 @@ a.section-link-icon:hover {
   margin-bottom: 0.3rem;
 }
 .dash-dd-range-inputs { display: flex; align-items: center; gap: 0.3rem; }
+.dash-dd-rtl-hint {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+.dash-range-sep { font-weight: 700; }
 .dash-dd-range-inputs input[type="date"] {
   font-size: 0.76rem;
   font-family: inherit;

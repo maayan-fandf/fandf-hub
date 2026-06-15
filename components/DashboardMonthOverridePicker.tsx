@@ -163,23 +163,29 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
           <div className="dash-dd-sep" />
           <div className={"dash-dd-range" + (rangeActive ? " is-active" : "")}>
             <span className="dash-dd-range-title">🗓️ טווח מותאם</span>
-            <div className="dash-dd-range-inputs">
+            <div
+              className="dash-dd-range-inputs"
+              title="הטווח נקרא מימין לשמאל: מימין = התחלה, משמאל = סיום"
+            >
               <input
                 type="date"
-                aria-label="מתאריך"
+                aria-label="מתאריך (התחלה)"
                 value={curFrom}
                 max={curTo || undefined}
                 onChange={(e) => onRange(e.target.value, curTo)}
               />
-              <span className="dash-range-sep">–</span>
+              <span className="dash-range-sep" aria-hidden>←</span>
               <input
                 type="date"
-                aria-label="עד תאריך"
+                aria-label="עד תאריך (סיום)"
                 value={curTo}
                 min={curFrom || undefined}
                 onChange={(e) => onRange(curFrom, e.target.value)}
               />
             </div>
+            <span className="dash-dd-rtl-hint" aria-hidden>
+              ← מימין: התחלה · משמאל: סיום
+            </span>
             {current || curFrom || curTo ? (
               <button
                 type="button"
