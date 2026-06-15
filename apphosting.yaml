@@ -149,18 +149,17 @@ env:
     availability:
       - RUNTIME
 
-  # Canary allowlist — BASE64 of a comma-separated list of Keys.CRM names
-  # (base64 because the env pipeline corrupts non-ASCII Hebrew → "?"). While
-  # set, enrichment/warehouse-funnel runs ONLY for those projects; EMPTY =
-  # ALL bmby projects (the wh>=sheet routing guard then decides per project,
-  # so incomplete-feed projects stay on the Sheet automatically).
-  # 2026-06-15: cleared to go portfolio-wide after the kenko/נתיבות canary
-  # verified good. To re-narrow: base64 a list, e.g.
-  #   node -e "console.log(Buffer.from('נתיבות,רעננה קנקו').toString('base64'))"
-  - variable: SUPABASE_CRM_PROJECTS
-    value: ""
-    availability:
-      - RUNTIME
+  # Canary allowlist (SUPABASE_CRM_PROJECTS) — when SET, enrichment +
+  # warehouse-funnel run ONLY for those Keys.CRM names; when UNSET (this
+  # variable omitted) = ALL bmby projects, with the wh>=sheet routing guard
+  # deciding per project (incomplete-feed projects stay on the Sheet).
+  # 2026-06-15: REMOVED to go portfolio-wide after the kenko/נתיבות canary.
+  # ⚠️ App Hosting rejects `value: ""` ("either 'value' or 'secret' is
+  # required") — so to RE-NARROW, re-add the variable with a BASE64 value
+  # (the env pipeline mangles non-ASCII Hebrew):
+  #   - variable: SUPABASE_CRM_PROJECTS
+  #     value: "<base64>"   # node -e "console.log(Buffer.from('נתיבות,רעננה קנקו').toString('base64'))"
+  #     availability: [RUNTIME]
 
   # Kill-switch for the קמפיינים → תקציבים inline budget editor. When "1"
   # the /api/campaigns/budget route may write column G (תקציב חודשי
