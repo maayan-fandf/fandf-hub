@@ -1619,11 +1619,20 @@ export async function getCrmFunnelForProject(args: {
         const sheetFunnel = funnel;
         const wh = await computeBmbyFunnelFromWarehouse(crmAccount, window);
         if (wh && wh.leads > 0 && (!sheetFunnel || wh.leads >= sheetFunnel.leads)) {
-          // The warehouse funnel is window-scoped, but the stale-leads
-          // alert (morning feed) needs project-wide / all-time coverage.
-          // Preserve the Sheet funnel's stale tally — it already scanned
-          // every project row, cross-period — so the alert stays accurate.
-          if (sheetFunnel) wh.staleLeads = sheetFunnel.staleLeads;
+          if (sheetFunnel) {
+            // The warehouse funnel is window-scoped, but the stale-leads
+            // alert (morning feed) needs project-wide / all-time coverage —
+            // preserve the Sheet's stale tally (it scanned every row).
+            wh.staleLeads = sheetFunnel.staleLeads;
+            // Objections are barely populated in the warehouse leads view
+            // (~4% of rows overall, 0% for many projects incl. kenko/נתיבות),
+            // but the Sheet's התנגדויות column is rich — carry the Sheet's
+            // objection breakdown over so the objections section keeps
+            // working. (Source keys are the same fb/yad2/… family, so the
+            // chip-filtered cross-tab still lines up for the common sources.)
+            wh.sourceMatrices.objectionBySource =
+              sheetFunnel.sourceMatrices.objectionBySource;
+          }
           funnel = wh;
         }
       } catch {
