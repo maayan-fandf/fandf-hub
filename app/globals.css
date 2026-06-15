@@ -4703,13 +4703,19 @@ a.section-link-icon:hover {
   top: calc(100% + 4px);
   z-index: 60;
   min-width: 14rem;
-  max-height: 60vh;
-  overflow-y: auto;
+  /* overflow:visible (not auto) so the nested DatePicker calendar popovers
+     in the range section can escape the panel box. The month list scrolls
+     in its own .dash-dd-scroll wrapper instead. */
+  overflow: visible;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   padding: 0.3rem;
+}
+.dash-dd-scroll {
+  max-height: 46vh;
+  overflow-y: auto;
 }
 .dash-dd-item {
   display: block;
@@ -4748,17 +4754,14 @@ a.section-link-icon:hover {
   letter-spacing: 0.01em;
 }
 .dash-range-sep { font-weight: 700; }
-.dash-dd-range-inputs input[type="date"] {
+/* The two calendar DatePickers (same component as the new-task page) sit in
+   the flex row; each takes equal width and shows a compact trigger. */
+.dash-dd-range-inputs .date-picker { flex: 1; min-width: 0; }
+.dash-dd-range-inputs .date-range-trigger {
   font-size: 0.76rem;
-  font-family: inherit;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  padding: 0.2rem 0.34rem;
   border-radius: 0.3rem;
-  padding: 0.18rem 0.3rem;
-  cursor: pointer;
-  min-width: 0;
-  flex: 1;
+  background: var(--surface);
 }
 .dash-range-sep { color: var(--muted); }
 .dash-dd-clear {

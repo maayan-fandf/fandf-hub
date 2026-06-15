@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import DatePicker from "./DatePicker";
 
 type Props = {
   /** Currently-applied month-override, mirrored from `?monthOverride=` in
@@ -77,8 +78,15 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
     });
   }
 
-  // Free range — clears the month override.
+  // Free range — clears the month override. The two single-date pickers have
+  // no native min/max coupling, so guard here: if both bounds are set and
+  // inverted, swap them so the applied range is always start ≤ end.
   function onRange(from: string, to: string) {
+    if (from && to && from > to) {
+      const t = from;
+      from = to;
+      to = t;
+    }
     pushParams((p) => {
       if (from) p.set("from", from); else p.delete("from");
       if (to) p.set("to", to); else p.delete("to");
@@ -135,31 +143,38 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
       </button>
       {open ? (
         <div className="dash-dd-panel" role="listbox">
-          <button
-            type="button"
-            className={"dash-dd-item" + (!current && !rangeActive ? " is-sel" : "")}
-            onClick={() => {
-              onMonth("");
-              setOpen(false);
-            }}
-          >
-            📅 פריסה נוכחית
-          </button>
-          {months.map((mk) => (
+          {/* Month buttons scroll; the range section below stays outside the
+              scroll area so the date-picker calendar popovers can overflow
+              without being clipped by the panel's overflow. */}
+          <div className="dash-dd-scroll">
             <button
-              key={mk}
               type="button"
-              className={"dash-dd-item" + (current === mk ? " is-sel" : "")}
+              className={"dash-dd-item" + (!current && !rangeActive ? " is-sel" : "")}
               onClick={() => {
-                onMonth(mk);
+                onMonth("");
                 setOpen(false);
               }}
             >
-              📅 {formatMonthLabel(mk)}
+              📅 פריסה נוכחית
             </button>
-          ))}
+            {months.map((mk) => (
+              <button
+                key={mk}
+                type="button"
+                className={"dash-dd-item" + (current === mk ? " is-sel" : "")}
+                onClick={() => {
+                  onMonth(mk);
+                  setOpen(false);
+                }}
+              >
+                📅 {formatMonthLabel(mk)}
+              </button>
+            ))}
+          </div>
           {/* Nested free range — pro-rates the CRM funnel's channel cost to
-              the selected days. Both bounds needed to take effect. */}
+              the selected days (programmatic channels use actual spend). Both
+              bounds needed to take effect. Uses the same calendar DatePicker
+              as the new-task page (controlled value/onChange → URL params). */}
           <div className="dash-dd-sep" />
           <div className={"dash-dd-range" + (rangeActive ? " is-active" : "")}>
             <span className="dash-dd-range-title">🗓️ טווח מותאם</span>
@@ -167,20 +182,18 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
               className="dash-dd-range-inputs"
               title="הטווח נקרא מימין לשמאל: מימין = התחלה, משמאל = סיום"
             >
-              <input
-                type="date"
-                aria-label="מתאריך (התחלה)"
+              <DatePicker
                 value={curFrom}
-                max={curTo || undefined}
-                onChange={(e) => onRange(e.target.value, curTo)}
+                onChange={(iso) => onRange(iso, curTo)}
+                placeholder="התחלה"
+                ariaLabel="מתאריך (התחלה)"
               />
               <span className="dash-range-sep" aria-hidden>←</span>
-              <input
-                type="date"
-                aria-label="עד תאריך (סיום)"
+              <DatePicker
                 value={curTo}
-                min={curFrom || undefined}
-                onChange={(e) => onRange(curFrom, e.target.value)}
+                onChange={(iso) => onRange(curFrom, iso)}
+                placeholder="סיום"
+                ariaLabel="עד תאריך (סיום)"
               />
             </div>
             <span className="dash-dd-rtl-hint" aria-hidden>
