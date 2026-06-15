@@ -151,11 +151,14 @@ env:
 
   # Canary allowlist — BASE64 of a comma-separated list of Keys.CRM names
   # (base64 because the env pipeline corrupts non-ASCII Hebrew → "?"). While
-  # set, enrichment runs ONLY for these projects. Clear the value (value: "")
-  # + redeploy to enable all bmby projects. Current = "נתיבות,רעננה קנקו".
-  # Regenerate: node -e "console.log(Buffer.from('a,b').toString('base64'))"
+  # set, enrichment/warehouse-funnel runs ONLY for those projects; EMPTY =
+  # ALL bmby projects (the wh>=sheet routing guard then decides per project,
+  # so incomplete-feed projects stay on the Sheet automatically).
+  # 2026-06-15: cleared to go portfolio-wide after the kenko/נתיבות canary
+  # verified good. To re-narrow: base64 a list, e.g.
+  #   node -e "console.log(Buffer.from('נתיבות,רעננה קנקו').toString('base64'))"
   - variable: SUPABASE_CRM_PROJECTS
-    value: "16DXqteZ15HXldeqLNeo16LXoNeg15Qg16fXoNen15U="
+    value: ""
     availability:
       - RUNTIME
 
