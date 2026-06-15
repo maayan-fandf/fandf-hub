@@ -112,3 +112,32 @@ export async function supabaseRows<T = Record<string, unknown>>(
     return [];
   }
 }
+
+/** Like supabaseRows but follows PostgREST pagination (Range headers)
+ *  until the result set is exhausted — for queries that can exceed the
+ *  1000-row default cap (e.g. a project's full meeting history or a
+ *  high-volume project's monthly leads). `maxRows` is a safety valve so a
+ *  runaway filter can't page forever. Returns whatever it has on error. */
+export async function supabaseRowsAll<T = Record<string, unknown>>(
+  path: string,
+  opts?: { pageSize?: number; maxRows?: number },
+): Promise<T[]> {
+  const pageSize = opts?.pageSize ?? 1000;
+  const maxRows = opts?.maxRows ?? 20000;
+  const out: T[] = [];
+  try {
+    for (let start = 0; start < maxRows; start += pageSize) {
+      const res = await supabaseFetch(path, {
+        extraHeaders: { Range: `${start}-${start + pageSize - 1}` },
+      });
+      if (!res.ok) break;
+      const j = await res.json();
+      if (!Array.isArray(j) || j.length === 0) break;
+      out.push(...(j as T[]));
+      if (j.length < pageSize) break;
+    }
+  } catch {
+    /* return what we have */
+  }
+  return out;
+}

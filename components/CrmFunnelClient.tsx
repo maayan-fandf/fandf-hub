@@ -401,6 +401,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           >
             {funnel.platform.toUpperCase()}
           </span>
+          {funnel.dataSource === "warehouse" ? (
+            <span
+              className="crm-source-badge"
+              title="הנתונים נמשכים ישירות ממסד הנתונים של BMBY (מסע הלקוח — אירועים), לא מהארכיון בגיליון. שלם ועדכני יותר: לידים ברמת אירוע, שיוך מקור מלא ופגישות מאומתות."
+            >
+              ⚡ BMBY ישיר
+            </span>
+          ) : null}
         </h2>
         <div className="section-head-actions">
           {funnel.monthFilter ? (

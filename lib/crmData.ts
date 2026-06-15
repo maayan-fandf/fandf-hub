@@ -34,7 +34,12 @@ import { sheetsClient } from "@/lib/sa";
 import { driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
 import { computeCrmEnrichment, type CrmEnrichment } from "./crmEnrichment";
-import { useSupabaseCrmEnrichment, supabaseCrmProjectAllowed } from "./supabase";
+import {
+  useSupabaseCrmEnrichment,
+  supabaseCrmProjectAllowed,
+  supabaseConfigured,
+  supabaseRowsAll,
+} from "./supabase";
 
 // Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
 // previous "Consolidated" sheet (1YOL2Rry…) to the now-canonical
@@ -184,6 +189,13 @@ export type CrmFunnel = {
    *  or a fetch failed: the base Sheet funnel is always intact. Whole-window
    *  figure (NOT chip-filtered). */
   supabaseEnrichment?: CrmEnrichment;
+  /** Which backend produced this funnel: "sheet" (the ארכיון Google Sheet —
+   *  the default / fallback) or "warehouse" (the Supabase BMBY journey,
+   *  used for flag-allowed bmby projects when it's at least as complete as
+   *  the Sheet on lead count). Drives the small source badge; absent ⇒
+   *  "sheet". When "warehouse", the funnel's own `meetings` IS the
+   *  authoritative held count, so the separate held strip is suppressed. */
+  dataSource?: "sheet" | "warehouse";
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -554,6 +566,24 @@ async function computeBmbyFunnel(
   window: DateWindow | null,
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readBmby(subjectEmail);
+  const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
+  if (funnel) funnel.dataSource = "sheet";
+  return funnel;
+}
+
+/** Pure BMBY funnel aggregation over already-loaded rows. Shared by the
+ *  Sheet path (computeBmbyFunnel) and the warehouse path
+ *  (computeBmbyFunnelFromWarehouse, which feeds it synthetic rows in the
+ *  same column layout). Keeping it row-source-agnostic means the source
+ *  pies, status funnel, objections matrix, daily trend and stale-leads
+ *  detection are all built by ONE code path — no duplication, guaranteed
+ *  shape parity between the two backends. */
+function aggregateBmbyFunnel(
+  headers: string[],
+  rows: unknown[][],
+  crmAccount: string,
+  window: DateWindow | null,
+): CrmFunnel | null {
   if (!rows.length) return null;
   const iEntry = headers.indexOf("תאריך כניסה");
   const iStatus = headers.indexOf("סטאטוס");
@@ -777,6 +807,157 @@ async function computeBmbyFunnel(
     monthFilter: window?.kind === "month" ? window.month : "",
     windowLabel: window?.kind === "range" ? window.label : "",
   };
+}
+
+/* ── BMBY funnel from the Supabase warehouse (journey events) ──────────
+ * Produces the SAME CrmFunnel as the Sheet path by synthesizing one row
+ * per warehouse lead (cohort = leads created in the window) carrying the
+ * columns aggregateBmbyFunnel reads, then running the identical
+ * aggregation. A lead's meeting state is joined from v_bmby_journey_meetings
+ * by client_id: a HELD event → "פגישה התקיימה" (counts scheduled+held); any
+ * other meeting event → "נקבעה פגישה" / "פגישה בוטלה" (scheduled only);
+ * otherwise the lead's client_status maps to an early/late funnel stage.
+ * Source token = media_source_clean (same token family the Sheet uses, so
+ * the cost-join canonicalizer and the source chips work unchanged).
+ *
+ * Returns null — so the caller keeps the Sheet funnel — on: no key, no
+ * window (unbounded fetch), unknown project, or zero in-window leads.
+ *
+ * NOTE: held counts reflect the warehouse's CONFIRMED outcomes, which are
+ * logged retrospectively, so current-month held is naturally low and grows
+ * through the month (see lib/crmEnrichment.ts). Stale-leads detection here
+ * is window-scoped (the Sheet path sees all-time rows) — acceptable for v1. */
+async function computeBmbyFunnelFromWarehouse(
+  crmAccount: string,
+  window: DateWindow | null,
+): Promise<CrmFunnel | null> {
+  if (!supabaseConfigured() || !window) return null;
+  // Window bounds [from, toExcl).
+  let from = "";
+  let toExcl = "";
+  if (window.kind === "month") {
+    from = `${window.month}-01`;
+    const [y, mo] = window.month.split("-").map(Number);
+    toExcl =
+      mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+  } else {
+    from = window.from;
+    const d = new Date(`${window.to}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    toExcl = d.toISOString().slice(0, 10);
+  }
+  // Resolve numeric project_id (the leads view keys on it).
+  const proj = await supabaseRowsAll<{ project_id: number }>(
+    `v_report_v2_bmby_projects?select=project_id&project_name=eq.${encodeURIComponent(crmAccount)}`,
+  );
+  const pid = proj[0]?.project_id;
+  if (pid == null) return null;
+  // Window-cohort leads.
+  const leads = await supabaseRowsAll<{
+    client_id: string | null;
+    lead_created_at: string | null;
+    handled_at: string | null;
+    is_handled: boolean | null;
+    media_source_clean: string | null;
+    objections: string | null;
+    client_status: string | null;
+    pipeline: string | null;
+  }>(
+    `v_bmby_leads_bucketed?project_id=eq.${pid}` +
+      `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
+      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,media_source_clean,objections,client_status,pipeline` +
+      // Stable total order on the PK — Range pagination is non-deterministic
+      // without an explicit ORDER BY (rows could repeat/drop past 1000).
+      `&order=lead_id.asc`,
+  );
+  if (!leads.length) return null;
+  // Project journey meetings (all dates) → per-client meeting state.
+  const meetings = await supabaseRowsAll<{
+    client_id: string | null;
+    appointment_outcome: string | null;
+  }>(
+    `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(crmAccount)}` +
+      `&select=client_id,appointment_outcome&order=meeting_id.asc`,
+  );
+  const heldClients = new Set<string>();
+  const anyClients = new Set<string>();
+  const nonCanceledClients = new Set<string>();
+  for (const m of meetings) {
+    const c = String(m.client_id ?? "");
+    if (!c) continue;
+    anyClients.add(c);
+    if (m.appointment_outcome === "held") heldClients.add(c);
+    if (m.appointment_outcome !== "canceled") nonCanceledClients.add(c);
+  }
+  // Synthesize rows in the BMBY column layout aggregateBmbyFunnel reads.
+  const headers = [
+    "פרויקט",
+    "תאריך כניסה",
+    "מקור הגעה",
+    "סטאטוס",
+    "התנגדויות",
+    "תאריך קשר",
+  ];
+  // A client can own MULTIPLE in-window lead rows (return leads). Each row
+  // is a real lead (counted), but the client's meeting is a single event —
+  // so stamp the meeting status on only the FIRST row per client; later
+  // return-lead rows get a neutral in-progress status. Otherwise scheduled/
+  // held (and meetingRate) over-count by the return-lead multiple. Leads
+  // are ordered by lead_id, so "first" is deterministic.
+  const meetingStamped = new Set<string>();
+  const rows: unknown[][] = leads.map((l) => {
+    const c = String(l.client_id ?? "");
+    const hasMeeting = !!c && anyClients.has(c);
+    let status: string;
+    if (hasMeeting && !meetingStamped.has(c)) {
+      meetingStamped.add(c);
+      status = heldClients.has(c)
+        ? "פגישה התקיימה"
+        : nonCanceledClients.has(c)
+          ? "נקבעה פגישה"
+          : "פגישה בוטלה";
+    } else if (hasMeeting) {
+      // return-lead row for an already-counted client — don't re-count the
+      // meeting; show as in-progress so the status funnel still places it.
+      status = l.is_handled ? "בטיפול" : "ליד";
+    } else {
+      status = mapWarehouseStatus(l.client_status, l.pipeline, l.is_handled);
+    }
+    // Any lead with a meeting is contacted by definition (the is_handled
+    // flag occasionally lags), so contacted >= scheduled >= held holds.
+    const contactDate =
+      l.is_handled || hasMeeting
+        ? (l.handled_at || l.lead_created_at || "").slice(0, 10)
+        : "";
+    return [
+      crmAccount,
+      (l.lead_created_at || "").slice(0, 10),
+      (l.media_source_clean || "").trim(),
+      status,
+      (l.objections || "").trim(),
+      contactDate,
+    ];
+  });
+  const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
+  if (funnel) funnel.dataSource = "warehouse";
+  return funnel;
+}
+
+/** Map a warehouse lead with NO meeting event to a BMBY funnel status
+ *  (one of BMBY_STATUS_FUNNEL_ORDER) so it slots into the status funnel. */
+function mapWarehouseStatus(
+  clientStatus: string | null,
+  pipeline: string | null,
+  isHandled: boolean | null,
+): string {
+  const cs = String(clientStatus ?? "").trim();
+  if (cs === "חוזה") return "חוזה";
+  if (cs.includes("פגישה")) return "נקבעה פגישה"; // status says meeting, no journey event yet
+  if (cs === "טלפון") return "טלפון";
+  if (cs === "אינטרנט") return "אינטרנט";
+  if (cs === "ליד") return "ליד";
+  if (String(pipeline ?? "").trim() === "לא רלוונטי") return "לא רלוונטי";
+  return isHandled ? "בטיפול" : "ליד";
 }
 
 /* ── Sehel funnel ──────────────────────────────────────────────────── */
@@ -1428,6 +1609,27 @@ export async function getCrmFunnelForProject(args: {
   let funnel: CrmFunnel | null;
   if (platform === "bmby") {
     funnel = await computeBmbyFunnel(driveFolderOwner(), crmAccount, window);
+    // Prefer the warehouse journey when it's flag-allowed for this project
+    // AND at least as complete as the Sheet on lead count (kenko, נתיבות…
+    // win; channel-scoped / dormant / not-onboarded projects fall back to
+    // the Sheet, which stays the full-CRM safety net). Per-project,
+    // per-window, automatic. Never throws to the caller.
+    if (useSupabaseCrmEnrichment() && supabaseCrmProjectAllowed(crmAccount)) {
+      try {
+        const sheetFunnel = funnel;
+        const wh = await computeBmbyFunnelFromWarehouse(crmAccount, window);
+        if (wh && wh.leads > 0 && (!sheetFunnel || wh.leads >= sheetFunnel.leads)) {
+          // The warehouse funnel is window-scoped, but the stale-leads
+          // alert (morning feed) needs project-wide / all-time coverage.
+          // Preserve the Sheet funnel's stale tally — it already scanned
+          // every project row, cross-period — so the alert stays accurate.
+          if (sheetFunnel) wh.staleLeads = sheetFunnel.staleLeads;
+          funnel = wh;
+        }
+      } catch {
+        /* keep the Sheet funnel */
+      }
+    }
   } else if (platform === "salesforce") {
     funnel = await computeSalesforceFunnel(driveFolderOwner(), crmAccount, window);
   } else {
@@ -1445,6 +1647,7 @@ export async function getCrmFunnelForProject(args: {
   if (
     funnel &&
     platform === "bmby" &&
+    funnel.dataSource !== "warehouse" &&
     useSupabaseCrmEnrichment() &&
     supabaseCrmProjectAllowed(crmAccount)
   ) {

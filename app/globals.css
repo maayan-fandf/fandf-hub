@@ -6048,6 +6048,22 @@ html:not([data-theme="dark"]) .project-section-crm .crm-block {
   background: var(--surface-hi, #f3f4f6);
   vertical-align: 0.18em;
 }
+/* Warehouse-sourced funnel marker — sits next to the platform badge when
+   the funnel is built from the BMBY journey (Supabase) rather than the
+   Sheet archive. Amber accent so it reads as "live/direct". */
+.crm-source-badge {
+  display: inline-block;
+  margin-inline-start: 0.35rem;
+  padding: 0.06rem 0.45rem;
+  font-size: 0.65em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid color-mix(in srgb, #f59e0b 45%, transparent);
+  border-radius: 999px;
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  vertical-align: 0.18em;
+}
 .crm-date-range {
   font-size: 0.78em;
   color: var(--muted);
