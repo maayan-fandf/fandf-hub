@@ -981,24 +981,24 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                 <thead>
                   <tr>
                     <th>מודעה</th>
-                    <th>לידים</th>
-                    <th>תואמו</th>
-                    <th>פגישות</th>
-                    <th title="עלות לליד">CPL</th>
-                    <th title="עלות לתיאום פגישה">CPS</th>
-                    <th title="עלות לפגישה שהתקיימה">CPM</th>
+                    <th className="m-leads">לידים</th>
+                    <th className="m-sched">תואמו</th>
+                    <th className="m-held">פגישות</th>
+                    <th className="m-leads" title="עלות לליד">CPL</th>
+                    <th className="m-sched" title="עלות לתיאום פגישה">CPS</th>
+                    <th className="m-held" title="עלות לפגישה שהתקיימה">CPM</th>
                   </tr>
                 </thead>
                 <tbody>
                   {funnel.fbBreakdown.byCreative.map((c) => (
                     <tr key={c.label}>
                       <td className="crm-fb-adname" title={c.label}>{c.label}</td>
-                      <td>{fmtInt(c.leads)}</td>
-                      <td>{fmtInt(c.scheduled)}</td>
-                      <td>{fmtInt(c.held)}</td>
-                      <td>{c.cpl ? `₪${fmtInt(c.cpl)}` : "—"}</td>
-                      <td>{c.cps ? `₪${fmtInt(c.cps)}` : "—"}</td>
-                      <td>{c.cpm ? `₪${fmtInt(c.cpm)}` : "—"}</td>
+                      <td className="m-leads">{fmtInt(c.leads)}</td>
+                      <td className="m-sched">{fmtInt(c.scheduled)}</td>
+                      <td className="m-held">{fmtInt(c.held)}</td>
+                      <td className="m-leads">{c.cpl ? `₪${fmtInt(c.cpl)}` : "—"}</td>
+                      <td className="m-sched">{c.cps ? `₪${fmtInt(c.cps)}` : "—"}</td>
+                      <td className="m-held">{c.cpm ? `₪${fmtInt(c.cpm)}` : "—"}</td>
                     </tr>
                   ))}
                 </tbody>

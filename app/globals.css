@@ -6165,10 +6165,15 @@ summary.crm-fb-head::before {
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
-  background: color-mix(in srgb, #1877f2 22%, transparent);
+  background: color-mix(in srgb, #6366f1 22%, transparent);
   border-radius: 6px;
   z-index: 0;
 }
+/* Funnel palette — leads=indigo, scheduled=pink, held=red (matches the
+   report's bar/legend convention). Applied to the creative perf table. */
+.crm-fb-table th.m-leads, .crm-fb-table td.m-leads { color: #6366f1; }
+.crm-fb-table th.m-sched, .crm-fb-table td.m-sched { color: #ec4899; }
+.crm-fb-table th.m-held, .crm-fb-table td.m-held { color: #f5576c; }
 .crm-fb-rowlabel {
   position: relative;
   z-index: 1;
