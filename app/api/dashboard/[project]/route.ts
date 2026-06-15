@@ -55,7 +55,14 @@ export async function GET(
   // can't poison the upstream call.
   const incomingParams = new URL(req.url).searchParams;
   const monthOverrideRaw = incomingParams.get("monthOverride") || "";
-  const monthOverride = /^\d{4}-\d{2}$/.test(monthOverrideRaw) ? monthOverrideRaw : "";
+  // "YYYY-MM" (single month) OR "YYYY-MM-DD..YYYY-MM-DD" (free range) — both
+  // are valid; anything else is dropped so a malformed param can't poison
+  // the upstream call.
+  const monthOverride =
+    /^\d{4}-\d{2}$/.test(monthOverrideRaw) ||
+    /^\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/.test(monthOverrideRaw)
+      ? monthOverrideRaw
+      : "";
   // `company` is only forwarded by the hub for כללי-project URLs — the
   // Apps Script side uses (project=כללי + company=X) to pivot to company-
   // portfolio mode (every project under X instead of the empty "כללי"

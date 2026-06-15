@@ -309,6 +309,13 @@ export default async function ProjectOverviewPage({
   const crmTo = isoDate(sp.to);
   const crmDateRange =
     crmFrom && crmTo && crmFrom <= crmTo ? { from: crmFrom, to: crmTo } : undefined;
+  // The embedded report reuses its `monthOverride` slot to carry EITHER a
+  // single month ("YYYY-MM") OR a free range ("YYYY-MM-DD..YYYY-MM-DD") — it
+  // parses both. So the iframe URL passes the range here when one is active
+  // (mutually exclusive with monthOverride, which the picker clears).
+  const dashboardPeriod = crmDateRange
+    ? `${crmDateRange.from}..${crmDateRange.to}`
+    : monthOverride;
   // `כללי` (catch-all project) has no campaign-ID slug in Keys, so a
   // regular `project=כללי` filter hits 0 ALL CLIENTS rows and the iframe
   // renders empty. The Apps Script side (doGet / _iframeHandle_ /
@@ -326,7 +333,7 @@ export default async function ProjectOverviewPage({
         company: companyForDashboard,
         project: projectName,
         authuser: userEmail,
-        monthOverride,
+        monthOverride: dashboardPeriod,
       })
     : "";
   // Iframe URL selection:
@@ -374,7 +381,7 @@ export default async function ProjectOverviewPage({
         project: projectName,
         authuser: userEmail,
         embed: true,
-        monthOverride,
+        monthOverride: dashboardPeriod,
         clientView: isClientUser,
       })
     : "";
@@ -385,7 +392,7 @@ export default async function ProjectOverviewPage({
   // company-mode pivot. clientView is forwarded similarly so the dashboard
   // hides its negative-signal surfaces (see dashboard-clasp Index.html).
   const proxyEmbedParams = new URLSearchParams();
-  if (monthOverride) proxyEmbedParams.set("monthOverride", monthOverride);
+  if (dashboardPeriod) proxyEmbedParams.set("monthOverride", dashboardPeriod);
   if (isKullitProject && companyForDashboard) {
     proxyEmbedParams.set("company", companyForDashboard);
   }
@@ -1579,7 +1586,13 @@ function buildDashboardUrl(
   if (filters.project) url.searchParams.set("project", filters.project);
   if (filters.authuser) url.searchParams.set("authuser", filters.authuser);
   if (filters.embed) url.searchParams.set("embed", "1");
-  if (filters.monthOverride && /^\d{4}-\d{2}$/.test(filters.monthOverride)) {
+  // "YYYY-MM" (single month) OR "YYYY-MM-DD..YYYY-MM-DD" (free range) — the
+  // dashboard parses both. Anything else is dropped.
+  if (
+    filters.monthOverride &&
+    (/^\d{4}-\d{2}$/.test(filters.monthOverride) ||
+      /^\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/.test(filters.monthOverride))
+  ) {
     url.searchParams.set("monthOverride", filters.monthOverride);
   }
   if (filters.clientView) url.searchParams.set("clientView", "1");
