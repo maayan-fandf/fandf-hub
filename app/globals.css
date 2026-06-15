@@ -4676,31 +4676,96 @@ a.section-link-icon:hover {
   gap: 0.4rem;
   font-size: 0.85rem;
 }
-/* Free date-range inputs (CRM funnel) — sit beside the month select. */
-.dash-range {
+/* Custom dropdown: month picker with a nested free date-range section. */
+.dash-month-picker { position: relative; }
+.dash-dd-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.1rem 0.4rem;
-  border: 1px dashed var(--border);
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  padding: 0.35rem 0.65rem;
   border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  height: 2rem;
+  box-sizing: border-box;
 }
-.dash-range.is-active {
-  border-style: solid;
+.dash-dd-trigger.is-set {
   border-color: color-mix(in srgb, #6366f1 55%, transparent);
-  background: color-mix(in srgb, #6366f1 8%, transparent);
 }
-.dash-range input[type="date"] {
-  font-size: 0.78rem;
+.dash-dd-caret { color: var(--muted); font-size: 0.7em; }
+.dash-dd-panel {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 4px);
+  z-index: 60;
+  min-width: 14rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 0.3rem;
+}
+.dash-dd-item {
+  display: block;
+  width: 100%;
+  text-align: start;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--ink);
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  background: transparent;
+  border-radius: 0.35rem;
+  cursor: pointer;
+}
+.dash-dd-item:hover { background: var(--surface-hi, #f3f4f6); }
+.dash-dd-item.is-sel {
+  background: color-mix(in srgb, #6366f1 14%, transparent);
+  font-weight: 600;
+}
+.dash-dd-sep { height: 1px; background: var(--border); margin: 0.3rem 0.2rem; }
+.dash-dd-range { padding: 0.3rem 0.45rem 0.45rem; border-radius: 0.4rem; }
+.dash-dd-range.is-active { background: color-mix(in srgb, #6366f1 8%, transparent); }
+.dash-dd-range-title {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.dash-dd-range-inputs { display: flex; align-items: center; gap: 0.3rem; }
+.dash-dd-range-inputs input[type="date"] {
+  font-size: 0.76rem;
   font-family: inherit;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.3rem;
-  padding: 0.15rem 0.3rem;
+  padding: 0.18rem 0.3rem;
   cursor: pointer;
+  min-width: 0;
+  flex: 1;
 }
 .dash-range-sep { color: var(--muted); }
+.dash-dd-clear {
+  margin-top: 0.4rem;
+  width: 100%;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  padding: 0.3rem;
+  cursor: pointer;
+}
+.dash-dd-clear:hover { color: var(--ink); }
 .dash-month-picker label {
   color: var(--muted);
   font-weight: 600;

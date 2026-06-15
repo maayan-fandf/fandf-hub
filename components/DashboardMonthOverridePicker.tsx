@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 type Props = {
   /** Currently-applied month-override, mirrored from `?monthOverride=` in
@@ -30,6 +31,12 @@ function formatMonthLabel(monthKey: string): string {
   if (!/^\d{4}-\d{2}$/.test(monthKey)) return monthKey;
   const [y, m] = monthKey.split("-");
   return `${HEBREW_MONTHS[parseInt(m, 10) - 1]} ${y}`;
+}
+
+/** "YYYY-MM-DD" → "dd/MM" for the compact range label on the trigger. */
+function ddmm(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}` : iso;
 }
 
 /**
@@ -87,58 +94,106 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
     });
   }
 
+  // Custom dropdown (a native <select> can't host the date inputs the owner
+  // wants nested inside it). Close on outside-click / Esc.
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   if (!months.length) return null;
 
+  const triggerLabel = rangeActive
+    ? `${ddmm(curFrom)}–${ddmm(curTo)}`
+    : current
+      ? formatMonthLabel(current)
+      : "פריסה נוכחית";
+
   return (
-    <div className="dash-month-picker" dir="rtl">
-      <label htmlFor="dash-month-picker-select" className="sr-only">
-        סיכום חודשי
-      </label>
-      <select
-        id="dash-month-picker-select"
-        value={current}
-        onChange={(e) => onMonth(e.target.value)}
-        title="צפה בכל הדשבורד עבור חודש בודד"
+    <div className="dash-month-picker" dir="rtl" ref={ref}>
+      <button
+        type="button"
+        className={"dash-dd-trigger" + (current || rangeActive ? " is-set" : "")}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title="בחר חודש או טווח תאריכים חופשי"
       >
-        <option value="">📅 פריסה נוכחית</option>
-        {months.map((mk) => (
-          <option key={mk} value={mk}>
-            📅 {formatMonthLabel(mk)}
-          </option>
-        ))}
-      </select>
-      {/* Free date-range — pro-rates the CRM funnel's channel cost to the
-          selected days. Both bounds needed to take effect. */}
-      <span
-        className={"dash-range" + (rangeActive ? " is-active" : "")}
-        title="טווח תאריכים חופשי למשפך ה-CRM — העלות מחושבת יחסית לימים שנבחרו"
-      >
-        <input
-          type="date"
-          aria-label="מתאריך"
-          value={curFrom}
-          max={curTo || undefined}
-          onChange={(e) => onRange(e.target.value, curTo)}
-        />
-        <span className="dash-range-sep">–</span>
-        <input
-          type="date"
-          aria-label="עד תאריך"
-          value={curTo}
-          min={curFrom || undefined}
-          onChange={(e) => onRange(curFrom, e.target.value)}
-        />
-      </span>
-      {current || curFrom || curTo ? (
-        <button
-          type="button"
-          className="dash-month-picker-clear"
-          onClick={clearAll}
-          title="חזור לפריסה נוכחית"
-          aria-label="חזור לפריסה נוכחית"
-        >
-          ✕
-        </button>
+        📅 {triggerLabel}
+        <span className="dash-dd-caret" aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="dash-dd-panel" role="listbox">
+          <button
+            type="button"
+            className={"dash-dd-item" + (!current && !rangeActive ? " is-sel" : "")}
+            onClick={() => {
+              onMonth("");
+              setOpen(false);
+            }}
+          >
+            📅 פריסה נוכחית
+          </button>
+          {months.map((mk) => (
+            <button
+              key={mk}
+              type="button"
+              className={"dash-dd-item" + (current === mk ? " is-sel" : "")}
+              onClick={() => {
+                onMonth(mk);
+                setOpen(false);
+              }}
+            >
+              📅 {formatMonthLabel(mk)}
+            </button>
+          ))}
+          {/* Nested free range — pro-rates the CRM funnel's channel cost to
+              the selected days. Both bounds needed to take effect. */}
+          <div className="dash-dd-sep" />
+          <div className={"dash-dd-range" + (rangeActive ? " is-active" : "")}>
+            <span className="dash-dd-range-title">🗓️ טווח מותאם</span>
+            <div className="dash-dd-range-inputs">
+              <input
+                type="date"
+                aria-label="מתאריך"
+                value={curFrom}
+                max={curTo || undefined}
+                onChange={(e) => onRange(e.target.value, curTo)}
+              />
+              <span className="dash-range-sep">–</span>
+              <input
+                type="date"
+                aria-label="עד תאריך"
+                value={curTo}
+                min={curFrom || undefined}
+                onChange={(e) => onRange(curFrom, e.target.value)}
+              />
+            </div>
+            {current || curFrom || curTo ? (
+              <button
+                type="button"
+                className="dash-dd-clear"
+                onClick={() => {
+                  clearAll();
+                  setOpen(false);
+                }}
+              >
+                ✕ נקה — חזור לפריסה נוכחית
+              </button>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </div>
   );

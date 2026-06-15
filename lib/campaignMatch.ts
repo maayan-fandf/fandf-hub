@@ -56,3 +56,26 @@ export function matchSlug(
   }
   return null;
 }
+
+/** A project's own slug (= its first `campaign ID` pattern, lowercased) —
+ *  the key the daily-spend readers (getDailySpend7d / getSpendInRange) use.
+ *  Lets a caller holding a project NAME look up that project's actual spend.
+ *  null when the project isn't in Keys or has no campaign-ID pattern. */
+export const getProjectSlug = cache(
+  async (subjectEmail: string, projectName: string): Promise<string | null> => {
+    const { headers, rows } = await readKeysCached(subjectEmail);
+    const iProj = headers.findIndex((h) => /פרוי?יקט/.test(h));
+    const iSlug = headers.findIndex((h) => /campaign\s*id/i.test(h));
+    if (iProj < 0 || iSlug < 0) return null;
+    const target = clean(projectName);
+    for (const row of rows) {
+      if (clean(row[iProj]) !== target) continue;
+      const first = clean(row[iSlug])
+        .split(",")
+        .map((s) => s.toLowerCase().trim())
+        .filter(Boolean)[0];
+      return first || null;
+    }
+    return null;
+  },
+);

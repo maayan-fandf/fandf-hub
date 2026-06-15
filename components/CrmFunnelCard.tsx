@@ -7,8 +7,21 @@ import {
   getAllClientsCurrentForProject,
   getAllClientsMonthlyForProject,
 } from "@/lib/allClients";
+import { getProjectSlug } from "@/lib/campaignMatch";
+import { getSpendInRange } from "@/lib/platformDailySpend";
 import { driveFolderOwner } from "@/lib/sa";
 import CrmFunnelClient from "./CrmFunnelClient";
+
+/** Canonical channels that have real daily spend in the GADS2/FB daily file
+ *  (programmatic) — their free-range cost is summed actual spend, not the
+ *  pro-rated monthly fee used for everything else. */
+const PROGRAMMATIC_CHANNELS = new Set([
+  "facebook",
+  "google-search",
+  "google-discovery",
+  "taboola",
+  "outbrain",
+]);
 
 /**
  * Server wrapper — fetches the CRM funnel cohort and hands the full
@@ -22,18 +35,6 @@ import CrmFunnelClient from "./CrmFunnelClient";
  * tab has zero matches — caller wraps in <Suspense fallback={null}> so
  * projects without CRM data silently collapse.
  */
-/** Today's calendar month "YYYY-MM" in Asia/Jerusalem. */
-function currentMonthIL(): string {
-  const p = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jerusalem",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(new Date());
-  const y = p.find((x) => x.type === "year")?.value ?? "";
-  const m = p.find((x) => x.type === "month")?.value ?? "";
-  return `${y}-${m}`;
-}
-
 /** Split an inclusive ISO range [from,to] into per-calendar-month segments,
  *  each carrying how many of its days fall inside the range and how many days
  *  the whole month has — the basis for pro-rating fixed monthly cost. */
@@ -96,37 +97,45 @@ export default async function CrmFunnelCard({
   // without cost for now.
   let spendByChannel: Record<string, number> | undefined;
   if (dateRange?.from && dateRange?.to) {
-    // Free range — pro-rate fixed cost data to the selected days, month by
-    // month: a PAST month contributes its monthly חודשי spend ÷ days-in-month
-    // × days-of-that-month-in-range; the CURRENT month contributes the daily
-    // budget (קצב יומי) × days-in-range (חודשי isn't complete yet).
+    // Free range. Two cost sources by channel type:
+    //   • PROGRAMMATIC (FB / Google / Taboola / Outbrain) — actual daily
+    //     spend summed over the range from the GADS2/FB daily file (budget
+    //     is irrelevant; we want what was really spent).
+    //   • NON-programmatic (yad2 / מדלן / כתבה / phone …) — the monthly
+    //     spent cost (ALL CLIENTS `עלות`) pro-rated: ÷ days-in-month ×
+    //     days-of-that-month-in-range, summed across the months in the range.
     projectWindow = { from: dateRange.from, to: dateRange.to };
-    const curMonth = currentMonthIL();
+    const owner = driveFolderOwner();
     const spend: Record<string, number> = {};
+    // Non-programmatic: pro-rate monthly עלות, month by month.
     for (const seg of monthSegments(dateRange.from, dateRange.to)) {
-      if (seg.month === curMonth) {
-        const cur = await getAllClientsCurrentForProject({
-          subjectEmail: driveFolderOwner(),
-          project,
-        }).catch(() => []);
-        for (const r of cur) {
-          const ch = canonicalMediaChannel(r.channel);
-          if (ch && r.dailyRate)
-            spend[ch] = (spend[ch] || 0) + r.dailyRate * seg.daysInRange;
-        }
-      } else {
-        const mo = await getAllClientsMonthlyForProject({
-          subjectEmail: driveFolderOwner(),
-          project,
-          yearMonth: seg.month,
-        }).catch(() => []);
-        for (const r of mo) {
-          const ch = canonicalMediaChannel(r.channel);
-          if (ch && r.spend)
-            spend[ch] =
-              (spend[ch] || 0) +
-              (r.spend / Math.max(1, seg.daysInMonth)) * seg.daysInRange;
-        }
+      const mo = await getAllClientsMonthlyForProject({
+        subjectEmail: owner,
+        project,
+        yearMonth: seg.month,
+      }).catch(() => []);
+      for (const r of mo) {
+        const ch = canonicalMediaChannel(r.channel);
+        if (ch && !PROGRAMMATIC_CHANNELS.has(ch) && r.spend)
+          spend[ch] =
+            (spend[ch] || 0) +
+            (r.spend / Math.max(1, seg.daysInMonth)) * seg.daysInRange;
+      }
+    }
+    // Programmatic: real spend over the exact range (channel split built-in).
+    const slug = await getProjectSlug(owner, project).catch(() => null);
+    if (slug) {
+      const byProject = await getSpendInRange(
+        owner,
+        dateRange.from,
+        dateRange.to,
+      ).catch(() => ({}) as Record<string, Record<string, number>>);
+      const ps = byProject[slug];
+      if (ps) {
+        if (ps.facebook) spend["facebook"] = (spend["facebook"] || 0) + ps.facebook;
+        if (ps.google) spend["google-search"] = (spend["google-search"] || 0) + ps.google;
+        if (ps.taboola) spend["taboola"] = (spend["taboola"] || 0) + ps.taboola;
+        if (ps.outbrain) spend["outbrain"] = (spend["outbrain"] || 0) + ps.outbrain;
       }
     }
     if (Object.keys(spend).length) spendByChannel = spend;

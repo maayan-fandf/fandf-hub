@@ -196,6 +196,56 @@ export const getDailySpend7d = cache(
   },
 );
 
+/** Total ACTUAL spend per project×platform over [fromIso, toIso] inclusive
+ *  (sum of daily Cost from the same GADS2/FB daily file). Slug-keyed like
+ *  getDailySpend7d. Powers the CRM funnel's free-range cost for programmatic
+ *  channels — real spend, not pro-rated budget. Best-effort: {} on error. */
+export const getSpendInRange = cache(
+  async (
+    subjectEmail: string,
+    fromIso: string,
+    toIso: string,
+  ): Promise<Record<string, Record<Plat, number>>> => {
+    const out: Record<string, Record<Plat, number>> = {};
+    if (!fromIso || !toIso || fromIso > toIso) return out;
+    try {
+      const matchMap = await buildMatchMap(subjectEmail);
+      const sheets = sheetsClient(subjectEmail);
+      const ssId = envOrThrow("SHEET_ID_PLATFORM_DAILY");
+      const bg = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId: ssId,
+        ranges: PLATS.map((p) => `'${TABS[p]}'!A1:D`),
+        valueRenderOption: "UNFORMATTED_VALUE",
+        dateTimeRenderOption: "FORMATTED_STRING",
+      });
+      const vrs = bg.data.valueRanges ?? [];
+      PLATS.forEach((plat, idx) => {
+        const rows = (vrs[idx]?.values ?? []) as unknown[][];
+        if (rows.length < 2) return;
+        const hdr = rows[0].map(clean);
+        const iDate = findCol(hdr, ["Date"]);
+        const iCamp = findCol(hdr, ["Campaign name"]);
+        const iCost = findCol(hdr, ["Cost"]);
+        if (iDate < 0 || iCamp < 0 || iCost < 0) return;
+        for (let r = 1; r < rows.length; r++) {
+          const camp = clean(rows[r][iCamp]);
+          if (!camp) continue;
+          const slug = matchSlug(camp, matchMap);
+          if (!slug) continue;
+          const date = parseDate(rows[r][iDate]);
+          if (!date || date < fromIso || date > toIso) continue;
+          if (!out[slug])
+            out[slug] = { google: 0, facebook: 0, taboola: 0, outbrain: 0 };
+          out[slug][plat] += num(rows[r][iCost]);
+        }
+      });
+    } catch {
+      /* best-effort — caller falls back to pro-rated monthly cost */
+    }
+    return out;
+  },
+);
+
 /** One platform's overspend spike — the latest day ran materially above
  *  the trailing-days baseline (runaway campaign / broken cap). */
 export type SpendSpike = {
