@@ -196,6 +196,18 @@ export type CrmFunnel = {
    *  "sheet". When "warehouse", the funnel's own `meetings` IS the
    *  authoritative held count, so the separate held strip is suppressed. */
   dataSource?: "sheet" | "warehouse";
+  /** Facebook/Meta UTM drill (warehouse-sourced funnels only) — how the
+   *  Meta leads (channel_key='fb' = fb+ig+an) split by ad placement
+   *  (utm_medium), audience (utm_term) and creative (utm_content). Counts
+   *  lead rows; top-8 per dimension + "אחר". Absent when the project has no
+   *  Meta leads or the funnel is Sheet-sourced (UTM lives only in the
+   *  warehouse). Per-segment CPL is a later slice (needs the meta_* join). */
+  fbBreakdown?: {
+    totalLeads: number;
+    byPlacement: { label: string; leads: number }[];
+    byAudience: { label: string; leads: number }[];
+    byCreative: { label: string; leads: number }[];
+  };
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -862,10 +874,14 @@ async function computeBmbyFunnelFromWarehouse(
     objections: string | null;
     client_status: string | null;
     pipeline: string | null;
+    channel_key: string | null;
+    utm_medium: string | null;
+    utm_term: string | null;
+    utm_content: string | null;
   }>(
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
       `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,media_source_clean,objections,client_status,pipeline` +
+      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
       `&order=lead_id.asc`,
@@ -939,8 +955,53 @@ async function computeBmbyFunnelFromWarehouse(
     ];
   });
   const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
-  if (funnel) funnel.dataSource = "warehouse";
+  if (funnel) {
+    funnel.dataSource = "warehouse";
+    // FB UTM drill — placement / audience / creative split of the Meta
+    // (channel_key='fb' covers fb+ig+an) leads. Warehouse-only (UTM isn't
+    // in the Sheet). Per-segment spend/CPL needs the meta_* join (Phase 2).
+    funnel.fbBreakdown = buildFbBreakdown(leads);
+  }
   return funnel;
+}
+
+/** Placement / audience / creative breakdown of a project's Meta leads from
+ *  their UTM tags. Counts lead ROWS (consistent with the funnel's lead
+ *  count). Top-8 per dimension, remainder rolled into "אחר". undefined when
+ *  the project has no Meta leads. */
+function buildFbBreakdown(
+  leads: { channel_key: string | null; utm_medium: string | null; utm_term: string | null; utm_content: string | null }[],
+): CrmFunnel["fbBreakdown"] {
+  const fb = leads.filter((l) => l.channel_key === "fb");
+  if (!fb.length) return undefined;
+  const TOP = 8;
+  const tally = (get: (l: (typeof fb)[number]) => string): { label: string; leads: number }[] => {
+    const m = new Map<string, number>();
+    for (const l of fb) {
+      const v = get(l).replace(/\s+/g, " ").trim();
+      if (!v) continue;
+      m.set(v, (m.get(v) || 0) + 1);
+    }
+    const sorted = [...m.entries()].sort((a, b) => b[1] - a[1]);
+    const head = sorted.slice(0, TOP).map(([label, n]) => ({ label, leads: n }));
+    const restN = sorted.slice(TOP).reduce((s, [, n]) => s + n, 0);
+    if (restN > 0) head.push({ label: "אחר", leads: restN });
+    return head;
+  };
+  // utm_term/utm_content occasionally carry a raw Meta numeric ID instead of
+  // a human label — bucket those into "אחר" so the panel reads cleanly (the
+  // IDs are still usable for the Phase-2 meta_* join).
+  const deId = (raw: string): string => {
+    const v = raw.replace(/\s+/g, " ").trim();
+    return /^\d{8,}$/.test(v) ? "אחר" : v;
+  };
+  return {
+    totalLeads: fb.length,
+    // utm_medium = ad placement (Facebook_Mobile_Feed → "Facebook Mobile Feed").
+    byPlacement: tally((l) => String(l.utm_medium ?? "").replace(/_/g, " ")),
+    byAudience: tally((l) => deId(String(l.utm_term ?? ""))),
+    byCreative: tally((l) => deId(String(l.utm_content ?? ""))),
+  };
 }
 
 /** Map a warehouse lead with NO meeting event to a BMBY funnel status

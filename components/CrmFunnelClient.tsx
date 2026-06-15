@@ -934,6 +934,47 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         </div>
       )}
 
+      {/* Facebook/Meta UTM drill — placement / audience / creative split of
+          the Meta leads (warehouse-sourced funnels only). Lead counts from
+          UTM tags; per-segment CPL is a later slice (needs the meta_* join). */}
+      {funnel.fbBreakdown ? (
+        <div className="crm-fb-breakdown" dir="rtl">
+          <div className="crm-fb-head">
+            <span className="crm-fb-icon" aria-hidden>📘</span>
+            פילוח פייסבוק — {fmtInt(funnel.fbBreakdown.totalLeads)} לידים
+            <span className="crm-fb-headsub">לפי תגיות UTM (Meta — פייסבוק/אינסטגרם)</span>
+          </div>
+          <div className="crm-fb-cols">
+            {([
+              ["מיקום (Placement)", funnel.fbBreakdown.byPlacement],
+              ["קהל (Audience)", funnel.fbBreakdown.byAudience],
+              ["קריאייטיב (Creative)", funnel.fbBreakdown.byCreative],
+            ] as const).map(([title, list]) => {
+              const max = list[0]?.leads || 1;
+              return (
+                <div key={title} className="crm-fb-col">
+                  <div className="crm-fb-col-title">{title}</div>
+                  {list.map((r) => (
+                    <div
+                      key={r.label}
+                      className="crm-fb-row"
+                      title={`${r.label}: ${r.leads} לידים`}
+                    >
+                      <div
+                        className="crm-fb-bar"
+                        style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
+                      />
+                      <span className="crm-fb-rowlabel">{r.label}</span>
+                      <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       {/* Sellers — BMBY-only. Inline summary form. */}
       {funnel.topSellers.length > 0 && (
         <div className="crm-block crm-block-inline">
