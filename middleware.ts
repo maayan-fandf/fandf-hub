@@ -25,6 +25,10 @@ export default auth((req) => {
     // skip the NextAuth redirect or Scheduler gets a 302→/signin
     // (surfaces as a 400 INVALID_ARGUMENT on the job).
     path === "/api/cron/sync-chat-spaces" ||
+    // Cloud Scheduler cron — recomputes per-creative/audience CRM meetings
+    // into the creative Sheet for the report. Same X-Cron-Token shared secret;
+    // server-to-server, must skip the NextAuth redirect.
+    path === "/api/cron/fb-creative-meetings" ||
     // One-off batch space re-provisioner (delete+recreate-as-threaded
     // migration). Same X-Cron-Token shared secret; server-to-server,
     // must skip the NextAuth redirect.
