@@ -6089,11 +6089,44 @@ html:not([data-theme="dark"]) .project-section-crm .crm-block {
 }
 .crm-fb-cols {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 0.9rem;
 }
 @media (max-width: 720px) {
   .crm-fb-cols { grid-template-columns: 1fr; }
+}
+/* Per-creative performance table (ad name · leads · sched · held · CPL/CPS/CPM). */
+.crm-fb-creatives { margin-top: 0.8rem; }
+.crm-fb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.crm-fb-table th,
+.crm-fb-table td {
+  padding: 0.28rem 0.5rem;
+  text-align: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.crm-fb-table th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.crm-fb-table td:first-child,
+.crm-fb-table th:first-child {
+  text-align: start;
+}
+.crm-fb-adname {
+  font-weight: 600;
+  max-width: 11rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crm-fb-table tbody tr:hover {
+  background: color-mix(in srgb, #1877f2 7%, transparent);
 }
 .crm-fb-col-title {
   font-size: 0.74rem;

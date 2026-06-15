@@ -40,6 +40,7 @@ import {
   supabaseConfigured,
   supabaseRowsAll,
 } from "./supabase";
+import { fbAdSpendByCreative, normAdName } from "./fbCreatives";
 
 // Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
 // previous "Consolidated" sheet (1YOL2Rry…) to the now-canonical
@@ -206,7 +207,20 @@ export type CrmFunnel = {
     totalLeads: number;
     byPlacement: { label: string; leads: number }[];
     byAudience: { label: string; leads: number }[];
-    byCreative: { label: string; leads: number }[];
+    /** Per creative (= ad name / utm_content). leads/scheduled/held from the
+     *  warehouse; spend + cpl/cps/cpm joined from the dashboard's
+     *  facebook-ads-metrics Sheet (cost ÷ leads / scheduled / held). spend=0
+     *  when no matching ad-spend row (cost metrics then 0). */
+    byCreative: {
+      label: string;
+      leads: number;
+      scheduled: number;
+      held: number;
+      spend: number;
+      cpl: number;
+      cps: number;
+      cpm: number;
+    }[];
   };
 };
 
@@ -878,10 +892,11 @@ async function computeBmbyFunnelFromWarehouse(
     utm_medium: string | null;
     utm_term: string | null;
     utm_content: string | null;
+    utm_campaign: string | null;
   }>(
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
       `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content` +
+      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
       `&order=lead_id.asc`,
@@ -958,24 +973,40 @@ async function computeBmbyFunnelFromWarehouse(
   if (funnel) {
     funnel.dataSource = "warehouse";
     // FB UTM drill — placement / audience / creative split of the Meta
-    // (channel_key='fb' covers fb+ig+an) leads. Warehouse-only (UTM isn't
-    // in the Sheet). Per-segment spend/CPL needs the meta_* join (Phase 2).
-    funnel.fbBreakdown = buildFbBreakdown(leads);
+    // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
+    // scheduled/held (warehouse) + spend & CPL/CPS/CPM (joined from the
+    // dashboard's facebook-ads-metrics Sheet by exact campaign + ad name).
+    funnel.fbBreakdown = await buildFbBreakdown(leads, anyClients, heldClients, from, toExcl);
   }
   return funnel;
 }
 
-/** Placement / audience / creative breakdown of a project's Meta leads from
- *  their UTM tags. Counts lead ROWS (consistent with the funnel's lead
- *  count). Top-8 per dimension, remainder rolled into "אחר". undefined when
- *  the project has no Meta leads. */
-function buildFbBreakdown(
-  leads: { channel_key: string | null; utm_medium: string | null; utm_term: string | null; utm_content: string | null }[],
-): CrmFunnel["fbBreakdown"] {
+type FbLead = {
+  client_id: string | null;
+  channel_key: string | null;
+  utm_medium: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  utm_campaign: string | null;
+};
+
+/** Placement / audience / creative breakdown of a project's Meta leads
+ *  (channel_key='fb' = fb+ig+an) from their UTM tags. Placement/audience are
+ *  lead-count splits; the creative rows (= ad name / utm_content) also carry
+ *  scheduled/held (from the warehouse meeting sets) and spend + CPL/CPS/CPM
+ *  joined from the dashboard's facebook-ads-metrics Sheet (cost ÷ each).
+ *  undefined when the project has no Meta leads. */
+async function buildFbBreakdown(
+  leads: FbLead[],
+  anyClients: Set<string>,
+  heldClients: Set<string>,
+  from: string,
+  toExcl: string,
+): Promise<CrmFunnel["fbBreakdown"]> {
   const fb = leads.filter((l) => l.channel_key === "fb");
   if (!fb.length) return undefined;
   const TOP = 8;
-  const tally = (get: (l: (typeof fb)[number]) => string): { label: string; leads: number }[] => {
+  const tally = (get: (l: FbLead) => string): { label: string; leads: number }[] => {
     const m = new Map<string, number>();
     for (const l of fb) {
       const v = get(l).replace(/\s+/g, " ").trim();
@@ -988,19 +1019,59 @@ function buildFbBreakdown(
     if (restN > 0) head.push({ label: "אחר", leads: restN });
     return head;
   };
-  // utm_term/utm_content occasionally carry a raw Meta numeric ID instead of
-  // a human label — bucket those into "אחר" so the panel reads cleanly (the
-  // IDs are still usable for the Phase-2 meta_* join).
+  // utm_term occasionally carries a raw Meta numeric ID — bucket to "אחר".
   const deId = (raw: string): string => {
     const v = raw.replace(/\s+/g, " ").trim();
     return /^\d{8,}$/.test(v) ? "אחר" : v;
   };
+
+  // Per-creative (= normalized ad name) leads / scheduled / held + the set of
+  // campaigns the Meta leads came from (used to scope the spend join).
+  const creatives = new Map<string, { leads: number; scheduled: number; held: number }>();
+  const campaigns = new Set<string>();
+  for (const l of fb) {
+    const camp = String(l.utm_campaign ?? "").replace(/\s+/g, " ").trim();
+    if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
+    const ad = normAdName(l.utm_content);
+    if (!ad || /^\d{8,}$/.test(ad)) continue; // skip bare ad-id labels
+    const c = String(l.client_id ?? "");
+    const rec = creatives.get(ad) || { leads: 0, scheduled: 0, held: 0 };
+    rec.leads++;
+    if (c && anyClients.has(c)) rec.scheduled++;
+    if (c && heldClients.has(c)) rec.held++;
+    creatives.set(ad, rec);
+  }
+  // Join per-ad spend from the dashboard's facebook-ads-metrics Sheet (exact
+  // campaign scope → collision-free). Degrades to spend=0 on any failure.
+  let spendByAd = new Map<string, { cost: number; impressions: number; websiteLeads: number }>();
+  try {
+    spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, from, toExcl);
+  } catch {
+    /* leave spend at 0 */
+  }
+  const byCreative = [...creatives.entries()]
+    .map(([label, r]) => {
+      const spend = spendByAd.get(label)?.cost ?? 0;
+      return {
+        label,
+        leads: r.leads,
+        scheduled: r.scheduled,
+        held: r.held,
+        spend,
+        cpl: r.leads ? spend / r.leads : 0,
+        cps: r.scheduled ? spend / r.scheduled : 0,
+        cpm: r.held ? spend / r.held : 0,
+      };
+    })
+    .sort((a, b) => b.leads - a.leads)
+    .slice(0, TOP);
+
   return {
     totalLeads: fb.length,
     // utm_medium = ad placement (Facebook_Mobile_Feed → "Facebook Mobile Feed").
     byPlacement: tally((l) => String(l.utm_medium ?? "").replace(/_/g, " ")),
     byAudience: tally((l) => deId(String(l.utm_term ?? ""))),
-    byCreative: tally((l) => deId(String(l.utm_content ?? ""))),
+    byCreative,
   };
 }
 

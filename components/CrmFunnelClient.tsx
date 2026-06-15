@@ -934,9 +934,10 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         </div>
       )}
 
-      {/* Facebook/Meta UTM drill — placement / audience / creative split of
-          the Meta leads (warehouse-sourced funnels only). Lead counts from
-          UTM tags; per-segment CPL is a later slice (needs the meta_* join). */}
+      {/* Facebook/Meta UTM drill (warehouse-sourced funnels only). Placement
+          + audience are lead-count splits; the creative table adds scheduled/
+          held and spend → cost-per-lead / scheduled / held, joined from the
+          dashboard's facebook-ads-metrics Sheet by exact campaign + ad name. */}
       {funnel.fbBreakdown ? (
         <div className="crm-fb-breakdown" dir="rtl">
           <div className="crm-fb-head">
@@ -948,7 +949,6 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             {([
               ["מיקום (Placement)", funnel.fbBreakdown.byPlacement],
               ["קהל (Audience)", funnel.fbBreakdown.byAudience],
-              ["קריאייטיב (Creative)", funnel.fbBreakdown.byCreative],
             ] as const).map(([title, list]) => {
               const max = list[0]?.leads || 1;
               return (
@@ -972,6 +972,39 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
               );
             })}
           </div>
+          {funnel.fbBreakdown.byCreative.length > 0 ? (
+            <div className="crm-fb-creatives">
+              <div className="crm-fb-col-title">
+                קריאייטיב — לידים · פגישות · עלות (מתוך נתוני פייסבוק בגיליון)
+              </div>
+              <table className="crm-fb-table">
+                <thead>
+                  <tr>
+                    <th>מודעה</th>
+                    <th>לידים</th>
+                    <th>תואמו</th>
+                    <th>פגישות</th>
+                    <th title="עלות לליד">CPL</th>
+                    <th title="עלות לתיאום פגישה">CPS</th>
+                    <th title="עלות לפגישה שהתקיימה">CPM</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {funnel.fbBreakdown.byCreative.map((c) => (
+                    <tr key={c.label}>
+                      <td className="crm-fb-adname" title={c.label}>{c.label}</td>
+                      <td>{fmtInt(c.leads)}</td>
+                      <td>{fmtInt(c.scheduled)}</td>
+                      <td>{fmtInt(c.held)}</td>
+                      <td>{c.cpl ? `₪${fmtInt(c.cpl)}` : "—"}</td>
+                      <td>{c.cps ? `₪${fmtInt(c.cps)}` : "—"}</td>
+                      <td>{c.cpm ? `₪${fmtInt(c.cpm)}` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
