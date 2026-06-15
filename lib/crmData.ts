@@ -952,7 +952,12 @@ function mapWarehouseStatus(
 ): string {
   const cs = String(clientStatus ?? "").trim();
   if (cs === "חוזה") return "חוזה";
-  if (cs.includes("פגישה")) return "נקבעה פגישה"; // status says meeting, no journey event yet
+  // A client_status of "פגישה N" with NO journey meeting event is NOT
+  // treated as scheduled: BMBY's דוח יחסי המרה counts meetings from actual
+  // events, and inferring one from the status alone over-counts תואמה פגישה
+  // (kenko: +13 phantom → 48 vs BMBY's ~32). Meeting state comes solely from
+  // v_bmby_journey_meetings (the caller stamps it before falling back here),
+  // so a status-only "meeting" with no event shows as in-progress below.
   if (cs === "טלפון") return "טלפון";
   if (cs === "אינטרנט") return "אינטרנט";
   if (cs === "ליד") return "ליד";
