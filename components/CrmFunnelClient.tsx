@@ -646,8 +646,16 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           Whole-window figure (NOT chip-filtered) — the Sheet's פגישות tile
           above conflates scheduled+held and over-counts; this is the
           BMBY-confirmed number (appointment_outcome='held'). Additive:
-          collapses to nothing when the warehouse enrichment is absent. */}
-      {funnel.supabaseEnrichment?.held ? (
+          collapses to nothing when the warehouse enrichment is absent.
+          Gated on authoritative > 0 (not just the object's presence):
+          BMBY logs appointment outcomes retrospectively, so an active
+          project early in the month — or a dormant one with no in-window
+          sync — legitimately has 0 confirmed-held. Showing "0 פגישות
+          התקיימו בפועל · מאומת BMBY" next to a Sheet funnel that reports
+          meetings reads as a bug, so we suppress and fall back to the
+          Sheet figure until a real confirmed count exists. */}
+      {funnel.supabaseEnrichment?.held &&
+      funnel.supabaseEnrichment.held.authoritative > 0 ? (
         <div
           className="crm-held-authority"
           dir="rtl"
