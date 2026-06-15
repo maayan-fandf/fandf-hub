@@ -939,12 +939,12 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           held and spend → cost-per-lead / scheduled / held, joined from the
           dashboard's facebook-ads-metrics Sheet by exact campaign + ad name. */}
       {funnel.fbBreakdown ? (
-        <div className="crm-fb-breakdown" dir="rtl">
-          <div className="crm-fb-head">
+        <details className="crm-fb-breakdown" dir="rtl">
+          <summary className="crm-fb-head">
             <span className="crm-fb-icon" aria-hidden>📘</span>
             פילוח פייסבוק — {fmtInt(funnel.fbBreakdown.totalLeads)} לידים
             <span className="crm-fb-headsub">לפי תגיות UTM (Meta — פייסבוק/אינסטגרם)</span>
-          </div>
+          </summary>
           <div className="crm-fb-cols">
             {([
               ["מיקום (Placement)", funnel.fbBreakdown.byPlacement],
@@ -1005,7 +1005,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
               </table>
             </div>
           ) : null}
-        </div>
+        </details>
       ) : null}
 
       {/* Sellers — BMBY-only. Inline summary form. */}

@@ -6081,6 +6081,23 @@ html:not([data-theme="dark"]) .project-section-crm .crm-block {
   font-size: 0.9rem;
   margin-bottom: 0.6rem;
 }
+/* Collapsed-by-default disclosure (the panel is now a <details>). */
+summary.crm-fb-head {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  margin-bottom: 0;
+}
+summary.crm-fb-head::-webkit-details-marker { display: none; }
+summary.crm-fb-head::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.85em;
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.crm-fb-breakdown[open] > summary.crm-fb-head { margin-bottom: 0.6rem; }
+.crm-fb-breakdown[open] > summary.crm-fb-head::before { transform: rotate(90deg); }
 .crm-fb-headsub {
   margin-inline-start: auto;
   font-weight: 400;
