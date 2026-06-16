@@ -360,6 +360,129 @@ export async function getAllClientsAllRows(
 }
 
 /**
+ * Per-project CRM funnel totals (leads → scheduled → held) plus blended
+ * cost-per-metric, summed across the project's "current" ALL CLIENTS
+ * rows. Keyed by lowercased `projectSlug` (the join key the dashboard
+ * uses everywhere — the `פרוייקט` name column is blank on many rows
+ * post-XLOOKUP). cost-per is total window spend ÷ count — the same
+ * blended figure the project page's totals show — and is left at 0 when
+ * the denominator is 0 so callers can omit the cost chip.
+ *
+ * "scheduled" = `תיאום וביטול` (meeting tie-ups incl. cancellations);
+ * "held" = `ביצוע פגישות` (meetings that took place). Same column
+ * semantics as the project metrics aggregate.
+ */
+export type ProjectFunnelTotals = {
+  leads: number;
+  scheduled: number;
+  held: number;
+  spend: number;
+  /** cost per lead (spend ÷ leads), 0 when no leads. */
+  cpl: number;
+  /** cost per scheduled meeting (spend ÷ scheduled), 0 when none. */
+  cps: number;
+  /** cost per held meeting (spend ÷ held), 0 when none. */
+  cpm: number;
+};
+
+/**
+ * Two-key index of project funnel totals, so callers can join on
+ * whichever identifier they hold. `bySlug` is the complete aggregation
+ * (slug is forward-consistent across continuation rows); `byName` covers
+ * rows that still carry a Hebrew `פרוייקט` value — the fallback for
+ * projects whose slug isn't reachable from Keys (mirrors the
+ * name-OR-slug match `consolidateForProject` runs).
+ */
+export type ProjectFunnelIndex = {
+  bySlug: Map<string, ProjectFunnelTotals>;
+  byName: Map<string, ProjectFunnelTotals>;
+};
+
+type FunnelAcc = { leads: number; scheduled: number; held: number; spend: number };
+
+function addFunnel(acc: Map<string, FunnelAcc>, key: string, r: AllClientsRow): void {
+  const cur = acc.get(key) ?? { leads: 0, scheduled: 0, held: 0, spend: 0 };
+  cur.leads += r.leads;
+  cur.scheduled += r.scheduled;
+  cur.held += r.meetings;
+  cur.spend += r.spend;
+  acc.set(key, cur);
+}
+
+function finalizeFunnels(acc: Map<string, FunnelAcc>): Map<string, ProjectFunnelTotals> {
+  const out = new Map<string, ProjectFunnelTotals>();
+  for (const [key, t] of acc) {
+    out.set(key, {
+      leads: t.leads,
+      scheduled: t.scheduled,
+      held: t.held,
+      spend: t.spend,
+      cpl: t.leads > 0 ? t.spend / t.leads : 0,
+      cps: t.scheduled > 0 ? t.spend / t.scheduled : 0,
+      cpm: t.held > 0 ? t.spend / t.held : 0,
+    });
+  }
+  return out;
+}
+
+export function sumProjectFunnels(rows: AllClientsRow[]): ProjectFunnelIndex {
+  const slugAcc = new Map<string, FunnelAcc>();
+  const nameAcc = new Map<string, FunnelAcc>();
+  for (const r of rows) {
+    if (r.rowType !== "current") continue;
+    const slug = r.projectSlug.toLowerCase().trim();
+    const name = r.project.toLowerCase().trim();
+    if (slug) addFunnel(slugAcc, slug, r);
+    if (name) addFunnel(nameAcc, name, r);
+  }
+  return { bySlug: finalizeFunnels(slugAcc), byName: finalizeFunnels(nameAcc) };
+}
+
+/**
+ * Resolve one project's funnel totals from the index, given its Hebrew
+ * name and (optionally) its Keys-resolved slug. Slug first — that's the
+ * complete aggregation — then the Hebrew name, then the case where the
+ * project string IS a slug. Null when none match (no CRM/media
+ * aggregation exists for the project yet). Same precedence intent as
+ * `consolidateForProject`'s row predicate.
+ */
+export function lookupProjectFunnel(
+  index: ProjectFunnelIndex,
+  projectName: string,
+  slugFromKeys?: string,
+): ProjectFunnelTotals | null {
+  const nameLower = projectName.toLowerCase().trim();
+  const slugLower = (slugFromKeys || "").toLowerCase().trim();
+  if (slugLower && index.bySlug.has(slugLower)) return index.bySlug.get(slugLower)!;
+  if (nameLower && index.byName.has(nameLower)) return index.byName.get(nameLower)!;
+  if (nameLower && index.bySlug.has(nameLower)) return index.bySlug.get(nameLower)!;
+  return null;
+}
+
+/**
+ * Map every project's lowercased Hebrew name → its slug (`campaign ID`),
+ * read from Keys. The canonical name→slug join the dashboard uses
+ * (a batched `resolveSlugFromKeys`) — needed because ALL CLIENTS joins
+ * on slug but most hub surfaces only carry the Hebrew project name.
+ * Cached the same way as every other Keys read.
+ */
+export async function getSlugByProjectName(
+  subjectEmail: string,
+): Promise<Map<string, string>> {
+  const { headers, rows } = await readKeysCached(subjectEmail);
+  const iProj = headers.indexOf("פרוייקט");
+  const iSlug = headers.indexOf("campaign ID");
+  const out = new Map<string, string>();
+  if (iProj < 0 || iSlug < 0) return out;
+  for (const r of rows) {
+    const name = String((r as unknown[])[iProj] ?? "").toLowerCase().trim();
+    const slug = String((r as unknown[])[iSlug] ?? "").trim();
+    if (name && slug) out.set(name, slug);
+  }
+  return out;
+}
+
+/**
  * Return every "חודשי" (monthly) row whose window contains today.
  *
  * `todayIso` defaults to the Asia/Jerusalem calendar day in YYYY-MM-DD.

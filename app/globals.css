@@ -1807,6 +1807,54 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
   letter-spacing: 0.01em;
 }
 
+/* Mini CRM funnel under the progress bars — leads / scheduled / held with
+   blended cost-per-metric. Three equal columns; each cell stacks the count,
+   a tiny label, and a colored cost chip (green=cheap … red=dear, same
+   thresholds as the budget desk's costChipStyle). Sits below a hairline
+   divider so it reads as a distinct "outcomes" block from the pacing bars. */
+.project-pill-funnel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+.ppf-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.ppf-count {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text, #111);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.ppf-label {
+  font-size: 0.66rem;
+  font-weight: 500;
+  color: var(--text-muted, #6b7280);
+  letter-spacing: 0.01em;
+}
+.ppf-cost {
+  font-size: 0.66rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0.05em 0.45em;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+.ppf-cost-empty {
+  background: transparent;
+  opacity: 0.45;
+  padding: 0;
+}
+
 /* Badges at the end of each pill — 📋 N / 🏷️ N when the user has open
    items on that project. Kept small + colored so the pill still reads
    "project X, oh and there's 2 tasks waiting" at a glance. */

@@ -19,6 +19,15 @@ import { companyColorSlot } from "@/lib/colors";
 import { scopeProjectsToPerson } from "@/lib/scope";
 import { projectHref } from "@/lib/projectHref";
 import { isProjectEndedByIso, morningScopeFor } from "@/lib/projectEnded";
+import {
+  getAllClientsAllRows,
+  getSlugByProjectName,
+  sumProjectFunnels,
+  lookupProjectFunnel,
+  type ProjectFunnelTotals,
+} from "@/lib/allClients";
+import { driveFolderOwner } from "@/lib/sa";
+import { costChipStyle } from "@/lib/budgetShiftSuggestions";
 
 type AlertCounts = { severe: number; warn: number; info: number };
 
@@ -47,14 +56,23 @@ export default async function HomePage() {
   // entry — otherwise the morning feed would fetch twice per request.
   const morningScope = morningScopeFor(effectiveMe);
 
-  const [projectsRes, countsRes, morningRes] = await Promise.allSettled([
-    getMyProjects(viewAs || undefined),
-    getMyCounts(viewAs || undefined),
-    // Morning feed powers alert badges AND the "hide ended" filter (via
-    // endIso). Returns empty for clients (gated internal-only) so we
-    // silently swallow access errors.
-    getMorningFeed({ scope: morningScope, overrideEmail: viewAs || undefined }),
-  ]);
+  const [projectsRes, countsRes, morningRes, allClientsRes, slugMapRes] =
+    await Promise.allSettled([
+      getMyProjects(viewAs || undefined),
+      getMyCounts(viewAs || undefined),
+      // Morning feed powers alert badges AND the "hide ended" filter (via
+      // endIso). Returns empty for clients (gated internal-only) so we
+      // silently swallow access errors.
+      getMorningFeed({ scope: morningScope, overrideEmail: viewAs || undefined }),
+      // ALL CLIENTS (5-min cached, read as the folder owner) + the Keys
+      // name→slug map power the per-project CRM funnel strip (leads /
+      // sched / held + cost-per-metric). Both are cheap cached reads that
+      // overlap the ~6s morning feed, so they add ~no wall-clock. Read
+      // for everyone but only joined for internal users below — a client's
+      // result is discarded server-side, never serialized.
+      getAllClientsAllRows(driveFolderOwner()),
+      getSlugByProjectName(driveFolderOwner()),
+    ]);
 
   const data = projectsRes.status === "fulfilled" ? projectsRes.value : null;
   const counts = countsRes.status === "fulfilled" ? countsRes.value : null;
@@ -183,6 +201,38 @@ export default async function HomePage() {
     }
   }
 
+  // Per-project CRM funnel (leads → scheduled → held) + blended
+  // cost-per-metric, summed from the project's "current" ALL CLIENTS rows
+  // and joined by Keys slug — the same slug-keyed aggregation /stats and
+  // the budget desk use, so the numbers agree across surfaces. The window
+  // is campaign-to-date (the full flight window), matching the project
+  // page's default funnel.
+  //
+  // Internal-only by construction: the morning feed returns projects only
+  // for staff/admins (empty for clients), so gating on it keeps the
+  // portfolio-wide funnel data — leads + cost — off client-facing renders,
+  // exactly like the budget/time bars below.
+  const funnelByProject = new Map<string, ProjectFunnelTotals>();
+  if (
+    morning &&
+    morning.projects.length > 0 &&
+    allClientsRes.status === "fulfilled" &&
+    slugMapRes.status === "fulfilled"
+  ) {
+    const funnelIndex = sumProjectFunnels(allClientsRes.value);
+    const slugByName = slugMapRes.value;
+    for (const p of allProjects) {
+      const f = lookupProjectFunnel(
+        funnelIndex,
+        p.name,
+        slugByName.get(p.name.toLowerCase().trim()),
+      );
+      if (f && (f.leads > 0 || f.scheduled > 0 || f.held > 0)) {
+        funnelByProject.set(p.name, f);
+      }
+    }
+  }
+
   return (
     <main className="container">
       <header className="page-header">
@@ -294,6 +344,7 @@ export default async function HomePage() {
                     const pc = byProject[p.name];
                     const ac = alertsByProject.get(p.name);
                     const pg = progressByProject.get(p.name);
+                    const pf = funnelByProject.get(p.name);
                     const ended = isProjectEndedByIso(
                       endIsoByProject.get(p.name),
                     );
@@ -315,6 +366,7 @@ export default async function HomePage() {
                             <ProjectPillBadges counts={pc} />
                           </div>
                           {pg && <ProjectPillProgress progress={pg} />}
+                          {pf && <ProjectPillFunnel funnel={pf} />}
                         </Link>
                       </li>
                     );
@@ -454,6 +506,63 @@ function ProjectPillProgress({
         </span>
         <span className="pill-bar-pct">{timePct}%</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Mini CRM funnel shown under the progress bars: leads → scheduled → held,
+ * each with its blended cost-per-metric (spend ÷ count) — the same figures
+ * the project page's totals row shows. Cost chips are colored on the
+ * green→red gradient shared with the budget desk (costChipStyle). Counts
+ * are campaign-to-date (the full flight window). Internal-only — the caller
+ * only populates funnel data for users whose morning feed returned
+ * projects, so external clients never see it.
+ */
+function ProjectPillFunnel({ funnel }: { funnel: ProjectFunnelTotals }) {
+  const ils = (v: number) =>
+    v > 0 ? `₪${Math.round(v).toLocaleString("he-IL")}` : "";
+  const cells: {
+    metric: "cpl" | "cps" | "cpm";
+    label: string;
+    short: string;
+    count: number;
+    cost: number;
+  }[] = [
+    { metric: "cpl", label: "לידים", short: "ליד", count: funnel.leads, cost: funnel.cpl },
+    {
+      metric: "cps",
+      label: "תיאומים",
+      short: "תיאום",
+      count: funnel.scheduled,
+      cost: funnel.cps,
+    },
+    { metric: "cpm", label: "פגישות", short: "פגישה", count: funnel.held, cost: funnel.cpm },
+  ];
+  return (
+    <div className="project-pill-funnel" aria-label="לידים, תיאומים ופגישות עם עלות לכל אחד">
+      {cells.map((c) => {
+        const chip = c.cost > 0 ? costChipStyle(c.metric, c.cost) : null;
+        return (
+          <div className="ppf-cell" key={c.metric}>
+            <span className="ppf-count">{c.count.toLocaleString("he-IL")}</span>
+            <span className="ppf-label">{c.label}</span>
+            {c.cost > 0 ? (
+              <span
+                className="ppf-cost"
+                style={chip ? { background: chip.bg, color: chip.fg } : undefined}
+                title={`עלות ל${c.short}: ${ils(c.cost)}`}
+              >
+                {ils(c.cost)}
+              </span>
+            ) : (
+              <span className="ppf-cost ppf-cost-empty" aria-hidden>
+                —
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
