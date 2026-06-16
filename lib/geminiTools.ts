@@ -16,7 +16,7 @@
  *   • Hub resolvers: getTask, getProject, getCompanyContacts
  *   • Project data: getProjectMetrics, getCrmFunnel, getProjectAlerts,
  *     getProjectPacing, getPriceCheck, getBudgetShift,
- *     diagnosePaidChannels, searchTasks
+ *     diagnosePaidChannels, getCreativePerformance, searchTasks
  *   • Portfolio: getMorningFeedPortfolio, getPortfolioBenchmarks
  *   • Workspace reads: searchGmail, readGmailThread, searchDrive,
  *     readDoc, readPdf
@@ -918,6 +918,91 @@ const diagnosePaidChannelsTool: Tool = {
   },
 };
 
+const getCreativePerformanceTool: Tool = {
+  declaration: {
+    name: "getCreativePerformance",
+    description:
+      "Per-CREATIVE cost-per-result for a project's paid Facebook/Instagram " +
+      "ads — which ad creative drove meetings at the lowest cost. Returns " +
+      "the project's FB UTM breakdown: leads by placement + audience, and " +
+      "per creative (ad name) leads / scheduled / held / spend / CPL / " +
+      "cost-per-scheduled / cost-per-held. Use for 'מה הקריאייטיב הכי טוב " +
+      "ב-X?', 'איזו מודעה מביאה פגישות הכי זול?', creative-level CPA. " +
+      "Only BMBY projects whose FB leads carry UTM tags (warehouse-sourced " +
+      "funnel) have this — for others it returns available:false with the " +
+      "reason (e.g. a project whose FB leads have no UTM, or a Sehel/" +
+      "Salesforce project). Sourced from the same CRM funnel as getCrmFunnel.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name as it appears in the hub (Hebrew ok).",
+        },
+        monthFilter: {
+          type: SchemaType.STRING,
+          description:
+            "Optional 'YYYY-MM' window; omit for the current Asia/Jerusalem " +
+            "month (matches the funnel's default).",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  execute: async (email, args) => {
+    const projectQuery = requireString(args, "project");
+    const monthFilter = optionalString(args, "monthFilter");
+    const { getMyProjectsDirect } = await import("@/lib/projectsDirect");
+    const data = await getMyProjectsDirect(email);
+    const lc = projectQuery.toLowerCase().trim();
+    const match = data.projects.find((p) => p.name.toLowerCase().trim() === lc);
+    if (!match) {
+      return {
+        ok: false,
+        error: `no project named '${projectQuery}' is visible to ${email}`,
+      };
+    }
+    const { getCrmFunnelForProject } = await import("@/lib/crmData");
+    const funnel = await getCrmFunnelForProject({
+      company: match.company,
+      project: match.name,
+      monthFilter,
+    });
+    if (!funnel) {
+      return {
+        ok: false,
+        error:
+          `no CRM funnel for '${match.name}' — no CRM mapping in Keys, or ` +
+          `zero CRM rows in the window`,
+      };
+    }
+    const fb = funnel.fbBreakdown;
+    if (!fb) {
+      return {
+        ok: true,
+        available: false,
+        project: match.name,
+        platform: funnel.platform,
+        note:
+          funnel.platform !== "bmby"
+            ? `creative-level cost-per-result is BMBY-only; '${match.name}' is a ${funnel.platform} project`
+            : `no FB creative breakdown for '${match.name}' — its funnel isn't warehouse-sourced, or its Facebook leads carry no UTM tags (so leads can't be attributed to specific creatives). The channel-level numbers from getCrmFunnel / getProjectMetrics still apply.`,
+      };
+    }
+    return {
+      ok: true,
+      available: true,
+      project: match.name,
+      platform: funnel.platform,
+      monthFilter: funnel.monthFilter || funnel.windowLabel || "(current month)",
+      totalFbLeads: fb.totalLeads,
+      byPlacement: fb.byPlacement,
+      byAudience: fb.byAudience,
+      byCreative: fb.byCreative,
+    };
+  },
+};
+
 const getCompanyContactsTool: Tool = {
   declaration: {
     name: "getCompanyContacts",
@@ -1740,6 +1825,7 @@ export const TOOL_CATALOG: Tool[] = [
   getBudgetShiftTool,
   getPortfolioBenchmarksTool,
   diagnosePaidChannelsTool,
+  getCreativePerformanceTool,
   getCompanyContactsTool,
   searchGmailTool,
   readGmailThreadTool,

@@ -44,6 +44,21 @@ function client(): Anthropic {
   return _client;
 }
 
+/** Transient Anthropic failures worth retrying: rate-limit (429),
+ *  overloaded (529), and gateway/5xx blips. 4xx (400/401/403) propagate. */
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 529]);
+function isRetryableStatus(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  return typeof status === "number" && RETRYABLE_STATUSES.has(status);
+}
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+/** Exponential backoff with ±20% jitter: ~300ms, ~600ms, ~1200ms. */
+function backoffMs(attempt: number): number {
+  return Math.round(300 * 2 ** attempt * (0.8 + Math.random() * 0.4));
+}
+
 /** Result of executing a hub function tool — handed back to Claude
  *  as the content of a `tool_result` block. JSON-serializable. */
 export type ClaudeToolResult = {
@@ -286,23 +301,12 @@ export async function* streamClaudeChat(
   // without letting a runaway loop burn tokens.
   const MAX_ITERATIONS = 8;
 
-  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    const stream = c.messages.stream({
-      model: args.model || "claude-haiku-4-5",
-      // 8192 (up from 4096): Hebrew runs ~1.3-1.5x more verbose than English
-      // and searchSheetRows/readSheetTab answers can be long + tabular, so the
-      // old ceiling truncated real answers (the drawer even has a MAX_TOKENS
-      // banner). Output is billed per-token, so this only costs more when a
-      // longer answer is actually produced.
-      max_tokens: 8192,
-      system: systemBlocks,
-      messages,
-      tools,
-    });
+  const MAX_RETRIES = 3;
 
-    // Per-iteration accumulators. We need to track tool_use blocks
-    // by their (numeric) content-block index so input_json_delta
-    // events can be correlated back to the right block.
+  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+    // Per-iteration accumulators. We track tool_use blocks by their
+    // (numeric) content-block index so input_json_delta events can be
+    // correlated back to the right block.
     const toolUseByIndex = new Map<number, CollectedToolUse>();
     let iterationStopReason: string | null = null;
 
@@ -323,6 +327,29 @@ export async function* streamClaudeChat(
         }
       }
     }
+
+    // Establish + consume the stream, retrying transient Anthropic errors
+    // (429 / 5xx / 529 overloaded) with exponential backoff + jitter. We
+    // retry ONLY while nothing has been yielded in the current attempt, so
+    // a mid-stream failure after partial output never double-emits text.
+    let finalMessage: Anthropic.Messages.Message | undefined;
+    for (let attempt = 0; ; attempt++) {
+      let producedThisAttempt = false;
+      try {
+        toolUseByIndex.clear();
+        iterationStopReason = null;
+        const stream = c.messages.stream({
+          model: args.model || "claude-haiku-4-5",
+          // 8192 (up from 4096): Hebrew runs ~1.3-1.5x more verbose than
+          // English and searchSheetRows/readSheetTab answers can be long +
+          // tabular, so the old ceiling truncated real answers (the drawer
+          // even has a MAX_TOKENS banner). Output is billed per-token, so
+          // this only costs more when a longer answer is actually produced.
+          max_tokens: 8192,
+          system: systemBlocks,
+          messages,
+          tools,
+        });
 
     for await (const event of stream) {
       // The SDK's typing union spans many event types. We only care
@@ -363,6 +390,7 @@ export async function* streamClaudeChat(
         }
       } else if (e.type === "content_block_delta" && typeof e.index === "number") {
         if (e.delta?.type === "text_delta" && typeof e.delta.text === "string") {
+          producedThisAttempt = true;
           yield { text: e.delta.text };
         } else if (
           e.delta?.type === "input_json_delta" &&
@@ -397,8 +425,12 @@ export async function* streamClaudeChat(
           //   - custom function → "🔧 toolName" chip
           if (tu.name === "web_search") {
             const q = typeof parsedArgs.query === "string" ? parsedArgs.query : "";
-            if (q) yield { searchQuery: q };
+            if (q) {
+              producedThisAttempt = true;
+              yield { searchQuery: q };
+            }
           } else {
+            producedThisAttempt = true;
             yield { toolCall: { name: tu.name, args: parsedArgs } };
           }
           // Stash the parsed args on the entry so the post-stream
@@ -412,10 +444,24 @@ export async function* streamClaudeChat(
       }
     }
 
-    // Resolve the aggregated final message for usage stats + a final
-    // source-harvest pass + the assistant content blocks we'll need
-    // to feed back if tool execution is required.
-    const finalMessage = await stream.finalMessage();
+        // Resolve the aggregated final message for usage stats + a final
+        // source-harvest pass + the assistant content blocks we'll need
+        // to feed back if tool execution is required.
+        finalMessage = await stream.finalMessage();
+        break;
+      } catch (err) {
+        if (
+          !producedThisAttempt &&
+          attempt < MAX_RETRIES &&
+          isRetryableStatus(err)
+        ) {
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!finalMessage) throw new Error("stream produced no final message");
     totalInputTokens += finalMessage.usage.input_tokens;
     totalOutputTokens += finalMessage.usage.output_tokens;
     if (!iterationStopReason) iterationStopReason = finalMessage.stop_reason;

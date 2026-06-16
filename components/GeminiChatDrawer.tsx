@@ -602,6 +602,8 @@ function toolEmoji(name: string): string {
       return "📈";
     case "diagnosePaidChannels":
       return "🔬";
+    case "getCreativePerformance":
+      return "🎨";
     case "getCompanyContacts":
       return "👥";
     case "searchGmail":

@@ -115,6 +115,8 @@ wrong tool:
       → getBudgetShift(project)
 - "diagnose X's channels" / good vs bad channels / where are we wasting budget
       → diagnosePaidChannels(project)
+- "which creative/ad performs best on X" / cheapest creative per meeting / FB ad CPA
+      → getCreativePerformance(project)   ← per-creative; needs UTM-tagged FB leads
 - "typical CPL/CPS in the portfolio" / is X's number good vs peers / benchmark
       → getPortfolioBenchmarks()
 getCompanyContacts is ONLY for resolving a PERSON's name → email (so a
