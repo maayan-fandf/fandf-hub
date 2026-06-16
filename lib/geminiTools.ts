@@ -15,7 +15,9 @@
  * Catalog (read-only):
  *   • Hub resolvers: getTask, getProject, getCompanyContacts
  *   • Project data: getProjectMetrics, getCrmFunnel, getProjectAlerts,
- *     getProjectPacing, getPriceCheck, searchTasks
+ *     getProjectPacing, getPriceCheck, getBudgetShift,
+ *     diagnosePaidChannels, searchTasks
+ *   • Portfolio: getMorningFeedPortfolio, getPortfolioBenchmarks
  *   • Workspace reads: searchGmail, readGmailThread, searchDrive,
  *     readDoc, readPdf
  *   • Sheet access: getSheetMetadata, readSheetTab, searchSheetRows
@@ -634,6 +636,285 @@ const getPriceCheckTool: Tool = {
     const project = requireString(args, "project");
     const { getProjectPriceCheck } = await import("@/lib/appsScript");
     return getProjectPriceCheck(project);
+  },
+};
+
+const getMorningFeedPortfolioTool: Tool = {
+  declaration: {
+    name: "getMorningFeedPortfolio",
+    description:
+      "Portfolio-wide morning briefing — 'what across ALL my projects " +
+      "needs attention?'. Aggregates the daily morning feed over every " +
+      "project the user can see: counts by severity (severe/warn/info) " +
+      "plus the most-severe signals (budget pacing, CPL spikes, zero-lead " +
+      "channels, price mismatch, stale CRM leads…) each tagged with its " +
+      "project. Use for 'תן לי סיכום בוקר', 'מה דורש טיפול היום?', 'יש " +
+      "בעיות בפרויקטים שלי?'. For ONE named project use getProjectAlerts. " +
+      "Dismissed (snoozed) signals are excluded.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        scope: {
+          type: SchemaType.STRING,
+          description:
+            "Optional 'all' (whole agency — admins/managers only) or " +
+            "'mine' (just my projects). Omit to use the viewer's default.",
+        },
+      },
+    },
+  },
+  execute: async (email, args) => {
+    const scopeArg = optionalString(args, "scope");
+    const { getMorningFeed } = await import("@/lib/appsScript");
+    const { morningScopeFor } = await import("@/lib/projectEnded");
+    const scope =
+      scopeArg === "all" || scopeArg === "mine"
+        ? scopeArg
+        : morningScopeFor(email);
+    const feed = await getMorningFeed({ scope, overrideEmail: email });
+    const SEV_RANK: Record<string, number> = { severe: 0, warn: 1, info: 2 };
+    const all: {
+      project: string;
+      company: string;
+      severity: string;
+      kind: string;
+      title: string;
+      detail: string;
+    }[] = [];
+    const perProject = (feed.projects || []).map((p) => {
+      const live = (p.signals || []).filter((s) => !s.dismissed);
+      for (const s of live) {
+        all.push({
+          project: p.name,
+          company: p.company,
+          severity: s.severity,
+          kind: s.kind,
+          title: s.title,
+          detail: s.detail,
+        });
+      }
+      const maxSeverity = live.reduce(
+        (m, s) => ((SEV_RANK[s.severity] ?? 9) < (SEV_RANK[m] ?? 9) ? s.severity : m),
+        "info",
+      );
+      return {
+        project: p.name,
+        company: p.company,
+        signalCount: live.length,
+        maxSeverity: live.length ? maxSeverity : "none",
+      };
+    });
+    all.sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9));
+    const counts = all.reduce(
+      (acc, s) => {
+        acc[s.severity] = (acc[s.severity] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+    return {
+      ok: true,
+      scope: feed.scope,
+      generatedAt: feed.generatedAt,
+      totalSignals: all.length,
+      counts: {
+        severe: counts.severe || 0,
+        warn: counts.warn || 0,
+        info: counts.info || 0,
+      },
+      topSignals: all.slice(0, 12),
+      projects: perProject
+        .filter((p) => p.signalCount > 0)
+        .sort((a, b) => b.signalCount - a.signalCount),
+    };
+  },
+};
+
+const getBudgetShiftTool: Tool = {
+  declaration: {
+    name: "getBudgetShift",
+    description:
+      "Per-project BUDGET-SHIFT advice — the same rebalance/drift " +
+      "suggestions the budget desk (/morning/budgets) shows. Returns " +
+      "where to move budget between channels (₪ deltas + rationale) plus " +
+      "per-channel performance (CPL / cost-per-scheduled / cost-per-meeting " +
+      "/ spend / daily rate / CPL trend). Use for 'איפה להזיז תקציב ב-X?', " +
+      "'אילו ערוצים מתת-ביצוע ב-X?', 'מה ההמלצה לתקציב של X?'. Advisory " +
+      "only — it never changes budgets.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name (Hebrew ok) or campaign-id slug.",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  // Reads the full budget master (like the desk page), so mirror the
+  // desk's access gate: budget-shift advice is for admins / managers /
+  // the media team only — don't broaden it to all staff via chat.
+  execute: async (email, args) => {
+    const { canSeeCampaigns } = await import("@/lib/userRole");
+    if (!(await canSeeCampaigns(email).catch(() => false))) {
+      return {
+        ok: false,
+        error:
+          "budget-shift advice is limited to admins, managers and the media team",
+      };
+    }
+    const query = requireString(args, "project").toLowerCase();
+    const { getBudgetMaster } = await import("@/lib/budgetMaster");
+    const { getAllClientsAllRows } = await import("@/lib/allClients");
+    const { groupAllClientsBySlug, computeBudgetShiftForProject, buildChannelPerf } =
+      await import("@/lib/budgetShiftSuggestions");
+    const { driveFolderOwner } = await import("@/lib/sa");
+    const owner = driveFolderOwner();
+    const master = await getBudgetMaster(owner);
+    if (!master || !master.projects?.length) {
+      return { ok: false, error: "budget master is unavailable" };
+    }
+    const proj = master.projects.find(
+      (p) =>
+        p.name.toLowerCase().trim() === query ||
+        (p.tab || "").toLowerCase().trim() === query,
+    );
+    if (!proj) {
+      return { ok: false, error: `no budget-desk project matches '${query}'` };
+    }
+    const bySlug = groupAllClientsBySlug(await getAllClientsAllRows(owner));
+    const group = bySlug.get((proj.tab || "").toLowerCase().trim());
+    if (!group) {
+      return {
+        ok: false,
+        error: `no ALL CLIENTS rows for '${proj.name}' (slug ${proj.tab})`,
+      };
+    }
+    const todayIso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+    }).format(new Date());
+    const shift = computeBudgetShiftForProject({
+      project: proj,
+      currentRows: group.current,
+      monthlyRows: group.monthly,
+      todayIso,
+    });
+    const perf = buildChannelPerf(group.current, group.monthly, todayIso);
+    const channelPerf = Object.entries(perf).map(([channel, p]) => ({
+      channel,
+      ...p,
+    }));
+    if (!shift) {
+      return {
+        ok: true,
+        project: proj.name,
+        slug: proj.tab,
+        mode: null,
+        totalMove: 0,
+        suggestions: [],
+        note:
+          "no budget-shift suggestion (drift < ₪100, no E3 budget, or too " +
+          "little per-channel data to score)",
+        channelPerf,
+      };
+    }
+    return {
+      ok: true,
+      project: proj.name,
+      slug: proj.tab,
+      mode: shift.mode,
+      totalMove: shift.totalMove,
+      suggestions: shift.suggestions,
+      channelPerf,
+    };
+  },
+};
+
+const getPortfolioBenchmarksTool: Tool = {
+  declaration: {
+    name: "getPortfolioBenchmarks",
+    description:
+      "Portfolio benchmarks — how the whole book distributes on CPL / " +
+      "cost-per-scheduled / cost-per-meeting, both per-PROJECT and " +
+      "per-CHANNEL, as P25 / median / P75 (+ mean, n). Use to answer 'מה " +
+      "ה-CPL הטיפוסי בתיקייה?', 'איזה ערוץ יקר ביחס לממוצע?', or to judge " +
+      "whether a project's number is good vs peers. For a ready-made " +
+      "per-project verdict, prefer diagnosePaidChannels.",
+    parameters: { type: SchemaType.OBJECT, properties: {} },
+  },
+  execute: async (email) => {
+    const { getPortfolioBenchmarks } = await import("@/lib/portfolioBenchmarks");
+    const b = await getPortfolioBenchmarks(email);
+    // Strip the heavy raw arrays (per-sample values, period-raw rows) — the
+    // model only needs the distribution stats, not the underlying samples.
+    const strip = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(strip);
+      if (v && typeof v === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          if (k === "samples" || k === "projectPeriodRaw") continue;
+          out[k] = strip(val);
+        }
+        return out;
+      }
+      return v;
+    };
+    return { ok: true, benchmarks: strip(b) };
+  },
+};
+
+const diagnosePaidChannelsTool: Tool = {
+  declaration: {
+    name: "diagnosePaidChannels",
+    description:
+      "Diagnose a project's PAID channels against portfolio benchmarks and " +
+      "return ranked, plain-language verdict cards (good / watch / warn / " +
+      "bad) — budget waste, CPL outliers, winners to scale, quality leaks. " +
+      "Use for 'אבחן את X', 'מה הטוב והרע בערוצים של X?', 'איפה שורפים " +
+      "תקציב ב-X?'. It fetches the project's media metrics + the portfolio " +
+      "benchmarks for you.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name (Hebrew ok) or slug.",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  execute: async (email, args) => {
+    const project = requireString(args, "project");
+    const { getProjectMetrics } = await import("@/lib/appsScript");
+    const { getPortfolioBenchmarks } = await import("@/lib/portfolioBenchmarks");
+    const { diagnosePaidChannels } = await import("@/lib/paidDiagnosis");
+    const [metricsRes, benchmarks] = await Promise.all([
+      getProjectMetrics(project, undefined, email),
+      getPortfolioBenchmarks(email).catch(() => null),
+    ]);
+    if (!metricsRes.ok) {
+      return {
+        ok: false,
+        error: `couldn't load metrics for '${project}': ${metricsRes.error}`,
+      };
+    }
+    const channels = metricsRes.project.channels || [];
+    const cards = diagnosePaidChannels(channels, benchmarks);
+    return {
+      ok: true,
+      project: metricsRes.project.name,
+      cardCount: cards.length,
+      cards: cards.map((c) => ({
+        priority: c.priority,
+        tone: c.tone,
+        head: c.head,
+        body: c.body,
+        sample: c.sample,
+        tip: c.tip,
+      })),
+    };
   },
 };
 
@@ -1455,6 +1736,10 @@ export const TOOL_CATALOG: Tool[] = [
   getProjectAlertsTool,
   getProjectPacingTool,
   getPriceCheckTool,
+  getMorningFeedPortfolioTool,
+  getBudgetShiftTool,
+  getPortfolioBenchmarksTool,
+  diagnosePaidChannelsTool,
   getCompanyContactsTool,
   searchGmailTool,
   readGmailThreadTool,

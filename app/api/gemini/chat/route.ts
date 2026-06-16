@@ -109,6 +109,14 @@ wrong tool:
       → getProjectPacing(project)
 - "which tasks…" / awaiting approval / what is X working on / מה תקוע
       → searchTasks(...)
+- "what needs attention across ALL my projects" / morning summary / סיכום בוקר
+      → getMorningFeedPortfolio()   ← portfolio-wide; getProjectAlerts is single-project
+- "where to shift budget on X" / which channels underperform / המלצת תקציב
+      → getBudgetShift(project)
+- "diagnose X's channels" / good vs bad channels / where are we wasting budget
+      → diagnosePaidChannels(project)
+- "typical CPL/CPS in the portfolio" / is X's number good vs peers / benchmark
+      → getPortfolioBenchmarks()
 getCompanyContacts is ONLY for resolving a PERSON's name → email (so a
 later searchGmail/searchDrive can run). It is NOT a project-data tool —
 never call it for a CRM/metrics/pacing/alerts/tasks question about a

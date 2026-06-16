@@ -594,6 +594,14 @@ function toolEmoji(name: string): string {
       return "⏱️";
     case "getPriceCheck":
       return "💰";
+    case "getMorningFeedPortfolio":
+      return "🌅";
+    case "getBudgetShift":
+      return "⚖️";
+    case "getPortfolioBenchmarks":
+      return "📈";
+    case "diagnosePaidChannels":
+      return "🔬";
     case "getCompanyContacts":
       return "👥";
     case "searchGmail":
