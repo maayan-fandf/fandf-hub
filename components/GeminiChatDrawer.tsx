@@ -5,7 +5,9 @@ import { usePageContext } from "@/components/PageContextProvider";
 import { capturePageContext } from "@/lib/pageContextSnapshot";
 
 /**
- * Gemini chat assistant drawer.
+ * Hubby — the in-hub AI assistant drawer (Claude-backed). The "gemini"
+ * names retained in this file (route path, localStorage prefix, CSS
+ * classes) are kept for backward-compat; the assistant is branded "Hubby".
  *
  * Renders two things:
  *   1. A floating action button (✨) in the bottom-INLINE-end corner
@@ -43,8 +45,8 @@ type Message = {
    *  Persisted alongside toolCalls for the same "see what the
    *  assistant did" reason. */
   searchQueries?: string[];
-  /** Web sources Vertex grounded against, surfaced as a "Sources:"
-   *  footer on the bubble. */
+  /** Web sources Claude grounded against via web_search, surfaced as a
+   *  "Sources:" footer on the bubble. */
   sources?: GroundingSource[];
   /** Reason the model stopped this turn. Empty / "STOP" = clean.
    *  Anything else (MAX_TOKENS / SAFETY / RECITATION / OTHER) is
@@ -286,15 +288,15 @@ export default function GeminiChatDrawer() {
         type="button"
         className={`gemini-fab${open ? " is-open" : ""}`}
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? "סגור עוזר" : "פתח עוזר"}
-        title={open ? "סגור" : "שאל את ה-Hub"}
+        aria-label={open ? "סגור את Hubby" : "פתח את Hubby"}
+        title={open ? "סגור" : "שאל את Hubby"}
       >
         ✨
       </button>
       {open && (
         <aside className="gemini-drawer themed-scrollbar" role="dialog">
           <header className="gemini-drawer-head">
-            <span className="gemini-drawer-title">✨ עוזר Hub</span>
+            <span className="gemini-drawer-title">✨ Hubby</span>
             <button
               type="button"
               className="gemini-drawer-clear"
@@ -319,14 +321,15 @@ export default function GeminiChatDrawer() {
             {messages.length === 0 && !streaming && (
               <div className="gemini-empty">
                 <div className="gemini-empty-icon">✨</div>
-                <div className="gemini-empty-title">איך אפשר לעזור?</div>
+                <div className="gemini-empty-title">היי, אני Hubby 👋</div>
                 <div className="gemini-empty-hint">
-                  אני מכיר את ה‑Hub, את הג׳ימייל שלך ואת ה‑Drive. שאל למשל:
+                  מכיר את ה‑Hub, הנתונים, ה‑CRM, הג׳ימייל וה‑Drive שלך. שאל למשל:
                 </div>
                 <ul className="gemini-empty-examples">
+                  <li>״מה המצב של קאזר החודש?״</li>
+                  <li>״איך נראה משפך ה‑CRM של גינדי?״</li>
+                  <li>״יש התראות או חריגות תקציב בפרויקטים שלי?״</li>
                   <li>״מה המייל האחרון מלורה ב‑Gindy?״</li>
-                  <li>״מי על הפרויקט הזה?״</li>
-                  <li>״מצא מסמכים על ה‑landing page של גוהרי״</li>
                 </ul>
               </div>
             )}
@@ -459,22 +462,22 @@ function MessageBubble({ message }: { message: Message }) {
 
 /** Small banner under a bubble whose finishReason was non-clean.
  *  MAX_TOKENS = the assistant ran out of room and was cut off; user
- *  can ask "המשך" to continue. SAFETY/RECITATION = Vertex's content
+ *  can ask "המשך" to continue. SAFETY/RECITATION = Claude's content
  *  filter blocked something. Anything else = unknown but not STOP. */
 function FinishReasonBanner({ reason }: { reason: string }) {
   const label =
     reason === "MAX_TOKENS"
       ? "ההודעה נחתכה — חרגה ממכסת הפלט. שאל \"המשך\" כדי להשלים."
       : reason === "SAFETY" || reason === "RECITATION"
-        ? "המודל עצר את התשובה (מסנן תוכן של Vertex)."
+        ? "המודל עצר את התשובה (מסנן תוכן של Claude)."
         : `המודל סיים בלי STOP (${reason}).`;
   return <div className="gemini-finish-banner">⚠️ {label}</div>;
 }
 
-/** Footer block listing the web sources Vertex grounded against.
- *  Rendered under the assistant text bubble when Google Search was
- *  used. Hostname-only labels keep the list compact; full URL goes
- *  on hover via title. */
+/** Footer block listing the web sources Claude found via web_search.
+ *  Rendered under the assistant text bubble when web search was used.
+ *  Hostname-only labels keep the list compact; full URL goes on hover
+ *  via title. */
 function SourcesFooter({ sources }: { sources: GroundingSource[] }) {
   return (
     <div className="gemini-sources">
@@ -579,6 +582,18 @@ function toolEmoji(name: string): string {
       return "📋";
     case "getProject":
       return "📁";
+    case "getProjectMetrics":
+      return "📊";
+    case "getCrmFunnel":
+      return "🔀";
+    case "searchTasks":
+      return "✅";
+    case "getProjectAlerts":
+      return "⚠️";
+    case "getProjectPacing":
+      return "⏱️";
+    case "getPriceCheck":
+      return "💰";
     case "getCompanyContacts":
       return "👥";
     case "searchGmail":
@@ -587,6 +602,13 @@ function toolEmoji(name: string): string {
     case "searchDrive":
     case "readDoc":
       return "📄";
+    case "readPdf":
+      return "📑";
+    case "getSheetMetadata":
+    case "readSheetTab":
+      return "🗂️";
+    case "searchSheetRows":
+      return "🔎";
     default:
       return "🔧";
   }

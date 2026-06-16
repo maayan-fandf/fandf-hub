@@ -12,17 +12,18 @@
  * escalation: the chat can only read what the user could read by
  * navigating the hub or opening their own Gmail / Drive.
  *
- * V1 catalog (read-only):
+ * Catalog (read-only):
  *   • Hub resolvers: getTask, getProject, getCompanyContacts
- *   • Workspace reads: searchGmail, readGmailThread, searchDrive, readDoc
+ *   • Project data: getProjectMetrics, getCrmFunnel, getProjectAlerts,
+ *     getProjectPacing, getPriceCheck, searchTasks
+ *   • Workspace reads: searchGmail, readGmailThread, searchDrive,
+ *     readDoc, readPdf
+ *   • Sheet access: getSheetMetadata, readSheetTab, searchSheetRows
  *
- * Deferred for V1.5+:
+ * Still deferred:
  *   • Write tools (createTask, updateTask) — safer to ship after we
  *     have a confirmation-flow UX in the drawer.
- *   • Calendar (V2 — calendar.events.readonly already in DWD).
- *   • Sheet reads — most useful sheet data is already exposed via
- *     getTask / getProject; raw sheet access is a power-user escape
- *     hatch we can add when a real need surfaces.
+ *   • Calendar (calendar.events.readonly already in DWD).
  */
 
 import { SchemaType, type FunctionDeclaration } from "@google-cloud/vertexai";
@@ -600,6 +601,39 @@ const getProjectPacingTool: Tool = {
           ? Math.round((projectedSpend / mp.budget) * 100)
           : null,
     };
+  },
+};
+
+const getPriceCheckTool: Tool = {
+  declaration: {
+    name: "getPriceCheck",
+    description:
+      "Advertised-price check for a project across its 4 marketing " +
+      "surfaces — landing page, Yad2, Google, Facebook. Returns the " +
+      "detected 'החל מ-' headline price per surface (with the surface's " +
+      "URL + live/ad status) plus a comparison: mismatched (do surfaces " +
+      "disagree), driftPct (max-min spread), severe (drift > 5%, the " +
+      "morning-feed threshold) and mismatchRoom (which room disagrees). " +
+      "Use for 'מה המחירים על X?', 'יש פער מחירים?', 'המחיר תואם בכל " +
+      "הערוצים?'. This is THE source for advertised prices — don't read " +
+      "sheets for them. Returns ok:false when no price was detected yet.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        project: {
+          type: SchemaType.STRING,
+          description: "Project name as it appears in the hub (Hebrew ok).",
+        },
+      },
+      required: ["project"],
+    },
+  },
+  // Advertised prices aren't user-scoped (they're the public ad copy), so
+  // this one tool doesn't need the subject email.
+  execute: async (_email, args) => {
+    const project = requireString(args, "project");
+    const { getProjectPriceCheck } = await import("@/lib/appsScript");
+    return getProjectPriceCheck(project);
   },
 };
 
@@ -1420,6 +1454,7 @@ export const TOOL_CATALOG: Tool[] = [
   searchTasksTool,
   getProjectAlertsTool,
   getProjectPacingTool,
+  getPriceCheckTool,
   getCompanyContactsTool,
   searchGmailTool,
   readGmailThreadTool,

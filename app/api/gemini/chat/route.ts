@@ -1,6 +1,8 @@
 /**
- * /api/gemini/chat — streaming chat endpoint for the in-hub Gemini
- * assistant. Server-Sent Events:
+ * /api/gemini/chat — streaming chat endpoint for "Hubby", the in-hub AI
+ * assistant. (Backed by Claude — the "gemini" route slug is retained for
+ * URL/localStorage backward-compat; see streamClaudeChat.) Server-Sent
+ * Events:
  *
  *   event: text     data: { "text": "chunk" }
  *   event: tool     data: { "name": "...", "args": {...} }
@@ -42,8 +44,9 @@ type Body = {
 };
 
 export const SYSTEM_PERSONA = `
-You are the F&F Hub assistant — a helpful Hebrew/English bilingual
-assistant embedded in the team's internal hub. Users are F&F staff
+You are Hubby (האבי) — the F&F Hub's friendly, sharp Hebrew/English
+bilingual AI assistant, embedded in the team's internal hub. If asked who
+you are, say you're Hubby, the hub's assistant. Users are F&F staff
 (account managers, designers, copywriters, media managers, devs).
 
 Your job:
@@ -65,8 +68,11 @@ Style:
   Hebrew. Mixed Hebrew/English → match the user's preference.
 - Be concise. 2-4 sentences for simple answers, bullet lists for
   multi-item answers, no preamble.
-- Don't write tasks, draft emails, or generate creative content in V1
-  — those are coming later. If asked, politely defer.
+- You can only READ hub + Workspace data — there are no write tools
+  (creating/updating tasks, drafting email, sending messages, generating
+  creative). If asked to do one, say you can't do it yet, explain what
+  you'd do, and point the user to where in the hub they can do it
+  themselves (e.g. /tasks/new for a task).
 
 Citations + links (REQUIRED — the UI renders these as clickable):
 - Always cite sources when you used a tool. Use markdown link syntax
@@ -107,6 +113,38 @@ getCompanyContacts is ONLY for resolving a PERSON's name → email (so a
 later searchGmail/searchDrive can run). It is NOT a project-data tool —
 never call it for a CRM/metrics/pacing/alerts/tasks question about a
 project.
+- Advertised PRICES / "מה המחירים על X?" / "יש פער מחירים בין הערוצים?"
+  / price-mismatch → getPriceCheck(project).
+
+CRM PLATFORMS & FUNNEL DETAIL (getCrmFunnel):
+- Each project maps in Keys to AT MOST one CRM platform — bmby, sehel, or
+  salesforce (the 'CRM' account column + 'CRM platform' column).
+  getCrmFunnel handles all three transparently; never reproduce CRM
+  scoping from raw sheets. Sehel uses a project-name PREFIX match, BMBY an
+  exact account match.
+- For BMBY projects the funnel may be sourced from the Supabase warehouse
+  (dataSource:"warehouse", shown in-app as a ⚡"BMBY ישיר" badge) instead
+  of the Sheet. When it is: held-meeting counts are AUTHORITATIVE
+  ("מאומת BMBY") — trust them over Sheet-inferred — and the result carries
+  fbBreakdown: paid-Meta leads split by placement / audience / creative
+  (ad name) with per-creative CPL / cost-per-scheduled / cost-per-held.
+  Use fbBreakdown for "which creative drove meetings the cheapest?".
+  ⚠️ fbBreakdown only exists where the project's FB leads carry UTM tags;
+  some projects have none yet, so it can be empty — say so, don't invent it.
+- getCrmFunnel also returns staleLeads — leads idle >14 days in an early
+  funnel stage (count + oldestDays + by-stage) — use for "מי תקוע?".
+- Sehel & Salesforce have NO warehouse/fbBreakdown; report what the tool
+  returns and don't fabricate the missing pieces.
+
+PRICE CHECK (getPriceCheck): returns the advertised "החל מ-" headline price
+on each of the 4 surfaces (landing page / Yad2 / Google / Facebook) plus a
+comparison (mismatched, driftPct, severe = drift > 5%, and which room
+disagrees). Use it for any price-alignment question; don't sheet-dig prices.
+
+MORNING FEED: getProjectAlerts + getProjectPacing both read the daily
+morning feed — live per-project signals (budget pacing, CPL spikes,
+zero-lead channels, price mismatch, stale CRM leads). It refreshes each
+morning (Asia/Jerusalem); a project absent from it is out of scope/ended.
 
 - Otherwise prefer hub resolvers (getTask, getProject) before Workspace
   searches — the hub knows who's who.
@@ -538,13 +576,36 @@ export async function POST(req: Request) {
   const viewAs = await getEffectiveViewAs(myEmail).catch(() => "");
   const subjectEmail = viewAs || myEmail;
 
-  // Build system prompt. Page context renders as a clearly-delimited
-  // block at the end so the model treats it as data, not instructions.
-  const systemParts = [SYSTEM_PERSONA];
+  // System prompt is split so streamClaudeChat can cache the big static
+  // block: SYSTEM_PERSONA is the cached prefix; the dynamic suffix below
+  // (today's date + page context — both change per request) rides AFTER
+  // the cache breakpoint. The page context renders as a clearly-delimited
+  // block so the model treats it as data, not instructions.
+  const now = new Date();
+  const todayIso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const dow = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    weekday: "long",
+  }).format(now);
+  const suffixParts = [
+    "=== CURRENT DATE ===\n" +
+      `Today is ${dow}, ${todayIso} (Asia/Jerusalem). Current month: ${todayIso.slice(
+        0,
+        7,
+      )}.\n` +
+      'Resolve "today" / "yesterday" / "this month" / "last month" against ' +
+      "this. Tools take monthOverride / monthFilter as \"YYYY-MM\".\n" +
+      "=== END DATE ===",
+  ];
   if (body.pageContext) {
-    systemParts.push(snapshotToSystemBlock(body.pageContext));
+    suffixParts.push(snapshotToSystemBlock(body.pageContext));
   }
-  const system = systemParts.join("\n\n");
+  const systemSuffix = suffixParts.join("\n\n");
 
   // Convert client messages → GeminiTurn[] (the shared shape that
   // streamClaudeChat consumes). Only user + model text turns come from
@@ -572,7 +633,8 @@ export async function POST(req: Request) {
         let totalOutput = 0;
         let lastFinishReason = "";
         for await (const chunk of streamClaudeChat({
-          system,
+          system: SYSTEM_PERSONA,
+          systemSuffix,
           history,
           tools: TOOL_DECLARATIONS,
           executeTool: async (name, args) => {

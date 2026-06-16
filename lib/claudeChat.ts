@@ -53,8 +53,15 @@ export type ClaudeToolResult = {
 };
 
 export type ClaudeChatArgs = {
-  /** System prompt (plain text). */
+  /** System prompt — the STATIC instruction block. It carries a
+   *  cache_control breakpoint (see streamClaudeChat) so it stays cached
+   *  across the tool-loop iterations and across requests within
+   *  Anthropic's ~5-min TTL; keep it byte-identical between turns. */
   system: string;
+  /** Optional DYNAMIC system suffix (e.g. today's date, page context).
+   *  Appended AFTER the cached static block and intentionally NOT cached,
+   *  since it changes every request. */
+  systemSuffix?: string;
   /** Conversation history in the shared GeminiTurn shape. We filter
    *  to text-only turns at the boundary — function-call / function-
    *  result turns from prior hub-mode turns are dropped, since Claude
@@ -246,6 +253,27 @@ export async function* streamClaudeChat(
     ...customTools,
   ] as unknown as Anthropic.Messages.Tool[];
 
+  // Cache the tool declarations: one cache_control breakpoint on the last
+  // tool caches every tool definition before it in the request prefix.
+  if (tools.length > 0) {
+    (tools[tools.length - 1] as { cache_control?: { type: "ephemeral" } })
+      .cache_control = { type: "ephemeral" };
+  }
+
+  // System as content blocks. The large STATIC instruction block carries a
+  // cache_control breakpoint so it + the tool declarations are cached across
+  // the up-to-MAX_ITERATIONS stream calls in this turn AND across requests
+  // within Anthropic's ~5-min cache TTL — the system+tools are otherwise
+  // re-sent (and re-billed at full price) on every single iteration. The
+  // dynamic suffix (today's date, page context) sits AFTER the breakpoint
+  // and is intentionally left uncached, since it changes every request.
+  const systemBlocks: Anthropic.Messages.TextBlockParam[] = [
+    { type: "text", text: args.system, cache_control: { type: "ephemeral" } },
+  ];
+  if (args.systemSuffix && args.systemSuffix.trim()) {
+    systemBlocks.push({ type: "text", text: args.systemSuffix });
+  }
+
   const sources: GeminiGroundingChunk[] = [];
   const seenUris = new Set<string>();
 
@@ -261,8 +289,13 @@ export async function* streamClaudeChat(
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     const stream = c.messages.stream({
       model: args.model || "claude-haiku-4-5",
-      max_tokens: 4096,
-      system: args.system,
+      // 8192 (up from 4096): Hebrew runs ~1.3-1.5x more verbose than English
+      // and searchSheetRows/readSheetTab answers can be long + tabular, so the
+      // old ceiling truncated real answers (the drawer even has a MAX_TOKENS
+      // banner). Output is billed per-token, so this only costs more when a
+      // longer answer is actually produced.
+      max_tokens: 8192,
+      system: systemBlocks,
       messages,
       tools,
     });
@@ -470,12 +503,14 @@ export async function* streamClaudeChat(
     // Loop back — Claude sees the results and continues composing.
   }
 
-  // Hit the iteration cap without a clean finish.
+  // Hit the iteration cap. Prefer a real mapped stop_reason from the last
+  // iteration (e.g. MAX_TOKENS, set above) so the UI banner shows the true
+  // cut-off cause; fall back to MAX_ITERATIONS only when none was captured.
   yield {
     done: true,
     groundingChunks: sources,
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
-    finishReason: "MAX_ITERATIONS",
+    finishReason: finalFinishReason || "MAX_ITERATIONS",
   };
 }
