@@ -7366,6 +7366,12 @@ html[data-theme="dark"] .crm-source-search-row:hover {
 .crm-speed-block { margin-top: 0.75em; }
 .crm-return-block { margin-top: 0.75em; }
 .crm-heat-block { margin-top: 0.75em; }
+/* Returning-table חוזרים cell — hover reveals the prior-channel mini-pie. */
+.crm-prior-cell {
+  cursor: help;
+  text-decoration: underline dotted var(--border);
+  text-underline-offset: 3px;
+}
 .crm-speed-overall {
   font-weight: 400;
   color: var(--muted);

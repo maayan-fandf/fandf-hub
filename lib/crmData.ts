@@ -255,6 +255,13 @@ export type CrmFunnel = {
     returning: number;
     newLeads: number;
     bySource: Record<string, { returning: number; newLeads: number }>;
+    /** For returning leads: current channel → { prior channel → count } —
+     *  the media channel of the client's immediately-PRIOR lead (within this
+     *  project's history). Powers the "prior channels" hover on the returning
+     *  table. Only ~half of returning leads have a locatable prior (pre-2024
+     *  inquiries are below the warehouse floor), so the inner sums are a
+     *  subset of `bySource[src].returning`. Warehouse-only. */
+    priorBySource?: Record<string, Record<string, number>>;
   };
   /** Lead-arrival heatmap (warehouse BMBY only): when leads land, by
    *  Asia/Jerusalem weekday (`matrix[0]`=Sunday … `matrix[6]`=Saturday) ×
@@ -411,6 +418,57 @@ function computeReturningSplit(
   const total = returning + newLeads;
   if (total === 0) return undefined;
   return { total, returning, newLeads, bySource };
+}
+
+/** For each returning lead, the media channel of the client's immediately-
+ *  PRIOR lead (from the project's full history), tallied as
+ *  currentSource → { priorSource → count }. Returning leads whose prior is
+ *  below the warehouse floor (pre-2024) have no locatable prior and are
+ *  skipped, so the sums are a subset of the returning counts. */
+function computeReturningPriors(
+  returningLeads: {
+    client_id: string | null;
+    lead_created_at: string | null;
+    media_source_clean: string | null;
+  }[],
+  history: {
+    client_id: string | null;
+    lead_created_at: string | null;
+    media_source_clean: string | null;
+  }[],
+): Record<string, Record<string, number>> {
+  const byClient = new Map<string, { ts: number; src: string }[]>();
+  for (const h of history) {
+    const c = String(h.client_id ?? "");
+    if (!c) continue;
+    const ts = Date.parse(h.lead_created_at ?? "");
+    if (Number.isNaN(ts)) continue;
+    let a = byClient.get(c);
+    if (!a) byClient.set(c, (a = []));
+    a.push({ ts, src: normSource(h.media_source_clean) });
+  }
+  for (const a of byClient.values()) a.sort((x, y) => x.ts - y.ts);
+
+  const out: Record<string, Record<string, number>> = {};
+  for (const l of returningLeads) {
+    const c = String(l.client_id ?? "");
+    if (!c) continue;
+    const ts = Date.parse(l.lead_created_at ?? "");
+    if (Number.isNaN(ts)) continue;
+    const h = byClient.get(c);
+    if (!h) continue;
+    let prior: string | null = null;
+    for (const e of h) {
+      if (e.ts < ts) prior = e.src;
+      else break;
+    }
+    if (!prior) continue;
+    const cur = normSource(l.media_source_clean);
+    if (!cur) continue;
+    const inner = out[cur] || (out[cur] = {});
+    inner[prior] = (inner[prior] || 0) + 1;
+  }
+  return out;
 }
 
 // IL weekday+hour formatter for the arrival heatmap (created once).
@@ -1204,6 +1262,23 @@ async function computeBmbyFunnelFromWarehouse(
     // from the leads we already fetched (no extra query). Whole-window.
     funnel.speedToLead = computeSpeedToLead(leads);
     funnel.returningSplit = computeReturningSplit(leads);
+    // Prior-channel breakdown for returning leads — needs the project's full
+    // lead history (the prior inquiry is usually before the window), so a
+    // separate paginated read, gated on there being returning leads.
+    if (funnel.returningSplit && funnel.returningSplit.returning > 0) {
+      const history = await supabaseRowsAll<{
+        client_id: string | null;
+        lead_created_at: string | null;
+        media_source_clean: string | null;
+      }>(
+        `v_bmby_leads_bucketed?project_id=eq.${pid}` +
+          `&select=client_id,lead_created_at,media_source_clean&order=lead_id.asc`,
+      );
+      funnel.returningSplit.priorBySource = computeReturningPriors(
+        leads.filter((l) => l.is_return_lead === true),
+        history,
+      );
+    }
     funnel.arrivalHeatmap = computeArrivalHeatmap(leads);
     funnel.journeyVelocity = computeJourneyVelocity(leads, meetings);
     // Contracts: the synthesized funnel status stamps meeting state over a

@@ -1169,7 +1169,15 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                       </td>
                       <td>{fmtInt(r.total)}</td>
                       <td>{fmtInt(r.newLeads)}</td>
-                      <td>{fmtInt(r.returning)}</td>
+                      <ReturningPriorCell
+                        value={r.returning}
+                        priors={Object.entries(
+                          funnel.returningSplit!.priorBySource?.[r.src] || {},
+                        )
+                          .map(([source, count]) => ({ source, count }))
+                          .sort((a, b) => b.count - a.count)}
+                        palette={palette}
+                      />
                       <td style={{ fontWeight: 600 }}>{pct(r.returning, r.total)}</td>
                     </tr>
                   ))}
@@ -1384,6 +1392,62 @@ function PieLegendRow({
           )
         : null}
     </li>
+  );
+}
+
+/**
+ * The returning table's חוזרים cell — hovering it reveals which media
+ * channel those returning leads previously arrived through (their
+ * immediately-prior lead). Portal-anchored mini-pie, same mechanism as
+ * KpiTile. The known-prior count is a subset of `value` (pre-2024
+ * inquiries can't be located), surfaced in the popover title.
+ */
+function ReturningPriorCell({
+  value,
+  priors,
+  palette,
+}: {
+  value: number;
+  priors: { source: string; count: number }[];
+  palette: Map<string, string>;
+}) {
+  const has = priors.length > 0;
+  const known = priors.reduce((n, p) => n + p.count, 0);
+  const { open, pos, triggerProps, popoverProps } =
+    useHoverPopover<HTMLTableCellElement>();
+  return (
+    <td
+      {...(has ? triggerProps : {})}
+      className={has ? "crm-prior-cell" : undefined}
+    >
+      {fmtInt(value)}
+      {has && open && pos
+        ? createPortal(
+            <div
+              {...popoverProps}
+              className="crm-channel-tooltip is-visible crm-channel-tooltip-portal"
+              role="tooltip"
+              style={{
+                position: "fixed",
+                top: pos.top,
+                left: pos.left,
+                transform: "translateX(-50%)",
+                zIndex: 9999,
+                pointerEvents: "auto",
+                opacity: 1,
+                visibility: "visible",
+              }}
+            >
+              <ChannelMiniPieContent
+                data={priors}
+                palette={palette}
+                metric={`ערוץ קודם (${fmtInt(known)} מתוך ${fmtInt(value)})`}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
+    </td>
   );
 }
 
