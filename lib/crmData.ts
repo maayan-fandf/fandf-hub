@@ -76,6 +76,12 @@ export type CrmFunnel = {
    *  התקיימה". Sehel: status in {אחרי פגישה, פגישה ללא סיכום} —
    *  the post-meeting stages, best-guess pending upstream answer. */
   meetings: number;
+  /** "חוזים/עסקאות" — leads at the contract/sale terminal status. A
+   *  CURRENT-snapshot count (not dated), so windowed figures drift; it's
+   *  independent of `meetings` (a held lead can also sign). BMBY: "חוזה";
+   *  Sehel: "| עסקה"; Salesforce: "טופס הרשמה" (the registration = the
+   *  conversion goal). 0 when none. */
+  contracts: number;
   /** meetings / leads as a 0-100 number (UI formats with %). null when
    *  leads === 0 so the card can show "—" instead of dividing by zero. */
   meetingRatePct: number | null;
@@ -110,6 +116,8 @@ export type CrmFunnel = {
     scheduledMeetingsBySource: Record<string, number>;
     /** source → meetings (held) count. Subset of scheduledMeetingsBySource. */
     meetingsBySource: Record<string, number>;
+    /** source → contracts (חוזה / עסקה / טופס הרשמה) count. */
+    contractsBySource: Record<string, number>;
     /** status → (source → count). Drives the chip-filtered status
      *  funnel: for each row at status S, sum its source columns that
      *  the chips have selected. */
@@ -845,6 +853,7 @@ function aggregateBmbyFunnel(
   let scheduledMeetings = 0; // תואמה פגישה — broad, includes cancelled
   let meetings = 0;          // פגישות — narrow, actually-held only
   let contacted = 0;
+  let contracts = 0;         // חוזה — signed (current-status snapshot)
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
   const bySource = new Map<string, number>();
@@ -857,6 +866,7 @@ function aggregateBmbyFunnel(
   const contactedBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
+  const contractsBySource = new Map<string, number>();
   // Stale-leads tracking: runs BEFORE the monthFilter check below so
   // it sees every row of the project, not just the filtered cohort.
   // A lead that came in 60 days ago and is STILL in "טלפון" today is
@@ -957,8 +967,10 @@ function aggregateBmbyFunnel(
     const isScheduledMeeting = st.includes("פגישה");
     const isHeldMeeting =
       /^פגישה\s+\d+$/.test(st) || st === "פגישה התקיימה";
+    const isContract = st === "חוזה";
     if (isScheduledMeeting) scheduledMeetings++;
     if (isHeldMeeting) meetings++;
+    if (isContract) contracts++;
     // "Contacted" proxy: row has a non-empty תאריך קשר. The CRM populates
     // this the first time a salesperson logs an outreach attempt, so it's
     // a reasonable "did anyone try?" signal short of pulling the full
@@ -1020,6 +1032,7 @@ function aggregateBmbyFunnel(
     contacted,
     scheduledMeetings,
     meetings,
+    contracts,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     // איש מכירות column dropped in the 2026-05-12 schema migration —
     // no seller breakdown anymore; UI already handles empty cleanly.
@@ -1030,6 +1043,7 @@ function aggregateBmbyFunnel(
       funnelOrder: BMBY_STATUS_FUNNEL_ORDER,
       leadsBySource, contactedBySource,
       scheduledMeetingsBySource, meetingsBySource,
+      contractsBySource,
       statusSourceMatrix, objectionSourceMatrix,
     }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
@@ -1192,6 +1206,26 @@ async function computeBmbyFunnelFromWarehouse(
     funnel.returningSplit = computeReturningSplit(leads);
     funnel.arrivalHeatmap = computeArrivalHeatmap(leads);
     funnel.journeyVelocity = computeJourneyVelocity(leads, meetings);
+    // Contracts: the synthesized funnel status stamps meeting state over a
+    // lead, hiding "חוזה" for any contracted lead that also had a meeting.
+    // Recount from the raw client_status, per distinct client (return leads
+    // share one status), attributing to the client's first lead source.
+    {
+      const seen = new Set<string>();
+      const bySrc: Record<string, number> = {};
+      let n = 0;
+      for (const l of leads) {
+        if (l.client_status !== "חוזה") continue;
+        const c = String(l.client_id ?? "");
+        if (c && seen.has(c)) continue;
+        if (c) seen.add(c);
+        n++;
+        const src = normSource(l.media_source_clean);
+        if (src) bySrc[src] = (bySrc[src] || 0) + 1;
+      }
+      funnel.contracts = n;
+      funnel.sourceMatrices.contractsBySource = bySrc;
+    }
     // FB UTM drill — placement / audience / creative split of the Meta
     // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
     // scheduled/held (warehouse) + spend & CPL/CPS/CPM (joined from the
@@ -1497,6 +1531,17 @@ async function computeSehelFunnel(
     }
   }
 
+  // Contracts (עסקה) — derived from the status matrix (no per-row loop
+  // edit). Current-status snapshot.
+  const contractsBySource = new Map<string, number>();
+  let contracts = 0;
+  for (const [stKey, cnt] of byStatus) {
+    if (!/עסקה/.test(stKey)) continue;
+    contracts += cnt;
+    const m = statusSourceMatrix.get(stKey);
+    if (m) for (const [s, c] of m) contractsBySource.set(s, (contractsBySource.get(s) || 0) + c);
+  }
+
   if (leads === 0) return null;
   return {
     platform: "sehel",
@@ -1505,6 +1550,7 @@ async function computeSehelFunnel(
     contacted,
     scheduledMeetings,
     meetings,
+    contracts,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     topSellers: [], // Sehel doesn't carry a salesperson column we trust
     sourceMatrices: buildSourceMatrices({
@@ -1513,6 +1559,7 @@ async function computeSehelFunnel(
       funnelOrder: SEHEL_STATUS_FUNNEL_ORDER,
       leadsBySource, contactedBySource,
       scheduledMeetingsBySource, meetingsBySource,
+      contractsBySource,
       statusSourceMatrix, objectionSourceMatrix,
     }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
@@ -1655,6 +1702,16 @@ async function computeSalesforceFunnel(
     }
   }
 
+  // Contracts — for Salesforce the conversion goal is "טופס הרשמה" (lottery
+  // registration), counted as the contract/sale terminal. From the status
+  // matrix; current-status snapshot.
+  const contractsBySource = new Map<string, number>();
+  let contracts = byStatus.get("טופס הרשמה") || 0;
+  {
+    const m = statusSourceMatrix.get("טופס הרשמה");
+    if (m) for (const [s, c] of m) contractsBySource.set(s, c);
+  }
+
   if (leads === 0) return null;
   return {
     platform: "salesforce",
@@ -1663,6 +1720,7 @@ async function computeSalesforceFunnel(
     contacted,
     scheduledMeetings,
     meetings,
+    contracts,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
     // Salesforce carries a בעלי ליד (owner) column, but we keep the
     // seller breakdown empty to match BMBY/Sehel's current behavior.
@@ -1673,6 +1731,7 @@ async function computeSalesforceFunnel(
       funnelOrder: SALESFORCE_STATUS_FUNNEL_ORDER,
       leadsBySource, contactedBySource,
       scheduledMeetingsBySource, meetingsBySource,
+      contractsBySource,
       statusSourceMatrix, objectionSourceMatrix,
     }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
@@ -1704,6 +1763,7 @@ function buildSourceMatrices(args: {
   contactedBySource: Map<string, number>;
   scheduledMeetingsBySource: Map<string, number>;
   meetingsBySource: Map<string, number>;
+  contractsBySource: Map<string, number>;
   statusSourceMatrix: Map<string, Map<string, number>>;
   objectionSourceMatrix: Map<string, Map<string, number>>;
 }): CrmFunnel["sourceMatrices"] {
@@ -1730,6 +1790,7 @@ function buildSourceMatrices(args: {
     contactedBySource: toRec(args.contactedBySource),
     scheduledMeetingsBySource: toRec(args.scheduledMeetingsBySource),
     meetingsBySource: toRec(args.meetingsBySource),
+    contractsBySource: toRec(args.contractsBySource),
     statusBySource: toRec2(args.statusSourceMatrix),
     objectionBySource: toRec2(args.objectionSourceMatrix),
   };

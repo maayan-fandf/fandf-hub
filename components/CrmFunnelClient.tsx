@@ -245,22 +245,26 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     const contactedBreakdown = breakdown(sm.contactedBySource);
     const scheduledBreakdown = breakdown(sm.scheduledMeetingsBySource);
     const meetingsBreakdown = breakdown(sm.meetingsBySource);
+    const contractsBreakdown = breakdown(sm.contractsBySource || {});
     const sumOf = (rows: { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
     const leads = sumOf(leadsBreakdown);
     const contacted = sumOf(contactedBreakdown);
     const scheduled = sumOf(scheduledBreakdown);
     const meetings = sumOf(meetingsBreakdown);
+    const contracts = sumOf(contractsBreakdown);
     return {
       leads,
       contacted,
       scheduledMeetings: scheduled,
       meetings,
+      contracts,
       meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
       breakdowns: {
         leads: leadsBreakdown,
         contacted: contactedBreakdown,
         scheduledMeetings: scheduledBreakdown,
         meetings: meetingsBreakdown,
+        contracts: contractsBreakdown,
       },
     };
   }, [selected, sm]);
@@ -646,6 +650,13 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           sub={pct(kpis.meetings, kpis.leads)}
           breakdown={kpis.breakdowns.meetings}
           palette={palette} />
+        {funnel.contracts > 0 && (
+          <KpiTile label={funnel.platform === "salesforce" ? "טופסי הרשמה" : "חוזים"}
+            value={fmtInt(kpis.contracts)}
+            sub={pct(kpis.contracts, kpis.leads)}
+            breakdown={kpis.breakdowns.contracts}
+            palette={palette} />
+        )}
         <KpiTile label="יחס פגישה"
           value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
       </div>
