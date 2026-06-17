@@ -758,157 +758,6 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         </div>
       )}
 
-      {/* Speed-to-lead — response time from lead arrival to first desk
-          touch, per channel (warehouse BMBY funnels only). Whole-window,
-          NOT chip-filtered (median can't be re-derived per-chip without
-          the raw arrays). Reuses the cost-table layout + source palette. */}
-      {funnel.speedToLead && (
-        <details className="crm-block crm-collapsible crm-speed-block">
-          <summary className="crm-block-title">
-            מהירות מענה — מהליד עד הפנייה הראשונה
-            <span
-              className="crm-speed-overall"
-              title="חציון זמן התגובה ושיעור המענה המהיר, לכל חלון התאריכים (לא מסונן לפי הצ׳יפים)"
-            >
-              {" "}· חציון {fmtDur(funnel.speedToLead.overall.medianSec)} ·{" "}
-              {pct(funnel.speedToLead.overall.under300, funnel.speedToLead.overall.n)} תוך 5 דק׳ ·{" "}
-              {pct(funnel.speedToLead.overall.under60, funnel.speedToLead.overall.n)} תוך דקה
-            </span>
-          </summary>
-          <div className="crm-cost-scroll">
-            <table className="crm-cost-table crm-speed-table">
-              <thead>
-                <tr>
-                  <th>ערוץ</th>
-                  <th>לידים</th>
-                  <th>חציון מענה</th>
-                  <th>תוך דקה</th>
-                  <th>תוך 5 דק׳</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(funnel.speedToLead.bySource)
-                  .sort((a, b) => b[1].n - a[1].n)
-                  .map(([src, s]) => (
-                    <tr key={src}>
-                      <td className="crm-cost-ch">
-                        <span
-                          className="crm-trend-legend-dot"
-                          style={{ background: palette.get(src) }}
-                        />{" "}
-                        {src}
-                      </td>
-                      <td>{fmtInt(s.n)}</td>
-                      <td style={{ color: speedTone(s.medianSec), fontWeight: 600 }}>
-                        {fmtDur(s.medianSec)}
-                      </td>
-                      <td>{pct(s.under60, s.n)}</td>
-                      <td>{pct(s.under300, s.n)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
-
-      {/* Returning vs new leads (warehouse BMBY only) — is_return_lead.
-          Whole-window, collapsed by default. */}
-      {funnel.returningSplit && (
-        <details className="crm-block crm-collapsible crm-return-block">
-          <summary className="crm-block-title">
-            לידים חוזרים מול חדשים
-            <span className="crm-speed-overall">
-              {" "}· {pct(funnel.returningSplit.returning, funnel.returningSplit.total)} חוזרים (
-              {fmtInt(funnel.returningSplit.returning)} מתוך {fmtInt(funnel.returningSplit.total)})
-            </span>
-          </summary>
-          <div className="crm-cost-scroll">
-            <table className="crm-cost-table crm-return-table">
-              <thead>
-                <tr>
-                  <th>ערוץ</th>
-                  <th>לידים</th>
-                  <th>חדשים</th>
-                  <th>חוזרים</th>
-                  <th>% חוזרים</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(funnel.returningSplit.bySource)
-                  .map(([src, s]) => ({ src, ...s, total: s.returning + s.newLeads }))
-                  .sort((a, b) => b.total - a.total)
-                  .map((r) => (
-                    <tr key={r.src}>
-                      <td className="crm-cost-ch">
-                        <span
-                          className="crm-trend-legend-dot"
-                          style={{ background: palette.get(r.src) }}
-                        />{" "}
-                        {r.src}
-                      </td>
-                      <td>{fmtInt(r.total)}</td>
-                      <td>{fmtInt(r.newLeads)}</td>
-                      <td>{fmtInt(r.returning)}</td>
-                      <td style={{ fontWeight: 600 }}>{pct(r.returning, r.total)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
-
-      {/* Lead-arrival heatmap (warehouse BMBY only) — weekday × hour in
-          Asia/Jerusalem. Collapsed by default. */}
-      {funnel.arrivalHeatmap && (
-        <details className="crm-block crm-collapsible crm-heat-block">
-          <summary className="crm-block-title">
-            מתי מגיעים לידים — מפת חום
-            <span className="crm-speed-overall">
-              {" "}· {fmtInt(funnel.arrivalHeatmap.total)} לידים · יום × שעה
-            </span>
-          </summary>
-          <div className="crm-cost-scroll">
-            <table className="crm-heat-table">
-              <thead>
-                <tr>
-                  <th />
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <th key={h}>{h % 3 === 0 ? h : ""}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"].map((label, wd) => (
-                  <tr key={wd}>
-                    <th className="crm-heat-wd">{label}</th>
-                    {funnel.arrivalHeatmap!.matrix[wd].map((c, h) => {
-                      const intensity =
-                        funnel.arrivalHeatmap!.peak > 0
-                          ? c / funnel.arrivalHeatmap!.peak
-                          : 0;
-                      return (
-                        <td
-                          key={h}
-                          className="crm-heat-cell"
-                          style={
-                            c > 0
-                              ? { background: `rgba(99,102,241,${(0.12 + intensity * 0.88).toFixed(3)})` }
-                              : undefined
-                          }
-                          title={`${label} ${String(h).padStart(2, "0")}:00 — ${c} לידים`}
-                        />
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
-
       {/* Status funnel + trendline — 50/50 grid. Trendline moved up
           here 2026-05-12 (was below the pie before). The objections-
           by-source breakdown that used to live next to the funnel was
@@ -1170,6 +1019,203 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           ) : null}
         </details>
       ) : null}
+
+      {/* ── Warehouse "extras" (BMBY) — collapsed by default, parked below
+          the FB breakdown so the funnel's core stays up top (owner). ── */}
+
+      {/* Speed-to-lead — response time from lead arrival to first desk
+          touch, per channel. Whole-window, NOT chip-filtered. */}
+      {funnel.speedToLead && (
+        <details className="crm-block crm-collapsible crm-speed-block">
+          <summary className="crm-block-title">
+            מהירות מענה — מהליד עד הפנייה הראשונה
+            <span
+              className="crm-speed-overall"
+              title="חציון זמן התגובה ושיעור המענה המהיר, לכל חלון התאריכים (לא מסונן לפי הצ׳יפים)"
+            >
+              {" "}· חציון {fmtDur(funnel.speedToLead.overall.medianSec)} ·{" "}
+              {pct(funnel.speedToLead.overall.under300, funnel.speedToLead.overall.n)} תוך 5 דק׳ ·{" "}
+              {pct(funnel.speedToLead.overall.under60, funnel.speedToLead.overall.n)} תוך דקה
+            </span>
+          </summary>
+          <div className="crm-cost-scroll">
+            <table className="crm-cost-table crm-speed-table">
+              <thead>
+                <tr>
+                  <th>ערוץ</th>
+                  <th>לידים</th>
+                  <th>חציון מענה</th>
+                  <th>תוך דקה</th>
+                  <th>תוך 5 דק׳</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(funnel.speedToLead.bySource)
+                  .sort((a, b) => b[1].n - a[1].n)
+                  .map(([src, s]) => (
+                    <tr key={src}>
+                      <td className="crm-cost-ch">
+                        <span
+                          className="crm-trend-legend-dot"
+                          style={{ background: palette.get(src) }}
+                        />{" "}
+                        {src}
+                      </td>
+                      <td>{fmtInt(s.n)}</td>
+                      <td style={{ color: speedTone(s.medianSec), fontWeight: 600 }}>
+                        {fmtDur(s.medianSec)}
+                      </td>
+                      <td>{pct(s.under60, s.n)}</td>
+                      <td>{pct(s.under300, s.n)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+
+      {/* Lead-journey velocity — days from a cohort lead to its first held
+          meeting (on/after), per channel. Whole-window, collapsed. */}
+      {funnel.journeyVelocity && (
+        <details className="crm-block crm-collapsible crm-speed-block">
+          <summary className="crm-block-title">
+            מסע הליד — מהליד עד פגישה שהתקיימה
+            <span
+              className="crm-speed-overall"
+              title="חציון/ממוצע הימים מהגעת הליד עד הפגישה הראשונה שהתקיימה (לכל החלון, לא מסונן)"
+            >
+              {" "}· חציון {funnel.journeyVelocity.overall.medianDays} י׳ · ממוצע{" "}
+              {funnel.journeyVelocity.overall.avgDays} י׳ · {fmtInt(funnel.journeyVelocity.overall.n)} פגישות
+            </span>
+          </summary>
+          <div className="crm-cost-scroll">
+            <table className="crm-cost-table crm-speed-table">
+              <thead>
+                <tr>
+                  <th>ערוץ</th>
+                  <th>פגישות</th>
+                  <th>חציון ימים</th>
+                  <th>ממוצע ימים</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(funnel.journeyVelocity.bySource)
+                  .sort((a, b) => b[1].n - a[1].n)
+                  .map(([src, s]) => (
+                    <tr key={src}>
+                      <td className="crm-cost-ch">
+                        <span
+                          className="crm-trend-legend-dot"
+                          style={{ background: palette.get(src) }}
+                        />{" "}
+                        {src}
+                      </td>
+                      <td>{fmtInt(s.n)}</td>
+                      <td style={{ fontWeight: 600 }}>{s.medianDays} י׳</td>
+                      <td>{s.avgDays} י׳</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+
+      {/* Returning vs new leads — is_return_lead. Whole-window, collapsed. */}
+      {funnel.returningSplit && (
+        <details className="crm-block crm-collapsible crm-return-block">
+          <summary className="crm-block-title">
+            לידים חוזרים מול חדשים
+            <span className="crm-speed-overall">
+              {" "}· {pct(funnel.returningSplit.returning, funnel.returningSplit.total)} חוזרים (
+              {fmtInt(funnel.returningSplit.returning)} מתוך {fmtInt(funnel.returningSplit.total)})
+            </span>
+          </summary>
+          <div className="crm-cost-scroll">
+            <table className="crm-cost-table crm-return-table">
+              <thead>
+                <tr>
+                  <th>ערוץ</th>
+                  <th>לידים</th>
+                  <th>חדשים</th>
+                  <th>חוזרים</th>
+                  <th>% חוזרים</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(funnel.returningSplit.bySource)
+                  .map(([src, s]) => ({ src, ...s, total: s.returning + s.newLeads }))
+                  .sort((a, b) => b.total - a.total)
+                  .map((r) => (
+                    <tr key={r.src}>
+                      <td className="crm-cost-ch">
+                        <span
+                          className="crm-trend-legend-dot"
+                          style={{ background: palette.get(r.src) }}
+                        />{" "}
+                        {r.src}
+                      </td>
+                      <td>{fmtInt(r.total)}</td>
+                      <td>{fmtInt(r.newLeads)}</td>
+                      <td>{fmtInt(r.returning)}</td>
+                      <td style={{ fontWeight: 600 }}>{pct(r.returning, r.total)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+
+      {/* Lead-arrival heatmap — weekday × hour (Asia/Jerusalem). Collapsed. */}
+      {funnel.arrivalHeatmap && (
+        <details className="crm-block crm-collapsible crm-heat-block">
+          <summary className="crm-block-title">
+            מתי מגיעים לידים — מפת חום
+            <span className="crm-speed-overall">
+              {" "}· {fmtInt(funnel.arrivalHeatmap.total)} לידים · יום × שעה
+            </span>
+          </summary>
+          <div className="crm-cost-scroll">
+            <table className="crm-heat-table">
+              <thead>
+                <tr>
+                  <th />
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <th key={h}>{h % 3 === 0 ? h : ""}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"].map((label, wd) => (
+                  <tr key={wd}>
+                    <th className="crm-heat-wd">{label}</th>
+                    {funnel.arrivalHeatmap!.matrix[wd].map((c, h) => {
+                      const intensity =
+                        funnel.arrivalHeatmap!.peak > 0
+                          ? c / funnel.arrivalHeatmap!.peak
+                          : 0;
+                      return (
+                        <td
+                          key={h}
+                          className="crm-heat-cell"
+                          style={
+                            c > 0
+                              ? { background: `rgba(99,102,241,${(0.12 + intensity * 0.88).toFixed(3)})` }
+                              : undefined
+                          }
+                          title={`${label} ${String(h).padStart(2, "0")}:00 — ${c} לידים`}
+                        />
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
 
       {/* Sellers — BMBY-only. Inline summary form. */}
       {funnel.topSellers.length > 0 && (

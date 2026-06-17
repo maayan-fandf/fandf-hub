@@ -257,6 +257,15 @@ export type CrmFunnel = {
     total: number;
     peak: number;
   };
+  /** Lead-journey velocity (warehouse BMBY only): DAYS from a cohort lead to
+   *  the client's first held meeting that falls on/after that lead, per
+   *  media channel (the lead's normSource'd source). median + avg + n (held
+   *  count). lead→scheduled is NOT here — the warehouse has no booking
+   *  timestamp, only the meeting date. Whole-window. */
+  journeyVelocity?: {
+    overall: { medianDays: number; avgDays: number; n: number };
+    bySource: Record<string, { medianDays: number; avgDays: number; n: number }>;
+  };
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -434,6 +443,66 @@ function computeArrivalHeatmap(
   }
   if (total === 0) return undefined;
   return { matrix, total, peak };
+}
+
+/** Lead→held journey velocity (days), per channel. For each cohort client
+ *  (first lead by lead_id order), find their first HELD meeting on/after the
+ *  lead (1-day slack for same-day) and count the day gap, attributed to the
+ *  lead's source. Skips clients whose only held meeting predates the lead
+ *  (the audit's cross-period skew). undefined when nothing qualifies. */
+function computeJourneyVelocity(
+  leads: {
+    client_id: string | null;
+    lead_created_at: string | null;
+    media_source_clean: string | null;
+  }[],
+  meetings: { client_id: string | null; appointment_outcome: string | null; meeting_date: string | null }[],
+): CrmFunnel["journeyVelocity"] {
+  const DAY = 86400000;
+  const heldByClient = new Map<string, number[]>();
+  for (const m of meetings) {
+    if (m.appointment_outcome !== "held" || !m.meeting_date) continue;
+    const c = String(m.client_id ?? "");
+    if (!c) continue;
+    const ms = Date.parse(m.meeting_date);
+    if (Number.isNaN(ms)) continue;
+    let arr = heldByClient.get(c);
+    if (!arr) heldByClient.set(c, (arr = []));
+    arr.push(ms);
+  }
+  for (const arr of heldByClient.values()) arr.sort((a, b) => a - b);
+
+  const seen = new Set<string>();
+  const bySrc = new Map<string, number[]>();
+  const all: number[] = [];
+  for (const l of leads) {
+    const c = String(l.client_id ?? "");
+    if (!c || seen.has(c)) continue;
+    seen.add(c);
+    const held = heldByClient.get(c);
+    if (!held) continue;
+    const leadMs = Date.parse(l.lead_created_at ?? "");
+    if (Number.isNaN(leadMs)) continue;
+    const firstAfter = held.find((d) => d >= leadMs - DAY);
+    if (firstAfter == null) continue;
+    const days = Math.max(0, Math.round((firstAfter - leadMs) / DAY));
+    const src = normSource(l.media_source_clean);
+    if (src) {
+      let a = bySrc.get(src);
+      if (!a) bySrc.set(src, (a = []));
+      a.push(days);
+    }
+    all.push(days);
+  }
+  if (all.length === 0) return undefined;
+  const stat = (a: number[]) => ({
+    medianDays: medianOf(a),
+    avgDays: Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10,
+    n: a.length,
+  });
+  const bySource: NonNullable<CrmFunnel["journeyVelocity"]>["bySource"] = {};
+  for (const [s, a] of bySrc) bySource[s] = stat(a);
+  return { overall: stat(all), bySource };
 }
 
 /**
@@ -1050,9 +1119,10 @@ async function computeBmbyFunnelFromWarehouse(
   const meetings = await supabaseRowsAll<{
     client_id: string | null;
     appointment_outcome: string | null;
+    meeting_date: string | null;
   }>(
     `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(crmAccount)}` +
-      `&select=client_id,appointment_outcome&order=meeting_id.asc`,
+      `&select=client_id,appointment_outcome,meeting_date&order=meeting_id.asc`,
   );
   const heldClients = new Set<string>();
   const anyClients = new Set<string>();
@@ -1121,6 +1191,7 @@ async function computeBmbyFunnelFromWarehouse(
     funnel.speedToLead = computeSpeedToLead(leads);
     funnel.returningSplit = computeReturningSplit(leads);
     funnel.arrivalHeatmap = computeArrivalHeatmap(leads);
+    funnel.journeyVelocity = computeJourneyVelocity(leads, meetings);
     // FB UTM drill — placement / audience / creative split of the Meta
     // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
     // scheduled/held (warehouse) + spend & CPL/CPS/CPM (joined from the
