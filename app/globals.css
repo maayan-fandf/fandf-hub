@@ -6732,6 +6732,114 @@ html[data-theme="dark"] .crm-trend-grid line {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Stacked-by-channel bars + hover-pie card (added 2026-06-17). */
+.crm-trend-chartwrap {
+  position: relative;
+}
+.crm-trend-bar {
+  shape-rendering: crispEdges;
+}
+.crm-trend-hit {
+  cursor: crosshair;
+}
+.crm-trend-hilite {
+  fill: var(--border);
+  opacity: 0.45;
+}
+html[data-theme="dark"] .crm-trend-hilite {
+  fill: rgba(255, 255, 255, 0.08);
+  opacity: 1;
+}
+.crm-trend-hover {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  z-index: 5;
+  pointer-events: none;
+  min-width: 244px;
+  max-width: 320px;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.18));
+}
+.crm-trend-hover-date {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  margin-bottom: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.crm-trend-pies {
+  display: flex;
+  justify-content: space-around;
+  gap: 0.4rem;
+}
+.crm-trend-pie {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.72em;
+}
+.crm-trend-pie-svg {
+  width: 52px;
+  height: 52px;
+}
+.crm-trend-pie-empty {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+}
+.crm-trend-pie-label {
+  color: var(--muted);
+}
+.crm-trend-pie-total {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.crm-trend-hover-legend {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0.4rem 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  font-size: 0.72em;
+}
+.crm-trend-hover-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.crm-trend-hover-legend-name {
+  color: var(--text);
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-trend-hover-legend-nums {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.crm-trend-legend-line {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.crm-trend-legend-sep {
+  margin-inline-start: 0.4rem;
+  padding-inline-start: 0.8rem;
+  border-inline-start: 1px solid var(--border);
+}
 .crm-kpi-label {
   font-size: 0.82em;
   color: var(--muted);

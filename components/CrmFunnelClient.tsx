@@ -805,6 +805,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             <CrmFunnelTrendline
               dailyTimeSeries={trendDaily}
               selectedSources={selected}
+              sourceColors={palette}
             />
           )}
         </div>
