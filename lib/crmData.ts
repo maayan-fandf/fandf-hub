@@ -238,6 +238,25 @@ export type CrmFunnel = {
       { medianSec: number; n: number; under60: number; under300: number }
     >;
   };
+  /** Returning vs new leads (warehouse BMBY only): `is_return_lead` from the
+   *  view — a lead already known to BMBY (a prior inquiry, often on another
+   *  project) vs genuinely new. Whole-window. `bySource` keys normSource'd
+   *  so they share the section palette. */
+  returningSplit?: {
+    total: number;
+    returning: number;
+    newLeads: number;
+    bySource: Record<string, { returning: number; newLeads: number }>;
+  };
+  /** Lead-arrival heatmap (warehouse BMBY only): when leads land, by
+   *  Asia/Jerusalem weekday (`matrix[0]`=Sunday … `matrix[6]`=Saturday) ×
+   *  hour 0-23. `matrix[wd][hr]` = lead count; `peak` = busiest cell (for
+   *  color scaling). Whole-window. */
+  arrivalHeatmap?: {
+    matrix: number[][];
+    total: number;
+    peak: number;
+  };
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -349,6 +368,72 @@ function computeSpeedToLead(
   const bySource: NonNullable<CrmFunnel["speedToLead"]>["bySource"] = {};
   for (const [src, a] of bySrc) bySource[src] = stat(a);
   return { overall: stat(all), bySource };
+}
+
+/** Returning vs new split from the warehouse leads' `is_return_lead`.
+ *  Overall + per (normSource'd) channel. undefined when nothing flagged. */
+function computeReturningSplit(
+  leads: { media_source_clean: string | null; is_return_lead: boolean | null }[],
+): CrmFunnel["returningSplit"] {
+  const bySource: NonNullable<CrmFunnel["returningSplit"]>["bySource"] = {};
+  let returning = 0;
+  let newLeads = 0;
+  for (const l of leads) {
+    if (l.is_return_lead == null) continue;
+    const isRet = l.is_return_lead === true;
+    if (isRet) returning++;
+    else newLeads++;
+    const src = normSource(l.media_source_clean);
+    if (src) {
+      let b = bySource[src];
+      if (!b) b = bySource[src] = { returning: 0, newLeads: 0 };
+      if (isRet) b.returning++;
+      else b.newLeads++;
+    }
+  }
+  const total = returning + newLeads;
+  if (total === 0) return undefined;
+  return { total, returning, newLeads, bySource };
+}
+
+// IL weekday+hour formatter for the arrival heatmap (created once).
+const IL_WEEKDAY_HOUR = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Jerusalem",
+  weekday: "short",
+  hour: "2-digit",
+  hour12: false,
+});
+const WD_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/** Lead-arrival heatmap: weekday(Sun=0..Sat=6) × hour(0-23) count, in
+ *  Asia/Jerusalem (lead_created_at is a UTC timestamp). undefined when
+ *  nothing parseable. */
+function computeArrivalHeatmap(
+  leads: { lead_created_at: string | null }[],
+): CrmFunnel["arrivalHeatmap"] {
+  const matrix: number[][] = Array.from({ length: 7 }, () =>
+    new Array<number>(24).fill(0),
+  );
+  let total = 0;
+  let peak = 0;
+  for (const l of leads) {
+    if (!l.lead_created_at) continue;
+    const d = new Date(l.lead_created_at);
+    if (Number.isNaN(d.getTime())) continue;
+    const parts: Record<string, string> = {};
+    for (const p of IL_WEEKDAY_HOUR.formatToParts(d)) parts[p.type] = p.value;
+    const wd = WD_INDEX[parts.weekday];
+    let hr = parseInt(parts.hour, 10);
+    if (hr === 24) hr = 0; // some ICU builds emit "24" for midnight
+    if (wd == null || !Number.isFinite(hr) || hr < 0 || hr > 23) continue;
+    const v = ++matrix[wd][hr];
+    total++;
+    if (v > peak) peak = v;
+  }
+  if (total === 0) return undefined;
+  return { matrix, total, peak };
 }
 
 /**
@@ -942,6 +1027,7 @@ async function computeBmbyFunnelFromWarehouse(
     handled_at: string | null;
     is_handled: boolean | null;
     response_seconds: number | null;
+    is_return_lead: boolean | null;
     media_source_clean: string | null;
     objections: string | null;
     client_status: string | null;
@@ -954,7 +1040,7 @@ async function computeBmbyFunnelFromWarehouse(
   }>(
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
       `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,response_seconds,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
+      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,response_seconds,is_return_lead,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
       `&order=lead_id.asc`,
@@ -1030,9 +1116,11 @@ async function computeBmbyFunnelFromWarehouse(
   const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
   if (funnel) {
     funnel.dataSource = "warehouse";
-    // Speed-to-lead — per-channel response time, from the leads we already
-    // fetched (response_seconds is pre-computed in the view). Whole-window.
+    // Speed-to-lead + returning/new split + arrival heatmap — all derived
+    // from the leads we already fetched (no extra query). Whole-window.
     funnel.speedToLead = computeSpeedToLead(leads);
+    funnel.returningSplit = computeReturningSplit(leads);
+    funnel.arrivalHeatmap = computeArrivalHeatmap(leads);
     // FB UTM drill — placement / audience / creative split of the Meta
     // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
     // scheduled/held (warehouse) + spend & CPL/CPS/CPM (joined from the

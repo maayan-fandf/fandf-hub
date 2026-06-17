@@ -7364,10 +7364,66 @@ html[data-theme="dark"] .crm-source-search-row:hover {
 /* cost-per-media-channel table under the KPI tiles */
 .crm-cost-block { margin-top: 0.75em; }
 .crm-speed-block { margin-top: 0.75em; }
+.crm-return-block { margin-top: 0.75em; }
+.crm-heat-block { margin-top: 0.75em; }
 .crm-speed-overall {
   font-weight: 400;
   color: var(--muted);
   font-size: 0.9em;
+}
+
+/* Generic collapsible CRM section — ▸ disclosure on a .crm-block-title
+   summary, collapsed by default so the funnel page stays short. */
+details.crm-collapsible > summary.crm-block-title {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+details.crm-collapsible > summary.crm-block-title::-webkit-details-marker {
+  display: none;
+}
+details.crm-collapsible > summary.crm-block-title::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.85em;
+  display: inline-block;
+  margin-inline-end: 0.35em;
+  transition: transform 0.15s;
+}
+details.crm-collapsible[open] > summary.crm-block-title {
+  margin-bottom: 0.5rem;
+}
+details.crm-collapsible[open] > summary.crm-block-title::before {
+  transform: rotate(90deg);
+}
+
+/* Lead-arrival heatmap — weekday × hour grid of small cells. */
+.crm-heat-table {
+  border-collapse: collapse;
+}
+.crm-heat-table th {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 500;
+  text-align: center;
+  padding: 0 1px;
+}
+.crm-heat-wd {
+  text-align: end !important;
+  padding-inline-end: 5px !important;
+  white-space: nowrap;
+}
+.crm-heat-cell {
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 0 !important;
 }
 .crm-cost-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .crm-cost-table {
