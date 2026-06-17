@@ -222,6 +222,22 @@ export type CrmFunnel = {
       cpm: number;
     }[];
   };
+  /** Speed-to-lead (warehouse BMBY funnels only): response time from lead
+   *  arrival to the first desk touch, per media channel, from
+   *  `v_bmby_leads_bucketed.response_seconds` (pre-computed upstream,
+   *  clamped ~24h, ~100% populated). Median + count + the sub-60s / sub-5min
+   *  shares — median + shares are used (not the mean) because the tail is
+   *  long and clamped. Whole-window (NOT chip-filtered, like the held
+   *  strip). Absent on Sheet/Sehel/Salesforce funnels — they carry no
+   *  per-lead response timing. `bySource` keys are normSource'd, so they
+   *  share the section's source→color palette. */
+  speedToLead?: {
+    overall: { medianSec: number; n: number; under60: number; under300: number };
+    bySource: Record<
+      string,
+      { medianSec: number; n: number; under60: number; under300: number }
+    >;
+  };
 };
 
 /* ── Sheets reads, cached ──────────────────────────────────────────── */
@@ -292,6 +308,47 @@ function norm(s: unknown): string {
  */
 function normSource(s: unknown): string {
   return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Integer median of a numeric array (0 when empty). */
+function medianOf(a: number[]): number {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+}
+
+/** Per-channel speed-to-lead from the warehouse leads' `response_seconds`
+ *  (seconds from lead arrival to first desk touch). Keyed by normSource so
+ *  it lines up with the funnel's source palette. null/negative are dropped;
+ *  zeros kept (instant/manual entries are legitimate). Returns undefined
+ *  when nothing usable — caller leaves `speedToLead` unset so the panel
+ *  hides. */
+function computeSpeedToLead(
+  leads: { media_source_clean: string | null; response_seconds: number | null }[],
+): CrmFunnel["speedToLead"] {
+  const bySrc = new Map<string, number[]>();
+  const all: number[] = [];
+  for (const l of leads) {
+    const rs = l.response_seconds;
+    if (rs == null || !Number.isFinite(rs) || rs < 0) continue;
+    const src = normSource(l.media_source_clean);
+    if (!src) continue;
+    let arr = bySrc.get(src);
+    if (!arr) bySrc.set(src, (arr = []));
+    arr.push(rs);
+    all.push(rs);
+  }
+  if (all.length === 0) return undefined;
+  const stat = (a: number[]) => ({
+    medianSec: medianOf(a),
+    n: a.length,
+    under60: a.filter((x) => x < 60).length,
+    under300: a.filter((x) => x < 300).length,
+  });
+  const bySource: NonNullable<CrmFunnel["speedToLead"]>["bySource"] = {};
+  for (const [src, a] of bySrc) bySource[src] = stat(a);
+  return { overall: stat(all), bySource };
 }
 
 /**
@@ -884,6 +941,7 @@ async function computeBmbyFunnelFromWarehouse(
     lead_created_at: string | null;
     handled_at: string | null;
     is_handled: boolean | null;
+    response_seconds: number | null;
     media_source_clean: string | null;
     objections: string | null;
     client_status: string | null;
@@ -896,7 +954,7 @@ async function computeBmbyFunnelFromWarehouse(
   }>(
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
       `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
+      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,response_seconds,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
       `&order=lead_id.asc`,
@@ -972,6 +1030,9 @@ async function computeBmbyFunnelFromWarehouse(
   const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
   if (funnel) {
     funnel.dataSource = "warehouse";
+    // Speed-to-lead — per-channel response time, from the leads we already
+    // fetched (response_seconds is pre-computed in the view). Whole-window.
+    funnel.speedToLead = computeSpeedToLead(leads);
     // FB UTM drill — placement / audience / creative split of the Meta
     // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
     // scheduled/held (warehouse) + spend & CPL/CPS/CPM (joined from the

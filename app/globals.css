@@ -7363,6 +7363,12 @@ html[data-theme="dark"] .crm-source-search-row:hover {
 
 /* cost-per-media-channel table under the KPI tiles */
 .crm-cost-block { margin-top: 0.75em; }
+.crm-speed-block { margin-top: 0.75em; }
+.crm-speed-overall {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.9em;
+}
 .crm-cost-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .crm-cost-table {
   width: 100%;

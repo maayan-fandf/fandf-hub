@@ -758,6 +758,60 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         </div>
       )}
 
+      {/* Speed-to-lead — response time from lead arrival to first desk
+          touch, per channel (warehouse BMBY funnels only). Whole-window,
+          NOT chip-filtered (median can't be re-derived per-chip without
+          the raw arrays). Reuses the cost-table layout + source palette. */}
+      {funnel.speedToLead && (
+        <div className="crm-block crm-speed-block">
+          <div className="crm-block-title">
+            מהירות מענה — מהליד עד הפנייה הראשונה
+            <span
+              className="crm-speed-overall"
+              title="חציון זמן התגובה ושיעור המענה המהיר, לכל חלון התאריכים (לא מסונן לפי הצ׳יפים)"
+            >
+              {" "}· חציון {fmtDur(funnel.speedToLead.overall.medianSec)} ·{" "}
+              {pct(funnel.speedToLead.overall.under300, funnel.speedToLead.overall.n)} תוך 5 דק׳ ·{" "}
+              {pct(funnel.speedToLead.overall.under60, funnel.speedToLead.overall.n)} תוך דקה
+            </span>
+          </div>
+          <div className="crm-cost-scroll">
+            <table className="crm-cost-table crm-speed-table">
+              <thead>
+                <tr>
+                  <th>ערוץ</th>
+                  <th>לידים</th>
+                  <th>חציון מענה</th>
+                  <th>תוך דקה</th>
+                  <th>תוך 5 דק׳</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(funnel.speedToLead.bySource)
+                  .sort((a, b) => b[1].n - a[1].n)
+                  .map(([src, s]) => (
+                    <tr key={src}>
+                      <td className="crm-cost-ch">
+                        <span
+                          className="crm-trend-legend-dot"
+                          style={{ background: palette.get(src) }}
+                        />{" "}
+                        {src}
+                      </td>
+                      <td>{fmtInt(s.n)}</td>
+                      <td style={{ color: speedTone(s.medianSec), fontWeight: 600 }}>
+                        {fmtDur(s.medianSec)}
+                      </td>
+                      <td>{pct(s.under60, s.n)}</td>
+                      <td>{pct(s.under300, s.n)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Status funnel + trendline — 50/50 grid. Trendline moved up
           here 2026-05-12 (was below the pie before). The objections-
           by-source breakdown that used to live next to the funnel was
@@ -1291,4 +1345,17 @@ function fmtILS(n: number): string {
 function pct(part: number, whole: number): string {
   if (!whole) return "—";
   return `${((part / whole) * 100).toFixed(1)}%`;
+}
+/** Seconds → compact Hebrew duration (שנ׳ / דק׳ / שע׳). */
+function fmtDur(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return "—";
+  if (sec < 60) return `${Math.round(sec)} שנ׳`;
+  if (sec < 3600) return `${Math.round(sec / 60)} דק׳`;
+  return `${(sec / 3600).toFixed(1)} שע׳`;
+}
+/** Median-response color: ≤5min green, ≤1h amber, else red. */
+function speedTone(sec: number): string {
+  if (sec <= 300) return "#16a34a";
+  if (sec <= 3600) return "#d97706";
+  return "#dc2626";
 }
