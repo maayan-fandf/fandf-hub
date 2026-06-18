@@ -20,6 +20,11 @@ export default auth((req) => {
     // report (token-authed via APPS_SCRIPT_API_TOKEN). Must skip the
     // NextAuth redirect — Apps Script runs unattended.
     path === "/api/alert-dismissals" ||
+    // Server-to-server CRM-funnel read, called by the Apps Script report
+    // to replace its pro-rated free-range funnel with actual windowed
+    // counts (token-authed via APPS_SCRIPT_API_TOKEN). Unattended — skip
+    // the NextAuth redirect.
+    path === "/api/crm-funnel" ||
     // Cloud Scheduler membership-reconcile cron. Same shared-secret
     // (X-Cron-Token / APPS_SCRIPT_API_TOKEN) auth as poll-tasks; must
     // skip the NextAuth redirect or Scheduler gets a 302→/signin
