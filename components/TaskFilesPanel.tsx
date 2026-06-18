@@ -81,6 +81,14 @@ type Props = {
    *  jump from the panel to File Explorer / Finder. */
   localPath?: string;
   localPathMac?: string;
+  /** Fired after a successful drag-drop / button upload, reporting the
+   *  folderId the file(s) actually landed in. The new-task form uses
+   *  this to bind the created task's drive_folder_id to where files
+   *  were uploaded — otherwise an upload made before the folder
+   *  selection settles (e.g. campaign typed AFTER uploading) leaves the
+   *  file stranded in Drive with no task pointing at it. Optional; the
+   *  task-detail page mounts this panel without it. */
+  onUploaded?: (folderId: string) => void;
 };
 
 export default function TaskFilesPanel({
@@ -94,6 +102,7 @@ export default function TaskFilesPanel({
   fileOrder,
   localPath,
   localPathMac,
+  onUploaded,
 }: Props) {
   const [files, setFiles] = useState<DriveFile[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -244,6 +253,10 @@ export default function TaskFilesPanel({
       // returned files into local state and avoids drift if multiple
       // uploads from different sessions race.
       await reload();
+      // Tell the parent which folder the file(s) landed in, so the
+      // new-task form can bind the created task to it even if the
+      // folder selection is later cleared (campaign-change reset).
+      onUploaded?.(folderId);
     } catch (e) {
       setErr(
         "העלאה נכשלה: " + (e instanceof Error ? e.message : String(e)),

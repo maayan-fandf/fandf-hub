@@ -379,6 +379,17 @@ export default function TaskCreateForm({
     setFolderSelection(v);
   }
 
+  // The folder a file was ACTUALLY uploaded into via the inline files
+  // panel. A ref (not state) so it survives the DriveFolderPicker
+  // campaign-change reset, which wipes `folderSelection` mid-session.
+  // Without this, uploading a file and THEN setting/changing the
+  // campaign (whose folder may not exist yet → no re-auto-select) left
+  // the created task with drive_folder_id="" while the file sat
+  // orphaned in Drive (prod: task T-mqj7bqgv-dwxo). Used as the submit-
+  // time fallback for drive_folder_id when no folder is explicitly
+  // selected.
+  const uploadedFolderIdRef = useRef<string>("");
+
   // Resolve the Drive folder the Picker should open at:
   //   - When the user has picked a בריף → that בריף's folder (drill in
   //     so they're choosing a sub-folder or file inside it).
@@ -871,6 +882,15 @@ export default function TaskCreateForm({
         folderSelection.folderId !== editingTask.drive_folder_id
       ) {
         patch.drive_folder_id = folderSelection.folderId;
+      } else if (
+        // Same orphan-attachment guard as the create path: an inline
+        // upload whose folder selection got cleared still re-binds the
+        // task to the folder the file actually landed in.
+        !patch.drive_folder_id &&
+        uploadedFolderIdRef.current &&
+        uploadedFolderIdRef.current !== editingTask.drive_folder_id
+      ) {
+        patch.drive_folder_id = uploadedFolderIdRef.current;
       }
 
       try {
@@ -1109,6 +1129,19 @@ export default function TaskCreateForm({
     } else if (folderSelection.mode === "new") {
       const name = folderSelection.name.trim();
       if (name) payload.drive_folder_name = name;
+    }
+    // Orphan-attachment guard: the user uploaded a file via the inline
+    // files panel but no folder is explicitly selected at submit (the
+    // picker's selection was cleared by a later campaign change, or the
+    // new campaign folder doesn't exist yet so nothing re-auto-selected).
+    // Bind the task to the folder the file actually landed in so it
+    // shows on the task page instead of being stranded in Drive.
+    if (
+      !payload.drive_folder_id &&
+      !payload.drive_folder_name &&
+      uploadedFolderIdRef.current
+    ) {
+      payload.drive_folder_id = uploadedFolderIdRef.current;
     }
     // Inline-template path: when the user filled a draft template,
     // hand the server the draftFolderId so it can re-parent that
@@ -1684,6 +1717,9 @@ export default function TaskCreateForm({
                 campaign={campaign}
                 taskTitle={title}
                 fileOrder=""
+                onUploaded={(fid) => {
+                  uploadedFolderIdRef.current = fid;
+                }}
               />
             )}
           />
