@@ -15426,6 +15426,19 @@ html[data-theme="dark"] .tasks-dept-chip {
 .drive-folder-inline-files {
   margin-top: .5em;
 }
+/* "Create the brief folder now" affordance shown in the pending state
+   (brand-new בריף, folder not yet created) so files can be uploaded
+   before the task is saved. */
+.drive-folder-brief-create {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .4em;
+  padding: .4em 0;
+}
+.drive-folder-brief-create .drive-folder-hint {
+  padding: 0;
+}
 
 /* Google Drive Picker dialog positions itself absolutely and does NOT
    account for page scroll — opened from a scrolled-down form it renders

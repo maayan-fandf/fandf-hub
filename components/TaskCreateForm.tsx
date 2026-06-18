@@ -1706,6 +1706,12 @@ export default function TaskCreateForm({
             userEmail={currentUserEmail}
             accessToken={driveAccessToken}
             apiKey={drivePickerApiKey}
+            // Create flow only: require a בריף before files can be
+            // uploaded (so they never land in the bare project folder),
+            // and offer on-demand creation of a brand-new brief's folder
+            // so uploads work before save. Edit mode keeps its existing
+            // inline upload regardless of brief.
+            requireBriefForUpload={!isEditing}
             // Option B — the files/upload panel renders INLINE right under
             // the selected folder (collapsed chip), via this render-prop.
             renderSelectedFolderPanel={(folderId) => (

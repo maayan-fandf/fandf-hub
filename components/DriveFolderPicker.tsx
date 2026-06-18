@@ -45,6 +45,14 @@ type Props = {
     folderId: string,
     folderName: string,
   ) => React.ReactNode;
+  /** When true (the new-task create flow), file upload REQUIRES a בריף:
+   *  the inline files panel is replaced by a "pick/create a brief" hint
+   *  until `campaign` is set, and the pending state (brief named but its
+   *  Drive folder not created yet) gets a "create the brief folder now"
+   *  button so files can be uploaded into the new brief's folder before
+   *  the task is saved. Default off (edit mode) so existing folder-bound
+   *  tasks keep their inline upload regardless of brief. */
+  requireBriefForUpload?: boolean;
 };
 
 type Child = {
@@ -71,6 +79,7 @@ export default function DriveFolderPicker({
   accessToken,
   apiKey,
   renderSelectedFolderPanel,
+  requireBriefForUpload = false,
 }: Props) {
   type CampaignState =
     | null
@@ -107,6 +116,13 @@ export default function DriveFolderPicker({
   // "נבחר: <name> · שנה תיקייה" line with the files panel right below;
   // "שנה תיקייה" reopens the full tree to pick a different folder.
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Brand-new בריף whose Drive folder doesn't exist yet (resolve →
+  // pending). Lets the user materialize it on demand — reusing the
+  // idempotent /api/campaigns/create — so files can be uploaded into
+  // the new brief's folder BEFORE the task is saved, instead of the
+  // inline panel staying hidden until first save.
+  const [creatingBrief, setCreatingBrief] = useState(false);
+  const [briefCreateErr, setBriefCreateErr] = useState<string | null>(null);
 
   const loadSiblings = useCallback(async () => {
     if (!project) return;
@@ -196,6 +212,37 @@ export default function DriveFolderPicker({
       setResolving(false);
     }
   }, [company, project, campaign]);
+
+  // Materialize a brand-new brief's Drive folder on demand so files can
+  // be uploaded into it before the task is saved. Reuses the idempotent
+  // /api/campaigns/create (ensureCampaignFolderId under the hood, with
+  // access-gating + reserved-name guard). On success we drop the picker
+  // into the resolved state, which lets the auto-select effect pick the
+  // folder and the inline upload panel render.
+  const createBriefFolder = useCallback(async () => {
+    const name = campaign.trim();
+    if (!project || !name) return;
+    setCreatingBrief(true);
+    setBriefCreateErr(null);
+    try {
+      const res = await fetch("/api/campaigns/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project, name }),
+      });
+      const data = (await res.json()) as
+        | { ok: true; folder: { id: string; name: string; viewUrl: string } }
+        | { ok: false; error: string };
+      if (!res.ok || !("ok" in data) || !data.ok) {
+        throw new Error(("error" in data && data.error) || `HTTP ${res.status}`);
+      }
+      setCampaignFolder({ id: data.folder.id, viewUrl: data.folder.viewUrl });
+    } catch (e) {
+      setBriefCreateErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingBrief(false);
+    }
+  }, [project, campaign]);
 
   useEffect(() => {
     if (disabled) return;
@@ -489,9 +536,31 @@ export default function DriveFolderPicker({
           preserved for type compatibility but unreachable in UI. */}
       <div className="drive-folder-existing-block">
           {isPending && (
-            <div className="drive-folder-hint">
-              ✅ תיקיית הבריף תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
-            </div>
+            requireBriefForUpload && campaign.trim() ? (
+              <div className="drive-folder-brief-create">
+                <div className="drive-folder-hint">
+                  תיקיית הבריף תיווצר אוטומטית בעת שמירה. כדי להעלות קבצים כבר
+                  עכשיו, צור/י אותה:
+                </div>
+                <button
+                  type="button"
+                  className="drive-folder-btn"
+                  disabled={creatingBrief}
+                  onClick={() => void createBriefFolder()}
+                >
+                  {creatingBrief
+                    ? "יוצר תיקייה…"
+                    : `➕ צור את תיקיית הבריף "${campaign.trim()}"`}
+                </button>
+                {briefCreateErr && (
+                  <div className="drive-folder-error">{briefCreateErr}</div>
+                )}
+              </div>
+            ) : (
+              <div className="drive-folder-hint">
+                ✅ תיקיית הבריף תיווצר אוטומטית בעת שמירה ותשמש כתיקיית המשימה.
+              </div>
+            )
           )}
           {/* Collapsed summary (Option B): once a folder is selected the
               tree folds to one line; the files panel renders right below. */}
@@ -716,15 +785,30 @@ export default function DriveFolderPicker({
           )}
           {/* Files / upload panel — rendered inline directly under the
               selected folder (collapsed chip or the tree), via the
-              parent's render-prop. */}
-          {rootId && selectedExistingId && renderSelectedFolderPanel && (
-            <div className="drive-folder-inline-files">
-              {renderSelectedFolderPanel(
-                selectedExistingId,
-                selectedExistingName || campaign || project || "תיקייה",
+              parent's render-prop. When `requireBriefForUpload` is on
+              and no בריף is chosen yet, the upload affordance is replaced
+              by a hint so files can't land in the bare project folder
+              (the orphaning bug's root cause). */}
+          {requireBriefForUpload && !campaign.trim()
+            ? rootId &&
+              selectedExistingId && (
+                <div className="drive-folder-inline-files">
+                  <div className="drive-folder-hint">
+                    📎 בחר/י או צור/י בריף (קמפיין) למעלה כדי להעלות קבצים
+                    למשימה.
+                  </div>
+                </div>
+              )
+            : rootId &&
+              selectedExistingId &&
+              renderSelectedFolderPanel && (
+                <div className="drive-folder-inline-files">
+                  {renderSelectedFolderPanel(
+                    selectedExistingId,
+                    selectedExistingName || campaign || project || "תיקייה",
+                  )}
+                </div>
               )}
-            </div>
-          )}
         </div>
     </div>
   );
