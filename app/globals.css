@@ -14600,6 +14600,9 @@ html[data-theme="dark"] .uhc-action-whatsapp:hover {
   font-size: .82em; color: var(--muted); margin-bottom: .3em;
 }
 .task-detail-crumbs a { color: var(--muted); }
+/* Brief (campaign) leaf crumb — a touch stronger than the muted
+   company/project links so the brief name reads as the current context. */
+.task-detail-crumb-brief { color: var(--text); }
 .task-detail-title { margin-top: .2em; }
 .task-detail-grid {
   display: grid;

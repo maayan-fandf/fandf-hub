@@ -300,6 +300,16 @@ export default async function TaskDetailPage({
             <Link href={`/projects/${encodeURIComponent(t.project)}`}>
               {displayProjectOrCompany(t.project)}
             </Link>
+            {/* Brief (= the task's `campaign`) as the trailing crumb:
+                company / project / brief. Plain text — there's no
+                brief-specific page to link to. Hidden when empty (e.g.
+                umbrellas / project-level tasks with no brief). */}
+            {t.campaign && (
+              <>
+                {" / "}
+                <span className="task-detail-crumb-brief">{t.campaign}</span>
+              </>
+            )}
           </div>
           <div className="task-detail-title-row">
             <h1 className="task-detail-title">{t.title}</h1>
