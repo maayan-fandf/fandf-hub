@@ -29,6 +29,14 @@ export type AutoTransitionInput = {
    *  falls back to the admin identity so the call still goes through
    *  if the recipient identity got lost upstream. */
   completedBy: string;
+  /** RFC3339 timestamp of when the Google Task was marked complete
+   *  (Tasks API `completed` field). Used to skip STALE completions: a
+   *  GT closed BEFORE the task entered its current status already drove
+   *  an earlier transition — or was closed by the hub's own cascade on
+   *  submit/approve — so re-reading it after the task bounced back to an
+   *  active status would fire a phantom pending_complete. Optional; when
+   *  absent (legacy HTTP callers) the staleness guard is skipped. */
+  completedAt?: string;
 };
 
 export type AutoTransitionResult =
@@ -65,6 +73,24 @@ export function autoTransitionTarget(
   return null;
 }
 
+/** Epoch ms when the task most recently ENTERED `status`, read from its
+ *  status_history (the latest entry whose `to` === status). Returns 0
+ *  when the history is missing or has no matching entry — callers treat
+ *  0 as "unknown" and skip the staleness comparison. */
+function statusEnteredAt(
+  history: ReadonlyArray<{ at?: string; to?: string }> | undefined,
+  status: string,
+): number {
+  if (!Array.isArray(history)) return 0;
+  let best = 0;
+  for (const h of history) {
+    if (!h || h.to !== status) continue;
+    const ms = Date.parse(h.at || "");
+    if (Number.isFinite(ms) && ms > best) best = ms;
+  }
+  return best;
+}
+
 export async function applyAutoTransition(
   input: AutoTransitionInput,
 ): Promise<AutoTransitionResult> {
@@ -86,6 +112,30 @@ export async function applyAutoTransition(
         previous,
         reason: `No transition for kind=${kind} from status=${previous}`,
       };
+    }
+
+    // Stale-completion guard (prod bug 2026-06-18, task T-mqj7bqgv-dwxo):
+    // a kind=todo GT closed at first submit (08:28) re-fired after the
+    // task was returned for fixes and re-entered awaiting_handling
+    // (08:56), spawning a phantom pending_complete the assignee never
+    // triggered. A completion that predates the task's CURRENT status is
+    // historical — it already drove a prior transition, or was closed by
+    // the hub's own cascade on submit/approve — so it must not be
+    // re-consumed. We only skip when both timestamps are known; absent
+    // completedAt (legacy HTTP callers) keeps the prior behaviour.
+    if (input.completedAt) {
+      const since = statusEnteredAt(task.status_history, previous);
+      const completedMs = Date.parse(input.completedAt);
+      if (since > 0 && Number.isFinite(completedMs) && completedMs < since) {
+        return {
+          ok: true,
+          skipped: true,
+          taskId,
+          kind,
+          previous,
+          reason: `stale GT completion (${input.completedAt}) predates current status "${previous}" entered ${new Date(since).toISOString()}`,
+        };
+      }
     }
 
     // Quiet-hours guard — outside Israel work hours, a GT completion

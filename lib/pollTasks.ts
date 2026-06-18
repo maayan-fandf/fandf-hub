@@ -77,7 +77,7 @@ function columnLetter(colNumber: number): string {
 }
 
 type FetchResult =
-  | { ok: true; status: string; due: string }
+  | { ok: true; status: string; due: string; completed: string }
   | { ok: false; deleted: boolean };
 
 async function fetchOne(ref: GTaskRef): Promise<FetchResult> {
@@ -88,6 +88,11 @@ async function fetchOne(ref: GTaskRef): Promise<FetchResult> {
       ok: true,
       status: res.data.status || "needsAction",
       due: rfcToDueDate(res.data.due ?? ""),
+      // Raw RFC3339 completion timestamp (Tasks API sets this whenever
+      // status=completed, regardless of who closed it). Threaded into
+      // applyAutoTransition so it can skip completions that predate the
+      // task's current status (stale, already-consumed signals).
+      completed: res.data.completed ?? "",
     };
   } catch (e) {
     const code = (e as { code?: number; response?: { status?: number } }).code
@@ -440,10 +445,16 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     for (const completed of completedRefs) {
       const kind: GTaskKind = (completed.r.kind as GTaskKind) || "todo";
       const completedBy = completed.r.u || "";
+      // Pass the GT's completion timestamp so applyAutoTransition can
+      // skip a stale completion that predates the task's current status
+      // (the bounce-back phantom-banner bug). completedRefs is filtered
+      // to ok+completed, so `.completed` is present.
+      const completedAt = completed.f.ok ? completed.f.completed : "";
       const result = await applyAutoTransition({
         taskId: job.rowId,
         kind,
         completedBy,
+        completedAt,
       });
       if ("error" in result) {
         lastError = result.error;
