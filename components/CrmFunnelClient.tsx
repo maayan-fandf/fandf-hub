@@ -7,6 +7,12 @@ import { channelIcon } from "@/lib/channelIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
 
+/** "YYYY-MM-DD" → "DD/MM" for the compact data-freshness note. */
+function ddmm(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}` : iso;
+}
+
 /**
  * Hover-anchored popover that renders into document.body via portal,
  * so it escapes every ancestor stacking context (CSS-only z-index
@@ -430,9 +436,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
               📅 {funnel.windowLabel}
             </span>
           ) : null}
-          <span className="crm-date-range" title="טווח התאריכים של הנתונים בקבוצה המסוננת">
-            {funnel.dateRange.from} → {funnel.dateRange.to}
-          </span>
+          {funnel.dataLagThrough ? (
+            <span
+              className="crm-date-stale"
+              title="הנתונים בקבוצה המסוננת מגיעים עד תאריך זה בלבד — בהמשך הטווח שנבחר אין עדיין נתונים (מקור שלא התעדכן, או פשוט אין לידים בימים האחרונים)"
+            >
+              ⚠️ נתונים עד {ddmm(funnel.dataLagThrough)}
+            </span>
+          ) : null}
         </div>
       </div>
 

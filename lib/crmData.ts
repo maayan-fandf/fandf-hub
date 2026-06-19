@@ -168,6 +168,13 @@ export type CrmFunnel = {
    *  date range (dd/MM/yyyy–dd/MM/yyyy) rather than a single month.
    *  Empty in month / no-filter mode. */
   windowLabel: string;
+  /** Data-freshness note: the latest in-window CRM-record date (YYYY-MM-DD)
+   *  when the data ends ≥ a few days before the window's *expected* end
+   *  (= min(window end, today) — future days can't carry data yet). Empty
+   *  when the data is current to the window. Drives the "⚠️ נתונים עד …" chip;
+   *  the window chip (windowLabel / monthFilter) already shows the *requested*
+   *  range, so this surfaces only the meaningful requested-vs-covered gap. */
+  dataLagThrough?: string;
   /** Per-paid-channel media cost attributed onto this funnel — the
    *  "Monthly Channel Leads" logic from the anda costs workbook ported
    *  to the Hub. Channel spend comes from ALL CLIENTS over the SAME
@@ -765,6 +772,48 @@ function rowInWindow(d: string, w: DateWindow | null): boolean {
 function ddmmyyyy(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+/** YYYY-MM-DD for "today" in Asia/Jerusalem — same anchor as the rest of
+ *  the codebase (agenda, currentMonthIL, dismissals). */
+function todayIsoIL(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/** Last calendar day of a "YYYY-MM" month, as YYYY-MM-DD. */
+function lastDayOfMonthIso(month: string): string {
+  const [y, mo] = month.split("-").map(Number); // mo is 1-based
+  const day = new Date(y, mo, 0).getDate(); // day 0 of the next month = last of this one
+  return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Data-freshness gap for the CRM-funnel card. Given the active window and
+ * the latest CRM-record date inside it (`dataTo`, "YYYY-MM-DD" or ""),
+ * returns `dataTo` when the data ends at least FRESHNESS_LAG_DAYS before the
+ * window's *expected* end — `min(window end, today)`, since days still in the
+ * future can't carry data yet — else "". The window chip already shows the
+ * *requested* range; this surfaces only the meaningful gap between what was
+ * requested and what the source actually covers (a pipeline-lag tell, most
+ * relevant for the sheet-fed CRMs). Pure; today is Asia/Jerusalem.
+ */
+const FRESHNESS_LAG_DAYS = 3;
+function dataFreshnessLag(window: DateWindow | null, dataTo: string): string {
+  if (!window || !dataTo) return "";
+  const windowEnd =
+    window.kind === "month" ? lastDayOfMonthIso(window.month) : window.to;
+  const today = todayIsoIL();
+  const expectedEnd = windowEnd < today ? windowEnd : today; // min(windowEnd, today)
+  if (dataTo >= expectedEnd) return "";
+  const lagDays =
+    (Date.parse(`${expectedEnd}T00:00:00Z`) - Date.parse(`${dataTo}T00:00:00Z`)) /
+    86_400_000;
+  return lagDays >= FRESHNESS_LAG_DAYS ? dataTo : "";
 }
 
 /**
@@ -2171,6 +2220,12 @@ export async function getCrmFunnelForProject(args: {
     } catch {
       /* leave the base Sheet funnel intact */
     }
+  }
+  // Freshness note — does the data reach the (clamped) end of the selected
+  // window? Computed at the single exit point so it covers every path
+  // (sheet/warehouse/cost-joined) off the final funnel's own dateRange.
+  if (funnel) {
+    funnel.dataLagThrough = dataFreshnessLag(window, funnel.dateRange.to);
   }
   return funnel;
 }
