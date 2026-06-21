@@ -18,6 +18,7 @@ const SHEET_ID_CREATIVES =
   process.env.SHEET_ID_CREATIVES || "1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA";
 const TAB = "fb-creative-meetings";
 const AUD_TAB = "fb-audience-meetings";
+const KW_TAB = "google-keyword-meetings";
 
 // Strip invisible bidi/zero-width marks (Meta injects U+200E etc. into the
 // UTM values) before collapsing whitespace — same rationale as normAdName.
@@ -35,6 +36,7 @@ function currentMonthIL(): string {
 
 type LeadRow = {
   client_id: string | null;
+  channel_key: string | null;
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
@@ -42,7 +44,7 @@ type LeadRow = {
 
 export async function exportFbCreativeMeetings(
   month?: string,
-): Promise<{ month: string; creativeRows: number; audienceRows: number }> {
+): Promise<{ month: string; creativeRows: number; audienceRows: number; keywordRows: number }> {
   if (!supabaseConfigured()) throw new Error("Supabase not configured");
   const mon = month || currentMonthIL();
   const from = `${mon}-01`;
@@ -56,12 +58,14 @@ export async function exportFbCreativeMeetings(
 
   const creativeRows: (string | number)[][] = []; // project, campaign, ad, leads, sched, held
   const audRows: (string | number)[][] = []; // project, audience, leads, sched, held
+  const kwRows: (string | number)[][] = []; // project, keyword, leads, sched, held
 
   for (const p of projects) {
+    // All channels — split below: fb → creative + audience, gs → keyword.
     const leads = await supabaseRowsAll<LeadRow>(
-      `v_bmby_leads_bucketed?project_id=eq.${p.project_id}&channel_key=eq.fb` +
+      `v_bmby_leads_bucketed?project_id=eq.${p.project_id}` +
         `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-        `&select=client_id,utm_campaign,utm_content,utm_term&order=lead_id.asc`,
+        `&select=client_id,channel_key,utm_campaign,utm_content,utm_term&order=lead_id.asc`,
     );
     if (!leads.length) continue;
     const jm = await supabaseRowsAll<{ client_id: string | null; appointment_outcome: string | null }>(
@@ -79,6 +83,7 @@ export async function exportFbCreativeMeetings(
     type Rec = { extra: Record<string, string>; clients: Set<string>; sched: Set<string>; held: Set<string> };
     const byKey = new Map<string, Rec>();
     const byAud = new Map<string, Rec>();
+    const byKw = new Map<string, Rec>(); // gs leads → keyword (utm_term)
     const bump = (map: Map<string, Rec>, key: string, extra: Record<string, string>, c: string) => {
       let rec = map.get(key);
       if (!rec) { rec = { extra, clients: new Set(), sched: new Set(), held: new Set() }; map.set(key, rec); }
@@ -86,14 +91,23 @@ export async function exportFbCreativeMeetings(
     };
     for (const l of leads) {
       const c = String(l.client_id ?? "");
-      const camp = clean(l.utm_campaign);
-      const ad = normAdName(l.utm_content);
-      if (camp && ad && !/^\d{8,}$/.test(camp) && !/^\d{8,}$/.test(ad)) bump(byKey, camp + "|" + ad, { camp, ad }, c);
-      const aud = clean(l.utm_term);
-      if (aud && !/^\d{8,}$/.test(aud)) bump(byAud, aud, { aud }, c);
+      const ch = String(l.channel_key ?? "");
+      if (ch === "fb") {
+        const camp = clean(l.utm_campaign);
+        const ad = normAdName(l.utm_content);
+        if (camp && ad && !/^\d{8,}$/.test(camp) && !/^\d{8,}$/.test(ad)) bump(byKey, camp + "|" + ad, { camp, ad }, c);
+        const aud = clean(l.utm_term);
+        if (aud && !/^\d{8,}$/.test(aud)) bump(byAud, aud, { aud }, c);
+      } else if (ch === "gs") {
+        // Google search: utm_term IS the keyword — joins onto the report's
+        // "מילות חיפוש מובילות" table by (project|keyword).
+        const kw = clean(l.utm_term);
+        if (kw && !/^\d{8,}$/.test(kw)) bump(byKw, kw, { kw }, c);
+      }
     }
     for (const r of byKey.values()) creativeRows.push([p.project_name, r.extra.camp, r.extra.ad, r.clients.size, r.sched.size, r.held.size]);
     for (const r of byAud.values()) audRows.push([p.project_name, r.extra.aud, r.clients.size, r.sched.size, r.held.size]);
+    for (const r of byKw.values()) kwRows.push([p.project_name, r.extra.kw, r.clients.size, r.sched.size, r.held.size]);
   }
 
   // ── write both tabs ──
@@ -154,6 +168,7 @@ export async function exportFbCreativeMeetings(
   };
   await writeTab(TAB, ["project", "campaign", "ad_name", "leads", "scheduled", "held", "month", "updated_at"], creativeRows);
   await writeTab(AUD_TAB, ["project", "audience", "leads", "scheduled", "held", "month", "updated_at"], audRows);
+  await writeTab(KW_TAB, ["project", "keyword", "leads", "scheduled", "held", "month", "updated_at"], kwRows);
 
-  return { month: mon, creativeRows: creativeRows.length, audienceRows: audRows.length };
+  return { month: mon, creativeRows: creativeRows.length, audienceRows: audRows.length, keywordRows: kwRows.length };
 }

@@ -24,6 +24,7 @@ const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 const CREATIVES_SHEET = env.SHEET_ID_CREATIVES || "1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA";
 const TAB = "fb-creative-meetings";
 const AUD_TAB = "fb-audience-meetings";
+const KW_TAB = "google-keyword-meetings";
 
 const MONTH = (process.argv[2] || "").trim() || isoMonthIL();
 const FROM = `${MONTH}-01`;
@@ -62,14 +63,15 @@ console.log(`Exporting FB creative meetings for ${MONTH} across ${projects.lengt
 
 const rows = []; // [project, campaign, ad_name, leads, scheduled, held]
 const audRows = []; // [project, audience, leads, scheduled, held]
+const kwRows = []; // [project, keyword, leads, scheduled, held]
 for (const p of projects) {
-  const leads = await sbAll(`v_bmby_leads_bucketed?project_id=eq.${p.project_id}&channel_key=eq.fb&lead_created_at=gte.${FROM}&lead_created_at=lt.${TO}&select=client_id,utm_campaign,utm_content,utm_term&order=lead_id.asc`);
+  const leads = await sbAll(`v_bmby_leads_bucketed?project_id=eq.${p.project_id}&lead_created_at=gte.${FROM}&lead_created_at=lt.${TO}&select=client_id,channel_key,utm_campaign,utm_content,utm_term&order=lead_id.asc`);
   if (!leads.length) continue;
   const jm = await sbAll(`v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(p.project_name)}&select=client_id,appointment_outcome&order=meeting_id.asc`);
   const any = new Set(), held = new Set();
   for (const x of jm) { const c = String(x.client_id ?? ""); if (!c) continue; any.add(c); if (x.appointment_outcome === "held") held.add(c); }
-  // per (campaign, ad) and per audience(utm_term) → distinct clients + meeting state
-  const byKey = new Map(), byAud = new Map();
+  // fb → (campaign, ad) + audience(utm_term); gs → keyword(utm_term).
+  const byKey = new Map(), byAud = new Map(), byKw = new Map();
   const bump = (map, k, fields, c) => {
     if (!map.has(k)) map.set(k, { ...fields, clients: new Set(), sched: new Set(), held: new Set() });
     const rec = map.get(k);
@@ -77,15 +79,22 @@ for (const p of projects) {
   };
   for (const l of leads) {
     const c = String(l.client_id ?? "");
-    const camp = clean(l.utm_campaign), ad = normAd(l.utm_content);
-    if (camp && ad && !/^\d{8,}$/.test(camp) && !/^\d{8,}$/.test(ad)) bump(byKey, camp + "|" + ad, { camp, ad }, c);
-    const aud = clean(l.utm_term);
-    if (aud && !/^\d{8,}$/.test(aud)) bump(byAud, aud, { aud }, c);
+    const ch = String(l.channel_key ?? "");
+    if (ch === "fb") {
+      const camp = clean(l.utm_campaign), ad = normAd(l.utm_content);
+      if (camp && ad && !/^\d{8,}$/.test(camp) && !/^\d{8,}$/.test(ad)) bump(byKey, camp + "|" + ad, { camp, ad }, c);
+      const aud = clean(l.utm_term);
+      if (aud && !/^\d{8,}$/.test(aud)) bump(byAud, aud, { aud }, c);
+    } else if (ch === "gs") {
+      const kw = clean(l.utm_term);
+      if (kw && !/^\d{8,}$/.test(kw)) bump(byKw, kw, { kw }, c);
+    }
   }
   for (const r of byKey.values()) rows.push([p.project_name, r.camp, r.ad, r.clients.size, r.sched.size, r.held.size]);
   for (const r of byAud.values()) audRows.push([p.project_name, r.aud, r.clients.size, r.sched.size, r.held.size]);
+  for (const r of byKw.values()) kwRows.push([p.project_name, r.kw, r.clients.size, r.sched.size, r.held.size]);
 }
-console.log(`Computed ${rows.length} (project, campaign, ad) + ${audRows.length} (project, audience) rows with meetings.`);
+console.log(`Computed ${rows.length} (campaign, ad) + ${audRows.length} (audience) + ${kwRows.length} (keyword) rows with meetings.`);
 
 // ── write to the creative workbook tab ──
 const auth = new google.auth.JWT({ email: JSON.parse(env.TASKS_SA_KEY_JSON).client_email, key: JSON.parse(env.TASKS_SA_KEY_JSON).private_key, scopes: ["https://www.googleapis.com/auth/spreadsheets"], subject: env.DRIVE_FOLDER_OWNER || "maayan@fandf.co.il" });
@@ -123,6 +132,7 @@ async function writeTab(tab, header, dataRows) {
 }
 await writeTab(TAB, ["project", "campaign", "ad_name", "leads", "scheduled", "held", "month", "updated_at"], rows);
 await writeTab(AUD_TAB, ["project", "audience", "leads", "scheduled", "held", "month", "updated_at"], audRows);
+await writeTab(KW_TAB, ["project", "keyword", "leads", "scheduled", "held", "month", "updated_at"], kwRows);
 // quick peek
 const kenko = rows.filter((r) => r[0] === "רעננה קנקו");
 console.log(`kenko rows:`); for (const r of kenko) console.log(`   ${r[2].padEnd(14)} leads=${r[3]} sched=${r[4]} held=${r[5]}`);
