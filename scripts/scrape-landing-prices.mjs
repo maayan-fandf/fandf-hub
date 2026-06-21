@@ -182,12 +182,17 @@ const yad2LookupMap = await (async () => {
     for (const row of rows.slice(1)) {
       const name = String(row[iName] || "").trim();
       const url = String(row[iUrl] || "").trim();
-      const live = iLive >= 0 ? String(row[iLive] || "").trim() : "באוויר";
+      const live = iLive >= 0 ? String(row[iLive] || "").trim() : "";
       if (!name) continue;
-      // "באוויר" = live. Anything else (בהקפאה / לא באוויר / blank)
-      // is skipped — frozen/inactive projects typically have a "-"
-      // in the URL column too.
-      if (live !== "באוויר") { skippedNotLive++; continue; }
+      // Drop a row only when the status EXPLICITLY says not-live
+      // (לא באוויר / בהקפאה / מוקפא). A BLANK status is treated as live:
+      // Yad2's team routinely leaves the on-air cell empty on perfectly
+      // live rows (e.g. "צרפתי לוריא" → /yad1/project/16284, "נופרים
+      // פסגת זאב"), and the http-URL gate below already removes genuinely
+      // inactive rows — those carry a "-"/blank URL. (Was `live !==
+      // "באוויר"`, which silently dropped every blank-status project even
+      // when it had a valid Yad2 URL → no יד2 surface on the project page.)
+      if (/לא\s*באוויר|הקפא|מוקפא/.test(live)) { skippedNotLive++; continue; }
       if (!/^https?:\/\//i.test(url)) { skippedNoUrl++; continue; }
       // First match wins if the same name appears twice (unusual).
       if (!map.has(name)) map.set(name, url);
