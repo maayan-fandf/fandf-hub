@@ -19,10 +19,16 @@ const SHEET_ID_CREATIVES =
   process.env.SHEET_ID_CREATIVES || "1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA";
 
 /** Normalize an ad name / utm_content so both sides of the join line up:
- *  drop the " - video|static|…" format suffix + a few Hebrew qualifier tails,
- *  collapse whitespace. */
+ *  strip invisible bidi / zero-width marks (LRM/RLM/embeddings/isolates,
+ *  ZWSP, soft-hyphen, BOM), drop the " - video|static|…" format suffix + a few
+ *  Hebrew qualifier tails, collapse whitespace. The bidi strip is essential:
+ *  Meta auto-fills utm_content from the ad name and injects U+200E around the
+ *  Hebrew (e.g. "‎‎2026-02-24c מפעל‎"), with INCONSISTENT counts that both
+ *  break the join against the clean Meta ad name AND split one creative into
+ *  several rows. */
 export function normAdName(s: string | null | undefined): string {
   return String(s ?? "")
+    .replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\s*[-–]\s*(video|static|image|carousel|וידאו|סטטי)\b.*$/i, "")

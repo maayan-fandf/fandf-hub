@@ -19,7 +19,10 @@ const SHEET_ID_CREATIVES =
 const TAB = "fb-creative-meetings";
 const AUD_TAB = "fb-audience-meetings";
 
-const clean = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim();
+// Strip invisible bidi/zero-width marks (Meta injects U+200E etc. into the
+// UTM values) before collapsing whitespace — same rationale as normAdName.
+const clean = (s: unknown) =>
+  String(s ?? "").replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "").replace(/\s+/g, " ").trim();
 
 function currentMonthIL(): string {
   const p = new Intl.DateTimeFormat("en-CA", {

@@ -34,7 +34,10 @@ function isoMonthIL() {
   const p = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit" }).formatToParts(new Date());
   return `${p.find(x=>x.type==="year").value}-${p.find(x=>x.type==="month").value}`;
 }
-const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+// Strip invisible bidi/zero-width marks (Meta injects U+200E etc. into UTM
+// values, breaking the join + splitting one creative into rows) — mirrors
+// lib/fbCreatives.ts normAdName + lib/fbCreativeMeetingsExport.ts clean.
+const clean = (s) => String(s ?? "").replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "").replace(/\s+/g, " ").trim();
 const normAd = (s) => clean(s).replace(/\s*[-–]\s*(video|static|image|carousel|וידאו|סטטי)\b.*$/i, "").replace(/\s+(רגילות|וידאו|סטטי)\b.*$/u, "").trim();
 async function sb(path) { const r = await fetch(SB + path, { headers: H }); return r.ok ? r.json() : []; }
 async function sbAll(path) { const out = []; for (let s = 0; s < 20000; s += 1000) { const r = await fetch(SB + path, { headers: { ...H, Range: `${s}-${s + 999}` } }); if (!r.ok) break; const j = await r.json(); if (!Array.isArray(j) || !j.length) break; out.push(...j); if (j.length < 1000) break; } return out; }
