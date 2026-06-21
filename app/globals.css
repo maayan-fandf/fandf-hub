@@ -6763,9 +6763,12 @@ html[data-theme="dark"] .crm-trend-hilite {
 }
 .crm-trend-hover {
   position: absolute;
-  top: 2px;
+  /* Sit ABOVE the chart (anchored to the plot's top edge, popping upward)
+     so the card never covers the bars — was top:2px, which overlapped the
+     stacked bars on the hovered side. */
+  bottom: calc(100% + 8px);
   transform: translateX(-50%);
-  z-index: 5;
+  z-index: 20;
   pointer-events: none;
   min-width: 244px;
   max-width: 320px;
