@@ -39,8 +39,23 @@ function isoMonthIL() {
 // lib/fbCreatives.ts normAdName + lib/fbCreativeMeetingsExport.ts clean.
 const clean = (s) => String(s ?? "").replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "").replace(/\s+/g, " ").trim();
 const normAd = (s) => clean(s).replace(/\s*[-–]\s*(video|static|image|carousel|וידאו|סטטי)\b.*$/i, "").replace(/\s+(רגילות|וידאו|סטטי)\b.*$/u, "").trim();
-async function sb(path) { const r = await fetch(SB + path, { headers: H }); return r.ok ? r.json() : []; }
-async function sbAll(path) { const out = []; for (let s = 0; s < 20000; s += 1000) { const r = await fetch(SB + path, { headers: { ...H, Range: `${s}-${s + 999}` } }); if (!r.ok) break; const j = await r.json(); if (!Array.isArray(j) || !j.length) break; out.push(...j); if (j.length < 1000) break; } return out; }
+// Retry transient throttling / 5xx / network errors with backoff — a bulk
+// backfill pages many projects fast and gets rate-limited, and a silently
+// dropped journey-meetings page wrote "0 meetings" over good data (kenko Feb).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function fetchRetry(url, headers) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const r = await fetch(url, { headers });
+      if (r.ok) return r;
+      if (r.status === 429 || r.status >= 500) { await sleep(300 * 2 ** attempt); continue; }
+      return r; // non-transient (other 4xx)
+    } catch { await sleep(300 * 2 ** attempt); }
+  }
+  return null;
+}
+async function sb(path) { const r = await fetchRetry(SB + path, H); return r && r.ok ? r.json() : []; }
+async function sbAll(path) { const out = []; for (let s = 0; s < 40000; s += 1000) { const r = await fetchRetry(SB + path, { ...H, Range: `${s}-${s + 999}` }); if (!r || !r.ok) break; const j = await r.json(); if (!Array.isArray(j) || !j.length) break; out.push(...j); if (j.length < 1000) break; } return out; }
 
 const projects = await sb(`v_report_v2_bmby_projects?select=project_id,project_name&order=project_name`);
 console.log(`Exporting FB creative meetings for ${MONTH} across ${projects.length} bmby projects…`);

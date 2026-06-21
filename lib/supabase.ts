@@ -113,11 +113,22 @@ export async function supabaseRows<T = Record<string, unknown>>(
   }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** Like supabaseRows but follows PostgREST pagination (Range headers)
  *  until the result set is exhausted — for queries that can exceed the
  *  1000-row default cap (e.g. a project's full meeting history or a
  *  high-volume project's monthly leads). `maxRows` is a safety valve so a
- *  runaway filter can't page forever. Returns whatever it has on error. */
+ *  runaway filter can't page forever.
+ *
+ *  Each page is retried on a transient error (HTTP 429 / 5xx / network
+ *  throw) with exponential backoff. This matters because the per-creative
+ *  meetings export pages many projects back-to-back and can get rate-
+ *  limited mid-run; without the retry, a single throttled page silently
+ *  returned partial/empty and the export wrote "0 meetings" over good data
+ *  (kenko Feb 2026 lost all scheduled/held this way). On a NON-transient
+ *  4xx or after exhausting retries, returns whatever it has so far
+ *  (preserves the graceful-degrade contract callers rely on). */
 export async function supabaseRowsAll<T = Record<string, unknown>>(
   path: string,
   opts?: { pageSize?: number; maxRows?: number },
@@ -125,19 +136,31 @@ export async function supabaseRowsAll<T = Record<string, unknown>>(
   const pageSize = opts?.pageSize ?? 1000;
   const maxRows = opts?.maxRows ?? 20000;
   const out: T[] = [];
-  try {
-    for (let start = 0; start < maxRows; start += pageSize) {
-      const res = await supabaseFetch(path, {
-        extraHeaders: { Range: `${start}-${start + pageSize - 1}` },
-      });
-      if (!res.ok) break;
-      const j = await res.json();
-      if (!Array.isArray(j) || j.length === 0) break;
-      out.push(...(j as T[]));
-      if (j.length < pageSize) break;
+  for (let start = 0; start < maxRows; start += pageSize) {
+    let page: T[] | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const res = await supabaseFetch(path, {
+          extraHeaders: { Range: `${start}-${start + pageSize - 1}` },
+        });
+        if (res.ok) {
+          const j = await res.json();
+          page = Array.isArray(j) ? (j as T[]) : [];
+          break;
+        }
+        // Retry throttling / transient server errors; bail on other 4xx.
+        if (res.status === 429 || res.status >= 500) {
+          await sleep(300 * 2 ** attempt);
+          continue;
+        }
+        return out;
+      } catch {
+        await sleep(300 * 2 ** attempt);
+      }
     }
-  } catch {
-    /* return what we have */
+    if (page === null) break; // exhausted retries — return what we have
+    out.push(...page);
+    if (page.length < pageSize) break;
   }
   return out;
 }
