@@ -344,6 +344,42 @@ function norm(s: unknown): string {
 }
 
 /**
+ * Candidate CRM-account strings a project's CRM rows may match against.
+ *
+ * The Keys `CRM` column is usually one account, but a few projects map
+ * to several accounts the client tracks separately, comma-joined — e.g.
+ * חבר → "תדהר בין השדרות תל אביב, קיימא, כוכב הצפון אשדוד" (3 distinct
+ * Sehel accounts whose leads should all roll into the one משפך CRM).
+ *
+ * The catch: a comma can ALSO be part of a single account *name*, not a
+ * separator — הגדה's Sehel account is literally "HaGada בני דן, תל אביב"
+ * and Essence's Salesforce project is "בית צורי 22,24". Splitting those
+ * would break the match.
+ *
+ * We can't know which a comma means, so we return BOTH readings: the
+ * full raw string AND each comma-split part. The row-match (exact for
+ * bmby/salesforce, prefix for sehel) accepts a row matching ANY
+ * candidate, counting each row once. This is purely additive over the
+ * old single-string match — comma-in-name projects (הגדה/Essence) keep
+ * matching via the full string; comma-separated projects (חבר) also pick
+ * up each account; single-account projects yield just [raw], identical
+ * to before.
+ */
+function crmAccountCandidates(raw: string): string[] {
+  const full = String(raw ?? "").trim();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const c of [full, ...full.split(",").map((s) => s.trim())]) {
+    if (!c) continue;
+    const k = c.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(c);
+  }
+  return out;
+}
+
+/**
  * Canonical form for source/`מקור הגעה` strings. The source data has
  * extensive casing chaos — "facebook" / "Facebook" / "FACEBOOK" co-exist
  * in BMBY (1418 / 341 / 159 rows respectively), plus similar drift on
@@ -955,7 +991,10 @@ function aggregateBmbyFunnel(
   // handles empty cleanly).
   if (iProject < 0) return null;
 
-  const target = norm(crmAccount);
+  // One project can map to several comma-joined CRM accounts; a comma
+  // can also be part of a single account name. crmAccountCandidates
+  // returns both readings — match ANY. See its doc for the overload.
+  const targets = crmAccountCandidates(crmAccount).map(norm);
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה — broad, includes cancelled
   let meetings = 0;          // פגישות — narrow, actually-held only
@@ -1006,7 +1045,7 @@ function aggregateBmbyFunnel(
   for (const row of rows) {
     const arr = row as unknown[];
     const proj = norm(arr[iProject]);
-    if (proj !== target) continue;
+    if (!targets.includes(proj)) continue;
 
     // Stale-leads check — runs against EVERY project row (deliberately
     // before the monthFilter bail below). A row counts as stale when
@@ -1497,7 +1536,12 @@ async function computeSehelFunnel(
   // match on Keys.CRM picks up all the seller-suffixed variants in one
   // pass. Exact-match would only catch the no-suffix rows (32/1000 in
   // the probe). The prefix is the project name, the rest is the seller.
-  const targetPrefix = norm(crmAccount);
+  //
+  // A project can also map to several comma-joined accounts (חבר → 3),
+  // while other projects carry a comma INSIDE one name (הגדה → "HaGada
+  // בני דן, תל אביב"). crmAccountCandidates returns both the full string
+  // and each split part; a row matches if it prefixes ANY candidate.
+  const targetPrefixes = crmAccountCandidates(crmAccount).map(norm);
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה
   let meetings = 0;          // פגישות (held)
@@ -1532,10 +1576,15 @@ async function computeSehelFunnel(
   for (const row of rows) {
     const arr = row as unknown[];
     const proj = norm(arr[iProject]);
-    if (!proj.startsWith(targetPrefix)) continue;
-    // Defensive: require either exact match OR a word boundary after the
-    // prefix (so "אורנבך 11" doesn't accidentally match "אורנבך 111").
-    if (proj !== targetPrefix && proj[targetPrefix.length] !== " ") continue;
+    // Match if the row's project prefixes ANY candidate account, with a
+    // word boundary after the prefix (so "אורנבך 11" doesn't match
+    // "אורנבך 111"). Each row is counted once however many it could match.
+    if (
+      !targetPrefixes.some(
+        (t) => proj.startsWith(t) && (proj === t || proj[t.length] === " "),
+      )
+    )
+      continue;
 
     // Stale-leads check — same model as BMBY. Sehel doesn't have a
     // dedicated "תאריך קשר" column; we use עדכון אחרון (last update)
@@ -1719,8 +1768,10 @@ async function computeSalesforceFunnel(
   if (iProject < 0) return null;
 
   // Exact match on פרויקט (like BMBY) — verified the two Keys.CRM
-  // account names match the Salesforce פרויקט values exactly.
-  const target = norm(crmAccount);
+  // account names match the Salesforce פרויקט values exactly. Multiple
+  // comma-joined accounts (or a comma that's part of one name, like
+  // "בית צורי 22,24") are handled by crmAccountCandidates — match ANY.
+  const targets = crmAccountCandidates(crmAccount).map(norm);
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה (נקבעה או בוטלה פגישה)
   let meetings = 0;          // פגישות (התבצעה פגישה — held)
@@ -1752,7 +1803,7 @@ async function computeSalesforceFunnel(
   for (const row of rows) {
     const arr = row as unknown[];
     const proj = norm(arr[iProject]);
-    if (proj !== target) continue;
+    if (!targets.includes(proj)) continue;
 
     // Stale-leads check — early-stage AND created >14d ago. Creation
     // date is the only available recency anchor (see the comment on
