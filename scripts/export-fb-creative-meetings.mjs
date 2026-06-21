@@ -80,10 +80,28 @@ async function writeTab(tab, header, dataRows) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: CREATIVES_SHEET, requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] } });
     console.log(`created tab "${tab}"`);
   }
-  const values = [header, ...dataRows.map((r) => [...r, MONTH, updatedAt])];
+  // MERGE by month (matches lib/fbCreativeMeetingsExport.ts) — keep other
+  // months' rows, replace only MONTH, so backfilling a past month doesn't wipe
+  // the rest of the history.
+  let preserved = [];
+  try {
+    const cur = await sheets.spreadsheets.values.get({ spreadsheetId: CREATIVES_SHEET, range: `'${tab}'!A:Z`, valueRenderOption: "UNFORMATTED_VALUE" });
+    const vals = cur.data.values || [];
+    if (vals.length > 1) {
+      const exHdr = vals[0].map((h) => String(h ?? ""));
+      const exMonth = exHdr.indexOf("month");
+      for (let i = 1; i < vals.length; i++) {
+        const row = vals[i];
+        if (exMonth >= 0 && String(row[exMonth] ?? "") === MONTH) continue;
+        preserved.push(header.map((c) => { const idx = exHdr.indexOf(c); return idx >= 0 ? (row[idx] ?? "") : ""; }));
+      }
+    }
+  } catch { preserved = []; }
+  const fresh = dataRows.map((r) => [...r, MONTH, updatedAt]);
+  const values = [header, ...preserved, ...fresh];
   await sheets.spreadsheets.values.clear({ spreadsheetId: CREATIVES_SHEET, range: `'${tab}'!A:Z` });
   await sheets.spreadsheets.values.update({ spreadsheetId: CREATIVES_SHEET, range: `'${tab}'!A1`, valueInputOption: "RAW", requestBody: { values } });
-  console.log(`✓ wrote ${dataRows.length} rows to "${tab}" (month ${MONTH}, updated ${updatedAt})`);
+  console.log(`✓ wrote ${dataRows.length} rows for ${MONTH} to "${tab}" (+${preserved.length} preserved, updated ${updatedAt})`);
 }
 await writeTab(TAB, ["project", "campaign", "ad_name", "leads", "scheduled", "held", "month", "updated_at"], rows);
 await writeTab(AUD_TAB, ["project", "audience", "leads", "scheduled", "held", "month", "updated_at"], audRows);

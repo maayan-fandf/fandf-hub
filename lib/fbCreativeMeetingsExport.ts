@@ -108,7 +108,39 @@ export async function exportFbCreativeMeetings(
         requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
       });
     }
-    const values = [header, ...data.map((r) => [...r, mon, updatedAt])];
+    // MERGE by month — the tab is per-creative/-audience meeting HISTORY now.
+    // (Was clear+rewrite, which kept only the last run's month, so the report's
+    // past-month views — e.g. monthOverride=2026-03 — found nothing to join.)
+    // Preserve every row whose `month` ≠ this run's month; replace only `mon`.
+    let preserved: (string | number)[][] = [];
+    try {
+      const cur = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID_CREATIVES,
+        range: `'${tab}'!A:Z`,
+        valueRenderOption: "UNFORMATTED_VALUE",
+      });
+      const vals = (cur.data.values ?? []) as (string | number)[][];
+      if (vals.length > 1) {
+        const exHdr = (vals[0] as unknown[]).map((h) => String(h ?? ""));
+        const exMonth = exHdr.indexOf("month");
+        for (let i = 1; i < vals.length; i++) {
+          const row = vals[i];
+          if (exMonth >= 0 && String(row[exMonth] ?? "") === mon) continue;
+          // Reshape onto OUR canonical header order so a column add/reorder
+          // can't misalign preserved months.
+          preserved.push(
+            header.map((c) => {
+              const idx = exHdr.indexOf(c);
+              return idx >= 0 ? ((row[idx] ?? "") as string | number) : "";
+            }),
+          );
+        }
+      }
+    } catch {
+      preserved = [];
+    }
+    const fresh = data.map((r) => [...r, mon, updatedAt]);
+    const values = [header, ...preserved, ...fresh];
     await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID_CREATIVES, range: `'${tab}'!A:Z` });
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID_CREATIVES,
