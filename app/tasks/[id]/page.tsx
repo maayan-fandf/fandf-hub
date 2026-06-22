@@ -63,7 +63,7 @@ import TaskTemplatePreview from "@/components/TaskTemplatePreview";
 import TaskTimeTracker from "@/components/TaskTimeTracker";
 import TaskTimePauseQuick from "@/components/TaskTimePauseQuick";
 import { deriveInProgressTime } from "@/lib/inProgressTime";
-import { linkifyParagraphs } from "@/lib/linkify";
+import CommentBody from "@/components/CommentBody";
 
 export const dynamic = "force-dynamic";
 
@@ -513,9 +513,11 @@ export default async function TaskDetailPage({
             />
           )}
           {t.description && (
-            <div className="task-detail-body">
-              {linkifyParagraphs(t.description)}
-            </div>
+            <CommentBody
+              body={t.description}
+              people={peopleRes?.people ?? []}
+              className="task-detail-body"
+            />
           )}
 
           {/* Submission banner — surfaces the latest "🔍 הוגש לאישור" /

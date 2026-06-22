@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import { useRouter } from "next/navigation";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 import CampaignCombobox from "./CampaignCombobox";
@@ -389,6 +390,100 @@ export default function TaskCreateForm({
   // time fallback for drive_folder_id when no folder is explicitly
   // selected.
   const uploadedFolderIdRef = useRef<string>("");
+
+  // ── Paste / drop images into the תיאור box ───────────────────────────
+  // Upload pasted/dropped images to the project's (internal) comments
+  // folder and drop a markdown image token at the cursor — same convention
+  // CreateTaskDrawer / TaskReplyComposer use, so the task-detail body
+  // (CommentBody) renders them inline. Keyed on `project` (not the בריף
+  // folder), so it works before a folder is chosen, like the comment
+  // composers — no בריף-folder gating.
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
+  const [pasteUploading, setPasteUploading] = useState(0);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const DESC_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+  type DescUploadResponse =
+    | { ok: true; fileId: string; name: string; mimeType: string; viewUrl: string; embedUrl: string }
+    | { ok: false; error: string };
+
+  function insertIntoDescription(text: string) {
+    setDescription((prev) => {
+      const ta = descriptionRef.current;
+      if (!ta) return prev + text;
+      const start = ta.selectionStart ?? prev.length;
+      const end = ta.selectionEnd ?? prev.length;
+      const next = prev.slice(0, start) + text + prev.slice(end);
+      requestAnimationFrame(() => {
+        const pos = start + text.length;
+        ta.setSelectionRange(pos, pos);
+        ta.focus();
+      });
+      return next;
+    });
+  }
+
+  async function uploadDescriptionImage(file: File): Promise<void> {
+    if (!project) {
+      setPasteError("בחר/י פרויקט לפני העלאת תמונה.");
+      return;
+    }
+    if (file.size > DESC_MAX_UPLOAD_BYTES) {
+      setPasteError(
+        `הקובץ גדול מדי (${Math.round(file.size / 1024 / 1024)}MB, מקסימום 25MB).`,
+      );
+      return;
+    }
+    const form = new FormData();
+    form.set("project", project);
+    form.set("file", file, file.name || "pasted-image.png");
+    // Tasks are F&F-internal → attachments go to the team-only bucket.
+    form.set("internal", "1");
+    setPasteUploading((n) => n + 1);
+    setPasteError(null);
+    try {
+      const res = await fetch("/api/comments/upload", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as DescUploadResponse;
+      if (!res.ok || !("ok" in data) || !data.ok) {
+        const msg = ("error" in data && data.error) || `העלאה נכשלה (${res.status})`;
+        throw new Error(msg);
+      }
+      const safeName = (data.name || file.name || "file").replace(/[[\]()]/g, "");
+      const mimeType = (file.type || data.mimeType || "").toLowerCase();
+      const isImage =
+        mimeType.startsWith("image/") ||
+        /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(safeName);
+      // Markdown token CommentBody renders inline on the task-detail body.
+      insertIntoDescription(
+        isImage
+          ? `\n![${safeName}](${data.viewUrl})\n`
+          : `\n[📎 ${safeName}](${data.viewUrl})\n`,
+      );
+    } catch (e) {
+      setPasteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPasteUploading((n) => Math.max(0, n - 1));
+    }
+  }
+
+  function onDescriptionPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return; // let normal text/link pastes through
+    e.preventDefault();
+    imgs.forEach((f) => void uploadDescriptionImage(f));
+  }
+  function onDescriptionDrop(e: React.DragEvent<HTMLTextAreaElement>) {
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    imgs.forEach((f) => void uploadDescriptionImage(f));
+  }
+  function onDescriptionDragOver(e: React.DragEvent<HTMLTextAreaElement>) {
+    if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+  }
 
   // Resolve the Drive folder the Picker should open at:
   //   - When the user has picked a בריף → that בריף's folder (drill in
@@ -1531,12 +1626,28 @@ export default function TaskCreateForm({
       <label>
         תיאור
         <textarea
+          ref={descriptionRef}
           name="description"
           rows={5}
-          placeholder="מה צריך לעשות, מה הקונטקסט, קישורים רלוונטיים…"
+          placeholder="מה צריך לעשות, מה הקונטקסט, קישורים רלוונטיים… (אפשר גם להדביק תמונות)"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onPaste={onDescriptionPaste}
+          onDrop={onDescriptionDrop}
+          onDragOver={onDescriptionDragOver}
         />
+        {(pasteUploading > 0 || pasteError) && (
+          <span
+            style={{
+              display: "block",
+              marginTop: "0.25rem",
+              fontSize: "0.78em",
+              color: pasteError ? "#dc2626" : "var(--muted)",
+            }}
+          >
+            {pasteError ? `⚠️ ${pasteError}` : "מעלה תמונה…"}
+          </span>
+        )}
       </label>
 
       {/* Chain-level departments are obsolete in chain mode — each
