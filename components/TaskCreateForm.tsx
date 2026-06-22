@@ -353,11 +353,23 @@ export default function TaskCreateForm({
     () => title.trim().slice(0, 60),
     [title],
   );
-  const [folderSelection, setFolderSelection] = useState<FolderPickerValue>({
-    mode: "existing",
-    folderId: "",
-    folderName: "",
-  });
+  // Seed the picker with the task's CURRENT folder in edit mode. Without
+  // this the selection starts empty, so DriveFolderPicker auto-selects the
+  // campaign (בריף) folder once it resolves — which both mis-displays the
+  // selection (shows the parent בריף instead of the saved sub-folder) AND,
+  // on the next save, overwrites drive_folder_id with the parent (silent
+  // data loss). Repro: task T-mqoxjvl4-pnis, folder "אתר" → showed/would
+  // save "השקה". (Name is resolved by the picker from the tree, so "" is
+  // fine here — the task row doesn't store a folder name.)
+  const [folderSelection, setFolderSelection] = useState<FolderPickerValue>(
+    isEditing && editingTask?.drive_folder_id
+      ? {
+          mode: "existing",
+          folderId: editingTask.drive_folder_id,
+          folderName: "",
+        }
+      : { mode: "existing", folderId: "", folderName: "" },
+  );
   // Track whether the user has manually edited the new-folder name.
   // Once edited, stop overwriting it with the title-derived suggestion.
   const [folderNameUserEdited, setFolderNameUserEdited] = useState(false);

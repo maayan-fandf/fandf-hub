@@ -397,8 +397,26 @@ export default function DriveFolderPicker({
   const mode = value.mode;
   const selectedExistingId =
     value.mode === "existing" ? value.folderId : "";
+  // Resolve the selected folder's display NAME. Prefer the name the parent
+  // passed; else look the id up among the loaded tree children (the campaign
+  // folder's children auto-load on resolve). Without this, a selected
+  // SUB-folder whose name wasn't passed in (edit mode seeds only the stored
+  // drive_folder_id) fell through to the `|| campaign` fallback at the render
+  // sites and read as if the parent בריף folder were selected — e.g. folder
+  // "אתר" displayed as "השקה" (task T-mqoxjvl4-pnis).
+  const lookupChildName = (id: string): string => {
+    if (!id || (rootId && id === rootId)) return "";
+    for (const v of Object.values(children)) {
+      if (Array.isArray(v)) {
+        const hit = v.find((c) => c.id === id);
+        if (hit) return hit.name;
+      }
+    }
+    return "";
+  };
   const selectedExistingName =
-    value.mode === "existing" ? value.folderName || "" : "";
+    (value.mode === "existing" ? value.folderName || "" : "") ||
+    lookupChildName(selectedExistingId);
 
   if (value.mode === "new" && value.name) {
     lastNewName.current = value.name;
