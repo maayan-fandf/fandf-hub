@@ -114,6 +114,33 @@ export async function applyAutoTransition(
       };
     }
 
+    // Idempotency guard (phantom-banner re-fire, task T-mqoxjvl4-pnis):
+    // if an IDENTICAL claim (same kind + same prev status) is already
+    // pending, don't re-stamp it with a fresh `at` on every poll cycle.
+    // The poller re-dispatches every still-`completed` GT ref each cycle,
+    // so without this a single completed ref re-writes pending_complete
+    // every few minutes — resurrecting a banner the approver just
+    // dismissed (revert clears the flag; the next identical completion
+    // would re-set it, which is the legitimate single-banner behaviour).
+    // Different kind/prev (e.g. a later approve completion) still writes.
+    if (task.pending_complete) {
+      try {
+        const existing = JSON.parse(String(task.pending_complete));
+        if (existing && existing.kind === kind && existing.prev === previous) {
+          return {
+            ok: true,
+            skipped: true,
+            taskId,
+            kind,
+            previous,
+            reason: `pending_complete already set for kind=${kind}/prev=${previous} — not re-stamping`,
+          };
+        }
+      } catch {
+        /* corrupt/empty claim → fall through to normal handling */
+      }
+    }
+
     // Stale-completion guard (prod bug 2026-06-18, task T-mqj7bqgv-dwxo):
     // a kind=todo GT closed at first submit (08:28) re-fired after the
     // task was returned for fixes and re-entered awaiting_handling

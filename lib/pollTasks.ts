@@ -273,6 +273,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   const I_APPROVER = idx("approver_email");
   const I_PM = idx("project_manager_email");
   const I_MENTIONS = idx("mentions");
+  const I_PENDING = idx("pending_complete");
   if (I_ID < 0 || I_GT < 0) {
     throw new Error("Comments sheet missing required headers (id, google_tasks)");
   }
@@ -601,6 +602,17 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
           e instanceof Error ? e.message : String(e),
         );
       }
+    }
+
+    // Phantom-banner churn fix (task T-mqoxjvl4-pnis): if a
+    // pending_complete claim is live on this row, a completed todo here is
+    // the "assignee finished — awaiting confirm/revert" signal, NOT a lost
+    // GT to heal. Respawning a replacement (which is then auto-completed →
+    // re-feeds the claim ~1/min) is exactly what minted 10 duplicate GTs.
+    // The claim clears on confirm/revert, after which reconcile resumes
+    // healing next cycle. The stale-ref CLOSE pass above still runs.
+    if (I_PENDING >= 0 && String(row[I_PENDING] ?? "").trim()) {
+      continue;
     }
 
     const missing: { email: string; kind: GTaskKind }[] = [];
