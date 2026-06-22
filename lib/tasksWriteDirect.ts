@@ -2046,6 +2046,17 @@ async function tasksUpdateDirectInner(
     // sub_status in the same patch, the SIMPLE_DIRECT loop below will
     // overwrite this clear with the new value.
     changes.sub_status = "";
+    // A real status change RESOLVES any pending GT-completion claim, so
+    // clear it here. If the caller set pending_complete explicitly in the
+    // same patch (e.g. confirm-pending sends status + ""), the
+    // SIMPLE_DIRECT loop below overwrites this with their value. Without
+    // this, a stale claim lingered after a manual transition (e.g.
+    // kanban→done) and kept rendering the approval banner on a done task
+    // (T-mqoxjvl4-pnis). applyAutoTransition sets the claim WITHOUT a
+    // status change, so this branch never clears a freshly-detected one.
+    if (String(cell("pending_complete") ?? "")) {
+      changes.pending_complete = "";
+    }
     // Append to status_history.
     const existingHist = (() => {
       try {
