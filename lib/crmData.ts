@@ -1211,9 +1211,13 @@ function aggregateBmbyFunnel(
  * per warehouse lead (cohort = leads created in the window) carrying the
  * columns aggregateBmbyFunnel reads, then running the identical
  * aggregation. A lead's meeting state is joined from v_bmby_journey_meetings
- * by client_id: a HELD event → "פגישה התקיימה" (counts scheduled+held); any
- * other meeting event → "נקבעה פגישה" / "פגישה בוטלה" (scheduled only);
- * otherwise the lead's client_status maps to an early/late funnel stage.
+ * by client_id, but ONLY from meetings whose date falls inside the active
+ * window (owner decision 2026-06-22 — "scheduled/held should reflect meetings
+ * IN the period, not every meeting the lead ever had"): an in-window HELD
+ * event → "פגישה התקיימה" (counts scheduled+held); any other in-window meeting
+ * event → "נקבעה פגישה" / "פגישה בוטלה" (scheduled only); otherwise the lead's
+ * client_status maps to an early/late funnel stage. (The full meeting history
+ * is still kept for journeyVelocity, which legitimately needs all dates.)
  * Source token = media_source_clean (same token family the Sheet uses, so
  * the cost-join canonicalizer and the source chips work unchanged).
  *
@@ -1275,21 +1279,37 @@ async function computeBmbyFunnelFromWarehouse(
       `&order=lead_id.asc`,
   );
   if (!leads.length) return null;
-  // Project journey meetings (all dates) → per-client meeting state.
+  // Project journey meetings — the full all-time history is fetched (journey
+  // velocity below needs every date), but the per-client meeting state that
+  // drives scheduled/held is built ONLY from meetings dated inside the active
+  // window. Anchor = appointment_date (when the meeting occurs), falling back
+  // to meeting_date when it's blank. So a cohort lead counts as scheduled/held
+  // only when its meeting actually lands in [from, toExcl) — return leads whose
+  // meeting predates the window, and June leads whose meeting is booked for a
+  // later month, are NOT counted (they re-enter as the month/their date fills).
   const meetings = await supabaseRowsAll<{
     client_id: string | null;
     appointment_outcome: string | null;
     meeting_date: string | null;
+    appointment_date: string | null;
   }>(
     `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(crmAccount)}` +
-      `&select=client_id,appointment_outcome,meeting_date&order=meeting_id.asc`,
+      `&select=client_id,appointment_outcome,meeting_date,appointment_date&order=meeting_id.asc`,
   );
+  const meetingInWindow = (m: {
+    appointment_date: string | null;
+    meeting_date: string | null;
+  }): boolean => {
+    const d = (m.appointment_date || m.meeting_date || "").slice(0, 10);
+    return !!d && d >= from && d < toExcl;
+  };
   const heldClients = new Set<string>();
   const anyClients = new Set<string>();
   const nonCanceledClients = new Set<string>();
   for (const m of meetings) {
     const c = String(m.client_id ?? "");
     if (!c) continue;
+    if (!meetingInWindow(m)) continue; // only meetings dated in the window
     anyClients.add(c);
     if (m.appointment_outcome === "held") heldClients.add(c);
     if (m.appointment_outcome !== "canceled") nonCanceledClients.add(c);
