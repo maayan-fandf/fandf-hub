@@ -20,6 +20,8 @@ import { driveFolderOwner } from "@/lib/sa";
 import {
   readAllManagementFees,
   getFeePercentForRow,
+  getGlobalDefaultFee,
+  getCompanyFee,
 } from "@/lib/managementFees";
 import CampaignsTabs from "@/components/CampaignsTabs";
 import ManagementFeeCell from "@/components/ManagementFeeCell";
@@ -368,14 +370,21 @@ export default async function ForecastPage({
         campaignManager: UNASSIGNED,
       } satisfies KeyMeta);
     const channel = r.channel || "(ללא ערוץ)";
-    const feePercent = getFeePercentForRow(feeMap, r.projectSlug, channel);
+    const companyName = meta.company || UNKNOWN_COMPANY;
+    // Fee cascade: (slug,channel) override → company → global default.
+    const feePercent = getFeePercentForRow(
+      feeMap,
+      r.projectSlug,
+      channel,
+      companyName,
+    );
     const feeIlsActual = (r.spend * feePercent) / 100;
     const feeIlsBudget = (r.budget * feePercent) / 100;
     const utilizationPct = r.budget > 0 ? (r.spend / r.budget) * 100 : null;
     return {
       slug: r.projectSlug,
       projectName: meta.projectName,
-      company: meta.company || UNKNOWN_COMPANY,
+      company: companyName,
       campaignManager: meta.campaignManager || UNASSIGNED,
       channel,
       month: r.startIso ? r.startIso.slice(0, 7) : "",
@@ -602,6 +611,10 @@ export default async function ForecastPage({
   // Grand totals across visible rows.
   const grand = sumRows(filtered);
 
+  // The agency-wide default fee (cascade's lowest tier) — feeds the
+  // toolbar "master" editor + the per-company fallback in the matrix.
+  const globalFee = getGlobalDefaultFee(feeMap);
+
   const hasFilter =
     fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0 || !!fQuery;
 
@@ -713,10 +726,13 @@ export default async function ForecastPage({
         return { company, totalsByMonth, projects, totalSpend };
       })
       // Strip the per-project totalSpend helper key off the wire shape;
-      // company sort uses it first.
+      // company sort uses it first. `feePercent` = the company's
+      // effective fee (its own override, else the global default) — the
+      // value the company-row editor shows + writes against.
       .sort((a, b) => b.totalSpend - a.totalSpend)
       .map(({ company, totalsByMonth, projects }) => ({
         company,
+        feePercent: getCompanyFee(feeMap, company) ?? globalFee,
         totalsByMonth,
         projects: projects.map(({ projectName, slug, cells }) => ({
           projectName,
@@ -982,6 +998,21 @@ export default async function ForecastPage({
           </span>
         </div>
       </section>
+
+      {/* Master fee control — the global default (cascade's lowest
+          tier). Editing it re-derives every fee that has no company or
+          per-channel override, across all views. Per-company fees are
+          set inline on the "כל החודשים" company rows. */}
+      <div className="forecast-fee-master">
+        <span className="forecast-fee-master-label">
+          ⚙️ דמי ניהול — ברירת מחדל:
+        </span>
+        <ManagementFeeCell scope="global" initialPercent={globalFee} />
+        <span className="forecast-fee-master-hint">
+          חל על כל פרויקט/ערוץ ללא אחוז ייעודי. אחוז לחברה נקבע בשורת החברה
+          בתצוגת “כל החודשים”.
+        </span>
+      </div>
 
       {viewMode === "all" ? (
         matrixMonths.length === 0 ? (

@@ -26,11 +26,20 @@ function fmtPercent(n: number): string {
 export default function ManagementFeeCell({
   slug,
   channel,
+  company,
+  scope = "channel",
   initialPercent,
 }: {
-  slug: string;
-  channel: string;
-  /** Server-resolved percent (with default 15 already applied). */
+  /** Required for scope="channel". */
+  slug?: string;
+  /** Required for scope="channel". */
+  channel?: string;
+  /** Required for scope="company". */
+  company?: string;
+  /** Which cascade tier this editor writes. Defaults to the per-
+   *  (project, channel) override so existing call-sites are unchanged. */
+  scope?: "channel" | "company" | "global";
+  /** Server-resolved percent (with the cascade already applied). */
   initialPercent: number;
 }) {
   const router = useRouter();
@@ -74,10 +83,16 @@ export default function ManagementFeeCell({
     setPercent(next); // Optimistic
     setEditing(false);
     try {
+      const payload =
+        scope === "global"
+          ? { scope, percent: next }
+          : scope === "company"
+            ? { scope, company, percent: next }
+            : { scope, slug, channel, percent: next };
       const res = await fetch("/api/management-fees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, channel, percent: next }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {

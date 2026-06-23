@@ -22,6 +22,33 @@ import { getDb, FS_COLLECTIONS } from "@/lib/firestore";
 const FEES_CACHE_TAG = "managementFees";
 const DEFAULT_FEE_PERCENT = 15;
 
+/**
+ * Sentinel (slug, channel) pairs that store the two "master" fee
+ * levels in the SAME `managementFees` collection as the per-cell
+ * overrides — so one `readAllManagementFees()` pass loads everything.
+ *
+ * The fee for any (project, channel) resolves by a cascade, most
+ * specific wins:
+ *   (slug, channel) override  →  company override  →  global default
+ *
+ * The sentinels can't collide with a real project slug (project slugs
+ * are `campaign ID` values, never these underscored tokens) or channel
+ * name. Company fees key on the (lowercased) Hebrew company name in the
+ * channel slot.
+ */
+const GLOBAL_FEE_SLUG = "__global__";
+const GLOBAL_FEE_CHANNEL = "__all__";
+const COMPANY_FEE_SLUG = "__company__";
+
+/** Map key for the global-default doc. */
+function globalFeeKey(): string {
+  return `${GLOBAL_FEE_SLUG}__${GLOBAL_FEE_CHANNEL}`;
+}
+/** Map key for a company-level doc (company name in the channel slot). */
+function companyFeeKey(company: string): string {
+  return `${COMPANY_FEE_SLUG}__${company.toLowerCase().trim()}`;
+}
+
 export type ManagementFee = {
   /** Lower-cased project slug. */
   slug: string;
@@ -90,17 +117,43 @@ export async function readAllManagementFees(): Promise<Map<string, number>> {
   return m;
 }
 
-/** Look up a single (slug, channel) fee from a map produced by
- *  {@link readAllManagementFees}. Returns the default 15% when no
- *  override exists. Pure / sync — pass the prebuilt map. */
+/** The global-default fee — the configurable replacement for the
+ *  hardcoded 15%. Returns {@link DEFAULT_FEE_PERCENT} when no global
+ *  doc has been set yet. Pure / sync — pass the prebuilt map. */
+export function getGlobalDefaultFee(feeMap: Map<string, number>): number {
+  const v = feeMap.get(globalFeeKey());
+  return Number.isFinite(v) ? (v as number) : DEFAULT_FEE_PERCENT;
+}
+
+/** A company-level fee override, or undefined when the company has no
+ *  explicit fee (caller falls back to the global default). */
+export function getCompanyFee(
+  feeMap: Map<string, number>,
+  company: string,
+): number | undefined {
+  if (!company) return undefined;
+  const v = feeMap.get(companyFeeKey(company));
+  return Number.isFinite(v) ? (v as number) : undefined;
+}
+
+/** Resolve the fee % for a (slug, channel) via the cascade:
+ *  (slug, channel) override → company override → global default.
+ *  `company` is optional so existing callers keep compiling; when
+ *  omitted the company tier is skipped. Pure / sync. */
 export function getFeePercentForRow(
   feeMap: Map<string, number>,
   slug: string,
   channel: string,
+  company?: string,
 ): number {
   const k = `${slug.toLowerCase().trim()}__${channel.toLowerCase().trim()}`;
-  const v = feeMap.get(k);
-  return Number.isFinite(v) ? (v as number) : DEFAULT_FEE_PERCENT;
+  const cell = feeMap.get(k);
+  if (Number.isFinite(cell)) return cell as number;
+  if (company) {
+    const co = getCompanyFee(feeMap, company);
+    if (Number.isFinite(co)) return co as number;
+  }
+  return getGlobalDefaultFee(feeMap);
 }
 
 export { DEFAULT_FEE_PERCENT };
@@ -148,4 +201,37 @@ export async function upsertManagementFee(args: {
     .set(doc, { merge: true });
   revalidateTag(FEES_CACHE_TAG);
   return doc;
+}
+
+/** Set the global-default fee (the cascade's lowest tier). Stored as a
+ *  sentinel doc in the same collection; resolved by
+ *  {@link getGlobalDefaultFee}. */
+export function setGlobalDefaultFee(args: {
+  percent: number;
+  updatedBy: string;
+}): Promise<ManagementFee> {
+  return upsertManagementFee({
+    slug: GLOBAL_FEE_SLUG,
+    channel: GLOBAL_FEE_CHANNEL,
+    percent: args.percent,
+    updatedBy: args.updatedBy,
+  });
+}
+
+/** Set a company-level fee override (applies to all the company's
+ *  projects/channels that lack their own per-channel override).
+ *  Resolved by {@link getCompanyFee}. */
+export function setCompanyFee(args: {
+  company: string;
+  percent: number;
+  updatedBy: string;
+}): Promise<ManagementFee> {
+  const company = args.company.trim();
+  if (!company) throw new Error("company is required");
+  return upsertManagementFee({
+    slug: COMPANY_FEE_SLUG,
+    channel: company,
+    percent: args.percent,
+    updatedBy: args.updatedBy,
+  });
 }

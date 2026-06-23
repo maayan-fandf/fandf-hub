@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getMyProjects } from "@/lib/appsScript";
-import { upsertManagementFee } from "@/lib/managementFees";
+import {
+  upsertManagementFee,
+  setCompanyFee,
+  setGlobalDefaultFee,
+} from "@/lib/managementFees";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,12 +13,17 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/management-fees
  *
- * Upserts a per-(project-slug, channel) management-fee override.
+ * Upserts a management-fee override at one of three cascade levels.
  * Admin-only — same gate as /morning/forecast itself.
  *
- * Body: { slug, channel, percent }
- *   - slug, channel: strings (forecast page passes them lowercased)
+ * Body: { scope?, percent, ...target }
+ *   - scope: "channel" (default) | "company" | "global"
  *   - percent: number, 0-100 (clamped server-side)
+ *   - channel scope → { slug, channel } (per-project-channel override)
+ *   - company scope → { company } (whole-company override)
+ *   - global scope  → {} (the agency-wide default)
+ *
+ * Resolution precedence at read time: (slug,channel) → company → global.
  *
  * Response: { ok: true, fee } on success, { ok: false, error } else.
  */
@@ -39,7 +48,13 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { slug?: string; channel?: string; percent?: unknown };
+  let body: {
+    scope?: string;
+    slug?: string;
+    channel?: string;
+    company?: string;
+    percent?: unknown;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -49,14 +64,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const slug = String(body.slug || "").trim();
-  const channel = String(body.channel || "").trim();
-  if (!slug || !channel) {
-    return NextResponse.json(
-      { ok: false, error: "slug and channel are required" },
-      { status: 400 },
-    );
-  }
   const percent = Number(body.percent);
   if (!Number.isFinite(percent)) {
     return NextResponse.json(
@@ -65,13 +72,44 @@ export async function POST(req: Request) {
     );
   }
 
+  // scope defaults to "channel" so existing { slug, channel, percent }
+  // callers (the per-cell editor) keep working unchanged.
+  const scope = String(body.scope || "channel").trim();
+
   try {
-    const fee = await upsertManagementFee({
-      slug,
-      channel,
-      percent,
-      updatedBy: email,
-    });
+    let fee;
+    if (scope === "global") {
+      fee = await setGlobalDefaultFee({ percent, updatedBy: email });
+    } else if (scope === "company") {
+      const company = String(body.company || "").trim();
+      if (!company) {
+        return NextResponse.json(
+          { ok: false, error: "company is required" },
+          { status: 400 },
+        );
+      }
+      fee = await setCompanyFee({ company, percent, updatedBy: email });
+    } else if (scope === "channel") {
+      const slug = String(body.slug || "").trim();
+      const channel = String(body.channel || "").trim();
+      if (!slug || !channel) {
+        return NextResponse.json(
+          { ok: false, error: "slug and channel are required" },
+          { status: 400 },
+        );
+      }
+      fee = await upsertManagementFee({
+        slug,
+        channel,
+        percent,
+        updatedBy: email,
+      });
+    } else {
+      return NextResponse.json(
+        { ok: false, error: `unknown scope: ${scope}` },
+        { status: 400 },
+      );
+    }
     return NextResponse.json({ ok: true, fee });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

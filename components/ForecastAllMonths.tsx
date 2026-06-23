@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ManagementFeeCell from "./ManagementFeeCell";
 
 /**
  * /morning/forecast — "כל החודשים" pivot view.
@@ -37,6 +38,9 @@ export type MatrixProject = {
 };
 export type MatrixCompany = {
   company: string;
+  /** The company's effective fee % (its own override, else the global
+   *  default) — shown + edited on the company header row. */
+  feePercent: number;
   /** month → company subtotal (spend + fee). */
   totalsByMonth: Record<string, { spend: number; fee: number }>;
   projects: MatrixProject[];
@@ -250,21 +254,34 @@ function CompanyRows({
     <>
       <tr className={`forecast-matrix-company-row${isOpen ? " is-open" : ""}`}>
         <th className="forecast-matrix-corner" dir="auto">
-          <button
-            type="button"
-            className="forecast-matrix-company-toggle"
-            onClick={() => onToggle(co.company)}
-            aria-expanded={isOpen}
-            title={isOpen ? "כווץ" : "הרחב פרויקטים"}
-          >
-            <span className="forecast-matrix-caret" aria-hidden>
-              {isOpen ? "▾" : "▸"}
+          <div className="forecast-matrix-company-head">
+            <button
+              type="button"
+              className="forecast-matrix-company-toggle"
+              onClick={() => onToggle(co.company)}
+              aria-expanded={isOpen}
+              title={isOpen ? "כווץ" : "הרחב פרויקטים"}
+            >
+              <span className="forecast-matrix-caret" aria-hidden>
+                {isOpen ? "▾" : "▸"}
+              </span>
+              <span dir="auto">{co.company}</span>
+              <span className="forecast-matrix-company-count">
+                ({co.projects.length})
+              </span>
+            </button>
+            {/* Per-company fee — sets the cascade's company tier for
+                every project/channel of this company that lacks its own
+                override. It's a sibling of the toggle button (not a
+                child), so editing it never triggers the expand toggle. */}
+            <span className="forecast-matrix-company-fee" title="דמי ניהול לחברה">
+              <ManagementFeeCell
+                scope="company"
+                company={co.company}
+                initialPercent={co.feePercent}
+              />
             </span>
-            <span dir="auto">{co.company}</span>
-            <span className="forecast-matrix-company-count">
-              ({co.projects.length})
-            </span>
-          </button>
+          </div>
         </th>
         {months.map((m) => {
           const t = co.totalsByMonth[m];
