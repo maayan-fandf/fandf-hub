@@ -64,7 +64,22 @@ type Selected = {
 
 export default function ForecastAllMonths({ months, companies, grand }: Props) {
   const [sel, setSel] = useState<Selected | null>(null);
+  // Collapsed-to-company by default: only company subtotal rows show;
+  // expanding a company reveals its project rows. `expanded` holds the
+  // open company names (empty = all collapsed).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const closeRef = useRef<HTMLButtonElement | null>(null);
+
+  const toggleCompany = (name: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  const allOpen = expanded.size === companies.length && companies.length > 0;
+  const toggleAll = () =>
+    setExpanded(allOpen ? new Set() : new Set(companies.map((c) => c.company)));
 
   // Esc closes the popup; focus the close button when it opens.
   useEffect(() => {
@@ -82,6 +97,16 @@ export default function ForecastAllMonths({ months, companies, grand }: Props) {
 
   return (
     <>
+      <div className="forecast-matrix-toolbar">
+        <button
+          type="button"
+          className="forecast-matrix-expand-all"
+          onClick={toggleAll}
+          aria-expanded={allOpen}
+        >
+          {allOpen ? "▸ כווץ הכל" : "▾ הרחב הכל"}
+        </button>
+      </div>
       <div className="forecast-table-wrap forecast-matrix-wrap">
         <table className="forecast-matrix" dir="rtl">
           <thead>
@@ -96,7 +121,14 @@ export default function ForecastAllMonths({ months, companies, grand }: Props) {
           </thead>
           <tbody>
             {companies.map((co) => (
-              <CompanyRows key={co.company} co={co} months={months} onPick={setSel} />
+              <CompanyRows
+                key={co.company}
+                co={co}
+                months={months}
+                isOpen={expanded.has(co.company)}
+                onToggle={toggleCompany}
+                onPick={setSel}
+              />
             ))}
           </tbody>
           <tfoot>
@@ -198,22 +230,41 @@ export default function ForecastAllMonths({ months, companies, grand }: Props) {
   );
 }
 
-/** One company block: a tinted header row carrying the company's
- *  per-month subtotals, followed by a clickable cell row per project. */
+/** One company block: a tinted, clickable header row that toggles its
+ *  per-month subtotals open/closed. When open, a clickable cell row
+ *  per project follows. Collapsed by default. */
 function CompanyRows({
   co,
   months,
+  isOpen,
+  onToggle,
   onPick,
 }: {
   co: MatrixCompany;
   months: string[];
+  isOpen: boolean;
+  onToggle: (name: string) => void;
   onPick: (s: Selected) => void;
 }) {
   return (
     <>
-      <tr className="forecast-matrix-company-row">
+      <tr className={`forecast-matrix-company-row${isOpen ? " is-open" : ""}`}>
         <th className="forecast-matrix-corner" dir="auto">
-          {co.company}
+          <button
+            type="button"
+            className="forecast-matrix-company-toggle"
+            onClick={() => onToggle(co.company)}
+            aria-expanded={isOpen}
+            title={isOpen ? "כווץ" : "הרחב פרויקטים"}
+          >
+            <span className="forecast-matrix-caret" aria-hidden>
+              {isOpen ? "▾" : "▸"}
+            </span>
+            <span dir="auto">{co.company}</span>
+            <span className="forecast-matrix-company-count">
+              ({co.projects.length})
+            </span>
+          </button>
         </th>
         {months.map((m) => {
           const t = co.totalsByMonth[m];
@@ -231,7 +282,8 @@ function CompanyRows({
           );
         })}
       </tr>
-      {co.projects.map((p) => (
+      {isOpen &&
+        co.projects.map((p) => (
         <tr key={`${p.projectName}__${p.slug}`} className="forecast-matrix-project-row">
           <th className="forecast-matrix-corner forecast-matrix-project-name" dir="auto">
             {p.projectName}
