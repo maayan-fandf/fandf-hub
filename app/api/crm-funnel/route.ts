@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCrmFunnelForProject } from "@/lib/crmData";
+import { getCrmFunnelForProject, funnelByCanonicalChannel } from "@/lib/crmData";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,13 @@ export const dynamic = "force-dynamic";
  *
  *   GET /api/crm-funnel?company=&project=&from=YYYY-MM-DD&to=YYYY-MM-DD
  *     → { ok, funnel: { leads, scheduledMeetings, meetings, contracts },
+ *         byChannel: { <canonical-channel>: { leads, scheduled, meetings } },
  *         windowLabel, dataSource }   (funnel:null when no CRM mapping)
+ *
+ * `byChannel` is the per-canonical-channel funnel split (facebook /
+ * google-search / yad2 / …), so the report can attribute REAL per-channel
+ * scheduled/held instead of splitting the totals by spend share (which made
+ * every channel's CPL/CPS/CPM identical when no pro-rated basis existed).
  *
  * Auth: the shared APPS_SCRIPT_API_TOKEN, sent as the `x-api-token` header
  * (preferred) or `?token=`. No NextAuth session — Apps Script runs
@@ -79,6 +85,7 @@ export async function GET(req: Request) {
       // back to its pro-rated estimate rather than zeroing the funnel.
       return NextResponse.json({ ok: true, funnel: null });
     }
+    const { byChannel } = funnelByCanonicalChannel(funnel.sourceMatrices);
     return NextResponse.json({
       ok: true,
       funnel: {
@@ -87,6 +94,7 @@ export async function GET(req: Request) {
         meetings: funnel.meetings,
         contracts: funnel.contracts,
       },
+      byChannel,
       windowLabel: funnel.windowLabel || "",
       dataSource: funnel.dataSource || "",
     });

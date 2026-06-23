@@ -2038,6 +2038,44 @@ export function canonicalMediaChannel(name: string): string | null {
 }
 
 /**
+ * Collapse a funnel's per-`מקור הגעה` breakdown to per-canonical-channel
+ * leads/scheduled/meetings, using the SAME canonicalMediaChannel grouping
+ * the cost-join uses (a composite source like "facebook, google" counts
+ * toward BOTH channels). Returns the aggregate map plus, per source, the
+ * channel(s) it canonicalized to. The single source of truth for "how many
+ * scheduled/held did each paid channel actually produce in this window" —
+ * consumed by attachChannelCosts (CPL/CPS/CPM) and by /api/crm-funnel (so
+ * the report can attribute real per-channel funnel stages instead of
+ * splitting the totals by spend). Non-paid sources (phone/own-site/…)
+ * canonicalize to null and contribute to no channel.
+ */
+export function funnelByCanonicalChannel(sm: CrmFunnel["sourceMatrices"]): {
+  byChannel: Record<string, { leads: number; scheduled: number; meetings: number }>;
+  sourceChannels: Record<string, string[]>;
+} {
+  const byChannel: Record<
+    string,
+    { leads: number; scheduled: number; meetings: number }
+  > = {};
+  const sourceChannels: Record<string, string[]> = {};
+  for (const src of sm.allSources) {
+    const chans = new Set<string>();
+    for (const tok of src.split(",")) {
+      const c = canonicalMediaChannel(tok);
+      if (c) chans.add(c);
+    }
+    sourceChannels[src] = [...chans];
+    for (const c of chans) {
+      if (!byChannel[c]) byChannel[c] = { leads: 0, scheduled: 0, meetings: 0 };
+      byChannel[c].leads += sm.leadsBySource[src] || 0;
+      byChannel[c].scheduled += sm.scheduledMeetingsBySource[src] || 0;
+      byChannel[c].meetings += sm.meetingsBySource[src] || 0;
+    }
+  }
+  return { byChannel, sourceChannels };
+}
+
+/**
  * Attribute per-channel media spend onto the funnel's CRM leads — the
  * anda "Monthly Channel Leads" model. For each canonical paid channel
  * with spend, sum the funnel's leads / scheduled / meetings over the
@@ -2051,26 +2089,9 @@ function attachChannelCosts(
   funnel: CrmFunnel,
   spendByChannel: Record<string, number>,
 ): void {
-  const sm = funnel.sourceMatrices;
-  const agg: Record<
-    string,
-    { leads: number; scheduled: number; meetings: number }
-  > = {};
-  const sourceChannels: Record<string, string[]> = {};
-  for (const src of sm.allSources) {
-    const chans = new Set<string>();
-    for (const tok of src.split(",")) {
-      const c = canonicalMediaChannel(tok);
-      if (c) chans.add(c);
-    }
-    sourceChannels[src] = [...chans];
-    for (const c of chans) {
-      if (!agg[c]) agg[c] = { leads: 0, scheduled: 0, meetings: 0 };
-      agg[c].leads += sm.leadsBySource[src] || 0;
-      agg[c].scheduled += sm.scheduledMeetingsBySource[src] || 0;
-      agg[c].meetings += sm.meetingsBySource[src] || 0;
-    }
-  }
+  const { byChannel: agg, sourceChannels } = funnelByCanonicalChannel(
+    funnel.sourceMatrices,
+  );
   const channelCosts: NonNullable<CrmFunnel["channelCosts"]> = [];
   for (const [channel, spend] of Object.entries(spendByChannel)) {
     if (!(spend > 0)) continue;
