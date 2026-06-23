@@ -531,6 +531,21 @@ export async function getMonthlyRowsForYearMonth(
 }
 
 /**
+ * Return EVERY "חודשי" (monthly) row across all calendar months — the
+ * data source for /morning/forecast's "כל החודשים" pivot view. One row
+ * per (project, channel, month); the caller derives the month from
+ * `startIso` (YYYY-MM) and consolidates duplicate channels per cell.
+ * Rows with empty/invalid startIso are kept here and dropped by the
+ * caller (a monthless row has no column to land in).
+ */
+export async function getAllMonthlyRows(
+  subjectEmail: string,
+): Promise<AllClientsRow[]> {
+  const all = await readAllClientsRows(subjectEmail);
+  return all.filter((r) => r.rowType === "חודשי");
+}
+
+/**
  * Compute the YYYY-MM string for the calendar month *before* the
  * given todayIso, in Asia/Jerusalem semantics. Pure function, exported
  * so the forecast page can reuse the same calculation for both data

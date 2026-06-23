@@ -11,6 +11,7 @@ import {
 import {
   getCurrentMonthlyRows,
   getMonthlyRowsForYearMonth,
+  getAllMonthlyRows,
   previousYearMonth,
   type AllClientsRow,
 } from "@/lib/allClients";
@@ -24,6 +25,10 @@ import CampaignsTabs from "@/components/CampaignsTabs";
 import ManagementFeeCell from "@/components/ManagementFeeCell";
 import SearchableMultiSelectFilter from "@/components/SearchableMultiSelectFilter";
 import ForecastMonthPicker from "@/components/ForecastMonthPicker";
+import ForecastAllMonths, {
+  type MatrixCellChannel,
+  type MatrixCompany,
+} from "@/components/ForecastAllMonths";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +65,10 @@ type EnrichedRow = {
   company: string;
   campaignManager: string;
   channel: string;
+  /** Calendar month (YYYY-MM) the row's window starts in. Derived from
+   *  startIso. Empty for malformed dates. Only meaningful in the
+   *  "כל החודשים" view, which pivots rows into month columns. */
+  month: string;
   spend: number;
   budget: number;
   /** Lead-count from ALL CLIENTS' `לידים CRM` column. Used by the
@@ -204,8 +213,15 @@ export default async function ForecastPage({
   // + ₪/result cost columns for the retrospective view; it's a no-op
   // in current-month mode (those metrics aren't part of the forecast
   // story).
-  const viewMode: "current" | "previous" =
-    sp.view === "previous" ? "previous" : "current";
+  // "all" (2026-06-23) = the "כל החודשים" pivot — every monthly row
+  // across all calendar months, laid out as a project × month matrix
+  // with a per-channel cost/fee breakdown popup on cell click.
+  const viewMode: "current" | "previous" | "all" =
+    sp.view === "previous"
+      ? "previous"
+      : sp.view === "all"
+        ? "all"
+        : "current";
   const showMetrics = sp.metrics === "1";
 
   // Sort state. The alpha columns (project / company / manager) only
@@ -276,13 +292,15 @@ export default async function ForecastPage({
       : prevYm;
 
   const [monthlyRows, keys, feeMap, morning] = await Promise.all([
-    viewMode === "previous"
-      ? getMonthlyRowsForYearMonth(subjectEmail, selectedMonth).catch(
-          () => [] as AllClientsRow[],
-        )
-      : getCurrentMonthlyRows(subjectEmail, todayIso).catch(
-          () => [] as AllClientsRow[],
-        ),
+    viewMode === "all"
+      ? getAllMonthlyRows(subjectEmail).catch(() => [] as AllClientsRow[])
+      : viewMode === "previous"
+        ? getMonthlyRowsForYearMonth(subjectEmail, selectedMonth).catch(
+            () => [] as AllClientsRow[],
+          )
+        : getCurrentMonthlyRows(subjectEmail, todayIso).catch(
+            () => [] as AllClientsRow[],
+          ),
     readKeysCached(subjectEmail).catch(
       () => ({ headers: [] as string[], rows: [] as unknown[][] }),
     ),
@@ -360,6 +378,7 @@ export default async function ForecastPage({
       company: meta.company || UNKNOWN_COMPANY,
       campaignManager: meta.campaignManager || UNASSIGNED,
       channel,
+      month: r.startIso ? r.startIso.slice(0, 7) : "",
       spend: r.spend,
       budget: r.budget,
       leads: r.leads,
@@ -586,18 +605,147 @@ export default async function ForecastPage({
   const hasFilter =
     fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0 || !!fQuery;
 
+  // ── "כל החודשים" pivot (viewMode === "all") ──────────────────────
+  // Project × month matrix built from `filtered` (so the same company /
+  // project / channel / search filters apply). Each cell sums the
+  // project's spend + management fee across its channels that month and
+  // embeds the per-channel breakdown for the cell-click popup. Months
+  // sorted ascending → in RTL they read as a right-to-left chronological
+  // timeline (oldest nearest the project name, newest/future to the
+  // left), matching the owner's column layout. Computed only in "all"
+  // mode — the other views don't use it.
+  let matrixMonths: string[] = [];
+  let matrixCompanies: MatrixCompany[] = [];
+  let matrixGrand: Record<string, { spend: number; fee: number }> = {};
+  let matrixProjectCount = 0;
+  if (viewMode === "all") {
+    const monthSet = new Set<string>();
+    // company → projectKey → { meta, month → channelLc → channel acc }
+    const coMap = new Map<
+      string,
+      Map<
+        string,
+        {
+          projectName: string;
+          slug: string;
+          byMonth: Map<string, Map<string, MatrixCellChannel>>;
+        }
+      >
+    >();
+    for (const r of filtered) {
+      if (!r.month) continue;
+      monthSet.add(r.month);
+      let projMap = coMap.get(r.company);
+      if (!projMap) {
+        projMap = new Map();
+        coMap.set(r.company, projMap);
+      }
+      const pKey = `${r.projectName}__${r.slug}`;
+      let pEntry = projMap.get(pKey);
+      if (!pEntry) {
+        pEntry = { projectName: r.projectName, slug: r.slug, byMonth: new Map() };
+        projMap.set(pKey, pEntry);
+      }
+      let chMap = pEntry.byMonth.get(r.month);
+      if (!chMap) {
+        chMap = new Map();
+        pEntry.byMonth.set(r.month, chMap);
+      }
+      // Consolidate sub-campaigns that share a channel name within the
+      // same (project, month) — fee % is constant per (slug, channel)
+      // so first-seen is kept; spend + fee accumulate.
+      const chKey = r.channel.toLowerCase();
+      const existing = chMap.get(chKey);
+      if (existing) {
+        existing.spend += r.spend;
+        existing.fee += r.feeIlsActual;
+      } else {
+        chMap.set(chKey, {
+          channel: r.channel,
+          spend: r.spend,
+          feePercent: r.feePercent,
+          fee: r.feeIlsActual,
+        });
+      }
+    }
+    matrixMonths = Array.from(monthSet).sort();
+    const grandAcc: Record<string, { spend: number; fee: number }> = {};
+    matrixCompanies = Array.from(coMap.entries())
+      .map(([company, projMap]) => {
+        const totalsByMonth: Record<string, { spend: number; fee: number }> = {};
+        const projects = Array.from(projMap.values())
+          .map((p) => {
+            const cells: Record<
+              string,
+              { spend: number; fee: number; channels: MatrixCellChannel[] }
+            > = {};
+            let totalSpend = 0;
+            for (const [month, chMap] of p.byMonth) {
+              // Drop channels with exactly-zero spend — a project
+              // carries many configured-but-idle channels and they'd
+              // bloat the cell + popup. Nonzero (incl. rare negative
+              // credits) are kept so the cell/grand totals reconcile
+              // exactly with the other views. A month left with no
+              // channel registers no cell → renders "—" (no activity)
+              // instead of a clickable ₪0.
+              const channels = Array.from(chMap.values())
+                .filter((c) => c.spend !== 0)
+                .sort((a, b) => b.spend - a.spend);
+              if (channels.length === 0) continue;
+              const spend = channels.reduce((s, c) => s + c.spend, 0);
+              const fee = channels.reduce((s, c) => s + c.fee, 0);
+              cells[month] = { spend, fee, channels };
+              totalSpend += spend;
+              const ct = totalsByMonth[month] || { spend: 0, fee: 0 };
+              ct.spend += spend;
+              ct.fee += fee;
+              totalsByMonth[month] = ct;
+              const gt = grandAcc[month] || { spend: 0, fee: 0 };
+              gt.spend += spend;
+              gt.fee += fee;
+              grandAcc[month] = gt;
+            }
+            return { projectName: p.projectName, slug: p.slug, cells, totalSpend };
+          })
+          .sort((a, b) => b.totalSpend - a.totalSpend);
+        matrixProjectCount += projects.length;
+        const totalSpend = projects.reduce((s, p) => s + p.totalSpend, 0);
+        return { company, totalsByMonth, projects, totalSpend };
+      })
+      // Strip the per-project totalSpend helper key off the wire shape;
+      // company sort uses it first.
+      .sort((a, b) => b.totalSpend - a.totalSpend)
+      .map(({ company, totalsByMonth, projects }) => ({
+        company,
+        totalsByMonth,
+        projects: projects.map(({ projectName, slug, cells }) => ({
+          projectName,
+          slug,
+          cells,
+        })),
+      }));
+    matrixGrand = grandAcc;
+  }
+
   return (
     <main className="container forecast-page">
       <header className="page-header">
         <div>
           <h1>
             <span className="emoji" aria-hidden>🔮</span>
-            תחזית הוצאה — {viewMode === "previous" ? `חודש ${selectedMonth}` : "חודש נוכחי"}
+            תחזית הוצאה —{" "}
+            {viewMode === "all"
+              ? "כל החודשים"
+              : viewMode === "previous"
+                ? `חודש ${selectedMonth}`
+                : "חודש נוכחי"}
           </h1>
           <div className="subtitle">
-            {viewMode === "previous"
-              ? `שורות חודשי ב־ALL CLIENTS שמתחילות ב־${selectedMonth}, מקובצות לפי מנהל/ת קמפיינים.`
-              : `שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את היום (${todayIso}), מקובצות לפי מנהל/ת קמפיינים.`}
+            {viewMode === "all"
+              ? "פילוח עלות ודמי ניהול לכל פרויקט לפי חודש (שורות חודשי ב־ALL CLIENTS). לחיצה על תא פותחת את פירוט הערוצים של אותו חודש."
+              : viewMode === "previous"
+                ? `שורות חודשי ב־ALL CLIENTS שמתחילות ב־${selectedMonth}, מקובצות לפי מנהל/ת קמפיינים.`
+                : `שורות חודשי ב־ALL CLIENTS שחלון התאריכים שלהן כולל את היום (${todayIso}), מקובצות לפי מנהל/ת קמפיינים.`}
           </div>
         </div>
       </header>
@@ -645,29 +793,34 @@ export default async function ForecastPage({
           placeholder="חפש ערוץ…"
         />
         {/* Grouping toggle. Keep the current sort param when
-            switching so the user doesn't lose their column choice. */}
-        <div className="forecast-grouping-toggle" role="tablist" aria-label="קיבוץ">
-          <Link
-            href={(() => {
-              const params = buildHref(sp, { grouping: "" });
-              return `/morning/forecast?${params}`;
-            })()}
-            className={`forecast-grouping-btn${groupingMode === "default" ? " is-active" : ""}`}
-            prefetch={false}
-          >
-            🗂️ מקובץ
-          </Link>
-          <Link
-            href={(() => {
-              const params = buildHref(sp, { grouping: "flat" });
-              return `/morning/forecast?${params}`;
-            })()}
-            className={`forecast-grouping-btn${groupingMode === "flat" ? " is-active" : ""}`}
-            prefetch={false}
-          >
-            📋 שורות
-          </Link>
-        </div>
+            switching so the user doesn't lose their column choice.
+            Hidden in "all" view — the matrix has its own fixed
+            company→project layout that the flat/grouped split doesn't
+            apply to. */}
+        {viewMode !== "all" && (
+          <div className="forecast-grouping-toggle" role="tablist" aria-label="קיבוץ">
+            <Link
+              href={(() => {
+                const params = buildHref(sp, { grouping: "" });
+                return `/morning/forecast?${params}`;
+              })()}
+              className={`forecast-grouping-btn${groupingMode === "default" ? " is-active" : ""}`}
+              prefetch={false}
+            >
+              🗂️ מקובץ
+            </Link>
+            <Link
+              href={(() => {
+                const params = buildHref(sp, { grouping: "flat" });
+                return `/morning/forecast?${params}`;
+              })()}
+              className={`forecast-grouping-btn${groupingMode === "flat" ? " is-active" : ""}`}
+              prefetch={false}
+            >
+              📋 שורות
+            </Link>
+          </div>
+        )}
         {/* View toggle (current vs previous month). Switching to the
             previous-month view defaults to the immediately-prior
             calendar month; the picker right next to it lets the user
@@ -688,6 +841,13 @@ export default async function ForecastPage({
             prefetch={false}
           >
             ⏪ חודש קודם
+          </Link>
+          <Link
+            href={`/morning/forecast?${buildHref(sp, { view: "all", month: "" })}`}
+            className={`forecast-grouping-btn${viewMode === "all" ? " is-active" : ""}`}
+            prefetch={false}
+          >
+            📊 כל החודשים
           </Link>
         </div>
         {/* Native month picker — only useful when looking at a prior
@@ -748,6 +908,9 @@ export default async function ForecastPage({
         {viewMode === "previous" && (
           <input type="hidden" name="view" value="previous" />
         )}
+        {viewMode === "all" && (
+          <input type="hidden" name="view" value="all" />
+        )}
         {showMetrics && <input type="hidden" name="metrics" value="1" />}
       </form>
 
@@ -756,9 +919,11 @@ export default async function ForecastPage({
           <span className="forecast-grand-label">
             {hasFilter
               ? "סך תיק לפי הסינון"
-              : viewMode === "previous"
-                ? "סך החודש הקודם"
-                : "סך תיק נוכחי"}
+              : viewMode === "all"
+                ? "סך כל החודשים"
+                : viewMode === "previous"
+                  ? "סך החודש הקודם"
+                  : "סך תיק נוכחי"}
           </span>
           {/* Order mirrors the table columns + the per-group summary
               strip: תקציב → בפועל → דמי ניהול (תקציב) → דמי ניהול
@@ -800,13 +965,40 @@ export default async function ForecastPage({
               )}
             </>
           )}
+          {viewMode === "all" && (
+            <>
+              <span className="forecast-grand-num">
+                <b>{fmtIls(grand.totalSpend)}</b> בפועל
+              </span>
+              <span className="forecast-grand-num">
+                <b>{fmtIls(grand.totalFeeActual)}</b> דמי ניהול
+              </span>
+            </>
+          )}
           <span className="forecast-grand-num">
-            ({filtered.length} שורות)
+            {viewMode === "all"
+              ? `(${matrixProjectCount} פרויקטים · ${matrixMonths.length} חודשים)`
+              : `(${filtered.length} שורות)`}
           </span>
         </div>
       </section>
 
-      {filtered.length === 0 ? (
+      {viewMode === "all" ? (
+        matrixMonths.length === 0 ? (
+          <div className="empty">
+            <span className="emoji" aria-hidden>🌥️</span>
+            {hasFilter
+              ? "אין תוצאות לסינון הנוכחי."
+              : "לא נמצאו שורות חודשי ב־ALL CLIENTS."}
+          </div>
+        ) : (
+          <ForecastAllMonths
+            months={matrixMonths}
+            companies={matrixCompanies}
+            grand={matrixGrand}
+          />
+        )
+      ) : filtered.length === 0 ? (
         <div className="empty">
           <span className="emoji" aria-hidden>🌥️</span>
           {hasFilter

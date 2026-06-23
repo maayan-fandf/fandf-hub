@@ -21446,6 +21446,147 @@ button.budget-need:focus-visible {
   margin-inline-start: 6px;
 }
 
+/* ── "כל החודשים" pivot matrix (forecast view=all) ───────────────── */
+.forecast-matrix-wrap { overflow-x: auto; }
+.forecast-matrix {
+  width: auto;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  direction: rtl;
+}
+.forecast-matrix th,
+.forecast-matrix td { white-space: nowrap; }
+.forecast-matrix thead th {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  padding: 6px 8px;
+  text-align: start;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.08));
+}
+.forecast-matrix-month { font-variant-numeric: tabular-nums; }
+/* First column (company / project names) sticks to the start edge so
+   it stays visible while scrolling across many month columns. The
+   background occludes cells scrolling underneath it. */
+.forecast-matrix-corner {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  text-align: start;
+  font-weight: 500;
+  background: var(--md-sys-color-surface, #fff);
+}
+.forecast-matrix tbody td,
+.forecast-matrix tfoot td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.04));
+  vertical-align: top;
+}
+.forecast-matrix-num {
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+}
+.forecast-matrix-company-row > * {
+  background: color-mix(in srgb, var(--md-sys-color-primary, #6366f1) 7%, var(--md-sys-color-surface, #fff));
+  font-weight: 600;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+}
+.forecast-matrix-company-row .forecast-matrix-corner {
+  background: color-mix(in srgb, var(--md-sys-color-primary, #6366f1) 7%, var(--md-sys-color-surface, #fff));
+}
+[data-theme="dark"] .forecast-matrix-company-row > *,
+[data-theme="dark"] .forecast-matrix-company-row .forecast-matrix-corner {
+  background: rgba(99, 102, 241, 0.18);
+}
+.forecast-matrix-project-name {
+  padding-inline-start: 1.4em;
+  font-weight: 500;
+}
+.forecast-matrix-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  transition: background 0.12s, border-color 0.12s;
+}
+.forecast-matrix-cell:hover {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+.forecast-matrix-cell:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary, #6366f1);
+  outline-offset: 1px;
+}
+.forecast-matrix-spend { font-weight: 600; font-variant-numeric: tabular-nums; }
+.forecast-matrix-fee {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  font-variant-numeric: tabular-nums;
+}
+.forecast-matrix-empty {
+  color: var(--md-sys-color-on-surface-variant, #94a3b8);
+  opacity: 0.6;
+}
+.forecast-matrix-grand-row > * {
+  border-top: 2px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  font-weight: 700;
+  background: var(--md-sys-color-surface, #fff);
+}
+[data-theme="dark"] .forecast-matrix-grand-row > * {
+  background: rgba(20, 30, 50, 0.6);
+}
+
+/* Cell-click popup — reuses the .quick-note-overlay / -dialog frame. */
+.forecast-matrix-popup { width: min(440px, 100%); }
+.forecast-matrix-popup-month {
+  font-size: 0.8em;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  font-weight: 500;
+}
+.forecast-matrix-popup-empty {
+  padding: 1rem 0;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  text-align: center;
+}
+.forecast-matrix-popup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  direction: rtl;
+}
+.forecast-matrix-popup-table th {
+  text-align: start;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  white-space: nowrap;
+}
+.forecast-matrix-popup-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.05));
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.forecast-matrix-popup-channel { font-weight: 500; }
+.forecast-matrix-popup-table tfoot td {
+  border-top: 2px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.15));
+  border-bottom: 0;
+  font-weight: 700;
+}
+
 .forecast-page .empty {
   margin-top: 24px;
   padding: 32px;
