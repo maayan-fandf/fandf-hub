@@ -26,7 +26,7 @@ function fmtPercent(n: number): string {
 export default function ManagementFeeCell({
   slug,
   channel,
-  company,
+  channelType,
   scope = "channel",
   initialPercent,
 }: {
@@ -34,11 +34,11 @@ export default function ManagementFeeCell({
   slug?: string;
   /** Required for scope="channel". */
   channel?: string;
-  /** Required for scope="company". */
-  company?: string;
+  /** Required for scope="channelType" (canonical channel, e.g. "facebook"). */
+  channelType?: string;
   /** Which cascade tier this editor writes. Defaults to the per-
    *  (project, channel) override so existing call-sites are unchanged. */
-  scope?: "channel" | "company" | "global";
+  scope?: "channel" | "channelType" | "global";
   /** Server-resolved percent (with the cascade already applied). */
   initialPercent: number;
 }) {
@@ -86,8 +86,8 @@ export default function ManagementFeeCell({
       const payload =
         scope === "global"
           ? { scope, percent: next }
-          : scope === "company"
-            ? { scope, company, percent: next }
+          : scope === "channelType"
+            ? { scope, channelType, percent: next }
             : { scope, slug, channel, percent: next };
       const res = await fetch("/api/management-fees", {
         method: "POST",

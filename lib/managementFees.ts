@@ -29,24 +29,27 @@ const DEFAULT_FEE_PERCENT = 15;
  *
  * The fee for any (project, channel) resolves by a cascade, most
  * specific wins:
- *   (slug, channel) override  →  company override  →  global default
+ *   (slug, channel) override  →  channel-type default  →  global default
  *
- * The sentinels can't collide with a real project slug (project slugs
- * are `campaign ID` values, never these underscored tokens) or channel
- * name. Company fees key on the (lowercased) Hebrew company name in the
- * channel slot.
+ * The "channel-type" tier keys on the CANONICAL media channel
+ * (facebook / google-search / yad2 / …) so one rate covers every
+ * project's rows of that type, including granular sub-channels like
+ * "facebook lead generation". The sentinels can't collide with a real
+ * project slug (project slugs are `campaign ID` values, never these
+ * underscored tokens). Channel-type fees key on the canonical channel
+ * in the channel slot.
  */
 const GLOBAL_FEE_SLUG = "__global__";
 const GLOBAL_FEE_CHANNEL = "__all__";
-const COMPANY_FEE_SLUG = "__company__";
+const CHANNELTYPE_FEE_SLUG = "__channeltype__";
 
 /** Map key for the global-default doc. */
 function globalFeeKey(): string {
   return `${GLOBAL_FEE_SLUG}__${GLOBAL_FEE_CHANNEL}`;
 }
-/** Map key for a company-level doc (company name in the channel slot). */
-function companyFeeKey(company: string): string {
-  return `${COMPANY_FEE_SLUG}__${company.toLowerCase().trim()}`;
+/** Map key for a channel-type doc (canonical channel in the channel slot). */
+function channelTypeFeeKey(channelType: string): string {
+  return `${CHANNELTYPE_FEE_SLUG}__${channelType.toLowerCase().trim()}`;
 }
 
 export type ManagementFee = {
@@ -125,33 +128,35 @@ export function getGlobalDefaultFee(feeMap: Map<string, number>): number {
   return Number.isFinite(v) ? (v as number) : DEFAULT_FEE_PERCENT;
 }
 
-/** A company-level fee override, or undefined when the company has no
- *  explicit fee (caller falls back to the global default). */
-export function getCompanyFee(
+/** A channel-type fee override (keyed by canonical channel, e.g.
+ *  "facebook"), or undefined when that type has no explicit fee (caller
+ *  falls back to the global default). */
+export function getChannelTypeFee(
   feeMap: Map<string, number>,
-  company: string,
+  channelType: string,
 ): number | undefined {
-  if (!company) return undefined;
-  const v = feeMap.get(companyFeeKey(company));
+  if (!channelType) return undefined;
+  const v = feeMap.get(channelTypeFeeKey(channelType));
   return Number.isFinite(v) ? (v as number) : undefined;
 }
 
 /** Resolve the fee % for a (slug, channel) via the cascade:
- *  (slug, channel) override → company override → global default.
- *  `company` is optional so existing callers keep compiling; when
- *  omitted the company tier is skipped. Pure / sync. */
+ *  (slug, channel) override → channel-type default → global default.
+ *  `channelType` is the row's canonical media channel (caller computes
+ *  it via canonicalMediaChannel); optional so other callers keep
+ *  compiling — when omitted the channel-type tier is skipped. Pure. */
 export function getFeePercentForRow(
   feeMap: Map<string, number>,
   slug: string,
   channel: string,
-  company?: string,
+  channelType?: string | null,
 ): number {
   const k = `${slug.toLowerCase().trim()}__${channel.toLowerCase().trim()}`;
   const cell = feeMap.get(k);
   if (Number.isFinite(cell)) return cell as number;
-  if (company) {
-    const co = getCompanyFee(feeMap, company);
-    if (Number.isFinite(co)) return co as number;
+  if (channelType) {
+    const ct = getChannelTypeFee(feeMap, channelType);
+    if (Number.isFinite(ct)) return ct as number;
   }
   return getGlobalDefaultFee(feeMap);
 }
@@ -218,19 +223,19 @@ export function setGlobalDefaultFee(args: {
   });
 }
 
-/** Set a company-level fee override (applies to all the company's
- *  projects/channels that lack their own per-channel override).
- *  Resolved by {@link getCompanyFee}. */
-export function setCompanyFee(args: {
-  company: string;
+/** Set a channel-type fee override (applies to every project's rows of
+ *  that canonical channel that lack their own per-channel override).
+ *  Resolved by {@link getChannelTypeFee}. */
+export function setChannelTypeFee(args: {
+  channelType: string;
   percent: number;
   updatedBy: string;
 }): Promise<ManagementFee> {
-  const company = args.company.trim();
-  if (!company) throw new Error("company is required");
+  const channelType = args.channelType.trim();
+  if (!channelType) throw new Error("channelType is required");
   return upsertManagementFee({
-    slug: COMPANY_FEE_SLUG,
-    channel: company,
+    slug: CHANNELTYPE_FEE_SLUG,
+    channel: channelType,
     percent: args.percent,
     updatedBy: args.updatedBy,
   });

@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { getMyProjects } from "@/lib/appsScript";
 import {
   upsertManagementFee,
-  setCompanyFee,
+  setChannelTypeFee,
   setGlobalDefaultFee,
 } from "@/lib/managementFees";
 
@@ -17,13 +17,14 @@ export const dynamic = "force-dynamic";
  * Admin-only — same gate as /morning/forecast itself.
  *
  * Body: { scope?, percent, ...target }
- *   - scope: "channel" (default) | "company" | "global"
+ *   - scope: "channel" (default) | "channelType" | "global"
  *   - percent: number, 0-100 (clamped server-side)
- *   - channel scope → { slug, channel } (per-project-channel override)
- *   - company scope → { company } (whole-company override)
- *   - global scope  → {} (the agency-wide default)
+ *   - channel scope     → { slug, channel } (per-project-channel override)
+ *   - channelType scope → { channelType } (canonical media-channel default)
+ *   - global scope      → {} (the agency-wide default)
  *
- * Resolution precedence at read time: (slug,channel) → company → global.
+ * Resolution precedence at read time:
+ *   (slug,channel) → channel-type → global.
  *
  * Response: { ok: true, fee } on success, { ok: false, error } else.
  */
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     scope?: string;
     slug?: string;
     channel?: string;
-    company?: string;
+    channelType?: string;
     percent?: unknown;
   };
   try {
@@ -80,15 +81,15 @@ export async function POST(req: Request) {
     let fee;
     if (scope === "global") {
       fee = await setGlobalDefaultFee({ percent, updatedBy: email });
-    } else if (scope === "company") {
-      const company = String(body.company || "").trim();
-      if (!company) {
+    } else if (scope === "channelType") {
+      const channelType = String(body.channelType || "").trim();
+      if (!channelType) {
         return NextResponse.json(
-          { ok: false, error: "company is required" },
+          { ok: false, error: "channelType is required" },
           { status: 400 },
         );
       }
-      fee = await setCompanyFee({ company, percent, updatedBy: email });
+      fee = await setChannelTypeFee({ channelType, percent, updatedBy: email });
     } else if (scope === "channel") {
       const slug = String(body.slug || "").trim();
       const channel = String(body.channel || "").trim();

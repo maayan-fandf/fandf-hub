@@ -21,8 +21,9 @@ import {
   readAllManagementFees,
   getFeePercentForRow,
   getGlobalDefaultFee,
-  getCompanyFee,
+  getChannelTypeFee,
 } from "@/lib/managementFees";
+import { canonicalMediaChannel } from "@/lib/crmData";
 import CampaignsTabs from "@/components/CampaignsTabs";
 import ManagementFeeCell from "@/components/ManagementFeeCell";
 import SearchableMultiSelectFilter from "@/components/SearchableMultiSelectFilter";
@@ -168,6 +169,35 @@ function buildHref(sp: SpShape, overrides: Partial<SpShape>): string {
 
 const UNASSIGNED = "(ללא מנהל)";
 const UNKNOWN_COMPANY = "(לא מזוהה)";
+
+/** The media-channel types shown in the master fee list, with Hebrew
+ *  labels. Keyed by {@link feeChannelType} (which collapses google-search
+ *  + google-discovery into one "google"). Fixed list (not data-derived)
+ *  so every type — incl. article/כתבה — is always settable even when
+ *  absent from the current view's rows. */
+const CHANNEL_TYPES: { type: string; label: string }[] = [
+  { type: "facebook", label: "פייסבוק" },
+  { type: "google", label: "גוגל" },
+  { type: "yad2", label: "יד2" },
+  { type: "madlan", label: "מדלן" },
+  { type: "onmap", label: "אונמאפ" },
+  { type: "outbrain", label: "אאוטבריין" },
+  { type: "taboola", label: "טאבולה" },
+  { type: "tiktok", label: "טיקטוק" },
+  { type: "article", label: "כתבה" },
+];
+
+/** Map a raw channel name → its FEE channel-type key. Wraps
+ *  canonicalMediaChannel but collapses Google's two products
+ *  (google-search + google-discovery) into a single "google" rate —
+ *  the agency charges one fee for all Google. Null for non-paid /
+ *  unrecognized channels (→ they fall back to the global default). */
+function feeChannelType(channel: string): string | null {
+  const c = canonicalMediaChannel(channel);
+  if (!c) return null;
+  if (c === "google-search" || c === "google-discovery") return "google";
+  return c;
+}
 
 export default async function ForecastPage({
   searchParams,
@@ -371,12 +401,15 @@ export default async function ForecastPage({
       } satisfies KeyMeta);
     const channel = r.channel || "(ללא ערוץ)";
     const companyName = meta.company || UNKNOWN_COMPANY;
-    // Fee cascade: (slug,channel) override → company → global default.
+    // Fee cascade: (slug,channel) override → channel-type → global.
+    // channelType = the fee media-channel type (facebook / google / yad2
+    // / …, Google products merged), so one rate covers all of a type's
+    // sub-channels.
     const feePercent = getFeePercentForRow(
       feeMap,
       r.projectSlug,
       channel,
-      companyName,
+      feeChannelType(channel),
     );
     const feeIlsActual = (r.spend * feePercent) / 100;
     const feeIlsBudget = (r.budget * feePercent) / 100;
@@ -612,8 +645,18 @@ export default async function ForecastPage({
   const grand = sumRows(filtered);
 
   // The agency-wide default fee (cascade's lowest tier) — feeds the
-  // toolbar "master" editor + the per-company fallback in the matrix.
+  // toolbar "master" editor + the per-channel-type fallback.
   const globalFee = getGlobalDefaultFee(feeMap);
+
+  // Per-media-channel-type "master" editors: the fixed canonical-type
+  // list, each at its effective rate (its own channel-type override,
+  // else the global default). Editing one sets the rate for every
+  // project's rows of that type.
+  const channelTypeFees = CHANNEL_TYPES.map(({ type, label }) => ({
+    type,
+    label,
+    percent: getChannelTypeFee(feeMap, type) ?? globalFee,
+  }));
 
   const hasFilter =
     fCompany.size > 0 || fProject.size > 0 || fChannel.size > 0 || !!fQuery;
@@ -726,13 +769,10 @@ export default async function ForecastPage({
         return { company, totalsByMonth, projects, totalSpend };
       })
       // Strip the per-project totalSpend helper key off the wire shape;
-      // company sort uses it first. `feePercent` = the company's
-      // effective fee (its own override, else the global default) — the
-      // value the company-row editor shows + writes against.
+      // company sort uses it first.
       .sort((a, b) => b.totalSpend - a.totalSpend)
       .map(({ company, totalsByMonth, projects }) => ({
         company,
-        feePercent: getCompanyFee(feeMap, company) ?? globalFee,
         totalsByMonth,
         projects: projects.map(({ projectName, slug, cells }) => ({
           projectName,
@@ -999,20 +1039,43 @@ export default async function ForecastPage({
         </div>
       </section>
 
-      {/* Master fee control — the global default (cascade's lowest
-          tier). Editing it re-derives every fee that has no company or
-          per-channel override, across all views. Per-company fees are
-          set inline on the "כל החודשים" company rows. */}
-      <div className="forecast-fee-master">
-        <span className="forecast-fee-master-label">
-          ⚙️ דמי ניהול — ברירת מחדל:
-        </span>
-        <ManagementFeeCell scope="global" initialPercent={globalFee} />
-        <span className="forecast-fee-master-hint">
-          חל על כל פרויקט/ערוץ ללא אחוז ייעודי. אחוז לחברה נקבע בשורת החברה
-          בתצוגת “כל החודשים”.
-        </span>
-      </div>
+      {/* Master fee control — a collapsed list: a global default + a
+          rate per media-channel TYPE (canonical: facebook / google-search
+          / yad2 / כתבה / …). Editing a type re-derives every project's
+          rows of that type, across all views. A specific (project,
+          channel) override still wins, set inline in the חודש נוכחי/קודם
+          tables. */}
+      <details className="forecast-fee-master">
+        <summary className="forecast-fee-master-summary">
+          <span className="forecast-fee-master-caret" aria-hidden>▸</span>
+          ⚙️ דמי ניהול — אחוזים לפי סוג ערוץ
+          <span className="forecast-fee-master-default">
+            (ברירת מחדל {fmtPct(globalFee)})
+          </span>
+        </summary>
+        <div className="forecast-fee-list">
+          <div className="forecast-fee-row">
+            <span className="forecast-fee-row-label">ברירת מחדל</span>
+            <ManagementFeeCell scope="global" initialPercent={globalFee} />
+          </div>
+          {channelTypeFees.map(({ type, label, percent }) => (
+            <div className="forecast-fee-row" key={type}>
+              <span className="forecast-fee-row-label" dir="auto">
+                {label}
+                <span className="forecast-fee-row-key">{type}</span>
+              </span>
+              <ManagementFeeCell
+                scope="channelType"
+                channelType={type}
+                initialPercent={percent}
+              />
+            </div>
+          ))}
+        </div>
+        <p className="forecast-fee-master-hint">
+          אחוז לפי סוג ערוץ; אחוז ספציפי לפרויקט/ערוץ נקבע בטבלת חודש נוכחי/קודם.
+        </p>
+      </details>
 
       {viewMode === "all" ? (
         matrixMonths.length === 0 ? (
