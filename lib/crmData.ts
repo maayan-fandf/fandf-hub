@@ -71,6 +71,11 @@ export type CrmFunnel = {
    *  OR a meeting date is set — best-guess equivalent pending upstream
    *  clarification. */
   scheduledMeetings: number;
+  /** Of `scheduledMeetings`, the canceled subset ("פגישה בוטלה" / בוטלו).
+   *  So תואמה = תואמו (non-canceled = held + upcoming) + בוטלו (this).
+   *  Surfaced for the KPI card breakdown. Optional — only the BMBY
+   *  funnel populates it (Sehel/Salesforce have no clean canceled state). */
+  canceledMeetings?: number;
   /** "פגישות" — meetings that actually took place (held). Subset of
    *  scheduledMeetings. BMBY: status matches "פגישה 1/2/3" or "פגישה
    *  התקיימה". Sehel: status in {אחרי פגישה, פגישה ללא סיכום} —
@@ -114,6 +119,10 @@ export type CrmFunnel = {
     contactedBySource: Record<string, number>;
     /** source → scheduledMeetings (תואמה פגישה) count. */
     scheduledMeetingsBySource: Record<string, number>;
+    /** source → cancelled-meeting (בוטלו) count. Subset of
+     *  scheduledMeetingsBySource; BMBY only (empty/absent elsewhere).
+     *  Lets the card split תואמה into תואמו + בוטלו under chip filtering. */
+    canceledMeetingsBySource?: Record<string, number>;
     /** source → meetings (held) count. Subset of scheduledMeetingsBySource. */
     meetingsBySource: Record<string, number>;
     /** source → contracts (חוזה / עסקה / טופס הרשמה) count. */
@@ -997,6 +1006,7 @@ function aggregateBmbyFunnel(
   const targets = crmAccountCandidates(crmAccount).map(norm);
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה — broad, includes cancelled
+  let canceledMeetings = 0;  // בוטלו — the cancelled subset of scheduled
   let meetings = 0;          // פגישות — narrow, actually-held only
   let contacted = 0;
   let contracts = 0;         // חוזה — signed (current-status snapshot)
@@ -1011,6 +1021,7 @@ function aggregateBmbyFunnel(
   const leadsBySource = new Map<string, number>();
   const contactedBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
+  const canceledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
   const contractsBySource = new Map<string, number>();
   // Stale-leads tracking: runs BEFORE the monthFilter check below so
@@ -1113,8 +1124,12 @@ function aggregateBmbyFunnel(
     const isScheduledMeeting = st.includes("פגישה");
     const isHeldMeeting =
       /^פגישה\s+\d+$/.test(st) || st === "פגישה התקיימה";
+    // Cancelled subset of scheduled ("פגישה בוטלה"). Counted so the card
+    // can split תואמה into תואמו (non-cancelled) + בוטלו.
+    const isCanceledMeeting = isScheduledMeeting && st.includes("בוטל");
     const isContract = st === "חוזה";
     if (isScheduledMeeting) scheduledMeetings++;
+    if (isCanceledMeeting) canceledMeetings++;
     if (isHeldMeeting) meetings++;
     if (isContract) contracts++;
     // "Contacted" proxy: row has a non-empty תאריך קשר. The CRM populates
@@ -1132,6 +1147,7 @@ function aggregateBmbyFunnel(
       leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
       if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
       if (isScheduledMeeting) scheduledMeetingsBySource.set(src, (scheduledMeetingsBySource.get(src) || 0) + 1);
+      if (isCanceledMeeting) canceledMeetingsBySource.set(src, (canceledMeetingsBySource.get(src) || 0) + 1);
       if (isHeldMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
     }
     if (obj && src) {
@@ -1177,6 +1193,7 @@ function aggregateBmbyFunnel(
     leads,
     contacted,
     scheduledMeetings,
+    canceledMeetings,
     meetings,
     contracts,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
@@ -1188,7 +1205,7 @@ function aggregateBmbyFunnel(
       statusObserved: byStatus,
       funnelOrder: BMBY_STATUS_FUNNEL_ORDER,
       leadsBySource, contactedBySource,
-      scheduledMeetingsBySource, meetingsBySource,
+      scheduledMeetingsBySource, canceledMeetingsBySource, meetingsBySource,
       contractsBySource,
       statusSourceMatrix, objectionSourceMatrix,
     }),
@@ -1279,14 +1296,11 @@ async function computeBmbyFunnelFromWarehouse(
       `&order=lead_id.asc`,
   );
   if (!leads.length) return null;
-  // Project journey meetings — the full all-time history is fetched (journey
-  // velocity below needs every date), but the per-client meeting state that
-  // drives scheduled/held is built ONLY from meetings dated inside the active
-  // window. Anchor = appointment_date (when the meeting occurs), falling back
-  // to meeting_date when it's blank. So a cohort lead counts as scheduled/held
-  // only when its meeting actually lands in [from, toExcl) — return leads whose
-  // meeting predates the window, and June leads whose meeting is booked for a
-  // later month, are NOT counted (they re-enter as the month/their date fills).
+  // Project journey meetings (all-time history fetched; journeyVelocity
+  // below needs every date). The meeting metrics are built from meetings
+  // DATED in the window (anchor appointment_date → meeting_date) — matching
+  // BMBY's דוח יחסי המרה, which counts meeting EVENTS in the period.
+  // (2026-06-24, per Maayan, verified exact on רמת אפעל 19/8/6.)
   const meetings = await supabaseRowsAll<{
     client_id: string | null;
     appointment_outcome: string | null;
@@ -1303,16 +1317,46 @@ async function computeBmbyFunnelFromWarehouse(
     const d = (m.appointment_date || m.meeting_date || "").slice(0, 10);
     return !!d && d >= from && d < toExcl;
   };
+  // client → its first cohort-lead source (lead_id order), for attributing
+  // each meeting event to a channel. Cohort = clients with a lead in window.
+  const cohortSrc = new Map<string, string>();
+  for (const l of leads) {
+    const c = String(l.client_id ?? "");
+    if (c && !cohortSrc.has(c)) cohortSrc.set(c, normSource(l.media_source_clean));
+  }
+  // Distinct-client sets — drive the synthesized status per cohort lead row
+  // (so the status funnel / objections / daily series stay coherent).
   const heldClients = new Set<string>();
   const anyClients = new Set<string>();
   const nonCanceledClients = new Set<string>();
+  // Meeting-EVENT tallies (in-window, cohort clients only) — these OVERRIDE
+  // the distinct-client KPI counts below so תואמה / פגישות / בוטלו equal the
+  // BMBY event counts. תואמה = all events; פגישות = held; בוטלו = cancelled.
+  let evSched = 0, evHeld = 0, evCanc = 0;
+  const evSchedBySrc = new Map<string, number>();
+  const evHeldBySrc = new Map<string, number>();
+  const evCancBySrc = new Map<string, number>();
   for (const m of meetings) {
     const c = String(m.client_id ?? "");
-    if (!c) continue;
-    if (!meetingInWindow(m)) continue; // only meetings dated in the window
+    if (!c || !meetingInWindow(m)) continue;
     anyClients.add(c);
-    if (m.appointment_outcome === "held") heldClients.add(c);
-    if (m.appointment_outcome !== "canceled") nonCanceledClients.add(c);
+    const held = m.appointment_outcome === "held";
+    const canceled = m.appointment_outcome === "canceled";
+    if (held) heldClients.add(c);
+    if (!canceled) nonCanceledClients.add(c);
+    if (cohortSrc.has(c)) {
+      const src = cohortSrc.get(c) || "";
+      evSched++;
+      if (src) evSchedBySrc.set(src, (evSchedBySrc.get(src) || 0) + 1);
+      if (held) {
+        evHeld++;
+        if (src) evHeldBySrc.set(src, (evHeldBySrc.get(src) || 0) + 1);
+      }
+      if (canceled) {
+        evCanc++;
+        if (src) evCancBySrc.set(src, (evCancBySrc.get(src) || 0) + 1);
+      }
+    }
   }
   // Synthesize rows in the BMBY column layout aggregateBmbyFunnel reads.
   const headers = [
@@ -1366,6 +1410,18 @@ async function computeBmbyFunnelFromWarehouse(
   const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
   if (funnel) {
     funnel.dataSource = "warehouse";
+    // Override the meeting KPIs (which aggregateBmbyFunnel computed per
+    // distinct client) with the in-window EVENT counts, so תואמה / פגישות /
+    // בוטלו mirror BMBY's דוח יחסי המרה (counts events, not clients —
+    // verified exact on רמת אפעל 19/8/6). תואמה = all events; פגישות = held;
+    // בוטלו = cancelled; תואמו (card breakdown) = תואמה − בוטלו.
+    funnel.scheduledMeetings = evSched;
+    funnel.meetings = evHeld;
+    funnel.canceledMeetings = evCanc;
+    funnel.meetingRatePct = funnel.leads > 0 ? (evHeld / funnel.leads) * 100 : null;
+    funnel.sourceMatrices.scheduledMeetingsBySource = Object.fromEntries(evSchedBySrc);
+    funnel.sourceMatrices.meetingsBySource = Object.fromEntries(evHeldBySrc);
+    funnel.sourceMatrices.canceledMeetingsBySource = Object.fromEntries(evCancBySrc);
     // Speed-to-lead + returning/new split + arrival heatmap — all derived
     // from the leads we already fetched (no extra query). Whole-window.
     funnel.speedToLead = computeSpeedToLead(leads);
@@ -1957,6 +2013,8 @@ function buildSourceMatrices(args: {
   leadsBySource: Map<string, number>;
   contactedBySource: Map<string, number>;
   scheduledMeetingsBySource: Map<string, number>;
+  /** Optional — BMBY only; the cancelled subset of scheduled. */
+  canceledMeetingsBySource?: Map<string, number>;
   meetingsBySource: Map<string, number>;
   contractsBySource: Map<string, number>;
   statusSourceMatrix: Map<string, Map<string, number>>;
@@ -1984,6 +2042,9 @@ function buildSourceMatrices(args: {
     leadsBySource: toRec(args.leadsBySource),
     contactedBySource: toRec(args.contactedBySource),
     scheduledMeetingsBySource: toRec(args.scheduledMeetingsBySource),
+    canceledMeetingsBySource: args.canceledMeetingsBySource
+      ? toRec(args.canceledMeetingsBySource)
+      : undefined,
     meetingsBySource: toRec(args.meetingsBySource),
     contractsBySource: toRec(args.contractsBySource),
     statusBySource: toRec2(args.statusSourceMatrix),

@@ -6864,6 +6864,15 @@ html[data-theme="dark"] .crm-trend-hilite {
   margin-top: 0.15rem;
   font-variant-numeric: tabular-nums;
 }
+/* תואמו + בוטלו breakdown under the תואמה tile. */
+.crm-kpi-note {
+  font-size: 0.66em;
+  color: var(--muted);
+  opacity: 0.85;
+  margin-top: 0.1rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .crm-block {
   margin-top: 0.9rem;
 }

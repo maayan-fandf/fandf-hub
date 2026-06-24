@@ -256,12 +256,16 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     const leads = sumOf(leadsBreakdown);
     const contacted = sumOf(contactedBreakdown);
     const scheduled = sumOf(scheduledBreakdown);
+    // Cancelled subset of scheduled (BMBY only) → lets the תואמה tile show
+    // תואמו (non-cancelled) + בוטלו. Chip-filtered like the rest.
+    const canceled = sumOf(breakdown(sm.canceledMeetingsBySource || {}));
     const meetings = sumOf(meetingsBreakdown);
     const contracts = sumOf(contractsBreakdown);
     return {
       leads,
       contacted,
       scheduledMeetings: scheduled,
+      canceledMeetings: canceled,
       meetings,
       contracts,
       meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
@@ -654,6 +658,11 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
         <KpiTile label="תואמה פגישה"
           value={fmtInt(kpis.scheduledMeetings)}
           sub={pct(kpis.scheduledMeetings, kpis.leads)}
+          note={
+            funnel.platform === "bmby" && kpis.scheduledMeetings > 0
+              ? `תואמו ${fmtInt(kpis.scheduledMeetings - kpis.canceledMeetings)} · בוטלו ${fmtInt(kpis.canceledMeetings)}`
+              : undefined
+          }
           breakdown={kpis.breakdowns.scheduledMeetings}
           palette={palette} />
         <KpiTile label="פגישות"
@@ -1269,12 +1278,16 @@ function KpiTile({
   label,
   value,
   sub,
+  note,
   breakdown,
   palette,
 }: {
   label: string;
   value: string;
   sub?: string;
+  /** Optional extra line under `sub` — used for the תואמה breakdown
+   *  (תואמו + בוטלו). Plain text, muted. */
+  note?: string;
   /** Per-source breakdown for this metric under the current chip
    *  selection. When present (and non-empty), the tile gets a hover
    *  popover with a mini-pie of which channels contributed. */
@@ -1291,6 +1304,7 @@ function KpiTile({
       <div className="crm-kpi-value">{value}</div>
       <div className="crm-kpi-label">{label}</div>
       {sub ? <div className="crm-kpi-sub">{sub}</div> : null}
+      {note ? <div className="crm-kpi-note">{note}</div> : null}
       {hasPopover && open && pos
         ? createPortal(
             <div
