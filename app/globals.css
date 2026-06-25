@@ -3465,6 +3465,24 @@ html[data-theme="dark"] .topnav-fandf-logo img {
   line-height: 1.5;
   font-size: 0.95rem;
 }
+/* The message body in the תיוגים inbox is click-to-open (→ the comment
+   on its project page). Hint it as interactive: pointer cursor + a soft
+   hover wash. The inner read-more button / links keep working —
+   OpenOnClick lets their clicks through. */
+.mention-body-open {
+  cursor: pointer;
+  border-radius: var(--md-sys-shape-corner-small, 8px);
+  margin: 0 -0.4rem;
+  padding: 0.15rem 0.4rem;
+  transition: background 0.15s ease;
+}
+.mention-body-open:hover {
+  background: var(--accent-soft, rgba(99, 102, 241, 0.09));
+}
+.mention-body-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 .mention-actions {
   margin-top: 0.6rem;
@@ -3739,6 +3757,28 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
 .discussion-client-thread.is-mentioned {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+/* When the project page is opened with a #thread-<id> hash (e.g. the
+   תיוגים inbox "open the message on the project page" click), keep the
+   landed-on thread clear of the sticky top nav and flash it once so the
+   eye finds it among the other comments. */
+.discussion-client-thread {
+  scroll-margin-top: 90px;
+}
+.discussion-client-thread:target {
+  animation: thread-flash 2.4s ease-out 1;
+}
+@keyframes thread-flash {
+  0%,
+  30% {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: var(--accent-soft, rgba(99, 102, 241, 0.16));
+  }
+  100% {
+    box-shadow: inset 0 0 0 1px transparent;
+    background: transparent;
+  }
 }
 .discussion-client-actions {
   margin-top: 0.4rem;

@@ -52,6 +52,7 @@ import {
 } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import { currentUserEmail } from "@/lib/appsScript";
+import { viewerCanEditComment as viewerCanEdit } from "@/lib/commentPermissions";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
 
@@ -1290,24 +1291,6 @@ function HubChannel({
   );
 }
 
-/**
- * Whether `viewerEmail` may edit a comment authored by `authorEmail`.
- * Strict authorship: you only ever edit your OWN message — the rule
- * Maayan asked for ("a user can only edit their own message"). We
- * deliberately do NOT mirror the server's admin override here: an admin
- * (Maayan included) reported seeing the ✏️ on a teammate's message and
- * wanted it gone, so surfacing the button only for the author is what
- * actually fixes the symptom. The server still allows author-OR-admin as
- * a backstop (editCommentDirect) — hiding the button never grants
- * anything; it just stops offering an edit the user shouldn't make.
- * Empty viewer (logged-out / unknown) → no edit.
- */
-function viewerCanEdit(authorEmail: string, viewerEmail: string): boolean {
-  const v = (viewerEmail || "").toLowerCase().trim();
-  if (!v) return false;
-  return v === (authorEmail || "").toLowerCase().trim();
-}
-
 function CommentsPreview({
   comments,
   projectName,
@@ -1366,6 +1349,7 @@ function CommentsPreview({
         return (
           <li
             key={c.comment_id}
+            id={`thread-${c.comment_id}`}
             className={`chat-thread discussion-client-thread ${
               c.resolved ? "is-resolved" : ""
             } ${isMentioned ? "is-mentioned" : ""}`}
@@ -1494,6 +1478,7 @@ function MentionsPreview({
         return (
           <li
             key={m.comment_id}
+            id={`thread-${actionTarget}`}
             className={`chat-thread discussion-client-thread ${
               m.resolved ? "is-resolved" : ""
             } is-mentioned`}

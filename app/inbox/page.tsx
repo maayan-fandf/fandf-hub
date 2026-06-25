@@ -16,6 +16,8 @@ import CardActions from "@/components/CardActions";
 import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import ThreadReplies from "@/components/ThreadReplies";
 import Avatar from "@/components/Avatar";
+import OpenOnClick from "@/components/OpenOnClick";
+import { viewerCanEditComment } from "@/lib/commentPermissions";
 
 export const dynamic = "force-dynamic";
 
@@ -141,7 +143,12 @@ export default async function InboxPage({
       {visible.length > 0 && (
         <ul className="mention-list">
           {visible.map((m) => (
-            <MentionCard key={m.comment_id} m={m} people={people} />
+            <MentionCard
+              key={m.comment_id}
+              m={m}
+              people={people}
+              meEmail={data?.me?.email ?? ""}
+            />
           ))}
         </ul>
       )}
@@ -152,9 +159,12 @@ export default async function InboxPage({
 function MentionCard({
   m,
   people,
+  meEmail,
 }: {
   m: MentionItem;
   people: TasksPerson[];
+  /** Current viewer's email — drives the ✏️ edit gate (author only). */
+  meEmail: string;
 }) {
   const authorDisplay =
     personDisplayName(m.author_email, people) ||
@@ -164,6 +174,15 @@ function MentionCard({
   // resolved on the Apps Script side. Falls back to comment_id for API
   // responses that don't yet include thread_root_id.
   const resolveTarget = m.thread_root_id || m.parent_id || m.comment_id;
+  // Clicking the message opens the comment on its project page, in the
+  // client discussion channel (these are תיוגי לקוח), scrolled to the
+  // exact thread via the #thread-<root> anchor (rendered into the
+  // CommentsPreview <li>). resolved=1 so a resolved tag is still in the
+  // list to land on.
+  const openHref =
+    `/projects/${encodeURIComponent(m.project)}?channel=client&view=all` +
+    (m.resolved ? "&resolved=1" : "") +
+    `#thread-${resolveTarget}`;
   return (
     <li className={`mention-card ${m.resolved ? "is-resolved" : ""}`}>
       <div className="mention-head">
@@ -197,12 +216,18 @@ function MentionCard({
           people={people}
         />
       </div>
-      <CommentBodyExpandable
-        body={m.body}
-        truncateChars={400}
-        className="mention-body"
-        people={people}
-      />
+      <OpenOnClick
+        href={openHref}
+        className="mention-body-open"
+        title="פתח את ההודעה בדף הפרויקט"
+      >
+        <CommentBodyExpandable
+          body={m.body}
+          truncateChars={400}
+          className="mention-body"
+          people={people}
+        />
+      </OpenOnClick>
       <div className="mention-actions">
         <CardActions
           commentId={resolveTarget}
@@ -211,6 +236,7 @@ function MentionCard({
           resolved={m.resolved}
           body={m.body}
           deleteItemLabel="את התיוג"
+          canEdit={viewerCanEditComment(m.author_email, meEmail)}
         />
       </div>
     </li>
