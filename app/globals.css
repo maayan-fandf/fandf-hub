@@ -4192,6 +4192,25 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
   color: var(--text);
   word-wrap: break-word;
 }
+/* Inline "read more / less" toggle under a clipped comment body
+   (CommentBodyExpandable). Subtle text button — muted at rest, accent on
+   hover — so it reads as an affordance without competing with the message
+   text. Sits on its own line just below the body. */
+.comment-readmore-btn {
+  display: inline-block;
+  margin-top: 0.25em;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+.comment-readmore-btn:hover {
+  color: var(--accent);
+}
 .chat-message-line {
   margin: 0 0 0.25em;
 }

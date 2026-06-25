@@ -18,7 +18,7 @@ import {
 } from "@/lib/appsScript";
 import TimelineFilterBar from "@/components/TimelineFilterBar";
 import CardActions from "@/components/CardActions";
-import CommentBody from "@/components/CommentBody";
+import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import ScrollToThread from "@/components/ScrollToThread";
 import Avatar from "@/components/Avatar";
 import { personDisplayName } from "@/lib/personDisplay";
@@ -324,7 +324,7 @@ function CommentRow({
             {formatRelative(c.timestamp)}
           </span>
         </div>
-        <CommentBody
+        <CommentBodyExpandable
           body={c.body}
           truncateChars={600}
           className="timeline-body"
@@ -428,7 +428,7 @@ function TaskRow({
             {formatRelative(t.created_at)}
           </span>
         </div>
-        <CommentBody
+        <CommentBodyExpandable
           body={t.title || t.body}
           truncateChars={600}
           className="timeline-body"

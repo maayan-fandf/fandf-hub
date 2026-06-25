@@ -28,6 +28,11 @@ type Props = {
   /** When the parent thread is resolved, the server will reject edits — hide
    *  the ✏️ button to match. Default false. */
   editLocked?: boolean;
+  /** Whether the viewer may edit this comment's body. The server only lets
+   *  the author (or an admin) edit — when the viewer is neither, hide the
+   *  ✏️ button instead of showing one that errors on save. Default true so
+   *  callers without author context (and the server guard) keep working. */
+  canEdit?: boolean;
   /** When true, the ✓ shows the resolved state as read-only (no un-resolve).
    *  Default false — most places allow toggling. */
   readOnlyWhenResolved?: boolean;
@@ -54,6 +59,7 @@ export default function CardActions({
   editLocked = false,
   readOnlyWhenResolved = false,
   canConvertToTask = true,
+  canEdit = true,
 }: Props) {
   return (
     <div className="card-actions">
@@ -66,13 +72,15 @@ export default function CardActions({
         readOnlyWhenResolved={readOnlyWhenResolved}
         iconOnly
       />
-      <EditDrawer
-        commentId={editCommentId ?? commentId}
-        initialBody={body}
-        locked={editLocked || resolved}
-        iconOnly
-        project={project}
-      />
+      {canEdit && (
+        <EditDrawer
+          commentId={editCommentId ?? commentId}
+          initialBody={body}
+          locked={editLocked || resolved}
+          iconOnly
+          project={project}
+        />
+      )}
       {canConvertToTask && (
         <ConvertToTaskButton commentId={editCommentId ?? commentId} />
       )}

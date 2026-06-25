@@ -64,6 +64,19 @@ function maybeTruncate(body: string, max?: number): string {
   return slice + "…";
 }
 
+/**
+ * True when `maybeTruncate` would actually clip this body — i.e. it
+ * exceeds `max` AND carries no image/link token (those always render in
+ * full, so there's nothing to expand). Lets a client wrapper decide
+ * whether to offer a "read more" toggle. Kept here next to the
+ * truncation rule so the two never drift apart.
+ */
+export function wouldTruncate(body: string, max?: number): boolean {
+  const b = body || "";
+  if (!max || b.length <= max) return false;
+  return !IMG_RE.test(b) && !LINK_RE.test(b);
+}
+
 function renderBody(body: string, people?: TasksPerson[]): React.ReactNode {
   const lines = body.split("\n");
   // dir="auto" on each <p> so lines pick LTR/RTL independently from

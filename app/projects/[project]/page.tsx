@@ -38,7 +38,7 @@ import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import CardActions from "@/components/CardActions";
-import CommentBody from "@/components/CommentBody";
+import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import { personDisplayName } from "@/lib/personDisplay";
 import ThreadReplies from "@/components/ThreadReplies";
 import MorningSignalRow from "@/components/MorningSignalRow";
@@ -988,6 +988,7 @@ function DiscussionSection({
           showResolved={showResolved}
           requestedView={requestedView}
           isClientUser={isClientUser}
+          userEmail={userEmail}
           people={people}
         />
       ) : (
@@ -1001,6 +1002,7 @@ function DiscussionSection({
           showResolved={showResolved}
           requestedView={requestedView}
           isClientUser={isClientUser}
+          userEmail={userEmail}
           people={people}
         />
       )}
@@ -1152,6 +1154,7 @@ function HubChannel({
   showResolved,
   requestedView,
   isClientUser,
+  userEmail,
   people,
 }: {
   /** Which audience this instance renders. Drives the composer scope
@@ -1165,6 +1168,9 @@ function HubChannel({
   showResolved: boolean;
   requestedView: string | undefined;
   isClientUser: boolean;
+  /** Current viewer's email — forwarded to the previews for the ✏️ edit
+   *  gate (author or admin only). */
+  userEmail: string;
   /** Roster threaded down through CommentsPreview / MentionsPreview /
    *  CommentBody so `@email` mentions render as the person's Hebrew
    *  display name. */
@@ -1247,6 +1253,7 @@ function HubChannel({
           mentions={mentions}
           showResolved={showResolved}
           isClientUser={isClientUser}
+          userEmail={userEmail}
           people={people}
         />
       ) : (
@@ -1256,6 +1263,7 @@ function HubChannel({
           showResolved={showResolved}
           mentionedThreadIds={mentionedThreadIds}
           isClientUser={isClientUser}
+          userEmail={userEmail}
           people={people}
         />
       )}
@@ -1282,12 +1290,31 @@ function HubChannel({
   );
 }
 
+/**
+ * Whether `viewerEmail` may edit a comment authored by `authorEmail`.
+ * Strict authorship: you only ever edit your OWN message — the rule
+ * Maayan asked for ("a user can only edit their own message"). We
+ * deliberately do NOT mirror the server's admin override here: an admin
+ * (Maayan included) reported seeing the ✏️ on a teammate's message and
+ * wanted it gone, so surfacing the button only for the author is what
+ * actually fixes the symptom. The server still allows author-OR-admin as
+ * a backstop (editCommentDirect) — hiding the button never grants
+ * anything; it just stops offering an edit the user shouldn't make.
+ * Empty viewer (logged-out / unknown) → no edit.
+ */
+function viewerCanEdit(authorEmail: string, viewerEmail: string): boolean {
+  const v = (viewerEmail || "").toLowerCase().trim();
+  if (!v) return false;
+  return v === (authorEmail || "").toLowerCase().trim();
+}
+
 function CommentsPreview({
   comments,
   projectName,
   showResolved,
   mentionedThreadIds,
   isClientUser,
+  userEmail,
   people,
 }: {
   comments: CommentItem[];
@@ -1300,6 +1327,9 @@ function CommentsPreview({
   /** When true, hide the "convert to task" affordance on each card —
    *  clients can't create tasks. */
   isClientUser?: boolean;
+  /** Current viewer's email — drives the per-comment ✏️ edit gate
+   *  (author or admin only). */
+  userEmail: string;
   /** Roster forwarded to CommentBody so mention tokens render Hebrew
    *  names. Optional — falls back to email-prefix when missing. */
   people?: import("@/lib/appsScript").TasksPerson[];
@@ -1367,7 +1397,7 @@ function CommentsPreview({
                   </span>
                 )}
               </div>
-              <CommentBody
+              <CommentBodyExpandable
                 body={c.body}
                 truncateChars={220}
                 className="chat-message-text"
@@ -1390,6 +1420,7 @@ function CommentsPreview({
                   body={c.body}
                   deleteItemLabel="את התגובה"
                   canConvertToTask={!isClientUser}
+                  canEdit={viewerCanEdit(c.author_email, userEmail)}
                 />
               </div>
             </div>
@@ -1415,11 +1446,15 @@ function MentionsPreview({
   mentions,
   showResolved,
   isClientUser,
+  userEmail,
   people,
 }: {
   mentions: MentionItem[];
   showResolved: boolean;
   isClientUser?: boolean;
+  /** Current viewer's email — drives the per-mention ✏️ edit gate
+   *  (author or admin only). */
+  userEmail: string;
   /** Roster forwarded to CommentBody so mention tokens render Hebrew
    *  names. Optional. */
   people?: import("@/lib/appsScript").TasksPerson[];
@@ -1485,7 +1520,7 @@ function MentionsPreview({
                   {formatRelative(m.timestamp)}
                 </span>
               </div>
-              <CommentBody
+              <CommentBodyExpandable
                 body={m.body}
                 truncateChars={200}
                 className="chat-message-text"
@@ -1507,6 +1542,7 @@ function MentionsPreview({
                   body={m.body}
                   deleteItemLabel="את התיוג"
                   canConvertToTask={!isClientUser}
+                  canEdit={viewerCanEdit(m.author_email, userEmail)}
                 />
               </div>
             </div>

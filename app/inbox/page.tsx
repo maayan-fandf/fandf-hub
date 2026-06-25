@@ -13,7 +13,7 @@ import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import InboxFilterBar from "@/components/InboxFilterBar";
 import CardActions from "@/components/CardActions";
-import CommentBody from "@/components/CommentBody";
+import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import ThreadReplies from "@/components/ThreadReplies";
 import Avatar from "@/components/Avatar";
 
@@ -197,7 +197,7 @@ function MentionCard({
           people={people}
         />
       </div>
-      <CommentBody
+      <CommentBodyExpandable
         body={m.body}
         truncateChars={400}
         className="mention-body"
