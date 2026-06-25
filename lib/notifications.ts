@@ -481,6 +481,78 @@ export async function markReadByProjectAndKind(
   return { ok: true, updated: updates.length };
 }
 
+/** Discussion-surface notification kinds — the ones a user "sees" simply
+ *  by opening the project page (the discussion + tags live right there).
+ *  Task pings (task_*) are NOT here: those clear on the task detail page
+ *  via markReadByTask, so opening a project doesn't silently swallow a
+ *  "you've been assigned X" you haven't actually opened yet. */
+const DISCUSSION_NOTIFICATION_KINDS: ReadonlySet<string> = new Set<
+  NotificationKind
+>(["comment_reply", "mention", "chat_mention"]);
+
+/** Mark every unread DISCUSSION notification (comment_reply / mention /
+ *  chat_mention) for `forEmail` scoped to one project as read, in a
+ *  single sheet read. Used by the auto-mark-read-on-visit flow: when the
+ *  user OPENS a project page the discussion + their tags are right there,
+ *  so those pings shouldn't keep nagging the bell + /notifications after
+ *  they've seen (and usually replied to) them. Reported by Maayan
+ *  2026-06-25: he'd seen + replied to messages but the notifications kept
+ *  prompting action because nothing cleared them on view. Generalizes
+ *  markReadByProjectAndKind to the whole discussion-kind set.
+ *
+ *  Best-effort, fire-and-forget — do NOT await in render-blocking paths.
+ *  Empty inputs are silent no-ops. */
+export async function markReadByProjectDiscussion(
+  forEmail: string,
+  project: string,
+): Promise<{ ok: true; updated: number }> {
+  const lc = forEmail.toLowerCase().trim();
+  const proj = project.trim();
+  if (!lc || !proj) return { ok: true, updated: 0 };
+  await ensureTab(forEmail);
+  const sheets = sheetsClient(forEmail);
+  const ssId = envOrThrow("SHEET_ID_COMMENTS");
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: ssId,
+    range: TAB,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const values = (res.data.values ?? []) as unknown[][];
+  if (values.length < 2) return { ok: true, updated: 0 };
+  const headers = (values[0] as unknown[]).map((h) =>
+    String(h ?? "").trim().toLowerCase(),
+  );
+  const iFor = headers.indexOf("for_email");
+  const iKind = headers.indexOf("kind");
+  const iProj = headers.indexOf("project");
+  const iRead = headers.indexOf("read_at");
+  if (iFor < 0 || iKind < 0 || iProj < 0 || iRead < 0) {
+    return { ok: true, updated: 0 };
+  }
+  const now = new Date().toISOString();
+  const updates: { range: string; values: [[string]] }[] = [];
+  for (let i = 1; i < values.length; i++) {
+    const fe = String(values[i][iFor] ?? "").toLowerCase().trim();
+    if (fe !== lc) continue;
+    if (!DISCUSSION_NOTIFICATION_KINDS.has(String(values[i][iKind] ?? "")))
+      continue;
+    if (String(values[i][iProj] ?? "").trim() !== proj) continue;
+    if (String(values[i][iRead] ?? "")) continue;
+    const sheetRow = i + 1;
+    const col = columnLetter(iRead + 1);
+    updates.push({
+      range: `${TAB}!${col}${sheetRow}:${col}${sheetRow}`,
+      values: [[now]],
+    });
+  }
+  if (updates.length === 0) return { ok: true, updated: 0 };
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: ssId,
+    requestBody: { valueInputOption: "RAW", data: updates },
+  });
+  return { ok: true, updated: updates.length };
+}
+
 /** Mark every unread Notifications row for `forEmail` whose `task_id`
  *  matches `taskId` as read. Used by the auto-dismiss-on-open flow:
  *  when the user opens a task's detail page, any pending pings about

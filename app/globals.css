@@ -756,10 +756,19 @@ a:hover {
    at top:0 z-index 20 (height ≈ 3rem), so we anchor below it with a
    lower z-index so topnav popovers still render above. */
 @media (min-width: 769px) {
+  /* Tuck the project header right under the topnav instead of leaving the
+     full .container 2rem top-padding as an empty band above it — on this
+     content-dense page that gap read as wasted space ("header not reaching
+     the top"). Desktop-only; mobile keeps the normal 2rem (header is static
+     there). Reported by Maayan 2026-06-25. */
+  .container.project-main {
+    padding-top: 0.5rem;
+  }
   .project-main .page-header {
     position: sticky;
-    top: 3rem; /* matches the topnav's measured height — 0.75rem top
-                  pad + 0.75rem bottom pad + ~1.5rem content */
+    top: 3.75rem; /* = the topnav's REAL height (~59px). The old 3rem
+                     under-shot by ~11px, so on scroll the header tucked
+                     behind the nav; 3.75rem sticks it flush just below. */
     z-index: 10;
     /* Solid background so content scrolling underneath doesn't bleed
        through. Use var(--bg) which both light and dark themes set

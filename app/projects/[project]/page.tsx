@@ -246,6 +246,22 @@ export default async function ProjectOverviewPage({
   // auth) and is the same value projectsData.email carries when it works.
   const userEmail = (await meP) || projectsData?.email || "";
 
+  // Auto-dismiss this project's DISCUSSION notifications (comment_reply /
+  // mention / chat_mention) when the user opens the page — the discussion
+  // + their tags are right here, so a ping they've now seen (and usually
+  // replied to) shouldn't keep nagging the bell + /notifications. Mirrors
+  // the markReadByTask auto-dismiss on /tasks/[id]. Fire-and-forget, kicked
+  // off early so it runs concurrently with the page's data fetches; errors
+  // swallowed (a missed dismissal is a UX nit, not a correctness bug). Task
+  // pings are left alone — they clear on the task detail page. Reported by
+  // Maayan 2026-06-25: he'd seen + replied to messages but the התראות kept
+  // prompting action because nothing cleared them on view.
+  if (userEmail) {
+    void import("@/lib/notifications").then((m) =>
+      m.markReadByProjectDiscussion(userEmail, projectName).catch(() => {}),
+    );
+  }
+
   // Project-type gate (2026-05-27). All real-estate-only surfaces on
   // this page — the Apps Script dashboard iframe, the CRM funnel
   // card, the Clarity insights, the FB/Google Ads deep-link buttons,
@@ -1471,90 +1487,103 @@ function MentionsPreview({
       </div>
     );
   }
-  if (top.length === 0) {
-    // showResolved is false here (otherwise visible would include them)
+
+  // Resolved tags are revealed INLINE (native <details>) below the open
+  // ones rather than bouncing to the inbox — mirrors the CommentsPreview
+  // "הצג N הערות פתורות" reveal. Same markup as the open mentions, so the
+  // mention <li> is factored into one renderer.
+  const resolvedMentions = mentions.filter((m) => m.resolved);
+  const resolvedNoun = resolvedCount === 1 ? "תיוג פתור" : "תיוגים פתורים";
+
+  const renderMention = (m: MentionItem) => {
+    // Resolve/delete target the thread root — only top-level comments are
+    // resolvable/deletable. Falls back to comment_id for older API
+    // responses that don't include thread_root_id.
+    const actionTarget = m.thread_root_id || m.parent_id || m.comment_id;
     return (
-      <div className="empty-small">
-        ✅ אין תיוגים פתוחים עבורך בפרויקט זה.{" "}
-        <Link href="/inbox?resolved=1" className="section-link">
-          הצג {resolvedCount} פתורים ←
-        </Link>
-      </div>
+      <li
+        key={m.comment_id}
+        id={`thread-${actionTarget}`}
+        className={`chat-thread discussion-client-thread ${
+          m.resolved ? "is-resolved" : ""
+        } is-mentioned`}
+      >
+        <Avatar
+          name={m.author_email}
+          title={m.author_name || m.author_email}
+          size={26}
+        />
+        <div className="chat-message-body">
+          <div className="chat-message-head">
+            <span className="chat-message-author">
+              {m.author_name || m.author_email}
+            </span>
+            {m.edited_at && (
+              <span
+                className="chip chip-muted"
+                title={`נערך ${formatRelative(m.edited_at)}`}
+              >
+                📝 נערך
+              </span>
+            )}
+            <span className="chat-message-time" title={m.timestamp}>
+              {formatRelative(m.timestamp)}
+            </span>
+          </div>
+          <CommentBodyExpandable
+            body={m.body}
+            truncateChars={200}
+            className="chat-message-text"
+            people={people}
+          />
+          {/* Replies under the body, not in the header (chat order). */}
+          <ThreadReplies
+            parentCommentId={actionTarget}
+            project={m.project}
+            count={m.reply_count ?? 0}
+            people={people}
+          />
+          <div className="discussion-client-actions">
+            <CardActions
+              commentId={actionTarget}
+              project={m.project}
+              editCommentId={m.comment_id}
+              resolved={m.resolved}
+              body={m.body}
+              deleteItemLabel="את התיוג"
+              canConvertToTask={!isClientUser}
+              canEdit={viewerCanEdit(m.author_email, userEmail)}
+              allowEditWhenResolved
+            />
+          </div>
+        </div>
+      </li>
     );
-  }
+  };
+
   return (
     <ul className="chat-message-list discussion-client-list">
-      {top.map((m) => {
-        // Resolve/delete target the thread root — only top-level comments
-        // are resolvable/deletable. Falls back to comment_id for older API
-        // responses that don't include thread_root_id.
-        const actionTarget = m.thread_root_id || m.parent_id || m.comment_id;
-        return (
-          <li
-            key={m.comment_id}
-            id={`thread-${actionTarget}`}
-            className={`chat-thread discussion-client-thread ${
-              m.resolved ? "is-resolved" : ""
-            } is-mentioned`}
-          >
-            <Avatar
-              name={m.author_email}
-              title={m.author_name || m.author_email}
-              size={26}
-            />
-            <div className="chat-message-body">
-              <div className="chat-message-head">
-                <span className="chat-message-author">
-                  {m.author_name || m.author_email}
-                </span>
-                {m.edited_at && (
-                  <span
-                    className="chip chip-muted"
-                    title={`נערך ${formatRelative(m.edited_at)}`}
-                  >
-                    📝 נערך
-                  </span>
-                )}
-                <span className="chat-message-time" title={m.timestamp}>
-                  {formatRelative(m.timestamp)}
-                </span>
-              </div>
-              <CommentBodyExpandable
-                body={m.body}
-                truncateChars={200}
-                className="chat-message-text"
-                people={people}
-              />
-              {/* Replies under the body, not in the header (chat order). */}
-              <ThreadReplies
-                parentCommentId={actionTarget}
-                project={m.project}
-                count={m.reply_count ?? 0}
-                people={people}
-              />
-              <div className="discussion-client-actions">
-                <CardActions
-                  commentId={actionTarget}
-                  project={m.project}
-                  editCommentId={m.comment_id}
-                  resolved={m.resolved}
-                  body={m.body}
-                  deleteItemLabel="את התיוג"
-                  canConvertToTask={!isClientUser}
-                  canEdit={viewerCanEdit(m.author_email, userEmail)}
-                  allowEditWhenResolved
-                />
-              </div>
-            </div>
-          </li>
-        );
-      })}
+      {top.length === 0 && (
+        <li className="discussion-no-open-note">
+          ✅ אין תיוגים פתוחים עבורך בפרויקט זה.
+        </li>
+      )}
+      {top.map((m) => renderMention(m))}
       {resolvedCount > 0 && !showResolved && (
-        <li className="chat-thread discussion-client-thread-footer">
-          <Link href="/inbox?resolved=1" className="section-link">
-            + הצג {resolvedCount}{" "}
-            {resolvedCount === 1 ? "תיוג פתור" : "תיוגים פתורים"} בתיבת התיוגים ←
-          </Link>
+        <li className="discussion-resolved-reveal-row">
+          <details className="discussion-resolved-reveal">
+            <summary className="discussion-resolved-summary">
+              <span className="discussion-resolved-summary-show">
+                + הצג {resolvedCount} {resolvedNoun}
+              </span>
+              <span className="discussion-resolved-summary-hide">
+                הסתר {resolvedNoun}
+              </span>
+            </summary>
+            <ul className="chat-message-list discussion-client-list discussion-resolved-list">
+              {resolvedMentions.map((m) => renderMention(m))}
+            </ul>
+          </details>
         </li>
       )}
     </ul>
