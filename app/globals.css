@@ -3795,6 +3795,59 @@ html[data-theme="dark"] .discussion-channel-tab-hint {
 .discussion-client-thread:focus-within .discussion-client-actions {
   opacity: 1;
 }
+/* "Show N resolved comments" reveals them INLINE here (native <details>)
+   instead of jumping to the timeline — the owner found the page jump
+   unintuitive. The row + note span the full discussion column. */
+.discussion-no-open-note {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.25rem 0.2rem 0.45rem;
+}
+.discussion-resolved-reveal-row {
+  display: block;
+  background: transparent;
+  border: none;
+  padding: 0.2rem 0 0;
+}
+.discussion-resolved-reveal {
+  width: 100%;
+}
+.discussion-resolved-summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.discussion-resolved-summary::-webkit-details-marker {
+  display: none;
+}
+.discussion-resolved-summary::marker {
+  content: "";
+}
+.discussion-resolved-summary:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(99, 102, 241, 0.08));
+}
+.discussion-resolved-reveal[open] .discussion-resolved-summary-show {
+  display: none;
+}
+.discussion-resolved-reveal:not([open]) .discussion-resolved-summary-hide {
+  display: none;
+}
+.discussion-resolved-list {
+  margin-top: 0.7rem;
+  padding-top: 0.1rem;
+}
 @media (hover: none) {
   .discussion-client-actions { opacity: 1; }
 }
@@ -5616,6 +5669,31 @@ a.section-link-icon:hover {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+.reply-btn-primary.is-sending {
+  /* Keep the button crisp (not dimmed by :disabled) while sending so the
+     spinner reads as active progress, not a greyed-out control. */
+  opacity: 1;
+  cursor: wait;
+}
+/* Inline spinner shown inside a primary action button while its request
+   is in flight (e.g. ClientChatComposer "שולח…"). currentColor so it
+   matches the button text on any tone. */
+.btn-spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-inline-end: 0.45em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.13em;
+  animation: btn-spin 0.7s linear infinite;
+}
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .reply-btn-primary:hover:not(:disabled) {

@@ -1036,18 +1036,16 @@ export async function editCommentDirect(
   }
   if (project) await assertProjectAccess(subjectEmail, project);
 
-  // Reject edits on resolved threads — match Apps Script behavior. The
-  // thread is "resolved" if the root row's resolved=true. Replies and
-  // top-level comments both check the root.
+  // NOTE: edits on resolved threads USED to be rejected here ("match Apps
+  // Script behavior"). Lifted 2026-06-25 at the owner's request — a user
+  // must be able to edit their OWN comments / root messages even after the
+  // thread is resolved (Maayan hit this: his resolved comment had no edit
+  // option). The author-or-admin gate above already restricts WHO can
+  // edit; the resolved STATE no longer blocks it. The discussion UI mirrors
+  // this via CardActions' `allowEditWhenResolved` (still author-gated);
+  // task cards keep their done-lock. `parentId` is still needed below to
+  // gate the Google-Tasks notes sync to top-level comments only.
   const parentId = String(row[idx.get("parent_id") ?? -1] ?? "").trim();
-  if (parentId) {
-    const rootIdx = findRowByCommentId(rows, idx, parentId);
-    if (rootIdx >= 0 && rows[rootIdx][idx.get("resolved") ?? -1] === true) {
-      throw new Error("Cannot edit a comment in a resolved thread");
-    }
-  } else if (row[idx.get("resolved") ?? -1] === true) {
-    throw new Error("Cannot edit a resolved comment");
-  }
 
   const currentBody = String(row[idx.get("body") ?? -1] ?? "");
   if (currentBody === newBody.trim()) {

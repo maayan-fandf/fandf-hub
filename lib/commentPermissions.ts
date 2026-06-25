@@ -1,14 +1,11 @@
 /**
  * Whether `viewerEmail` may edit a comment authored by `authorEmail`.
  *
- * Strict authorship — you only ever edit your OWN message, the rule
- * Maayan asked for ("a user can only edit their own message"). We
- * deliberately do NOT mirror the server's admin override here: an admin
- * (Maayan included) reported seeing the ✏️ on a teammate's message and
- * wanted it gone, so the UI surfaces the edit button only for the author.
- * The server (editCommentDirect) still allows author-OR-admin as a
- * backstop — hiding the button never grants anything; it just stops
- * offering an edit the viewer shouldn't make.
+ * Strict authorship: every user may edit their OWN comments / root
+ * messages, and nobody else's — the rule Maayan asked for ("a user can
+ * only edit their own message"). No admin override: the owner edits his
+ * own messages like everyone else. The server (editCommentDirect) is the
+ * security backstop; this only governs whether the UI offers the ✏️.
  *
  * Shared by the project discussion (CommentsPreview / MentionsPreview)
  * and the תיוגים inbox so the rule can't drift between surfaces.

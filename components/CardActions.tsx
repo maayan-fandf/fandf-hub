@@ -25,9 +25,14 @@ type Props = {
   /** Whether this card can be replied to. Replies-of-replies aren't allowed,
    *  and some contexts (preview-only views) skip reply too. Default true. */
   canReply?: boolean;
-  /** When the parent thread is resolved, the server will reject edits — hide
-   *  the ✏️ button to match. Default false. */
+  /** Hard lock on the ✏️ button regardless of resolved state. Default
+   *  false; no caller currently sets it true. */
   editLocked?: boolean;
+  /** Allow editing even when the thread is resolved. Discussion comments
+   *  pass this (a user may edit their OWN message after it's resolved —
+   *  the `canEdit` author-gate still applies). Task cards leave it false so
+   *  a done task stays locked. Default false. */
+  allowEditWhenResolved?: boolean;
   /** Whether the viewer may edit this comment's body. The server only lets
    *  the author (or an admin) edit — when the viewer is neither, hide the
    *  ✏️ button instead of showing one that errors on save. Default true so
@@ -57,6 +62,7 @@ export default function CardActions({
   editCommentId,
   canReply = true,
   editLocked = false,
+  allowEditWhenResolved = false,
   readOnlyWhenResolved = false,
   canConvertToTask = true,
   canEdit = true,
@@ -76,7 +82,7 @@ export default function CardActions({
         <EditDrawer
           commentId={editCommentId ?? commentId}
           initialBody={body}
-          locked={editLocked || resolved}
+          locked={editLocked || (resolved && !allowEditWhenResolved)}
           iconOnly
           project={project}
         />

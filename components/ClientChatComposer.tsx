@@ -485,7 +485,7 @@ export default function ClientChatComposer({
         </span>
         <button
           type="button"
-          className="reply-btn reply-btn-primary"
+          className={`reply-btn reply-btn-primary${sending ? " is-sending" : ""}`}
           onClick={() => void submit()}
           disabled={sending || empty || over}
           title={
@@ -496,7 +496,14 @@ export default function ClientChatComposer({
                 : "פרסם הודעה לערוץ הלקוח"
           }
         >
-          {sending ? "שולח…" : `שלח הודעה ${audience}`}
+          {sending ? (
+            <>
+              <span className="btn-spinner" aria-hidden />
+              שולח…
+            </>
+          ) : (
+            `שלח הודעה ${audience}`
+          )}
         </button>
       </div>
       {pickerOpen && (

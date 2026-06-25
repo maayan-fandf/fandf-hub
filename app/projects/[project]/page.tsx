@@ -236,7 +236,15 @@ export default async function ProjectOverviewPage({
   // the Apps Script side wouldn't trigger.
   const companyForDashboard =
     projectMeta?.company ?? (companyScope || "");
-  const userEmail = projectsData?.email ?? "";
+  // The logged-in user's email. MUST come from the session (`meP` =
+  // currentUserEmail), NOT projectsData.email — the latter is "" whenever
+  // getMyProjects() is slow or fails (it's `.catch(() => null)`), which
+  // silently flipped the ✏️ edit gate off on the user's OWN messages and
+  // mis-set isInternalUser to false. Reported by Maayan 2026-06-25: his
+  // own comment showed no edit option on a load where the projects read
+  // didn't return. Session email is always present (the page requires
+  // auth) and is the same value projectsData.email carries when it works.
+  const userEmail = (await meP) || projectsData?.email || "";
 
   // Project-type gate (2026-05-27). All real-estate-only surfaces on
   // this page — the Apps Script dashboard iframe, the CRM funnel
@@ -1328,98 +1336,104 @@ function CommentsPreview({
   if (top.length === 0 && resolvedCount === 0) {
     return <div className="empty-small">💭 אין הערות בפרויקט זה עדיין.</div>;
   }
-  if (top.length === 0) {
-    // showResolved is false here (otherwise visible would include them)
+
+  // Resolved threads (within the fetched window) are revealed INLINE via a
+  // native <details> below the open ones — the owner found the old "jump
+  // to the timeline" link unintuitive. Same markup as the open threads, so
+  // the thread <li> is factored into one renderer used by both lists.
+  const resolvedThreads = topLevel.filter((c) => c.resolved);
+  const resolvedNoun = resolvedCount === 1 ? "הערה פתורה" : "הערות פתורות";
+
+  const renderThread = (c: CommentItem) => {
+    const isMentioned = mentionedThreadIds?.has(c.comment_id) ?? false;
     return (
-      <div className="empty-small">
-        ✅ אין הערות פתוחות.{" "}
-        <Link
-          href={`/projects/${encodeURIComponent(projectName)}/timeline?resolved=1`}
-          className="section-link"
-        >
-          הצג {resolvedCount} פתורות ←
-        </Link>
-      </div>
+      <li
+        key={c.comment_id}
+        id={`thread-${c.comment_id}`}
+        className={`chat-thread discussion-client-thread ${
+          c.resolved ? "is-resolved" : ""
+        } ${isMentioned ? "is-mentioned" : ""}`}
+      >
+        <Avatar
+          name={c.author_email}
+          title={c.author_name || c.author_email}
+          size={26}
+        />
+        <div className="chat-message-body">
+          <div className="chat-message-head">
+            <span className="chat-message-author">
+              {c.author_name || c.author_email}
+            </span>
+            {isMentioned && (
+              <span className="chip chip-mention" title="תויגת בשרשור הזה">
+                🏷️ אותך
+              </span>
+            )}
+            <span className="chat-message-time" title={c.timestamp}>
+              {formatRelative(c.timestamp)}
+            </span>
+            {c.edited_at && (
+              <span
+                className="chip chip-muted"
+                title={`נערך ${formatRelative(c.edited_at)}`}
+              >
+                📝 נערך
+              </span>
+            )}
+          </div>
+          <CommentBodyExpandable
+            body={c.body}
+            truncateChars={220}
+            className="chat-message-text"
+            people={people}
+          />
+          {/* Replies render BELOW the comment body (chat order: the
+              message first, then the thread under it), not in the
+              header. */}
+          <ThreadReplies
+            parentCommentId={c.comment_id}
+            project={c.project}
+            count={c.reply_count}
+            people={people}
+          />
+          <div className="discussion-client-actions">
+            <CardActions
+              commentId={c.comment_id}
+              project={c.project}
+              resolved={c.resolved}
+              body={c.body}
+              deleteItemLabel="את התגובה"
+              canConvertToTask={!isClientUser}
+              canEdit={viewerCanEdit(c.author_email, userEmail)}
+              allowEditWhenResolved
+            />
+          </div>
+        </div>
+      </li>
     );
-  }
+  };
+
   return (
     <ul className="chat-message-list discussion-client-list">
-      {top.map((c) => {
-        const isMentioned = mentionedThreadIds?.has(c.comment_id) ?? false;
-        return (
-          <li
-            key={c.comment_id}
-            id={`thread-${c.comment_id}`}
-            className={`chat-thread discussion-client-thread ${
-              c.resolved ? "is-resolved" : ""
-            } ${isMentioned ? "is-mentioned" : ""}`}
-          >
-            <Avatar
-              name={c.author_email}
-              title={c.author_name || c.author_email}
-              size={26}
-            />
-            <div className="chat-message-body">
-              <div className="chat-message-head">
-                <span className="chat-message-author">
-                  {c.author_name || c.author_email}
-                </span>
-                {isMentioned && (
-                  <span className="chip chip-mention" title="תויגת בשרשור הזה">
-                    🏷️ אותך
-                  </span>
-                )}
-                <span className="chat-message-time" title={c.timestamp}>
-                  {formatRelative(c.timestamp)}
-                </span>
-                {c.edited_at && (
-                  <span
-                    className="chip chip-muted"
-                    title={`נערך ${formatRelative(c.edited_at)}`}
-                  >
-                    📝 נערך
-                  </span>
-                )}
-              </div>
-              <CommentBodyExpandable
-                body={c.body}
-                truncateChars={220}
-                className="chat-message-text"
-                people={people}
-              />
-              {/* Replies render BELOW the comment body (chat order: the
-                  message first, then the thread under it), not in the
-                  header. */}
-              <ThreadReplies
-                parentCommentId={c.comment_id}
-                project={c.project}
-                count={c.reply_count}
-                people={people}
-              />
-              <div className="discussion-client-actions">
-                <CardActions
-                  commentId={c.comment_id}
-                  project={c.project}
-                  resolved={c.resolved}
-                  body={c.body}
-                  deleteItemLabel="את התגובה"
-                  canConvertToTask={!isClientUser}
-                  canEdit={viewerCanEdit(c.author_email, userEmail)}
-                />
-              </div>
-            </div>
-          </li>
-        );
-      })}
+      {top.length === 0 && (
+        <li className="discussion-no-open-note">✅ אין הערות פתוחות.</li>
+      )}
+      {top.map((c) => renderThread(c))}
       {resolvedCount > 0 && !showResolved && (
-        <li className="chat-thread discussion-client-thread-footer">
-          <Link
-            href={`/projects/${encodeURIComponent(projectName)}/timeline?resolved=1`}
-            className="section-link"
-          >
-            + הצג {resolvedCount}{" "}
-            {resolvedCount === 1 ? "הערה פתורה" : "הערות פתורות"} בציר הזמן ←
-          </Link>
+        <li className="discussion-resolved-reveal-row">
+          <details className="discussion-resolved-reveal">
+            <summary className="discussion-resolved-summary">
+              <span className="discussion-resolved-summary-show">
+                + הצג {resolvedCount} {resolvedNoun}
+              </span>
+              <span className="discussion-resolved-summary-hide">
+                הסתר {resolvedNoun}
+              </span>
+            </summary>
+            <ul className="chat-message-list discussion-client-list discussion-resolved-list">
+              {resolvedThreads.map((c) => renderThread(c))}
+            </ul>
+          </details>
         </li>
       )}
     </ul>
@@ -1528,6 +1542,7 @@ function MentionsPreview({
                   deleteItemLabel="את התיוג"
                   canConvertToTask={!isClientUser}
                   canEdit={viewerCanEdit(m.author_email, userEmail)}
+                  allowEditWhenResolved
                 />
               </div>
             </div>

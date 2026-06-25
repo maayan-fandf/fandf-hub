@@ -237,6 +237,7 @@ function MentionCard({
           body={m.body}
           deleteItemLabel="את התיוג"
           canEdit={viewerCanEditComment(m.author_email, meEmail)}
+          allowEditWhenResolved
         />
       </div>
     </li>
