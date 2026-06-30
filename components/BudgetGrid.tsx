@@ -25,6 +25,9 @@ import {
   type ChannelPerf,
 } from "@/lib/budgetShiftSuggestions";
 import type { DailySpendSpikes, SpendSpike } from "@/lib/platformDailySpend";
+import CountUp from "./anim/CountUp";
+import { useFlipReorder } from "./anim/useFlipReorder";
+import { countInt } from "@/lib/anim";
 
 /**
  * קמפיינים → תקציבים grid. Summary row per project (E3 vs allocated +
@@ -336,7 +339,9 @@ export default function BudgetGrid({
                     showAdLinks={showAdLinks}
                   />
                 </h3>
-                <ul className="budget-list">
+                <BudgetProjectList
+                  flipKey={cg.projects.map((p) => p.tab).join("|")}
+                >
                   {cg.projects.map((p) => (
                     <ProjectRow
                       key={p.tab}
@@ -357,13 +362,35 @@ export default function BudgetGrid({
                       spike={spikes[p.tab.toLowerCase()]}
                     />
                   ))}
-                </ul>
+                </BudgetProjectList>
               </div>
             ))}
           </section>
         ))
       )}
     </div>
+  );
+}
+
+/**
+ * One company group's project list, wrapped so its rows FLIP-reorder when
+ * the filter / show-inactive toggle changes which projects are visible.
+ * Each ProjectRow's <li> carries data-flip={tab}; flipKey re-measures
+ * whenever this group's visible-tab set changes (rows glide / fade rather
+ * than snap). Drag isn't a factor here — the budget list has no dnd-kit.
+ */
+function BudgetProjectList({
+  flipKey,
+  children,
+}: {
+  flipKey: string;
+  children: ReactNode;
+}) {
+  const ref = useFlipReorder<HTMLUListElement>(flipKey);
+  return (
+    <ul className="budget-list" ref={ref}>
+      {children}
+    </ul>
   );
 }
 
@@ -414,11 +441,11 @@ function PortfolioStrip({
   const tone = Math.abs(p.delta) < 1 ? "ok" : p.delta > 0 ? "over" : "under";
   return (
     <div className="budget-portfolio">
-      <PortfolioTile label="פרויקטים פעילים" value={String(activeCount)} />
-      <PortfolioTile label="יעד E3" value={fmt(p.target)} />
+      <PortfolioTile label="פרויקטים פעילים" value={<CountUp value={activeCount} format={countInt} />} />
+      <PortfolioTile label="יעד E3" value={<CountUp value={p.target} format={fmt} />} />
       <PortfolioTile
         label="חולק"
-        value={fmt(p.allocated)}
+        value={<CountUp value={p.allocated} format={fmt} />}
         sub={
           Math.abs(p.delta) >= 1
             ? `${p.delta > 0 ? "+" : "−"}${fmt(Math.abs(p.delta))}`
@@ -426,28 +453,28 @@ function PortfolioStrip({
         }
         subTone={tone}
       />
-      <PortfolioTile label="הוצאה" value={fmt(p.spend)} />
+      <PortfolioTile label="הוצאה" value={<CountUp value={p.spend} format={fmt} />} />
       <PortfolioTile
         label="עלות לליד ממוצעת"
-        value={p.blendedCpl > 0 ? fmt(p.blendedCpl) : "—"}
+        value={p.blendedCpl > 0 ? <CountUp value={p.blendedCpl} format={fmt} /> : "—"}
         sub={p.leads > 0 ? `${p.leads.toLocaleString("he-IL")} לידים` : undefined}
         title="ממוצע משוקלל על פני כל הערוצים הפעילים (Σהוצאה ÷ Σלידים)"
       />
       <PortfolioTile
         label="קצב חורג"
-        value={String(p.offPace)}
+        value={<CountUp value={p.offPace} format={countInt} />}
         tone={p.offPace > 0 ? "warn" : "ok"}
         title="פרויקטים פעילים שלפחות ערוץ אחד בהם חורג מהקצב"
       />
       <PortfolioTile
         label="ערוצים מושהים"
-        value={String(p.notSpending)}
+        value={<CountUp value={p.notSpending} format={countInt} />}
         tone={p.notSpending > 0 ? "warn" : "ok"}
         title="ערוצים עם תקציב שנותר אך כל הקמפיינים מושהים — לא מוציאים"
       />
       <PortfolioTile
         label="חריגות הוצאה"
-        value={String(p.spikeCount)}
+        value={<CountUp value={p.spikeCount} format={countInt} />}
         tone={p.spikeCount > 0 ? "warn" : "ok"}
         title="פלטפורמות שהוציאו היום הרבה מעל הממוצע השבועי"
       />
@@ -464,7 +491,7 @@ function PortfolioTile({
   title,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   sub?: string;
   subTone?: string;
   tone?: string;
@@ -566,7 +593,10 @@ function ProjectRow({
   const projCpl = progLeads > 0 ? progSpend / progLeads : 0;
   const projCps = progSched > 0 ? progSpend / progSched : 0;
   return (
-    <li className={`budget-card ${needsAttention(p) ? "is-attention" : ""}`}>
+    <li
+      data-flip={p.tab}
+      className={`budget-card ${needsAttention(p) ? "is-attention" : ""}`}
+    >
       <button
         type="button"
         className="budget-summary"
