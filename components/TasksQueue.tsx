@@ -21,6 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { WorkTask, WorkTaskStatus, TasksPerson } from "@/lib/appsScript";
+import { useFlipReorder } from "@/components/anim/useFlipReorder";
 
 /** Sort axes exposed via clickable column headers. `rank` is the
  *  drag-driven manual order (default); the rest sort within each
@@ -1172,6 +1173,15 @@ function SortableTableSection({
   // by its children in chain order (created_at asc — chain creation
   // sequence). Subsequent family members are skipped (already placed).
   const ordered = showUmbrellas ? clusterChainFamilies(sorted) : sorted;
+  // FLIP the rows when a re-sort / re-filter reorders them — but ONLY when
+  // drag is off (e.g. grouped-by-company/assignee views). In drag mode
+  // dnd-kit owns the row transforms, so FLIP stays disabled there; it still
+  // records positions each render (order-signature depKey) so the map stays
+  // fresh across a drag→non-drag switch. Each <tr> carries data-flip={id}.
+  const flipBodyRef = useFlipReorder<HTMLTableSectionElement>(
+    ordered.map((t) => t.id).join("|"),
+    !dragEnabled,
+  );
   // Header checkbox controls "select all visible in this section".
   // When all rows are already selected, clicking it deselects this
   // section's rows; otherwise it adds them.
@@ -1284,7 +1294,7 @@ function SortableTableSection({
   const table = (
     <table className={`tasks-table${compact ? " tasks-table-compact" : ""}`}>
       {head}
-      <tbody>{body}</tbody>
+      <tbody ref={flipBodyRef}>{body}</tbody>
     </table>
   );
   if (!dragEnabled) return table;
@@ -1517,6 +1527,7 @@ function TaskRow({
   return (
     <tr
       ref={dragEnabled ? setNodeRef : undefined}
+      data-flip={task.id}
       style={rowStyle}
       // data-user-state drives the row accent (left/start border tint +
       // soft background wash) — see the .tasks-table tr[data-user-state]
