@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import CountUp from "@/components/anim/CountUp";
+import { countInt } from "@/lib/anim";
 import Link from "next/link";
 import {
   DndContext,
@@ -468,7 +470,9 @@ function KanbanColumn({
           </span>
           {column.label}
         </span>
-        <span className="kanban-column-count">{tasks.length}</span>
+        <span className="kanban-column-count">
+          <CountUp value={tasks.length} format={countInt} />
+        </span>
       </header>
       <div className="kanban-column-body">
         <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
