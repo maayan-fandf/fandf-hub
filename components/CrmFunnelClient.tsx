@@ -6,6 +6,11 @@ import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
+import CountUp from "./anim/CountUp";
+import StaggerReveal from "./anim/StaggerReveal";
+import { useFlipReorder } from "./anim/useFlipReorder";
+import { animate } from "animejs";
+import { prefersReducedMotion } from "@/lib/anim";
 
 /** "YYYY-MM-DD" → "DD/MM" for the compact data-freshness note. */
 function ddmm(iso: string): string {
@@ -404,6 +409,25 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
     return arcs;
   }, [pieData]);
 
+  // ── Reactive-data motion ──────────────────────────────────────────
+  // Every chip toggle re-aggregates the whole section. These make it
+  // VISIBLY respond instead of snapping: the status-funnel + objection
+  // legend rows FLIP to their new order, and the objection pie pops as
+  // its slices redraw. Bar widths glide via CSS (globals.css). Keyed on
+  // `selected` (a fresh Set on each toggle) so they fire on every change.
+  const statusListRef = useFlipReorder<HTMLUListElement>(selected);
+  const legendListRef = useFlipReorder<HTMLUListElement>(selected);
+  const pieRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!pieRef.current || prefersReducedMotion()) return;
+    animate(pieRef.current, {
+      scale: [0.97, 1],
+      opacity: [0.65, 1],
+      duration: 420,
+      ease: "outCubic",
+    });
+  }, [selected]);
+
   return (
     <section className="project-section project-section-crm" dir="rtl">
       <div className="section-head">
@@ -645,18 +669,18 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           numbers reflect the selected-source subset; with "all"
           selected they match the project totals (modulo rows with no
           source attribution, which sit outside the chip taxonomy). */}
-      <div className="crm-kpi-row">
+      <StaggerReveal className="crm-kpi-row" childSelector=":scope > .crm-kpi-tile">
         <KpiTile label="לידים"
-          value={fmtInt(kpis.leads)}
+          value={<CountUp value={kpis.leads} format={fmtInt} />}
           breakdown={kpis.breakdowns.leads}
           palette={palette} />
         <KpiTile label="נוצר קשר"
-          value={fmtInt(kpis.contacted)}
+          value={<CountUp value={kpis.contacted} format={fmtInt} />}
           sub={pct(kpis.contacted, kpis.leads)}
           breakdown={kpis.breakdowns.contacted}
           palette={palette} />
         <KpiTile label="תואמה פגישה"
-          value={fmtInt(kpis.scheduledMeetings)}
+          value={<CountUp value={kpis.scheduledMeetings} format={fmtInt} />}
           sub={pct(kpis.scheduledMeetings, kpis.leads)}
           note={
             funnel.platform === "bmby" && kpis.scheduledMeetings > 0
@@ -666,20 +690,20 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           breakdown={kpis.breakdowns.scheduledMeetings}
           palette={palette} />
         <KpiTile label="פגישות"
-          value={fmtInt(kpis.meetings)}
+          value={<CountUp value={kpis.meetings} format={fmtInt} />}
           sub={pct(kpis.meetings, kpis.leads)}
           breakdown={kpis.breakdowns.meetings}
           palette={palette} />
         {funnel.contracts > 0 && (
           <KpiTile label={funnel.platform === "salesforce" ? "טופסי הרשמה" : "חוזים"}
-            value={fmtInt(kpis.contracts)}
+            value={<CountUp value={kpis.contracts} format={fmtInt} />}
             sub={pct(kpis.contracts, kpis.leads)}
             breakdown={kpis.breakdowns.contracts}
             palette={palette} />
         )}
         <KpiTile label="יחס פגישה"
           value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
-      </div>
+      </StaggerReveal>
 
       {/* Authoritative held meetings from the BMBY warehouse (Supabase).
           Whole-window figure (NOT chip-filtered) — the Sheet's פגישות tile
@@ -799,14 +823,14 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
           {statusRows.length > 0 && (
             <div className="crm-block">
               <div className="crm-block-title">משפך סטטוסים</div>
-              <ul className="crm-matrix">
+              <ul className="crm-matrix" ref={statusListRef}>
                 {statusRows.map((row) => {
                   const cumPct = (row.cumulative / Math.max(1, kpis.leads) * 100).toFixed(1);
                   const tooltip =
                     `${row.label} — ${row.cumulative} (${cumPct}% מהלידים הגיעו לשלב הזה או מעבר)\n` +
                     `מתוכם ${row.count} (${pct(row.count, kpis.leads)}) נמצאים כעת בשלב הזה בדיוק`;
                   return (
-                    <li key={row.label} className="crm-matrix-row" title={tooltip}>
+                    <li key={row.label} data-flip={row.label} className="crm-matrix-row" title={tooltip}>
                       <span className="crm-matrix-label" title={row.label}>{row.label}</span>
                       <span className="crm-matrix-bar" style={{ width: `${row.widthPct}%` }}>
                         {row.sources.map((s) => {
@@ -853,6 +877,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             <div className="crm-block-title">התפלגות התנגדויות</div>
             <div className="crm-pie-row">
               <div
+                ref={pieRef}
                 className={"crm-pie" + (noneSelected || pieData.total === 0 ? " crm-pie-empty" : "")}
                 aria-label={
                   noneSelected
@@ -904,7 +929,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                   />
                 );
               })()}
-              <ul className="crm-pie-legend">
+              <ul className="crm-pie-legend" ref={legendListRef}>
                 {pieData.slices.length === 0 ? (
                   <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
                 ) : (
@@ -940,6 +965,7 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
                     return (
                       <PieLegendRow
                         key={s.label}
+                        flipId={s.label}
                         label={s.label}
                         count={s.count}
                         pctOfTotal={(s.count / pieData.total) * 100}
@@ -1283,7 +1309,7 @@ function KpiTile({
   palette,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   sub?: string;
   /** Optional extra line under `sub` — used for the תואמה breakdown
    *  (תואמו + בוטלו). Plain text, muted. */
@@ -1339,6 +1365,7 @@ function KpiTile({
  * bounding rect, not the parent list's.
  */
 function PieLegendRow({
+  flipId,
   label,
   count,
   pctOfTotal,
@@ -1349,6 +1376,7 @@ function PieLegendRow({
   barWidthPct,
   palette,
 }: {
+  flipId: string;
   label: string;
   count: number;
   pctOfTotal: number;
@@ -1364,6 +1392,7 @@ function PieLegendRow({
   return (
     <li
       {...(hasPopover ? triggerProps : {})}
+      data-flip={flipId}
       className={hasPopover ? "crm-pie-legend-row crm-pie-legend-row-has-popover" : "crm-pie-legend-row"}
     >
       <span

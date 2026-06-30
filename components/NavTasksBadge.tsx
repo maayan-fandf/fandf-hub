@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import CountUp from "./anim/CountUp";
+import { countBadge } from "@/lib/anim";
 
 type StatusCounts = {
   awaiting_handling: number;
@@ -192,7 +194,7 @@ export default function NavTasksBadge() {
       aria-label={title}
       title={title}
     >
-      {actionableTotal > 99 ? "99+" : actionableTotal}
+      <CountUp value={actionableTotal} duration={500} format={countBadge} />
     </span>
   );
 }

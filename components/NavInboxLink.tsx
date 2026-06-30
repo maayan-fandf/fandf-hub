@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import ActiveLink from "./ActiveLink";
+import CountUp from "./anim/CountUp";
+import { countBadge } from "@/lib/anim";
 
 /**
  * Topnav "🏷️ תיוגי לקוח" / "🏷️ תיוגים שלי" link with self-hide when
@@ -46,7 +48,7 @@ export default function NavInboxLink({ isClientUser }: { isClientUser: boolean }
         aria-label={`${count} תיוגים פתוחים`}
         title={`${count} תיוגים פתוחים`}
       >
-        {count > 99 ? "99+" : count}
+        <CountUp value={count} duration={500} format={countBadge} />
       </span>
     </ActiveLink>
   );

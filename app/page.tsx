@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import HomeFilterBar from "@/components/HomeFilterBar";
+import StaggerReveal from "@/components/anim/StaggerReveal";
 
 export const metadata = { title: "פרויקטים" };
 import {
@@ -278,7 +279,10 @@ export default async function HomePage() {
       )}
 
       {grouped.length > 0 && (
-        <div className="company-groups">
+        <StaggerReveal
+          className="company-groups"
+          childSelector=":scope > .company-group"
+        >
           {grouped.map((g) => {
             const slot = companyColorSlot(g.company || "__ungrouped");
             // A company is "fully ended" only when every one of its projects
@@ -375,7 +379,7 @@ export default async function HomePage() {
               </details>
             );
           })}
-        </div>
+        </StaggerReveal>
       )}
     </main>
   );

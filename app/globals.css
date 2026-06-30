@@ -23551,3 +23551,103 @@ button.budget-need:focus-visible {
   padding: .3em .75em;
   font-size: .82em;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Motion polish — anime.js + CSS hybrid (added 2026-06-30).
+
+   Division of labor:
+     • anime.js owns the count-ups (CountUp) + staggered card reveals
+       (StaggerReveal) — those need imperative tweening / coordinated
+       delays CSS can't express cleanly.
+     • CSS (here) owns the cheap, per-navigation page fade + the hover
+       micro-lifts — no JS, no bundle cost, re-fires for free on every
+       App-Router remount.
+
+   Everything is wrapped in `prefers-reduced-motion: no-preference`, so a
+   user who asks for reduced motion gets the final state instantly — this
+   is a dashboard people stare at all day, restraint is the whole point.
+   ───────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  /* Each route's main content fades in on mount. Opacity ONLY — no
+     transform on the page root — so it can never become a containing
+     block that would knock the sticky .page-header or a position:fixed
+     FAB out of place mid-transition. */
+  .app-shell-main > * {
+    animation: pageRise 260ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+  /* The page header gets the gentle upward rise the body skips. Safe to
+     transform: it composes with position:sticky and settles to none. */
+  .app-shell-main > * > .page-header {
+    animation: headerRise 380ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+  /* Home project pills — GPU-only lift on hover for a touch of depth. */
+  .project-list li > a {
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }
+  .project-list li > a:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.32);
+  }
+  /* Topnav links — barely-there lift so the bar feels responsive. */
+  .topnav-link {
+    transition: transform 140ms ease;
+  }
+  .topnav-link:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes pageRise {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes headerRise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Count-up figures: lock to tabular numerals so the KPI tiles don't
+   reflow a pixel as the digits tick up. Inert without the count-up. */
+.crm-kpi-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Reactive data (FLIP prototype) ──────────────────────────────────
+   When the CRM source-chip filter re-aggregates, the bar fills GLIDE to
+   their new widths instead of snapping (the row reordering itself is
+   handled imperatively by useFlipReorder + anime.js). Gated on
+   reduced-motion. */
+/* Shared bar-glide timing token — one duration/easing for every fill that
+   animates its width on a data change (CRM funnel, home pills, morning
+   pacing). Keeps the motion voice consistent across surfaces. */
+:root {
+  --anim-bar: 480ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .crm-matrix-bar,
+  .crm-matrix-seg,
+  .crm-legend-bar,
+  .crm-legend-bar-seg,
+  .crm-fb-bar,
+  .pill-bar-fill,
+  .morning-bar-fill {
+    transition: width var(--anim-bar);
+  }
+}
+/* Reduced-motion: snap, don't glide — overrides the un-gated 250ms
+   .pill-bar-fill / .morning-bar-fill transitions defined earlier. */
+@media (prefers-reduced-motion: reduce) {
+  .crm-matrix-bar,
+  .crm-matrix-seg,
+  .crm-legend-bar,
+  .crm-legend-bar-seg,
+  .crm-fb-bar,
+  .pill-bar-fill,
+  .morning-bar-fill {
+    transition: none;
+  }
+}
+/* The objection pie pops from its center (scale tween in JS). */
+.crm-pie {
+  transform-origin: center center;
+}

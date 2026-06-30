@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { prefersReducedMotion } from "@/lib/anim";
 
 /**
  * ParticlesBackground — animated ambient backdrop using particles.js
@@ -315,6 +316,9 @@ export default function ParticlesBackground() {
     let cancelled = false;
 
     async function init() {
+      // Respect reduced-motion: skip the ambient particle animation
+      // entirely for users who ask for less motion.
+      if (prefersReducedMotion()) return;
       try {
         await loadParticlesScript();
       } catch {

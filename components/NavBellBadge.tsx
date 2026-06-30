@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import CountUp from "./anim/CountUp";
+import { countBadge } from "@/lib/anim";
 
 /**
  * Small red-dot badge next to the "🔔 התראות" link in the top nav.
@@ -50,7 +52,7 @@ export default function NavBellBadge() {
       aria-label={`${count} התראות חדשות${snoozed ? " (מושתק)" : ""}`}
       title={`${count} התראות חדשות${snoozed ? " · התראות מושתקות זמנית" : ""}`}
     >
-      {count > 99 ? "99+" : count}
+      <CountUp value={count} duration={500} format={countBadge} />
     </span>
   );
 }
