@@ -7,6 +7,7 @@ import {
   type TasksPerson,
 } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
+import StaggerReveal from "@/components/anim/StaggerReveal";
 
 export const metadata = { title: "תיבת תיוגים" };
 import { scopedProjectNames } from "@/lib/scope";
@@ -141,7 +142,11 @@ export default async function InboxPage({
       )}
 
       {visible.length > 0 && (
-        <ul className="mention-list">
+        <StaggerReveal
+          as="ul"
+          className="mention-list"
+          childSelector=":scope > *"
+        >
           {visible.map((m) => (
             <MentionCard
               key={m.comment_id}
@@ -150,7 +155,7 @@ export default async function InboxPage({
               meEmail={data?.me?.email ?? ""}
             />
           ))}
-        </ul>
+        </StaggerReveal>
       )}
     </main>
   );

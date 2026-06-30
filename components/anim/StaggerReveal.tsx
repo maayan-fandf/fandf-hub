@@ -23,6 +23,7 @@ export default function StaggerReveal({
   childSelector = ":scope > *",
   staggerMs = ANIM.stagger,
   y = ANIM.revealY,
+  as: Tag = "div",
 }: {
   children: React.ReactNode;
   className?: string;
@@ -30,8 +31,11 @@ export default function StaggerReveal({
   childSelector?: string;
   staggerMs?: number;
   y?: number;
+  /** Container element to render — e.g. "ul" to wrap <li> rows without an
+   *  invalid ul>div>li nesting. Defaults to "div". */
+  as?: React.ElementType;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const ref = useRef<HTMLElement | null>(null);
 
   useIsomorphicLayoutEffect(() => {
     const root = ref.current;
@@ -109,8 +113,8 @@ export default function StaggerReveal({
   }, []);
 
   return (
-    <div ref={ref} className={className}>
+    <Tag ref={ref} className={className}>
       {children}
-    </div>
+    </Tag>
   );
 }

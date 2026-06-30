@@ -23,6 +23,7 @@ import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismis
 import { driveFolderOwner } from "@/lib/sa";
 import { isRealEstateType } from "@/lib/keys";
 import MorningSignalRow from "@/components/MorningSignalRow";
+import StaggerReveal from "@/components/anim/StaggerReveal";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 import GoogleAdsIcon from "@/components/GoogleAdsIcon";
 import CampaignsTabs from "@/components/CampaignsTabs";
@@ -302,11 +303,11 @@ export default async function MorningPage({
       )}
 
       {roleEligible && alertProjects.length > 0 && (
-        <ul className="morning-list">
+        <StaggerReveal as="ul" className="morning-list" childSelector=":scope > *">
           {alertProjects.map((p) => (
             <ProjectCard key={p.name} p={p} showAdLinks={showAdLinks} />
           ))}
-        </ul>
+        </StaggerReveal>
       )}
 
       {roleEligible && clearProjects.length > 0 && severityFilter !== "clear" && (

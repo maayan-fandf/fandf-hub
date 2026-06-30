@@ -3,6 +3,7 @@ import Link from "next/link";
 import { currentUserEmail, getMyProjects } from "@/lib/appsScript";
 import { getTeamRoster } from "@/lib/teamData";
 import TeamPersonCard from "@/components/TeamPersonCard";
+import StaggerReveal from "@/components/anim/StaggerReveal";
 
 export const metadata = { title: "צוות" };
 
@@ -156,11 +157,11 @@ export default async function TeamPage({
             : "לא נמצאו אנשי צוות פנימיים."}
         </div>
       ) : (
-        <div className="team-grid">
+        <StaggerReveal className="team-grid" childSelector=":scope > *">
           {filtered.map((p) => (
             <TeamPersonCard key={p.email} person={p} viewerEmail={me} />
           ))}
-        </div>
+        </StaggerReveal>
       )}
     </main>
   );

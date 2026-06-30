@@ -8,6 +8,9 @@ import type { NotificationRow } from "@/lib/notifications";
 import type { TasksPerson } from "@/lib/appsScript";
 import { formatDateIso } from "@/lib/dateFormat";
 import { personDisplayName } from "@/lib/personDisplay";
+import CountUp from "@/components/anim/CountUp";
+import StaggerReveal from "@/components/anim/StaggerReveal";
+import { countInt } from "@/lib/anim";
 
 type Props = {
   items: NotificationRow[];
@@ -91,7 +94,7 @@ export default function NotificationsList({
         <span className="notifications-toolbar-info">
           {unreadCount > 0 ? (
             <>
-              <b>{unreadCount}</b> חדשות מתוך {items.length}
+              <b><CountUp value={unreadCount} format={countInt} /></b> חדשות מתוך {items.length}
             </>
           ) : (
             <>הכל נקרא ({items.length})</>
@@ -108,7 +111,11 @@ export default function NotificationsList({
           </button>
         )}
       </div>
-      <ul className="notifications-list">
+      <StaggerReveal
+        as="ul"
+        className="notifications-list"
+        childSelector=":scope > .notification-row"
+      >
         {sorted.map((n) => {
           const k = kindLabels[n.kind] || { emoji: "🔔", label: n.kind };
           const unread = !n.read_at;
@@ -191,7 +198,7 @@ export default function NotificationsList({
             </li>
           );
         })}
-      </ul>
+      </StaggerReveal>
     </div>
   );
 }
