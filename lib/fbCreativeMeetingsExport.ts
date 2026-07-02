@@ -63,22 +63,14 @@ function monthWindow(mon: string): { from: string; toExcl: string } {
  * clients scheduled (has any meeting) / held. Shared by the Sheet export AND
  * the live /api/fb-creative-meetings endpoint, so there's one implementation.
  */
-export async function computeProjectMeetings(
-  projectName: string,
-  projectId: number,
-  from: string,
-  toExcl: string,
-): Promise<ProjectMeetings> {
-  const leads = await supabaseRowsAll<LeadRow>(
-    `v_bmby_leads_bucketed?project_id=eq.${projectId}` +
-      `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-      `&select=client_id,channel_key,utm_campaign,utm_content,utm_term&order=lead_id.asc`,
-  );
-  if (!leads.length) return { creative: [], audience: [], keyword: [] };
-  const jm = await supabaseRowsAll<{ client_id: string | null; appointment_outcome: string | null }>(
-    `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(projectName)}` +
-      `&select=client_id,appointment_outcome&order=meeting_id.asc`,
-  );
+type MeetingSets = { any: Set<string>; held: Set<string> };
+
+/** DISTINCT clients with any meeting / a held meeting, from a project's full
+ *  journey-meeting history. Month-independent, so it's fetched ONCE and reused
+ *  across every month in a multi-month window. */
+function meetingSets(
+  jm: Array<{ client_id: string | null; appointment_outcome: string | null }>,
+): MeetingSets {
   const any = new Set<string>();
   const held = new Set<string>();
   for (const x of jm) {
@@ -87,6 +79,13 @@ export async function computeProjectMeetings(
     any.add(c);
     if (x.appointment_outcome === "held") held.add(c);
   }
+  return { any, held };
+}
+
+/** Pure aggregation (no I/O): a month's leads × the project's meeting sets →
+ *  per-(campaign,ad) / per-audience / per-keyword scheduled/held counts. */
+function aggregateMeetings(leads: LeadRow[], sets: MeetingSets): ProjectMeetings {
+  const { any, held } = sets;
   type Rec = { extra: Record<string, string>; clients: Set<string>; sched: Set<string>; held: Set<string> };
   const byKey = new Map<string, Rec>();
   const byAud = new Map<string, Rec>();
@@ -118,27 +117,91 @@ export async function computeProjectMeetings(
   };
 }
 
+/** One month's leads for a project (warehouse date space). */
+function fetchMonthLeads(projectId: number, from: string, toExcl: string): Promise<LeadRow[]> {
+  return supabaseRowsAll<LeadRow>(
+    `v_bmby_leads_bucketed?project_id=eq.${projectId}` +
+      `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
+      `&select=client_id,channel_key,utm_campaign,utm_content,utm_term&order=lead_id.asc`,
+  );
+}
+
+/** A project's full journey-meeting history (month-independent). */
+function fetchMeetings(projectName: string) {
+  return supabaseRowsAll<{ client_id: string | null; appointment_outcome: string | null }>(
+    `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(projectName)}` +
+      `&select=client_id,appointment_outcome&order=meeting_id.asc`,
+  );
+}
+
+export async function computeProjectMeetings(
+  projectName: string,
+  projectId: number,
+  from: string,
+  toExcl: string,
+): Promise<ProjectMeetings> {
+  const leads = await fetchMonthLeads(projectId, from, toExcl);
+  if (!leads.length) return { creative: [], audience: [], keyword: [] };
+  const jm = await fetchMeetings(projectName);
+  return aggregateMeetings(leads, meetingSets(jm));
+}
+
 /**
  * Live per-project read for the report endpoint: resolve the warehouse
  * project_id by (exact) name, then compute one month's meetings. Returns
  * empty arrays (projectId:null) when the name doesn't resolve, so the caller
- * degrades gracefully to no CRM row.
+ * degrades gracefully to no CRM row. Thin wrapper over the multi-month path.
  */
 export async function getProjectMeetingsLive(
   projectName: string,
   month?: string,
 ): Promise<{ month: string; project: string; projectId: number | null } & ProjectMeetings> {
-  if (!supabaseConfigured()) throw new Error("Supabase not configured");
   const mon = month || currentMonthIL();
-  const { from, toExcl } = monthWindow(mon);
+  const { project, projectId, results } = await getProjectMeetingsLiveMulti(projectName, [mon]);
+  const r = results[0] || { month: mon, creative: [], audience: [], keyword: [] };
+  return { month: r.month, project, projectId, creative: r.creative, audience: r.audience, keyword: r.keyword };
+}
+
+/**
+ * Live MULTI-month read for the report endpoint. The report calls this once per
+ * render with every month in its window. The old per-month loop re-resolved the
+ * project and re-fetched the FULL journey-meeting history on EVERY month
+ * (≈0.8–1s/month → ~5.7s for a 6-month window, all on the iframe's critical
+ * path). This resolves + fetches meetings ONCE, then runs the genuinely
+ * per-month leads queries in PARALLEL — identical per-month semantics (each
+ * leads query is byte-for-byte the same, so Postgres still does the month
+ * boundary comparison), but ~3 round-trips deep regardless of month count.
+ */
+export async function getProjectMeetingsLiveMulti(
+  projectName: string,
+  months: string[],
+): Promise<{ project: string; projectId: number | null; results: Array<{ month: string } & ProjectMeetings> }> {
+  if (!supabaseConfigured()) throw new Error("Supabase not configured");
+  const mons = months.length ? months : [currentMonthIL()];
   const found = await supabaseRowsAll<{ project_id: number; project_name: string }>(
     `v_report_v2_bmby_projects?select=project_id,project_name&project_name=eq.${encodeURIComponent(projectName)}&limit=1`,
   );
   if (!found.length) {
-    return { month: mon, project: projectName, projectId: null, creative: [], audience: [], keyword: [] };
+    return {
+      project: projectName,
+      projectId: null,
+      results: mons.map((m) => ({ month: m, creative: [], audience: [], keyword: [] })),
+    };
   }
-  const m = await computeProjectMeetings(found[0].project_name, found[0].project_id, from, toExcl);
-  return { month: mon, project: found[0].project_name, projectId: found[0].project_id, ...m };
+  const projectId = found[0].project_id;
+  const projName = found[0].project_name;
+  // Meeting history is month-independent — fetch once, reuse for every month.
+  const sets = meetingSets(await fetchMeetings(projName));
+  // Leads ARE per-month; run each month's query in parallel so wall-clock ≈ the
+  // slowest single month, not the sum of all months.
+  const results = await Promise.all(
+    mons.map(async (mon) => {
+      const { from, toExcl } = monthWindow(mon);
+      const leads = await fetchMonthLeads(projectId, from, toExcl);
+      return { month: mon, ...aggregateMeetings(leads, sets) };
+    }),
+  );
+  return { project: projName, projectId, results };
 }
 
 export async function exportFbCreativeMeetings(

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProjectMeetingsLive } from "@/lib/fbCreativeMeetingsExport";
+import { getProjectMeetingsLiveMulti } from "@/lib/fbCreativeMeetingsExport";
 
 export const dynamic = "force-dynamic";
 // One warehouse project × a few months — bounded; give headroom over the
@@ -77,16 +77,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "too many months (max 24)" }, { status: 400 });
   }
   try {
-    const results = [];
-    for (const mon of months) {
-      const r = await getProjectMeetingsLive(project, mon);
-      results.push({
-        month: r.month,
-        creative: r.creative,
-        audience: r.audience,
-        keyword: r.keyword,
-      });
-    }
+    // Resolve + fetch meeting-history ONCE, then the per-month leads queries in
+    // parallel — the report calls this synchronously on its critical path, so a
+    // sequential per-month loop put ~1s/month straight into iframe load time.
+    const { results } = await getProjectMeetingsLiveMulti(project, months);
     return NextResponse.json({ ok: true, project, results });
   } catch (e) {
     return NextResponse.json(
