@@ -7,9 +7,14 @@
 runConfig:
   minInstances: 0
   maxInstances: 5
-  concurrency: 80
+  # concurrency lowered 80→40 so fewer heavy project-page renders share one
+  # instance's RAM at once (each render fetches + builds a large HTML tree).
+  concurrency: 40
   cpu: 1
-  memoryMiB: 512
+  # 512 MiB OOM-killed the container on heavy project-page renders (Cloud Run
+  # logs 2026-07-02: "Memory limit of 512 MiB exceeded" → instance terminated
+  # → request fails / page "doesn't load"). 2 GiB gives ~4× headroom.
+  memoryMiB: 2048
 
 env:
   # ─── Apps Script hub API ─────────────────────────────────────────
