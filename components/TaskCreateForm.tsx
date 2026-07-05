@@ -2492,12 +2492,13 @@ export default function TaskCreateForm({
       <div className="task-form-actions">
         <button
           type="submit"
-          className="btn-primary"
+          className={`btn-primary${saving ? " is-sending" : ""}`}
           disabled={saving}
           onClick={() => {
             submitModeRef.current = "plain";
           }}
         >
+          {saving && <span className="btn-spinner" aria-hidden />}
           {isEditing
             ? saving ? "שומר…" : "💾 שמור"
             : saving
@@ -2530,13 +2531,14 @@ export default function TaskCreateForm({
         {!isEditing && cleanupGmailTaskId && (
           <button
             type="submit"
-            className="btn-primary"
+            className={`btn-primary${saving ? " is-sending" : ""}`}
             disabled={saving}
             onClick={() => {
               submitModeRef.current = "cleanup";
             }}
             title="יצירת משימה ב-Hub + סימון משימת ה-Google Tasks המקורית כהושלמה"
           >
+            {saving && <span className="btn-spinner" aria-hidden />}
             {saving ? "יוצר…" : "צור משימה ונקה את ה-Gmail task"}
           </button>
         )}

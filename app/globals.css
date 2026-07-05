@@ -5688,6 +5688,14 @@ a.section-link-icon:hover {
 /* Inline spinner shown inside a primary action button while its request
    is in flight (e.g. ClientChatComposer "שולח…"). currentColor so it
    matches the button text on any tone. */
+/* Same treatment for standalone primary submit buttons (the task
+   creator's "יוצר…", etc.): keep the button crisp while its request is
+   in flight so the inline spinner reads as active progress rather than a
+   greyed-out disabled control. */
+.btn-primary.is-sending {
+  opacity: 1;
+  cursor: wait;
+}
 .btn-spinner {
   display: inline-block;
   width: 0.85em;
