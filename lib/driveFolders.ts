@@ -300,6 +300,12 @@ export type LatestPrisot = {
   /** ISO timestamp of when the file was locked/approved (the
    *  contentRestriction's restrictionTime). Empty when not approved. */
   approvedTime: string;
+  /** The content-lock reason string, when the approval came from a
+   *  readOnly lock rather than a Drive Approvals-API flow. The hub's
+   *  client "אשר פריסה" action stamps `אושר ע"י <email> דרך F&F Hub · …`
+   *  here, so the card can attribute a lock-approval ("אושר על ידי X")
+   *  even though there's no API reviewer to read. Empty otherwise. */
+  approvalReason: string;
   /** URL of the parent `פריסות` folder so the card can render a
    *  "open the folder in Drive" affordance — useful when the user
    *  wants to see prior spreads or upload a new one. */
@@ -641,6 +647,7 @@ async function findLatestPrisotInner(
     approvalReviewers,
     approved: approvalState === "approved",
     approvedTime,
+    approvalReason: restriction?.reason || "",
     folderUrl,
   };
 }

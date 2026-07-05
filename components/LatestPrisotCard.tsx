@@ -63,6 +63,15 @@ export default async function LatestPrisotCard({
   ).catch(() => null);
   if (!latest) return null;
   const clientMode = !!isClientUser;
+  // Attribution for a content-lock approval (the client "אשר פריסה"
+  // action, or a manual Sheets lock): the approver email is stamped into
+  // the lock reason as `אושר ע"י <email> …`. Drive Approvals-API flows
+  // carry structured reviewers instead, so this only resolves for the
+  // lock path — letting the card show "אושר על ידי X" where it otherwise
+  // couldn't (a lock has no API reviewer to read).
+  const lockApprover =
+    (latest.approvalReason.match(/אושר ע["״]י\s+(\S+@\S+?)(?:\s|$)/) ||
+      [])[1] || "";
 
   const isImage = latest.mimeType.startsWith("image/");
   const isSheet =
@@ -95,16 +104,30 @@ export default async function LatestPrisotCard({
               the approved version — attributed to the client. */}
           {clientMode &&
             (latest.approvalState === "approved" ? (
-              <span
-                className="prisot-approved-badge"
-                title={
-                  latest.approvedTime
-                    ? `הפריסה אושרה ב־${formatRelativeHe(latest.approvedTime)}`
-                    : "הפריסה מסומנת כגרסה מאושרת"
-                }
-              >
-                ✓ מאושר
-              </span>
+              <>
+                <span
+                  className="prisot-approved-badge"
+                  title={
+                    latest.approvedTime
+                      ? `הפריסה אושרה ב־${formatRelativeHe(latest.approvedTime)}`
+                      : "הפריסה מסומנת כגרסה מאושרת"
+                  }
+                >
+                  ✓ מאושר
+                </span>
+                {lockApprover && (
+                  <span
+                    className="prisot-reviewer-chip prisot-reviewer-chip-approved"
+                    title={`אושר ע״י ${lockApprover}${
+                      latest.approvedTime
+                        ? ` · ${formatRelativeHe(latest.approvedTime)}`
+                        : ""
+                    }`}
+                  >
+                    ע״י {personDisplayName(lockApprover, people) || lockApprover}
+                  </span>
+                )}
+              </>
             ) : (
               <ApprovePrisaButton fileId={latest.id} />
             ))}
@@ -118,14 +141,17 @@ export default async function LatestPrisotCard({
               a state claim. */}
           {!clientMode && latest.approvalState === "approved" && (() => {
             // Find reviewer who actually approved (vs. NO_RESPONSE
-            // siblings on multi-approver flows). When the approval
-            // came from a manual lock there are no API reviewers —
-            // skip the chip in that case.
+            // siblings on multi-approver flows). When the approval came
+            // from a content lock (the hub "אשר פריסה" client action, or
+            // a manual Sheets lock) there are no API reviewers — fall
+            // back to the approver email stamped in the lock reason so
+            // the team still sees who signed off (e.g. a client).
             const approver = (latest.approvalReviewers || []).find(
               (r) => r.response === "APPROVED",
             );
-            const approverName = approver
-              ? personDisplayName(approver.email, people)
+            const approverEmail = approver?.email || lockApprover;
+            const approverName = approverEmail
+              ? personDisplayName(approverEmail, people) || approverEmail
               : "";
             return (
               <>
@@ -142,7 +168,7 @@ export default async function LatestPrisotCard({
                 {approverName && (
                   <span
                     className="prisot-reviewer-chip prisot-reviewer-chip-approved"
-                    title={`אושר ע״י ${approver?.email}`}
+                    title={`אושר ע״י ${approverEmail}`}
                   >
                     ע״י {approverName}
                   </span>
