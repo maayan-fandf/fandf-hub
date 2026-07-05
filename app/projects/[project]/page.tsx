@@ -749,18 +749,20 @@ export default async function ProjectOverviewPage({
       )}
 
       {/* Latest פריסה (spread / deployment sheet) — the most-recently-
-          updated Google Sheet inside `<project>/פריסות/`. Internal-only:
-          clients shouldn't see internal spreads (those are working
-          drafts before they're shared via the customer-emails flow).
+          updated Google Sheet inside `<project>/פריסות/`. Now visible to
+          clients too (2026-07-05, per Maayan): they see the rendered plan
+          and can approve it in place — LatestPrisotCard strips the internal
+          approval-workflow chrome for clients and offers a single "אשר
+          פריסה" action instead (locks the sheet as the approved version).
           Renders as null when the folder doesn't exist or has no
           sheets, so projects that don't follow the convention silently
           degrade. Suspense keeps the Drive lookup off the critical
           render path.
           Project-type gate: only real-estate projects have פריסות.
           Owner moved this from above the iframe to right above
-          "מחירים מפורסמים" 2026-06-04 — both are internal-only
-          bottom-of-page reference shelves, makes sense to group them. */}
-      {!isClientUser && isRealEstateProject && (
+          "מחירים מפורסמים" 2026-06-04 — both are bottom-of-page
+          reference shelves, makes sense to group them. */}
+      {isRealEstateProject && (
         <Suspense fallback={null}>
           <LatestPrisotCard
             subjectEmail={userEmail}
@@ -768,21 +770,30 @@ export default async function ProjectOverviewPage({
             project={projectName}
             clientEmails={projectClientEmails}
             people={peopleData?.ok ? peopleData.people : []}
+            isClientUser={isClientUser}
           />
         </Suspense>
       )}
 
       {/* "מחירים מפורסמים" — 4-surface advertised-price snapshot at the
-          bottom of the page. Internal-only (the data exposes ad-platform
-          deep-links + ad copy presence), real-estate-only (non-real-estate
+          bottom of the page. Now visible to clients too (2026-07-05, per
+          Maayan): ProjectPriceCheckSection strips the internal ad-ops
+          chrome for clients (FB/Google Ads deep-links, "מודעות מושהות"
+          chips, the mismatch/QA pill) and keeps the published prices +
+          landing/Yad2 links + room inventory. The report's
+          projectPriceCheck endpoint enforces the caller's own per-project
+          access (col E) server-side. Real-estate-only (non-real-estate
           projects don't have a "starting from" price concept). Self-hides
           when the project has zero surfaces with usable input — so on
           fresh projects with no scrape + no live ad copy the section
           stays hidden rather than rendering an empty shelf. Suspense
           keeps the Apps-Script call off the critical render path. */}
-      {isRealEstateProject && !isClientUser && (
+      {isRealEstateProject && (
         <Suspense fallback={null}>
-          <ProjectPriceCheckSection projectName={projectName} />
+          <ProjectPriceCheckSection
+            projectName={projectName}
+            isClientUser={isClientUser}
+          />
         </Suspense>
       )}
     </main>

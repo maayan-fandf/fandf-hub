@@ -22,9 +22,17 @@ import {
  */
 export default async function ProjectPriceCheckSection({
   projectName,
+  isClientUser = false,
 }: {
   projectName: string;
+  /** Client viewer — strips the internal ad-ops chrome: the FB/Google
+   *  "פתח ב-Ads" deep-links, the "מודעות מושהות" ad-status chips, and
+   *  the internal mismatch/QA status pill + min/max outlier badges.
+   *  Clients keep the published prices, the landing/Yad2 links, and the
+   *  per-room inventory. */
+  isClientUser?: boolean;
 }) {
+  const clientMode = !!isClientUser;
   const data = await getProjectPriceCheck(projectName).catch(() => null);
   if (!data || !data.ok) return null;
 
@@ -80,7 +88,7 @@ export default async function ProjectPriceCheckSection({
       <div className="section-head">
         <h2>
           💰 מחירים מפורסמים
-          {statusPill && (
+          {!clientMode && statusPill && (
             <span
               className={`price-check-status-pill price-check-status-${statusPill.tone}`}
             >
@@ -99,10 +107,9 @@ export default async function ProjectPriceCheckSection({
       </div>
 
       <p className="section-subtitle">
-        מחיר ה״החל מ-״ שזוהה בכל מקור פרסומי לפרויקט. כשמופיע פער של מעל
-        1%, המקור הנמוך והגבוה ביותר מודגשים — אלו השניים שצריך לתאם.
-        מתחת לכל כרטיס מופיע גם מלאי המחירים המלא לפי חדרים כשמזוהים יותר
-        ממחיר אחד באותו מקור.
+        {clientMode
+          ? "מחיר ה״החל מ-״ שמפורסם בכל ערוץ עבור הפרויקט. מתחת לכל כרטיס מופיע מלאי המחירים המלא לפי חדרים כשמזוהה יותר ממחיר אחד."
+          : "מחיר ה״החל מ-״ שזוהה בכל מקור פרסומי לפרויקט. כשמופיע פער של מעל 1%, המקור הנמוך והגבוה ביותר מודגשים — אלו השניים שצריך לתאם. מתחת לכל כרטיס מופיע גם מלאי המחירים המלא לפי חדרים כשמזוהים יותר ממחיר אחד באותו מקור."}
       </p>
 
       <div className="price-check-grid">
@@ -110,9 +117,10 @@ export default async function ProjectPriceCheckSection({
           <PriceCheckCard
             key={s.name}
             surface={s}
-            isOutlier={isOutlier(s)}
-            isMin={s.price != null && s.price === minPrice && cmp?.mismatched}
-            isMax={s.price != null && s.price === maxPrice && cmp?.mismatched}
+            clientMode={clientMode}
+            isOutlier={!clientMode && isOutlier(s)}
+            isMin={!clientMode && s.price != null && s.price === minPrice && cmp?.mismatched}
+            isMax={!clientMode && s.price != null && s.price === maxPrice && cmp?.mismatched}
           />
         ))}
       </div>
@@ -127,11 +135,15 @@ function PriceCheckCard({
   isOutlier,
   isMin,
   isMax,
+  clientMode = false,
 }: {
   surface: ProjectPriceSurface;
   isOutlier: boolean;
   isMin: boolean | undefined;
   isMax: boolean | undefined;
+  /** Client viewer — hides the ad-status chip and the FB/Google Ads
+   *  deep-links (internal ad-ops surfaces the client can't use). */
+  clientMode?: boolean;
 }) {
   const icon = SURFACE_ICONS[surface.name] ?? "•";
   // Empty-state copy — distinguishes "we don't have a source for this
@@ -183,7 +195,7 @@ function PriceCheckCard({
           {icon}
         </span>
         <span className="price-check-card-label">{surface.label}</span>
-        <AdStatusChip surface={surface} />
+        {!clientMode && <AdStatusChip surface={surface} />}
         <Yad2MetaChip surface={surface} />
         {isMin && (
           <span
@@ -209,16 +221,20 @@ function PriceCheckCard({
         <div className="price-check-card-empty-state">{emptyState}</div>
       )}
       <InventoryRows surface={surface} />
-      {surface.url && (
-        <a
-          className="price-check-card-link"
-          href={surface.url}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {LINK_LABEL[surface.name]} ↗
-        </a>
-      )}
+      {surface.url &&
+        !(
+          clientMode &&
+          (surface.name === "google" || surface.name === "facebook")
+        ) && (
+          <a
+            className="price-check-card-link"
+            href={surface.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {LINK_LABEL[surface.name]} ↗
+          </a>
+        )}
     </div>
   );
 }

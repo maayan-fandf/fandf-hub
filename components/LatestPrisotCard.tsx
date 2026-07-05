@@ -6,6 +6,7 @@ import {
 import PrisotThumb from "./PrisotThumb";
 import PrisotDataTable from "./PrisotDataTable";
 import SendForApprovalButton from "./SendForApprovalButton";
+import ApprovePrisaButton from "./ApprovePrisaButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
 import { personDisplayName } from "@/lib/personDisplay";
 import type { TasksPerson } from "@/lib/appsScript";
@@ -33,6 +34,7 @@ export default async function LatestPrisotCard({
   project,
   clientEmails = [],
   people = [],
+  isClientUser = false,
 }: {
   subjectEmail: string;
   company: string;
@@ -47,6 +49,12 @@ export default async function LatestPrisotCard({
    *  local-part when the person isn't in the roster (typical for
    *  external client reviewers like Marketing1@s-sarfati.co.il). */
   people?: TasksPerson[];
+  /** True when the viewer is a client (col-E only). Hides the internal
+   *  approval-workflow chrome (send-for-approval, reviewer chips, the
+   *  internal Drive-folder / open-in-Sheets links, the "מתוך כללי"
+   *  source badge) and instead offers a single "✓ אשר פריסה" action so
+   *  the client can sign off the plan without leaving the hub. */
+  isClientUser?: boolean;
 }) {
   const latest = await pickLatestPrisotForCompanyOrProject(
     subjectEmail,
@@ -54,6 +62,7 @@ export default async function LatestPrisotCard({
     project,
   ).catch(() => null);
   if (!latest) return null;
+  const clientMode = !!isClientUser;
 
   const isImage = latest.mimeType.startsWith("image/");
   const isSheet =
@@ -80,6 +89,25 @@ export default async function LatestPrisotCard({
       <div className="section-head">
         <h2>
           📐 פריסה אחרונה
+          {/* Client view: no internal approval-workflow chrome. Either a
+              plain ✓ מאושר badge (when the plan is already locked /
+              approved) or a single "אשר פריסה" action that locks it as
+              the approved version — attributed to the client. */}
+          {clientMode &&
+            (latest.approvalState === "approved" ? (
+              <span
+                className="prisot-approved-badge"
+                title={
+                  latest.approvedTime
+                    ? `הפריסה אושרה ב־${formatRelativeHe(latest.approvedTime)}`
+                    : "הפריסה מסומנת כגרסה מאושרת"
+                }
+              >
+                ✓ מאושר
+              </span>
+            ) : (
+              <ApprovePrisaButton fileId={latest.id} />
+            ))}
           {/* Three-state approval badge driven by the Drive Approvals
               API + contentRestrictions readOnly fallback (see
               lib/driveFolders.ts → fetchApprovalState). "approved" =
@@ -88,7 +116,7 @@ export default async function LatestPrisotCard({
               flow on the file. "none" = no badge — the absence of any
               badge naturally reads as "not yet approved" without making
               a state claim. */}
-          {latest.approvalState === "approved" && (() => {
+          {!clientMode && latest.approvalState === "approved" && (() => {
             // Find reviewer who actually approved (vs. NO_RESPONSE
             // siblings on multi-approver flows). When the approval
             // came from a manual lock there are no API reviewers —
@@ -122,7 +150,7 @@ export default async function LatestPrisotCard({
               </>
             );
           })()}
-          {latest.approvalState === "pending" && (() => {
+          {!clientMode && latest.approvalState === "pending" && (() => {
             // Pending = at least one reviewer hasn't responded.
             // Chip lists the still-pending reviewers (NO_RESPONSE),
             // capped at 2 to keep the head row tidy with a "+N"
@@ -158,7 +186,7 @@ export default async function LatestPrisotCard({
               </>
             );
           })()}
-          {latest.approvalState === "declined" && (() => {
+          {!clientMode && latest.approvalState === "declined" && (() => {
             // First reviewer with DECLINED response. Drive's flow
             // marks the whole approval as declined when any
             // reviewer rejects, so we only need the first one.
@@ -192,7 +220,7 @@ export default async function LatestPrisotCard({
               </>
             );
           })()}
-          {latest.approvalState === "none" && (
+          {!clientMode && latest.approvalState === "none" && (
             <>
               <span
                 className="prisot-not-approved-badge"
@@ -207,7 +235,7 @@ export default async function LatestPrisotCard({
               />
             </>
           )}
-          {latest.source === "general" && (
+          {!clientMode && latest.source === "general" && (
             <span
               className="prisot-source-badge"
               title="הפריסה לקוחה מתיקיית 'כללי' של החברה — אין פריסה חדשה יותר תחת הפרויקט עצמו"
@@ -216,74 +244,92 @@ export default async function LatestPrisotCard({
             </span>
           )}
         </h2>
-        <div className="section-head-actions prisot-head-actions">
-          {latest.folderUrl && (
+        {/* Internal-only actions — both point into the internal Shared
+            Drive (the folder + the Sheets file), which clients have no
+            access to. Clients read the plan from the rendered preview
+            below instead, so the whole action strip is hidden for them. */}
+        {!clientMode && (
+          <div className="section-head-actions prisot-head-actions">
+            {latest.folderUrl && (
+              <a
+                className="prisot-folder-link"
+                href={latest.folderUrl}
+                target="_blank"
+                rel="noreferrer"
+                title="פתח את תיקיית הפריסות ב-Drive"
+                aria-label="פתח את תיקיית הפריסות ב-Drive"
+              >
+                <GoogleDriveIcon size="1.05em" />
+                <span>תיקייה</span>
+              </a>
+            )}
             <a
-              className="prisot-folder-link"
-              href={latest.folderUrl}
+              className="section-link"
+              href={latest.webViewLink}
               target="_blank"
               rel="noreferrer"
-              title="פתח את תיקיית הפריסות ב-Drive"
-              aria-label="פתח את תיקיית הפריסות ב-Drive"
             >
-              <GoogleDriveIcon size="1.05em" />
-              <span>תיקייה</span>
+              פתח בכרטיסייה חדשה ↗
             </a>
-          )}
-          <a
-            className="section-link"
+          </div>
+        )}
+      </div>
+      {(() => {
+        const cardInner = (
+          <>
+            {isImage ? (
+              // Image file — render the actual bytes via the hub's image
+              // proxy so we get full fidelity (not the small Drive
+              // thumbnail). Onerror falls back to the thumb proxy via
+              // the existing PrisotThumb wrapper, which has its own
+              // fallback chain.
+              <div className="prisot-thumb prisot-thumb-image">
+                <PrisotThumb src={imageSrc} alt={latest.name} />
+              </div>
+            ) : data ? (
+              // Sheet file with successfully-read cell values + formats →
+              // styled HTML table that mirrors the Google Sheets view.
+              <PrisotDataTable data={data} />
+            ) : (
+              // Sheet file but the data read failed (or unsupported file
+              // type) → fall back to the thumbnail proxy.
+              <div className="prisot-thumb">
+                <PrisotThumb
+                  src={thumbSrc}
+                  alt={`תצוגה מקדימה של ${latest.name}`}
+                />
+              </div>
+            )}
+            <div className="prisot-meta">
+              <div className="prisot-name">
+                {latest.name}
+                {data && (
+                  <span className="prisot-tab-name" title="שם הלשונית שנקראה">
+                    · {data.sheetTitle}
+                  </span>
+                )}
+              </div>
+              <div className="prisot-modified">📅 עודכן {modified}</div>
+            </div>
+          </>
+        );
+        // Clients have no Drive access to the internal Shared-Drive sheet,
+        // so the card doesn't link out to Drive for them (it would bounce
+        // to "request access"). They read the plan from the rendered
+        // preview itself. Internal users keep the click-through.
+        return clientMode ? (
+          <div className="prisot-card prisot-card-static">{cardInner}</div>
+        ) : (
+          <Link
             href={latest.webViewLink}
             target="_blank"
             rel="noreferrer"
+            className="prisot-card"
           >
-            פתח בכרטיסייה חדשה ↗
-          </a>
-        </div>
-      </div>
-      <Link
-        href={latest.webViewLink}
-        target="_blank"
-        rel="noreferrer"
-        className="prisot-card"
-      >
-        {isImage ? (
-          // Image file — render the actual bytes via the hub's image
-          // proxy so we get full fidelity (not the small Drive
-          // thumbnail). Onerror falls back to the thumb proxy via
-          // the existing PrisotThumb wrapper, which has its own
-          // fallback chain.
-          <div className="prisot-thumb prisot-thumb-image">
-            <PrisotThumb
-              src={imageSrc}
-              alt={latest.name}
-            />
-          </div>
-        ) : data ? (
-          // Sheet file with successfully-read cell values + formats →
-          // styled HTML table that mirrors the Google Sheets view.
-          <PrisotDataTable data={data} />
-        ) : (
-          // Sheet file but the data read failed (or unsupported file
-          // type) → fall back to the thumbnail proxy.
-          <div className="prisot-thumb">
-            <PrisotThumb
-              src={thumbSrc}
-              alt={`תצוגה מקדימה של ${latest.name}`}
-            />
-          </div>
-        )}
-        <div className="prisot-meta">
-          <div className="prisot-name">
-            {latest.name}
-            {data && (
-              <span className="prisot-tab-name" title="שם הלשונית שנקראה">
-                · {data.sheetTitle}
-              </span>
-            )}
-          </div>
-          <div className="prisot-modified">📅 עודכן {modified}</div>
-        </div>
-      </Link>
+            {cardInner}
+          </Link>
+        );
+      })()}
     </section>
   );
 }
