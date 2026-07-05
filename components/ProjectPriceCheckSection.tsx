@@ -14,8 +14,10 @@ import {
  * - Server component, mounted under <Suspense fallback={null}> at the
  *   page level so the Apps-Script call doesn't block the rest of the
  *   render.
- * - Internal-only — gated at the call site (mirrors LatestPrisotCard /
- *   ClarityInsightsSection). Apps Script ALSO enforces it server-side.
+ * - Visible to clients too (2026-07-05) via the `isClientUser` prop, which
+ *   strips the internal ad-ops chrome (FB/Google Ads deep-links, ad-status
+ *   chips, mismatch/QA pill). The report's projectPriceCheck endpoint
+ *   enforces the caller's own per-project access (col E) server-side.
  * - Self-hides when the project has nothing to show — neither a landing
  *   scrape NOR any ad copy. Avoids an empty "💰 מחירים מפורסמים" shelf
  *   on projects the price feature doesn't cover yet.
