@@ -32,6 +32,7 @@ import {
   useFirestoreWrites,
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
+import { deferAfterResponse } from "@/lib/afterResponse";
 import { isQuietHours, nextWorkDateIso } from "@/lib/quietHours";
 import {
   BRIEFS_SUBFOLDER_NAME,
@@ -1759,18 +1760,25 @@ export async function tasksCreateDirect(
   // in tasksUpdateDirect re-fires notifyTaskAssigned at the moment
   // their work actually becomes actionable.
   if (task.status !== "blocked") {
-    await notifyTaskAssigned(
-      {
-        id: task.id,
-        project: task.project,
-        title: task.title,
-        description: task.description,
-        requested_date: task.requested_date,
-        priority: task.priority,
-        assignees: task.assignees,
-      },
-      task.author_email,
-    );
+    // Deferred off the response path (2026-07-05 speed pass): the
+    // Notifications-row append + per-assignee Gmail sends are sequential
+    // and don't gate the task's existence or the destination render, so
+    // they run after the response flushes via after(). The task row is
+    // already committed above, so the bell/email land within ~1s.
+    deferAfterResponse(async () => {
+      await notifyTaskAssigned(
+        {
+          id: task.id,
+          project: task.project,
+          title: task.title,
+          description: task.description,
+          requested_date: task.requested_date,
+          priority: task.priority,
+          assignees: task.assignees,
+        },
+        task.author_email,
+      );
+    });
   }
 
   // Phase 4 dependencies — newborn child of an umbrella might shift
@@ -1778,25 +1786,26 @@ export async function tasksCreateDirect(
   // umbrella moves awaiting_handling → in_progress). Best-effort
   // recompute; doesn't bubble.
   if (task.umbrella_id) {
-    try {
+    // Deferred (2026-07-05 speed pass): the umbrella rollup reads the
+    // whole Comments sheet and is best-effort / eventually-consistent —
+    // it doesn't gate the new child's existence, so run it after the
+    // response flushes rather than blocking the create on a full read.
+    const umbrellaId = task.umbrella_id;
+    const childId = task.id;
+    deferAfterResponse(async () => {
       const { recomputeUmbrellaStatus } = await import("@/lib/umbrellaRecompute");
       const r = await recomputeUmbrellaStatus({
         subjectEmail,
-        umbrellaId: task.umbrella_id,
+        umbrellaId,
         commentsSpreadsheetId: commentsSsId,
         nowIso: now,
       });
       if (r.ok && r.changed) {
         console.log(
-          `[tasksWriteDirect] umbrella ${task.umbrella_id} status: ${r.previous} → ${r.next} (after child ${task.id} created)`,
+          `[tasksWriteDirect] umbrella ${umbrellaId} status: ${r.previous} → ${r.next} (after child ${childId} created)`,
         );
       }
-    } catch (e) {
-      console.log(
-        `[tasksWriteDirect] umbrella recompute on create threw for ${task.umbrella_id}:`,
-        e instanceof Error ? e.message : String(e),
-      );
-    }
+    });
   }
 
   return { ok: true, task };
