@@ -7,7 +7,9 @@ import PrisotThumb from "./PrisotThumb";
 import PrisotDataTable from "./PrisotDataTable";
 import SendForApprovalButton from "./SendForApprovalButton";
 import ApprovePrisaButton from "./ApprovePrisaButton";
+import RequestChangesButton from "./RequestChangesButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
+import { getPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 import { personDisplayName } from "@/lib/personDisplay";
 import type { TasksPerson } from "@/lib/appsScript";
 
@@ -72,6 +74,10 @@ export default async function LatestPrisotCard({
   const lockApprover =
     (latest.approvalReason.match(/אושר ע["״]י\s+(\S+@\S+?)(?:\s|$)/) ||
       [])[1] || "";
+  // Pending client change-request for this exact plan (keyed by fileId).
+  // Drives the "🔄 התבקשו שינויים" chip; cleared on (re-)approval. Reads
+  // soft-fail to null so the card still renders if Firestore is down.
+  const changeRequest = await getPrisotChangeRequest(latest.id);
 
   const isImage = latest.mimeType.startsWith("image/");
   const isSheet =
@@ -98,6 +104,21 @@ export default async function LatestPrisotCard({
       <div className="section-head">
         <h2>
           📐 פריסה אחרונה
+          {/* Client-requested-changes marker — shown to BOTH the client
+              (their request registered) and the team (a change was asked).
+              Suppressed once the plan is approved (approval supersedes it,
+              and the approve route clears the record). */}
+          {changeRequest && latest.approvalState !== "approved" && (
+            <span
+              className="prisot-change-request-chip"
+              title={
+                (changeRequest.note ? changeRequest.note + " · " : "") +
+                `התבקשו שינויים ${formatRelativeHe(changeRequest.requestedAt)}`
+              }
+            >
+              🔄 התבקשו שינויים · {formatRelativeHe(changeRequest.requestedAt)}
+            </span>
+          )}
           {/* Client view: no internal approval-workflow chrome. Either a
               plain ✓ מאושר badge (when the plan is already locked /
               approved) or a single "אשר פריסה" action that locks it as
@@ -129,7 +150,13 @@ export default async function LatestPrisotCard({
                 )}
               </>
             ) : (
-              <ApprovePrisaButton fileId={latest.id} />
+              <>
+                <ApprovePrisaButton fileId={latest.id} />
+                <RequestChangesButton
+                  fileId={latest.id}
+                  project={project}
+                />
+              </>
             ))}
           {/* Three-state approval badge driven by the Drive Approvals
               API + contentRestrictions readOnly fallback (see

@@ -89,6 +89,12 @@ export const FS_COLLECTIONS = {
    *  updatedAt (ISO), updatedBy (email) }. Default percent when no
    *  doc exists is 15 — applied client/server-side. */
   managementFees: "managementFees",
+  /** Per-פריסה (media-plan sheet) client change-requests. Doc id = the
+   *  Drive fileId (globally unique + Firestore-id-safe, so no hashing).
+   *  Fields: { fileId, projectName, requestedBy (email), requestedAt
+   *  (ISO), note }. Drives the "🔄 התבקשו שינויים" chip on the פריסה
+   *  card; cleared when the plan is (re-)approved. */
+  prisotChangeRequests: "prisotChangeRequests",
 } as const;
 
 type SAKey = {

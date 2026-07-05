@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { approvePrisaViaLock } from "@/lib/driveApprovals";
+import { clearPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,5 +54,8 @@ export async function POST(req: Request) {
   if (!result.ok) {
     return NextResponse.json(result, { status: result.status || 500 });
   }
+  // Approving supersedes any pending change-request — clear the chip so an
+  // approved plan doesn't keep showing "🔄 התבקשו שינויים". Best-effort.
+  await clearPrisotChangeRequest(fileId);
   return NextResponse.json(result);
 }
