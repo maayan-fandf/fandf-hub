@@ -10,6 +10,7 @@ import ApprovePrisaButton from "./ApprovePrisaButton";
 import RequestChangesButton from "./RequestChangesButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
 import { getPrisotChangeRequest } from "@/lib/prisotChangeRequests";
+import { ensurePrisaClientAccess } from "@/lib/driveClientAccess";
 import { personDisplayName } from "@/lib/personDisplay";
 import type { TasksPerson } from "@/lib/appsScript";
 
@@ -78,6 +79,19 @@ export default async function LatestPrisotCard({
   // Drives the "🔄 התבקשו שינויים" chip; cleared on (re-)approval. Reads
   // soft-fail to null so the card still renders if Firestore is down.
   const changeRequest = await getPrisotChangeRequest(latest.id);
+
+  // Ensure the project's clients have native Drive access to the plan —
+  // commenter on the sheet (comment in Google Sheets) + reader on the
+  // פריסות folder (browse prior plans). Idempotent + cached (mirrors
+  // ensureProjectSharedFolder); the SA does the grant so it runs for any
+  // viewer, and it's best-effort — never block the card on a Drive write.
+  if (clientEmails.length) {
+    await ensurePrisaClientAccess(
+      latest.id,
+      latest.folderId,
+      clientEmails,
+    ).catch(() => {});
+  }
 
   const isImage = latest.mimeType.startsWith("image/");
   const isSheet =
@@ -297,35 +311,44 @@ export default async function LatestPrisotCard({
             </span>
           )}
         </h2>
-        {/* Internal-only actions — both point into the internal Shared
-            Drive (the folder + the Sheets file), which clients have no
-            access to. Clients read the plan from the rendered preview
-            below instead, so the whole action strip is hidden for them. */}
-        {!clientMode && (
-          <div className="section-head-actions prisot-head-actions">
-            {latest.folderUrl && (
-              <a
-                className="prisot-folder-link"
-                href={latest.folderUrl}
-                target="_blank"
-                rel="noreferrer"
-                title="פתח את תיקיית הפריסות ב-Drive"
-                aria-label="פתח את תיקיית הפריסות ב-Drive"
-              >
-                <GoogleDriveIcon size="1.05em" />
-                <span>תיקייה</span>
-              </a>
-            )}
+        {/* Header actions. Clients now get the SAME folder + file links as
+            the team: they're auto-granted reader on the פריסות folder
+            (browse prior plans for finance/review) + commenter on the
+            sheet (comment natively), so both links resolve for them. The
+            file link is labelled "פתח ב-Google Sheets" for clients to cue
+            that they can comment there. */}
+        <div className="section-head-actions prisot-head-actions">
+          {latest.folderUrl && (
             <a
-              className="section-link"
-              href={latest.webViewLink}
+              className="prisot-folder-link"
+              href={latest.folderUrl}
               target="_blank"
               rel="noreferrer"
+              title={
+                clientMode
+                  ? "פתח את תיקיית הפריסות — לצפייה בפריסות קודמות"
+                  : "פתח את תיקיית הפריסות ב-Drive"
+              }
+              aria-label="פתח את תיקיית הפריסות ב-Drive"
             >
-              פתח בכרטיסייה חדשה ↗
+              <GoogleDriveIcon size="1.05em" />
+              <span>תיקייה</span>
             </a>
-          </div>
-        )}
+          )}
+          <a
+            className="section-link"
+            href={latest.webViewLink}
+            target="_blank"
+            rel="noreferrer"
+            title={
+              clientMode
+                ? "פתח ב-Google Sheets — אפשר להוסיף הערות על התאים"
+                : undefined
+            }
+          >
+            {clientMode ? "📊 פתח ב-Google Sheets" : "פתח בכרטיסייה חדשה ↗"}
+          </a>
+        </div>
       </div>
       {(() => {
         const cardInner = (

@@ -310,6 +310,9 @@ export type LatestPrisot = {
    *  "open the folder in Drive" affordance — useful when the user
    *  wants to see prior spreads or upload a new one. */
   folderUrl: string;
+  /** Drive id of that `פריסות` folder (the folderUrl's id) so callers can
+   *  grant folder-level access without re-parsing the URL. */
+  folderId: string;
 };
 
 /** Mime types we surface from a פריסות folder — sheets, common
@@ -649,6 +652,7 @@ async function findLatestPrisotInner(
     approvedTime,
     approvalReason: restriction?.reason || "",
     folderUrl,
+    folderId: prisotFolderId,
   };
 }
 
