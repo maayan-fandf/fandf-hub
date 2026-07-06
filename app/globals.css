@@ -5696,6 +5696,12 @@ a.section-link-icon:hover {
   opacity: 1;
   cursor: wait;
 }
+
+/* Streamed-discussion placeholder on the task-detail page while the
+   Comments-tab read resolves off the first-paint path. */
+.task-comments-loading {
+  padding: 1rem 0;
+}
 .btn-spinner {
   display: inline-block;
   width: 0.85em;

@@ -15,6 +15,7 @@ export async function generateMetadata({
   return { title: `משימה ${id.slice(0, 7)}` };
 }
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
@@ -102,7 +103,7 @@ export default async function TaskDetailPage({
   // `.then()` chain that previously serialized the (slow) schema
   // fetch behind it inside the batch (speed pass 2026-06-10).
   const myEmail = (await currentUserEmail().catch(() => "")) || "";
-  const [res, peopleRes, accessRes, formSchemaRes, bannerComments] =
+  const [res, peopleRes, accessRes, formSchemaRes] =
     await Promise.all([
       tasksGet(decodedId).catch((e: unknown) => {
         const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
@@ -123,9 +124,6 @@ export default async function TaskDetailPage({
       editing && myEmail
         ? getTaskFormSchema(myEmail).catch(() => null)
         : Promise.resolve(null),
-      getTaskComments(decodedId)
-        .then((d) => d.comments)
-        .catch(() => []),
     ]);
   if (accessRes) {
     const isClientUser =
@@ -139,11 +137,13 @@ export default async function TaskDetailPage({
 
   const t = res.task;
 
-  // `bannerComments` was fetched in the parallel batch above (the
-  // approval banner needs it; getTaskComments is React-cache()-wrapped
-  // so the discussion section's TaskComments reuses the same result —
-  // no second read within this request). On error it's [] and the
-  // banner renders null. `myEmail` was hoisted above the batch.
+  // Comments are no longer fetched in the blocking batch above (speed
+  // pass 2026-07-05): the ~1–3s Comments-tab read was the biggest single
+  // contributor to first paint. The approval banner and the discussion
+  // now read comments INSIDE <Suspense> boundaries — getTaskComments is
+  // React-cache()-wrapped so the two share ONE read per request, but it's
+  // off the first-paint critical path now (the page shell paints, comments
+  // stream in). `myEmail` was hoisted above the batch.
 
   // Auto-dismiss bell pings about this task. When the user lands on
   // the detail page, any unread Notifications row whose task_id is
@@ -529,12 +529,13 @@ export default async function TaskDetailPage({
               section below the tabs. Renders null unless the task is
               in a banner-eligible status AND a matching comment
               exists. Reported by Maayan 2026-05-12. */}
-          <TaskApprovalBanner
-            task={t}
-            comments={bannerComments}
-            myEmail={myEmail}
-            people={peopleRes?.people ?? []}
-          />
+          <Suspense fallback={null}>
+            <TaskApprovalBannerAsync
+              task={t}
+              myEmail={myEmail}
+              people={peopleRes?.people ?? []}
+            />
+          </Suspense>
 
           {/* Inline template preview — read-only iframe of the
               filled-in template that lives in the task's Drive
@@ -560,7 +561,13 @@ export default async function TaskDetailPage({
             id="task-discussion"
             className="task-detail-section task-detail-section-discussion"
           >
-            <TaskComments taskId={t.id} />
+            <Suspense
+              fallback={
+                <p className="muted task-comments-loading">טוען דיון…</p>
+              }
+            >
+              <TaskComments taskId={t.id} />
+            </Suspense>
           </section>
 
           <section
@@ -767,6 +774,37 @@ export default async function TaskDetailPage({
         </aside>
       </section>
     </main>
+  );
+}
+
+/**
+ * Streamed wrapper for the approval banner. Reads the task's comments
+ * itself (inside a <Suspense> boundary) instead of receiving them from a
+ * blocking parent fetch — this is what keeps the ~1–3s Comments-tab read
+ * off first paint. getTaskComments is React-cache()-wrapped, so this
+ * shares the single per-request read with the streamed <TaskComments>
+ * discussion below. Renders null when the task isn't in a banner-eligible
+ * status (the common case), so the null Suspense fallback is invisible.
+ */
+async function TaskApprovalBannerAsync({
+  task,
+  myEmail,
+  people,
+}: {
+  task: WorkTask;
+  myEmail: string;
+  people: TasksPerson[];
+}) {
+  const comments = await getTaskComments(task.id)
+    .then((d) => d.comments)
+    .catch(() => []);
+  return (
+    <TaskApprovalBanner
+      task={task}
+      comments={comments}
+      myEmail={myEmail}
+      people={people}
+    />
   );
 }
 
