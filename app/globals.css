@@ -529,21 +529,28 @@ body {
   }
 }
 
-/* "Review + approve the plan" prompt — shown at the top of the client
-   project page only while the latest פריסה isn't approved. The header and
-   this prompt share ONE sticky wrapper (.project-top-stack) so BOTH stay
-   pinned on scroll; the client header is de-stickied so the wrapper alone
-   drives the pinning (no two-sticky overlap, and the header no longer
-   scrolls away). */
-body[data-client-portal="1"] .project-top-stack {
-  position: sticky;
-  top: 3.75rem;
-  z-index: 20;
+/* The project header + (for clients) the approve-prompt share ONE sticky
+   wrapper (.project-top-stack) so both stay pinned on scroll. The WRAPPER
+   carries the sticky for ALL viewers — desktop-only, matching the original
+   project-header sticky — so the internal header keeps pinning too (its own
+   sticky broke once wrapped: sticky can't extend past its short wrapper
+   parent). The client prompt rides along beneath the header. */
+@media (min-width: 769px) {
+  .project-top-stack {
+    position: sticky;
+    top: 3.75rem;
+    z-index: 10;
+    /* Solid bg so content scrolling underneath doesn't bleed through the
+       header↔prompt gap while pinned. */
+    background: var(--bg);
+  }
 }
-body[data-client-portal="1"] .project-main .page-header {
+.project-main .project-top-stack > .page-header {
+  /* The wrapper owns the sticky now — neutralize the header's own sticky
+     (its short wrapper parent would otherwise stop it sticking at all).
+     Higher specificity than the `.project-main .page-header` desktop rule,
+     so it wins regardless of source order. */
   position: static;
-}
-.project-top-stack > .page-header {
   /* Header is no longer a direct child of .project-main; zero its margin so
      the flex-gap spacing to the sections below stays 1.5rem (unchanged). */
   margin-bottom: 0;
