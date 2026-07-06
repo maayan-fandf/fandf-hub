@@ -529,17 +529,27 @@ body {
   }
 }
 
-/* Sticky "review + approve the plan" prompt — shown at the top of the
-   client project page only while the latest פריסה isn't approved. The
-   client project header is de-stickied so this is the single sticky
-   element (no two-sticky overlap). */
+/* "Review + approve the plan" prompt — shown at the top of the client
+   project page only while the latest פריסה isn't approved. The header and
+   this prompt share ONE sticky wrapper (.project-top-stack) so BOTH stay
+   pinned on scroll; the client header is de-stickied so the wrapper alone
+   drives the pinning (no two-sticky overlap, and the header no longer
+   scrolls away). */
+body[data-client-portal="1"] .project-top-stack {
+  position: sticky;
+  top: 3.75rem;
+  z-index: 20;
+}
 body[data-client-portal="1"] .project-main .page-header {
   position: static;
 }
+.project-top-stack > .page-header {
+  /* Header is no longer a direct child of .project-main; zero its margin so
+     the flex-gap spacing to the sections below stays 1.5rem (unchanged). */
+  margin-bottom: 0;
+}
 .client-approve-prompt {
-  position: sticky;
-  top: 3.75rem;
-  z-index: 30;
+  margin-top: 0.6rem;
   display: flex;
   align-items: center;
   justify-content: space-between;

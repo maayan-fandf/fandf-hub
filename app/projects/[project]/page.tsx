@@ -487,20 +487,11 @@ export default async function ProjectOverviewPage({
 
   return (
     <main className="container project-main">
-      {/* Sticky "review + approve the plan" nudge — client-only, self-hides
-          when the latest פריסה is already approved (or absent). Placed ABOVE
-          the header (as a top notification bar) so when it sticks on scroll
-          it never rides over the project header — the header just scrolls up
-          behind it. Streamed; shares LatestPrisotCard's cached Drive fetch. */}
-      {isClientUser && isRealEstateProject && (
-        <Suspense fallback={null}>
-          <ClientPrisaApprovalPrompt
-            subjectEmail={userEmail}
-            company={companyForDashboard}
-            project={projectName}
-          />
-        </Suspense>
-      )}
+      {/* Header + the client approve-prompt share ONE sticky wrapper so both
+          stay pinned on scroll — the header no longer scrolls away, and the
+          prompt sits beneath it (not riding over it). For internal viewers
+          the wrapper is inert; the header keeps its own sticky. */}
+      <div className="project-top-stack">
       <header className="page-header">
         {/* Tiny client-side scroll watcher: toggles `is-scrolled` on
             this header once the user scrolls past ~80px. CSS handles
@@ -583,6 +574,16 @@ export default async function ProjectOverviewPage({
           )}
         </div>
       </header>
+      {isClientUser && isRealEstateProject && (
+        <Suspense fallback={null}>
+          <ClientPrisaApprovalPrompt
+            subjectEmail={userEmail}
+            company={companyForDashboard}
+            project={projectName}
+          />
+        </Suspense>
+      )}
+      </div>
 
       {firstError && (
         <div className="error">
