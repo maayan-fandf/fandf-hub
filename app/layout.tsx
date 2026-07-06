@@ -213,7 +213,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
         />
       </head>
-      <body>
+      <body data-client-portal={isClientUser ? "1" : undefined}>
         {/* Ambient particles backdrop — first in body so it sits behind
             every other element (also z-index:-1 in CSS as belt-and-
             suspenders). Renders nothing for prefers-reduced-motion

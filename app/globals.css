@@ -515,6 +515,55 @@ body {
   }
 }
 
+/* ─── Client portal polish ─────────────────────────────────────────────
+   Clients experience the hub as a light client portal, not an internal
+   tool. Gated to client viewers via [data-client-portal] on <body>
+   (app/layout.tsx) + `.client-portal` on the project <main>. Two moves:
+   (1) calm the ambient particles so the view doesn't read as loose cards
+   floating in space; (2) frame the project page content as one softly-
+   elevated, contained surface (a frosted panel over the calmed field) so
+   it feels like a focused portal. Internal viewers are untouched. */
+body[data-client-portal="1"] #particles-bg.ready {
+  opacity: 0.28;
+}
+.project-main.client-portal {
+  position: relative;
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 12px 48px rgba(15, 23, 42, 0.08);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  padding-bottom: 2.5rem;
+  margin-top: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+/* Friendlier client empty-state for the discussion — a warm invitation to
+   write rather than a flat "no comments yet". Only the client variant
+   carries `.discussion-empty-state`; the internal empty text is unchanged.
+   Doubled class beats `.empty-small`'s own layout without !important. */
+.discussion-empty-state.discussion-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+  padding: 1.9rem 1rem;
+}
+.discussion-empty-emoji {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+.discussion-empty-title {
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+.discussion-empty-sub {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* ─── M3 typescale on global headings ──────────────────────────────
  * Bare h1-h6 inherit the M3 type roles. Page-specific heading rules
  * (e.g. .page-header h1, .morning-card-title, .gemini-drawer-title)

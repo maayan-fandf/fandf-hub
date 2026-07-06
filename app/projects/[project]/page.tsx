@@ -485,7 +485,9 @@ export default async function ProjectOverviewPage({
       : resolvedFor(comments, sharedMentions);
 
   return (
-    <main className="container project-main">
+    <main
+      className={`container project-main${isClientUser ? " client-portal" : ""}`}
+    >
       <header className="page-header">
         {/* Tiny client-side scroll watcher: toggles `is-scrolled` on
             this header once the user scrolls past ~80px. CSS handles
@@ -1361,7 +1363,29 @@ function CommentsPreview({
   const top = visible.slice(0, 8);
 
   if (top.length === 0 && resolvedCount === 0) {
-    return <div className="empty-small">💭 אין הערות בפרויקט זה עדיין.</div>;
+    return (
+      <div
+        className={`empty-small${
+          isClientUser ? " discussion-empty-state" : ""
+        }`}
+      >
+        {isClientUser ? (
+          <>
+            <span className="discussion-empty-emoji" aria-hidden>
+              👋
+            </span>
+            <span className="discussion-empty-title">
+              יש שאלה, בקשה או עדכון?
+            </span>
+            <span className="discussion-empty-sub">
+              כתבו לנו כאן והצוות יחזור אליכם בהקדם.
+            </span>
+          </>
+        ) : (
+          <>💭 אין הערות בפרויקט זה עדיין.</>
+        )}
+      </div>
+    );
   }
 
   // Resolved threads (within the fetched window) are revealed INLINE via a
