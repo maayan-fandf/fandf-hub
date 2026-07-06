@@ -515,28 +515,64 @@ body {
   }
 }
 
-/* ─── Client portal polish ─────────────────────────────────────────────
-   Clients experience the hub as a light client portal, not an internal
-   tool. Gated to client viewers via [data-client-portal] on <body>
-   (app/layout.tsx) + `.client-portal` on the project <main>. Two moves:
-   (1) calm the ambient particles so the view doesn't read as loose cards
-   floating in space; (2) frame the project page content as one softly-
-   elevated, contained surface (a frosted panel over the calmed field) so
-   it feels like a focused portal. Internal viewers are untouched. */
-body[data-client-portal="1"] #particles-bg.ready {
-  opacity: 0.28;
+/* ─── Client view tweaks ───────────────────────────────────────────────
+   Gated to client viewers via [data-client-portal] on <body>
+   (app/layout.tsx). Internal viewers are untouched. */
+
+/* Center the content: clients have no agenda right-rail, so the two-column
+   app shell would otherwise keep reserving the 320px agenda column and push
+   the whole page off-center (toward the right in RTL). Collapse to a single
+   column for clients so the content centers in the viewport. */
+@media (min-width: 1024px) {
+  body[data-client-portal="1"] .app-shell-with-agenda {
+    grid-template-columns: 1fr;
+  }
 }
-.project-main.client-portal {
-  position: relative;
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  box-shadow: 0 12px 48px rgba(15, 23, 42, 0.08);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  padding-bottom: 2.5rem;
-  margin-top: 0.75rem;
-  margin-bottom: 2rem;
+
+/* Sticky "review + approve the plan" prompt — shown at the top of the
+   client project page only while the latest פריסה isn't approved. The
+   client project header is de-stickied so this is the single sticky
+   element (no two-sticky overlap). */
+body[data-client-portal="1"] .project-main .page-header {
+  position: static;
+}
+.client-approve-prompt {
+  position: sticky;
+  top: 3.75rem;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 1rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, #f59e0b 45%, var(--border));
+  background: color-mix(in srgb, #f59e0b 13%, var(--surface));
+  box-shadow: 0 6px 22px rgba(245, 158, 11, 0.16);
+}
+.client-approve-prompt-text {
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+.client-approve-prompt-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.client-approve-prompt-view {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #b45309;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.client-approve-prompt-view:hover {
+  text-decoration: underline;
+}
+#prisa-section {
+  scroll-margin-top: 6rem;
 }
 
 /* Friendlier client empty-state for the discussion — a warm invitation to

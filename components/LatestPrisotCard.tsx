@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  pickLatestPrisotForCompanyOrProject,
+  latestPrisotForRequest,
   readPrisotData,
 } from "@/lib/driveFolders";
 import PrisotThumb from "./PrisotThumb";
@@ -59,7 +59,7 @@ export default async function LatestPrisotCard({
    *  the client can sign off the plan without leaving the hub. */
   isClientUser?: boolean;
 }) {
-  const latest = await pickLatestPrisotForCompanyOrProject(
+  const latest = await latestPrisotForRequest(
     subjectEmail,
     company,
     project,
@@ -114,7 +114,10 @@ export default async function LatestPrisotCard({
   const thumbSrc = `/api/drive/thumb/${encodeURIComponent(latest.id)}`;
 
   return (
-    <section className="project-section project-section-prisot">
+    <section
+      id="prisa-section"
+      className="project-section project-section-prisot"
+    >
       <div className="section-head">
         <h2>
           📐 פריסה אחרונה

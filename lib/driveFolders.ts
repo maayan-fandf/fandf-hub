@@ -995,6 +995,14 @@ export async function pickLatestPrisotForCompanyOrProject(
   return genDate > ownDate ? general : own;
 }
 
+/** Request-cached wrapper so the sticky client approval prompt (top of the
+ *  project page) and the LatestPrisotCard (bottom) share ONE Drive
+ *  traversal for the latest פריסה — same (subjectEmail, company, project)
+ *  args → React.cache dedupes within a single request. */
+export const latestPrisotForRequest = cache(
+  pickLatestPrisotForCompanyOrProject,
+);
+
 export async function listFolderChildren(
   subjectEmail: string,
   parentId: string,

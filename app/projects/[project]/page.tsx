@@ -26,6 +26,7 @@ import LatestPrisotCard from "@/components/LatestPrisotCard";
 import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import ProjectPriceCheckSection from "@/components/ProjectPriceCheckSection";
+import ClientPrisaApprovalPrompt from "@/components/ClientPrisaApprovalPrompt";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { isRealEstateType } from "@/lib/keys";
@@ -485,9 +486,7 @@ export default async function ProjectOverviewPage({
       : resolvedFor(comments, sharedMentions);
 
   return (
-    <main
-      className={`container project-main${isClientUser ? " client-portal" : ""}`}
-    >
+    <main className="container project-main">
       <header className="page-header">
         {/* Tiny client-side scroll watcher: toggles `is-scrolled` on
             this header once the user scrolls past ~80px. CSS handles
@@ -570,6 +569,20 @@ export default async function ProjectOverviewPage({
           )}
         </div>
       </header>
+
+      {/* Sticky "review + approve the plan" nudge — client-only, and self-
+          hides when the latest פריסה is already approved (or absent). Reads
+          the plan via the request-cached getter so it shares LatestPrisotCard's
+          single fetch. Streamed so it never blocks the page. */}
+      {isClientUser && isRealEstateProject && (
+        <Suspense fallback={null}>
+          <ClientPrisaApprovalPrompt
+            subjectEmail={userEmail}
+            company={companyForDashboard}
+            project={projectName}
+          />
+        </Suspense>
+      )}
 
       {firstError && (
         <div className="error">
