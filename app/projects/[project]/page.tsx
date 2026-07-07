@@ -1723,13 +1723,25 @@ function buildDashboardUrl(
  * Script down, etc.) silently render nothing — the iframe still works,
  * users just can't pick a month from the hub side.
  */
+// Remembers the last non-empty available-months list (per server instance).
+// getAvailableMonths hits the Apps Script report, which can be slow / cold
+// (especially just after a report redeploy) and occasionally times out —
+// without this fallback the month picker silently vanished on such a render
+// (seen on /projects/קאזר 2026-07-07). The list is global + slow-changing, so
+// reusing the last good one is safe.
+let _lastAvailableMonths: string[] = [];
 async function DashboardMonthOverrideSlot({ current }: { current: string }) {
   let months: string[] = [];
   try {
     const res = await getAvailableMonths();
     months = Array.isArray(res?.months) ? res.months : [];
   } catch {
-    return null;
+    months = [];
+  }
+  if (months.length) {
+    _lastAvailableMonths = months;
+  } else if (_lastAvailableMonths.length) {
+    months = _lastAvailableMonths; // transient report failure → last good list
   }
   if (!months.length) return null;
   return <DashboardMonthOverridePicker current={current} months={months} />;
