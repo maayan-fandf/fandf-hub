@@ -149,7 +149,7 @@ export default function ThreadReplies({
                           <DeleteButton
                             commentId={r.comment_id}
                             itemLabel="את התגובה"
-                            minimal
+                            iconOnly
                           />
                         )}
                     </div>
