@@ -6622,6 +6622,47 @@ summary.crm-fb-head::before {
   font-weight: 600;
   color: var(--muted);
 }
+/* Placement/audience rows now carry three figures — leads · scheduled ·
+   held — grouped at the (RTL) end of the row. Leads stays prominent; the
+   scheduled/held counts read as smaller, dimmer companions. */
+.crm-fb-rowmetrics {
+  position: relative;
+  z-index: 1;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.crm-fb-rowmetrics .crm-fb-rowcount {
+  margin-inline-start: 0;
+  color: var(--text);
+  min-width: 1.1em;
+  text-align: end;
+}
+.crm-fb-rowsub {
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 0.8;
+  min-width: 1.1em;
+  text-align: end;
+}
+/* Column header now carries a tiny "לידים · תואמו · פגישות" legend so the
+   three numbers per row are self-explanatory. */
+.crm-fb-col-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.crm-fb-col-legend {
+  font-size: 0.64rem;
+  font-weight: 500;
+  color: var(--muted);
+  opacity: 0.75;
+  white-space: nowrap;
+}
 /* Data-freshness chip — shown only when the CRM data lags the selected
    window end (dataFreshnessLag in lib/crmData.ts). Mirrors .crm-source-badge's
    translucent-amber recipe so it reads on both light and dark surfaces. */

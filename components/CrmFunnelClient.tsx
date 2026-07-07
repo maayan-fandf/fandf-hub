@@ -1022,19 +1022,32 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
               const max = list[0]?.leads || 1;
               return (
                 <div key={title} className="crm-fb-col">
-                  <div className="crm-fb-col-title">{title}</div>
+                  <div className="crm-fb-col-title crm-fb-col-title-row">
+                    <span>{title}</span>
+                    <span className="crm-fb-col-legend" aria-hidden>
+                      לידים · תואמו · פגישות
+                    </span>
+                  </div>
                   {list.map((r) => (
                     <div
                       key={r.label}
                       className="crm-fb-row"
-                      title={`${r.label}: ${r.leads} לידים`}
+                      title={`${r.label}: ${r.leads} לידים · ${r.scheduled} תואמו · ${r.held} פגישות`}
                     >
                       <div
                         className="crm-fb-bar"
                         style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
                       />
                       <span className="crm-fb-rowlabel">{r.label}</span>
-                      <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
+                      <span className="crm-fb-rowmetrics">
+                        <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
+                        <span className="crm-fb-rowsub" title="תואמו">
+                          {fmtInt(r.scheduled)}
+                        </span>
+                        <span className="crm-fb-rowsub" title="פגישות">
+                          {fmtInt(r.held)}
+                        </span>
+                      </span>
                     </div>
                   ))}
                 </div>

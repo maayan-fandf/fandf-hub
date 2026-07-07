@@ -229,8 +229,8 @@ export type CrmFunnel = {
    *  warehouse). Per-segment CPL is a later slice (needs the meta_* join). */
   fbBreakdown?: {
     totalLeads: number;
-    byPlacement: { label: string; leads: number }[];
-    byAudience: { label: string; leads: number }[];
+    byPlacement: { label: string; leads: number; scheduled: number; held: number }[];
+    byAudience: { label: string; leads: number; scheduled: number; held: number }[];
     /** Per creative (= ad name / utm_content). leads/scheduled/held from the
      *  warehouse; spend + cpl/cps/cpm joined from the dashboard's
      *  facebook-ads-metrics Sheet (cost ÷ leads / scheduled / held). spend=0
@@ -1499,17 +1499,37 @@ async function buildFbBreakdown(
   const fb = leads.filter((l) => l.channel_key === "fb");
   if (!fb.length) return undefined;
   const TOP = 8;
-  const tally = (get: (l: FbLead) => string): { label: string; leads: number }[] => {
-    const m = new Map<string, number>();
+  // Tally leads AND the scheduled/held meeting counts per group (placement /
+  // audience), reusing the same warehouse meeting sets the creative rows use:
+  // a lead is "scheduled"/"held" when its client_id is in anyClients/heldClients.
+  const tally = (
+    get: (l: FbLead) => string,
+  ): { label: string; leads: number; scheduled: number; held: number }[] => {
+    const m = new Map<
+      string,
+      { leads: number; scheduled: number; held: number }
+    >();
     for (const l of fb) {
       const v = get(l).replace(/\s+/g, " ").trim();
       if (!v) continue;
-      m.set(v, (m.get(v) || 0) + 1);
+      const c = String(l.client_id ?? "");
+      const rec = m.get(v) || { leads: 0, scheduled: 0, held: 0 };
+      rec.leads++;
+      if (c && anyClients.has(c)) rec.scheduled++;
+      if (c && heldClients.has(c)) rec.held++;
+      m.set(v, rec);
     }
-    const sorted = [...m.entries()].sort((a, b) => b[1] - a[1]);
-    const head = sorted.slice(0, TOP).map(([label, n]) => ({ label, leads: n }));
-    const restN = sorted.slice(TOP).reduce((s, [, n]) => s + n, 0);
-    if (restN > 0) head.push({ label: "אחר", leads: restN });
+    const sorted = [...m.entries()].sort((a, b) => b[1].leads - a[1].leads);
+    const head = sorted.slice(0, TOP).map(([label, r]) => ({ label, ...r }));
+    const rest = sorted.slice(TOP).reduce(
+      (s, [, r]) => ({
+        leads: s.leads + r.leads,
+        scheduled: s.scheduled + r.scheduled,
+        held: s.held + r.held,
+      }),
+      { leads: 0, scheduled: 0, held: 0 },
+    );
+    if (rest.leads > 0) head.push({ label: "אחר", ...rest });
     return head;
   };
   // utm_term occasionally carries a raw Meta numeric ID — bucket to "אחר".
