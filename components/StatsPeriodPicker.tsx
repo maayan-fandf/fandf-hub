@@ -1,23 +1,23 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 
 /**
- * URL-driven multi-select period filter for the /stats page. Each
- * option is one of:
+ * Multi-select period filter for the /stats page. Each option is one of:
  *   - "current"  → the rowType=current aggregation (one sample/project)
  *   - "YYYY-MM"  → a חודשי month bucket
  *
- * Default selection (when ?periods= is absent or empty) is all months
- * except "current" — because "current" is the sum of its monthlies and
- * including both double-counts. Selecting "current" is opt-in.
+ * Default selection (null) is all months except "current" — because
+ * "current" is the sum of its monthlies and including both
+ * double-counts. Selecting "current" is opt-in.
  *
- * URL shape: `?periods=2026-06,2026-05,current` (comma-separated).
- * Empty selection = no filter = all months (default behavior).
+ * Controlled since the 2026-07 overhaul: StatsPageBody owns the state
+ * (every consumer filters the already-loaded payload client-side) and
+ * mirrors it to `?periods=` via history.replaceState. `onChange(null)`
+ * means "back to the default months-only selection".
  */
 
-const ALL_KEY = "__all__"; // sentinel meaning "all months (current opt-out)"
+const ALL_KEY = "__all__"; // sentinel meaning "all periods incl. current"
 
 function labelFor(period: string): string {
   if (period === "current") return "Current (תיק־לקוחות חי)";
@@ -30,19 +30,18 @@ function labelFor(period: string): string {
 export default function StatsPeriodPicker({
   availablePeriods,
   selected,
+  onChange,
 }: {
   /** Periods present in the dataset — sorted by the server. */
   availablePeriods: string[];
-  /** URL-decoded selection, or null when the user hasn't picked. */
+  /** Current selection, or null for the default (all months). */
   selected: string[] | null;
+  onChange: (periods: string[] | null) => void;
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
-  const [isPending, startTransition] = useTransition();
 
   // Default selection — all months, no "current". Used when `selected`
-  // is null (no URL param yet).
+  // is null (no explicit pick).
   const defaultMonthsOnly = useMemo(
     () => availablePeriods.filter((p) => p !== "current"),
     [availablePeriods],
@@ -70,35 +69,30 @@ export default function StatsPeriodPicker({
     buttonLabel = labelFor(effectiveSelected[0]);
   else buttonLabel = `${effectiveSet.size} מתוך ${allCount}`;
 
-  const writeURL = (next: string[]) => {
-    const params = new URLSearchParams(searchParams?.toString() || "");
+  const emit = (next: string[]) => {
     if (
       next.length === defaultMonthsOnly.length &&
       defaultMonthsOnly.every((p) => next.includes(p))
     ) {
-      // Selection equals the default — drop the param so the URL stays
-      // clean for the common case.
-      params.delete("periods");
+      // Selection equals the default — collapse to null so the URL
+      // stays clean for the common case.
+      onChange(null);
     } else {
-      params.set("periods", next.join(","));
+      onChange(next);
     }
-    const qs = params.toString();
-    startTransition(() => {
-      router.push(qs ? `/stats?${qs}` : "/stats");
-    });
   };
 
   const togglePeriod = (period: string) => {
     const next = new Set(effectiveSelected);
     if (next.has(period)) next.delete(period);
     else next.add(period);
-    writeURL(Array.from(next));
+    emit(Array.from(next));
   };
 
   const setPreset = (preset: typeof ALL_KEY | "months" | "current-only") => {
-    if (preset === ALL_KEY) writeURL(availablePeriods.slice());
-    else if (preset === "months") writeURL(defaultMonthsOnly.slice());
-    else if (preset === "current-only") writeURL(["current"]);
+    if (preset === ALL_KEY) emit(availablePeriods.slice());
+    else if (preset === "months") emit(defaultMonthsOnly.slice());
+    else if (preset === "current-only") emit(["current"]);
   };
 
   return (
@@ -109,17 +103,12 @@ export default function StatsPeriodPicker({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={isPending}
       >
         <span className="stats-picker-icon" aria-hidden>
           📅
         </span>
         <span className="stats-picker-current">{buttonLabel}</span>
-        {isPending ? (
-          <span className="stats-picker-caret">⏳</span>
-        ) : (
-          <span className="stats-picker-caret">{open ? "▴" : "▾"}</span>
-        )}
+        <span className="stats-picker-caret">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
         <div className="stats-picker-panel" role="listbox">
@@ -128,7 +117,6 @@ export default function StatsPeriodPicker({
               type="button"
               className="stats-pill"
               onClick={() => setPreset("months")}
-              disabled={isPending}
             >
               כל החודשים
             </button>
@@ -136,7 +124,6 @@ export default function StatsPeriodPicker({
               type="button"
               className="stats-pill"
               onClick={() => setPreset(ALL_KEY)}
-              disabled={isPending}
             >
               + Current
             </button>
@@ -144,7 +131,6 @@ export default function StatsPeriodPicker({
               type="button"
               className="stats-pill"
               onClick={() => setPreset("current-only")}
-              disabled={isPending}
             >
               Current בלבד
             </button>
@@ -163,7 +149,6 @@ export default function StatsPeriodPicker({
                     type="checkbox"
                     checked={isOn}
                     onChange={() => togglePeriod(p)}
-                    disabled={isPending}
                   />
                   <span>{labelFor(p)}</span>
                 </label>

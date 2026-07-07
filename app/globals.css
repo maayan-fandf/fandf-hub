@@ -23330,14 +23330,21 @@ button.budget-need:focus-visible {
   border-radius: 50%;
 }
 
-/* Sticky context bar at the top of /stats — holds both the project
-   and city pickers so the user can switch context without scrolling
-   back to the bottom of the page. Sticks just below the topnav so the
-   pickers stay reachable while exploring the long lower sections. */
-.stats-context-bar {
+/* Sticky chrome at the top of /stats — context bar (pickers) + tab
+   bar pinned together just below the topnav. The wrapper owns the
+   stickiness for BOTH rows (2026-07 overhaul; same lesson as the
+   project-page header: when a sticky element gains siblings that must
+   pin with it, wrap them and move the sticky to the wrapper). */
+.stats-chrome {
   position: sticky;
   top: 56px; /* clears the global topnav */
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  margin-bottom: 1em;
+}
+.stats-context-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -23347,7 +23354,6 @@ button.budget-need:focus-visible {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  margin-bottom: 1em;
 }
 [data-theme="dark"] .stats-context-bar {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
@@ -23951,4 +23957,361 @@ button.budget-need:focus-visible {
 /* The objection pie pops from its center (scale tween in JS). */
 .crm-pie {
   transform-origin: center center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   /stats overhaul (2026-07) — tabs, KPI band, insights, consolidated
+   project table, channels range-bar table, positioning strip.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Tab bar (second row of .stats-chrome) ─────────────────────── */
+.stats-tabs {
+  display: flex;
+  gap: 0.35em;
+  padding: 0.35em;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.stats-tabs::-webkit-scrollbar { display: none; }
+[data-theme="dark"] .stats-tabs {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+.stats-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.45em 0.95em;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.92em;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.stats-tab:hover { background: var(--surface-hi); }
+.stats-tab.is-active {
+  background: var(--brand);
+  color: var(--md-sys-color-on-primary, #fff);
+}
+.stats-tab.is-muted:not(.is-active) { opacity: 0.6; }
+
+/* ── Tab panels — inactive stay mounted (recharts keeps a real
+      width) but collapse to zero height and drop from the a11y
+      tree. NOT display:none: ResponsiveContainer would measure 0. */
+.stats-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+}
+.stats-tabpanel:not(.is-active) {
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── KPI band ──────────────────────────────────────────────────── */
+.kpi-band-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin-bottom: 0.9em;
+}
+.kpi-band-head h2 { margin: 0; }
+.kpi-band-note { font-size: 0.8em; color: var(--muted); }
+.kpi-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.7em;
+}
+.kpi-card {
+  padding: 0.8em 0.95em;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  min-width: 0;
+}
+.kpi-label {
+  font-size: 0.78em;
+  font-weight: 600;
+  color: var(--muted);
+}
+.kpi-value {
+  font-size: 1.55em;
+  font-weight: 650;
+  color: var(--ink);
+  line-height: 1.1;
+  /* Stat-tile values read better with proportional figures —
+     tabular-nums is reserved for columns that must align. */
+  font-variant-numeric: normal;
+}
+.kpi-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  min-height: 26px;
+}
+.kpi-delta {
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 0.1em 0.45em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.kpi-delta.is-good { color: #15803d; background: rgba(22, 163, 74, 0.12); }
+.kpi-delta.is-bad { color: #b91c1c; background: rgba(220, 38, 38, 0.10); }
+.kpi-delta.is-flat { color: var(--muted); background: var(--surface-hi); }
+[data-theme="dark"] .kpi-delta.is-good { color: #4ade80; background: rgba(74, 222, 128, 0.14); }
+[data-theme="dark"] .kpi-delta.is-bad { color: #f87171; background: rgba(248, 113, 113, 0.14); }
+.kpi-spark { flex: 0 0 auto; }
+
+/* ── Insights strip ────────────────────────────────────────────── */
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.7em;
+}
+.insight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+  padding: 0.75em 0.9em;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  border-inline-start: 3px solid var(--border-soft);
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.insight-card.is-good { border-inline-start-color: #16a34a; }
+.insight-card.is-bad { border-inline-start-color: #dc2626; }
+.insight-card.is-watch { border-inline-start-color: #d97706; }
+.insight-card.is-info { border-inline-start-color: var(--brand); }
+.insight-icon { flex: 0 0 auto; font-size: 1.1em; }
+.insight-text { color: var(--ink-soft); }
+.insight-text b { color: var(--ink); }
+.insight-action {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  align-self: center;
+  border: none;
+  background: none;
+  color: var(--brand);
+  font-size: 0.88em;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.insight-action:hover { background: var(--surface-hi); }
+
+/* ── Consolidated project table ────────────────────────────────── */
+.ptable-search {
+  padding: 0.4em 0.8em;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--ink);
+  font-size: 0.88em;
+  min-width: 170px;
+}
+.ptable-note { margin-bottom: 0.8em; }
+.ptable-scroll { overflow-x: auto; }
+.ptable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.ptable th,
+.ptable td {
+  padding: 0.5em 0.65em;
+  text-align: start;
+  border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+.ptable-th {
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  font-size: 0.92em;
+  font-weight: 700;
+  position: relative;
+}
+.ptable-th:hover { color: var(--ink); }
+.ptable-th.is-sorted { color: var(--brand); }
+.ptable-th.is-static { cursor: default; }
+.ptable-th.is-static:hover { color: var(--muted); }
+.ptable-sort-mark {
+  font-size: 0.75em;
+  margin-inline-start: 0.3em;
+  opacity: 0.7;
+}
+.ptable tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ptable tbody tr:hover { background: var(--surface-hi); }
+.ptable-project { font-weight: 600; color: var(--ink); }
+.ptable-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.ptable-delta.is-good { color: #15803d; }
+.ptable-delta.is-bad { color: #b91c1c; }
+[data-theme="dark"] .ptable-delta.is-good { color: #4ade80; }
+[data-theme="dark"] .ptable-delta.is-bad { color: #f87171; }
+.ptable-spark { line-height: 0; }
+.ptable-nospark { color: var(--muted); }
+.ptable-status {
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 0.15em 0.55em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ptable-status.is-bad { color: #b91c1c; background: rgba(220, 38, 38, 0.10); }
+.ptable-status.is-warn { color: #a16207; background: rgba(217, 119, 6, 0.12); }
+.ptable-status.is-good { color: #15803d; background: rgba(22, 163, 74, 0.12); }
+.ptable-status.is-ok { color: var(--muted); background: var(--surface-hi); }
+[data-theme="dark"] .ptable-status.is-bad { color: #f87171; background: rgba(248, 113, 113, 0.14); }
+[data-theme="dark"] .ptable-status.is-warn { color: #fbbf24; background: rgba(251, 191, 36, 0.13); }
+[data-theme="dark"] .ptable-status.is-good { color: #4ade80; background: rgba(74, 222, 128, 0.14); }
+
+/* ── Channels range-bar table ──────────────────────────────────── */
+.chan-portfolio-ref {
+  font-size: 0.88em;
+  color: var(--ink-soft);
+  padding: 0.55em 0.8em;
+  background: var(--surface-alt);
+  border-radius: 8px;
+  margin-bottom: 0.9em;
+}
+.chan-table-wrap { position: relative; overflow-x: auto; }
+.chan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.chan-table th,
+.chan-table td {
+  padding: 0.5em 0.65em;
+  text-align: start;
+  border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+.chan-table th {
+  color: var(--muted);
+  font-size: 0.92em;
+  font-weight: 700;
+}
+.chan-num { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.chan-median { font-weight: 700; color: var(--ink); }
+.chan-alias { cursor: default; }
+.chan-table tr.is-hovered { background: var(--surface-hi); }
+.chan-bar-col { width: 38%; min-width: 220px; }
+.chan-track {
+  position: relative;
+  height: 14px;
+  background: var(--surface-hi);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.chan-range {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: var(--brand);
+  opacity: 0.35;
+  border-radius: 5px;
+}
+.chan-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  margin-inline-start: -1.5px;
+  background: var(--brand);
+  border-radius: 2px;
+}
+
+/* Collapsible full-table section */
+.stats-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 1.02em;
+  list-style-position: inside;
+}
+.stats-details[open] > summary { margin-bottom: 0.9em; }
+.stats-details > summary:hover { color: var(--brand); }
+
+/* ── Project positioning strip (drill-down tab) ────────────────── */
+.pos-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.7em;
+}
+.pos-card {
+  padding: 0.75em 0.9em;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.pos-metric { font-size: 0.8em; font-weight: 600; color: var(--muted); }
+.pos-value {
+  font-size: 1.35em;
+  font-weight: 650;
+  color: var(--ink);
+  font-variant-numeric: normal;
+}
+.pos-chips { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.pos-chip {
+  font-size: 0.78em;
+  font-weight: 600;
+  padding: 0.12em 0.5em;
+  border-radius: 999px;
+  background: var(--surface-hi);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.pos-chip.is-bad { color: #b91c1c; background: rgba(220, 38, 38, 0.10); }
+.pos-chip.is-warn { color: #a16207; background: rgba(217, 119, 6, 0.12); }
+.pos-chip.is-good { color: #15803d; background: rgba(22, 163, 74, 0.12); }
+[data-theme="dark"] .pos-chip.is-bad { color: #f87171; background: rgba(248, 113, 113, 0.14); }
+[data-theme="dark"] .pos-chip.is-warn { color: #fbbf24; background: rgba(251, 191, 36, 0.13); }
+[data-theme="dark"] .pos-chip.is-good { color: #4ade80; background: rgba(74, 222, 128, 0.14); }
+
+/* Mobile: sticky chrome eats too much viewport — unpin it. */
+@media (max-width: 640px) {
+  .stats-chrome { position: static; }
+}
+/* Channel bar clipped by the capped scale — overflow marker at the
+   bar's far (inline-end) edge. */
+.chan-clip {
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 50%;
+  transform: translateY(-54%);
+  font-weight: 900;
+  font-size: 12px;
+  color: var(--brand);
+  line-height: 1;
 }

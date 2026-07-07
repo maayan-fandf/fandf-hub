@@ -2,35 +2,32 @@
 
 import { useMemo } from "react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import type { PortfolioBenchmarks } from "@/lib/portfolioBenchmarks";
+import { useChartPalette } from "@/lib/chartTheme";
+import { trendSeries, METRIC_LABELS, type Metric } from "@/lib/statsInsights";
 
 /**
- * Portfolio time-trend chart. For each month present in the data,
- * computes the median of the selected metric across ALL projects with
- * a sample in that month. Answers "is my book of business getting more
- * expensive, cheaper, or steady over the year?"
+ * Portfolio time-trend chart. For each month, the median of the
+ * selected metric across all projects with a sample that month, wrapped
+ * in the P25–P75 interquartile band — so the book reads as a
+ * distribution moving through time, not a single line. A dashed
+ * reference line anchors the lifetime median.
  *
- * Limit to the last 24 months so the x-axis stays readable.
- *
- * Also overlays a portfolio-wide "all-time" reference line (the
- * lifetime median) so the user sees direction-of-travel against the
- * long-run anchor.
+ * 2026-07 overhaul: added the IQR band, solid hairline grid (dashed
+ * grid reads as threshold/projection), theme-aware palette
+ * (lib/chartTheme — the hardcoded indigo was 2:1 against the dark
+ * surface).
  */
-
-const METRIC_LABELS: Record<"cpl" | "cps" | "cpm", string> = {
-  cpl: "עלות לליד",
-  cps: "עלות לתיאום",
-  cpm: "עלות לביצוע",
-};
 
 const fmtIls = (n: number) =>
   n > 0 ? "₪" + Math.round(n).toLocaleString("he-IL") : "—";
@@ -48,40 +45,27 @@ export default function StatsPortfolioTrend({
   monthsBack = 24,
 }: {
   benchmarks: PortfolioBenchmarks;
-  metric: "cpl" | "cps" | "cpm";
+  metric: Metric;
   monthsBack?: number;
 }) {
+  const pal = useChartPalette();
+
   const { data, lifetimeMedian } = useMemo(() => {
-    const samples = benchmarks.project[metric].samples;
-    // Group monthly samples by their YYYY-MM key. Skip "current" since
-    // it's not a calendar month — the trend is about time evolution.
-    const byMonth = new Map<string, number[]>();
-    for (const s of samples) {
-      if (s.period === "current") continue;
-      if (!/^\d{4}-\d{2}$/.test(s.period)) continue;
-      const list = byMonth.get(s.period) || [];
-      list.push(s.value);
-      byMonth.set(s.period, list);
-    }
-    // Sort months ascending and keep the last N.
-    const months = Array.from(byMonth.keys()).sort();
-    const trimmed = months.slice(-monthsBack);
-    const data = trimmed.map((m) => {
-      const values = byMonth.get(m) || [];
-      return {
-        month: m,
-        median: median(values),
-        n: values.length,
-      };
-    });
-    // Lifetime median across ALL samples — reference line.
-    const allValues: number[] = [];
-    byMonth.forEach((list) => allValues.push(...list));
-    return {
-      data,
-      lifetimeMedian: allValues.length ? median(allValues) : 0,
-    };
-  }, [benchmarks.project, metric, monthsBack]);
+    const series = trendSeries(benchmarks, metric, monthsBack);
+    // Recharts renders the band as a stacked pair: an invisible base at
+    // P25 + a wash of height (P75 − P25) on top of it.
+    const data = series.map((p) => ({
+      ...p,
+      bandBase: p.p25,
+      bandSpan: Math.max(p.p75 - p.p25, 0),
+    }));
+    const lifetimeMedian = median(
+      benchmarks.project[metric].samples
+        .filter((s) => /^\d{4}-\d{2}$/.test(s.period))
+        .map((s) => s.value),
+    );
+    return { data, lifetimeMedian };
+  }, [benchmarks, metric, monthsBack]);
 
   if (data.length < 2) {
     // Need at least two months to show a trend.
@@ -105,7 +89,7 @@ export default function StatsPortfolioTrend({
     <section className="stats-section">
       <div className="stats-section-head">
         <h2 style={{ margin: 0 }}>
-          📈 מגמת התיק — חציון {METRIC_LABELS[metric]}
+          📈 מגמת התיק — {METRIC_LABELS[metric]}
         </h2>
         <span className={`stats-trend-badge ${trendTone}`}>
           {trendArrow} {pctChange >= 0 ? "+" : ""}
@@ -113,53 +97,95 @@ export default function StatsPortfolioTrend({
         </span>
       </div>
       <div className="stats-trend-meta">
-        חציון כל הזמן (קו ייחוס): <b>{fmtIls(lifetimeMedian)}</b> · n ליד
-        כל נקודה = מספר הפרויקטים שתרמו דגימה באותו חודש
+        הרצועה = P25–P75 (חצי מהתיק בתוכה) · הקו = חציון · קו מקווקו =
+        חציון כל הזמן ({fmtIls(lifetimeMedian)})
       </div>
       <div className="stats-trend-chart">
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={data} margin={{ top: 12, right: 20, left: 20, bottom: 4 }}>
-            <CartesianGrid stroke="rgba(127,127,127,0.10)" strokeDasharray="3 3" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart
+            data={data}
+            margin={{ top: 12, right: 20, left: 20, bottom: 4 }}
+          >
+            <CartesianGrid stroke={pal.grid} />
+            <XAxis dataKey="month" tick={{ fontSize: 11, fill: pal.tick }} />
             <YAxis
               tickFormatter={(v) => fmtIls(v)}
-              tick={{ fontSize: 11 }}
+              tick={{ fontSize: 11, fill: pal.tick }}
               domain={["auto", "auto"]}
             />
             <Tooltip
-              labelStyle={{ direction: "rtl", color: "#1f2937" }}
-              contentStyle={{ background: "white", border: "1px solid #e5e7eb" }}
-              formatter={(value, name, item) => {
-                if (name === "median") {
-                  const p = item.payload as { n: number };
-                  return [`${fmtIls(Number(value) || 0)} (n=${p.n})`, "חציון"];
-                }
-                return [fmtIls(Number(value) || 0), name];
+              labelStyle={{ direction: "rtl", color: pal.tooltipInk }}
+              contentStyle={{
+                background: pal.tooltipBg,
+                border: `1px solid ${pal.tooltipBorder}`,
+                color: pal.tooltipInk,
+              }}
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                const p = payload[0].payload as {
+                  median: number;
+                  p25: number;
+                  p75: number;
+                  n: number;
+                };
+                return (
+                  <div className="gsp-tooltip">
+                    <strong>{String(label)}</strong>
+                    <span>חציון: {fmtIls(p.median)}</span>
+                    <span>
+                      P25–P75: {fmtIls(p.p25)}–{fmtIls(p.p75)}
+                    </span>
+                    <span>n = {p.n} פרויקטים</span>
+                  </div>
+                );
               }}
             />
             <Legend />
+            {/* IQR band — stacked invisible base + wash. */}
+            <Area
+              dataKey="bandBase"
+              stackId="iqr"
+              stroke="none"
+              fill="transparent"
+              isAnimationActive={false}
+              legendType="none"
+              tooltipType="none"
+              name="__base"
+              activeDot={false}
+            />
+            <Area
+              dataKey="bandSpan"
+              stackId="iqr"
+              stroke="none"
+              fill={pal.wash}
+              isAnimationActive={false}
+              name="טווח P25–P75"
+              legendType="square"
+              tooltipType="none"
+              activeDot={false}
+            />
             <Line
               type="monotone"
               dataKey="median"
               name={`חציון התיק — ${METRIC_LABELS[metric]}`}
-              stroke="#4338ca"
-              strokeWidth={2.5}
-              dot={{ r: 3 }}
+              stroke={pal.accent}
+              strokeWidth={2}
+              dot={{ r: 3, strokeWidth: 2, stroke: pal.tooltipBg }}
               activeDot={{ r: 5 }}
             />
-            {/* Reference line — drawn as a fake horizontal series so it
-                shows up in the legend and has tooltip parity. */}
+            {/* Lifetime-median reference — de-emphasized chrome, not a
+                series: gray + dashed (dashing here MEANS reference). */}
             <Line
               type="linear"
               dataKey={() => lifetimeMedian}
-              name="חציון לטווח ארוך"
-              stroke="#0891b2"
+              name="חציון כל הזמן"
+              stroke={pal.deemph}
               strokeWidth={1.5}
               strokeDasharray="6 4"
               dot={false}
               activeDot={false}
             />
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </section>

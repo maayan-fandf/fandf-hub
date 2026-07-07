@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import type {
   BenchmarkSample,
   PortfolioBenchmarks,
@@ -74,13 +73,13 @@ function detectOutliers(
 export default function StatsOutliersPanel({
   benchmarks,
   metric,
+  onSelectProject,
 }: {
   benchmarks: PortfolioBenchmarks;
   metric: "cpl" | "cps" | "cpm";
+  /** Card click — StatsPageBody routes it into the drill-down tab. */
+  onSelectProject: (project: string) => void;
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
   const { expensive, winners, baselineCount } = useMemo(() => {
     // Lifetime samples only — that's the project-vs-project baseline.
     const currentOnly = benchmarks.project[metric].samples.filter(
@@ -101,9 +100,7 @@ export default function StatsOutliersPanel({
   }, [benchmarks.project, metric]);
 
   const handleClick = (project: string) => {
-    const params = new URLSearchParams(searchParams?.toString() || "");
-    params.set("project", project);
-    router.push(`/stats?${params.toString()}`);
+    onSelectProject(project);
   };
 
   if (expensive.length === 0 && winners.length === 0) {
@@ -113,7 +110,7 @@ export default function StatsOutliersPanel({
     }
     return (
       <section className="stats-section stats-heads-up">
-        <h2>🚨 התראות חמורות (Heads up)</h2>
+        <h2>🎯 דורש תשומת לב</h2>
         <div className="stats-empty">
           ✓ אין פרויקטים חורגים בתיק כרגע (כל הפרויקטים בתחום של {Z_THRESHOLD}
           σ מהממוצע).
@@ -165,7 +162,7 @@ export default function StatsOutliersPanel({
     <section className="stats-section stats-heads-up">
       <div className="stats-section-head">
         <h2 style={{ margin: 0 }}>
-          🚨 התראות חמורות — {METRIC_LABELS[metric]}
+          🎯 דורש תשומת לב — {METRIC_LABELS[metric]}
         </h2>
         <span className="stats-heads-up-count">
           {expensive.length + winners.length} פרויקטים מתוך {baselineCount}{" "}

@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
-
 /**
- * Three-pill metric picker for /stats's sticky context bar. URL-driven
- * via `?metric=cpl|cps|cpm` so selections are shareable + survive
- * reload, and the Gaussian section is a pure renderer (no internal
- * state).
+ * Three-pill metric picker for /stats's sticky context bar. Controlled
+ * since the 2026-07 overhaul: StatsPageBody owns the metric state (all
+ * consumers are client components slicing the already-loaded payload,
+ * so flipping metrics is instant — the URL is synced by the parent via
+ * history.replaceState, no server round-trip).
  */
 
 const METRICS: Array<{ key: "cpl" | "cps" | "cpm"; label: string }> = [
@@ -18,23 +16,11 @@ const METRICS: Array<{ key: "cpl" | "cps" | "cpm"; label: string }> = [
 
 export default function StatsMetricPicker({
   selected,
+  onChange,
 }: {
   selected: "cpl" | "cps" | "cpm";
+  onChange: (m: "cpl" | "cps" | "cpm") => void;
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
-
-  const setMetric = (m: "cpl" | "cps" | "cpm") => {
-    const params = new URLSearchParams(searchParams?.toString() || "");
-    if (m === "cpl") params.delete("metric"); // CPL is the default — keep URL clean
-    else params.set("metric", m);
-    const qs = params.toString();
-    startTransition(() => {
-      router.push(qs ? `/stats?${qs}` : "/stats");
-    });
-  };
-
   return (
     <div
       className="stats-metric-picker"
@@ -48,8 +34,7 @@ export default function StatsMetricPicker({
           role="radio"
           aria-checked={selected === m.key}
           className={"stats-pill" + (selected === m.key ? " is-active" : "")}
-          onClick={() => setMetric(m.key)}
-          disabled={isPending}
+          onClick={() => onChange(m.key)}
         >
           {m.label}
         </button>
