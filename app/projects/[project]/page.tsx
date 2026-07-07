@@ -1460,6 +1460,7 @@ function CommentsPreview({
             project={c.project}
             count={c.reply_count}
             people={people}
+            userEmail={userEmail}
           />
           <div className="discussion-client-actions">
             <CardActions
@@ -1591,6 +1592,7 @@ function MentionsPreview({
             project={m.project}
             count={m.reply_count ?? 0}
             people={people}
+            userEmail={userEmail}
           />
           <div className="discussion-client-actions">
             <CardActions

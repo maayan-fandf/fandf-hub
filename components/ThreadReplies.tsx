@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import CommentBody from "./CommentBody";
+import DeleteButton from "./DeleteButton";
 import type { CommentItem, TasksPerson } from "@/lib/appsScript";
 import { formatDateIso } from "@/lib/dateFormat";
 
@@ -18,6 +19,12 @@ type Props = {
    *  for `@email` mentions. Optional — falls back to email-prefix when
    *  missing. */
   people?: TasksPerson[];
+  /** Current viewer's email. A reply gets a 🗑️ delete affordance only when
+   *  the viewer authored it (the server also enforces author-or-admin) — so
+   *  a user can remove just their OWN reply without touching the thread root
+   *  (which is the only delete the discussion offered before, and it cascaded
+   *  to the whole thread). */
+  userEmail?: string;
 };
 
 /**
@@ -34,6 +41,7 @@ export default function ThreadReplies({
   project,
   count,
   people,
+  userEmail,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -135,6 +143,15 @@ export default function ThreadReplies({
                           📝 נערך
                         </span>
                       )}
+                      {!!userEmail &&
+                        (r.author_email || "").toLowerCase().trim() ===
+                          userEmail.toLowerCase().trim() && (
+                          <DeleteButton
+                            commentId={r.comment_id}
+                            itemLabel="את התגובה"
+                            minimal
+                          />
+                        )}
                     </div>
                     <CommentBody
                       body={r.body}

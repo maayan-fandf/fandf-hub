@@ -33,27 +33,44 @@ export default function DeleteButton({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  async function submitDelete(force: boolean): Promise<void> {
+    const res = await fetch("/api/comments/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commentId, force }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      needsForce?: boolean;
+      othersReplies?: number;
+    };
+    if (!res.ok) {
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+    // Server refused because the thread carries replies from OTHER people —
+    // confirm that explicit cascade before forcing it through. This is the
+    // guard against "I deleted my comment and the whole thread vanished".
+    if (data.needsForce) {
+      const n = data.othersReplies ?? 0;
+      const ok = window.confirm(
+        `בשרשור הזה יש ${n} תגובות של אנשים אחרים — מחיקה תמחק גם אותן ולא ניתן לשחזר. להמשיך ולמחוק את כל השרשור?`,
+      );
+      if (!ok) return;
+      await submitDelete(true);
+      return;
+    }
+    router.refresh();
+  }
+
   function onClick() {
-    if (
-      !window.confirm(
-        `בטוח למחוק ${itemLabel}? הפעולה תמחק גם את התגובות והמשימות שנוצרו. אי אפשר לבטל.`,
-      )
-    ) {
+    if (!window.confirm(`בטוח למחוק ${itemLabel}? אי אפשר לבטל.`)) {
       return;
     }
     setError(null);
     startTransition(async () => {
       try {
-        const res = await fetch("/api/comments/delete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ commentId }),
-        });
-        if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(data.error || `Request failed (${res.status})`);
-        }
-        router.refresh();
+        await submitDelete(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }

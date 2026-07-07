@@ -9,20 +9,24 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-  let body: { commentId?: string };
+  let body: { commentId?: string; force?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { commentId } = body;
+  const { commentId, force } = body;
   if (!commentId) {
     return NextResponse.json({ error: "commentId required" }, { status: 400 });
   }
 
   try {
-    const result = await deleteCommentDirect(session.user.email, commentId);
+    const result = await deleteCommentDirect(
+      session.user.email,
+      commentId,
+      !!force,
+    );
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

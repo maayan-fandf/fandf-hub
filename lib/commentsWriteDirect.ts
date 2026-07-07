@@ -912,11 +912,19 @@ export type DeleteCommentResult = {
   comment_id: string;
   deleted_replies: number;
   deleted_tasks: number;
+  /** Set when the delete was REFUSED because the thread has replies written
+   *  by OTHER people — the caller must re-issue with force:true to confirm
+   *  the cascade. Nothing is deleted on a needsForce response. */
+  needsForce?: boolean;
+  /** How many of the would-be cascade-deleted replies are authored by
+   *  someone other than the deleter (set alongside needsForce). */
+  othersReplies?: number;
 };
 
 export async function deleteCommentDirect(
   subjectEmail: string,
   commentId: string,
+  force = false,
 ): Promise<DeleteCommentResult> {
   const { rows, idx, sheetId, fsWrites } =
     await readCommentsForWrite(subjectEmail);
@@ -940,6 +948,30 @@ export async function deleteCommentDirect(
         replyRowIndices.push(i);
       }
     }
+  }
+
+  // Safety guard (reported 2026-07-07): the discussion UI's only delete
+  // affordance sits on the thread ROOT, and this function cascades to every
+  // reply — so "delete my comment" silently wiped everyone's replies too.
+  // Refuse to remove replies authored by OTHER people unless the caller
+  // explicitly forces it (the client re-confirms, then re-issues force:true).
+  const authorCol = idx.get("author_email");
+  let othersReplies = 0;
+  if (authorCol != null) {
+    for (const ri of replyRowIndices) {
+      const ra = String(rows[ri][authorCol] ?? "").toLowerCase().trim();
+      if (ra && ra !== me) othersReplies++;
+    }
+  }
+  if (othersReplies > 0 && !force) {
+    return {
+      ok: false,
+      needsForce: true,
+      othersReplies,
+      comment_id: commentId,
+      deleted_replies: 0,
+      deleted_tasks: 0,
+    };
   }
 
   // Parse spawned Google Tasks refs now (we still own `row`); the actual
