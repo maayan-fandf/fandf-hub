@@ -72,8 +72,8 @@ function monthWindow(mon: string): { from: string; toExcl: string } {
  *     window definition as the Hub funnel KPIs (owner-verified on רמת אפעל)
  *     and BMBY's period reports (3-tenant sweep 2026-07-09; see
  *     lib/crmData buildFbBreakdown).
- *   • held      = in-month events that are held OR past-dated in_process
- *     (outcomes are marked retrospectively in BMBY).
+ *   • held      = in-month events BMBY-confirmed as held (strictly marked —
+ *     no past-due-unmarked estimates; owner decision 2026-07-09).
  */
 type Attr = {
   fb: Map<string, { camp: string; ad: string; aud: string }>;
@@ -105,9 +105,15 @@ function buildAttr(allLeads: LeadRow[]): Attr {
 
 const numericId = (s: string) => /^\d{8,}$/.test(s);
 
-/** Today's date in the CRM's timezone (outcome-lag cutoff for "performed"). */
-function todayIL(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date());
+/** Israel-local calendar day of a warehouse timestamptz (PostgREST returns
+ *  UTC; the exporter writes fixed +03:00 — a bare slice(0,10) misfiles
+ *  00:00-03:00-IL events into the previous day/month). */
+function ilDay(ts: string | null | undefined): string {
+  const raw = String(ts ?? "");
+  if (!raw) return "";
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) return raw.slice(0, 10);
+  return new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
 /** Pure aggregation (no I/O): month leads (distinct clients per group) +
@@ -120,8 +126,9 @@ function aggregateMeetings(
   from: string,
   toExcl: string,
 ): ProjectMeetings {
-  // Per-client tallies of meeting events dated IN the month.
-  const today = todayIL();
+  // Per-client tallies of meeting events dated IN the month. held = BMBY-
+  // confirmed only (no past-due in_process — owner decision 2026-07-09; see
+  // lib/crmData buildFbBreakdown).
   const evByClient = new Map<string, { total: number; done: number }>();
   for (const m of jm) {
     const c = String(m.client_id ?? "");
@@ -130,12 +137,7 @@ function aggregateMeetings(
     if (!d || d < from || d >= toExcl) continue;
     const rec = evByClient.get(c) || { total: 0, done: 0 };
     rec.total++;
-    if (
-      m.appointment_outcome === "held" ||
-      (m.appointment_outcome === "in_process" && d <= today)
-    ) {
-      rec.done++;
-    }
+    if (m.appointment_outcome === "held") rec.done++;
     evByClient.set(c, rec);
   }
 
@@ -216,7 +218,7 @@ export async function computeProjectMeetings(
   if (!allLeads.length) return { creative: [], audience: [], keyword: [] };
   const attr = buildAttr(allLeads);
   const monthLeads = allLeads.filter((l) => {
-    const d = String(l.lead_created_at ?? "").slice(0, 10);
+    const d = ilDay(l.lead_created_at);
     return d >= from && d < toExcl;
   });
   return aggregateMeetings(monthLeads, attr, jm, from, toExcl);
@@ -270,7 +272,7 @@ export async function getProjectMeetingsLiveMulti(
   const results = mons.map((mon) => {
     const { from, toExcl } = monthWindow(mon);
     const monthLeads = allLeads.filter((l) => {
-      const d = String(l.lead_created_at ?? "").slice(0, 10);
+      const d = ilDay(l.lead_created_at);
       return d >= from && d < toExcl;
     });
     return { month: mon, ...aggregateMeetings(monthLeads, attr, jm, from, toExcl) };

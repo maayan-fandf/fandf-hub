@@ -1245,6 +1245,18 @@ function aggregateBmbyFunnel(
  * logged retrospectively, so current-month held is naturally low and grows
  * through the month (see lib/crmEnrichment.ts). Stale-leads detection here
  * is window-scoped (the Sheet path sees all-time rows) — acceptable for v1. */
+/** Israel-local calendar day of a warehouse timestamptz. PostgREST returns
+ *  UTC ISO strings, so a bare slice(0,10) gives the UTC day — off by one for
+ *  events between 00:00-03:00 IL. The exporter writes fixed +03:00, so a
+ *  fixed +3h shift reproduces its calendar exactly (no DST bookkeeping). */
+function ilDay(ts: string | null | undefined): string {
+  const raw = String(ts ?? "");
+  if (!raw) return "";
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) return raw.slice(0, 10);
+  return new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 async function computeBmbyFunnelFromWarehouse(
   crmAccount: string,
   window: DateWindow | null,
@@ -1288,8 +1300,13 @@ async function computeBmbyFunnelFromWarehouse(
     utm_content: string | null;
     utm_campaign: string | null;
   }>(
+    // Window bounds carry an explicit +03:00 offset: lead_created_at is a
+    // timestamptz the exporter writes as Israel(+03:00), so a bare date here
+    // compares at UTC midnight and misfiles each month's first/last 3 IL
+    // hours (found 2026-07-09 by diffing a BMBY leads-grid export — 4 of
+    // מיה's July-1 00:00-03:00 leads landed in June). %2B = url-encoded +.
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
-      `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
+      `&lead_created_at=gte.${from}T00:00:00%2B03:00&lead_created_at=lt.${toExcl}T00:00:00%2B03:00` +
       `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,response_seconds,is_return_lead,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
@@ -1396,11 +1413,11 @@ async function computeBmbyFunnelFromWarehouse(
     // flag occasionally lags), so contacted >= scheduled >= held holds.
     const contactDate =
       l.is_handled || hasMeeting
-        ? (l.handled_at || l.lead_created_at || "").slice(0, 10)
+        ? ilDay(l.handled_at || l.lead_created_at)
         : "";
     return [
       crmAccount,
-      (l.lead_created_at || "").slice(0, 10),
+      ilDay(l.lead_created_at),
       (l.media_source_clean || "").trim(),
       status,
       (l.objections || "").trim(),
@@ -1526,9 +1543,11 @@ type FbLead = {
  *     June 129≈133, kenko June ~70≈57+30, מיה July 53≈55; the one outlier —
  *     מיה June 76 vs 125 — is that tenant's cohort-cumulative column variant,
  *     and chasing it over-counted mature projects 3x, e.g. kenko 180 vs 57).
- *   • פגישות = in-window events that are held OR past-dated in_process
- *     (outcomes are marked retrospectively; a passed, non-canceled meeting
- *     reads as performed).
+ *   • פגישות = in-window events BMBY-confirmed as held. Strictly marked-held
+ *     only — counting past-due-unmarked in_process as performed presented
+ *     estimates as fact (בוצעו 18 on a card whose BMBY row said 10; keyword
+ *     rows collapsed to תיאומים==ביצועים) — owner decision 2026-07-09. The
+ *     cost: current-month held lags BMBY until outcomes are marked.
  *  Non-fb-first clients don't credit fb groups. The creative rows also carry
  *  spend + CPL/CPS/CPM joined from the dashboard's facebook-ads-metrics Sheet.
  *  undefined when the project has no in-window Meta leads. */
@@ -1555,11 +1574,10 @@ async function buildFbBreakdown(
   };
 
   // Per-client tallies of meeting events dated IN the window: total events +
-  // "performed" (held, or in_process whose date already passed — the outcome
-  // flag is marked retrospectively in BMBY).
-  const todayIL = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jerusalem",
-  }).format(new Date());
+  // performed. Performed = BMBY-CONFIRMED held ONLY (owner decision 2026-07-09:
+  // past-dated-but-unmarked in_process read as "בוצעו 18" on a card while the
+  // BMBY screen said 6 — some past-dues turn out no-shows, so counting them
+  // presented estimates as fact).
   const winEvByClient = new Map<string, { total: number; done: number }>();
   for (const m of meetings) {
     const c = String(m.client_id ?? "");
@@ -1568,12 +1586,7 @@ async function buildFbBreakdown(
     if (!d || d < from || d >= toExcl) continue;
     const rec = winEvByClient.get(c) || { total: 0, done: 0 };
     rec.total++;
-    if (
-      m.appointment_outcome === "held" ||
-      (m.appointment_outcome === "in_process" && d <= todayIL)
-    ) {
-      rec.done++;
-    }
+    if (m.appointment_outcome === "held") rec.done++;
     winEvByClient.set(c, rec);
   }
 
