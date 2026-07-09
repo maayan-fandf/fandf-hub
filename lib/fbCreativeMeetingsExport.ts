@@ -64,18 +64,16 @@ function monthWindow(mon: string): { from: string; toExcl: string } {
 }
 
 /**
- * The per-project warehouse join, as PURE COMPUTE (no Sheet I/O). Reproduces
- * BMBY's דוח יחסי המרה semantics (reverse-engineered live 2026-07-09; see
- * lib/crmData buildFbBreakdown for the verification numbers):
- *   • leads   = distinct clients with a lead CREATED in the month, grouped by
- *     their own UTM tag.
- *   • cohort  = clients TOUCHED in the month — a lead in it OR a meeting event
- *     dated in it (how BMBY pulls old clients into the current month).
- *   • scheduled = ALL meeting events EVER (to date) of the group's cohort
- *     clients, credited via each client's FIRST-touch lead.
- *   • held    = those events that are held OR past-dated in_process (BMBY
- *     marks outcomes retrospectively; a passed, non-canceled meeting reads
- *     as performed — matches BMBY's בוצעו).
+ * The per-project warehouse join, as PURE COMPUTE (no Sheet I/O).
+ *   • leads     = distinct clients with a lead CREATED in the month, grouped
+ *     by their own UTM tag.
+ *   • scheduled = meeting EVENTS dated IN the month, credited to the group of
+ *     the meeting-client's FIRST-touch lead (any lead age) — same event-in-
+ *     window definition as the Hub funnel KPIs (owner-verified on רמת אפעל)
+ *     and BMBY's period reports (3-tenant sweep 2026-07-09; see
+ *     lib/crmData buildFbBreakdown).
+ *   • held      = in-month events that are held OR past-dated in_process
+ *     (outcomes are marked retrospectively in BMBY).
  */
 type Attr = {
   fb: Map<string, { camp: string; ad: string; aud: string }>;
@@ -112,10 +110,9 @@ function todayIL(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date());
 }
 
-/** Pure aggregation (no I/O), BMBY-semantics: month leads (distinct clients
- *  per group) + cohort = month-lead clients ∪ clients with a meeting event
- *  dated in the month; scheduled = ALL meeting events ever of the cohort,
- *  held = their held/past-due events — credited via first-touch attribution. */
+/** Pure aggregation (no I/O): month leads (distinct clients per group) +
+ *  meeting EVENTS dated in the month (per-client tallies), credited via
+ *  first-touch attribution. */
 function aggregateMeetings(
   monthLeads: LeadRow[],
   attr: Attr,
@@ -123,24 +120,23 @@ function aggregateMeetings(
   from: string,
   toExcl: string,
 ): ProjectMeetings {
-  // Per-client EVER meeting tallies + the set of clients with an in-month event.
+  // Per-client tallies of meeting events dated IN the month.
   const today = todayIL();
   const evByClient = new Map<string, { total: number; done: number }>();
-  const inWindow = new Set<string>();
   for (const m of jm) {
     const c = String(m.client_id ?? "");
     if (!c) continue;
+    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
+    if (!d || d < from || d >= toExcl) continue;
     const rec = evByClient.get(c) || { total: 0, done: 0 };
     rec.total++;
-    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
     if (
       m.appointment_outcome === "held" ||
-      (m.appointment_outcome === "in_process" && d && d <= today)
+      (m.appointment_outcome === "in_process" && d <= today)
     ) {
       rec.done++;
     }
     evByClient.set(c, rec);
-    if (d && d >= from && d < toExcl) inWindow.add(c);
   }
 
   type Rec = { extra: Record<string, string>; clients: Set<string>; sched: number; held: number };
@@ -153,11 +149,9 @@ function aggregateMeetings(
     return rec;
   };
   // leads — created this month, distinct client per group.
-  const cohort = new Set<string>();
   for (const l of monthLeads) {
     const c = String(l.client_id ?? "");
     if (!c) continue;
-    cohort.add(c);
     const ch = String(l.channel_key ?? "");
     if (ch === "fb") {
       const camp = clean(l.utm_campaign), ad = normAdName(l.utm_content);
@@ -169,12 +163,9 @@ function aggregateMeetings(
       if (kw && !numericId(kw)) ensure(byKw, kw, { kw }).clients.add(c);
     }
   }
-  for (const c of inWindow) cohort.add(c);
-  // Meetings — each cohort client's EVER tallies, credited once per dimension
-  // to the group of their FIRST-touch lead.
-  for (const c of cohort) {
-    const ev = evByClient.get(c);
-    if (!ev) continue;
+  // Meetings — each client's in-month event tallies, credited once per
+  // dimension to the group of their FIRST-touch lead.
+  for (const [c, ev] of evByClient) {
     const f = attr.fb.get(c);
     if (f && f.camp && f.ad && !numericId(f.camp) && !numericId(f.ad)) {
       const r = ensure(byKey, f.camp + "|" + f.ad, { camp: f.camp, ad: f.ad });

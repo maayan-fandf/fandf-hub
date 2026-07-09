@@ -1498,7 +1498,6 @@ async function computeBmbyFunnelFromWarehouse(
     funnel.fbBreakdown = await buildFbBreakdown(
       leads,
       meetings,
-      anyClients,
       fbAttrByClient,
       from,
       toExcl,
@@ -1517,25 +1516,22 @@ type FbLead = {
 };
 
 /** Placement / audience / creative breakdown of a project's Meta leads
- *  (channel_key='fb' = fb+ig+an) from their UTM tags, with meeting counts that
- *  REPRODUCE BMBY's דוח יחסי המרה semantics (reverse-engineered live on
- *  באר יעקב מערב 2026-07-09; June fb 53≈52, held 38≈41; July totals 55≈55,
- *  22≈22 — all within fetch-lag):
- *   • cohort  = clients TOUCHED in the window — a lead row in it OR a meeting
- *     event dated in it (that's how BMBY pulls old clients into the current
- *     month as חוזרים when their meeting happens now).
- *   • leads   = window fb lead rows, grouped by their own UTM tag (unchanged).
- *   • תואמו   = ALL meeting events EVER (to date) of the group's cohort
- *     clients — BMBY counts a client's meeting history cumulatively, not
- *     meetings-dated-in-window.
- *   • פגישות = those events that are held OR past-dated in_process (outcomes
- *     are marked retrospectively in BMBY; a meeting whose date passed and
- *     wasn't canceled reads as performed — matches BMBY's בוצעו).
- *  Each meeting client maps to a group via their FIRST-touch fb lead
- *  (`fbAttrByClient`; non-fb-first clients don't credit fb groups).
- *  The creative rows also carry spend + CPL/CPS/CPM joined from the dashboard's
- *  facebook-ads-metrics Sheet. undefined when the project has no in-window
- *  Meta leads. */
+ *  (channel_key='fb' = fb+ig+an) from their UTM tags.
+ *   • leads   = window fb lead rows, grouped by their own UTM tag.
+ *   • תואמו   = meeting EVENTS dated IN the window, credited to the group of
+ *     the meeting-client's FIRST-touch fb lead (any lead age) — so a June ad
+ *     gets its clients' July meetings in the July view. Same event-in-window
+ *     definition as the funnel KPI tiles (owner-verified exact on רמת אפעל
+ *     19/8/6) and BMBY's period reports (2026-07-09 3-tenant sweep: נתיבות
+ *     June 129≈133, kenko June ~70≈57+30, מיה July 53≈55; the one outlier —
+ *     מיה June 76 vs 125 — is that tenant's cohort-cumulative column variant,
+ *     and chasing it over-counted mature projects 3x, e.g. kenko 180 vs 57).
+ *   • פגישות = in-window events that are held OR past-dated in_process
+ *     (outcomes are marked retrospectively; a passed, non-canceled meeting
+ *     reads as performed).
+ *  Non-fb-first clients don't credit fb groups. The creative rows also carry
+ *  spend + CPL/CPS/CPM joined from the dashboard's facebook-ads-metrics Sheet.
+ *  undefined when the project has no in-window Meta leads. */
 async function buildFbBreakdown(
   windowLeads: FbLead[],
   meetings: Array<{
@@ -1544,7 +1540,6 @@ async function buildFbBreakdown(
     meeting_date: string | null;
     appointment_date: string | null;
   }>,
-  windowMeetingClients: Set<string>,
   fbAttrByClient: Map<string, FbLead>,
   from: string,
   toExcl: string,
@@ -1559,37 +1554,27 @@ async function buildFbBreakdown(
     return /^\d{8,}$/.test(v) ? "אחר" : v;
   };
 
-  // Per-client meeting tallies over the FULL history (BMBY counts a cohort
-  // client's meetings cumulatively): total events + "performed" events (held,
-  // or in_process whose date already passed — the outcome flag lags).
+  // Per-client tallies of meeting events dated IN the window: total events +
+  // "performed" (held, or in_process whose date already passed — the outcome
+  // flag is marked retrospectively in BMBY).
   const todayIL = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
-  const evByClient = new Map<string, { total: number; done: number }>();
+  const winEvByClient = new Map<string, { total: number; done: number }>();
   for (const m of meetings) {
     const c = String(m.client_id ?? "");
     if (!c) continue;
-    const rec = evByClient.get(c) || { total: 0, done: 0 };
-    rec.total++;
     const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
+    if (!d || d < from || d >= toExcl) continue;
+    const rec = winEvByClient.get(c) || { total: 0, done: 0 };
+    rec.total++;
     if (
       m.appointment_outcome === "held" ||
-      (m.appointment_outcome === "in_process" && d && d <= todayIL)
+      (m.appointment_outcome === "in_process" && d <= todayIL)
     ) {
       rec.done++;
     }
-    evByClient.set(c, rec);
-  }
-
-  // Cohort = clients of the window's fb leads ∪ fb-first clients with a
-  // meeting event dated in the window (BMBY's חוזרים-by-meeting-touch).
-  const cohort = new Set<string>();
-  for (const l of fb) {
-    const c = String(l.client_id ?? "");
-    if (c) cohort.add(c);
-  }
-  for (const c of windowMeetingClients) {
-    if (fbAttrByClient.has(c)) cohort.add(c);
+    winEvByClient.set(c, rec);
   }
 
   type Acc = { leads: number; sched: number; held: number };
@@ -1604,13 +1589,12 @@ async function buildFbBreakdown(
       const v = getLabel(l);
       if (v) ensure(v).leads++;
     }
-    // Meetings: each cohort client's EVER-tally credited once, to the group of
-    // their first-touch fb lead (one group per dimension — sums cleanly).
-    for (const c of cohort) {
-      const ev = evByClient.get(c);
-      if (!ev) continue;
+    // Meetings: each client's in-window event tally credited once, to the
+    // group of their first-touch fb lead (one group per dimension — sums
+    // cleanly; clients whose first touch isn't fb don't credit fb groups).
+    for (const [c, ev] of winEvByClient) {
       const origin = fbAttrByClient.get(c);
-      if (!origin) continue; // window lead whose client isn't fb-first
+      if (!origin) continue;
       const v = getLabel(origin);
       if (!v) continue;
       const r = ensure(v);
@@ -1650,7 +1634,7 @@ async function buildFbBreakdown(
     if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
   };
   for (const l of fb) addCamp(l);
-  for (const c of cohort) { const o = fbAttrByClient.get(c); if (o) addCamp(o); }
+  for (const c of winEvByClient.keys()) { const o = fbAttrByClient.get(c); if (o) addCamp(o); }
 
   // Join per-ad spend from the dashboard's facebook-ads-metrics Sheet (exact
   // campaign scope → collision-free). Degrades to spend=0 on any failure.
