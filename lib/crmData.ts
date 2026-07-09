@@ -1477,14 +1477,22 @@ async function computeBmbyFunnelFromWarehouse(
     // cohort), gated on there being in-window meetings to attribute.
     const fbAttrByClient = new Map<string, FbLead>();
     if (anyClients.size > 0) {
-      const fbHistory = await supabaseRowsAll<FbLead>(
-        `v_bmby_leads_bucketed?project_id=eq.${pid}&channel_key=eq.fb` +
+      // First-TOUCH attribution: credit a meeting to fb ONLY when the client's
+      // FIRST lead (across ALL channels, by lead_id) is an fb lead — matching
+      // BMBY's single-source model. Otherwise a client who arrived via yad2/
+      // phone first and merely also clicked an fb ad would inflate fb's
+      // scheduled/held (seen on מיה: any-fb 34 vs first-touch 30).
+      const history = await supabaseRowsAll<FbLead>(
+        `v_bmby_leads_bucketed?project_id=eq.${pid}` +
           `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
           `&order=lead_id.asc`,
       );
-      for (const l of fbHistory) {
+      const seen = new Set<string>();
+      for (const l of history) {
         const c = String(l.client_id ?? "");
-        if (c && !fbAttrByClient.has(c)) fbAttrByClient.set(c, l);
+        if (!c || seen.has(c)) continue;
+        seen.add(c); // this client's first (originating) lead
+        if (l.channel_key === "fb") fbAttrByClient.set(c, l);
       }
     }
     funnel.fbBreakdown = await buildFbBreakdown(

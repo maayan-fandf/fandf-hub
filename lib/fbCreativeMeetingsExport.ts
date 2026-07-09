@@ -79,18 +79,23 @@ type Attr = {
   gs: Map<string, { kw: string }>;
 };
 
-/** client → its ORIGINATING (first, by lead_id) fb / gs lead's group keys, from
- *  the project's FULL lead history. Month-independent → fetched once, reused. */
+/** client → its ORIGINATING lead's group keys — FIRST-TOUCH: a client is
+ *  credited to fb (creative/audience) or gs (keyword) ONLY when their FIRST
+ *  lead across ALL channels (by lead_id) is that channel, matching BMBY's
+ *  single-source model. So a yad2-first client who also clicked an fb ad
+ *  doesn't inflate fb's meetings. Month-independent → built once, reused. */
 function buildAttr(allLeads: LeadRow[]): Attr {
   const fb = new Map<string, { camp: string; ad: string; aud: string }>();
   const gs = new Map<string, { kw: string }>();
+  const seen = new Set<string>();
   for (const l of allLeads) {
     const c = String(l.client_id ?? "");
-    if (!c) continue;
+    if (!c || seen.has(c)) continue;
+    seen.add(c); // this client's first (originating) lead
     const ch = String(l.channel_key ?? "");
-    if (ch === "fb" && !fb.has(c)) {
+    if (ch === "fb") {
       fb.set(c, { camp: clean(l.utm_campaign), ad: normAdName(l.utm_content), aud: clean(l.utm_term) });
-    } else if (ch === "gs" && !gs.has(c)) {
+    } else if (ch === "gs") {
       gs.set(c, { kw: clean(l.utm_term) });
     }
   }
