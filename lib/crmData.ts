@@ -1497,8 +1497,8 @@ async function computeBmbyFunnelFromWarehouse(
     }
     funnel.fbBreakdown = await buildFbBreakdown(
       leads,
+      meetings,
       anyClients,
-      heldClients,
       fbAttrByClient,
       from,
       toExcl,
@@ -1517,22 +1517,34 @@ type FbLead = {
 };
 
 /** Placement / audience / creative breakdown of a project's Meta leads
- *  (channel_key='fb' = fb+ig+an) from their UTM tags. Two DIFFERENT bases,
- *  by design (mirrors BMBY's דוח יחסי המרה):
- *   • leads   = leads CREATED in the window, grouped by their own UTM tag.
- *   • תואמו/פגישות = DISTINCT clients whose meeting EVENT is dated in the
- *     window, credited to the group of that client's ORIGINATING fb lead
- *     (`fbAttrByClient`, any date). So a creative that brought a client months
- *     ago still gets that client's in-window meeting — the whole point: on a
- *     young month the fresh leads haven't met yet, and the month's real
- *     meetings belong to OLDER leads (June creative → July meetings).
+ *  (channel_key='fb' = fb+ig+an) from their UTM tags, with meeting counts that
+ *  REPRODUCE BMBY's דוח יחסי המרה semantics (reverse-engineered live on
+ *  באר יעקב מערב 2026-07-09; June fb 53≈52, held 38≈41; July totals 55≈55,
+ *  22≈22 — all within fetch-lag):
+ *   • cohort  = clients TOUCHED in the window — a lead row in it OR a meeting
+ *     event dated in it (that's how BMBY pulls old clients into the current
+ *     month as חוזרים when their meeting happens now).
+ *   • leads   = window fb lead rows, grouped by their own UTM tag (unchanged).
+ *   • תואמו   = ALL meeting events EVER (to date) of the group's cohort
+ *     clients — BMBY counts a client's meeting history cumulatively, not
+ *     meetings-dated-in-window.
+ *   • פגישות = those events that are held OR past-dated in_process (outcomes
+ *     are marked retrospectively in BMBY; a meeting whose date passed and
+ *     wasn't canceled reads as performed — matches BMBY's בוצעו).
+ *  Each meeting client maps to a group via their FIRST-touch fb lead
+ *  (`fbAttrByClient`; non-fb-first clients don't credit fb groups).
  *  The creative rows also carry spend + CPL/CPS/CPM joined from the dashboard's
  *  facebook-ads-metrics Sheet. undefined when the project has no in-window
  *  Meta leads. */
 async function buildFbBreakdown(
   windowLeads: FbLead[],
-  schedClients: Set<string>,
-  heldClients: Set<string>,
+  meetings: Array<{
+    client_id: string | null;
+    appointment_outcome: string | null;
+    meeting_date: string | null;
+    appointment_date: string | null;
+  }>,
+  windowMeetingClients: Set<string>,
   fbAttrByClient: Map<string, FbLead>,
   from: string,
   toExcl: string,
@@ -1547,30 +1559,63 @@ async function buildFbBreakdown(
     return /^\d{8,}$/.test(v) ? "אחר" : v;
   };
 
-  // Per group: leads (window cohort, per lead) + scheduled/held as DISTINCT
-  // clients, each in-window meeting credited to the group of the client's FIRST
-  // fb lead (`fbAttrByClient`). A client maps to exactly ONE group per
-  // dimension, so the group sizes sum without double-counting.
-  type Acc = { leads: number; sched: Set<string>; held: Set<string> };
+  // Per-client meeting tallies over the FULL history (BMBY counts a cohort
+  // client's meetings cumulatively): total events + "performed" events (held,
+  // or in_process whose date already passed — the outcome flag lags).
+  const todayIL = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+  const evByClient = new Map<string, { total: number; done: number }>();
+  for (const m of meetings) {
+    const c = String(m.client_id ?? "");
+    if (!c) continue;
+    const rec = evByClient.get(c) || { total: 0, done: 0 };
+    rec.total++;
+    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
+    if (
+      m.appointment_outcome === "held" ||
+      (m.appointment_outcome === "in_process" && d && d <= todayIL)
+    ) {
+      rec.done++;
+    }
+    evByClient.set(c, rec);
+  }
+
+  // Cohort = clients of the window's fb leads ∪ fb-first clients with a
+  // meeting event dated in the window (BMBY's חוזרים-by-meeting-touch).
+  const cohort = new Set<string>();
+  for (const l of fb) {
+    const c = String(l.client_id ?? "");
+    if (c) cohort.add(c);
+  }
+  for (const c of windowMeetingClients) {
+    if (fbAttrByClient.has(c)) cohort.add(c);
+  }
+
+  type Acc = { leads: number; sched: number; held: number };
   const accumulate = (getLabel: (l: FbLead) => string): Map<string, Acc> => {
     const m = new Map<string, Acc>();
     const ensure = (k: string): Acc => {
       let r = m.get(k);
-      if (!r) { r = { leads: 0, sched: new Set(), held: new Set() }; m.set(k, r); }
+      if (!r) { r = { leads: 0, sched: 0, held: 0 }; m.set(k, r); }
       return r;
     };
     for (const l of fb) {
       const v = getLabel(l);
       if (v) ensure(v).leads++;
     }
-    for (const c of schedClients) {
+    // Meetings: each cohort client's EVER-tally credited once, to the group of
+    // their first-touch fb lead (one group per dimension — sums cleanly).
+    for (const c of cohort) {
+      const ev = evByClient.get(c);
+      if (!ev) continue;
       const origin = fbAttrByClient.get(c);
-      if (!origin) continue; // client didn't originate from an fb lead
+      if (!origin) continue; // window lead whose client isn't fb-first
       const v = getLabel(origin);
       if (!v) continue;
       const r = ensure(v);
-      r.sched.add(c);
-      if (heldClients.has(c)) r.held.add(c);
+      r.sched += ev.total;
+      r.held += ev.done;
     }
     return m;
   };
@@ -1578,7 +1623,7 @@ async function buildFbBreakdown(
   // leads this window (an older ad) still surfaces, not only lead-heavy ones.
   const toRows = (m: Map<string, Acc>) => {
     const sorted = [...m.entries()]
-      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.sched.size, held: r.held.size }))
+      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.sched, held: r.held }))
       .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
     const head = sorted.slice(0, TOP);
     const rest = sorted.slice(TOP).reduce(
@@ -1605,7 +1650,7 @@ async function buildFbBreakdown(
     if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
   };
   for (const l of fb) addCamp(l);
-  for (const c of schedClients) { const o = fbAttrByClient.get(c); if (o) addCamp(o); }
+  for (const c of cohort) { const o = fbAttrByClient.get(c); if (o) addCamp(o); }
 
   // Join per-ad spend from the dashboard's facebook-ads-metrics Sheet (exact
   // campaign scope → collision-free). Degrades to spend=0 on any failure.
@@ -1617,7 +1662,7 @@ async function buildFbBreakdown(
   }
   const byCreative = [...creativeAcc.entries()]
     .map(([label, r]) => {
-      const leads = r.leads, scheduled = r.sched.size, held = r.held.size;
+      const leads = r.leads, scheduled = r.sched, held = r.held;
       const spend = spendByAd.get(label)?.cost ?? 0;
       return {
         label, leads, scheduled, held, spend,

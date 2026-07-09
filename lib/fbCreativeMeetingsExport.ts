@@ -64,15 +64,18 @@ function monthWindow(mon: string): { from: string; toExcl: string } {
 }
 
 /**
- * The per-project warehouse join, as PURE COMPUTE (no Sheet I/O). Two DIFFERENT
- * bases, by design (mirrors BMBY's דוח יחסי המרה — see lib/crmData buildFbBreakdown):
- *   • leads   = leads CREATED in the month, grouped by their own UTM tag,
- *     distinct clients.
- *   • scheduled/held = DISTINCT clients whose meeting EVENT is dated in the
- *     month, credited to the group of that client's ORIGINATING lead (any
- *     date). So a creative that brought a client in June gets that client's
- *     July meeting — the fresh month's leads mostly haven't met yet; the
- *     month's real meetings belong to OLDER leads.
+ * The per-project warehouse join, as PURE COMPUTE (no Sheet I/O). Reproduces
+ * BMBY's דוח יחסי המרה semantics (reverse-engineered live 2026-07-09; see
+ * lib/crmData buildFbBreakdown for the verification numbers):
+ *   • leads   = distinct clients with a lead CREATED in the month, grouped by
+ *     their own UTM tag.
+ *   • cohort  = clients TOUCHED in the month — a lead in it OR a meeting event
+ *     dated in it (how BMBY pulls old clients into the current month).
+ *   • scheduled = ALL meeting events EVER (to date) of the group's cohort
+ *     clients, credited via each client's FIRST-touch lead.
+ *   • held    = those events that are held OR past-dated in_process (BMBY
+ *     marks outcomes retrospectively; a passed, non-canceled meeting reads
+ *     as performed — matches BMBY's בוצעו).
  */
 type Attr = {
   fb: Map<string, { camp: string; ad: string; aud: string }>;
@@ -102,44 +105,59 @@ function buildAttr(allLeads: LeadRow[]): Attr {
   return { fb, gs };
 }
 
-/** DISTINCT clients whose meeting event is dated inside [from, toExcl). */
-function meetingClientsInWindow(jm: MeetingRow[], from: string, toExcl: string): { any: Set<string>; held: Set<string> } {
-  const any = new Set<string>();
-  const held = new Set<string>();
-  for (const m of jm) {
-    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
-    if (!d || d < from || d >= toExcl) continue;
-    const c = String(m.client_id ?? "");
-    if (!c) continue;
-    any.add(c);
-    if (m.appointment_outcome === "held") held.add(c);
-  }
-  return { any, held };
-}
-
 const numericId = (s: string) => /^\d{8,}$/.test(s);
 
-/** Pure aggregation (no I/O): month leads (for the leads count) + the client→
- *  origin attribution + the in-window meeting clients → per-(campaign,ad) /
- *  per-audience / per-keyword leads + scheduled/held (distinct clients). */
+/** Today's date in the CRM's timezone (outcome-lag cutoff for "performed"). */
+function todayIL(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date());
+}
+
+/** Pure aggregation (no I/O), BMBY-semantics: month leads (distinct clients
+ *  per group) + cohort = month-lead clients ∪ clients with a meeting event
+ *  dated in the month; scheduled = ALL meeting events ever of the cohort,
+ *  held = their held/past-due events — credited via first-touch attribution. */
 function aggregateMeetings(
   monthLeads: LeadRow[],
   attr: Attr,
-  wmc: { any: Set<string>; held: Set<string> },
+  jm: MeetingRow[],
+  from: string,
+  toExcl: string,
 ): ProjectMeetings {
-  type Rec = { extra: Record<string, string>; clients: Set<string>; sched: Set<string>; held: Set<string> };
+  // Per-client EVER meeting tallies + the set of clients with an in-month event.
+  const today = todayIL();
+  const evByClient = new Map<string, { total: number; done: number }>();
+  const inWindow = new Set<string>();
+  for (const m of jm) {
+    const c = String(m.client_id ?? "");
+    if (!c) continue;
+    const rec = evByClient.get(c) || { total: 0, done: 0 };
+    rec.total++;
+    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
+    if (
+      m.appointment_outcome === "held" ||
+      (m.appointment_outcome === "in_process" && d && d <= today)
+    ) {
+      rec.done++;
+    }
+    evByClient.set(c, rec);
+    if (d && d >= from && d < toExcl) inWindow.add(c);
+  }
+
+  type Rec = { extra: Record<string, string>; clients: Set<string>; sched: number; held: number };
   const byKey = new Map<string, Rec>();
   const byAud = new Map<string, Rec>();
   const byKw = new Map<string, Rec>();
   const ensure = (map: Map<string, Rec>, key: string, extra: Record<string, string>): Rec => {
     let rec = map.get(key);
-    if (!rec) { rec = { extra, clients: new Set(), sched: new Set(), held: new Set() }; map.set(key, rec); }
+    if (!rec) { rec = { extra, clients: new Set(), sched: 0, held: 0 }; map.set(key, rec); }
     return rec;
   };
   // leads — created this month, distinct client per group.
+  const cohort = new Set<string>();
   for (const l of monthLeads) {
     const c = String(l.client_id ?? "");
     if (!c) continue;
+    cohort.add(c);
     const ch = String(l.channel_key ?? "");
     if (ch === "fb") {
       const camp = clean(l.utm_campaign), ad = normAdName(l.utm_content);
@@ -151,29 +169,31 @@ function aggregateMeetings(
       if (kw && !numericId(kw)) ensure(byKw, kw, { kw }).clients.add(c);
     }
   }
-  // scheduled/held — in-window meeting clients, credited to their ORIGINATING
-  // lead's group (regardless of when that lead was created).
-  for (const c of wmc.any) {
-    const isHeld = wmc.held.has(c);
+  for (const c of inWindow) cohort.add(c);
+  // Meetings — each cohort client's EVER tallies, credited once per dimension
+  // to the group of their FIRST-touch lead.
+  for (const c of cohort) {
+    const ev = evByClient.get(c);
+    if (!ev) continue;
     const f = attr.fb.get(c);
     if (f && f.camp && f.ad && !numericId(f.camp) && !numericId(f.ad)) {
       const r = ensure(byKey, f.camp + "|" + f.ad, { camp: f.camp, ad: f.ad });
-      r.sched.add(c); if (isHeld) r.held.add(c);
+      r.sched += ev.total; r.held += ev.done;
     }
     if (f && f.aud && !numericId(f.aud)) {
       const r = ensure(byAud, f.aud, { aud: f.aud });
-      r.sched.add(c); if (isHeld) r.held.add(c);
+      r.sched += ev.total; r.held += ev.done;
     }
     const g = attr.gs.get(c);
     if (g && g.kw && !numericId(g.kw)) {
       const r = ensure(byKw, g.kw, { kw: g.kw });
-      r.sched.add(c); if (isHeld) r.held.add(c);
+      r.sched += ev.total; r.held += ev.done;
     }
   }
   return {
-    creative: [...byKey.values()].map((r) => ({ campaign: r.extra.camp, ad: r.extra.ad, leads: r.clients.size, scheduled: r.sched.size, held: r.held.size })),
-    audience: [...byAud.values()].map((r) => ({ audience: r.extra.aud, leads: r.clients.size, scheduled: r.sched.size, held: r.held.size })),
-    keyword: [...byKw.values()].map((r) => ({ keyword: r.extra.kw, leads: r.clients.size, scheduled: r.sched.size, held: r.held.size })),
+    creative: [...byKey.values()].map((r) => ({ campaign: r.extra.camp, ad: r.extra.ad, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+    audience: [...byAud.values()].map((r) => ({ audience: r.extra.aud, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+    keyword: [...byKw.values()].map((r) => ({ keyword: r.extra.kw, leads: r.clients.size, scheduled: r.sched, held: r.held })),
   };
 }
 
@@ -208,7 +228,7 @@ export async function computeProjectMeetings(
     const d = String(l.lead_created_at ?? "").slice(0, 10);
     return d >= from && d < toExcl;
   });
-  return aggregateMeetings(monthLeads, attr, meetingClientsInWindow(jm, from, toExcl));
+  return aggregateMeetings(monthLeads, attr, jm, from, toExcl);
 }
 
 /**
@@ -262,7 +282,7 @@ export async function getProjectMeetingsLiveMulti(
       const d = String(l.lead_created_at ?? "").slice(0, 10);
       return d >= from && d < toExcl;
     });
-    return { month: mon, ...aggregateMeetings(monthLeads, attr, meetingClientsInWindow(jm, from, toExcl)) };
+    return { month: mon, ...aggregateMeetings(monthLeads, attr, jm, from, toExcl) };
   });
   return { project: projName, projectId, results };
 }
