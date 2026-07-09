@@ -6537,6 +6537,12 @@ summary.crm-fb-head::before {
   font-size: 0.72em;
   color: var(--muted);
 }
+.crm-fb-basis {
+  margin: 0 0 0.6rem;
+  font-size: 0.72em;
+  line-height: 1.5;
+  color: var(--muted);
+}
 .crm-fb-cols {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

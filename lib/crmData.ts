@@ -1467,9 +1467,34 @@ async function computeBmbyFunnelFromWarehouse(
     }
     // FB UTM drill — placement / audience / creative split of the Meta
     // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
-    // scheduled/held (warehouse) + spend & CPL/CPS/CPM (joined from the
-    // dashboard's facebook-ads-metrics Sheet by exact campaign + ad name).
-    funnel.fbBreakdown = await buildFbBreakdown(leads, anyClients, heldClients, from, toExcl);
+    // scheduled/held + spend & CPL/CPS/CPM (joined from the dashboard's
+    // facebook-ads-metrics Sheet by exact campaign + ad name).
+    //
+    // Meeting credit is EVENT-in-window, attributed to the creative that
+    // ORIGINALLY brought each meeting's client — which may be a lead created
+    // BEFORE the window (a June ad's July meetings). So build a client → first
+    // fb lead map from the project's FULL fb-lead history (not just the window
+    // cohort), gated on there being in-window meetings to attribute.
+    const fbAttrByClient = new Map<string, FbLead>();
+    if (anyClients.size > 0) {
+      const fbHistory = await supabaseRowsAll<FbLead>(
+        `v_bmby_leads_bucketed?project_id=eq.${pid}&channel_key=eq.fb` +
+          `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
+          `&order=lead_id.asc`,
+      );
+      for (const l of fbHistory) {
+        const c = String(l.client_id ?? "");
+        if (c && !fbAttrByClient.has(c)) fbAttrByClient.set(c, l);
+      }
+    }
+    funnel.fbBreakdown = await buildFbBreakdown(
+      leads,
+      anyClients,
+      heldClients,
+      fbAttrByClient,
+      from,
+      toExcl,
+    );
   }
   return funnel;
 }
@@ -1484,76 +1509,96 @@ type FbLead = {
 };
 
 /** Placement / audience / creative breakdown of a project's Meta leads
- *  (channel_key='fb' = fb+ig+an) from their UTM tags. Placement/audience are
- *  lead-count splits; the creative rows (= ad name / utm_content) also carry
- *  scheduled/held (from the warehouse meeting sets) and spend + CPL/CPS/CPM
- *  joined from the dashboard's facebook-ads-metrics Sheet (cost ÷ each).
- *  undefined when the project has no Meta leads. */
+ *  (channel_key='fb' = fb+ig+an) from their UTM tags. Two DIFFERENT bases,
+ *  by design (mirrors BMBY's דוח יחסי המרה):
+ *   • leads   = leads CREATED in the window, grouped by their own UTM tag.
+ *   • תואמו/פגישות = DISTINCT clients whose meeting EVENT is dated in the
+ *     window, credited to the group of that client's ORIGINATING fb lead
+ *     (`fbAttrByClient`, any date). So a creative that brought a client months
+ *     ago still gets that client's in-window meeting — the whole point: on a
+ *     young month the fresh leads haven't met yet, and the month's real
+ *     meetings belong to OLDER leads (June creative → July meetings).
+ *  The creative rows also carry spend + CPL/CPS/CPM joined from the dashboard's
+ *  facebook-ads-metrics Sheet. undefined when the project has no in-window
+ *  Meta leads. */
 async function buildFbBreakdown(
-  leads: FbLead[],
-  anyClients: Set<string>,
+  windowLeads: FbLead[],
+  schedClients: Set<string>,
   heldClients: Set<string>,
+  fbAttrByClient: Map<string, FbLead>,
   from: string,
   toExcl: string,
 ): Promise<CrmFunnel["fbBreakdown"]> {
-  const fb = leads.filter((l) => l.channel_key === "fb");
+  const fb = windowLeads.filter((l) => l.channel_key === "fb");
   if (!fb.length) return undefined;
   const TOP = 8;
-  // Tally leads AND the scheduled/held meeting counts per group (placement /
-  // audience), reusing the same warehouse meeting sets the creative rows use:
-  // a lead is "scheduled"/"held" when its client_id is in anyClients/heldClients.
-  const tally = (
-    get: (l: FbLead) => string,
-  ): { label: string; leads: number; scheduled: number; held: number }[] => {
-    const m = new Map<
-      string,
-      { leads: number; scheduled: number; held: number }
-    >();
-    for (const l of fb) {
-      const v = get(l).replace(/\s+/g, " ").trim();
-      if (!v) continue;
-      const c = String(l.client_id ?? "");
-      const rec = m.get(v) || { leads: 0, scheduled: 0, held: 0 };
-      rec.leads++;
-      if (c && anyClients.has(c)) rec.scheduled++;
-      if (c && heldClients.has(c)) rec.held++;
-      m.set(v, rec);
-    }
-    const sorted = [...m.entries()].sort((a, b) => b[1].leads - a[1].leads);
-    const head = sorted.slice(0, TOP).map(([label, r]) => ({ label, ...r }));
-    const rest = sorted.slice(TOP).reduce(
-      (s, [, r]) => ({
-        leads: s.leads + r.leads,
-        scheduled: s.scheduled + r.scheduled,
-        held: s.held + r.held,
-      }),
-      { leads: 0, scheduled: 0, held: 0 },
-    );
-    if (rest.leads > 0) head.push({ label: "אחר", ...rest });
-    return head;
-  };
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
   // utm_term occasionally carries a raw Meta numeric ID — bucket to "אחר".
   const deId = (raw: string): string => {
-    const v = raw.replace(/\s+/g, " ").trim();
+    const v = norm(raw);
     return /^\d{8,}$/.test(v) ? "אחר" : v;
   };
 
-  // Per-creative (= normalized ad name) leads / scheduled / held + the set of
-  // campaigns the Meta leads came from (used to scope the spend join).
-  const creatives = new Map<string, { leads: number; scheduled: number; held: number }>();
-  const campaigns = new Set<string>();
-  for (const l of fb) {
-    const camp = String(l.utm_campaign ?? "").replace(/\s+/g, " ").trim();
-    if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
+  // Per group: leads (window cohort, per lead) + scheduled/held as DISTINCT
+  // clients, each in-window meeting credited to the group of the client's FIRST
+  // fb lead (`fbAttrByClient`). A client maps to exactly ONE group per
+  // dimension, so the group sizes sum without double-counting.
+  type Acc = { leads: number; sched: Set<string>; held: Set<string> };
+  const accumulate = (getLabel: (l: FbLead) => string): Map<string, Acc> => {
+    const m = new Map<string, Acc>();
+    const ensure = (k: string): Acc => {
+      let r = m.get(k);
+      if (!r) { r = { leads: 0, sched: new Set(), held: new Set() }; m.set(k, r); }
+      return r;
+    };
+    for (const l of fb) {
+      const v = getLabel(l);
+      if (v) ensure(v).leads++;
+    }
+    for (const c of schedClients) {
+      const origin = fbAttrByClient.get(c);
+      if (!origin) continue; // client didn't originate from an fb lead
+      const v = getLabel(origin);
+      if (!v) continue;
+      const r = ensure(v);
+      r.sched.add(c);
+      if (heldClients.has(c)) r.held.add(c);
+    }
+    return m;
+  };
+  // Rank by leads + scheduled so a creative that produced meetings but no NEW
+  // leads this window (an older ad) still surfaces, not only lead-heavy ones.
+  const toRows = (m: Map<string, Acc>) => {
+    const sorted = [...m.entries()]
+      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.sched.size, held: r.held.size }))
+      .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
+    const head = sorted.slice(0, TOP);
+    const rest = sorted.slice(TOP).reduce(
+      (s, r) => ({ leads: s.leads + r.leads, scheduled: s.scheduled + r.scheduled, held: s.held + r.held }),
+      { leads: 0, scheduled: 0, held: 0 },
+    );
+    if (rest.leads > 0 || rest.scheduled > 0) head.push({ label: "אחר", ...rest });
+    return head;
+  };
+
+  const placement = accumulate((l) => norm(String(l.utm_medium ?? "").replace(/_/g, " ")));
+  const audience = accumulate((l) => deId(String(l.utm_term ?? "")));
+  const creativeAcc = accumulate((l) => {
     const ad = normAdName(l.utm_content);
-    if (!ad || /^\d{8,}$/.test(ad)) continue; // skip bare ad-id labels
-    const c = String(l.client_id ?? "");
-    const rec = creatives.get(ad) || { leads: 0, scheduled: 0, held: 0 };
-    rec.leads++;
-    if (c && anyClients.has(c)) rec.scheduled++;
-    if (c && heldClients.has(c)) rec.held++;
-    creatives.set(ad, rec);
-  }
+    return ad && !/^\d{8,}$/.test(ad) ? ad : "";
+  });
+
+  // Campaign scope for the spend join — union of window fb leads' campaigns AND
+  // the campaigns behind meeting-credited (older) creatives, so a creative that
+  // produced meetings but no new window leads still gets its spend scoped.
+  const campaigns = new Set<string>();
+  const addCamp = (l: FbLead) => {
+    const camp = norm(String(l.utm_campaign ?? ""));
+    if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
+  };
+  for (const l of fb) addCamp(l);
+  for (const c of schedClients) { const o = fbAttrByClient.get(c); if (o) addCamp(o); }
+
   // Join per-ad spend from the dashboard's facebook-ads-metrics Sheet (exact
   // campaign scope → collision-free). Degrades to spend=0 on any failure.
   let spendByAd = new Map<string, { cost: number; impressions: number; websiteLeads: number }>();
@@ -1562,28 +1607,25 @@ async function buildFbBreakdown(
   } catch {
     /* leave spend at 0 */
   }
-  const byCreative = [...creatives.entries()]
+  const byCreative = [...creativeAcc.entries()]
     .map(([label, r]) => {
+      const leads = r.leads, scheduled = r.sched.size, held = r.held.size;
       const spend = spendByAd.get(label)?.cost ?? 0;
       return {
-        label,
-        leads: r.leads,
-        scheduled: r.scheduled,
-        held: r.held,
-        spend,
-        cpl: r.leads ? spend / r.leads : 0,
-        cps: r.scheduled ? spend / r.scheduled : 0,
-        cpm: r.held ? spend / r.held : 0,
+        label, leads, scheduled, held, spend,
+        cpl: leads ? spend / leads : 0,
+        cps: scheduled ? spend / scheduled : 0,
+        cpm: held ? spend / held : 0,
       };
     })
-    .sort((a, b) => b.leads - a.leads)
+    .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled))
     .slice(0, TOP);
 
   return {
     totalLeads: fb.length,
     // utm_medium = ad placement (Facebook_Mobile_Feed → "Facebook Mobile Feed").
-    byPlacement: tally((l) => String(l.utm_medium ?? "").replace(/_/g, " ")),
-    byAudience: tally((l) => deId(String(l.utm_term ?? ""))),
+    byPlacement: toRows(placement),
+    byAudience: toRows(audience),
     byCreative,
   };
 }

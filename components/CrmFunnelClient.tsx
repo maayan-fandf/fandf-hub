@@ -1014,6 +1014,11 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
             פילוח פייסבוק — {fmtInt(funnel.fbBreakdown.totalLeads)} לידים
             <span className="crm-fb-headsub">לפי תגיות UTM (Meta — פייסבוק/אינסטגרם)</span>
           </summary>
+          <p className="crm-fb-basis">
+            לידים = נכנסו בטווח · תואמו/פגישות = פגישות שהתקיימו בטווח, לפי המודעה
+            שהביאה את הליד (גם אם נכנס לפני הטווח) — כך שקריאייטיב ותיק זוכה בפגישות
+            של הלידים שהביא.
+          </p>
           <div className="crm-fb-cols">
             {([
               ["מיקום (Placement)", funnel.fbBreakdown.byPlacement],

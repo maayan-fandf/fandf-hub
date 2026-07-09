@@ -37,9 +37,16 @@ function currentMonthIL(): string {
 type LeadRow = {
   client_id: string | null;
   channel_key: string | null;
+  lead_created_at: string | null;
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
+};
+type MeetingRow = {
+  client_id: string | null;
+  appointment_outcome: string | null;
+  meeting_date: string | null;
+  appointment_date: string | null;
 };
 
 export type CreativeMeeting = { campaign: string; ad: string; leads: number; scheduled: number; held: number };
@@ -57,57 +64,105 @@ function monthWindow(mon: string): { from: string; toExcl: string } {
 }
 
 /**
- * The per-project warehouse join, as PURE COMPUTE (no Sheet I/O): a project's
- * FB leads → (campaign, ad) + (audience), its GS leads → (keyword), each
- * cross-referenced against the project's journey meetings to count DISTINCT
- * clients scheduled (has any meeting) / held. Shared by the Sheet export AND
- * the live /api/fb-creative-meetings endpoint, so there's one implementation.
+ * The per-project warehouse join, as PURE COMPUTE (no Sheet I/O). Two DIFFERENT
+ * bases, by design (mirrors BMBY's דוח יחסי המרה — see lib/crmData buildFbBreakdown):
+ *   • leads   = leads CREATED in the month, grouped by their own UTM tag,
+ *     distinct clients.
+ *   • scheduled/held = DISTINCT clients whose meeting EVENT is dated in the
+ *     month, credited to the group of that client's ORIGINATING lead (any
+ *     date). So a creative that brought a client in June gets that client's
+ *     July meeting — the fresh month's leads mostly haven't met yet; the
+ *     month's real meetings belong to OLDER leads.
  */
-type MeetingSets = { any: Set<string>; held: Set<string> };
+type Attr = {
+  fb: Map<string, { camp: string; ad: string; aud: string }>;
+  gs: Map<string, { kw: string }>;
+};
 
-/** DISTINCT clients with any meeting / a held meeting, from a project's full
- *  journey-meeting history. Month-independent, so it's fetched ONCE and reused
- *  across every month in a multi-month window. */
-function meetingSets(
-  jm: Array<{ client_id: string | null; appointment_outcome: string | null }>,
-): MeetingSets {
+/** client → its ORIGINATING (first, by lead_id) fb / gs lead's group keys, from
+ *  the project's FULL lead history. Month-independent → fetched once, reused. */
+function buildAttr(allLeads: LeadRow[]): Attr {
+  const fb = new Map<string, { camp: string; ad: string; aud: string }>();
+  const gs = new Map<string, { kw: string }>();
+  for (const l of allLeads) {
+    const c = String(l.client_id ?? "");
+    if (!c) continue;
+    const ch = String(l.channel_key ?? "");
+    if (ch === "fb" && !fb.has(c)) {
+      fb.set(c, { camp: clean(l.utm_campaign), ad: normAdName(l.utm_content), aud: clean(l.utm_term) });
+    } else if (ch === "gs" && !gs.has(c)) {
+      gs.set(c, { kw: clean(l.utm_term) });
+    }
+  }
+  return { fb, gs };
+}
+
+/** DISTINCT clients whose meeting event is dated inside [from, toExcl). */
+function meetingClientsInWindow(jm: MeetingRow[], from: string, toExcl: string): { any: Set<string>; held: Set<string> } {
   const any = new Set<string>();
   const held = new Set<string>();
-  for (const x of jm) {
-    const c = String(x.client_id ?? "");
+  for (const m of jm) {
+    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
+    if (!d || d < from || d >= toExcl) continue;
+    const c = String(m.client_id ?? "");
     if (!c) continue;
     any.add(c);
-    if (x.appointment_outcome === "held") held.add(c);
+    if (m.appointment_outcome === "held") held.add(c);
   }
   return { any, held };
 }
 
-/** Pure aggregation (no I/O): a month's leads × the project's meeting sets →
- *  per-(campaign,ad) / per-audience / per-keyword scheduled/held counts. */
-function aggregateMeetings(leads: LeadRow[], sets: MeetingSets): ProjectMeetings {
-  const { any, held } = sets;
+const numericId = (s: string) => /^\d{8,}$/.test(s);
+
+/** Pure aggregation (no I/O): month leads (for the leads count) + the client→
+ *  origin attribution + the in-window meeting clients → per-(campaign,ad) /
+ *  per-audience / per-keyword leads + scheduled/held (distinct clients). */
+function aggregateMeetings(
+  monthLeads: LeadRow[],
+  attr: Attr,
+  wmc: { any: Set<string>; held: Set<string> },
+): ProjectMeetings {
   type Rec = { extra: Record<string, string>; clients: Set<string>; sched: Set<string>; held: Set<string> };
   const byKey = new Map<string, Rec>();
   const byAud = new Map<string, Rec>();
-  const byKw = new Map<string, Rec>(); // gs leads → keyword (utm_term)
-  const bump = (map: Map<string, Rec>, key: string, extra: Record<string, string>, c: string) => {
+  const byKw = new Map<string, Rec>();
+  const ensure = (map: Map<string, Rec>, key: string, extra: Record<string, string>): Rec => {
     let rec = map.get(key);
     if (!rec) { rec = { extra, clients: new Set(), sched: new Set(), held: new Set() }; map.set(key, rec); }
-    if (c) { rec.clients.add(c); if (any.has(c)) rec.sched.add(c); if (held.has(c)) rec.held.add(c); }
+    return rec;
   };
-  for (const l of leads) {
+  // leads — created this month, distinct client per group.
+  for (const l of monthLeads) {
     const c = String(l.client_id ?? "");
+    if (!c) continue;
     const ch = String(l.channel_key ?? "");
     if (ch === "fb") {
-      const camp = clean(l.utm_campaign);
-      const ad = normAdName(l.utm_content);
-      if (camp && ad && !/^\d{8,}$/.test(camp) && !/^\d{8,}$/.test(ad)) bump(byKey, camp + "|" + ad, { camp, ad }, c);
+      const camp = clean(l.utm_campaign), ad = normAdName(l.utm_content);
+      if (camp && ad && !numericId(camp) && !numericId(ad)) ensure(byKey, camp + "|" + ad, { camp, ad }).clients.add(c);
       const aud = clean(l.utm_term);
-      if (aud && !/^\d{8,}$/.test(aud)) bump(byAud, aud, { aud }, c);
+      if (aud && !numericId(aud)) ensure(byAud, aud, { aud }).clients.add(c);
     } else if (ch === "gs") {
-      // Google search: utm_term IS the keyword.
       const kw = clean(l.utm_term);
-      if (kw && !/^\d{8,}$/.test(kw)) bump(byKw, kw, { kw }, c);
+      if (kw && !numericId(kw)) ensure(byKw, kw, { kw }).clients.add(c);
+    }
+  }
+  // scheduled/held — in-window meeting clients, credited to their ORIGINATING
+  // lead's group (regardless of when that lead was created).
+  for (const c of wmc.any) {
+    const isHeld = wmc.held.has(c);
+    const f = attr.fb.get(c);
+    if (f && f.camp && f.ad && !numericId(f.camp) && !numericId(f.ad)) {
+      const r = ensure(byKey, f.camp + "|" + f.ad, { camp: f.camp, ad: f.ad });
+      r.sched.add(c); if (isHeld) r.held.add(c);
+    }
+    if (f && f.aud && !numericId(f.aud)) {
+      const r = ensure(byAud, f.aud, { aud: f.aud });
+      r.sched.add(c); if (isHeld) r.held.add(c);
+    }
+    const g = attr.gs.get(c);
+    if (g && g.kw && !numericId(g.kw)) {
+      const r = ensure(byKw, g.kw, { kw: g.kw });
+      r.sched.add(c); if (isHeld) r.held.add(c);
     }
   }
   return {
@@ -117,20 +172,21 @@ function aggregateMeetings(leads: LeadRow[], sets: MeetingSets): ProjectMeetings
   };
 }
 
-/** One month's leads for a project (warehouse date space). */
-function fetchMonthLeads(projectId: number, from: string, toExcl: string): Promise<LeadRow[]> {
+/** A project's FULL lead history (utm + creation date). Serves BOTH the
+ *  attribution map AND the per-month leads count (filtered in memory), so a
+ *  multi-month window needs one leads fetch, not one per month. */
+function fetchAllLeads(projectId: number): Promise<LeadRow[]> {
   return supabaseRowsAll<LeadRow>(
     `v_bmby_leads_bucketed?project_id=eq.${projectId}` +
-      `&lead_created_at=gte.${from}&lead_created_at=lt.${toExcl}` +
-      `&select=client_id,channel_key,utm_campaign,utm_content,utm_term&order=lead_id.asc`,
+      `&select=client_id,channel_key,lead_created_at,utm_campaign,utm_content,utm_term&order=lead_id.asc`,
   );
 }
 
-/** A project's full journey-meeting history (month-independent). */
+/** A project's full journey-meeting history WITH dates (to window per month). */
 function fetchMeetings(projectName: string) {
-  return supabaseRowsAll<{ client_id: string | null; appointment_outcome: string | null }>(
+  return supabaseRowsAll<MeetingRow>(
     `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(projectName)}` +
-      `&select=client_id,appointment_outcome&order=meeting_id.asc`,
+      `&select=client_id,appointment_outcome,meeting_date,appointment_date&order=meeting_id.asc`,
   );
 }
 
@@ -140,10 +196,14 @@ export async function computeProjectMeetings(
   from: string,
   toExcl: string,
 ): Promise<ProjectMeetings> {
-  const leads = await fetchMonthLeads(projectId, from, toExcl);
-  if (!leads.length) return { creative: [], audience: [], keyword: [] };
-  const jm = await fetchMeetings(projectName);
-  return aggregateMeetings(leads, meetingSets(jm));
+  const [allLeads, jm] = await Promise.all([fetchAllLeads(projectId), fetchMeetings(projectName)]);
+  if (!allLeads.length) return { creative: [], audience: [], keyword: [] };
+  const attr = buildAttr(allLeads);
+  const monthLeads = allLeads.filter((l) => {
+    const d = String(l.lead_created_at ?? "").slice(0, 10);
+    return d >= from && d < toExcl;
+  });
+  return aggregateMeetings(monthLeads, attr, meetingClientsInWindow(jm, from, toExcl));
 }
 
 /**
@@ -164,13 +224,10 @@ export async function getProjectMeetingsLive(
 
 /**
  * Live MULTI-month read for the report endpoint. The report calls this once per
- * render with every month in its window. The old per-month loop re-resolved the
- * project and re-fetched the FULL journey-meeting history on EVERY month
- * (≈0.8–1s/month → ~5.7s for a 6-month window, all on the iframe's critical
- * path). This resolves + fetches meetings ONCE, then runs the genuinely
- * per-month leads queries in PARALLEL — identical per-month semantics (each
- * leads query is byte-for-byte the same, so Postgres still does the month
- * boundary comparison), but ~3 round-trips deep regardless of month count.
+ * render with every month in its window. Resolves the project + fetches the FULL
+ * lead history AND meeting history ONCE (both month-independent), then slices
+ * each month's cohort + in-window meetings IN MEMORY — so the whole window is
+ * ~2 round-trips deep regardless of month count (was one leads query per month).
  */
 export async function getProjectMeetingsLiveMulti(
   projectName: string,
@@ -190,17 +247,18 @@ export async function getProjectMeetingsLiveMulti(
   }
   const projectId = found[0].project_id;
   const projName = found[0].project_name;
-  // Meeting history is month-independent — fetch once, reuse for every month.
-  const sets = meetingSets(await fetchMeetings(projName));
-  // Leads ARE per-month; run each month's query in parallel so wall-clock ≈ the
-  // slowest single month, not the sum of all months.
-  const results = await Promise.all(
-    mons.map(async (mon) => {
-      const { from, toExcl } = monthWindow(mon);
-      const leads = await fetchMonthLeads(projectId, from, toExcl);
-      return { month: mon, ...aggregateMeetings(leads, sets) };
-    }),
-  );
+  // Lead history + meeting history are both month-independent — fetch once,
+  // slice per month in memory.
+  const [allLeads, jm] = await Promise.all([fetchAllLeads(projectId), fetchMeetings(projName)]);
+  const attr = buildAttr(allLeads);
+  const results = mons.map((mon) => {
+    const { from, toExcl } = monthWindow(mon);
+    const monthLeads = allLeads.filter((l) => {
+      const d = String(l.lead_created_at ?? "").slice(0, 10);
+      return d >= from && d < toExcl;
+    });
+    return { month: mon, ...aggregateMeetings(monthLeads, attr, meetingClientsInWindow(jm, from, toExcl)) };
+  });
   return { project: projName, projectId, results };
 }
 
