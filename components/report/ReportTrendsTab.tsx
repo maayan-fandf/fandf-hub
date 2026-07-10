@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useChartPalette } from "@/lib/chartTheme";
+import ReportMonthlyTrend from "@/components/report/ReportMonthlyTrend";
 import {
   REPORT_PLATS,
   PLAT_LABELS,
@@ -162,7 +163,12 @@ export default function ReportTrendsTab({ data }: { data: ProjectReportData }) {
   const families = [...new Set(selectedDefs.map((m) => m.family))];
 
   if (!activePlats.length) {
-    return <div className="rpt-empty">אין נתונים יומיים לפרויקט הזה.</div>;
+    return (
+      <div className="rpt-trends">
+        <div className="rpt-empty">אין נתונים יומיים לפרויקט הזה.</div>
+        <ReportMonthlyTrend data={data} />
+      </div>
+    );
   }
 
   return (
@@ -235,6 +241,8 @@ export default function ReportTrendsTab({ data }: { data: ProjectReportData }) {
           pal={pal}
         />
       ))}
+
+      <ReportMonthlyTrend data={data} />
     </div>
   );
 }

@@ -556,6 +556,64 @@ export async function getCurrentMonthlyRows(
   });
 }
 
+/** One project's raw "חודשי" row (one per channel × month) — the shape
+ *  the historical-trend section aggregates by channel filter. */
+export type ProjectMonthlyRawRow = {
+  month: string; // YYYY-MM
+  channel: string;
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  budget: number;
+};
+
+/**
+ * Every "חודשי" row for a project, kept per-channel (mirrors the
+ * dashboard's p.monthlyRaw). Feeds the native report's מגמה היסטורית
+ * section — the client aggregates by channel filter. Matched by Hebrew
+ * name OR slug the same way consolidateForProject does.
+ */
+export const getProjectMonthlyRaw = cache(
+  async (args: {
+    subjectEmail: string;
+    project: string;
+    projectSlug?: string;
+  }): Promise<ProjectMonthlyRawRow[]> => {
+    const [rows, slugFromKeys] = await Promise.all([
+      readAllClientsRows(args.subjectEmail),
+      args.projectSlug
+        ? Promise.resolve(args.projectSlug)
+        : resolveSlugFromKeys(args.subjectEmail, args.project),
+    ]);
+    const targetProject = args.project.toLowerCase().trim();
+    const targetSlug = (args.projectSlug || slugFromKeys || "").toLowerCase().trim();
+    const out: ProjectMonthlyRawRow[] = [];
+    for (const r of rows) {
+      if (r.rowType !== "חודשי") continue;
+      const month = r.startIso.slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(month)) continue;
+      const proj = r.project.toLowerCase();
+      const slug = r.projectSlug.toLowerCase();
+      const match =
+        (proj && proj === targetProject) ||
+        (targetSlug && slug && slug === targetSlug) ||
+        (slug && slug === targetProject);
+      if (!match) continue;
+      out.push({
+        month,
+        channel: r.channel,
+        spend: r.spend,
+        leads: r.leads,
+        scheduled: r.scheduled,
+        meetings: r.meetings,
+        budget: r.budget,
+      });
+    }
+    return out;
+  },
+);
+
 /** One project's monthly totals, summed across channels per calendar
  *  month — the shape the native report's forecast + prev-funnel need. */
 export type ProjectMonthlyTotals = {

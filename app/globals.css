@@ -25878,3 +25878,127 @@ button.budget-need:focus-visible {
   margin-inline-start: 0.3rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Native report — historical monthly trend (מגמה היסטורית) ─── */
+.rpt-monthly {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.8rem;
+}
+.rpt-mt-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.rpt-mt-section-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+.rpt-mt-filter {
+  position: relative;
+}
+.rpt-mt-filter-btn {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border-radius: 8px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.rpt-mt-filter-panel {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 110%;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+  min-width: 180px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+.rpt-mt-filter-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rpt-mt-filter-opt:hover {
+  background: var(--surface-alt);
+}
+.rpt-mt-filter-opt.is-all {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font-weight: 700;
+  text-align: start;
+}
+.rpt-mt-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+.rpt-mt-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.6rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.rpt-mt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.rpt-mt-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.rpt-mt-total {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-mt-delta {
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.rpt-mt-delta.is-up {
+  color: #16a34a;
+}
+.rpt-mt-delta.is-down {
+  color: #dc2626;
+}
+.rpt-mt-spark {
+  width: 100%;
+  height: auto;
+}
+.rpt-mt-chart-box {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.6rem 0.8rem;
+}
+.rpt-mt-chart-box h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}

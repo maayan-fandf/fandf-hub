@@ -157,6 +157,8 @@ export type ProjectReportData = {
   anomalies: ReportAnomaly[];
   /** Previous-month funnel (day-ratio-scaled) — feeds the util delta. */
   prevFunnel: PrevFunnel | null;
+  /** Per-channel monthly rows for the historical-trend section. */
+  monthlyRaw: MonthlyChannelRow[];
   /** ALL CLIENTS per-channel rows for the window mode ([] in range mode). */
   totals: {
     budget: number;
@@ -469,6 +471,17 @@ export function computePacing(
     return { cls: "red", label: "מתחת לקצב", detail, spendPct, dayPct };
   return { cls: "red", label: "מעל הקצב", detail, spendPct, dayPct };
 }
+
+/** One raw per-channel monthly row (from ALL CLIENTS חודשי rows). */
+export type MonthlyChannelRow = {
+  month: string;
+  channel: string;
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  budget: number;
+};
 
 /** One aggregated calendar-month row (from ALL CLIENTS חודשי rows). */
 export type MonthlyRow = {

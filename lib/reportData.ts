@@ -6,6 +6,7 @@ import {
   getAllClientsCurrentForProject,
   getAllClientsMonthlyForProject,
   getProjectMonthlyTotals,
+  getProjectMonthlyRaw,
   type AllClientsRow,
 } from "@/lib/allClients";
 import { getProjectLandingUrl } from "@/lib/projectsDirect";
@@ -457,6 +458,9 @@ export const getProjectReportData = cache(
     const monthlyP = getProjectMonthlyTotals({ subjectEmail, project: projectName }).catch(
       () => [] as MonthlyRow[],
     );
+    const monthlyRawP = getProjectMonthlyRaw({ subjectEmail, project: projectName }).catch(
+      () => [] as ProjectReportData["monthlyRaw"],
+    );
     const rows = await readProjectPlatformRows(subjectEmail, slug);
     const adPlatform = aggregateWindow(rows, window.startIso, window.endIso);
     const prevWindow = prevWindowOf(window);
@@ -496,9 +500,10 @@ export const getProjectReportData = cache(
     }
 
     const totals = mode === "range" ? null : sumChannelTotals(channels);
-    const [landingUrl, monthly, creatives] = await Promise.all([
+    const [landingUrl, monthly, monthlyRaw, creatives] = await Promise.all([
       landingP,
       monthlyP,
+      monthlyRawP,
       creativesP,
     ]);
 
@@ -540,6 +545,7 @@ export const getProjectReportData = cache(
       forecast,
       anomalies,
       prevFunnel,
+      monthlyRaw,
       totals,
     };
   },
