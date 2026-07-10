@@ -180,29 +180,31 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
 
       {t && t.budget > 0 && (
         <div className="rpt-util">
-          <div className="rpt-util-block">
-            <div className="rpt-util-label">
-              ניצול תקציב: {fmtILS(t.spend)} מתוך {fmtILS(t.budget)}
-              {spendDelta && (
-                <span className="rpt-util-delta" title={`בתקופה הקודמת: ${fmtILS(data.prevFunnel!.spend)}`}>
-                  {spendDelta.arrow} {spendDelta.text}
-                </span>
-              )}
-            </div>
-            <div className="rpt-util-track">
-              <div
-                className="rpt-util-fill"
-                style={{
-                  width: `${Math.min(isMonth ? (t.budget > 0 ? (t.spend / t.budget) * 100 : 0) : pace?.spendPct ?? 0, 100)}%`,
-                  background: isMonth ? "#7c3aed" : PACE_BAR_COLOR[pace?.cls ?? "neutral"],
-                }}
-              >
-                {Math.round(isMonth ? (t.budget > 0 ? (t.spend / t.budget) * 100 : 0) : pace?.spendPct ?? 0)}%
+          {/* Spend + time bars stacked vertically (same track width) so
+              the two fills line up and pacing reads at a glance. */}
+          <div className="rpt-util-bars">
+            <div className="rpt-util-block">
+              <div className="rpt-util-label">
+                ניצול תקציב: {fmtILS(t.spend)} מתוך {fmtILS(t.budget)}
+                {spendDelta && (
+                  <span className="rpt-util-delta" title={`בתקופה הקודמת: ${fmtILS(data.prevFunnel!.spend)}`}>
+                    {spendDelta.arrow} {spendDelta.text}
+                  </span>
+                )}
+              </div>
+              <div className="rpt-util-track">
+                <div
+                  className="rpt-util-fill"
+                  style={{
+                    width: `${Math.min(isMonth ? (t.budget > 0 ? (t.spend / t.budget) * 100 : 0) : pace?.spendPct ?? 0, 100)}%`,
+                    background: isMonth ? "#7c3aed" : PACE_BAR_COLOR[pace?.cls ?? "neutral"],
+                  }}
+                >
+                  {Math.round(isMonth ? (t.budget > 0 ? (t.spend / t.budget) * 100 : 0) : pace?.spendPct ?? 0)}%
+                </div>
               </div>
             </div>
-          </div>
-          {!isMonth && pace && (
-            <>
+            {!isMonth && pace && (
               <div className="rpt-util-block">
                 <div className="rpt-util-label">
                   התקדמות בזמן: {Math.round(pace.dayPct)}%
@@ -216,11 +218,13 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
                   </div>
                 </div>
               </div>
-              <div className={`rpt-pace-badge is-${pace.cls}`}>
-                ⦿ {pace.label}
-                {pace.detail && <span className="rpt-pace-detail">{pace.detail}</span>}
-              </div>
-            </>
+            )}
+          </div>
+          {!isMonth && pace && (
+            <div className={`rpt-pace-badge is-${pace.cls}`}>
+              ⦿ {pace.label}
+              {pace.detail && <span className="rpt-pace-detail">{pace.detail}</span>}
+            </div>
           )}
         </div>
       )}

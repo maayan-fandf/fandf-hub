@@ -21,9 +21,12 @@ import ReportHeader from "@/components/report/ReportHeader";
  * native get a tab (no "coming soon" stubs).
  */
 
-type TabId = "overview" | "channels" | "creatives" | "trends";
+type TabId = "summary" | "overview" | "channels" | "creatives" | "trends";
+
+const DEFAULT_TAB: TabId = "summary";
 
 const TAB_DEFS: { id: TabId; icon: string; label: string }[] = [
+  { id: "summary", icon: "🧭", label: "כללי" },
   { id: "overview", icon: "📡", label: "סקירה" },
   { id: "channels", icon: "📋", label: "ערוצים" },
   { id: "creatives", icon: "🎨", label: "קריאייטיבים" },
@@ -54,7 +57,9 @@ export default function ProjectReportTabs({
   pacingDismissals?: Record<string, PacingDismissal>;
 }) {
   const [tab, setTabState] = useState<TabId>(
-    TAB_DEFS.some((t) => t.id === initialTab) ? (initialTab as TabId) : "overview",
+    TAB_DEFS.some((t) => t.id === initialTab)
+      ? (initialTab as TabId)
+      : DEFAULT_TAB,
   );
 
   const syncUrl = useCallback((updates: Record<string, string | null>) => {
@@ -74,7 +79,7 @@ export default function ProjectReportTabs({
   const setTab = useCallback(
     (t: TabId) => {
       setTabState(t);
-      syncUrl({ rtab: t === "overview" ? null : t });
+      syncUrl({ rtab: t === DEFAULT_TAB ? null : t });
       // Recharts' ResponsiveContainer measures on resize — nudge it after
       // a hidden panel becomes visible again.
       requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
@@ -87,7 +92,6 @@ export default function ProjectReportTabs({
 
   return (
     <div className="rpt-shell">
-      <ReportHeader data={data} />
       <nav className="stats-tabs rpt-tabs" role="tablist" aria-label="תצוגות דוח">
         {TAB_DEFS.map((t) => (
           <button
@@ -105,6 +109,16 @@ export default function ProjectReportTabs({
         ))}
       </nav>
 
+      <div
+        id="rpt-panel-summary"
+        role="tabpanel"
+        aria-labelledby="rpt-tab-summary"
+        className={panelCls("summary")}
+      >
+        <FreezeWhenHidden active={tab === "summary"}>
+          <ReportHeader data={data} />
+        </FreezeWhenHidden>
+      </div>
       <div
         id="rpt-panel-overview"
         role="tabpanel"

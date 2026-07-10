@@ -25245,10 +25245,7 @@ button.budget-need:focus-visible {
 .rpt-header {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  padding-bottom: 0.3rem;
-  border-bottom: 1px solid var(--border-soft);
-  margin-bottom: 0.2rem;
+  gap: 0.8rem;
 }
 .rpt-header-top {
   display: flex;
@@ -25295,12 +25292,20 @@ button.budget-need:focus-visible {
   background: color-mix(in srgb, #ef4444 10%, var(--surface));
   border-color: color-mix(in srgb, #ef4444 35%, var(--border-soft));
 }
-/* Utilization bars */
+/* Utilization bars — the two bars (spend + time) stack VERTICALLY in
+   .rpt-util-bars with the same track width, so their fills line up and
+   spend-vs-time reads at a glance; the pacing badge sits alongside. */
 .rpt-util {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 0.6rem 1rem;
-  align-items: end;
+  display: flex;
+  gap: 1rem;
+  align-items: stretch;
+}
+.rpt-util-bars {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 .rpt-util-block {
   min-width: 0;
