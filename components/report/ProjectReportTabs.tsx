@@ -8,6 +8,7 @@ import ReportChannelsTab, {
   type PacingDismissal,
 } from "@/components/report/ReportChannelsTab";
 import ReportCreativesTab from "@/components/report/ReportCreativesTab";
+import ReportHeader from "@/components/report/ReportHeader";
 
 /**
  * Tabbed client shell for the native project report — the "tab-divided,
@@ -86,6 +87,7 @@ export default function ProjectReportTabs({
 
   return (
     <div className="rpt-shell">
+      <ReportHeader data={data} />
       <nav className="stats-tabs rpt-tabs" role="tablist" aria-label="תצוגות דוח">
         {TAB_DEFS.map((t) => (
           <button

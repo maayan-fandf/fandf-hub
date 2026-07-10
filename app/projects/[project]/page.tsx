@@ -776,6 +776,7 @@ export default async function ProjectOverviewPage({
               <ProjectReportSection
                 projectName={projectName}
                 period={dashboardPeriod}
+                company={companyForDashboard}
                 initialTab={typeof sp.rtab === "string" ? sp.rtab : undefined}
               />
             </Suspense>

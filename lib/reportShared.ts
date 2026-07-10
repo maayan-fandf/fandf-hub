@@ -145,6 +145,18 @@ export type ProjectReportData = {
   /** קריאייטיבים tab data (null when the creative sheet has nothing
    *  for the project or the fetch failed — the tab shows an empty note). */
   creatives: ReportCreatives | null;
+  /** Company (Keys חברה) — for the header tag. */
+  company: string;
+  /** Landing page URL string (may hold several space/comma-separated). */
+  landingUrl: string;
+  /** Budget-pacing badge + bars (null in range mode). */
+  pacing: ReportPacing | null;
+  /** End-of-period forecast strip (live mode only; null otherwise). */
+  forecast: ReportForecast | null;
+  /** Period-over-period anomaly chips. */
+  anomalies: ReportAnomaly[];
+  /** Previous-month funnel (day-ratio-scaled) — feeds the util delta. */
+  prevFunnel: PrevFunnel | null;
   /** ALL CLIENTS per-channel rows for the window mode ([] in range mode). */
   totals: {
     budget: number;
@@ -397,6 +409,302 @@ export function diagnoseTopFunnel(
     ctrState: ctrS,
     cvrState: cvrS,
   };
+}
+
+/* ------------------------------ header math ------------------------------ */
+
+export type ReportPacing = {
+  cls: "green" | "yellow" | "red" | "neutral";
+  label: string;
+  detail: string;
+  spendPct: number;
+  dayPct: number;
+};
+
+/** Legacy computePacing (Index.html:4387). `todayIso` = Asia/Jerusalem
+ *  day, injected so server + client agree. */
+export function computePacing(
+  totals: { budget: number; spend: number },
+  window: ReportWindow,
+  todayIso: string,
+): ReportPacing {
+  if (!totals.budget)
+    return { cls: "neutral", label: "אין תקציב", detail: "", spendPct: 0, dayPct: 0 };
+  const spendPct = (totals.spend / totals.budget) * 100;
+  let dayPct: number | null = null;
+  if (window.startIso && window.endIso) {
+    const start = Date.parse(window.startIso);
+    const end = Date.parse(window.endIso);
+    const today = Date.parse(todayIso);
+    const total = end - start;
+    if (total > 0)
+      dayPct = Math.max(0, Math.min(100, ((today - start) / total) * 100));
+  }
+  if (dayPct === null)
+    return { cls: "neutral", label: "תאריכים חסרים", detail: "", spendPct, dayPct: 0 };
+  if (dayPct === 0)
+    return { cls: "neutral", label: "טרם החל", detail: "", spendPct, dayPct };
+  const ratio = spendPct / dayPct;
+  const detail = `תקציב ${Math.round(spendPct)}% · ימים ${Math.round(dayPct)}%`;
+  if (ratio >= 0.9 && ratio <= 1.1)
+    return { cls: "green", label: "בקצב תקין", detail, spendPct, dayPct };
+  if (ratio >= 0.7 && ratio <= 1.3)
+    return { cls: "yellow", label: "יש לבדוק", detail, spendPct, dayPct };
+  if (ratio < 0.7)
+    return { cls: "red", label: "מתחת לקצב", detail, spendPct, dayPct };
+  return { cls: "red", label: "מעל הקצב", detail, spendPct, dayPct };
+}
+
+/** One aggregated calendar-month row (from ALL CLIENTS חודשי rows). */
+export type MonthlyRow = {
+  month: string; // YYYY-MM
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  budget: number;
+};
+
+export type ReportForecast = {
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  budget: number;
+  daysLeft: number;
+};
+
+const FORECAST_METRICS = ["spend", "leads", "scheduled", "meetings"] as const;
+type ForecastMetric = (typeof FORECAST_METRICS)[number];
+
+function median(nums: number[]): number | null {
+  if (!nums.length) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/**
+ * Legacy computeForecast (Index.html:4301) + its projection primitives
+ * (buildProjectionPrimitives) — projected end-of-period spend/leads/
+ * scheduled/meetings by segment-summing every calendar month in the
+ * window: past = actuals, current = pace projection, future = median
+ * baseline (or planned budget for spend). null when < 10% elapsed / not
+ * started / finished / no dates. `todayIso` = Asia/Jerusalem day.
+ */
+export function computeForecast(
+  window: ReportWindow,
+  monthly: MonthlyRow[],
+  budgetTotal: number,
+  totals: { spend: number; leads: number; scheduled: number; meetings: number },
+  todayIso: string,
+): ReportForecast | null {
+  if (!window.startIso || !window.endIso) return null;
+  const start = Date.parse(`${window.startIso}T00:00:00`);
+  const end = Date.parse(`${window.endIso}T00:00:00`);
+  const today = Date.parse(`${todayIso}T00:00:00`);
+  const total = end - start;
+  if (total <= 0) return null;
+  const elapsed = today - start;
+  if (elapsed <= 0 || elapsed >= total) return null;
+  const pct = elapsed / total;
+  if (pct < 0.1) return null;
+
+  const rowByMonth = new Map(monthly.map((r) => [r.month, r]));
+  const currentMonthKey = todayIso.slice(0, 7);
+  const [ty, tm, td] = todayIso.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+  const monthPct = td / daysInMonth;
+
+  // liveSoFar(metric): current-month accrual = window totals minus prior
+  // in-period completed months (clamped ≥0).
+  const priorSum = (k: ForecastMetric) => {
+    let s = 0;
+    for (const r of monthly) if (r.month < currentMonthKey) s += r[k];
+    return s;
+  };
+  const liveSoFar = (k: ForecastMetric) =>
+    Math.max(0, (totals as Record<ForecastMetric, number>)[k] - priorSum(k));
+
+  // historicalBaseline: median of up to the last 3 completed months.
+  const completed = monthly
+    .filter((r) => r.month < currentMonthKey)
+    .sort((a, b) => (a.month < b.month ? 1 : -1))
+    .slice(0, 3);
+  const historicalBaseline = (k: ForecastMetric) =>
+    median(completed.map((r) => r[k]));
+
+  const curRow = rowByMonth.get(currentMonthKey);
+  const monthBudget = curRow?.budget ?? 0;
+  const liveSpend = liveSoFar("spend");
+  const spendGate = liveSpend >= Math.max(200, monthBudget * 0.15);
+  const countsGate = liveSoFar("leads") >= 3;
+  const isCurrentPartial =
+    !!curRow && monthPct >= 0.1 && monthPct <= 1;
+
+  const segmentProjection = (k: ForecastMetric): number | null => {
+    if (!isCurrentPartial) return null;
+    // Single-month shortcut: the live period IS this calendar month.
+    if (window.startIso.slice(0, 7) === currentMonthKey && window.endIso.slice(0, 7) === currentMonthKey) {
+      if (k === "spend") return budgetTotal;
+      return liveSpend > 0 ? budgetTotal * (liveSoFar(k) / liveSpend) : null;
+    }
+    const gatePasses = k === "spend" ? spendGate : countsGate;
+    if (!gatePasses) return k === "spend" && monthBudget > 0 ? monthBudget : null;
+    const live = liveSoFar(k);
+    const baseline = historicalBaseline(k);
+    if (baseline === null) {
+      // No history → linear (spend) / efficiency (counts).
+      if (k === "spend") return live / monthPct;
+      return liveSpend > 0 ? (liveSpend / monthPct) * (live / liveSpend) : null;
+    }
+    const linear = live / monthPct;
+    const w = monthPct;
+    const blended = (1 - w) * baseline + w * linear;
+    if (k === "spend") return blended;
+    return Math.min(blended, Math.max(2 * live, 3 * baseline));
+  };
+
+  // Enumerate every calendar month from start to end inclusive.
+  const monthKeys: string[] = [];
+  let cy = new Date(start).getUTCFullYear();
+  let cm = new Date(start).getUTCMonth() + 1;
+  const endKey = `${new Date(end).getUTCFullYear()}-${String(new Date(end).getUTCMonth() + 1).padStart(2, "0")}`;
+  for (let i = 0; i < 60; i++) {
+    const mk = `${cy}-${String(cm).padStart(2, "0")}`;
+    monthKeys.push(mk);
+    if (mk >= endKey) break;
+    cm++;
+    if (cm > 12) {
+      cm = 1;
+      cy++;
+    }
+  }
+
+  const agg = { spend: 0, leads: 0, scheduled: 0, meetings: 0 };
+  for (const mk of monthKeys) {
+    const row = rowByMonth.get(mk);
+    for (const k of FORECAST_METRICS) {
+      if (mk < currentMonthKey) {
+        agg[k] += row ? row[k] : 0;
+      } else if (mk === currentMonthKey) {
+        const proj = segmentProjection(k);
+        agg[k] += proj !== null ? proj : row ? row[k] : 0;
+      } else {
+        const baseline = historicalBaseline(k);
+        if (baseline !== null) agg[k] += baseline;
+        else if (k === "spend" && row && row.budget > 0) agg[k] += row.budget;
+      }
+    }
+  }
+  return {
+    spend: agg.spend,
+    leads: agg.leads,
+    scheduled: agg.scheduled,
+    meetings: agg.meetings,
+    budget: budgetTotal,
+    daysLeft: Math.max(0, Math.round((end - today) / 86400000)),
+  };
+}
+
+export type PrevFunnel = {
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  costPerLead: number;
+  ratioApplied: number;
+};
+
+/** Legacy computePrevFunnel (Index.html:4413) — previous calendar month
+ *  from monthlyRaw, day-ratio-scaled to the elapsed portion of the
+ *  current period. null when no prior-month rows. */
+export function computePrevFunnel(
+  window: ReportWindow,
+  monthly: MonthlyRow[],
+  todayIso: string,
+): PrevFunnel | null {
+  if (!window.startIso || !monthly.length) return null;
+  const [y, m] = window.startIso.split("-").map(Number);
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  const prevMonth = `${prevY}-${String(prevM).padStart(2, "0")}`;
+  const rows = monthly.filter((r) => r.month === prevMonth);
+  if (!rows.length) return null;
+  const sum = (k: keyof MonthlyRow) =>
+    rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+  const rawSpend = sum("spend");
+  const rawLeads = sum("leads");
+  const rawSched = sum("scheduled");
+  const rawMeet = sum("meetings");
+  const startMs = Date.parse(window.startIso);
+  const endMs = window.endIso ? Date.parse(window.endIso) : Date.parse(todayIso);
+  const todayMs = Date.parse(todayIso);
+  const effEnd = todayMs < endMs ? todayMs : endMs;
+  const daysElapsed = Math.max(1, Math.round((effEnd - startMs) / 86400000) + 1);
+  const daysInPrev = new Date(Date.UTC(prevY, prevM, 0)).getUTCDate();
+  const ratio = Math.min(1, daysElapsed / daysInPrev);
+  const leads = Math.round(rawLeads * ratio);
+  const scheduled = Math.round(rawSched * ratio);
+  const meetings = Math.round(rawMeet * ratio);
+  const spend = rawSpend * ratio;
+  return {
+    spend,
+    leads,
+    scheduled,
+    meetings,
+    costPerLead: leads > 0 ? spend / leads : 0,
+    ratioApplied: ratio,
+  };
+}
+
+export type ReportAnomaly = { type: "good" | "bad"; text: string };
+
+/** Legacy detectAnomalies (Index.html:4465) — period-over-period media
+ *  + CRM anomaly chips (pickChannelAlerts covers the per-channel ones). */
+export function detectAnomalies(
+  totals: { spend: number; leads: number; scheduled: number; meetings: number },
+  prevFunnel: PrevFunnel | null,
+  sm: SmTotals,
+  prevSm: SmTotals | null,
+): ReportAnomaly[] {
+  const out: ReportAnomaly[] = [];
+  const pctD = (cur: number, prev: number) => {
+    if (prev === 0) return cur > 0 ? "+∞" : "0%";
+    const p = ((cur - prev) / prev) * 100;
+    return (p >= 0 ? "+" : "") + p.toFixed(0) + "%";
+  };
+  const drop = (cur: number, prev: number, t: number) => prev > 0 && cur < prev * (1 - t);
+  const rise = (cur: number, prev: number, t: number) => prev > 0 && cur > prev * (1 + t);
+
+  if (sm && prevSm) {
+    if (drop(sm.ctr, prevSm.ctr, 0.3) && sm.impressions > 1000)
+      out.push({ type: "bad", text: `📉 CTR ירד משמעותית (${pctD(sm.ctr, prevSm.ctr)}) — מ-${fmtPct2(prevSm.ctr)} ל-${fmtPct2(sm.ctr)}` });
+    if (rise(sm.cpc, prevSm.cpc, 0.35))
+      out.push({ type: "bad", text: `💸 CPC עלה בחדות (${pctD(sm.cpc, prevSm.cpc)}) — מ-${fmtILS(prevSm.cpc)} ל-${fmtILS(sm.cpc)}` });
+    if (prevSm.conversions > 0 && sm.conversions === 0)
+      out.push({ type: "bad", text: `⛔ המרות Google צנחו ל-0 (מ-${fmtInt(prevSm.conversions)} בתקופה הקודמת)` });
+    if (prevSm.fbLeads > 0 && sm.fbLeads === 0)
+      out.push({ type: "bad", text: `⛔ לידים בפייסבוק צנחו ל-0 (מ-${fmtInt(prevSm.fbLeads)} בתקופה הקודמת)` });
+    if (rise(sm.impressions, prevSm.impressions, 0.5))
+      out.push({ type: "good", text: `🚀 זינוק בחשיפות (${pctD(sm.impressions, prevSm.impressions)}) — מ-${fmtInt(prevSm.impressions)} ל-${fmtInt(sm.impressions)}` });
+  }
+
+  if (prevFunnel) {
+    const p = prevFunnel;
+    if (rise(totals.leads, p.leads, 0.5))
+      out.push({ type: "good", text: `🎯 זינוק בלידים (${pctD(totals.leads, p.leads)}) — מ-${fmtInt(p.leads)} ל-${fmtInt(totals.leads)}` });
+    if (drop(totals.leads, p.leads, 0.3) && p.leads > 5)
+      out.push({ type: "bad", text: `⚠️ לידים ירדו ב-${pctD(totals.leads, p.leads)} — מ-${fmtInt(p.leads)} ל-${fmtInt(totals.leads)}` });
+    if (rise(totals.meetings, p.meetings, 0.4))
+      out.push({ type: "good", text: `🏆 זינוק בביצועי פגישה (${pctD(totals.meetings, p.meetings)}) — מ-${fmtInt(p.meetings)} ל-${fmtInt(totals.meetings)}` });
+    if (rise(totals.spend, p.spend, 0.3) && drop(totals.leads, p.leads, 0.2))
+      out.push({ type: "bad", text: `🔻 הוצאה עלתה (${pctD(totals.spend, p.spend)}) אך לידים ירדו (${pctD(totals.leads, p.leads)}) — ירידה ביעילות` });
+    const curCpl = totals.leads > 0 ? totals.spend / totals.leads : 0;
+    if (rise(curCpl, p.costPerLead, 0.5) && totals.leads > 3)
+      out.push({ type: "bad", text: `📈 עלות לליד עלתה ב-${pctD(curCpl, p.costPerLead)} — מ-${fmtILS(p.costPerLead)} ל-${fmtILS(curCpl)}` });
+  }
+  return out;
 }
 
 /* ---------------------------- creatives types ---------------------------- */

@@ -14,11 +14,14 @@ import type { PacingDismissal } from "@/components/report/ReportChannelsTab";
 export default async function ProjectReportSection({
   projectName,
   period,
+  company = "",
   initialTab,
 }: {
   projectName: string;
   /** "" (live) | "YYYY-MM" | "YYYY-MM-DD..YYYY-MM-DD" — same slot the iframe URL carries. */
   period: string;
+  /** Keys חברה — for the header tag + AI-summary context. */
+  company?: string;
   initialTab?: string;
 }) {
   let data = null;
@@ -29,7 +32,7 @@ export default async function ProjectReportSection({
   const pacingDismissals: Record<string, PacingDismissal> = {};
   try {
     const [d, dismissals] = await Promise.all([
-      getProjectReportData(driveFolderOwner(), projectName, period),
+      getProjectReportData(driveFolderOwner(), projectName, period, company),
       listAlertDismissals().catch(
         () => ({}) as Awaited<ReturnType<typeof listAlertDismissals>>,
       ),

@@ -5,8 +5,10 @@ import { buildMatchMap, matchSlug, getProjectSlug } from "@/lib/campaignMatch";
 import {
   getAllClientsCurrentForProject,
   getAllClientsMonthlyForProject,
+  getProjectMonthlyTotals,
   type AllClientsRow,
 } from "@/lib/allClients";
+import { getProjectLandingUrl } from "@/lib/projectsDirect";
 import { classifyChannel } from "@/lib/budgetTypes";
 import { getCampaignBudgets, type CampaignBudgetItem } from "@/lib/platformDailyBudget";
 import { getDailySpend7d } from "@/lib/platformDailySpend";
@@ -14,8 +16,14 @@ import { getProjectCreatives } from "@/lib/reportCreatives";
 import {
   REPORT_PLATS,
   emptyAdPlatform,
+  sumAdPlatform,
+  computePacing,
+  computeForecast,
+  computePrevFunnel,
+  detectAnomalies,
   type AdPlatform,
   type DailyPoint,
+  type MonthlyRow,
   type PlatCampaign,
   type ProjectReportData,
   type ReportChannel,
@@ -390,6 +398,7 @@ export const getProjectReportData = cache(
     subjectEmail: string,
     projectName: string,
     period: string,
+    company = "",
   ): Promise<ProjectReportData | null> => {
     const slug = await getProjectSlug(subjectEmail, projectName);
     if (!slug) return null;
@@ -437,6 +446,15 @@ export const getProjectReportData = cache(
       slug,
       window,
     );
+    // Header inputs — landing URL (cheap cached Keys read) + this
+    // project's per-month totals (forecast + prev-funnel). Both
+    // best-effort so the header degrades gracefully.
+    const landingP = getProjectLandingUrl(subjectEmail, projectName).catch(
+      () => "",
+    );
+    const monthlyP = getProjectMonthlyTotals({ subjectEmail, project: projectName }).catch(
+      () => [] as MonthlyRow[],
+    );
     const rows = await readProjectPlatformRows(subjectEmail, slug);
     const adPlatform = aggregateWindow(rows, window.startIso, window.endIso);
     const prevWindow = prevWindowOf(window);
@@ -475,6 +493,34 @@ export const getProjectReportData = cache(
       );
     }
 
+    const totals = mode === "range" ? null : sumChannelTotals(channels);
+    const [landingUrl, monthly, creatives] = await Promise.all([
+      landingP,
+      monthlyP,
+      creativesP,
+    ]);
+
+    // Header derivations (server-side so the client header is a pure
+    // render — no browser clock, no hydration drift). Only when we have
+    // a totals block (live + month modes).
+    const today = todayIso();
+    const sm = sumAdPlatform(adPlatform);
+    const prevSm = prevAdPlatform ? sumAdPlatform(prevAdPlatform) : null;
+    const pacing =
+      totals && mode !== "range"
+        ? computePacing(totals, window, today)
+        : null;
+    const prevFunnel =
+      mode === "live" ? computePrevFunnel(window, monthly, today) : null;
+    const forecast =
+      mode === "live" && totals
+        ? computeForecast(window, monthly, totals.budget, totals, today)
+        : null;
+    const anomalies =
+      totals && mode !== "range"
+        ? detectAnomalies(totals, prevFunnel, sm, prevSm)
+        : [];
+
     return {
       project: projectName,
       slug,
@@ -485,8 +531,14 @@ export const getProjectReportData = cache(
       prevAdPlatform,
       daily: dailySeries(rows),
       channels: reportChannels,
-      creatives: await creativesP,
-      totals: mode === "range" ? null : sumChannelTotals(channels),
+      creatives,
+      company,
+      landingUrl,
+      pacing,
+      forecast,
+      anomalies,
+      prevFunnel,
+      totals,
     };
   },
 );
