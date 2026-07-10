@@ -26172,3 +26172,92 @@ button.budget-need:focus-visible {
   padding: 0 0.35rem;
   font-size: 0.72rem;
 }
+
+/* ─── מגמה היסטורית — projection chips, hollow-dot spark, pie popover ─── */
+.rpt-mt-proj {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.rpt-mt-actual {
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.rpt-mt-empty {
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 0.4rem 0;
+}
+.rpt-mt-spark rect {
+  cursor: crosshair;
+}
+/* per-channel hover pie popover */
+.rpt-mt-pie {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 9999;
+  width: 250px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.22);
+  padding: 0.5rem 0.6rem;
+  direction: rtl;
+  pointer-events: none;
+}
+.rpt-mt-pie-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 0.35rem;
+}
+.rpt-mt-pie-total {
+  color: var(--muted);
+  font-weight: 600;
+}
+.rpt-mt-pie > svg {
+  display: block;
+  margin: 0 auto 0.35rem;
+}
+.rpt-mt-pie-none {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.6rem 0;
+}
+.rpt-mt-pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 130px;
+  overflow-y: auto;
+}
+.rpt-mt-pie-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+}
+.rpt-mt-pie-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.rpt-mt-pie-ch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-mt-pie-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.rpt-mt-pie-pct {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

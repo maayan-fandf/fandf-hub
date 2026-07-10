@@ -165,14 +165,16 @@ export default function ReportTrendsTab({ data }: { data: ProjectReportData }) {
   if (!activePlats.length) {
     return (
       <div className="rpt-trends">
-        <div className="rpt-empty">אין נתונים יומיים לפרויקט הזה.</div>
         <ReportMonthlyTrend data={data} />
+        <div className="rpt-empty">אין נתונים יומיים לפרויקט הזה.</div>
       </div>
     );
   }
 
   return (
     <div className="rpt-trends">
+      {/* Historical monthly trend sits ABOVE the daily platform charts. */}
+      <ReportMonthlyTrend data={data} />
       <div className="rpt-trend-controls">
         <div className="rpt-range-btns">
           {quickRanges.map((q) => {
@@ -241,8 +243,6 @@ export default function ReportTrendsTab({ data }: { data: ProjectReportData }) {
           pal={pal}
         />
       ))}
-
-      <ReportMonthlyTrend data={data} />
     </div>
   );
 }

@@ -159,6 +159,9 @@ export type ProjectReportData = {
   prevFunnel: PrevFunnel | null;
   /** Per-channel monthly rows for the historical-trend section. */
   monthlyRaw: MonthlyChannelRow[];
+  /** Today (Asia/Jerusalem) — server-injected so the monthly-trend
+   *  projection agrees between SSR and client. */
+  todayIso: string;
   /** Budget-desk tab name (== מזהה מע"פ) — the write key for inline
    *  budget-cell edits (/api/campaigns/budget lookup mode). "" when the
    *  budget master didn't resolve the project. */
@@ -505,6 +508,223 @@ export type MonthlyRow = {
   meetings: number;
   budget: number;
 };
+
+export type ProjMetric = "spend" | "leads" | "scheduled" | "meetings";
+
+export type ProjectionPrimitives = {
+  currentMonthKey: string;
+  daysInMonth: number;
+  dayOfMonth: number;
+  monthPct: number;
+  currentIdx: number;
+  isCurrentPartial: boolean;
+  isStrictlyMonthly: boolean;
+  hasHistory: boolean;
+  periodStartMonth: string;
+  periodEndMonth: string;
+  monthBudget: number | null;
+  /** monthly array, possibly with a synthesized current-month placeholder. */
+  monthly: MonthlyRow[];
+  liveSoFar: (m: ProjMetric) => number;
+  historicalBaseline: (m: ProjMetric) => number | null;
+  significanceGate: (family: "spend" | "counts") => boolean;
+  segmentProjection: (m: ProjMetric) => number | null;
+};
+
+/**
+ * Legacy `buildProjectionPrimitives` (Index.html:8198) — the shared
+ * projection engine behind the מגמה היסטורית mini cards' current-month
+ * dot + the forecast strip. `todayIso` (Asia/Jerusalem) is injected so
+ * server + client agree. `totals` = the live נוכחי window totals (p.totals);
+ * `monthly` = the (channel-filtered) per-month aggregate; `window` = the
+ * project flight envelope. Byte-for-byte with the Apps Script.
+ */
+export function buildProjectionPrimitives(
+  monthlyIn: MonthlyRow[],
+  totals: { spend: number; leads: number; scheduled: number; meetings: number; budget: number },
+  window: ReportWindow,
+  todayIso: string,
+): ProjectionPrimitives {
+  const monthly = monthlyIn.map((r) => ({ ...r }));
+  const [ty, tm, td] = todayIso.split("-").map(Number);
+  const currentMonthKey = `${ty}-${String(tm).padStart(2, "0")}`;
+  const daysInMonth = new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+  const dayOfMonth = td;
+  const monthPct = daysInMonth > 0 ? dayOfMonth / daysInMonth : 0;
+
+  const hasData = (r: MonthlyRow) =>
+    (r.spend || 0) + (r.leads || 0) + (r.scheduled || 0) + (r.meetings || 0) > 0;
+  let currentIdx = monthly.findIndex((r) => r.month === currentMonthKey);
+
+  const periodStartMonth = window.startIso ? window.startIso.slice(0, 7) : "";
+  const periodEndMonth = window.endIso ? window.endIso.slice(0, 7) : "";
+  const isStrictlyMonthly =
+    !!periodStartMonth && !!periodEndMonth && periodStartMonth === periodEndMonth;
+
+  // Period-validity: fixed-period → now ∈ [start, end]; monthly-recurring
+  // (start only) → always in-period; no start → false. Compare ISO days.
+  let periodValid = false;
+  if (window.startIso && window.endIso) {
+    if (
+      window.endIso > window.startIso &&
+      todayIso >= window.startIso &&
+      todayIso <= window.endIso
+    )
+      periodValid = true;
+  } else if (window.startIso) {
+    periodValid = true;
+  }
+
+  const isCurrentPartial =
+    currentIdx >= 0 && monthPct >= 0.1 && monthPct <= 1 && periodValid;
+
+  // Synthesize a placeholder for the current month if archive hasn't landed.
+  if (isCurrentPartial && currentIdx === -1) {
+    let ins = monthly.findIndex((r) => r.month > currentMonthKey);
+    if (ins < 0) ins = monthly.length;
+    monthly.splice(ins, 0, {
+      month: currentMonthKey,
+      spend: 0,
+      leads: 0,
+      scheduled: 0,
+      meetings: 0,
+      budget: 0,
+    });
+    currentIdx = ins;
+  }
+
+  const t = totals as Record<ProjMetric, number> & { budget: number };
+  const liveCache = new Map<ProjMetric, number>();
+  const liveSoFar = (metric: ProjMetric): number => {
+    const c = liveCache.get(metric);
+    if (c !== undefined) return c;
+    if (!isCurrentPartial) {
+      liveCache.set(metric, 0);
+      return 0;
+    }
+    let v = 0;
+    if (t[metric] != null) {
+      if (periodStartMonth && periodEndMonth) {
+        let priorSum = 0;
+        monthly.forEach((r, i) => {
+          if (i === currentIdx) return;
+          if (
+            r.month >= periodStartMonth &&
+            r.month < currentMonthKey &&
+            r.month <= periodEndMonth
+          )
+            priorSum += r[metric] || 0;
+        });
+        v = Math.max(0, (t[metric] || 0) - priorSum);
+      } else {
+        v = Math.max(0, t[metric] || 0);
+      }
+    }
+    liveCache.set(metric, v);
+    return v;
+  };
+
+  const monthBudget =
+    isCurrentPartial && monthly[currentIdx] && monthly[currentIdx].budget > 0
+      ? monthly[currentIdx].budget
+      : null;
+
+  const completedMonths: MonthlyRow[] = [];
+  for (let i = 0; i < monthly.length; i++) {
+    if (i === currentIdx) continue;
+    const row = monthly[i];
+    if (!row || row.month >= currentMonthKey || !hasData(row)) continue;
+    completedMonths.push(row);
+  }
+  const hasHistory = completedMonths.length > 0;
+
+  const baselineCache = new Map<ProjMetric, number | null>();
+  const historicalBaseline = (metric: ProjMetric): number | null => {
+    if (baselineCache.has(metric)) return baselineCache.get(metric)!;
+    if (!hasHistory) {
+      baselineCache.set(metric, null);
+      return null;
+    }
+    const lastN = completedMonths.slice(-3).map((r) => r[metric] || 0).sort((a, b) => a - b);
+    const mid = Math.floor(lastN.length / 2);
+    const median =
+      lastN.length % 2 === 0 ? (lastN[mid - 1] + lastN[mid]) / 2 : lastN[mid];
+    baselineCache.set(metric, median);
+    return median;
+  };
+
+  const significanceGate = (family: "spend" | "counts"): boolean => {
+    if (!isCurrentPartial || monthPct < 0.1) return false;
+    if (family === "spend")
+      return liveSoFar("spend") >= Math.max(200, (monthBudget || 0) * 0.15);
+    if (family === "counts") return liveSoFar("leads") >= 3;
+    return false;
+  };
+
+  const budgetFallbackSpend = (): number | null => {
+    if (!isCurrentPartial || !monthBudget) return null;
+    if (significanceGate("spend")) return null;
+    return monthBudget;
+  };
+
+  const segmentProjection = (metric: ProjMetric): number | null => {
+    if (!isCurrentPartial) return null;
+    if (isStrictlyMonthly && periodStartMonth === currentMonthKey) {
+      const planned = t.budget || 0;
+      if (planned > 0) {
+        if (metric === "spend") return planned;
+        const liveSpend = liveSoFar("spend");
+        const live = liveSoFar(metric);
+        if (liveSpend > 0) return planned * (live / liveSpend);
+      }
+    }
+    const family = metric === "spend" ? "spend" : "counts";
+    if (!significanceGate(family)) {
+      if (metric === "spend") {
+        const fb = budgetFallbackSpend();
+        if (fb !== null) return fb;
+      }
+      return null;
+    }
+    const live = liveSoFar(metric);
+    if (!hasHistory) {
+      if (metric === "spend") return live / monthPct;
+      const liveSpend = liveSoFar("spend");
+      if (liveSpend > 0) return (liveSpend / monthPct) * (live / liveSpend);
+      return live / monthPct;
+    }
+    const linear = live / monthPct;
+    const baseline = historicalBaseline(metric);
+    let blended =
+      baseline !== null && baseline > 0
+        ? (1 - monthPct) * baseline + monthPct * linear
+        : linear;
+    if (metric !== "spend") {
+      const cap = Math.max(2 * live, 3 * (baseline || 0));
+      if (cap > 0) blended = Math.min(blended, cap);
+    }
+    return blended;
+  };
+
+  return {
+    currentMonthKey,
+    daysInMonth,
+    dayOfMonth,
+    monthPct,
+    currentIdx,
+    isCurrentPartial,
+    isStrictlyMonthly,
+    hasHistory,
+    periodStartMonth,
+    periodEndMonth,
+    monthBudget,
+    monthly,
+    liveSoFar,
+    historicalBaseline,
+    significanceGate,
+    segmentProjection,
+  };
+}
 
 export type ReportForecast = {
   spend: number;

@@ -578,6 +578,7 @@ export const getProjectReportData = cache(
       anomalies,
       prevFunnel,
       monthlyRaw,
+      todayIso: today,
       tabSlug,
       budgetSummary,
       totals,
