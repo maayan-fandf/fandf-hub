@@ -375,7 +375,7 @@ function buildReportChannels(
 }
 
 function sumChannelTotals(channels: AllClientsRow[]) {
-  const t = { budget: 0, spend: 0, leads: 0, relevant: 0, scheduled: 0, meetings: 0 };
+  const t = { budget: 0, spend: 0, leads: 0, relevant: 0, scheduled: 0, meetings: 0, sales: 0 };
   for (const c of channels) {
     t.budget += c.budget;
     t.spend += c.spend;
@@ -383,6 +383,7 @@ function sumChannelTotals(channels: AllClientsRow[]) {
     t.relevant += c.relevant ?? 0;
     t.scheduled += c.scheduled;
     t.meetings += c.meetings;
+    t.sales += c.sales ?? 0;
   }
   return t;
 }

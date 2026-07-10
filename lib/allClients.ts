@@ -71,6 +71,9 @@ export type AllClientsRow = {
   /** Meetings that actually took place (ביצוע פגישות). The "held"
    *  side of the noshow gap. */
   meetings: number;
+  /** Sales / deals closed (`מכירות`) — the last funnel stage; 0/absent
+   *  when the column is missing. Feeds the conversion-funnel chart. */
+  sales?: number;
   /** קצב יומי — the channel's historical daily spend rate. The budget-
    *  shift scorer uses it only as a gate (dailyRate > 0 ⇒ headroom is
    *  meaningful), mirroring the dashboard's c.dailyRate (Code.js#L2207).
@@ -161,6 +164,7 @@ async function readAllClientsRows(
   const iRelevant = col("לידים רלוונטים"); // optional; -1 tolerated
   const iScheduled = col("תיאום וביטול");
   const iMeetings = col("ביצוע פגישות");
+  const iSales = col("מכירות"); // optional; -1 tolerated
   const iDailyRate = col("קצב יומי");
   const iRowType = col("סוג שורה");
   const iProject = col("פרוייקט");
@@ -201,6 +205,7 @@ async function readAllClientsRows(
     relevant: iRelevant >= 0 ? num(row[iRelevant]) : 0,
     scheduled: num(row[iScheduled]),
     meetings: num(row[iMeetings]),
+    sales: iSales >= 0 ? num(row[iSales]) : 0,
     dailyRate: iDailyRate >= 0 ? num(row[iDailyRate]) : 0,
     startIso: dateOnlyFromSerial(row[iStart]),
     endIso: dateOnlyFromSerial(row[iEnd]),

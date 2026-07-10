@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import ReportFunnelFlow from "@/components/report/ReportFunnelFlow";
+import ReportConversionFunnel from "@/components/report/ReportConversionFunnel";
 import {
   REPORT_PLATS,
   PLAT_LABELS,
@@ -398,6 +399,8 @@ export default function ReportOverviewTab({ data }: { data: ProjectReportData })
           <PlatCard key={p} plat={p} totals={ap[p]} />
         ))}
       </div>
+
+      <ReportConversionFunnel data={data} />
     </div>
   );
 }

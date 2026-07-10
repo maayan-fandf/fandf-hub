@@ -165,6 +165,7 @@ export type ProjectReportData = {
     relevant: number;
     scheduled: number;
     meetings: number;
+    sales: number;
   } | null;
 };
 

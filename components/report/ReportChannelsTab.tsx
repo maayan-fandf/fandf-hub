@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { channelIcon } from "@/lib/channelIcon";
 import { pacingChannelKey } from "@/lib/budgetTypes";
+import ReportChannelCharts from "@/components/report/ReportChannelCharts";
 import {
   computeChannelPacing,
   costHeatStyle,
@@ -519,6 +520,8 @@ export default function ReportChannelsTab({
           </tbody>
         </table>
       </div>
+
+      <ReportChannelCharts channels={channels} />
     </div>
   );
 }

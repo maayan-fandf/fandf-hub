@@ -25672,3 +25672,209 @@ button.budget-need:focus-visible {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Native report — conversion funnel bar (drawFunnel) ─── */
+.rpt-conv-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.7rem 0.9rem;
+}
+.rpt-cf-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.rpt-cf-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.rpt-cf-row {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  align-items: center;
+  gap: 0.6rem;
+}
+.rpt-cf-label {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  text-align: end;
+}
+.rpt-cf-track {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.rpt-cf-fill {
+  height: 22px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  padding-inline-start: 0.5rem;
+  min-width: 2.4rem;
+  transition: width 480ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.rpt-cf-val {
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.rpt-cf-conv {
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rpt-cf-note {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* ─── Native report — channel analytics charts ─── */
+.rpt-ch-charts {
+  margin-top: 0.8rem;
+}
+.rpt-ch-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.8rem;
+}
+.rpt-ch-chart-box {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.6rem 0.8rem;
+}
+.rpt-ch-chart-box h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.rpt-scatter {
+  width: 100%;
+}
+.rpt-scatter-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.rpt-scatter-chip {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.76rem;
+}
+.rpt-scatter-chip b {
+  color: var(--brand);
+}
+/* budget-vs-cost fill bars */
+.rpt-budbar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.rpt-budbar-row {
+  display: grid;
+  grid-template-columns: 2em 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+.rpt-budbar-slot {
+  min-width: 0;
+}
+.rpt-budbar-track {
+  display: block;
+  height: 18px;
+  background: var(--surface-alt);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.rpt-budbar-track.is-over {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, #ef4444 18%, var(--surface-alt)),
+    color-mix(in srgb, #ef4444 18%, var(--surface-alt)) 5px,
+    var(--surface-alt) 5px,
+    var(--surface-alt) 10px
+  );
+}
+.rpt-budbar-fill {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  background: #14b8a6;
+  border-radius: 5px;
+  padding-inline-start: 0.4rem;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-width: 1.8rem;
+}
+.rpt-budbar-num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* outcome grouped bars */
+.rpt-outbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.rpt-outbar-legend {
+  display: flex;
+  gap: 0.8rem;
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.2rem;
+}
+.rpt-outbar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.rpt-outbar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.rpt-outbar-row {
+  display: grid;
+  grid-template-columns: 2em 1fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rpt-outbar-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rpt-outbar-track {
+  position: relative;
+  height: 12px;
+  display: flex;
+  align-items: center;
+}
+.rpt-outbar-fill {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 1px;
+}
+.rpt-outbar-val {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-inline-start: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
