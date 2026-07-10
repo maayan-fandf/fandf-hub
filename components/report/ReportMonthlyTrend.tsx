@@ -425,7 +425,8 @@ export default function ReportMonthlyTrend({
     });
   };
   const filterLabel =
-    selected === null ? `כל הערוצים (${allChannels.length})` : `${selected.size} ערוצים`;
+    selected === null ? 'כל הערוצים (סה"כ)' : `${selected.size} ערוצים`;
+  const allChecked = selected === null;
 
   const cplLines = [
     { key: "costPerLead" as const, label: "עלות לליד", color: "#6366f1" },
@@ -493,13 +494,18 @@ export default function ReportMonthlyTrend({
             </button>
             {open && (
               <div className="rpt-mt-filter-panel">
-                <button
-                  type="button"
-                  className="rpt-mt-filter-opt is-all"
-                  onClick={() => setSelected(null)}
-                >
-                  כל הערוצים
-                </button>
+                <label className="rpt-mt-filter-opt is-all">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    ref={(el) => {
+                      // Partial selection → indeterminate tri-state.
+                      if (el) el.indeterminate = !allChecked;
+                    }}
+                    onChange={() => setSelected(null)}
+                  />
+                  <b>כל הערוצים</b>
+                </label>
                 {allChannels.map((ch) => {
                   const on = selected === null || selected.has(ch);
                   return (
