@@ -159,6 +159,10 @@ export type ProjectReportData = {
   prevFunnel: PrevFunnel | null;
   /** Per-channel monthly rows for the historical-trend section. */
   monthlyRaw: MonthlyChannelRow[];
+  /** Budget-desk tab name (== מזהה מע"פ) — the write key for inline
+   *  budget-cell edits (/api/campaigns/budget lookup mode). "" when the
+   *  budget master didn't resolve the project. */
+  tabSlug: string;
   /** Budget-desk summary for the תקציב חודשי strip (live mode, internal
    *  only; null when unavailable). */
   budgetSummary: {

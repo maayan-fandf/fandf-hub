@@ -26130,3 +26130,45 @@ button.budget-need:focus-visible {
   text-decoration: none;
   white-space: nowrap;
 }
+
+/* ─── Native report — editable budget cell + pacing copy ─── */
+.rpt-budcell-btn {
+  border: 1px dashed transparent;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.rpt-budcell-btn:hover {
+  border-color: var(--border-soft);
+  background: var(--surface-alt);
+}
+.rpt-budcell-btn.is-saving {
+  opacity: 0.6;
+}
+.rpt-budcell-btn.is-saved {
+  color: #16a34a;
+}
+.rpt-budcell-btn.is-error {
+  color: #dc2626;
+  border-color: #dc2626;
+}
+.rpt-budcell-input {
+  width: 5.5em;
+  border: 1px solid var(--brand);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 5px;
+  padding: 0.05rem 0.35rem;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+/* the pacing copy button reuses .morning-copy-btn from the budget desk */
+.rpt-pace .morning-copy-btn {
+  margin-inline-start: 0.35rem;
+  padding: 0 0.35rem;
+  font-size: 0.72rem;
+}

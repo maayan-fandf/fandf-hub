@@ -532,6 +532,7 @@ export const getProjectReportData = cache(
     // Budget-desk summary for the תקציב חודשי strip (live mode only —
     // E3/allocated/delta are flight-window concepts). Best-effort.
     let budgetSummary: ProjectReportData["budgetSummary"] = null;
+    let tabSlug = "";
     if (mode === "live") {
       try {
         const bm = await getBudgetMaster(subjectEmail);
@@ -544,7 +545,8 @@ export const getProjectReportData = cache(
             p.name.toLowerCase().trim() === projLc ||
             p.tab.toLowerCase() === slugLc,
         );
-        if (bp)
+        if (bp) {
+          tabSlug = bp.tab;
           budgetSummary = {
             e3: bp.e3,
             allocated: bp.allocated,
@@ -552,6 +554,7 @@ export const getProjectReportData = cache(
             remainingDays: bp.remainingDays,
             totalDays: bp.totalDays,
           };
+        }
       } catch {
         /* strip degrades to hidden */
       }
@@ -575,6 +578,7 @@ export const getProjectReportData = cache(
       anomalies,
       prevFunnel,
       monthlyRaw,
+      tabSlug,
       budgetSummary,
       totals,
     };

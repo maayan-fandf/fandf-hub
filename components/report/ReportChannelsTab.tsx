@@ -4,6 +4,11 @@ import { useMemo, useState } from "react";
 import { channelIcon } from "@/lib/channelIcon";
 import { pacingChannelKey } from "@/lib/budgetTypes";
 import ReportChannelCharts from "@/components/report/ReportChannelCharts";
+import CopyAmountButton from "@/components/CopyAmountButton";
+
+/** Ads-manager deep links (Keys accounts → platform URL) for the pacing
+ *  copy-and-open control. Built by the Apps Script (getProjectAdLinks). */
+export type ReportAdLinks = { gAdsUrl: string; fbAdsUrl: string };
 import {
   computeChannelPacing,
   costHeatStyle,
@@ -184,6 +189,105 @@ function BudgetStrip({
   );
 }
 
+/** Inline-editable תקציב cell (media/felix) — writes col G on the
+ *  project tab via /api/campaigns/budget lookup mode (distribute across
+ *  merged sub-campaign rows when needed), with the same drift guard the
+ *  budget desk uses. */
+function BudgetCell({
+  tabSlug,
+  channel,
+  budget,
+  distribute,
+}: {
+  tabSlug: string;
+  channel: string;
+  budget: number;
+  distribute: boolean;
+}) {
+  const [value, setValue] = useState(budget);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(Math.round(budget)));
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    setEditing(false);
+    const next = Math.round(Number(draft.replace(/[^\d.-]/g, "")));
+    if (!Number.isFinite(next) || next === Math.round(value)) {
+      setDraft(String(Math.round(value)));
+      return;
+    }
+    setState("saving");
+    setErr("");
+    try {
+      const res = await fetch("/api/campaigns/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: tabSlug,
+          channel,
+          value: next,
+          expectedBudget: Math.round(value),
+          distribute,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setValue(next);
+      setDraft(String(next));
+      setState("saved");
+      setTimeout(() => setState("idle"), 1500);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setDraft(String(Math.round(value)));
+      setState("error");
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        className="rpt-budcell-input"
+        type="text"
+        inputMode="numeric"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") {
+            setDraft(String(Math.round(value)));
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={"rpt-budcell-btn is-" + state}
+      title={
+        state === "error"
+          ? `שגיאה: ${err}`
+          : distribute
+            ? "לחצו לעריכה — יחולק יחסית בין תתי-הקמפיינים · נשמר ל-Google Sheet"
+            : "לחצו לעריכה — נשמר ל-Google Sheet"
+      }
+      onClick={() => {
+        setDraft(String(Math.round(value)));
+        setEditing(true);
+      }}
+    >
+      {fmtILS(value)}
+      {state === "saving" && " …"}
+      {state === "saved" && " ✓"}
+      {state === "error" && " ⚠️"}
+    </button>
+  );
+}
+
 function ChannelGantt({
   channels,
   window,
@@ -251,9 +355,13 @@ function ChannelGantt({
 export default function ReportChannelsTab({
   data,
   pacingDismissals,
+  canEditBudget = false,
+  adLinks = null,
 }: {
   data: ProjectReportData;
   pacingDismissals: Record<string, PacingDismissal>;
+  canEditBudget?: boolean;
+  adLinks?: ReportAdLinks | null;
 }) {
   const isMonth = data.mode === "month";
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
@@ -482,7 +590,20 @@ export default function ReportChannelsTab({
                       </button>
                     )}
                   </td>
-                  {!isMonth && <td>{fmtILS(c.budget)}</td>}
+                  {!isMonth && (
+                    <td className="rpt-budcell">
+                      {canEditBudget && data.tabSlug ? (
+                        <BudgetCell
+                          tabSlug={data.tabSlug}
+                          channel={c.channel}
+                          budget={c.budget}
+                          distribute={subs.length > 1}
+                        />
+                      ) : (
+                        fmtILS(c.budget)
+                      )}
+                    </td>
+                  )}
                   <td>{fmtILS(c.spend)}</td>
                   <td>{fmtInt(c.leads)}</td>
                   <td style={costHeatStyle("costPerLead", c.costPerLead)}>
@@ -554,6 +675,30 @@ export default function ReportChannelsTab({
                           ↩︎
                         </button>
                       )}
+                      {canEditBudget &&
+                        c.dailyRate > 0 &&
+                        (() => {
+                          const url =
+                            c.platform === "google"
+                              ? adLinks?.gAdsUrl
+                              : c.platform === "facebook"
+                                ? adLinks?.fbAdsUrl
+                                : "";
+                          if (!url) return null;
+                          const openUrl =
+                            c.platform === "google"
+                              ? `${url}${url.includes("#") ? "" : `#fandf-filter=${encodeURIComponent(data.slug)}`}`
+                              : url;
+                          return (
+                            <CopyAmountButton
+                              amount={String(Math.round(c.dailyRate))}
+                              copyId={data.slug}
+                              url={openUrl}
+                              variant="ghost"
+                              label="⧉"
+                            />
+                          );
+                        })()}
                     </td>
                   )}
                 </tr>

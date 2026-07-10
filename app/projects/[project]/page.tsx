@@ -30,6 +30,7 @@ import ClientPrisaApprovalPrompt from "@/components/ClientPrisaApprovalPrompt";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { isRealEstateType } from "@/lib/keys";
+import { canSeeCampaigns } from "@/lib/userRole";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
 import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismissals";
 import { getAllClientsCurrentForProject, type AllClientsRow } from "@/lib/allClients";
@@ -442,6 +443,11 @@ export default async function ProjectOverviewPage({
   // internal users opt in via ?report=native; everyone else keeps the
   // legacy iframe until the native report reaches feature parity.
   const useNativeReport = isInternalUser && sp.report === "native";
+  // Media/felix gate for the native report's inline budget edit +
+  // pacing copy-and-open controls (same gate as the budget desk).
+  const canEditReportBudget = useNativeReport
+    ? await canSeeCampaigns(userEmail).catch(() => false)
+    : false;
   const reportToggleHref = (native: boolean): string => {
     const qs = new URLSearchParams();
     const keep = [
@@ -777,6 +783,7 @@ export default async function ProjectOverviewPage({
                 projectName={projectName}
                 period={dashboardPeriod}
                 company={companyForDashboard}
+                canEditBudget={canEditReportBudget}
                 initialTab={typeof sp.rtab === "string" ? sp.rtab : undefined}
               />
             </Suspense>

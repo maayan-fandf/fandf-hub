@@ -6,6 +6,7 @@ import ReportOverviewTab from "@/components/report/ReportOverviewTab";
 import ReportTrendsTab from "@/components/report/ReportTrendsTab";
 import ReportChannelsTab, {
   type PacingDismissal,
+  type ReportAdLinks,
 } from "@/components/report/ReportChannelsTab";
 import ReportCreativesTab from "@/components/report/ReportCreativesTab";
 import ReportHeader from "@/components/report/ReportHeader";
@@ -51,10 +52,14 @@ export default function ProjectReportTabs({
   data,
   initialTab,
   pacingDismissals = {},
+  canEditBudget = false,
+  adLinks = null,
 }: {
   data: ProjectReportData;
   initialTab?: string;
   pacingDismissals?: Record<string, PacingDismissal>;
+  canEditBudget?: boolean;
+  adLinks?: ReportAdLinks | null;
 }) {
   const [tab, setTabState] = useState<TabId>(
     TAB_DEFS.some((t) => t.id === initialTab)
@@ -136,7 +141,12 @@ export default function ProjectReportTabs({
         className={panelCls("channels")}
       >
         <FreezeWhenHidden active={tab === "channels"}>
-          <ReportChannelsTab data={data} pacingDismissals={pacingDismissals} />
+          <ReportChannelsTab
+            data={data}
+            pacingDismissals={pacingDismissals}
+            canEditBudget={canEditBudget}
+            adLinks={adLinks}
+          />
         </FreezeWhenHidden>
       </div>
       <div
