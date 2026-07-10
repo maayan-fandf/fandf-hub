@@ -38,6 +38,7 @@ import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
+import ProjectReportSection from "@/components/report/ProjectReportSection";
 import CardActions from "@/components/CardActions";
 import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import { personDisplayName } from "@/lib/personDisplay";
@@ -92,6 +93,12 @@ type Search = {
    *  channel cost is pro-rated to the selected days. */
   from?: string;
   to?: string;
+  /** "native" swaps the Apps Script iframe for the in-hub tabbed report
+   *  (internal users only, phase-1 migration). Absent = legacy iframe. */
+  report?: string;
+  /** Native report's active tab (deep-link support; the client mirrors
+   *  tab switches back into the URL via replaceState). */
+  rtab?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -431,6 +438,30 @@ export default async function ProjectOverviewPage({
   // clients can't load that — route them to the proxy instead so the link
   // still works from their browser.
   const dashboardOpenUrl = isInternalUser ? dashboardFilteredUrl : proxyEmbedUrl;
+  // Native in-hub report (phase-1 migration off the Apps Script iframe):
+  // internal users opt in via ?report=native; everyone else keeps the
+  // legacy iframe until the native report reaches feature parity.
+  const useNativeReport = isInternalUser && sp.report === "native";
+  const reportToggleHref = (native: boolean): string => {
+    const qs = new URLSearchParams();
+    const keep = [
+      "resolved",
+      "person",
+      "view",
+      "channel",
+      "company",
+      "monthOverride",
+      "from",
+      "to",
+    ] as const;
+    for (const k of keep) {
+      const v = sp[k];
+      if (typeof v === "string" && v) qs.set(k, v);
+    }
+    if (native) qs.set("report", "native");
+    const s = qs.toString();
+    return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
+  };
 
   // If a core call failed, it's likely an access-denied — show the first error.
   const firstError =
@@ -690,7 +721,12 @@ export default async function ProjectOverviewPage({
           Non-real-estate (e.g. צוות F&F) has no campaign/funnel data
           and the iframe would show an empty Apps Script report. */}
       {isRealEstateProject && dashboardEmbedUrl && (
-        <section className="project-section project-section-metrics">
+        <section
+          className={
+            "project-section project-section-metrics" +
+            (useNativeReport ? " is-native" : "")
+          }
+        >
           {/* Section head is absolutely positioned over the iframe's
               top-left corner. The iframe's own header lives directly
               underneath (project name on the right, גיליון/Facebook/
@@ -700,6 +736,27 @@ export default async function ProjectOverviewPage({
           <div className="section-head" title="📊 מטריקות">
             <h2 aria-label="מטריקות">📊</h2>
             <div className="section-head-actions">
+              {isInternalUser && (
+                <span className="rpt-toggle" role="group" aria-label="גרסת דוח">
+                  <Link
+                    className={
+                      "rpt-toggle-btn" + (useNativeReport ? " is-active" : "")
+                    }
+                    href={reportToggleHref(true)}
+                    title="הדוח החדש — נבנה בתוך ההאב (בטא)"
+                  >
+                    ✨ חדש
+                  </Link>
+                  <Link
+                    className={
+                      "rpt-toggle-btn" + (!useNativeReport ? " is-active" : "")
+                    }
+                    href={reportToggleHref(false)}
+                  >
+                    קלאסי
+                  </Link>
+                </span>
+              )}
               <a
                 className="section-link section-link-icon"
                 href={dashboardOpenUrl}
@@ -712,11 +769,23 @@ export default async function ProjectOverviewPage({
               </a>
             </div>
           </div>
-          <MetricsIframe
-            src={dashboardEmbedUrl}
-            projectName={projectName}
-            expectedEmail={userEmail}
-          />
+          {useNativeReport ? (
+            <Suspense
+              fallback={<div className="rpt-empty">טוען את הדוח החדש…</div>}
+            >
+              <ProjectReportSection
+                projectName={projectName}
+                period={dashboardPeriod}
+                initialTab={typeof sp.rtab === "string" ? sp.rtab : undefined}
+              />
+            </Suspense>
+          ) : (
+            <MetricsIframe
+              src={dashboardEmbedUrl}
+              projectName={projectName}
+              expectedEmail={userEmail}
+            />
+          )}
         </section>
       )}
 

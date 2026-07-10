@@ -24321,3 +24321,342 @@ button.budget-need:focus-visible {
   color: var(--brand);
   line-height: 1;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Native project report — phase-1 migration off the Apps Script iframe.
+   .rpt-* namespace; the tab bar itself reuses .stats-tabs / .stats-tab /
+   .stats-tabpanel and the KPI cards reuse .kpi-band / .kpi-card.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.project-section-metrics.is-native {
+  /* Top padding clears the floating section-head pill (absolute, top 0.5rem). */
+  padding: 2.4rem 1rem 1.1rem;
+}
+.rpt-toggle {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 2px;
+}
+.rpt-toggle-btn {
+  padding: 0.15rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+.rpt-toggle-btn.is-active {
+  background: var(--brand);
+  color: #fff;
+}
+.rpt-empty {
+  padding: 1.2rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: center;
+}
+.rpt-empty-sm {
+  padding: 0.6rem;
+}
+
+.rpt-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.rpt-tabs {
+  align-self: flex-start;
+}
+
+/* ─── Overview tab ─── */
+.rpt-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.rpt-window-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.rpt-window-chip {
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+.rpt-window-prev {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Threshold framing on KPI cards (legacy alert-red/amber/green). */
+.rpt-kpi-red {
+  box-shadow: inset 0 0 0 1.5px #ef4444;
+}
+.rpt-kpi-amber {
+  box-shadow: inset 0 0 0 1.5px #f59e0b;
+}
+.rpt-kpi-green {
+  box-shadow: inset 0 0 0 1.5px #22c55e;
+}
+
+/* Funnel diagnosis card */
+.rpt-dx {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: var(--surface-alt);
+}
+.rpt-dx-head {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.rpt-dx-rates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  font-size: 0.85rem;
+}
+.rpt-dx-rates b {
+  font-variant-numeric: tabular-nums;
+}
+.rpt-dx-down {
+  color: #ef4444;
+  font-weight: 600;
+}
+.rpt-dx-up {
+  color: #22c55e;
+  font-weight: 600;
+}
+.rpt-dx-stable {
+  color: var(--muted);
+}
+.rpt-dx-warn {
+  color: #b45309;
+  font-size: 0.8rem;
+}
+.rpt-dx-ok {
+  border-inline-start: 3px solid #22c55e;
+}
+.rpt-dx-site {
+  border-inline-start: 3px solid #3b82f6;
+}
+.rpt-dx-ads {
+  border-inline-start: 3px solid #a855f7;
+}
+.rpt-dx-quality {
+  border-inline-start: 3px solid #0ea5e9;
+}
+.rpt-dx-mixed {
+  border-inline-start: 3px solid #f59e0b;
+}
+.rpt-dx-nodata {
+  border-inline-start: 3px solid var(--border-soft);
+}
+
+/* Per-platform cards */
+.rpt-plat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 0.8rem;
+}
+.rpt-plat-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.rpt-plat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.rpt-plat-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.rpt-plat-name {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.rpt-plat-cost {
+  margin-inline-start: auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
+}
+.rpt-plat-body {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+.rpt-plat-stats {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 0.9rem;
+}
+.rpt-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.83rem;
+  border-bottom: 1px dashed var(--border-soft);
+  padding-bottom: 0.18rem;
+}
+.rpt-stat-l {
+  color: var(--muted);
+}
+.rpt-stat-v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-pie-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 150px;
+}
+.rpt-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  max-width: 150px;
+}
+.rpt-pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.rpt-pie-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+.rpt-pie-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+}
+.rpt-pie-more {
+  color: var(--muted);
+}
+
+/* ─── Trends tab ─── */
+.rpt-trends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.rpt-trend-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rpt-range-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.rpt-range-btn {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.rpt-range-btn.is-active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.rpt-range-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.rpt-range-dates input {
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.12rem 0.3rem;
+  font-size: 0.78rem;
+}
+.rpt-trend-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.rpt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.16rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rpt-chip.is-on {
+  background: var(--surface-alt);
+}
+.rpt-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.rpt-trend-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rpt-trend-totals {
+  margin-inline-start: auto;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-trend-chart {
+  width: 100%;
+}
