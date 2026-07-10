@@ -432,12 +432,51 @@ export default function ReportMonthlyTrend({
     { key: "costPerScheduled" as const, label: "עלות לתיאום", color: "#ec4899" },
     { key: "costPerMeeting" as const, label: "עלות לביצוע", color: "#f5576c" },
   ];
-  const chartData = agg.map((m) => ({
-    month: monthLabelHe(m.month),
-    costPerLead: Math.round(m.costPerLead),
-    costPerScheduled: Math.round(m.costPerScheduled),
-    costPerMeeting: Math.round(m.costPerMeeting),
-  }));
+  // Unit-cost chart: clip to ≤ min(currentMonth, periodEnd) and project
+  // the current partial month's ratios from the clamped count/spend
+  // projections (drawTrendCPL). A ratio only projects when both spend and
+  // its denominator pass their gates; a month with spend but 0 results
+  // gaps the line (null). Wasted-spend ⚠ handled by the null gap.
+  const cplEndMonth =
+    prim.periodEndMonth && prim.periodEndMonth < prim.currentMonthKey
+      ? prim.periodEndMonth
+      : prim.currentMonthKey;
+  let projCpl: number | null = null;
+  let projCps: number | null = null;
+  let projCpm: number | null = null;
+  if (prim.isCurrentPartial) {
+    const pSpend = prim.segmentProjection("spend");
+    let pLeads = prim.segmentProjection("leads");
+    let pSched = prim.segmentProjection("scheduled");
+    let pMeet = prim.segmentProjection("meetings");
+    if (pLeads !== null && pSched !== null && pSched > pLeads) pSched = pLeads;
+    if (pSched !== null && pMeet !== null && pMeet > pSched) pMeet = pSched;
+    if (pSpend !== null && pLeads !== null && pLeads > 0) projCpl = pSpend / pLeads;
+    if (pSpend !== null && pSched !== null && pSched > 0) projCps = pSpend / pSched;
+    if (pSpend !== null && pMeet !== null && pMeet > 0) projCpm = pSpend / pMeet;
+  }
+  const ratioOrNull = (
+    isCur: boolean,
+    proj: number | null,
+    spend: number,
+    count: number,
+  ): number | null => {
+    if (isCur && proj !== null) return Math.round(proj);
+    if (count > 0) return Math.round(spend / count);
+    return null; // 0 results (or wasted spend) → gap the line
+  };
+  const chartData = prim.monthly
+    .filter((m) => m.month <= cplEndMonth)
+    .map((m) => {
+      const isCur =
+        prim.monthly.indexOf(m) === prim.currentIdx && prim.isCurrentPartial;
+      return {
+        month: monthLabelHe(m.month),
+        costPerLead: ratioOrNull(isCur, projCpl, m.spend, m.leads),
+        costPerScheduled: ratioOrNull(isCur, projCps, m.spend, m.scheduled),
+        costPerMeeting: ratioOrNull(isCur, projCpm, m.spend, m.meetings),
+      };
+    });
 
   return (
     <section className="rpt-monthly">
@@ -476,29 +515,80 @@ export default function ReportMonthlyTrend({
         )}
       </div>
 
-      <div className="rpt-mt-cards">
-        {METRICS.map((m) => (
-          <MetricCard
-            key={m.key}
-            metric={m}
-            agg={agg}
-            prim={prim}
-            onHover={(month, x, y) =>
-              setPie(
-                month
-                  ? {
-                      metricKey: m.key,
-                      metricLabel: m.label,
-                      money: m.money,
-                      month,
-                      x,
-                      y,
-                    }
-                  : null,
-              )
-            }
-          />
-        ))}
+      <div className="rpt-mt-charts">
+        <div className="rpt-mt-box">
+          <h4>מגמה חודשית — מטריקות</h4>
+          <div className="rpt-mt-cards">
+            {METRICS.map((m) => (
+              <MetricCard
+                key={m.key}
+                metric={m}
+                agg={agg}
+                prim={prim}
+                onHover={(month, x, y) =>
+                  setPie(
+                    month
+                      ? {
+                          metricKey: m.key,
+                          metricLabel: m.label,
+                          money: m.money,
+                          month,
+                          x,
+                          y,
+                        }
+                      : null,
+                  )
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="rpt-mt-box">
+          <h4>מגמה חודשית — עלויות יחידה</h4>
+          {chartData.length >= 2 ? (
+            <div className="rpt-trend-chart" dir="ltr">
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+                  <CartesianGrid stroke={pal.grid} strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill: pal.tick, fontSize: 11 }} />
+                  <YAxis
+                    tick={{ fill: pal.tick, fontSize: 11 }}
+                    width={52}
+                    tickFormatter={(v: number) => fmtILS(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: pal.tooltipBg,
+                      border: `1px solid ${pal.tooltipBorder}`,
+                      borderRadius: 8,
+                      color: pal.tooltipInk,
+                      fontSize: 12,
+                      direction: "rtl",
+                    }}
+                    formatter={(value, name) => [fmtILS(Number(value) || 0), String(name)]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  {cplLines.map((l) => (
+                    <Line
+                      key={l.key}
+                      type="monotone"
+                      dataKey={l.key}
+                      name={l.label}
+                      stroke={l.color}
+                      strokeWidth={2.5}
+                      dot={{ r: 3 }}
+                      isAnimationActive={false}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="rpt-empty rpt-empty-sm">אין מספיק חודשים למגמת עלויות.</div>
+          )}
+        </div>
       </div>
 
       {pie && (
@@ -508,50 +598,6 @@ export default function ReportMonthlyTrend({
           channelFilter={channelFilter}
           onClose={() => setPie(null)}
         />
-      )}
-
-      {chartData.length >= 2 && (
-        <div className="rpt-mt-chart-box">
-          <h4>מגמה חודשית — עלויות יחידה</h4>
-          <div className="rpt-trend-chart" dir="ltr">
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-                <CartesianGrid stroke={pal.grid} strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: pal.tick, fontSize: 11 }} />
-                <YAxis
-                  tick={{ fill: pal.tick, fontSize: 11 }}
-                  width={52}
-                  tickFormatter={(v: number) => fmtILS(v)}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: pal.tooltipBg,
-                    border: `1px solid ${pal.tooltipBorder}`,
-                    borderRadius: 8,
-                    color: pal.tooltipInk,
-                    fontSize: 12,
-                    direction: "rtl",
-                  }}
-                  formatter={(value, name) => [fmtILS(Number(value) || 0), String(name)]}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                {cplLines.map((l) => (
-                  <Line
-                    key={l.key}
-                    type="monotone"
-                    dataKey={l.key}
-                    name={l.label}
-                    stroke={l.color}
-                    strokeWidth={2.5}
-                    dot={{ r: 3 }}
-                    isAnimationActive={false}
-                    connectNulls
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
       )}
     </section>
   );

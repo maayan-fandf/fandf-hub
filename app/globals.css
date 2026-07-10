@@ -25946,10 +25946,36 @@ button.budget-need:focus-visible {
   font-weight: 700;
   text-align: start;
 }
+/* Two-column layout (like the dashboard's .charts): the metrics 2×2 grid
+   next to the unit-cost chart; stacks on narrow screens. */
+.rpt-mt-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .rpt-mt-charts {
+    grid-template-columns: 1fr;
+  }
+}
+.rpt-mt-box {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.6rem 0.8rem;
+  min-width: 0;
+}
+.rpt-mt-box h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
 .rpt-mt-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
 }
 .rpt-mt-card {
   border: 1px solid var(--border-soft);
