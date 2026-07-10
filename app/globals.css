@@ -25766,6 +25766,83 @@ button.budget-need:focus-visible {
 .rpt-scatter {
   width: 100%;
 }
+/* Efficiency scatter — per-box accent (border-top + colored title dot + prefix) */
+.rpt-scatter-box {
+  position: relative;
+}
+.rpt-scatter-box h4 {
+  padding-inline-start: 1.4em;
+}
+.rpt-scatter-box::after {
+  content: "";
+  position: absolute;
+  top: 0.85rem;
+  inset-inline-start: 0.8rem;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.rpt-scatter-h4-tag {
+  font-weight: 800;
+}
+.rpt-scatter-box-leads {
+  border-top: 3px solid #6366f1;
+}
+.rpt-scatter-box-leads::after {
+  background: #6366f1;
+}
+.rpt-scatter-box-leads .rpt-scatter-h4-tag {
+  color: #6366f1;
+}
+.rpt-scatter-box-sched {
+  border-top: 3px solid #ec4899;
+}
+.rpt-scatter-box-sched::after {
+  background: #ec4899;
+}
+.rpt-scatter-box-sched .rpt-scatter-h4-tag {
+  color: #ec4899;
+}
+/* Efficiency gradient wash — top-left (cheap+high) green → bottom-right (dear+low) red */
+.rpt-scatter-zone {
+  position: relative;
+  width: 100%;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.14) 0%,
+    rgba(16, 185, 129, 0.06) 30%,
+    rgba(253, 224, 71, 0.05) 55%,
+    rgba(239, 68, 68, 0.08) 80%,
+    rgba(239, 68, 68, 0.18) 100%
+  );
+}
+.rpt-scatter-zone::before,
+.rpt-scatter-zone::after {
+  position: absolute;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.18em 0.6em;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 2;
+}
+.rpt-scatter-zone::before {
+  content: "✨ יעיל";
+  top: 0.5em;
+  inset-inline-start: 0.5em;
+  background: rgba(16, 185, 129, 0.22);
+  color: #065f46;
+}
+.rpt-scatter-zone::after {
+  content: "⚠️ פחות יעיל";
+  bottom: 2.7em;
+  inset-inline-end: 0.5em;
+  background: rgba(239, 68, 68, 0.2);
+  color: #991b1b;
+}
 .rpt-scatter-legend {
   display: flex;
   flex-wrap: wrap;

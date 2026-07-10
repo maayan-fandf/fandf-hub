@@ -39,6 +39,9 @@ function EffScatter({
   countLabel,
   emptyText,
   color,
+  variant,
+  xTitle,
+  yTitle,
 }: {
   channels: ReportChannel[];
   costKey: "costPerLead" | "costPerScheduled";
@@ -47,6 +50,9 @@ function EffScatter({
   countLabel: string;
   emptyText: string;
   color: string;
+  variant: "leads" | "sched";
+  xTitle: string;
+  yTitle: string;
 }) {
   const pal = useChartPalette();
   const points = useMemo(
@@ -58,7 +64,7 @@ function EffScatter({
           x: c[costKey],
           y: c[countKey],
           name: c.channel,
-          label: icon(c.channel),
+          label: `${icon(c.channel)} ${c.channel}`.trim(),
           spend: c.spend,
         })),
     [channels, costKey, countKey],
@@ -66,9 +72,9 @@ function EffScatter({
   if (!points.length)
     return <div className="rpt-empty rpt-empty-sm">{emptyText}</div>;
   return (
-    <div className="rpt-scatter" dir="ltr">
-      <ResponsiveContainer width="100%" height={230}>
-        <ScatterChart margin={{ top: 12, right: 16, bottom: 26, left: 8 }}>
+    <div className={`rpt-scatter-zone rpt-scatter-zone-${variant}`} dir="ltr">
+      <ResponsiveContainer width="100%" height={244}>
+        <ScatterChart margin={{ top: 16, right: 18, bottom: 34, left: 14 }}>
           <CartesianGrid stroke={pal.grid} strokeDasharray="3 3" />
           <XAxis
             type="number"
@@ -76,16 +82,24 @@ function EffScatter({
             name={costLabel}
             tick={{ fill: pal.tick, fontSize: 11 }}
             tickFormatter={(v: number) => fmtILS(v)}
-            label={{ value: `${costLabel} — ← זול יותר`, position: "bottom", fill: pal.tick, fontSize: 11 }}
+            label={{ value: xTitle, position: "bottom", fill: pal.tick, fontSize: 10, dy: 4 }}
           />
           <YAxis
             type="number"
             dataKey="y"
             name={countLabel}
             tick={{ fill: pal.tick, fontSize: 11 }}
-            width={40}
+            width={46}
+            label={{
+              value: yTitle,
+              angle: -90,
+              position: "insideLeft",
+              fill: pal.tick,
+              fontSize: 10,
+              style: { textAnchor: "middle" },
+            }}
           />
-          <ZAxis range={[180, 180]} />
+          <ZAxis range={[160, 160]} />
           <Tooltip
             cursor={{ strokeDasharray: "3 3" }}
             contentStyle={{
@@ -104,7 +118,11 @@ function EffScatter({
             labelFormatter={() => ""}
           />
           <Scatter data={points} fill={color}>
-            <LabelList dataKey="label" position="top" style={{ fontSize: 13 }} />
+            <LabelList
+              dataKey="label"
+              position="top"
+              style={{ fontSize: 10, fontWeight: 700, fill: pal.tick }}
+            />
           </Scatter>
         </ScatterChart>
       </ResponsiveContainer>
@@ -248,8 +266,11 @@ export default function ReportChannelCharts({
   return (
     <div className="rpt-ch-charts">
       <div className="rpt-ch-chart-grid">
-        <div className="rpt-ch-chart-box">
-          <h4>יעילות ערוצים — לידים מול עלות לליד</h4>
+        <div className="rpt-ch-chart-box rpt-scatter-box rpt-scatter-box-leads">
+          <h4>
+            <span className="rpt-scatter-h4-tag">👥 לידים ·</span> יעילות ערוצים —
+            לידים מול עלות לליד
+          </h4>
           <EffScatter
             channels={channels}
             costKey="costPerLead"
@@ -258,11 +279,17 @@ export default function ReportChannelCharts({
             countLabel="לידים"
             emptyText="אין לידים בערוצים פעילים"
             color="#667eea"
+            variant="leads"
+            xTitle="עלות לליד (₪) — שמאלה = יעיל יותר"
+            yTitle="כמות לידים — למעלה = יותר"
           />
           <ScatterLegend channels={channels} costKey="costPerLead" countKey="leads" />
         </div>
-        <div className="rpt-ch-chart-box">
-          <h4>יעילות ערוצים — תיאומים מול עלות לתיאום</h4>
+        <div className="rpt-ch-chart-box rpt-scatter-box rpt-scatter-box-sched">
+          <h4>
+            <span className="rpt-scatter-h4-tag">📅 תיאומי פגישה ·</span> יעילות
+            ערוצים — תיאומים מול עלות לתיאום
+          </h4>
           <EffScatter
             channels={channels}
             costKey="costPerScheduled"
@@ -271,6 +298,9 @@ export default function ReportChannelCharts({
             countLabel="תיאומים"
             emptyText="אין תיאומי פגישה"
             color="#ec4899"
+            variant="sched"
+            xTitle="עלות לתיאום (₪) — שמאלה = יעיל יותר"
+            yTitle="כמות תיאומים — למעלה = יותר"
           />
           <ScatterLegend channels={channels} costKey="costPerScheduled" countKey="scheduled" />
         </div>
