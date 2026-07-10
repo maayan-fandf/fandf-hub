@@ -11,6 +11,7 @@ import {
 } from "@/lib/allClients";
 import { getProjectLandingUrl } from "@/lib/projectsDirect";
 import { classifyChannel } from "@/lib/budgetTypes";
+import { getBudgetMaster } from "@/lib/budgetMaster";
 import { getCampaignBudgets, type CampaignBudgetItem } from "@/lib/platformDailyBudget";
 import { getDailySpend7d } from "@/lib/platformDailySpend";
 import { getProjectCreatives } from "@/lib/reportCreatives";
@@ -528,6 +529,34 @@ export const getProjectReportData = cache(
         ? detectAnomalies(totals, prevFunnel, sm, prevSm)
         : [];
 
+    // Budget-desk summary for the תקציב חודשי strip (live mode only —
+    // E3/allocated/delta are flight-window concepts). Best-effort.
+    let budgetSummary: ProjectReportData["budgetSummary"] = null;
+    if (mode === "live") {
+      try {
+        const bm = await getBudgetMaster(subjectEmail);
+        // Budget-desk `tab` = מזהה מע"פ; our `slug` = the Keys campaign-ID
+        // pattern — they can differ, so match by project name too.
+        const projLc = projectName.toLowerCase().trim();
+        const slugLc = slug.toLowerCase();
+        const bp = bm.projects.find(
+          (p) =>
+            p.name.toLowerCase().trim() === projLc ||
+            p.tab.toLowerCase() === slugLc,
+        );
+        if (bp)
+          budgetSummary = {
+            e3: bp.e3,
+            allocated: bp.allocated,
+            delta: bp.delta,
+            remainingDays: bp.remainingDays,
+            totalDays: bp.totalDays,
+          };
+      } catch {
+        /* strip degrades to hidden */
+      }
+    }
+
     return {
       project: projectName,
       slug,
@@ -546,6 +575,7 @@ export const getProjectReportData = cache(
       anomalies,
       prevFunnel,
       monthlyRaw,
+      budgetSummary,
       totals,
     };
   },

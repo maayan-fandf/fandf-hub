@@ -26002,3 +26002,131 @@ button.budget-need:focus-visible {
   font-weight: 700;
   color: var(--ink-soft);
 }
+
+/* ─── Native report — paid-channels diagnosis + budget strip ─── */
+.rpt-paid-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rpt-pd-card {
+  border: 1px solid;
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.rpt-pd-card.is-bad {
+  background: color-mix(in srgb, #ef4444 8%, var(--surface));
+  border-color: color-mix(in srgb, #ef4444 35%, var(--border-soft));
+}
+.rpt-pd-card.is-warn {
+  background: color-mix(in srgb, #f59e0b 8%, var(--surface));
+  border-color: color-mix(in srgb, #f59e0b 35%, var(--border-soft));
+}
+.rpt-pd-card.is-good {
+  background: color-mix(in srgb, #22c55e 8%, var(--surface));
+  border-color: color-mix(in srgb, #22c55e 35%, var(--border-soft));
+}
+.rpt-pd-card.is-info {
+  background: color-mix(in srgb, #3b82f6 8%, var(--surface));
+  border-color: color-mix(in srgb, #3b82f6 35%, var(--border-soft));
+}
+.rpt-pd-head {
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.rpt-pd-sample {
+  opacity: 0.8;
+  font-size: 0.78rem;
+  margin-top: 0.2rem;
+}
+.rpt-pd-tip {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  opacity: 0.9;
+}
+/* Budget strip */
+.rpt-bstrip {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.rpt-bstrip-head {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.rpt-bstrip-head:hover {
+  background: var(--surface-alt);
+}
+.rpt-bstrip-title {
+  color: var(--ink);
+}
+.rpt-bstrip-state {
+  margin-inline-start: auto;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.12rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--muted);
+}
+.rpt-bstrip-state.is-ok {
+  background: color-mix(in srgb, #22c55e 18%, var(--surface));
+  color: #16794f;
+}
+.rpt-bstrip-state.is-drift {
+  background: color-mix(in srgb, #f59e0b 20%, var(--surface));
+  color: #92600e;
+}
+.rpt-bstrip-caret {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.rpt-bstrip-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  border-top: 1px solid var(--border-soft);
+  align-items: center;
+}
+.rpt-bstrip-cell {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+.rpt-bstrip-lbl {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+.rpt-bstrip-val {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-bstrip-delta.is-ok .rpt-bstrip-val {
+  color: #16a34a;
+}
+.rpt-bstrip-delta.is-drift .rpt-bstrip-val {
+  color: #d97706;
+}
+.rpt-bstrip-link {
+  align-self: center;
+  color: var(--brand);
+  font-size: 0.82rem;
+  text-decoration: none;
+  white-space: nowrap;
+}

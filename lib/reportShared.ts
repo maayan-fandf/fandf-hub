@@ -159,6 +159,15 @@ export type ProjectReportData = {
   prevFunnel: PrevFunnel | null;
   /** Per-channel monthly rows for the historical-trend section. */
   monthlyRaw: MonthlyChannelRow[];
+  /** Budget-desk summary for the תקציב חודשי strip (live mode, internal
+   *  only; null when unavailable). */
+  budgetSummary: {
+    e3: number;
+    allocated: number;
+    delta: number;
+    remainingDays: number;
+    totalDays: number;
+  } | null;
   /** ALL CLIENTS per-channel rows for the window mode ([] in range mode). */
   totals: {
     budget: number;
@@ -996,6 +1005,159 @@ export function pickChannelAlerts(
     });
   }
   return out;
+}
+
+/* --------------------------- paid diagnosis --------------------------- */
+
+export type PaidDiagCard = {
+  tone: "bad" | "warn" | "good" | "info";
+  icon: string;
+  head: string;
+  /** Trusted self-authored HTML (only <b> tags). */
+  bodyHtml: string;
+  sample?: string;
+  tipHtml?: string;
+};
+
+/**
+ * Native port of the self-contained rules of diagnosePaidChannels
+ * (Index.html:3999): waste alarm (🔴 בזבוז תקציב), CPL outlier, quality
+ * leak, winner (⭐), concentration (📊), and the all-clear. The
+ * portfolio-benchmark rules (project-vs-P75, per-channel-family) are
+ * omitted — they need cross-project distributions the native report
+ * doesn't load. Max 3 cards, priority-sorted, deduped by head.
+ */
+export function diagnosePaidChannels(channels: ReportChannel[]): PaidDiagCard[] {
+  const MIN_SPEND = 500;
+  const WASTE_SHARE = 0.1;
+  const CPL_OUTLIER_MULT = 2.0;
+  const QUALITY_RATIO = 0.5;
+  const WINNER_MULT = 0.7;
+  const CONCENTRATION = 0.6;
+
+  const all = channels.filter((c) => c.spend > 0);
+  if (!all.length) return [];
+  const paid = all.filter((c) => c.spend >= MIN_SPEND || c.leads > 0);
+  const totalSpend = all.reduce((s, c) => s + c.spend, 0);
+  const totalLeads = all.reduce((s, c) => s + c.leads, 0);
+  const totalSched = all.reduce((s, c) => s + c.scheduled, 0);
+  const paidLeads = paid.reduce((s, c) => s + c.leads, 0);
+  const paidSpend = paid.reduce((s, c) => s + c.spend, 0);
+  const paidAvgCpl = paidLeads > 0 ? paidSpend / paidLeads : 0;
+  const projAvgConv = totalLeads > 0 ? totalSched / totalLeads : 0;
+  const tier = (c: ReportChannel) =>
+    c.leads >= 10 && c.scheduled >= 5
+      ? "robust"
+      : c.leads >= 10
+        ? "robust-cpl"
+        : c.leads >= 3
+          ? "directional"
+          : "early";
+
+  type Card = PaidDiagCard & { priority: number };
+  const cards: Card[] = [];
+
+  // Rule 1 — waste alarm 🔴
+  for (const c of all) {
+    if (c.leads === 0 && (c.spend >= MIN_SPEND || c.spend >= totalSpend * WASTE_SHARE)) {
+      cards.push({
+        priority: 1,
+        tone: "bad",
+        icon: "🔴",
+        head: `בזבוז תקציב: ${c.channel}`,
+        bodyHtml: `הוצאת <b>${fmtILS(c.spend)}</b> על ${c.channel} וקיבלת <b>0 לידים</b> בתקופה זו.`,
+        sample:
+          c.spend >= totalSpend * WASTE_SHARE
+            ? `${fmtPct2(c.spend / totalSpend)} מסך ההוצאה על מדיה בתשלום`
+            : undefined,
+        tipHtml:
+          "השבת/הורד תקציב, בדוק פיקסל ומעקב המרות, ושקול לחזור לטירגוט/קריאייטיב שעבד בעבר.",
+      });
+    }
+  }
+  // Rule 2 — CPL outlier 🟠
+  for (const c of paid) {
+    const t = tier(c);
+    if ((t === "robust" || t === "robust-cpl") && paidAvgCpl > 0 && c.costPerLead > paidAvgCpl * CPL_OUTLIER_MULT) {
+      cards.push({
+        priority: 2,
+        tone: "warn",
+        icon: "🟠",
+        head: `עלות לליד גבוהה חריג: ${c.channel}`,
+        bodyHtml: `CPL של ${c.channel}: <b>${fmtILS(c.costPerLead)}</b> — <b>${(c.costPerLead / paidAvgCpl).toFixed(1)}×</b> מהממוצע של המדיה בתשלום (${fmtILS(paidAvgCpl)}).`,
+        tipHtml:
+          "בדוק קריאייטיב, טירגוט, והתאמת הודעה לדף נחיתה. שקול להעביר חלק מהתקציב לערוצים יעילים יותר עד שה-CPL ישתפר.",
+      });
+    }
+  }
+  // Rule 3 — quality leak 📉
+  for (const c of paid) {
+    if (tier(c) !== "robust") continue;
+    const conv = c.leads > 0 ? c.scheduled / c.leads : 0;
+    if (projAvgConv > 0 && conv > 0 && conv < projAvgConv * QUALITY_RATIO) {
+      cards.push({
+        priority: 3,
+        tone: "warn",
+        icon: "📉",
+        head: `איכות לידים נמוכה: ${c.channel}`,
+        bodyHtml: `${c.channel} מייצר לידים, אבל רק <b>${fmtPct2(conv)}</b> מתואמים לפגישה — לעומת ${fmtPct2(projAvgConv)} ממוצע הפרויקט.`,
+        tipHtml:
+          "הלידים ככל הנראה בעלי כוונה נמוכה. חדד טירגוט, הוסף שאלות סינון לטופס, או הקטן תקציב עד שתמצא קהל איכותי יותר.",
+      });
+    }
+  }
+  // Rule 4 — winner ⭐
+  for (const c of paid) {
+    if (tier(c) === "robust" && c.costPerLead > 0 && c.costPerLead <= paidAvgCpl * WINNER_MULT) {
+      const extras = [
+        c.costPerScheduled > 0 ? ` · עלות לתיאום ${fmtILS(c.costPerScheduled)}` : "",
+        c.costPerMeeting > 0 ? ` · עלות לפגישה ${fmtILS(c.costPerMeeting)}` : "",
+      ].join("");
+      cards.push({
+        priority: 4,
+        tone: "good",
+        icon: "⭐",
+        head: `ערוץ מוביל: ${c.channel}`,
+        bodyHtml: `${c.channel}: <b>${fmtILS(c.costPerLead)}</b> לליד${extras}. יעיל פי <b>${(paidAvgCpl / c.costPerLead).toFixed(1)}</b> מממוצע המדיה בתשלום.`,
+        tipHtml:
+          "זהו ערוץ מוכח — שקול להגדיל את התקציב בהדרגה (30-50% בבת אחת) ולבדוק אם היעילות נשמרת בסקייל.",
+      });
+    }
+  }
+  // Rule 6 — concentration 📊
+  if (all.length > 1) {
+    const top = [...all].sort((a, b) => b.spend - a.spend)[0];
+    const share = totalSpend > 0 ? top.spend / totalSpend : 0;
+    if (share >= CONCENTRATION) {
+      cards.push({
+        priority: 6,
+        tone: "info",
+        icon: "📊",
+        head: `ריכוז תקציב: ${top.channel}`,
+        bodyHtml: `${top.channel} מהווה <b>${fmtPct2(share)}</b> מכלל ההוצאה על מדיה בתשלום (${fmtILS(top.spend)} מתוך ${fmtILS(totalSpend)}).`,
+        tipHtml:
+          "תלות-יתר בערוץ בודד = סיכון תפעולי. שקול לבדוק 1-2 ערוצים נוספים עם 10-15% מהתקציב.",
+      });
+    }
+  }
+  // All-clear ✅
+  if (!cards.length && paid.length > 0) {
+    cards.push({
+      priority: 99,
+      tone: "good",
+      icon: "✅",
+      head: "מדיה בתשלום נראית מאוזנת",
+      bodyHtml:
+        "אין אזהרות פעילות — אין ערוץ מבזבז תקציב, אין חריג CPL, ואין ריכוז-יתר בערוץ אחד.",
+    });
+  }
+
+  const seen = new Set<string>();
+  return cards
+    .sort((a, b) => a.priority - b.priority)
+    .filter((c) => (seen.has(c.head) ? false : (seen.add(c.head), true)))
+    .slice(0, 3)
+    .map(({ priority: _p, ...rest }) => rest);
 }
 
 /* ------------------------------ formatters ------------------------------ */

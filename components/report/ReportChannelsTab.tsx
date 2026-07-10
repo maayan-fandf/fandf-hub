@@ -9,6 +9,7 @@ import {
   costHeatStyle,
   convTone,
   pickChannelAlerts,
+  diagnosePaidChannels,
   fmtInt,
   fmtILS,
   fmtDateHe,
@@ -122,6 +123,64 @@ function ConvCell({ r }: { r: number | null }) {
     <td className={`rpt-conv rpt-conv-${tone}`}>
       {r !== null ? `← ${(Math.round(r * 10000) / 100).toString()}%` : "—"}
     </td>
+  );
+}
+
+/** תקציב חודשי strip — the 4 budget-desk summary cells (יעד E3 / חולק /
+ *  פער / ימים), collapsible. Ports renderBudgetStripBody's summary row
+ *  (Index.html:9386); the suggestion engine lives on the budget desk. */
+function BudgetStrip({
+  s,
+}: {
+  s: NonNullable<ProjectReportData["budgetSummary"]>;
+}) {
+  const [open, setOpen] = useState(false);
+  const driftAbs = Math.abs(s.delta);
+  const tone = !s.e3 ? "unknown" : driftAbs < 100 ? "ok" : "drift";
+  const stateLabel =
+    tone === "ok" ? "מסונכרן" : tone === "unknown" ? "אין יעד" : `פער ${fmtILS(driftAbs)}`;
+  return (
+    <div className="rpt-bstrip">
+      <button
+        type="button"
+        className="rpt-bstrip-head"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span>💰</span>
+        <span className="rpt-bstrip-title">תקציב חודשי</span>
+        <span className={`rpt-bstrip-state is-${tone}`}>{stateLabel}</span>
+        <span className="rpt-bstrip-caret">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="rpt-bstrip-body">
+          <div className="rpt-bstrip-cell">
+            <div className="rpt-bstrip-lbl">יעד (E3)</div>
+            <div className="rpt-bstrip-val">{s.e3 > 0 ? fmtILS(s.e3) : "—"}</div>
+          </div>
+          <div className="rpt-bstrip-cell">
+            <div className="rpt-bstrip-lbl">חולק</div>
+            <div className="rpt-bstrip-val">{fmtILS(s.allocated)}</div>
+          </div>
+          <div className={`rpt-bstrip-cell rpt-bstrip-delta is-${tone}`}>
+            <div className="rpt-bstrip-lbl">פער</div>
+            <div className="rpt-bstrip-val">
+              {s.delta > 0 ? "+" : s.delta < 0 ? "−" : ""}
+              {fmtILS(driftAbs)}
+            </div>
+          </div>
+          <div className="rpt-bstrip-cell">
+            <div className="rpt-bstrip-lbl">ימים שנותרו</div>
+            <div className="rpt-bstrip-val">
+              {s.remainingDays} / {s.totalDays}
+            </div>
+          </div>
+          <a className="rpt-bstrip-link" href="/morning/budgets">
+            שולחן התקציבים ↗
+          </a>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -301,6 +360,8 @@ export default function ReportChannelsTab({
     }
   };
 
+  const diagCards = diagnosePaidChannels(channels);
+
   return (
     <div className="rpt-channels">
       {alerts.length > 0 && (
@@ -308,6 +369,25 @@ export default function ReportChannelsTab({
           {alerts.map((a, i) => (
             <div key={i} className={`rpt-ch-alert is-${a.type}`}>
               {a.text}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.budgetSummary && <BudgetStrip s={data.budgetSummary} />}
+
+      {diagCards.length > 0 && (
+        <div className="rpt-paid-diag">
+          {diagCards.map((c, i) => (
+            <div key={i} className={`rpt-pd-card is-${c.tone}`}>
+              <div className="rpt-pd-head">
+                {c.icon} {c.head}
+              </div>
+              <div dangerouslySetInnerHTML={{ __html: c.bodyHtml }} />
+              {c.sample && <div className="rpt-pd-sample">{c.sample}</div>}
+              {c.tipHtml && (
+                <div className="rpt-pd-tip" dangerouslySetInnerHTML={{ __html: `💡 ${c.tipHtml}` }} />
+              )}
             </div>
           ))}
         </div>
