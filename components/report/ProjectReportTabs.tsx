@@ -7,6 +7,7 @@ import ReportTrendsTab from "@/components/report/ReportTrendsTab";
 import ReportChannelsTab, {
   type PacingDismissal,
 } from "@/components/report/ReportChannelsTab";
+import ReportCreativesTab from "@/components/report/ReportCreativesTab";
 
 /**
  * Tabbed client shell for the native project report — the "tab-divided,
@@ -19,11 +20,12 @@ import ReportChannelsTab, {
  * native get a tab (no "coming soon" stubs).
  */
 
-type TabId = "overview" | "channels" | "trends";
+type TabId = "overview" | "channels" | "creatives" | "trends";
 
 const TAB_DEFS: { id: TabId; icon: string; label: string }[] = [
   { id: "overview", icon: "📡", label: "סקירה" },
   { id: "channels", icon: "📋", label: "ערוצים" },
+  { id: "creatives", icon: "🎨", label: "קריאייטיבים" },
   { id: "trends", icon: "📅", label: "מגמות" },
 ];
 
@@ -119,6 +121,16 @@ export default function ProjectReportTabs({
       >
         <FreezeWhenHidden active={tab === "channels"}>
           <ReportChannelsTab data={data} pacingDismissals={pacingDismissals} />
+        </FreezeWhenHidden>
+      </div>
+      <div
+        id="rpt-panel-creatives"
+        role="tabpanel"
+        aria-labelledby="rpt-tab-creatives"
+        className={panelCls("creatives")}
+      >
+        <FreezeWhenHidden active={tab === "creatives"}>
+          <ReportCreativesTab data={data} />
         </FreezeWhenHidden>
       </div>
       <div

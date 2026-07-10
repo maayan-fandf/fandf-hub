@@ -10,6 +10,7 @@ import {
 import { classifyChannel } from "@/lib/budgetTypes";
 import { getCampaignBudgets, type CampaignBudgetItem } from "@/lib/platformDailyBudget";
 import { getDailySpend7d } from "@/lib/platformDailySpend";
+import { getProjectCreatives } from "@/lib/reportCreatives";
 import {
   REPORT_PLATS,
   emptyAdPlatform,
@@ -428,6 +429,14 @@ export const getProjectReportData = cache(
       window = { startIso: start, endIso: end };
     }
 
+    // Creatives fetch runs concurrently with the platform-daily read —
+    // both are independent sheet reads (+ the warehouse meetings join).
+    const creativesP = getProjectCreatives(
+      subjectEmail,
+      projectName,
+      slug,
+      window,
+    );
     const rows = await readProjectPlatformRows(subjectEmail, slug);
     const adPlatform = aggregateWindow(rows, window.startIso, window.endIso);
     const prevWindow = prevWindowOf(window);
@@ -476,6 +485,7 @@ export const getProjectReportData = cache(
       prevAdPlatform,
       daily: dailySeries(rows),
       channels: reportChannels,
+      creatives: await creativesP,
       totals: mode === "range" ? null : sumChannelTotals(channels),
     };
   },

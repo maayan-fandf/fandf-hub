@@ -24893,3 +24893,350 @@ button.budget-need:focus-visible {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ─── Native report — קריאייטיבים tab (phase 3) ─── */
+.rpt-creatives {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.rpt-cr-title {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.rpt-cr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.8rem;
+}
+.rpt-cr-card {
+  position: relative;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rpt-cr-card.is-winner {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px #f59e0b;
+}
+.rpt-cr-card.is-paused {
+  opacity: 0.62;
+}
+.rpt-cr-badge {
+  position: absolute;
+  top: 0.4rem;
+  inset-inline-start: 0.4rem;
+  z-index: 2;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.rpt-cr-badge-win {
+  background: #f59e0b;
+  color: #fff;
+}
+.rpt-cr-badge-fatigue {
+  background: color-mix(in srgb, #ef4444 85%, #000);
+  color: #fff;
+  top: auto;
+  bottom: 0.4rem;
+}
+.rpt-cr-thumb {
+  position: relative;
+  /* Square, like the legacy .ad-thumb — FB creatives are 1:1 / 4:5. */
+  aspect-ratio: 1 / 1;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+/* Media is absolutely positioned: the landing-page <a> wrapper has no
+   intrinsic size, so a percentage-height <img> inside it would resolve
+   against an indefinite height and blow the aspect-ratio box open. */
+.rpt-cr-thumb a,
+.rpt-cr-thumb img,
+.rpt-cr-noimg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.rpt-cr-thumb img {
+  object-fit: cover;
+  display: block;
+}
+.rpt-cr-card.is-paused .rpt-cr-thumb img {
+  filter: grayscale(0.4);
+  transition: filter 0.15s ease;
+}
+.rpt-cr-card.is-paused:hover .rpt-cr-thumb img {
+  filter: none;
+}
+.rpt-cr-noimg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.rpt-cr-status {
+  position: absolute;
+  bottom: 0.35rem;
+  inset-inline-end: 0.35rem;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--border-soft);
+}
+.rpt-cr-status.is-active {
+  color: #16a34a;
+}
+.rpt-cr-status.is-paused {
+  color: var(--muted);
+}
+.rpt-cr-status.is-deleted,
+.rpt-cr-status.is-issue {
+  color: #dc2626;
+}
+.rpt-cr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  flex: 1;
+}
+.rpt-cr-name {
+  font-weight: 700;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-cr-campaign {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+  text-align: end;
+}
+.rpt-cr-adtitle {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-cr-age {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.rpt-cr-copy summary {
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.rpt-cr-copy-text {
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  padding: 0.3rem 0.1rem;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.rpt-cr-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  border-top: 1px dashed var(--border-soft);
+  padding-top: 0.35rem;
+}
+.rpt-cr-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+}
+.rpt-cr-stat-l {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.rpt-cr-stat-v {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-cr-links {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.4rem 0.65rem 0.55rem;
+  font-size: 0.74rem;
+}
+.rpt-cr-links a {
+  color: var(--brand);
+  text-decoration: none;
+}
+/* Hover trendline popover */
+.rpt-cr-trend {
+  display: none;
+  position: absolute;
+  inset-inline: 0.4rem;
+  bottom: 2.2rem;
+  z-index: 3;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  pointer-events: none;
+}
+.rpt-cr-card:hover .rpt-cr-trend,
+.rpt-cr-adset:hover .rpt-cr-trend {
+  display: block;
+}
+.rpt-cr-adset {
+  position: relative;
+}
+.rpt-cr-trend-head {
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-cr-trend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.rpt-cr-trend-row svg {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+}
+/* Ad-sets */
+.rpt-cr-adsets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.6rem;
+}
+.rpt-cr-adset {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.rpt-cr-adset.is-winner {
+  border-color: #f59e0b;
+}
+.rpt-cr-adset-name {
+  font-weight: 700;
+  font-size: 0.84rem;
+}
+.rpt-cr-adset-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+/* Google RSA assets */
+.rpt-cr-gcamps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.rpt-cr-gcamp {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rpt-cr-gcamp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.rpt-cr-gcamp-name {
+  font-weight: 700;
+  font-size: 0.86rem;
+  direction: ltr;
+}
+.rpt-cr-gcamp-meta {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.rpt-cr-gad {
+  border-top: 1px dashed var(--border-soft);
+  padding-top: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.rpt-cr-gad-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+}
+.rpt-cr-gad-row a {
+  color: var(--brand);
+  text-decoration: none;
+}
+.rpt-cr-gad-status {
+  border-radius: 999px;
+  padding: 0.02rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid var(--border-soft);
+}
+.rpt-cr-gad-status.is-on {
+  color: #16a34a;
+}
+.rpt-cr-gad-status.is-off {
+  color: var(--muted);
+}
+.rpt-cr-gad-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.rpt-cr-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.rpt-cr-pill {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.74rem;
+}
+.rpt-cr-pill.is-desc {
+  border-radius: 8px;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+.rpt-cr-kw {
+  direction: ltr;
+  text-align: end;
+}

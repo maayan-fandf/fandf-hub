@@ -142,6 +142,9 @@ export type ProjectReportData = {
   /** ALL CLIENTS channel rows enriched for the ערוצים tab (empty in
    *  range mode — the legacy pro-rating path isn't ported yet). */
   channels: ReportChannel[];
+  /** קריאייטיבים tab data (null when the creative sheet has nothing
+   *  for the project or the fetch failed — the tab shows an empty note). */
+  creatives: ReportCreatives | null;
   /** ALL CLIENTS per-channel rows for the window mode ([] in range mode). */
   totals: {
     budget: number;
@@ -394,6 +397,113 @@ export function diagnoseTopFunnel(
     ctrState: ctrS,
     cvrState: cvrS,
   };
+}
+
+/* ---------------------------- creatives types ---------------------------- */
+
+export type ReportAdDaily = { date: string; cost: number; leads: number };
+
+export type ReportFbAd = {
+  account: string;
+  campaign: string;
+  ad: string;
+  status: string;
+  /** "Link to promoted post" — only from the assets lookup. */
+  url: string;
+  destUrl: string;
+  body: string;
+  title: string;
+  thumb: string;
+  image: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  leads: number;
+  cpl: number;
+  ctr: number;
+  /** Warehouse CRM joins (0/absent hides the CRM row). */
+  crmLeads: number;
+  scheduled: number;
+  held: number;
+  costPerSched: number;
+  costPerHeld: number;
+  ageDays: number;
+  ctrEarly: number;
+  ctrRecent: number;
+  fatigued: boolean;
+  fatigueReason: "" | "declining" | "long";
+  isWinner: boolean;
+  daily: ReportAdDaily[];
+};
+
+export type ReportFbAdSet = {
+  name: string;
+  cost: number;
+  leads: number;
+  cpl: number;
+  crmLeads: number;
+  scheduled: number;
+  held: number;
+  costPerSched: number;
+  costPerHeld: number;
+  daily: ReportAdDaily[];
+};
+
+export type ReportGoogleAd = {
+  account: string;
+  campaign: string;
+  status: string;
+  impressions: number;
+  finalUrl: string;
+  headlines: string[];
+  descriptions: string[];
+};
+
+export type ReportKeyword = {
+  keyword: string;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  scheduled: number;
+  held: number;
+};
+
+export type ReportCreatives = {
+  fb: {
+    cost: number;
+    leads: number;
+    cpl: number;
+    /** ACTIVE ads in the (unsliced) topAds list. */
+    adCount: number;
+    topAds: ReportFbAd[];
+    topAdSets: ReportFbAdSet[];
+  };
+  google: {
+    clicks: number;
+    conversions: number;
+    topKeywords: ReportKeyword[];
+    ads: ReportGoogleAd[];
+  };
+};
+
+/** Legacy `fbStatusInfo` (Index.html:3597) — FB ad status → pill. */
+export function fbStatusInfo(raw: string): { label: string; cls: string } {
+  const s = String(raw || "").toUpperCase().trim();
+  if (!s) return { label: "", cls: "" };
+  if (s === "ACTIVE") return { label: "🟢 פעילה", cls: "active" };
+  if (s === "PAUSED") return { label: "⏸ מושהית", cls: "paused" };
+  if (s === "ADSET_PAUSED") return { label: "⏸ קהל מושהה", cls: "paused" };
+  if (s === "CAMPAIGN_PAUSED") return { label: "⏸ קמפיין מושהה", cls: "paused" };
+  if (s === "DELETED") return { label: "🗑 נמחקה", cls: "deleted" };
+  if (s === "ARCHIVED") return { label: "🗑 בארכיון", cls: "deleted" };
+  if (
+    s === "DISAPPROVED" ||
+    s === "PENDING_REVIEW" ||
+    s === "PENDING_BILLING_INFO" ||
+    s === "WITH_ISSUES"
+  )
+    return { label: "⚠️ בעיה", cls: "issue" };
+  return { label: raw, cls: "other" };
 }
 
 /* --------------------------- channels tab math --------------------------- */
