@@ -61,6 +61,10 @@ export type AllClientsRow = {
   /** Total leads recorded against this (project, channel) in the
    *  window. Source: `לידים CRM` column. */
   leads: number;
+  /** Relevant leads (`לידים רלוונטים`) — the qualified subset that
+   *  feeds the funnel-flow's leads→relevant conversion. 0/absent when the
+   *  column is absent. */
+  relevant?: number;
   /** Total meeting tie-ups (תיאום וביטול — includes cancellations).
    *  This is the "scheduled" half of meeting-noshow-spike alerts. */
   scheduled: number;
@@ -154,6 +158,7 @@ async function readAllClientsRows(
   const iBudget = col("תקציב חודשי מאושר");
   const iSpend = col("עלות");
   const iLeads = col("לידים CRM");
+  const iRelevant = col("לידים רלוונטים"); // optional; -1 tolerated
   const iScheduled = col("תיאום וביטול");
   const iMeetings = col("ביצוע פגישות");
   const iDailyRate = col("קצב יומי");
@@ -193,6 +198,7 @@ async function readAllClientsRows(
     spend: num(row[iSpend]),
     budget: num(row[iBudget]),
     leads: num(row[iLeads]),
+    relevant: iRelevant >= 0 ? num(row[iRelevant]) : 0,
     scheduled: num(row[iScheduled]),
     meetings: num(row[iMeetings]),
     dailyRate: iDailyRate >= 0 ? num(row[iDailyRate]) : 0,

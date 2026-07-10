@@ -25512,3 +25512,163 @@ button.budget-need:focus-visible {
 .rpt-ai-line strong {
   color: var(--ink);
 }
+
+/* ─── Native report — CRM funnel flow (ביצועים נוכחיים) ─── */
+.rpt-ff-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.rpt-ff-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.rpt-ff-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 400;
+  cursor: help;
+}
+.rpt-funnel-flow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.rpt-ff-card {
+  flex: 1;
+  min-width: 150px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 0.7rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  position: relative;
+}
+.rpt-ff-card.is-lead {
+  border-color: color-mix(in srgb, #667eea 45%, var(--border-soft));
+}
+.rpt-ff-card.is-sched {
+  border-color: color-mix(in srgb, #ec4899 40%, var(--border-soft));
+}
+.rpt-ff-card.is-meet {
+  border-color: color-mix(in srgb, #f5576c 40%, var(--border-soft));
+}
+.rpt-ff-card.rpt-ff-red {
+  box-shadow: inset 0 0 0 1.5px #ef4444;
+}
+.rpt-ff-card.rpt-ff-amber {
+  box-shadow: inset 0 0 0 1.5px #f59e0b;
+}
+.rpt-ff-card.rpt-ff-green {
+  box-shadow: inset 0 0 0 1.5px #22c55e;
+}
+.rpt-ff-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.rpt-ff-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.rpt-ff-meta {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+.rpt-ff-delta {
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin-top: 0.1rem;
+}
+.rpt-ff-delta.is-good {
+  color: #16a34a;
+}
+.rpt-ff-delta.is-bad {
+  color: #dc2626;
+}
+.rpt-ff-delta.is-none,
+.rpt-ff-delta.is-new {
+  color: var(--muted);
+}
+/* connector arrows between cards */
+.rpt-ff-arrow {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 54px;
+  padding-top: 1.2rem;
+}
+.rpt-ff-rate {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-ff-rate.is-green {
+  color: #16a34a;
+}
+.rpt-ff-rate.is-amber {
+  color: #d97706;
+}
+.rpt-ff-rate.is-red {
+  color: #dc2626;
+}
+.rpt-ff-rate.is-none {
+  color: var(--muted);
+}
+.rpt-ff-arrow-line {
+  width: 100%;
+  border-top: 2px dashed var(--border-soft);
+  position: relative;
+  height: 1px;
+}
+.rpt-ff-arrow-head {
+  position: absolute;
+  top: -0.7rem;
+  inset-inline-start: -0.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+/* relevant sub-node hanging off the leads card */
+.rpt-ff-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  margin-top: 0.4rem;
+}
+.rpt-ff-sub-arrow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.rpt-ff-sub-card {
+  width: 100%;
+  border: 1px dashed var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  padding: 0.3rem 0.5rem;
+  text-align: center;
+}
+.rpt-ff-sub-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.rpt-ff-sub-value {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

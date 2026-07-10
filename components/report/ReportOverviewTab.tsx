@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import ReportFunnelFlow from "@/components/report/ReportFunnelFlow";
 import {
   REPORT_PLATS,
   PLAT_LABELS,
@@ -230,17 +231,25 @@ export default function ReportOverviewTab({ data }: { data: ProjectReportData })
     (p) => ap[p].cost > 0 || ap[p].impressions > 0,
   );
 
+  // The CRM funnel flow (ביצועים נוכחיים) is CRM data, so it shows even
+  // when there are no paid-platform impressions/clicks.
+  const funnelFlow = data.totals ? <ReportFunnelFlow data={data} /> : null;
+
   if (!hasSm) {
     return (
-      <div className="rpt-empty">
-        אין נתוני פלטפורמות בטווח הזה ({fmtDateHe(data.window.startIso)} —{" "}
-        {fmtDateHe(data.window.endIso)}).
+      <div className="rpt-overview">
+        {funnelFlow}
+        <div className="rpt-empty">
+          אין נתוני פלטפורמות בטווח הזה ({fmtDateHe(data.window.startIso)} —{" "}
+          {fmtDateHe(data.window.endIso)}).
+        </div>
       </div>
     );
   }
 
   return (
     <div className="rpt-overview">
+      {funnelFlow}
       <div className="rpt-window-line">
         <span className="rpt-window-chip">{MODE_LABELS[data.mode]}</span>
         <span>

@@ -162,6 +162,7 @@ export type ProjectReportData = {
     budget: number;
     spend: number;
     leads: number;
+    relevant: number;
     scheduled: number;
     meetings: number;
   } | null;
@@ -242,6 +243,19 @@ export function kpiAlert(
     if (value === 0) return "red";
   }
   return "";
+}
+
+/** Cost-per-outcome tone for the funnel-flow cards (Index.html:7856):
+ *  costPerScheduled ≤2000 green / ≤3000 amber / else red;
+ *  costPerMeeting ≤5000 / ≤9000 / else red. Value 0 → no tone. */
+export function costPerTone(
+  metric: "costPerScheduled" | "costPerMeeting",
+  value: number,
+): KpiTone {
+  if (!value || value <= 0) return "";
+  if (metric === "costPerScheduled")
+    return value <= 2000 ? "green" : value <= 3000 ? "amber" : "red";
+  return value <= 5000 ? "green" : value <= 9000 ? "amber" : "red";
 }
 
 export type DeltaInfo = {
