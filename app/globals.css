@@ -24660,3 +24660,236 @@ button.budget-need:focus-visible {
 .rpt-trend-chart {
   width: 100%;
 }
+
+/* ─── Native report — ערוצים tab (phase 2) ─── */
+.rpt-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.rpt-ch-alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.rpt-ch-alert {
+  border-radius: 8px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--border-soft);
+}
+.rpt-ch-alert.is-good {
+  background: color-mix(in srgb, #22c55e 12%, var(--surface));
+  border-color: color-mix(in srgb, #22c55e 35%, var(--border-soft));
+}
+.rpt-ch-alert.is-bad {
+  background: color-mix(in srgb, #ef4444 10%, var(--surface));
+  border-color: color-mix(in srgb, #ef4444 35%, var(--border-soft));
+}
+.rpt-ch-table-wrap {
+  overflow-x: auto;
+}
+.rpt-ch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.rpt-ch-table th {
+  text-align: right;
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.rpt-ch-table th.is-sorted {
+  color: var(--ink);
+}
+.rpt-ch-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px dashed var(--border-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-ch-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 260px;
+}
+.rpt-ch-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-ch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.rpt-ch-dot.is-ok {
+  background: #22c55e;
+}
+.rpt-ch-dot.is-off {
+  background: #9ca3af;
+}
+.rpt-ch-dot.is-mixed {
+  background: #f59e0b;
+}
+.rpt-ch-subs {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.rpt-ch-datechip {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rpt-ch-datechip.is-open {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.rpt-conv {
+  font-size: 0.8rem;
+}
+.rpt-conv-green {
+  color: #16a34a;
+  font-weight: 600;
+}
+.rpt-conv-amber {
+  color: #d97706;
+  font-weight: 600;
+}
+.rpt-conv-red {
+  color: #dc2626;
+  font-weight: 600;
+}
+.rpt-conv-none {
+  color: var(--muted);
+}
+.rpt-ch-totals td {
+  border-top: 2px solid var(--border-soft);
+  border-bottom: 0;
+  background: var(--surface-alt);
+}
+
+/* Pacing cell (קצב יומי) */
+.rpt-pace {
+  position: relative;
+}
+.rpt-pace.pacing-warn {
+  box-shadow: inset 2px 0 0 #f59e0b;
+}
+.rpt-pace.pacing-severe {
+  box-shadow: inset 2px 0 0 #ef4444;
+}
+.rpt-pace.pacing-mild {
+  box-shadow: inset 2px 0 0 #0ea5e9;
+}
+.rpt-pace.is-handled {
+  opacity: 0.55;
+}
+.rpt-pace-mark {
+  color: #16a34a;
+  margin-inline-end: 0.2rem;
+}
+.rpt-pace-alert {
+  margin-inline-end: 0.2rem;
+}
+.rpt-pace-btn {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border-radius: 6px;
+  padding: 0 0.3rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+  margin-inline-start: 0.35rem;
+}
+.rpt-pace-btn:hover {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+/* Mini-gantt panel */
+.rpt-gantt {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.rpt-gantt-head {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.rpt-gantt-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 11em) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+}
+.rpt-gantt-row.is-cur .rpt-gantt-label {
+  font-weight: 700;
+  color: var(--brand);
+}
+.rpt-gantt-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+.rpt-gantt-track {
+  position: relative;
+  height: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.rpt-gantt-bar {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  background: color-mix(in srgb, var(--brand) 22%, var(--surface));
+  border-radius: 4px;
+  overflow: hidden;
+}
+.rpt-gantt-fill {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  opacity: 0.75;
+}
+.rpt-gantt-bar.is-over .rpt-gantt-fill {
+  background: #ef4444;
+}
+.rpt-gantt-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ef4444;
+  opacity: 0.7;
+  z-index: 1;
+}
+.rpt-gantt-meta {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

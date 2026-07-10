@@ -1,6 +1,8 @@
 import { driveFolderOwner } from "@/lib/sa";
 import { getProjectReportData } from "@/lib/reportData";
+import { listAlertDismissals } from "@/lib/alertDismissals";
 import ProjectReportTabs from "@/components/report/ProjectReportTabs";
+import type { PacingDismissal } from "@/components/report/ReportChannelsTab";
 
 /**
  * Server wrapper for the NATIVE project report (the in-hub rebuild of the
@@ -21,8 +23,26 @@ export default async function ProjectReportSection({
 }) {
   let data = null;
   let failed = false;
+  // Pacing snoozes — the SAME Firestore alertDismissals keys the iframe,
+  // budget desk and morning feed share (<slug>|pacing-variance|channel|…),
+  // so a ✓טיפלתי anywhere fades the native channels tab too. Best-effort.
+  const pacingDismissals: Record<string, PacingDismissal> = {};
   try {
-    data = await getProjectReportData(driveFolderOwner(), projectName, period);
+    const [d, dismissals] = await Promise.all([
+      getProjectReportData(driveFolderOwner(), projectName, period),
+      listAlertDismissals().catch(
+        () => ({}) as Awaited<ReturnType<typeof listAlertDismissals>>,
+      ),
+    ]);
+    data = d;
+    for (const [key, v] of Object.entries(dismissals)) {
+      if (!key.includes("|pacing-variance|")) continue;
+      pacingDismissals[key] = {
+        snooze_until: v.snooze_until || "",
+        dismissed_at: v.dismissed_at || "",
+        reason: v.reason || "",
+      };
+    }
   } catch {
     failed = true;
   }
@@ -39,5 +59,11 @@ export default async function ProjectReportSection({
       </div>
     );
   }
-  return <ProjectReportTabs data={data} initialTab={initialTab} />;
+  return (
+    <ProjectReportTabs
+      data={data}
+      initialTab={initialTab}
+      pacingDismissals={pacingDismissals}
+    />
+  );
 }

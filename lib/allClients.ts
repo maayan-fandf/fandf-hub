@@ -77,6 +77,24 @@ export type AllClientsRow = {
   startIso: string;
   /** Window end (ISO date). */
   endIso: string;
+  /** סוג קמפיין — the SUMIFS sub-campaign token (e.g. "GS", "45-60").
+   *  Optional column; ""/absent when the sheet lacks it. Used by the
+   *  native report's channels tab to attribute configured platform
+   *  budgets (same token matching as lib/budgetMaster). */
+  campaignType?: string;
+  /** Populated ONLY by consolidateForProject: the pre-merge sub-rows
+   *  that carried a סוג קמפיין, so a consolidated channel can show its
+   *  sub-campaign breakdown (mirrors the dashboard's c.subCampaigns). */
+  subCampaigns?: AllClientsSubCampaign[];
+};
+
+export type AllClientsSubCampaign = {
+  name: string;
+  spend: number;
+  budget: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
 };
 
 type RawTable = { headers: string[]; rows: unknown[][] };
@@ -141,6 +159,7 @@ async function readAllClientsRows(
   const iDailyRate = col("קצב יומי");
   const iRowType = col("סוג שורה");
   const iProject = col("פרוייקט");
+  const iCampaignType = col("סוג קמפיין"); // optional; -1 tolerated
 
   const num = (v: unknown): number => {
     if (v === "" || v == null) return 0;
@@ -179,6 +198,8 @@ async function readAllClientsRows(
     dailyRate: iDailyRate >= 0 ? num(row[iDailyRate]) : 0,
     startIso: dateOnlyFromSerial(row[iStart]),
     endIso: dateOnlyFromSerial(row[iEnd]),
+    campaignType:
+      iCampaignType >= 0 ? String(row[iCampaignType] ?? "").trim() : "",
   }));
 }
 
@@ -225,11 +246,24 @@ function consolidateForProject(
   });
   const byChannel = new Map<string, AllClientsRow>();
   const order: string[] = [];
+  const subOf = (r: AllClientsRow): AllClientsSubCampaign[] =>
+    r.campaignType
+      ? [
+          {
+            name: r.campaignType,
+            spend: r.spend,
+            budget: r.budget,
+            leads: r.leads,
+            scheduled: r.scheduled,
+            meetings: r.meetings,
+          },
+        ]
+      : [];
   for (const r of matched) {
     const key = r.channel.toLowerCase();
     const existing = byChannel.get(key);
     if (!existing) {
-      byChannel.set(key, { ...r });
+      byChannel.set(key, { ...r, subCampaigns: subOf(r) });
       order.push(key);
     } else {
       existing.spend += r.spend;
@@ -240,6 +274,7 @@ function consolidateForProject(
       existing.dailyRate += r.dailyRate;
       if (!existing.startIso && r.startIso) existing.startIso = r.startIso;
       if (r.endIso && r.endIso > existing.endIso) existing.endIso = r.endIso;
+      existing.subCampaigns!.push(...subOf(r));
     }
   }
   return order.map((k) => byChannel.get(k)!);

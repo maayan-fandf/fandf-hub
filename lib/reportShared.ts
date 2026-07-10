@@ -90,6 +90,45 @@ export type SmTotals = {
 
 export type ReportWindow = { startIso: string; endIso: string };
 
+export type ReportSubCampaign = {
+  name: string;
+  spend: number;
+  budget: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+};
+
+/** One row of the ערוצים tab — an ALL CLIENTS channel row enriched with
+ *  platform attribution + pacing inputs (legacy `p.channels[i]`). */
+export type ReportChannel = {
+  channel: string;
+  /** classifyChannel bucket ("google"/"facebook"/… or "other"). */
+  platform: string;
+  budget: number;
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  /** Sheet קצב יומי — the required daily budget ((G−H)/days-left). */
+  dailyRate: number;
+  startIso: string;
+  endIso: string;
+  costPerLead: number;
+  costPerScheduled: number;
+  costPerMeeting: number;
+  subCampaigns: ReportSubCampaign[];
+  /** Σ ACTIVE matched platform campaigns' configured daily budgets;
+   *  null when the channel has no סוג tokens / no campaign matched. */
+  configuredDaily: number | null;
+  /** Live/paused dot (legacy c.campaignStatus). */
+  campaignStatus: "none" | "active" | "paused" | "mixed";
+  /** Platform-level trailing-7-day average daily spend — attached only
+   *  when this row is its platform's ONLY channel (else the platform
+   *  average would be meaningless per-row). */
+  avg7d: number | null;
+};
+
 export type ProjectReportData = {
   project: string;
   slug: string;
@@ -100,6 +139,9 @@ export type ProjectReportData = {
   prevAdPlatform: AdPlatform | null;
   /** Full unfiltered per-platform daily series (client windows it). */
   daily: Record<ReportPlat, DailyPoint[]>;
+  /** ALL CLIENTS channel rows enriched for the ערוצים tab (empty in
+   *  range mode — the legacy pro-rating path isn't ported yet). */
+  channels: ReportChannel[];
   /** ALL CLIENTS per-channel rows for the window mode ([] in range mode). */
   totals: {
     budget: number;
@@ -352,6 +394,162 @@ export function diagnoseTopFunnel(
     ctrState: ctrS,
     cvrState: cvrS,
   };
+}
+
+/* --------------------------- channels tab math --------------------------- */
+
+export type ChannelPacing = {
+  cls: "pacing-on" | "pacing-mild" | "pacing-warn" | "pacing-severe" | "";
+  action: "" | "lower" | "raise" | "investigate";
+  /** Tooltip lines (plain text). */
+  lines: string[];
+};
+
+/**
+ * Legacy `pacingCellAttrs` (Index.html:6365), simplified: the 12%
+ * configured-vs-planned rule drives ⬇/⬆, the ±10% actual-vs-plan variance
+ * drives 🔍/the no-config fallback, and a negative planned (sheet formula
+ * went negative = budget exhausted) is severe. Omitted vs legacy: the
+ * per-campaign escalation detail (needs per-campaign daily actuals the
+ * hub doesn't aggregate yet).
+ */
+export function computeChannelPacing(c: {
+  dailyRate: number;
+  configuredDaily: number | null;
+  avg7d: number | null;
+}): ChannelPacing {
+  const planned = c.dailyRate;
+  if (!planned) return { cls: "", action: "", lines: [] };
+  if (planned < 0) {
+    const lines = [
+      `⚠️ תקציב התקופה נוצל — הקצב היומי הנדרש שלילי (${fmtILS(planned)})`,
+    ];
+    if (c.configuredDaily != null)
+      lines.push(`מוגדר בפלטפורמה: ${fmtILS(c.configuredDaily)}`);
+    lines.push("💡 מומלץ לעצור או לצמצם משמעותית — המשך הוצאה = חריגה נוספת");
+    return { cls: "pacing-severe", action: "lower", lines };
+  }
+  const PACE_TOL = 0.12;
+  const lines: string[] = [`מתוכנן: ${fmtILS(planned)}`];
+  let action: ChannelPacing["action"] = "";
+  let gap = 0;
+  const hasConfig = c.configuredDaily != null && c.configuredDaily > 0;
+  if (hasConfig) {
+    const configured = c.configuredDaily!;
+    lines.push(`מוגדר בפלטפורמה: ${fmtILS(configured)}`);
+    const configVsPlan = (configured - planned) / planned;
+    gap = Math.abs(configVsPlan);
+    if (configVsPlan > PACE_TOL) {
+      action = "lower";
+      lines.push(
+        `💡 מומלץ להוריד את התקציב בפלטפורמה ל־${fmtILS(planned)} (כרגע מוגדר ${fmtILS(configured)}, פער ${Math.round(gap * 100)}% מהתכנון)`,
+      );
+    } else if (configVsPlan < -PACE_TOL) {
+      action = "raise";
+      lines.push(
+        `💡 מומלץ להעלות את התקציב בפלטפורמה ל־${fmtILS(planned)} (כרגע מוגדר ${fmtILS(configured)})`,
+      );
+    } else if (c.avg7d != null) {
+      const variance = (c.avg7d - planned) / planned;
+      lines.push(`ממוצע 7 ימים: ${fmtILS(c.avg7d)}`);
+      if (variance > 0.1) {
+        action = "investigate";
+        gap = Math.abs(variance);
+        lines.push(
+          `🔍 התקציב מוגדר כהלכה (${fmtILS(configured)}) אבל הפלטפורמה מוציאה ${fmtILS(c.avg7d)}/יום (פער ${Math.round(variance * 100)}%) — בדקו שינויי CPC / CBO / עונתיות, לא תקציב`,
+        );
+      } else if (variance < -0.1) {
+        action = "investigate";
+        gap = Math.abs(variance);
+        lines.push(
+          `🔍 התקציב מוגדר כהלכה (${fmtILS(configured)}) אבל הפלטפורמה מוציאה רק ${fmtILS(c.avg7d)}/יום — בדקו קהלים / הצעות מחיר / קריאייטיבים, לא תקציב`,
+        );
+      }
+    }
+  } else if (c.avg7d != null) {
+    // No configured budget known (Taboola/Outbrain/unmatched) —
+    // spend-variance fallback.
+    const variance = (c.avg7d - planned) / planned;
+    gap = Math.abs(variance);
+    lines.push(`ממוצע 7 ימים: ${fmtILS(c.avg7d)}`);
+    if (variance > 0.1) {
+      action = "lower";
+      lines.push(`💡 מומלץ להוריד את התקציב היומי ל־${fmtILS(planned)}`);
+    } else if (variance < -0.1) {
+      action = "raise";
+      lines.push(`💡 מומלץ להעלות את התקציב היומי ל־${fmtILS(planned)}`);
+    }
+  }
+  const cls =
+    action === "lower" || action === "raise"
+      ? gap >= 0.5
+        ? "pacing-severe"
+        : "pacing-warn"
+      : action === "investigate"
+        ? "pacing-mild"
+        : "pacing-on";
+  return { cls, action, lines };
+}
+
+/** Legacy `costStyle` (Index.html:6164) — green→red heat on cost-per
+ *  cells, same hue bands for rows and totals. undefined for v ≤ 0. */
+export function costHeatStyle(
+  metric: "costPerLead" | "costPerScheduled" | "costPerMeeting",
+  v: number,
+): { background: string; color: string; fontWeight: number } | undefined {
+  if (!v || v <= 0) return undefined;
+  const [lo, hi] =
+    metric === "costPerLead"
+      ? [150, 700]
+      : metric === "costPerScheduled"
+        ? [1500, 4500]
+        : [4000, 12000];
+  let t = (v - lo) / (hi - lo);
+  t = Math.max(0, Math.min(1, t));
+  const hue = Math.round(140 - t * 140);
+  return {
+    background: `hsl(${hue},70%,88%)`,
+    color: `hsl(${hue},70%,26%)`,
+    fontWeight: 600,
+  };
+}
+
+/** Legacy `convCls` (Index.html:6183) — conversion-rate cell tone. */
+export function convTone(r: number | null): "none" | "green" | "amber" | "red" {
+  if (r === null) return "none";
+  if (r >= 0.6) return "green";
+  if (r >= 0.3) return "amber";
+  return "red";
+}
+
+export type ChannelAlert = { type: "good" | "bad"; text: string };
+
+/** Legacy `pickAlerts(p.channels)` (Index.html:4520) — the two
+ *  per-channel strip chips. `icon` renders the channel display name. */
+export function pickChannelAlerts(
+  channels: ReportChannel[],
+  icon: (name: string) => string,
+): ChannelAlert[] {
+  const out: ChannelAlert[] = [];
+  const active = channels.filter((c) => c.spend > 0);
+  const withLeads = active
+    .filter((c) => c.leads > 0 && c.costPerLead > 0)
+    .sort((a, b) => a.costPerLead - b.costPerLead);
+  if (withLeads.length) {
+    const best = withLeads[0];
+    out.push({
+      type: "good",
+      text: `⭐ הערוץ המוביל: ${icon(best.channel)} — ${fmtILS(best.costPerLead)} לליד`,
+    });
+  }
+  const noLeads = active.filter((c) => c.leads === 0 && c.spend > 500);
+  if (noLeads.length) {
+    out.push({
+      type: "bad",
+      text: `⚠️ תקציב ללא לידים: ${noLeads.map((c) => icon(c.channel)).join(", ")}`,
+    });
+  }
+  return out;
 }
 
 /* ------------------------------ formatters ------------------------------ */

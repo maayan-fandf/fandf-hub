@@ -4,6 +4,9 @@ import { useCallback, useRef, useState, type ReactNode } from "react";
 import type { ProjectReportData } from "@/lib/reportShared";
 import ReportOverviewTab from "@/components/report/ReportOverviewTab";
 import ReportTrendsTab from "@/components/report/ReportTrendsTab";
+import ReportChannelsTab, {
+  type PacingDismissal,
+} from "@/components/report/ReportChannelsTab";
 
 /**
  * Tabbed client shell for the native project report — the "tab-divided,
@@ -16,10 +19,11 @@ import ReportTrendsTab from "@/components/report/ReportTrendsTab";
  * native get a tab (no "coming soon" stubs).
  */
 
-type TabId = "overview" | "trends";
+type TabId = "overview" | "channels" | "trends";
 
 const TAB_DEFS: { id: TabId; icon: string; label: string }[] = [
   { id: "overview", icon: "📡", label: "סקירה" },
+  { id: "channels", icon: "📋", label: "ערוצים" },
   { id: "trends", icon: "📅", label: "מגמות" },
 ];
 
@@ -40,9 +44,11 @@ function FreezeWhenHidden({
 export default function ProjectReportTabs({
   data,
   initialTab,
+  pacingDismissals = {},
 }: {
   data: ProjectReportData;
   initialTab?: string;
+  pacingDismissals?: Record<string, PacingDismissal>;
 }) {
   const [tab, setTabState] = useState<TabId>(
     TAB_DEFS.some((t) => t.id === initialTab) ? (initialTab as TabId) : "overview",
@@ -103,6 +109,16 @@ export default function ProjectReportTabs({
       >
         <FreezeWhenHidden active={tab === "overview"}>
           <ReportOverviewTab data={data} />
+        </FreezeWhenHidden>
+      </div>
+      <div
+        id="rpt-panel-channels"
+        role="tabpanel"
+        aria-labelledby="rpt-tab-channels"
+        className={panelCls("channels")}
+      >
+        <FreezeWhenHidden active={tab === "channels"}>
+          <ReportChannelsTab data={data} pacingDismissals={pacingDismissals} />
         </FreezeWhenHidden>
       </div>
       <div

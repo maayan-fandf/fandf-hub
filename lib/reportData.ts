@@ -7,6 +7,9 @@ import {
   getAllClientsMonthlyForProject,
   type AllClientsRow,
 } from "@/lib/allClients";
+import { classifyChannel } from "@/lib/budgetTypes";
+import { getCampaignBudgets, type CampaignBudgetItem } from "@/lib/platformDailyBudget";
+import { getDailySpend7d } from "@/lib/platformDailySpend";
 import {
   REPORT_PLATS,
   emptyAdPlatform,
@@ -14,6 +17,7 @@ import {
   type DailyPoint,
   type PlatCampaign,
   type ProjectReportData,
+  type ReportChannel,
   type ReportPlat,
   type ReportWindow,
 } from "@/lib/reportShared";
@@ -273,6 +277,94 @@ function lastDayOfMonth(yearMonth: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/**
+ * Enrich ALL CLIENTS channel rows into the ערוצים tab's rows. The
+ * configured-daily attribution ports lib/budgetMaster's סוג-token loop
+ * (tokens must ALL appear in the campaign name, platform-scoped;
+ * `+`/`-` stay inside tokens so "60+" won't substring-match "45-60").
+ * Channels without tokens get no configured budget (legacy leaves them
+ * undecorated); the platform 7-day average is attached only when the
+ * row is its platform's sole channel — otherwise a platform-level
+ * average is meaningless per-row.
+ */
+function buildReportChannels(
+  rows: AllClientsRow[],
+  slug: string,
+  projCampaigns: CampaignBudgetItem[],
+  avg7dByPlat: Record<string, number> | undefined,
+  enrich: boolean,
+): ReportChannel[] {
+  const platCount = new Map<string, number>();
+  const plats = rows.map((r) => {
+    const p = classifyChannel(r.channel);
+    platCount.set(p, (platCount.get(p) ?? 0) + 1);
+    return p;
+  });
+  return rows.map((r, i) => {
+    const platform = plats[i];
+    const subs = r.subCampaigns ?? [];
+    let configuredDaily: number | null = null;
+    let campaignStatus: ReportChannel["campaignStatus"] = "none";
+    if (enrich && (platform === "google" || platform === "facebook")) {
+      const tokenSets = subs
+        .map((s) =>
+          s.name
+            .toLowerCase()
+            .split(/[^a-z0-9֐-׿+\-]+/)
+            .filter((t) => t.length >= 2),
+        )
+        .filter((ts) => ts.length);
+      if (tokenSets.length) {
+        let sum = 0;
+        let activeCount = 0;
+        let pausedCount = 0;
+        for (const c of projCampaigns) {
+          if (c.platform !== platform) continue;
+          if (!tokenSets.some((ts) => ts.every((t) => c.nameLower.includes(t))))
+            continue;
+          if (c.active) {
+            sum += c.dailyBudget;
+            activeCount++;
+          } else pausedCount++;
+        }
+        if (activeCount || pausedCount) {
+          configuredDaily = sum;
+          campaignStatus =
+            activeCount && pausedCount
+              ? "mixed"
+              : activeCount
+                ? "active"
+                : "paused";
+        }
+      }
+    }
+    const soleOfPlatform = platCount.get(platform) === 1;
+    const avg7d =
+      enrich && soleOfPlatform && avg7dByPlat && platform in avg7dByPlat
+        ? (avg7dByPlat[platform] ?? 0)
+        : null;
+    return {
+      channel: r.channel,
+      platform,
+      budget: r.budget,
+      spend: r.spend,
+      leads: r.leads,
+      scheduled: r.scheduled,
+      meetings: r.meetings,
+      dailyRate: r.dailyRate,
+      startIso: r.startIso,
+      endIso: r.endIso,
+      costPerLead: r.leads > 0 ? r.spend / r.leads : 0,
+      costPerScheduled: r.scheduled > 0 ? r.spend / r.scheduled : 0,
+      costPerMeeting: r.meetings > 0 ? r.spend / r.meetings : 0,
+      subCampaigns: subs,
+      configuredDaily,
+      campaignStatus,
+      avg7d,
+    };
+  });
+}
+
 function sumChannelTotals(channels: AllClientsRow[]) {
   const t = { budget: 0, spend: 0, leads: 0, scheduled: 0, meetings: 0 };
   for (const c of channels) {
@@ -343,6 +435,37 @@ export const getProjectReportData = cache(
       ? aggregateWindow(rows, prevWindow.startIso, prevWindow.endIso)
       : null;
 
+    // ערוצים tab rows: live mode gets the full pacing enrichment
+    // (configured budgets + status dots + 7d averages); month mode shows
+    // plain values with the legacy dailyRate = spend/daysInMonth (the
+    // תקציב + קצב יומי columns are hidden there anyway); range mode
+    // isn't ported yet (legacy pro-rates חודשי rows).
+    let reportChannels: ReportChannel[] = [];
+    if (mode !== "range" && channels.length) {
+      let campaigns: CampaignBudgetItem[] = [];
+      let avg7dByPlat: Record<string, number> | undefined;
+      if (mode === "live") {
+        const [cb, spend7d] = await Promise.all([
+          getCampaignBudgets(subjectEmail).catch(() => null),
+          getDailySpend7d(subjectEmail).catch(() => null),
+        ]);
+        campaigns = cb?.campaignsBySlug[slug.toLowerCase()] ?? [];
+        avg7dByPlat = spend7d?.[slug.toLowerCase()];
+      }
+      const daysInMonth = Number(window.endIso.slice(8, 10)) || 30;
+      const rowsForTab =
+        mode === "month"
+          ? channels.map((c) => ({ ...c, dailyRate: c.spend / daysInMonth }))
+          : channels;
+      reportChannels = buildReportChannels(
+        rowsForTab,
+        slug,
+        campaigns,
+        avg7dByPlat,
+        mode === "live",
+      );
+    }
+
     return {
       project: projectName,
       slug,
@@ -352,6 +475,7 @@ export const getProjectReportData = cache(
       adPlatform,
       prevAdPlatform,
       daily: dailySeries(rows),
+      channels: reportChannels,
       totals: mode === "range" ? null : sumChannelTotals(channels),
     };
   },
