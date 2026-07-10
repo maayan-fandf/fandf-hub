@@ -44,6 +44,112 @@ export type PacingDismissal = {
 const chLabel = (name: string) =>
   `${channelIcon(name) || "●"} ${name}`.trim();
 
+type DayPt = { date: string; cost: number; leads: number };
+
+/** Zero-filled daily series clamped to the last date that actually has
+ *  data, so the sparkline doesn't trail into future zeros — mirrors the
+ *  legacy `_buildAdTrendlinePopover_` windowing (Index.html:6890). */
+function windowDaily(
+  series: { date: string; cost: number; leads: number }[],
+  startIso: string,
+  endIso: string,
+): DayPt[] {
+  if (!series.length || !startIso || !endIso) return [];
+  const byDate = new Map(series.map((p) => [p.date, p]));
+  const inWin = series.filter((p) => p.date >= startIso && p.date <= endIso);
+  if (!inWin.length) return [];
+  let lastData = "";
+  for (const p of inWin)
+    if ((p.cost > 0 || p.leads > 0) && p.date > lastData) lastData = p.date;
+  const end = lastData && lastData >= startIso ? lastData : endIso;
+  const out: DayPt[] = [];
+  const cur = new Date(`${startIso}T00:00:00Z`);
+  const endD = new Date(`${end}T00:00:00Z`);
+  let guard = 0;
+  while (cur <= endD && guard++ < 400) {
+    const iso = cur.toISOString().slice(0, 10);
+    const p = byDate.get(iso);
+    out.push({ date: iso, cost: p?.cost ?? 0, leads: p?.leads ?? 0 });
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
+}
+
+const ddmm = (iso: string) => {
+  const [, m, d] = iso.split("-");
+  return d && m ? `${d}/${m}` : iso;
+};
+
+/** Hover popover: two independently auto-scaled SVG line-sparklines
+ *  (daily cost teal + leads purple) across the report window. Port of
+ *  the legacy `_buildAdTrendlinePopover_` (Index.html:6885) — shown on
+ *  google/facebook rows only (the platform daily feed covers those). */
+function ChannelTrendPop({
+  channel,
+  series,
+}: {
+  channel: string;
+  series: DayPt[];
+}) {
+  const W = 240;
+  const H = 42;
+  const PAD = 2;
+  const innerW = W - PAD * 2;
+  const innerH = H - PAD * 2;
+  const maxCost = series.reduce((m, r) => Math.max(m, r.cost), 0);
+  const maxLeads = series.reduce((m, r) => Math.max(m, r.leads), 0);
+  const xAt = (i: number) =>
+    series.length <= 1
+      ? PAD + innerW / 2
+      : PAD + (i / (series.length - 1)) * innerW;
+  const yOf = (v: number, max: number) =>
+    max <= 0 ? PAD + innerH : PAD + innerH - (v / max) * innerH;
+  const path = (key: "cost" | "leads", max: number) =>
+    series
+      .map(
+        (r, i) =>
+          (i === 0 ? "M" : "L") +
+          xAt(i).toFixed(1) +
+          " " +
+          yOf(r[key], max).toFixed(1),
+      )
+      .join(" ");
+  const totalCost = series.reduce((s, r) => s + r.cost, 0);
+  const totalLeads = series.reduce((s, r) => s + r.leads, 0);
+  return (
+    <div className="rpt-chtrend-pop" aria-hidden="true">
+      <div className="rpt-chtrend-head">
+        {channel} · {ddmm(series[0].date)} →{" "}
+        {ddmm(series[series.length - 1].date)}
+      </div>
+      <div className="rpt-chtrend-row">
+        <span className="rpt-chtrend-label">💸 עלות</span>
+        <svg viewBox={`0 0 ${W} ${H}`} className="rpt-chtrend-svg">
+          <path
+            d={path("cost", maxCost)}
+            fill="none"
+            stroke="#14b8a6"
+            strokeWidth={1.6}
+          />
+        </svg>
+        <span className="rpt-chtrend-total">{fmtILS(totalCost)}</span>
+      </div>
+      <div className="rpt-chtrend-row">
+        <span className="rpt-chtrend-label">🎯 לידים</span>
+        <svg viewBox={`0 0 ${W} ${H}`} className="rpt-chtrend-svg">
+          <path
+            d={path("leads", maxLeads)}
+            fill="none"
+            stroke="#8b5cf6"
+            strokeWidth={1.6}
+          />
+        </svg>
+        <span className="rpt-chtrend-total">{fmtInt(totalLeads)}</span>
+      </div>
+    </div>
+  );
+}
+
 type FadeState = "active" | "dismissed" | "resurfaced";
 
 function ilToday(): string {
@@ -369,6 +475,11 @@ export default function ReportChannelsTab({
     {},
   );
   const [ganttFor, setGanttFor] = useState<string | null>(null);
+  // Channel filter (multi-select). null = all channels shown. Mirrors the
+  // legacy `applyChannelsTableFilter` — hides rows + recomputes totals only;
+  // the four charts stay on the full channel set.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
   const today = useMemo(ilToday, []);
 
   const channels = data.channels;
@@ -383,6 +494,11 @@ export default function ReportChannelsTab({
       return ((av as number) - (bv as number)) * sort.dir;
     });
   }, [channels, sort]);
+  const visible = useMemo(
+    () =>
+      selected === null ? sorted : sorted.filter((c) => selected.has(c.channel)),
+    [sorted, selected],
+  );
 
   if (data.mode === "range") {
     return (
@@ -408,7 +524,9 @@ export default function ReportChannelsTab({
         (c.startIso !== data.window.startIso || c.endIso !== data.window.endIso),
     );
 
-  const totals = channels.reduce(
+  // Totals reflect the *visible* (filtered) rows — matches the legacy
+  // recomputeChannelsTableTotals so the bottom line agrees with the rows.
+  const totals = visible.reduce(
     (t, c) => {
       t.budget += c.budget;
       t.spend += c.spend;
@@ -420,6 +538,24 @@ export default function ReportChannelsTab({
     },
     { budget: 0, spend: 0, leads: 0, scheduled: 0, meetings: 0, daily: 0 },
   );
+
+  const toggleChannel = (ch: string) =>
+    setSelected((cur) => {
+      const base = cur ?? new Set(channels.map((c) => c.channel));
+      const next = new Set(base);
+      if (next.has(ch)) next.delete(ch);
+      else next.add(ch);
+      // Empty or full selection both mean "all" — snap back to null.
+      if (next.size === 0 || next.size === channels.length) return null;
+      return next;
+    });
+  const allChecked = selected === null;
+  const filterLabel =
+    selected === null
+      ? "כל הערוצים"
+      : selected.size === 1
+        ? chLabel([...selected][0])
+        : `${selected.size} ערוצים נבחרו`;
   const tCpl = totals.leads > 0 ? totals.spend / totals.leads : 0;
   const tCps = totals.scheduled > 0 ? totals.spend / totals.scheduled : 0;
   const tCpm = totals.meetings > 0 ? totals.spend / totals.meetings : 0;
@@ -509,6 +645,56 @@ export default function ReportChannelsTab({
         />
       )}
 
+      {channels.length > 1 && (
+        <div className="rpt-ch-tablecontrols">
+          <span className="rpt-ch-tablecontrols-lbl">סינון לפי ערוץ:</span>
+          <div className="rpt-mt-filter">
+            <button
+              type="button"
+              className="rpt-mt-filter-btn"
+              onClick={() => setFilterOpen((o) => !o)}
+              aria-expanded={filterOpen}
+            >
+              {filterLabel} ▾
+            </button>
+            {filterOpen && (
+              <>
+                <div
+                  className="rpt-ch-filter-backdrop"
+                  onClick={() => setFilterOpen(false)}
+                />
+                <div className="rpt-mt-filter-panel" role="listbox">
+                  <label className="rpt-mt-filter-opt is-all">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={(el) => {
+                        if (el) el.indeterminate = !allChecked;
+                      }}
+                      onChange={() => setSelected(null)}
+                    />
+                    <b>כל הערוצים</b>
+                  </label>
+                  {channels.map((c) => {
+                    const on = selected === null || selected.has(c.channel);
+                    return (
+                      <label key={c.channel} className="rpt-mt-filter-opt">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => toggleChannel(c.channel)}
+                        />
+                        {chLabel(c.channel)}
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="rpt-ch-table-wrap">
         <table className="rpt-ch-table">
           <thead>
@@ -528,9 +714,18 @@ export default function ReportChannelsTab({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((c) => {
+            {visible.map((c) => {
               const subs = c.subCampaigns.filter((s) => s.name);
               const dot = STATUS_DOT[c.campaignStatus];
+              const trendDaily =
+                (c.platform === "google" || c.platform === "facebook") &&
+                c.spend > 0
+                  ? windowDaily(
+                      data.daily?.[c.platform] ?? [],
+                      data.window.startIso,
+                      data.window.endIso,
+                    )
+                  : [];
               const chipDiffers =
                 datesIrregular &&
                 c.startIso &&
@@ -552,7 +747,12 @@ export default function ReportChannelsTab({
               const chKey = c.channel.toLowerCase();
               return (
                 <tr key={c.channel}>
-                  <td className="rpt-ch-name">
+                  <td
+                    className={
+                      "rpt-ch-name" +
+                      (trendDaily.length >= 2 ? " has-trend" : "")
+                    }
+                  >
                     <span className="rpt-ch-label">{chLabel(c.channel)}</span>
                     {dot && (
                       <span
@@ -588,6 +788,9 @@ export default function ReportChannelsTab({
                         📅 {fmtDateHe(c.startIso).slice(0, 5)}–
                         {fmtDateHe(c.endIso).slice(0, 5)}
                       </button>
+                    )}
+                    {trendDaily.length >= 2 && (
+                      <ChannelTrendPop channel={c.channel} series={trendDaily} />
                     )}
                   </td>
                   {!isMonth && (

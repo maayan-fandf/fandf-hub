@@ -24689,6 +24689,97 @@ button.budget-need:focus-visible {
 .rpt-ch-table-wrap {
   overflow-x: auto;
 }
+/* On hover-capable wide screens the table fits, so let the per-channel
+   trendline popover escape the scroll box; keep horizontal scroll on
+   touch/narrow (where hover popovers don't apply anyway). */
+@media (hover: hover) and (min-width: 900px) {
+  .rpt-ch-table-wrap {
+    overflow: visible;
+  }
+}
+/* פירוט ערוצים filter row (reuses the .rpt-mt-filter* dropdown chrome) */
+.rpt-ch-tablecontrols {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.2rem 0 0.5rem;
+}
+.rpt-ch-tablecontrols-lbl {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+.rpt-ch-filter-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+}
+/* Per-channel hover trendline popover (google/facebook rows) */
+.rpt-ch-name.has-trend {
+  position: relative;
+  cursor: default;
+}
+.rpt-chtrend-pop {
+  position: absolute;
+  /* Physical right (not logical inset-inline-end) so it opens to the LEFT
+     of the channel cell — the cell sits at the RTL table's right edge. */
+  right: calc(100% + 0.35rem);
+  left: auto;
+  top: 50%;
+  width: 290px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  padding: 0.7rem 0.85rem;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%) translateX(4px);
+  transition: opacity 0.12s, transform 0.12s;
+  direction: rtl;
+  text-align: right;
+}
+.rpt-ch-name.has-trend:hover .rpt-chtrend-pop {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+.rpt-chtrend-head {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-chtrend-row {
+  display: grid;
+  grid-template-columns: 3.4em 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.78rem;
+}
+.rpt-chtrend-row:last-child {
+  margin-bottom: 0;
+}
+.rpt-chtrend-label {
+  color: var(--ink-soft);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.rpt-chtrend-svg {
+  width: 100%;
+  height: 34px;
+  display: block;
+}
+.rpt-chtrend-total {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
 .rpt-ch-table {
   width: 100%;
   border-collapse: collapse;
@@ -24783,18 +24874,34 @@ button.budget-need:focus-visible {
   background: var(--surface-alt);
 }
 
-/* Pacing cell (קצב יומי) */
+/* Pacing cell (קצב יומי) — full background tint by pace state, matching
+   the classic table (configured-vs-required daily: green on-track →
+   yellow investigate → orange/red off). */
 .rpt-pace {
   position: relative;
 }
-.rpt-pace.pacing-warn {
-  box-shadow: inset 2px 0 0 #f59e0b;
-}
-.rpt-pace.pacing-severe {
-  box-shadow: inset 2px 0 0 #ef4444;
+.rpt-pace.pacing-on {
+  background: #dcfce7;
+  color: #065f46;
+  font-weight: 600;
 }
 .rpt-pace.pacing-mild {
-  box-shadow: inset 2px 0 0 #0ea5e9;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 600;
+}
+.rpt-pace.pacing-warn {
+  background: #ffedd5;
+  color: #9a3412;
+  font-weight: 700;
+}
+.rpt-pace.pacing-severe {
+  background: #fee2e2;
+  color: #991b1b;
+  font-weight: 700;
+}
+.rpt-pace .rpt-pace-num {
+  font-variant-numeric: tabular-nums;
 }
 .rpt-pace.is-handled {
   opacity: 0.55;
