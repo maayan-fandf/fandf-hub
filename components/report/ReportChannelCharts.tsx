@@ -4,11 +4,14 @@ import { useMemo } from "react";
 import {
   ScatterChart,
   Scatter,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   ZAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   LabelList,
 } from "recharts";
@@ -174,51 +177,64 @@ function BudgetBars({ channels }: { channels: ReportChannel[] }) {
   );
 }
 
+/** Vertical grouped column chart — לידים / תיאומים / ביצועים per channel
+ *  (drawLeadsBar). Channel-icon x-axis, three colored columns with value
+ *  labels + a top legend, matching the dashboard. */
 function OutcomeBars({ channels }: { channels: ReportChannel[] }) {
-  const rows = channels.filter(
-    (c) => c.leads + c.scheduled + c.meetings > 0,
-  );
+  const pal = useChartPalette();
+  const rows = channels.filter((c) => c.leads + c.scheduled + c.meetings > 0);
   if (!rows.length)
     return <div className="rpt-empty rpt-empty-sm">אין נתוני משפך</div>;
-  const max = Math.max(...rows.map((c) => c.leads), 1);
+  const data = rows.map((c) => ({
+    channel: icon(c.channel),
+    name: c.channel,
+    leads: c.leads,
+    scheduled: c.scheduled,
+    meetings: c.meetings,
+  }));
   const SERIES = [
-    { key: "leads" as const, label: "לידים", color: "#6366f1" },
-    { key: "scheduled" as const, label: "תיאומים", color: "#ec4899" },
-    { key: "meetings" as const, label: "ביצועים", color: "#f5576c" },
+    { key: "leads", label: "לידים", color: "#6366f1" },
+    { key: "scheduled", label: "תיאומים", color: "#ec4899" },
+    { key: "meetings", label: "ביצועים", color: "#f5576c" },
   ];
   return (
-    <div className="rpt-outbar">
-      <div className="rpt-outbar-legend">
-        {SERIES.map((s) => (
-          <span key={s.key}>
-            <span className="rpt-outbar-dot" style={{ background: s.color }} />
-            {s.label}
-          </span>
-        ))}
-      </div>
-      {rows.map((c) => (
-        <div key={c.channel} className="rpt-outbar-row">
-          <span className="rpt-outbar-label" title={c.channel}>
-            {icon(c.channel)}
-          </span>
-          <span className="rpt-outbar-bars">
-            {SERIES.map((s) => (
-              <span key={s.key} className="rpt-outbar-track">
-                <span
-                  className="rpt-outbar-fill"
-                  style={{
-                    width: `${(c[s.key] / max) * 100}%`,
-                    background: s.color,
-                  }}
-                />
-                {c[s.key] > 0 && (
-                  <span className="rpt-outbar-val">{fmtInt(c[s.key])}</span>
-                )}
-              </span>
-            ))}
-          </span>
-        </div>
-      ))}
+    <div className="rpt-scatter" dir="ltr">
+      <ResponsiveContainer width="100%" height={230}>
+        <BarChart data={data} margin={{ top: 16, right: 8, bottom: 4, left: 8 }} barCategoryGap="20%">
+          <CartesianGrid stroke={pal.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="channel" tick={{ fontSize: 15 }} interval={0} />
+          <YAxis tick={{ fill: pal.tick, fontSize: 11 }} width={34} allowDecimals={false} />
+          <Tooltip
+            cursor={{ fill: pal.grid, opacity: 0.25 }}
+            contentStyle={{
+              background: pal.tooltipBg,
+              border: `1px solid ${pal.tooltipBorder}`,
+              borderRadius: 8,
+              color: pal.tooltipInk,
+              fontSize: 12,
+              direction: "rtl",
+            }}
+            labelFormatter={(_l, p) =>
+              p && p[0] ? String((p[0].payload as { name?: string }).name ?? "") : ""
+            }
+            formatter={(v, n) => [fmtInt(Number(v) || 0), String(n)]}
+          />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {SERIES.map((s) => (
+            <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} radius={[3, 3, 0, 0]} maxBarSize={22}>
+              <LabelList
+                dataKey={s.key}
+                position="top"
+                formatter={(v) => {
+                  const n = Number(v) || 0;
+                  return n > 0 ? fmtInt(n) : "";
+                }}
+                style={{ fill: pal.tick, fontSize: 10 }}
+              />
+            </Bar>
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }

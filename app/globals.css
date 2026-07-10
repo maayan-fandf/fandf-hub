@@ -25743,8 +25743,13 @@ button.budget-need:focus-visible {
 }
 .rpt-ch-chart-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 0.8rem;
+}
+@media (max-width: 780px) {
+  .rpt-ch-chart-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .rpt-ch-chart-box {
   border: 1px solid var(--border-soft);
