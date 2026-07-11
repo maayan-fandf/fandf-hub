@@ -36,6 +36,7 @@ export default async function NativeProjectRail({
   tasksNode,
   alertsNode,
   crmNode,
+  objNode,
   prisotNode,
   pricesNode,
   clarityNode,
@@ -51,6 +52,9 @@ export default async function NativeProjectRail({
   /** התראות — Suspense-wrapped alerts. Null for clients / non-real-estate. */
   alertsNode?: ReactNode;
   crmNode?: ReactNode;
+  /** התנגדויות ומסע — objection distribution + journey analyses (the CRM
+   *  card's "analysis" view). */
+  objNode?: ReactNode;
   prisotNode?: ReactNode;
   pricesNode?: ReactNode;
   /** דף נחיתה insights (Clarity) — folded under סקירת פעילות when present. */
@@ -178,6 +182,15 @@ export default async function NativeProjectRail({
       label: "CRM",
       icon: "🧩",
       content: crmNode,
+    });
+  }
+  if (objNode) {
+    sections.push({
+      id: "objections",
+      group: "leads",
+      label: "התנגדויות ומסע",
+      icon: "💬",
+      content: objNode,
     });
   }
   if (prisotNode) {

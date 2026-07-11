@@ -610,6 +610,31 @@ export default async function ProjectOverviewPage({
       />
     </Suspense>
   ) : null;
+  // Rail-only: the CRM card splits into two sections — CRM (funnel view)
+  // and התנגדויות ומסע (analysis view: objection distribution + journey).
+  // One funnel fetch per view; the underlying Sheet read is request-cached.
+  const railCrmNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <CrmFunnelCard
+        company={companyForDashboard}
+        project={projectName}
+        monthFilter={monthOverride}
+        dateRange={crmDateRange}
+        view="funnel"
+      />
+    </Suspense>
+  ) : null;
+  const objectionsNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <CrmFunnelCard
+        company={companyForDashboard}
+        project={projectName}
+        monthFilter={monthOverride}
+        dateRange={crmDateRange}
+        view="analysis"
+      />
+    </Suspense>
+  ) : null;
   const clarityNode =
     isRealEstateProject && !isClientUser ? (
       <Suspense fallback={null}>
@@ -796,7 +821,8 @@ export default async function ProjectOverviewPage({
                 </>
               }
               alertsNode={alertsNode}
-              crmNode={crmNode}
+              crmNode={railCrmNode}
+              objNode={objectionsNode}
               clarityNode={clarityNode}
               prisotNode={prisotNode}
               pricesNode={pricesNode}

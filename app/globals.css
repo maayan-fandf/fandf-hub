@@ -6444,6 +6444,22 @@ html[data-theme="dark"] .quick-note-saved {
   /* margin-bottom removed — .project-main's flex-column gap is the
      single source of inter-section spacing on the project page. */
 }
+/* Rail split: one funnel fetch feeds two sections. "funnel" (the CRM
+   rail section) hides the objection + journey surfaces; "analysis" (the
+   התנגדויות ומסע section) hides the funnel/KPIs/cost/status/trendline/FB/
+   sellers. The source-chip filter + section head stay in both. */
+.crm-view-funnel .crm-source-analysis-grid,
+.crm-view-funnel .crm-collapsible {
+  display: none;
+}
+.crm-view-analysis .crm-kpi-row,
+.crm-view-analysis .crm-held-authority,
+.crm-view-analysis .crm-cost-block,
+.crm-view-analysis .crm-objection-grid,
+.crm-view-analysis .crm-fb-breakdown,
+.crm-view-analysis .crm-block-inline {
+  display: none;
+}
 /* Inset cards — every inner block gets its own subtle border + bg so the
    funnel / objections / chips / pie / trendline read as separate areas
    instead of merging into the section background. The KPI row stays

@@ -111,7 +111,19 @@ const TOP_OBJECTIONS = 5;
 const TOP_SOURCES_PER_ROW = 4;
 const TOP_OBJECTIONS_IN_PIE = 6;
 
-export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
+export default function CrmFunnelClient({
+  funnel,
+  view = "full",
+}: {
+  funnel: CrmFunnel;
+  /** Which slice of the card to show. "full" (default) = everything;
+   *  "funnel" = KPIs / cost / status / trendline / sellers (the CRM rail
+   *  section); "analysis" = objection distribution + journey collapsibles
+   *  (the התנגדויות rail section). Splitting lets one funnel feed two rail
+   *  sections; hiding is CSS-only (crm-view-*) so the shared source-chip
+   *  filter keeps driving both. */
+  view?: "full" | "funnel" | "analysis";
+}) {
   const sm = funnel.sourceMatrices;
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(sm.allSources),
@@ -429,10 +441,13 @@ export default function CrmFunnelClient({ funnel }: { funnel: CrmFunnel }) {
   }, [selected]);
 
   return (
-    <section className="project-section project-section-crm" dir="rtl">
+    <section
+      className={"project-section project-section-crm crm-view-" + view}
+      dir="rtl"
+    >
       <div className="section-head">
         <h2>
-          📋 משפך CRM
+          {view === "analysis" ? "💬 התנגדויות ומסע " : "📋 משפך CRM"}
           <span
             className="crm-platform-badge"
             title={`חשבון ב־${funnel.platform.toUpperCase()}: ${funnel.crmAccount}`}

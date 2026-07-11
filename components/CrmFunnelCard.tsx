@@ -70,9 +70,14 @@ export default async function CrmFunnelCard({
   project,
   monthFilter,
   dateRange,
+  view = "full",
 }: {
   company: string;
   project: string;
+  /** Splits the card for the native rail: "funnel" (CRM section) vs
+   *  "analysis" (התנגדויות ומסע). Default "full" keeps every current caller
+   *  (classic project page, /morning) rendering the whole card. */
+  view?: "full" | "funnel" | "analysis";
   /** Threaded from the page's `?monthOverride=YYYY-MM` so this card
    *  matches whatever month the dashboard iframe is rendering. Empty
    *  means "no filter — show all rows we have." */
@@ -182,7 +187,7 @@ export default async function CrmFunnelCard({
     spendByChannel,
   }).catch(() => null);
   if (!funnel || funnel.leads === 0) return null;
-  return <CrmFunnelClient funnel={funnel} />;
+  return <CrmFunnelClient funnel={funnel} view={view} />;
 }
 
 // Re-export so callers (alerts, etc.) keep importing from one place.
