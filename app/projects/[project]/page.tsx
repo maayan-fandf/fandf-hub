@@ -446,10 +446,14 @@ export default async function ProjectOverviewPage({
   // clients can't load that — route them to the proxy instead so the link
   // still works from their browser.
   const dashboardOpenUrl = isInternalUser ? dashboardFilteredUrl : proxyEmbedUrl;
-  // Native in-hub report (phase-1 migration off the Apps Script iframe):
-  // internal users opt in via ?report=native; everyone else keeps the
-  // legacy iframe until the native report reaches feature parity.
-  const useNativeReport = isInternalUser && sp.report === "native";
+  // Native in-hub report (phase-5): the native vertical-nav rail is now the
+  // DEFAULT for internal users — they get it without any query param.
+  // Internal users can fall back to the legacy Apps Script iframe with
+  // ?report=classic (legacy ?report=native links still resolve to native).
+  // Clients always keep the classic iframe until the native report has a
+  // client-view stripping mode (no ad-ops / negative-signal chrome) — do
+  // NOT flip clients here; that's the outward-facing cutover (task #56).
+  const useNativeReport = isInternalUser && sp.report !== "classic";
   // Media/felix gate for the native report's inline budget edit +
   // pacing copy-and-open controls (same gate as the budget desk).
   const canEditReportBudget = useNativeReport
@@ -471,7 +475,9 @@ export default async function ProjectOverviewPage({
       const v = sp[k];
       if (typeof v === "string" && v) qs.set(k, v);
     }
-    if (native) qs.set("report", "native");
+    // Native is the default now, so the "חדש" target carries no param and the
+    // "קלאסי" target opts out with ?report=classic.
+    if (!native) qs.set("report", "classic");
     const s = qs.toString();
     return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
   };
