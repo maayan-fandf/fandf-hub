@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useChartPalette } from "@/lib/chartTheme";
+import DateRangePicker from "@/components/DateRangePicker";
 import ReportMonthlyTrend from "@/components/report/ReportMonthlyTrend";
 import {
   REPORT_PLATS,
@@ -190,22 +191,19 @@ export default function ReportTrendsTab({ data }: { data: ProjectReportData }) {
               </button>
             );
           })}
+          {/* Single-popover calendar range picker (same one as the global
+              period picker + /tasks) — replaces the two bare <input type=date>
+              fields. Keyed off the active range so a quick-range button click
+              re-seeds the calendar; picking a full range applies it, and ניקוי
+              snaps back to the default window. */}
           <span className="rpt-range-dates">
-            <input
-              type="date"
-              value={range.from}
-              max={range.to}
-              onChange={(e) =>
-                e.target.value && setRange((r) => ({ ...r, from: e.target.value }))
-              }
-            />
-            —
-            <input
-              type="date"
-              value={range.to}
-              min={range.from}
-              onChange={(e) =>
-                e.target.value && setRange((r) => ({ ...r, to: e.target.value }))
+            <DateRangePicker
+              key={`${range.from}|${range.to}`}
+              initialFrom={range.from}
+              initialTo={range.to}
+              placeholder="בחר טווח תאריכים"
+              onChange={(from, to) =>
+                setRange(from && to ? { from, to } : defaultRange)
               }
             />
           </span>
