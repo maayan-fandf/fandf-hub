@@ -24436,9 +24436,12 @@ button.budget-need:focus-visible {
   border-color: #fed7aa;
 }
 .prl-triage-chip.is-accent {
-  background: var(--brand-soft, #eef2ff);
-  color: var(--brand, #4f46e5);
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
   border-color: transparent;
+}
+html[data-theme="dark"] .prl-triage-chip.is-accent {
+  color: color-mix(in srgb, var(--brand) 74%, #ffffff);
 }
 .prl-triage-chip:hover {
   filter: brightness(0.97);
@@ -24488,9 +24491,17 @@ button.budget-need:focus-visible {
   background: var(--surface-alt);
 }
 .prl-nav.is-active {
-  background: var(--brand-soft, #eef2ff);
-  color: var(--brand, #4f46e5);
+  /* Theme-adaptive brand tint — the old var(--brand-soft, #eef2ff) fallback
+     was a fixed LIGHT fill, so in dark mode the active item read as a washed
+     pale box. A color-mix over transparent tints correctly on either bg. */
+  background: color-mix(in srgb, var(--brand) 15%, transparent);
+  color: var(--brand);
   font-weight: 600;
+}
+html[data-theme="dark"] .prl-nav.is-active {
+  /* Brighten the active label for contrast on the dark rail. */
+  background: color-mix(in srgb, var(--brand) 24%, transparent);
+  color: color-mix(in srgb, var(--brand) 72%, #ffffff);
 }
 .prl-nav-icon {
   font-size: 1rem;
@@ -24511,8 +24522,11 @@ button.budget-need:focus-visible {
   flex: none;
 }
 .prl-bdg.is-accent {
-  background: var(--brand-soft, #eef2ff);
-  color: var(--brand, #4f46e5);
+  background: color-mix(in srgb, var(--brand) 20%, transparent);
+  color: var(--brand);
+}
+html[data-theme="dark"] .prl-bdg.is-accent {
+  color: color-mix(in srgb, var(--brand) 72%, #ffffff);
 }
 .prl-bdg.is-danger {
   background: #fee2e2;

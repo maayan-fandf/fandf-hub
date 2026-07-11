@@ -127,11 +127,23 @@ export default function ProjectRailShell({
         const n = alerts.querySelectorAll(".morning-signal-list > li").length;
         next.alerts = n > 0 ? { text: String(n), tone: "danger" } : null;
       }
-      // פריסה awaiting the client's requested changes (🔄) — actionable.
+      // פריסה: client requested changes (🔄) beats not-yet-approved (⏳);
+      // both are actionable.
       const prisot = root.querySelector('[data-sid="prisot"]');
       if (prisot) {
         next.prisot = prisot.querySelector(".prisot-change-request-chip")
           ? { text: "🔄", tone: "warning" }
+          : prisot.querySelector(".prisot-unapproved-badge")
+            ? { text: "⏳", tone: "warning" }
+            : null;
+      }
+      // מחירים: a published-price mismatch across surfaces (warn/severe pill).
+      const prices = root.querySelector('[data-sid="prices"]');
+      if (prices) {
+        next.prices = prices.querySelector(
+          ".price-check-status-warn, .price-check-status-severe",
+        )
+          ? { text: "⚠️", tone: "warning" }
           : null;
       }
       // Budget off its required pace (over/under) shows a red pace badge in
@@ -178,7 +190,20 @@ export default function ProjectRailShell({
           {
             target: "prisot",
             icon: "📄",
-            text: "פריסה — התבקשו שינויים",
+            text:
+              derived.prisot.text === "🔄"
+                ? "פריסה — התבקשו שינויים"
+                : "פריסה ממתינה לאישור",
+            tone: "warning" as const,
+          },
+        ]
+      : []),
+    ...(derived.prices
+      ? [
+          {
+            target: "prices",
+            icon: "💰",
+            text: "פערי מחירים בפרסום",
             tone: "warning" as const,
           },
         ]
