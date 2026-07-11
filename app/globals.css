@@ -24486,15 +24486,11 @@ button.budget-need:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.45rem;
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: var(--surface);
-  /* Hug the content instead of stretching the full column width — with a
-     single chip the full-width box read as a big empty banner. Stays on the
-     inline-start (right, RTL) and wraps if the chips overflow. */
-  align-self: flex-start;
-  max-width: 100%;
+  /* A subtle inline strip, NOT a boxed banner: full-width so it lines up with
+     the rail + content below (no lone right-hugging pill), and borderless so
+     the unused space doesn't read as an empty card. The alert chips carry
+     their own colour. */
+  padding: 0.1rem 0;
 }
 .prl-triage-lbl {
   font-size: 0.78rem;
