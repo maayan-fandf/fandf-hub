@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { CrmSourceFilterContext } from "./CrmSourceFilterContext";
 import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
@@ -125,9 +126,15 @@ export default function CrmFunnelClient({
   view?: "full" | "funnel" | "analysis";
 }) {
   const sm = funnel.sourceMatrices;
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(sm.allSources),
-  );
+  // Source-chip selection. When a CrmSourceFilterProvider is above us (the
+  // native rail — CRM + התנגדויות sections), we share ONE selection through
+  // it so filtering either section filters both. Otherwise (classic full
+  // card, /morning) it's local to this instance. The context value is a
+  // useState tuple, so the functional setSelected handlers below work either
+  // way.
+  const shared = useContext(CrmSourceFilterContext);
+  const localState = useState<Set<string>>(() => new Set(sm.allSources));
+  const [selected, setSelected] = shared ?? localState;
   // Reset the chip selection whenever the funnel's source set changes —
   // a month-rewind or a project→project navigation reuses THIS component
   // instance (same `[project]` route), so `selected` would otherwise keep
@@ -135,9 +142,11 @@ export default function CrmFunnelClient({
   // `leadsBySource` filtered by `selected`, a stale/disjoint set makes
   // all KPIs read 0 while the chips (rendered straight from the new
   // allSources) still show counts. React "adjust state during render"
-  // pattern → no extra render pass, no flash of wrong numbers.
+  // pattern → no extra render pass, no flash of wrong numbers. When sharing,
+  // prevSig starts "" so the very first render seeds the (empty-initialised)
+  // shared set to allSources.
   const srcSig = sm.allSources.join("|");
-  const [prevSrcSig, setPrevSrcSig] = useState(srcSig);
+  const [prevSrcSig, setPrevSrcSig] = useState(() => (shared ? "" : srcSig));
   if (srcSig !== prevSrcSig) {
     setPrevSrcSig(srcSig);
     setSelected(new Set(sm.allSources));

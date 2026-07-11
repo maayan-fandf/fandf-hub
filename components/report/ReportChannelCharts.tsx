@@ -73,8 +73,10 @@ function EffScatter({
     return <div className="rpt-empty rpt-empty-sm">{emptyText}</div>;
   return (
     <div className={`rpt-scatter-zone rpt-scatter-zone-${variant}`} dir="ltr">
-      <ResponsiveContainer width="100%" height={244}>
-        <ScatterChart margin={{ top: 16, right: 18, bottom: 34, left: 14 }}>
+      <ResponsiveContainer width="100%" height={252}>
+        {/* Extra top/right/bottom margin insets the plot so the corner
+            "יעיל"/"פחות יעיל" tags don't collide with edge dots + labels. */}
+        <ScatterChart margin={{ top: 28, right: 30, bottom: 40, left: 16 }}>
           <CartesianGrid stroke={pal.grid} strokeDasharray="3 3" />
           <XAxis
             type="number"
@@ -170,7 +172,8 @@ function BudgetBars({ channels }: { channels: ReportChannel[] }) {
         return (
           <div key={c.channel} className="rpt-budbar-row">
             <span className="rpt-budbar-label" title={c.channel}>
-              {icon(c.channel)}
+              <span className="rpt-budbar-icon" aria-hidden>{icon(c.channel)}</span>
+              <span className="rpt-budbar-name">{c.channel}</span>
             </span>
             <span className="rpt-budbar-slot">
               <span

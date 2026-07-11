@@ -44,6 +44,7 @@ import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import ProjectReportSection from "@/components/report/ProjectReportSection";
 import NativeProjectRail from "@/components/report/NativeProjectRail";
+import { CrmSourceFilterProvider } from "@/components/CrmSourceFilterContext";
 import CardActions from "@/components/CardActions";
 import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import { personDisplayName } from "@/lib/personDisplay";
@@ -870,6 +871,9 @@ export default async function ProjectOverviewPage({
               )}
             </div>
           )}
+          {/* One shared source-chip selection for the CRM + התנגדויות rail
+              sections (both CrmFunnelClient instances read this context). */}
+          <CrmSourceFilterProvider>
           <Suspense
             fallback={<div className="rpt-empty">טוען את הפרויקט…</div>}
           >
@@ -897,6 +901,7 @@ export default async function ProjectOverviewPage({
               pricesNode={pricesNode}
             />
           </Suspense>
+          </CrmSourceFilterProvider>
         </>
       ) : (
         <>

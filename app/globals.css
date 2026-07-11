@@ -26367,26 +26367,29 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-scatter-zone::before,
 .rpt-scatter-zone::after {
   position: absolute;
-  font-size: 0.68rem;
+  font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 0.18em 0.6em;
+  letter-spacing: 0.01em;
+  padding: 0.08em 0.45em;
   border-radius: 999px;
   pointer-events: none;
   z-index: 2;
+  opacity: 0.88;
 }
+/* Tucked into the extreme corners (the enlarged chart margin keeps them off
+   the plot) so they don't collide with edge dots + their labels. */
 .rpt-scatter-zone::before {
   content: "✨ יעיל";
-  top: 0.5em;
-  inset-inline-start: 0.5em;
-  background: rgba(16, 185, 129, 0.22);
+  top: 0.25em;
+  inset-inline-start: 0.25em;
+  background: rgba(16, 185, 129, 0.18);
   color: #065f46;
 }
 .rpt-scatter-zone::after {
   content: "⚠️ פחות יעיל";
-  bottom: 2.7em;
-  inset-inline-end: 0.5em;
-  background: rgba(239, 68, 68, 0.2);
+  bottom: 2.3em;
+  inset-inline-end: 0.25em;
+  background: rgba(239, 68, 68, 0.16);
   color: #991b1b;
 }
 .rpt-scatter-legend {
@@ -26417,10 +26420,25 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 }
 .rpt-budbar-row {
   display: grid;
-  grid-template-columns: 2em 1fr auto;
+  grid-template-columns: minmax(5.5em, 8em) 1fr auto;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
+}
+.rpt-budbar-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.rpt-budbar-icon {
+  flex: none;
+}
+.rpt-budbar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
 }
 .rpt-budbar-slot {
   min-width: 0;
