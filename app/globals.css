@@ -26398,6 +26398,10 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-scatter-chip b {
   color: var(--brand);
 }
+.rpt-scatter-chip-name {
+  color: var(--text-soft);
+  font-weight: 500;
+}
 /* budget-vs-cost fill bars */
 .rpt-budbar-list {
   display: flex;

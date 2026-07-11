@@ -669,9 +669,19 @@ export default function ReportChannelsTab({
                       type="checkbox"
                       checked={allChecked}
                       ref={(el) => {
-                        if (el) el.indeterminate = !allChecked;
+                        // Indeterminate only for a partial selection; a full
+                        // deselect (empty set) reads as a clean unchecked box.
+                        if (el)
+                          el.indeterminate =
+                            selected !== null && selected.size > 0;
                       }}
-                      onChange={() => setSelected(null)}
+                      // Proper master toggle: when everything is shown, clicking
+                      // clears the selection (empty set → no rows); otherwise it
+                      // re-selects all. Previously it always set null, so clicking
+                      // it while all were selected did nothing.
+                      onChange={() =>
+                        setSelected(allChecked ? new Set<string>() : null)
+                      }
                     />
                     <b>כל הערוצים</b>
                   </label>

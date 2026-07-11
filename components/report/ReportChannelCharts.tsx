@@ -148,7 +148,7 @@ function ScatterLegend({
     <div className="rpt-scatter-legend">
       {ranked.map((c, i) => (
         <span key={c.channel} className="rpt-scatter-chip" title={`${c.channel} · ${fmtILS(c[costKey])}`}>
-          <b>{i + 1}</b> {icon(c.channel)}
+          <b>{i + 1}</b> {icon(c.channel)} <span className="rpt-scatter-chip-name">{c.channel}</span>
         </span>
       ))}
     </div>
@@ -204,7 +204,7 @@ function OutcomeBars({ channels }: { channels: ReportChannel[] }) {
   if (!rows.length)
     return <div className="rpt-empty rpt-empty-sm">אין נתוני משפך</div>;
   const data = rows.map((c) => ({
-    channel: icon(c.channel),
+    channel: c.channel,
     name: c.channel,
     leads: c.leads,
     scheduled: c.scheduled,
@@ -215,12 +215,34 @@ function OutcomeBars({ channels }: { channels: ReportChannel[] }) {
     { key: "scheduled", label: "תיאומים", color: "#ec4899" },
     { key: "meetings", label: "ביצועים", color: "#f5576c" },
   ];
+  // Emoji on top, channel name (truncated) below — matches the dashboard's
+  // "emoji + name" x-axis labels without long Hebrew names overrunning.
+  const renderTick = (props: {
+    x?: number | string;
+    y?: number | string;
+    payload?: { value?: string | number };
+  }) => {
+    const px = Number(props.x) || 0;
+    const py = Number(props.y) || 0;
+    const nm = String(props.payload?.value ?? "");
+    const short = nm.length > 12 ? nm.slice(0, 11) + "…" : nm;
+    return (
+      <g transform={`translate(${px},${py})`}>
+        <text textAnchor="middle" y={13} fontSize={14}>
+          {icon(nm)}
+        </text>
+        <text textAnchor="middle" y={26} fontSize={9} fill={pal.tick}>
+          {short}
+        </text>
+      </g>
+    );
+  };
   return (
     <div className="rpt-scatter" dir="ltr">
-      <ResponsiveContainer width="100%" height={230}>
-        <BarChart data={data} margin={{ top: 16, right: 8, bottom: 4, left: 8 }} barCategoryGap="20%">
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={data} margin={{ top: 16, right: 8, bottom: 26, left: 8 }} barCategoryGap="20%">
           <CartesianGrid stroke={pal.grid} strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="channel" tick={{ fontSize: 15 }} interval={0} />
+          <XAxis dataKey="channel" tick={renderTick} interval={0} height={40} />
           <YAxis tick={{ fill: pal.tick, fontSize: 11 }} width={34} allowDecimals={false} />
           <Tooltip
             cursor={{ fill: pal.grid, opacity: 0.25 }}
