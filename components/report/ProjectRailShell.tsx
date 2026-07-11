@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 /**
  * Vertical-nav shell for the native project page. Replaces the "endless
@@ -104,6 +110,56 @@ export default function ProjectRailShell({
     [syncUrl, validIds],
   );
 
+  // Live-derived badges/triage read from the rendered (Suspense-streamed)
+  // panels — surfaces "where's the fire" on the rail without blocking the
+  // server sections on slow counts. Alerts: count the signal rows once
+  // they stream in. Static server badges (e.g. the tasks count) still show
+  // unless a derived rule overrides that id.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [derived, setDerived] = useState<Record<string, RailBadge | null>>({});
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const recompute = () => {
+      const next: Record<string, RailBadge | null> = {};
+      const alerts = root.querySelector('[data-sid="alerts"]');
+      if (alerts) {
+        const n = alerts.querySelectorAll(".morning-signal-list > li").length;
+        next.alerts = n > 0 ? { text: String(n), tone: "danger" } : null;
+      }
+      setDerived((prev) => {
+        const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+        for (const k of keys) {
+          if ((prev[k]?.text ?? "") !== (next[k]?.text ?? "")) return next;
+        }
+        return prev;
+      });
+    };
+    recompute();
+    const mo = new MutationObserver(recompute);
+    mo.observe(root, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
+
+  const badgeFor = (s: RailSection): RailBadge | null =>
+    Object.prototype.hasOwnProperty.call(derived, s.id)
+      ? derived[s.id]
+      : (s.badge ?? null);
+
+  const allTriage: RailTriage[] = [
+    ...triage,
+    ...(derived.alerts
+      ? [
+          {
+            target: "alerts",
+            icon: "🔥",
+            text: `${derived.alerts.text} התראות`,
+            tone: "danger" as const,
+          },
+        ]
+      : []),
+  ];
+
   // Only render a group header when it actually has sections (role
   // filtering can empty a group out).
   const shownGroups = groups.filter((g) =>
@@ -112,10 +168,10 @@ export default function ProjectRailShell({
 
   return (
     <div className="prl">
-      {triage.length > 0 && (
+      {allTriage.length > 0 && (
         <div className="prl-triage">
           <span className="prl-triage-lbl">דורש טיפול:</span>
-          {triage.map((t, i) => (
+          {allTriage.map((t, i) => (
             <button
               key={i}
               type="button"
@@ -146,20 +202,22 @@ export default function ProjectRailShell({
                       {s.icon}
                     </span>
                     <span className="prl-nav-lbl">{s.label}</span>
-                    {s.badge && (
-                      <span className={`prl-bdg is-${s.badge.tone}`}>
-                        {s.badge.text}
-                      </span>
-                    )}
+                    {(() => {
+                      const b = badgeFor(s);
+                      return b ? (
+                        <span className={`prl-bdg is-${b.tone}`}>{b.text}</span>
+                      ) : null;
+                    })()}
                   </button>
                 ))}
             </div>
           ))}
         </nav>
-        <div className="prl-content">
+        <div className="prl-content" ref={contentRef}>
           {sections.map((s) => (
             <div
               key={s.id}
+              data-sid={s.id}
               className={"prl-panel" + (active === s.id ? " is-active" : "")}
               role="tabpanel"
               aria-hidden={active !== s.id}
