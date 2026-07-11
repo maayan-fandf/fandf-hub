@@ -75,8 +75,39 @@ async function fetchKeysFromSheet(
   return { headers, rows: values.slice(1) };
 }
 
+type KeysData = { headers: string[]; rows: unknown[][] };
+
+// Process-local last-good Keys snapshot — a serve-stale-on-error floor.
+// The Keys tab is the root of nearly everything on a project page (roster →
+// getMyProjects, the CRM-account mapping, project type, landing URLs,
+// campaign IDs). A single transient Sheets failure on a COLD/expired cache
+// used to throw all the way up and blank the whole page (the cascade). Once
+// we've read Keys successfully even once per instance, a later failure
+// serves the last-good rows instead of throwing. Keys is identical for
+// every subject (the SA reads the master tab), so one shared slot is correct.
+let lastGoodKeys: KeysData | null = null;
+
+async function fetchKeysResilient(subjectEmail: string): Promise<KeysData> {
+  try {
+    const data = await fetchKeysFromSheet(subjectEmail);
+    // Only snapshot a real read — an empty result is more likely a transient
+    // blank than a genuinely empty Keys tab, and caching it would defeat the
+    // fallback.
+    if (data.headers.length) lastGoodKeys = data;
+    return data;
+  } catch (e) {
+    if (lastGoodKeys) {
+      console.warn(
+        `[keys] read failed — serving last-good snapshot (${lastGoodKeys.rows.length} rows): ${String((e as Error)?.message ?? e).slice(0, 140)}`,
+      );
+      return lastGoodKeys;
+    }
+    throw e; // never read Keys yet this instance — nothing to fall back to
+  }
+}
+
 const fetchKeysCrossRequest = unstable_cache(
-  fetchKeysFromSheet,
+  fetchKeysResilient,
   ["readKeys"],
   { revalidate: KEYS_CACHE_TTL_SECONDS, tags: [KEYS_CACHE_TAG] },
 );
