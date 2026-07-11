@@ -24390,8 +24390,78 @@ button.budget-need:focus-visible {
 /* ─── Project vertical-nav rail shell ─── */
 .rpt-railbar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.5rem;
   margin-top: 0.4rem;
+}
+/* Internal-only "preview as client" toggle in the railbar. */
+.rpt-clientview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  background: var(--surface);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.rpt-clientview-toggle:hover {
+  color: var(--text);
+  border-color: var(--brand);
+}
+.rpt-clientview-toggle.is-active {
+  color: #fff;
+  background: color-mix(in srgb, var(--brand) 78%, #7c3aed);
+  border-color: transparent;
+}
+/* While previewing the client view, mark the whole report so it's obvious
+   the owner is looking at the stripped experience, not the full one. */
+.rpt-clientview .prl {
+  outline: 2px dashed color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 4px;
+  border-radius: 14px;
+}
+
+/* ── Client-view stripping ─────────────────────────────────────────────
+   Mirrors the classic Apps Script report's `body.client-view` rules: hide
+   the negative-signal / diagnosis / ad-ops chrome, keep the headline +
+   positives. Applied whenever <main> carries `.rpt-clientview` (real client
+   or internal preview). Budget/spend/CPL numbers deliberately STAY — parity
+   with the classic client view, which shows them. Edit / deep-link controls
+   are additionally force-disabled server-side (canEditBudget=false). */
+.rpt-clientview .rpt-anomaly.is-bad,             /* period-over-period bad chips */
+.rpt-clientview .rpt-pace-badge.is-red,          /* pacing verdict (off pace) */
+.rpt-clientview .rpt-pace-badge.is-yellow,
+.rpt-clientview .rpt-ai-trigger,                 /* AI summary button */
+.rpt-clientview .rpt-ai,                          /* AI summary result */
+.rpt-clientview .rpt-ch-alerts,                  /* negative channel-alert strip */
+.rpt-clientview .rpt-bstrip,                     /* budget-balance / rebalance strip */
+.rpt-clientview .rpt-pd-card.is-bad,             /* paid-diagnosis bad/warn cards */
+.rpt-clientview .rpt-pd-card.is-warn,
+.rpt-clientview .rpt-ch-dot,                     /* campaign live/paused/mixed dots */
+.rpt-clientview .rpt-pace-mark,                  /* ✓טיפלתי handled mark */
+.rpt-clientview .rpt-pace-alert,                 /* pacing gap ⚠️ */
+.rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
+.rpt-clientview .rpt-pace-action,                /* ⬇/⬆/🔍 budget-action arrows */
+.rpt-clientview .rpt-cr-badge-fatigue,           /* creative fatigue badges */
+.rpt-clientview .rpt-dx {                        /* "🔬 איבחון משפך" ad-vs-landing diagnosis */
+  display: none !important;
+}
+/* Collapse the containers that would be left empty once their negatives are
+   hidden (mirror of the classic `.alerts:not(:has(.alert.good))`). */
+.rpt-clientview .rpt-header-alerts:not(:has(.rpt-anomaly.is-good)),
+.rpt-clientview .rpt-paid-diag:not(:has(.rpt-pd-card:not(.is-bad):not(.is-warn))) {
+  display: none !important;
+}
+/* Neutralize the pacing cell's off-pace tint so the client sees just the
+   plain daily-rate number, no red/amber "you're off pace" signal. */
+.rpt-clientview td.rpt-pace {
+  background-color: transparent !important;
 }
 .prl {
   display: flex;

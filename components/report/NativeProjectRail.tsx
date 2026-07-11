@@ -32,6 +32,7 @@ export default async function NativeProjectRail({
   period,
   company = "",
   canEditBudget = false,
+  clientView = false,
   initialSection,
   tasksNode,
   alertsNode,
@@ -46,6 +47,12 @@ export default async function NativeProjectRail({
   period: string;
   company?: string;
   canEditBudget?: boolean;
+  /** Client-stripped render: negative-signal / diagnosis / ad-ops chrome is
+   *  hidden (via the `rpt-clientview` class the page sets on <main>), and any
+   *  budget-edit / ad-manager deep-link controls are force-disabled here so a
+   *  client (or an internal user previewing the client view) never sees them.
+   *  The negative-element hiding itself is CSS-driven — see globals.css. */
+  clientView?: boolean;
   initialSection?: string;
   /** משימות + הודעות (tasks queue + discussion). Always present. */
   tasksNode: ReactNode;
@@ -61,6 +68,10 @@ export default async function NativeProjectRail({
   clarityNode?: ReactNode;
   tasksBadge?: number;
 }) {
+  // A client (or an internal user previewing the client view) never gets the
+  // budget-edit / ad-manager deep-link controls, so drop the ad-links fetch
+  // and the edit gate entirely in that mode.
+  const effectiveCanEdit = clientView ? false : canEditBudget;
   const pacingDismissals: Record<string, PacingDismissal> = {};
   let adLinks: ReportAdLinks | null = null;
   let data = null;
@@ -70,7 +81,7 @@ export default async function NativeProjectRail({
       listAlertDismissals().catch(
         () => ({}) as Awaited<ReturnType<typeof listAlertDismissals>>,
       ),
-      canEditBudget
+      effectiveCanEdit
         ? getProjectAdLinks(projectName).catch(() => null)
         : Promise.resolve(null),
     ]);
@@ -139,7 +150,7 @@ export default async function NativeProjectRail({
         <ReportChannelsTab
           data={data}
           pacingDismissals={pacingDismissals}
-          canEditBudget={canEditBudget}
+          canEditBudget={effectiveCanEdit}
           adLinks={adLinks}
         />
       ),

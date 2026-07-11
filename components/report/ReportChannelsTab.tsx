@@ -850,13 +850,13 @@ export default function ReportChannelsTab({
                         {c.dailyRate ? fmtILS(c.dailyRate) : "—"}
                       </span>
                       {pacing?.action === "lower" && (
-                        <span aria-label="הורד תקציב"> ⬇</span>
+                        <span className="rpt-pace-action" aria-label="הורד תקציב"> ⬇</span>
                       )}
                       {pacing?.action === "raise" && (
-                        <span aria-label="העלה תקציב"> ⬆</span>
+                        <span className="rpt-pace-action" aria-label="העלה תקציב"> ⬆</span>
                       )}
                       {pacing?.action === "investigate" && (
-                        <span aria-label="בדוק delivery"> 🔍</span>
+                        <span className="rpt-pace-action" aria-label="בדוק delivery"> 🔍</span>
                       )}
                       {gapStillOff && fade !== "dismissed" && (
                         <button

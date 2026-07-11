@@ -107,6 +107,11 @@ type Search = {
   /** Native rail layout's active section (?section=). Mirrored back into
    *  the URL by ProjectRailShell via replaceState. */
   section?: string;
+  /** "1" = render the native report stripped to the client view (negatives /
+   *  diagnosis / ad-ops chrome hidden). Set automatically for client-tier
+   *  users; internal users can pass ?clientView=1 to PREVIEW the client view
+   *  before any real client cutover. */
+  clientView?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -454,6 +459,13 @@ export default async function ProjectOverviewPage({
   // client-view stripping mode (no ad-ops / negative-signal chrome) — do
   // NOT flip clients here; that's the outward-facing cutover (task #56).
   const useNativeReport = isInternalUser && sp.report !== "classic";
+  // Client-stripped render of the native report: real client-tier users always
+  // get it; internal users can PREVIEW it with ?clientView=1 (to review the
+  // client experience before the real client cutover — task #56). Drives the
+  // `rpt-clientview` class on <main> (CSS hides the negative/ad-ops chrome) and
+  // the clientView prop into NativeProjectRail (force-disables edit controls).
+  const reportClientView =
+    isClientUser || (isInternalUser && sp.clientView === "1");
   // Media/felix gate for the native report's inline budget edit +
   // pacing copy-and-open controls (same gate as the budget desk).
   const canEditReportBudget = useNativeReport
@@ -478,6 +490,30 @@ export default async function ProjectOverviewPage({
     // Native is the default now, so the "חדש" target carries no param and the
     // "קלאסי" target opts out with ?report=classic.
     if (!native) qs.set("report", "classic");
+    const s = qs.toString();
+    return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
+  };
+  // Internal-only "preview as client" toggle — adds/removes ?clientView=1 while
+  // keeping the current period/section so the owner can review the stripped
+  // client view before the real client cutover.
+  const clientPreviewHref = (on: boolean): string => {
+    const qs = new URLSearchParams();
+    const keep = [
+      "resolved",
+      "person",
+      "view",
+      "channel",
+      "company",
+      "monthOverride",
+      "from",
+      "to",
+      "section",
+    ] as const;
+    for (const k of keep) {
+      const v = sp[k];
+      if (typeof v === "string" && v) qs.set(k, v);
+    }
+    if (on) qs.set("clientView", "1");
     const s = qs.toString();
     return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
   };
@@ -676,7 +712,11 @@ export default async function ProjectOverviewPage({
   ) : null;
 
   return (
-    <main className="container project-main">
+    <main
+      className={
+        "container project-main" + (reportClientView ? " rpt-clientview" : "")
+      }
+    >
       {/* Header + the client approve-prompt share ONE sticky wrapper so both
           stay pinned on scroll — the header no longer scrolls away, and the
           prompt sits beneath it (not riding over it). For internal viewers
@@ -809,6 +849,25 @@ export default async function ProjectOverviewPage({
                   קלאסי
                 </Link>
               </span>
+              {/* Preview-as-client toggle (internal only): strips the report to
+                  what a client would see, to review before the real cutover. */}
+              {reportClientView ? (
+                <Link
+                  className="rpt-clientview-toggle is-active"
+                  href={clientPreviewHref(false)}
+                  title="את/ה צופה בדוח כפי שהלקוח רואה — לחץ לחזרה לתצוגה המלאה"
+                >
+                  👁️ תצוגת לקוח · יציאה
+                </Link>
+              ) : (
+                <Link
+                  className="rpt-clientview-toggle"
+                  href={clientPreviewHref(true)}
+                  title="הצג את הדוח כפי שהלקוח יראה אותו (ללא הצ׳רום הפנימי)"
+                >
+                  👁️ תצוגת לקוח
+                </Link>
+              )}
             </div>
           )}
           <Suspense
@@ -819,6 +878,7 @@ export default async function ProjectOverviewPage({
               period={dashboardPeriod}
               company={companyForDashboard}
               canEditBudget={canEditReportBudget}
+              clientView={reportClientView}
               initialSection={
                 typeof sp.section === "string" ? sp.section : undefined
               }
