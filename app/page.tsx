@@ -111,27 +111,80 @@ export default async function HomePage() {
       )
     : new Set<string>();
 
-  // endIso map from the morning feed — powers the hide-ended filter.
-  // inactiveByProject — projects with no current-month media activity.
+  // Per-project portfolio metrics — budget / spend / flight-window / CRM
+  // funnel — derived DIRECTLY from the ALL CLIENTS sheet, NOT the Apps Script
+  // morning feed. The morning feed is flaky (Apps Script), and when it was
+  // down it blanked every pill's metrics AND broke the active/ended filters
+  // (nothing got a data-ended / data-inactive stamp, so the filter hid
+  // nothing). The direct read is the same source the project pages use.
   //
-  // morning.spend + morning.budget are summed from the master tab's
-  // `current` rows. A project is "inactive" only when BOTH are zero —
-  // meaning no spend has landed AND no budget is planned for the period.
-  // Spend-alone was too strict: on the 1st of each month the freshly-
-  // rolled current rows naturally have spend=0 because the month just
-  // started, which incorrectly hid every project that had been pre-
-  // rolled. Maayan flagged 2026-06-01: גיא ודורון's 6 projects all
-  // showed inactive on the morning of June 1 even though their June
-  // budgets were set. Adding the budget check fixes the day-1 case.
-  // General (כללי) is never marked inactive — the page/menu stamp
-  // data-inactive="0" on it.
+  // Internal-only: leads + cost must never reach a client render, so gate on
+  // the caller not being a client (the morning feed — empty for clients — was
+  // the previous internal proxy for exactly this reason). When we can't build
+  // the metrics (a client, or the reads failed) the maps stay empty and the
+  // filters simply show everything, matching the prior no-feed behavior.
+  const todayIso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+  const pctTimeFor = (startIso: string, endIso: string): number => {
+    if (!startIso || !endIso) return 0;
+    const s = Date.parse(startIso + "T00:00:00Z");
+    const e = Date.parse(endIso + "T00:00:00Z");
+    const t = Date.parse(todayIso + "T00:00:00Z");
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return 0;
+    const total = e - s;
+    return Math.min(Math.max(t - s, 0), total) / total;
+  };
+
+  const showPortfolioMetrics =
+    !!data &&
+    !data.isClient &&
+    allClientsRes.status === "fulfilled" &&
+    slugMapRes.status === "fulfilled";
+  const funnelIndex = showPortfolioMetrics
+    ? sumProjectFunnels(allClientsRes.value)
+    : null;
+  const slugByName =
+    slugMapRes.status === "fulfilled"
+      ? slugMapRes.value
+      : new Map<string, string>();
+
   const endIsoByProject = new Map<string, string>();
   const inactiveByProject = new Set<string>();
-  if (morning) {
-    for (const p of morning.projects) {
-      if (p.endIso) endIsoByProject.set(p.name, p.endIso);
-      if (!(p.spend > 0) && !(p.budget > 0)) {
-        inactiveByProject.add(p.name);
+  // Budget + time progress per project (native — was `morning`-sourced).
+  const progressByProject = new Map<
+    string,
+    { pctBudget: number; pctTime: number; budget: number; spend: number }
+  >();
+  // Per-project CRM funnel (leads → scheduled → held) + blended cost-per.
+  const funnelByProject = new Map<string, ProjectFunnelTotals>();
+  if (funnelIndex) {
+    for (const p of allProjects) {
+      // General (כללי) is never a media project — leave it out of the metric
+      // maps so it's never marked inactive / ended.
+      if (p.name === GENERAL_PROJECT_NAME) continue;
+      const f = lookupProjectFunnel(
+        funnelIndex,
+        p.name,
+        slugByName.get(p.name.toLowerCase().trim()),
+      );
+      // No ALL CLIENTS match → leave the pill untouched (don't risk hiding a
+      // live project on a name/slug join miss).
+      if (!f) continue;
+      if (f.endIso) endIsoByProject.set(p.name, f.endIso);
+      // "inactive" = no spend has landed AND no budget is planned. The budget
+      // check keeps day-1-of-month projects (spend still 0) visible.
+      if (!(f.spend > 0) && !(f.budget > 0)) inactiveByProject.add(p.name);
+      if (f.budget > 0 || (f.startIso && f.endIso)) {
+        progressByProject.set(p.name, {
+          pctBudget: f.budget > 0 ? f.spend / f.budget : 0,
+          pctTime: pctTimeFor(f.startIso, f.endIso),
+          budget: f.budget,
+          spend: f.spend,
+        });
+      }
+      if (f.leads > 0 || f.scheduled > 0 || f.held > 0) {
+        funnelByProject.set(p.name, f);
       }
     }
   }
@@ -157,13 +210,11 @@ export default async function HomePage() {
   // Alert counts per project + per company, built from the morning feed.
   // Dismissed signals are explicitly excluded so badges reflect what still
   // needs attention — matches the severity-count logic inside the feed.
+  // Alert badge counts stay sourced from the morning feed — the alert
+  // *signals* are the morning-feed computation itself and have no direct
+  // equivalent. When the feed is down, pills just show no alert badge (the
+  // metrics + filters no longer depend on it).
   const alertsByProject = new Map<string, AlertCounts>();
-  // Budget + time progress per project, also from morning feed. Piggy-backs
-  // on the fetch that's already happening for alerts — no extra API call.
-  const progressByProject = new Map<
-    string,
-    { pctBudget: number; pctTime: number; budget: number; spend: number }
-  >();
   if (morning) {
     for (const p of morning.projects) {
       const ac: AlertCounts = { severe: 0, warn: 0, info: 0 };
@@ -175,14 +226,6 @@ export default async function HomePage() {
       }
       if (ac.severe || ac.warn || ac.info) {
         alertsByProject.set(p.name, ac);
-      }
-      if (p.budget > 0 || p.daysTotal > 0) {
-        progressByProject.set(p.name, {
-          pctBudget: p.pctBudget,
-          pctTime: p.pctTime,
-          budget: p.budget,
-          spend: p.spend,
-        });
       }
     }
   }
@@ -199,38 +242,6 @@ export default async function HomePage() {
     }
     if (agg.severe || agg.warn || agg.info) {
       alertsByCompany.set(g.company || "__ungrouped", agg);
-    }
-  }
-
-  // Per-project CRM funnel (leads → scheduled → held) + blended
-  // cost-per-metric, summed from the project's "current" ALL CLIENTS rows
-  // and joined by Keys slug — the same slug-keyed aggregation /stats and
-  // the budget desk use, so the numbers agree across surfaces. The window
-  // is campaign-to-date (the full flight window), matching the project
-  // page's default funnel.
-  //
-  // Internal-only by construction: the morning feed returns projects only
-  // for staff/admins (empty for clients), so gating on it keeps the
-  // portfolio-wide funnel data — leads + cost — off client-facing renders,
-  // exactly like the budget/time bars below.
-  const funnelByProject = new Map<string, ProjectFunnelTotals>();
-  if (
-    morning &&
-    morning.projects.length > 0 &&
-    allClientsRes.status === "fulfilled" &&
-    slugMapRes.status === "fulfilled"
-  ) {
-    const funnelIndex = sumProjectFunnels(allClientsRes.value);
-    const slugByName = slugMapRes.value;
-    for (const p of allProjects) {
-      const f = lookupProjectFunnel(
-        funnelIndex,
-        p.name,
-        slugByName.get(p.name.toLowerCase().trim()),
-      );
-      if (f && (f.leads > 0 || f.scheduled > 0 || f.held > 0)) {
-        funnelByProject.set(p.name, f);
-      }
     }
   }
 

@@ -429,6 +429,14 @@ export type ProjectFunnelTotals = {
   cps: number;
   /** cost per held meeting (spend ÷ held), 0 when none. */
   cpm: number;
+  /** Approved budget summed across the project's current rows — lets the
+   *  home grid derive budget-utilization + the "inactive" (no spend AND no
+   *  budget) filter WITHOUT the Apps Script morning feed. */
+  budget: number;
+  /** Flight window (widest across the project's current rows) — powers the
+   *  time-progress bar + the hide-ended filter natively. "" when absent. */
+  startIso: string;
+  endIso: string;
 };
 
 /**
@@ -444,14 +452,28 @@ export type ProjectFunnelIndex = {
   byName: Map<string, ProjectFunnelTotals>;
 };
 
-type FunnelAcc = { leads: number; scheduled: number; held: number; spend: number };
+type FunnelAcc = {
+  leads: number;
+  scheduled: number;
+  held: number;
+  spend: number;
+  budget: number;
+  startIso: string;
+  endIso: string;
+};
 
 function addFunnel(acc: Map<string, FunnelAcc>, key: string, r: AllClientsRow): void {
-  const cur = acc.get(key) ?? { leads: 0, scheduled: 0, held: 0, spend: 0 };
+  const cur =
+    acc.get(key) ??
+    { leads: 0, scheduled: 0, held: 0, spend: 0, budget: 0, startIso: "", endIso: "" };
   cur.leads += r.leads;
   cur.scheduled += r.scheduled;
   cur.held += r.meetings;
   cur.spend += r.spend;
+  cur.budget += r.budget;
+  // Widest flight window across the project's channels.
+  if (r.startIso && (!cur.startIso || r.startIso < cur.startIso)) cur.startIso = r.startIso;
+  if (r.endIso && r.endIso > cur.endIso) cur.endIso = r.endIso;
   acc.set(key, cur);
 }
 
@@ -466,6 +488,9 @@ function finalizeFunnels(acc: Map<string, FunnelAcc>): Map<string, ProjectFunnel
       cpl: t.leads > 0 ? t.spend / t.leads : 0,
       cps: t.scheduled > 0 ? t.spend / t.scheduled : 0,
       cpm: t.held > 0 ? t.spend / t.held : 0,
+      budget: t.budget,
+      startIso: t.startIso,
+      endIso: t.endIso,
     });
   }
   return out;

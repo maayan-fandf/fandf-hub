@@ -526,6 +526,9 @@ body {
 @media (min-width: 1024px) {
   body[data-client-portal="1"] .app-shell-with-agenda {
     grid-template-columns: 1fr;
+    /* No agenda column for clients → no breakout correction needed (keeps the
+       project rail's full-bleed exact if clients ever get the native rail). */
+    --agenda-col: 0px;
   }
 }
 
@@ -12065,6 +12068,13 @@ html[data-theme="dark"] .tasks-campaign-chip {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0;
+  /* Width of the reserved agenda column. Published as a custom property so
+     the project rail's full-bleed breakout (.prl-body) can correct for it —
+     the agenda column offsets .app-shell-main from the viewport centre, so
+     a naive `calc(50% - 50vw)` overshoots by half this value and the rail
+     gets clipped by `overflow-x: clip`. 0 below the desktop breakpoint (no
+     agenda column). */
+  --agenda-col: 0px;
   /* Smooth column-width transition when the panel collapses/expands.
      Skipped under prefers-reduced-motion (block at the end of this
      section). */
@@ -12073,6 +12083,7 @@ html[data-theme="dark"] .tasks-campaign-chip {
 @media (min-width: 1024px) {
   .app-shell-with-agenda {
     grid-template-columns: 1fr 320px;
+    --agenda-col: 320px;
   }
   /* Collapsed state — the agenda column shrinks to a thin strip
      (just enough for the toggle button + vertical label). Uses
@@ -12084,6 +12095,7 @@ html[data-theme="dark"] .tasks-campaign-chip {
      [data-collapsed="1"] > *:not(...) rule, just less elegantly. */
   .app-shell-with-agenda:has(.agenda-panel[data-collapsed="1"]) {
     grid-template-columns: 1fr 2.4em;
+    --agenda-col: 2.4em;
   }
 }
 .app-shell-main {
@@ -24649,7 +24661,12 @@ html[data-theme="dark"] .prl-bdg.is-accent {
    escapes. */
 @media (min-width: 821px) {
   .prl-body {
-    margin-inline-start: calc(50% - 50vw);
+    /* Full-bleed the rail out to the viewport's inline-start (physical right,
+       RTL). The `50%` resolves against the centred .container, but when the
+       agenda panel reserves a column .app-shell-main is NOT viewport-centred,
+       so add back half the agenda column width to land exactly on the edge
+       instead of overshooting into the `overflow-x: clip` zone. */
+    margin-inline-start: calc(50% - 50vw + var(--agenda-col, 0px) / 2);
     padding-inline-start: 1.25rem;
   }
   .prl-rail {
