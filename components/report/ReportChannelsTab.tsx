@@ -539,6 +539,35 @@ export default function ReportChannelsTab({
     { budget: 0, spend: 0, leads: 0, scheduled: 0, meetings: 0, daily: 0 },
   );
 
+  // One budget-utilization bar per row, spanning the תקציב + עלות cells: the
+  // TRACK length ∝ this channel's budget (biggest budget in view = full width,
+  // small budget = short bar), and it's FILLED to the actual spend on the same
+  // scale (red when over budget). The bar is split across the two equal-width
+  // cells — `a`/`b` are this cell's slice of the combined [0,1] bar: in RTL the
+  // right cell (תקציב) is [0,.5], the left cell (עלות) is [.5,1]. Only in the
+  // non-month view where both cells exist.
+  const maxBudget = Math.max(1, ...visible.map((c) => c.budget));
+  const spanBar = (
+    budget: number,
+    spend: number,
+    a: number,
+    b: number,
+  ): { backgroundImage: string } | undefined => {
+    const budgetR = Math.min(budget / maxBudget, 1);
+    if (budgetR <= 0) return undefined;
+    const over = budget > 0 && spend > budget;
+    const spendR = Math.min(spend / maxBudget, budgetR); // fill clamped into track
+    const loc = (r: number) => Math.max(0, Math.min((r - a) / (b - a), 1)) * 100;
+    const bL = loc(budgetR);
+    const sL = loc(spendR);
+    if (bL <= 0) return undefined;
+    const track = "rgba(20,184,166,0.13)";
+    const fill = over ? "rgba(239,68,68,0.34)" : "rgba(20,184,166,0.44)";
+    return {
+      backgroundImage: `linear-gradient(to left, ${fill} ${sL}%, ${track} ${sL}%, ${track} ${bL}%, transparent ${bL}%)`,
+    };
+  };
+
   const toggleChannel = (ch: string) =>
     setSelected((cur) => {
       const base = cur ?? new Set(channels.map((c) => c.channel));
@@ -804,7 +833,10 @@ export default function ReportChannelsTab({
                     )}
                   </td>
                   {!isMonth && (
-                    <td className="rpt-budcell">
+                    <td
+                      className="rpt-budcell rpt-money-cell"
+                      style={spanBar(c.budget, c.spend, 0, 0.5)}
+                    >
                       {canEditBudget && data.tabSlug ? (
                         <BudgetCell
                           tabSlug={data.tabSlug}
@@ -817,7 +849,12 @@ export default function ReportChannelsTab({
                       )}
                     </td>
                   )}
-                  <td>{fmtILS(c.spend)}</td>
+                  <td
+                    className="rpt-money-cell"
+                    style={isMonth ? undefined : spanBar(c.budget, c.spend, 0.5, 1)}
+                  >
+                    {fmtILS(c.spend)}
+                  </td>
                   <td>{fmtInt(c.leads)}</td>
                   <td style={costHeatStyle("costPerLead", c.costPerLead)}>
                     {c.costPerLead > 0 ? fmtILS(c.costPerLead) : "—"}

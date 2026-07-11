@@ -25143,6 +25143,13 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* תקציב + עלות cells carry the two halves of the row's budget-utilization
+   bar (see spanBar). Equal fixed width so the halves line up into one
+   continuous bar; the number sits on top of its background gradient. */
+.rpt-ch-table td.rpt-money-cell,
+.rpt-ch-table th.rpt-money-cell {
+  width: 5.5rem;
+}
 .rpt-ch-name {
   display: flex;
   align-items: center;
