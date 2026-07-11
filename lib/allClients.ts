@@ -614,6 +614,43 @@ export const getProjectMonthlyRaw = cache(
   },
 );
 
+/**
+ * Distinct historical months ("YYYY-MM") present in the ALL CLIENTS
+ * "חודשי" rows across every project, minus the current in-flight
+ * calendar month, sorted descending.
+ *
+ * Native replacement for the Apps Script `getAvailableMonths` action:
+ * the month-picker options are derived from the very monthly rows the
+ * report's historical-trend section already reads, so the picker no
+ * longer depends on the Apps Script report being reachable. The union
+ * across all projects (a global month list) mirrors the Apps Script
+ * behavior, and `readAllClientsRows` is React-cache()d and already
+ * loaded during a project render, so this adds ~zero marginal cost.
+ *
+ * The current month is excluded because it's mid-flight — a "rewind"
+ * view of it would just duplicate live mode (parity with the Apps
+ * Script `m < todayMonth` filter, Asia/Jerusalem).
+ */
+export const getAvailableMonthsDirect = cache(
+  async (subjectEmail: string): Promise<{ months: string[] }> => {
+    const rows = await readAllClientsRows(subjectEmail);
+    const todayMonth = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+    })
+      .format(new Date())
+      .slice(0, 7); // "YYYY-MM"
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (r.rowType !== "חודשי") continue;
+      const month = r.startIso.slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(month)) continue;
+      if (month >= todayMonth) continue;
+      set.add(month);
+    }
+    return { months: Array.from(set).sort().reverse() };
+  },
+);
+
 /** One project's monthly totals, summed across channels per calendar
  *  month — the shape the native report's forecast + prev-funnel need. */
 export type ProjectMonthlyTotals = {

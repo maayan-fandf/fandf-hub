@@ -10,7 +10,6 @@ export async function generateMetadata({
 import Link from "next/link";
 import { Suspense } from "react";
 import {
-  getAvailableMonths,
   getProjectComments,
   getMyMentions,
   getMyProjects,
@@ -33,7 +32,11 @@ import { isRealEstateType } from "@/lib/keys";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
 import { listAlertDismissals, applyDismissalsToSignals } from "@/lib/alertDismissals";
-import { getAllClientsCurrentForProject, type AllClientsRow } from "@/lib/allClients";
+import {
+  getAllClientsCurrentForProject,
+  getAvailableMonthsDirect,
+  type AllClientsRow,
+} from "@/lib/allClients";
 import { driveFolderOwner } from "@/lib/sa";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
@@ -1846,16 +1849,18 @@ function buildDashboardUrl(
  * users just can't pick a month from the hub side.
  */
 // Remembers the last non-empty available-months list (per server instance).
-// getAvailableMonths hits the Apps Script report, which can be slow / cold
-// (especially just after a report redeploy) and occasionally times out —
-// without this fallback the month picker silently vanished on such a render
-// (seen on /projects/קאזר 2026-07-07). The list is global + slow-changing, so
-// reusing the last good one is safe.
+// The months now come from a direct ALL CLIENTS read (getAvailableMonthsDirect)
+// instead of the Apps Script report — which used to be slow / cold (especially
+// just after a report redeploy) and occasionally timed out, silently vanishing
+// the picker (seen on /projects/קאזר 2026-07-07). The direct read reuses the
+// request's already-cached ALL CLIENTS rows, but this last-good fallback is
+// kept as cheap defense-in-depth: the list is global + slow-changing, so
+// reusing the last good one across a transient blank is safe.
 let _lastAvailableMonths: string[] = [];
 async function DashboardMonthOverrideSlot({ current }: { current: string }) {
   let months: string[] = [];
   try {
-    const res = await getAvailableMonths();
+    const res = await getAvailableMonthsDirect(driveFolderOwner());
     months = Array.isArray(res?.months) ? res.months : [];
   } catch {
     months = [];

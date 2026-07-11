@@ -379,14 +379,10 @@ const fetchMyProjectsCached = unstable_cache(
 // matches Keys TTL across all instances. Apps Script path (below)
 // keeps its cache because the read itself is slow (~1s).
 
-/**
- * List of months ("YYYY-MM") that have חודשי data for the user's accessible
- * projects, sorted newest-first and clipped to ≤ current calendar month.
- * Drives the hub-side monthOverride picker on each project page.
- */
-export async function getAvailableMonths(): Promise<{ months: string[] }> {
-  return callApi<{ months: string[] }>("getAvailableMonths");
-}
+// The month-picker options ("YYYY-MM" list) are now derived natively from the
+// ALL CLIENTS "חודשי" rows via getAvailableMonthsDirect (lib/allClients) — the
+// Apps Script `getAvailableMonths` wrapper was retired 2026-07 so the picker no
+// longer depends on the report being reachable.
 
 export async function getMyProjects(overrideEmail?: string): Promise<MyProjects> {
   // `overrideEmail` powers the gear-menu "view as" feature on the
