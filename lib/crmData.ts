@@ -307,6 +307,9 @@ async function fetchTabFromSheet(
   subjectEmail: string,
   range: string,
 ): Promise<RawTab> {
+  // sheetsClient's read methods (.values.get/.batchGet) transient-retry
+  // internally now (lib/sa.ts), so this huge-tab read survives a Sheets
+  // 429 / 5xx / dropped socket instead of blanking the whole CRM card.
   const sheets = sheetsClient(subjectEmail);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: CRM_SHEET_ID,

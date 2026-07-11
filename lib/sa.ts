@@ -23,6 +23,7 @@
 
 import { google } from "googleapis";
 import type { JWT } from "google-auth-library";
+import { withRetry } from "@/lib/retry";
 
 type SAKey = {
   type: string;
@@ -119,7 +120,31 @@ export function sheetsClient(subjectEmail: string) {
   const auth = getSAClient(subjectEmail, [
     "https://www.googleapis.com/auth/spreadsheets",
   ]);
-  return google.sheets({ version: "v4", auth });
+  const sheets = google.sheets({ version: "v4", auth });
+  // Transient-retry the READ methods (.values.get / .batchGet) here, once,
+  // so every one of the ~56 direct Sheets readers survives a Sheets 429 /
+  // 5xx / dropped socket instead of bubbling to a `.catch(() => null)` that
+  // silently blanks the section. Writes (.append/.update) are deliberately
+  // NOT wrapped — retrying a partial write could duplicate rows. A fresh
+  // client is created per call, so this patch is never applied twice.
+  const vals = sheets.spreadsheets.values;
+  const onRetry = (label: string) => (e: unknown, n: number) =>
+    console.warn(
+      `[sheets] retry ${n}/2 ${label}: ${String((e as Error)?.message ?? e).slice(0, 120)}`,
+    );
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const origGet = vals.get.bind(vals);
+  vals.get = ((...a: any[]) =>
+    withRetry(() => (origGet as any)(...a), {
+      onRetry: onRetry("get"),
+    })) as typeof vals.get;
+  const origBatchGet = vals.batchGet.bind(vals);
+  vals.batchGet = ((...a: any[]) =>
+    withRetry(() => (origBatchGet as any)(...a), {
+      onRetry: onRetry("batchGet"),
+    })) as typeof vals.batchGet;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  return sheets;
 }
 
 /**

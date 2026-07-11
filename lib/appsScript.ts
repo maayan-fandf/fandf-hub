@@ -12,9 +12,102 @@
 import { auth } from "@/auth";
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
+import { withRetry, isTransientError } from "@/lib/retry";
 
 type ApiOk<T> = T;
 type ApiError = { error: string; status: number };
+
+/** Per-attempt timeout for the Apps Script call. Its cold starts + heavy
+ *  Sheets reads can legitimately take tens of seconds, so this is generous
+ *  — but bounded so a hung request fails cleanly instead of hanging on
+ *  undici's default headers-timeout (which surfaced as
+ *  UND_ERR_HEADERS_TIMEOUT). Timeouts are NOT retried (a consistently-slow
+ *  backend just times out again); only fast transient failures are. */
+const API_ATTEMPT_TIMEOUT_MS = 45_000;
+
+/**
+ * Fetch + parse the Apps Script JSON API with a per-attempt timeout and
+ * transient-error retry. Apps Script fails two intermittent ways that both
+ * used to blank sections: the request hangs past the headers timeout, or it
+ * 200s an HTML error/login page instead of JSON (so `res.json()` throws
+ * `Unexpected token '<'`). Both are transient → retried. A structured
+ * `{error,status}` payload is a real API error (e.g. access denied) → not
+ * retried.
+ */
+async function apiFetchJson<T>(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<T> {
+  return withRetry(
+    async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), API_ATTEMPT_TIMEOUT_MS);
+      try {
+        const res = await fetch(url, {
+          ...init,
+          cache: "no-store",
+          signal: ctrl.signal,
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          throw Object.assign(
+            new Error(`Apps Script API ${res.status} (${label}): ${text.slice(0, 160)}`),
+            { status: res.status },
+          );
+        }
+        const head = text.trimStart();
+        if (!head) throw new Error(`Apps Script returned empty for ${label}`);
+        if (head[0] === "<")
+          throw new Error(
+            `Apps Script returned HTML (not JSON) for ${label} — transient Google error/login page`,
+          );
+        let data: ApiOk<T> | ApiError;
+        try {
+          data = JSON.parse(text) as ApiOk<T> | ApiError;
+        } catch {
+          throw new Error(`Apps Script returned non-JSON for ${label}`);
+        }
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "error" in data &&
+          "status" in data
+        ) {
+          const err = data as ApiError;
+          throw Object.assign(
+            new Error(`Apps Script API error ${err.status}: ${err.error}`),
+            { appsScriptApiError: true },
+          );
+        }
+        return data as T;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    {
+      // Retry only FAST transient failures (HTML/empty/non-JSON body,
+      // network blip, 5xx/429). NOT: a structured Apps Script API error
+      // (real failure — access denied etc.), and NOT a timeout/abort — a
+      // consistently-slow backend just aborts again, so retrying only
+      // triples the wait. A one-off slow call fails cleanly at 45s.
+      retryable: (e) => {
+        if ((e as { appsScriptApiError?: boolean })?.appsScriptApiError)
+          return false;
+        if (
+          (e as Error)?.name === "AbortError" ||
+          /\baborted\b/i.test(String((e as Error)?.message ?? ""))
+        )
+          return false;
+        return isTransientError(e);
+      },
+      onRetry: (e, attempt) =>
+        console.warn(
+          `[appsScript] retry ${attempt}/2 for ${label}: ${String((e as Error)?.message ?? e).slice(0, 140)}`,
+        ),
+    },
+  );
+}
 
 function assertEnv(name: string): string {
   const v = process.env[name];
@@ -58,29 +151,10 @@ async function callApiAs<T>(
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
   }
 
-  // Apps Script exec URLs 302-redirect to googleusercontent.com — fetch follows by default.
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    // Per-request `cache: "no-store"` by default — the caller (`callApi` or
-    // a `unstable_cache` wrapper) is responsible for any caching layer.
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Apps Script API ${res.status}: ${await res.text()}`);
-  }
-
-  const data = (await res.json()) as ApiOk<T> | ApiError;
-  if (
-    typeof data === "object" &&
-    data !== null &&
-    "error" in data &&
-    "status" in data
-  ) {
-    const err = data as ApiError;
-    throw new Error(`Apps Script API error ${err.status}: ${err.error}`);
-  }
-  return data as T;
+  // Apps Script exec URLs 302-redirect to googleusercontent.com — fetch
+  // follows by default. Retry + per-attempt timeout + HTML detection live
+  // in apiFetchJson (the caller `callApi`/`unstable_cache` owns caching).
+  return apiFetchJson<T>(url.toString(), { method: "GET" }, action);
 }
 
 async function callApi<T>(
@@ -109,27 +183,15 @@ async function postApi<T>(
   const url = new URL(base);
   for (const [k, v] of Object.entries(body)) url.searchParams.set(k, v);
 
-  const res = await fetch(url.toString(), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Apps Script API ${res.status}: ${await res.text()}`);
-  }
-  const data = (await res.json()) as ApiOk<T> | ApiError;
-  if (
-    typeof data === "object" &&
-    data !== null &&
-    "error" in data &&
-    "status" in data
-  ) {
-    const err = data as ApiError;
-    throw new Error(`Apps Script API error ${err.status}: ${err.error}`);
-  }
-  return data as T;
+  return apiFetchJson<T>(
+    url.toString(),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    },
+    action,
+  );
 }
 
 /* ─── Typed call sites ───────────────────────────────────────────── */
