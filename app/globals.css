@@ -24537,6 +24537,24 @@ button.budget-need:focus-visible {
 .prl-panel:not(.is-active) {
   display: none;
 }
+/* Reactive-data motion: a gentle fade-rise each time a section becomes
+   active. display:none→block restarts the animation on every switch.
+   Reduced-motion users get an instant swap. */
+@media (prefers-reduced-motion: no-preference) {
+  .prl-panel.is-active {
+    animation: prl-panel-in 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  @keyframes prl-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(7px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
 /* Desktop: break the rail out of the content column into the right
    gutter, so the nav sits OUTSIDE the content width, near the viewport's
    right edge. The rail stays in normal flow (sticky) — so it starts below
