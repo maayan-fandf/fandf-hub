@@ -127,6 +127,21 @@ export default function ProjectRailShell({
         const n = alerts.querySelectorAll(".morning-signal-list > li").length;
         next.alerts = n > 0 ? { text: String(n), tone: "danger" } : null;
       }
+      // פריסה awaiting the client's requested changes (🔄) — actionable.
+      const prisot = root.querySelector('[data-sid="prisot"]');
+      if (prisot) {
+        next.prisot = prisot.querySelector(".prisot-change-request-chip")
+          ? { text: "🔄", tone: "warning" }
+          : null;
+      }
+      // Budget off its required pace (over/under) shows a red pace badge in
+      // the header → flag סקירת פעילות.
+      const overview = root.querySelector('[data-sid="overview"]');
+      if (overview) {
+        next.overview = overview.querySelector(".rpt-pace-badge.is-red")
+          ? { text: "⚠️", tone: "warning" }
+          : null;
+      }
       setDerived((prev) => {
         const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
         for (const k of keys) {
@@ -155,6 +170,26 @@ export default function ProjectRailShell({
             icon: "🔥",
             text: `${derived.alerts.text} התראות`,
             tone: "danger" as const,
+          },
+        ]
+      : []),
+    ...(derived.prisot
+      ? [
+          {
+            target: "prisot",
+            icon: "📄",
+            text: "פריסה — התבקשו שינויים",
+            tone: "warning" as const,
+          },
+        ]
+      : []),
+    ...(derived.overview
+      ? [
+          {
+            target: "overview",
+            icon: "⚠️",
+            text: "תקציב לא בקצב",
+            tone: "warning" as const,
           },
         ]
       : []),
