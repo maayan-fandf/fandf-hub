@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ReportMediaSection from "@/components/report/ReportMediaSection";
 import {
   fbStatusInfo,
   fmtInt,
@@ -158,9 +159,12 @@ export default function ReportCreativesTab({
   const c = data.creatives;
   if (!c) {
     return (
-      <div className="rpt-empty">
-        אין נתוני קריאייטיבים לפרויקט בתקופה הזו (חשבון הפרסום אינו ברשימת
-        ה-Supermetrics, או שאין פעילות בטווח).
+      <div className="rpt-creatives">
+        <ReportMediaSection data={data} />
+        <div className="rpt-empty">
+          אין נתוני קריאייטיבים לפרויקט בתקופה הזו (חשבון הפרסום אינו ברשימת
+          ה-Supermetrics, או שאין פעילות בטווח).
+        </div>
       </div>
     );
   }
@@ -168,6 +172,7 @@ export default function ReportCreativesTab({
 
   return (
     <div className="rpt-creatives">
+      <ReportMediaSection data={data} />
       {(fb.topAds.length > 0 || fb.cost > 0) && (
         <div className="kpi-band rpt-cr-kpis">
           <div className="kpi-card">

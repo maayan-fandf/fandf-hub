@@ -25007,6 +25007,13 @@ button.budget-need:focus-visible {
   flex-direction: column;
   gap: 0.9rem;
 }
+/* Paid-media block (moved from סקירה): keep the KPI band / diagnosis /
+   platform-grid spacing they had as direct .rpt-overview children. */
+.rpt-media {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
 .rpt-cr-title {
   margin: 0.4rem 0 0;
   font-size: 0.95rem;
