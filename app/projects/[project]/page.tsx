@@ -40,6 +40,7 @@ import TasksQueue from "@/components/TasksQueue";
 import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import ProjectReportSection from "@/components/report/ProjectReportSection";
+import NativeProjectRail from "@/components/report/NativeProjectRail";
 import CardActions from "@/components/CardActions";
 import CommentBodyExpandable from "@/components/CommentBodyExpandable";
 import { personDisplayName } from "@/lib/personDisplay";
@@ -100,6 +101,9 @@ type Search = {
   /** Native report's active tab (deep-link support; the client mirrors
    *  tab switches back into the URL via replaceState). */
   rtab?: string;
+  /** Native rail layout's active section (?section=). Mirrored back into
+   *  the URL by ProjectRailShell via replaceState. */
+  section?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -522,6 +526,121 @@ export default async function ProjectOverviewPage({
       ? resolvedFor(internalComments, internalMentions)
       : resolvedFor(comments, sharedMentions);
 
+  // ── Section nodes, shared between the classic stacked layout and the
+  // native vertical-nav rail (useNativeReport). Defining them once keeps
+  // the two layouts in lockstep; the rail dissolves the report's own tabs
+  // into top-level sections (see NativeProjectRail). Role gating is the
+  // same on both paths — a null node simply doesn't appear. ──
+  const railFilterBar =
+    (activeChannel === "client" || activeChannel === "internal") &&
+    (resolvedCount > 0 || showResolved) ? (
+      <ProjectFilterBar
+        showResolved={showResolved}
+        resolvedCount={resolvedCount}
+      />
+    ) : null;
+  const discussionBlock = (
+    <div className="project-sections">
+      {!isClientUser && (
+        <section className="project-section">
+          <div className="section-head">
+            <h2>
+              📋 משימות
+              <span className="section-count">{openWorkTasks}</span>
+            </h2>
+            <Link
+              className="section-link"
+              href={`/tasks?project=${encodeURIComponent(projectName)}&mine=0`}
+            >
+              פתח את כל המשימות ←
+            </Link>
+          </div>
+          <p className="section-subtitle">
+            משימות עבודה פתוחות, מקובצות לפי סטטוס. לחץ על שם המשימה לפרטים.
+          </p>
+          <TasksQueue
+            tasks={workTasks}
+            groupByCompany={false}
+            hideOther
+            compact
+            people={peopleData?.people ?? []}
+            driveName={sharedDriveName}
+            userEmail={userEmail}
+            emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
+          />
+        </section>
+      )}
+      <DiscussionSection
+        sharedComments={comments}
+        sharedMentions={sharedMentions}
+        sharedTotal={totalComments}
+        sharedOpenMentions={openMentions}
+        internalComments={internalComments}
+        internalMentions={internalMentions}
+        internalTotal={internalTotal}
+        internalOpenMentions={internalOpenMentions}
+        projectName={projectName}
+        showResolved={showResolved}
+        requestedView={sp.view}
+        requestedChannel={sp.channel}
+        isInternalUser={isInternalUser}
+        isClientUser={isClientUser}
+        userEmail={userEmail}
+        people={peopleData?.ok ? peopleData.people : []}
+      />
+    </div>
+  );
+  const alertsNode =
+    !isClientUser && isRealEstateProject ? (
+      <Suspense fallback={null}>
+        <ProjectAlertsSection
+          projectName={projectName}
+          company={companyForDashboard}
+          monthOverride={monthOverride}
+        />
+      </Suspense>
+    ) : null;
+  const crmNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <CrmFunnelCard
+        company={companyForDashboard}
+        project={projectName}
+        monthFilter={monthOverride}
+        dateRange={crmDateRange}
+      />
+    </Suspense>
+  ) : null;
+  const clarityNode =
+    isRealEstateProject && !isClientUser ? (
+      <Suspense fallback={null}>
+        <ClarityInsightsSection
+          subjectEmail={userEmail}
+          project={projectName}
+          monthFilter={monthOverride}
+        />
+      </Suspense>
+    ) : null;
+  const prisotNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <LatestPrisotCard
+        subjectEmail={userEmail}
+        company={companyForDashboard}
+        project={projectName}
+        clientEmails={projectClientEmails}
+        people={peopleData?.ok ? peopleData.people : []}
+        isClientUser={isClientUser}
+      />
+    </Suspense>
+  ) : null;
+  const pricesNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <ProjectPriceCheckSection
+        projectName={projectName}
+        isClientUser={isClientUser}
+      />
+    </Suspense>
+  ) : null;
+
   return (
     <main className="container project-main">
       {/* Header + the client approve-prompt share ONE sticky wrapper so both
@@ -632,93 +751,74 @@ export default async function ProjectOverviewPage({
 
       {isOutOfScope && <OutOfScopeBanner person={scopedPerson} />}
 
+      {/* Native vertical-nav rail (internal opt-in via ?report=native):
+          one grouped side nav replaces the stacked cards + the report's
+          own tab bar. The report's five tabs dissolve into top-level
+          sections inside NativeProjectRail. Runs parallel to the classic
+          stacked layout below until parity, then flips on for clients. */}
+      {useNativeReport ? (
+        <>
+          {isInternalUser && (
+            <div className="rpt-railbar">
+              <span className="rpt-toggle" role="group" aria-label="גרסת דוח">
+                <Link
+                  className="rpt-toggle-btn is-active"
+                  href={reportToggleHref(true)}
+                  title="הדוח החדש — נבנה בתוך ההאב (בטא)"
+                >
+                  ✨ חדש
+                </Link>
+                <Link
+                  className="rpt-toggle-btn"
+                  href={reportToggleHref(false)}
+                >
+                  קלאסי
+                </Link>
+              </span>
+            </div>
+          )}
+          <Suspense
+            fallback={<div className="rpt-empty">טוען את הפרויקט…</div>}
+          >
+            <NativeProjectRail
+              projectName={projectName}
+              period={dashboardPeriod}
+              company={companyForDashboard}
+              canEditBudget={canEditReportBudget}
+              initialSection={
+                typeof sp.section === "string" ? sp.section : undefined
+              }
+              tasksBadge={openWorkTasks}
+              tasksNode={
+                <>
+                  {railFilterBar}
+                  {discussionBlock}
+                </>
+              }
+              alertsNode={alertsNode}
+              crmNode={crmNode}
+              clarityNode={clarityNode}
+              prisotNode={prisotNode}
+              pricesNode={pricesNode}
+            />
+          </Suspense>
+        </>
+      ) : (
+        <>
       {/* Resolved-state filter — both the internal and shared channels
           are hub Comments now, so the toggle is meaningful on both
           (the old Google-Chat internal tab had no resolved state, which
           is why this used to be client-only). The tasks channel has no
           resolved filter. Hidden when nothing is resolved yet AND the
           user isn't already in show-resolved mode. */}
-      {(activeChannel === "client" || activeChannel === "internal") &&
-        (resolvedCount > 0 || showResolved) && (
-          <ProjectFilterBar
-            showResolved={showResolved}
-            resolvedCount={resolvedCount}
-          />
-        )}
+      {railFilterBar}
 
-      {/* Section order intentionally matches the stats row above (tasks /
-          mentions / comments) so each column lines up with its count tile
-          when the grid renders in RTL. The 📋 משימות section is hidden
-          entirely for clients — they don't see task management. */}
-      <div className="project-sections">
-        {!isClientUser && (
-          <section className="project-section">
-            <div className="section-head">
-              <h2>
-                📋 משימות
-                <span className="section-count">{openWorkTasks}</span>
-              </h2>
-              <Link
-                className="section-link"
-                href={`/tasks?project=${encodeURIComponent(projectName)}&mine=0`}
-              >
-                פתח את כל המשימות ←
-              </Link>
-            </div>
-            <p className="section-subtitle">
-              משימות עבודה פתוחות, מקובצות לפי סטטוס. לחץ על שם המשימה לפרטים.
-            </p>
-            <TasksQueue
-              tasks={workTasks}
-              groupByCompany={false}
-              hideOther
-              compact
-              people={peopleData?.people ?? []}
-              driveName={sharedDriveName}
-              userEmail={userEmail}
-              emptyMessage="🎉 אין משימות פתוחות בפרויקט זה."
-            />
-          </section>
-        )}
+      {/* Tasks + discussion, then the alerts strip — both shared verbatim
+          with the rail's "משימות והודעות" / "התראות" sections (see the
+          node variables defined above the return). */}
+      {discussionBlock}
 
-        <DiscussionSection
-          sharedComments={comments}
-          sharedMentions={sharedMentions}
-          sharedTotal={totalComments}
-          sharedOpenMentions={openMentions}
-          internalComments={internalComments}
-          internalMentions={internalMentions}
-          internalTotal={internalTotal}
-          internalOpenMentions={internalOpenMentions}
-          projectName={projectName}
-          showResolved={showResolved}
-          requestedView={sp.view}
-          requestedChannel={sp.channel}
-          isInternalUser={isInternalUser}
-          isClientUser={isClientUser}
-          userEmail={userEmail}
-          people={peopleData?.ok ? peopleData.people : []}
-        />
-      </div>
-
-      {/* Alerts section — pacing/budget/deadline/paused-budget signals for
-          this project only. Same dismiss/snooze/revisit behavior as the
-          morning page; dismissals are team-wide.
-          Internal-only — these are operational warnings (audience
-          mismatch, paused budget, ramp-up suggestions) that clients
-          shouldn't see surfaced in their own view of the project.
-          Streamed via <Suspense> so the slow Apps-Script-backed
-          getMorningFeed call (~1–3s cold) doesn't block the משימות /
-          תיוגים / הערות sections above from rendering. */}
-      {!isClientUser && isRealEstateProject && (
-        <Suspense fallback={null}>
-          <ProjectAlertsSection
-            projectName={projectName}
-            company={companyForDashboard}
-            monthOverride={monthOverride}
-          />
-        </Suspense>
-      )}
+      {alertsNode}
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section
@@ -797,97 +897,16 @@ export default async function ProjectOverviewPage({
         </section>
       )}
 
-      {/* CRM funnel — per-lead status & meetings pulled from the
-          external "Consolidated" workbook (BMBY + Sehel). Sits below the
-          dashboard iframe because it answers "what happened AFTER the
-          lead came in" while the dashboard above shows "how leads got
-          here". Surfaced for clients too — they care about their own
-          funnel and the card shows downstream-of-our-ads activity,
-          not internal F&F performance signals.
-          Renders null when the project's Keys row has no `CRM` mapping
-          or the source tab has no matching rows.
-          Project-type gate: only real-estate projects have a CRM
-          funnel concept; non-real-estate (e.g. internal F&F) skips. */}
-      {isRealEstateProject && (
-        <Suspense fallback={null}>
-          <CrmFunnelCard
-            company={companyForDashboard}
-            project={projectName}
-            monthFilter={monthOverride}
-            dateRange={crmDateRange}
-          />
-        </Suspense>
-      )}
+      {/* CRM funnel / Clarity insights / פריסות / מחירים — all shared with
+          the rail's leads + planning sections (node variables above). */}
+      {crmNode}
 
-      {/* Landing-page behavior insights — Clarity API + Claude-generated
-          Hebrew narrative. Internal-only (mirrors the LatestPrisotCard
-          gate). Renders null on any failure so the page silently
-          degrades; Suspense keeps the API chain off the critical
-          render path. `monthFilter` is threaded through so the section
-          can self-hide when the user has rewound the page to a past
-          month — Clarity's API only returns the trailing 3 days
-          (numOfDays=3 hardcoded in lib/clarity.ts), so we can't
-          honestly show "April 2026 Clarity data" — hiding the section
-          is the truthful UX.
-          Project-type gate: real-estate landing pages only; nothing
-          to analyze on an internal-discussions project. */}
-      {isRealEstateProject && !isClientUser && (
-        <Suspense fallback={null}>
-          <ClarityInsightsSection
-            subjectEmail={userEmail}
-            project={projectName}
-            monthFilter={monthOverride}
-          />
-        </Suspense>
-      )}
+      {clarityNode}
 
-      {/* Latest פריסה (spread / deployment sheet) — the most-recently-
-          updated Google Sheet inside `<project>/פריסות/`. Now visible to
-          clients too (2026-07-05, per Maayan): they see the rendered plan
-          and can approve it in place — LatestPrisotCard strips the internal
-          approval-workflow chrome for clients and offers a single "אשר
-          פריסה" action instead (locks the sheet as the approved version).
-          Renders as null when the folder doesn't exist or has no
-          sheets, so projects that don't follow the convention silently
-          degrade. Suspense keeps the Drive lookup off the critical
-          render path.
-          Project-type gate: only real-estate projects have פריסות.
-          Owner moved this from above the iframe to right above
-          "מחירים מפורסמים" 2026-06-04 — both are bottom-of-page
-          reference shelves, makes sense to group them. */}
-      {isRealEstateProject && (
-        <Suspense fallback={null}>
-          <LatestPrisotCard
-            subjectEmail={userEmail}
-            company={companyForDashboard}
-            project={projectName}
-            clientEmails={projectClientEmails}
-            people={peopleData?.ok ? peopleData.people : []}
-            isClientUser={isClientUser}
-          />
-        </Suspense>
-      )}
+      {prisotNode}
 
-      {/* "מחירים מפורסמים" — 4-surface advertised-price snapshot at the
-          bottom of the page. Now visible to clients too (2026-07-05, per
-          Maayan): ProjectPriceCheckSection strips the internal ad-ops
-          chrome for clients (FB/Google Ads deep-links, "מודעות מושהות"
-          chips, the mismatch/QA pill) and keeps the published prices +
-          landing/Yad2 links + room inventory. The report's
-          projectPriceCheck endpoint enforces the caller's own per-project
-          access (col E) server-side. Real-estate-only (non-real-estate
-          projects don't have a "starting from" price concept). Self-hides
-          when the project has zero surfaces with usable input — so on
-          fresh projects with no scrape + no live ad copy the section
-          stays hidden rather than rendering an empty shelf. Suspense
-          keeps the Apps-Script call off the critical render path. */}
-      {isRealEstateProject && (
-        <Suspense fallback={null}>
-          <ProjectPriceCheckSection
-            projectName={projectName}
-            isClientUser={isClientUser}
-          />
-        </Suspense>
+      {pricesNode}
+        </>
       )}
     </main>
   );
