@@ -24490,6 +24490,11 @@ button.budget-need:focus-visible {
   border: 1px solid var(--border-soft);
   border-radius: 12px;
   background: var(--surface);
+  /* Hug the content instead of stretching the full column width — with a
+     single chip the full-width box read as a big empty banner. Stays on the
+     inline-start (right, RTL) and wraps if the chips overflow. */
+  align-self: flex-start;
+  max-width: 100%;
 }
 .prl-triage-lbl {
   font-size: 0.78rem;

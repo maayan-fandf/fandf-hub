@@ -174,15 +174,11 @@ export default async function RootLayout({
     } catch {
       // Silent — empty name/role is the rendering fallback.
     }
-    // getProjectNavData uses React per-request cache() over a direct
-    // getMorningFeed call — same non-nested path the home grid uses, so
-    // the dropdown and grid can't diverge. (It must NOT be
-    // unstable_cache-wrapped: nesting that around the already-
-    // unstable_cache'd getMorningFeed silently returned an empty feed
-    // and left the nav permanently unfiltered — see projectEnded.ts.)
-    // The .catch keeps a single bad render fail-open without poisoning
-    // anything, since nothing persists across requests here.
-    // Skipped for client users since morning feed is staff-only.
+    // getProjectNavData derives ended/inactive from the DIRECT ALL CLIENTS
+    // read (React-cache()d, same source as the home grid) — NOT the flaky
+    // morning feed, which when down returned an empty feed and left the nav
+    // permanently unfiltered (all 37 projects). The .catch keeps a single bad
+    // render fail-open. Skipped for client users (they only see own projects).
     if (!isClientUser) {
       const navData = await getProjectNavData(
         viewAs || email,

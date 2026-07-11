@@ -14,7 +14,14 @@
  */
 
 import { cache } from "react";
-import { getMorningFeed } from "@/lib/appsScript";
+import { getMyProjects, GENERAL_PROJECT_NAME } from "@/lib/appsScript";
+import { driveFolderOwner } from "@/lib/sa";
+import {
+  getAllClientsAllRows,
+  sumProjectFunnels,
+  lookupProjectFunnel,
+  getSlugByProjectName,
+} from "@/lib/allClients";
 
 /** Hub admins always see "all" projects. Mirrors the set used in
  *  app/page.tsx + the topnav admin gates. */
@@ -107,25 +114,47 @@ export function isProjectEndedByIso(endIso: string | undefined): boolean {
  */
 export const getProjectNavData = cache(
   async (
+    // Part of the react-cache() key (distinguishes users / view-as even when
+    // overrideEmail is undefined) — the derivation itself keys off the direct
+    // reads below.
     effectiveEmail: string,
     overrideEmail: string | undefined,
   ): Promise<{
     endIso: Record<string, string>;
     inactive: Record<string, true>;
   }> => {
-    const scope = morningScopeFor(effectiveEmail);
-    const morning = await getMorningFeed({ scope, overrideEmail });
-    if (!morning.projects || morning.projects.length === 0) {
-      throw new Error("projectNavData: empty morning feed");
-    }
+    void effectiveEmail;
+    // Derive the ended / inactive filter from the DIRECT ALL CLIENTS read —
+    // the same source app/page.tsx uses — instead of the flaky Apps Script
+    // morning feed. The morning feed, when down, returned an empty envelope
+    // and left the nav dropdown completely UNFILTERED (all 37 projects shown).
+    // getMyProjects + the ALL CLIENTS reads are React-cache()d, so this
+    // dedupes with the rest of the request. If a read genuinely fails it
+    // throws → layout's `.catch(() => emptyMaps)` fails open for that render.
+    const owner = driveFolderOwner();
+    const [my, allRows, slugByName] = await Promise.all([
+      getMyProjects(overrideEmail),
+      getAllClientsAllRows(owner),
+      getSlugByProjectName(owner),
+    ]);
+    const index = sumProjectFunnels(allRows);
     const endIso: Record<string, string> = {};
     const inactive: Record<string, true> = {};
-    for (const p of morning.projects) {
-      if (p.endIso) endIso[p.name] = p.endIso;
-      // No current-month spend → not a running budget → inactive.
-      if (!(p.spend > 0)) {
-        inactive[p.name] = true;
-      }
+    for (const p of my.projects) {
+      // General (כללי) is a manual catch-all — never filtered out.
+      if (p.name === GENERAL_PROJECT_NAME) continue;
+      const f = lookupProjectFunnel(
+        index,
+        p.name,
+        slugByName.get(p.name.toLowerCase().trim()),
+      );
+      // No ALL CLIENTS match → leave it visible (don't hide a live project on
+      // a name/slug join miss).
+      if (!f) continue;
+      if (f.endIso) endIso[p.name] = f.endIso;
+      // "inactive" = no spend has landed AND no budget is planned — matches
+      // the home grid (app/page.tsx) so the two surfaces stay in lockstep.
+      if (!(f.spend > 0) && !(f.budget > 0)) inactive[p.name] = true;
     }
     return { endIso, inactive };
   },
