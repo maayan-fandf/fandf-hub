@@ -25270,9 +25270,10 @@ button.budget-need:focus-visible {
 }
 /* Google RSA assets */
 .rpt-cr-gcamps {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 0.8rem;
+  align-items: start;
 }
 .rpt-cr-gcamp {
   border: 1px solid var(--border-soft);
