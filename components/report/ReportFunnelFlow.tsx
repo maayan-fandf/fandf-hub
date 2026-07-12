@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { channelIcon } from "@/lib/channelIcon";
 import {
   convTone,
@@ -183,6 +184,14 @@ export default function ReportFunnelFlow({ data }: { data: ProjectReportData }) 
   const rMeet = sched > 0 ? meet / sched : null;
   const prev = data.prevFunnel;
 
+  // Per-card share of the top-of-funnel (leads) → drives the proportional
+  // funnel share-bar along each card's bottom (CSS `--ff-share`). Clamped so
+  // a tiny stage still shows a visible sliver. Leads itself is the full bar.
+  const ffShare = (n: number): CSSProperties =>
+    ({
+      "--ff-share": leads > 0 ? Math.max(0.04, n / leads) : 1,
+    }) as CSSProperties;
+
   const monthLabel =
     data.mode === "month" ? data.window.startIso.slice(0, 7) : "";
   const title =
@@ -204,7 +213,7 @@ export default function ReportFunnelFlow({ data }: { data: ProjectReportData }) 
       </div>
       <div className="rpt-funnel-flow">
         {/* Card 1 — לידים CRM (+ relevant sub-node) */}
-        <div className="rpt-ff-card is-lead">
+        <div className="rpt-ff-card is-lead" style={ffShare(leads)}>
           <div className="rpt-ff-label">לידים CRM</div>
           <div className="rpt-ff-value">{fmtInt(leads)}</div>
           <div className="rpt-ff-meta">
@@ -233,7 +242,10 @@ export default function ReportFunnelFlow({ data }: { data: ProjectReportData }) 
         <Arrow rate={rSched} />
 
         {/* Card 2 — תיאומי פגישה */}
-        <div className={`rpt-ff-card is-sched rpt-ff-${costPerTone("costPerScheduled", cps)}`}>
+        <div
+          className={`rpt-ff-card is-sched rpt-ff-${costPerTone("costPerScheduled", cps)}`}
+          style={ffShare(sched)}
+        >
           <div className="rpt-ff-label">תיאומי פגישה</div>
           <div className="rpt-ff-value">{fmtInt(sched)}</div>
           <div className="rpt-ff-meta">
@@ -252,7 +264,10 @@ export default function ReportFunnelFlow({ data }: { data: ProjectReportData }) 
         <Arrow rate={rMeet} />
 
         {/* Card 3 — ביצועי פגישה */}
-        <div className={`rpt-ff-card is-meet rpt-ff-${costPerTone("costPerMeeting", cpm)}`}>
+        <div
+          className={`rpt-ff-card is-meet rpt-ff-${costPerTone("costPerMeeting", cpm)}`}
+          style={ffShare(meet)}
+        >
           <div className="rpt-ff-label">ביצועי פגישה</div>
           <div className="rpt-ff-value">{fmtInt(meet)}</div>
           <div className="rpt-ff-meta">

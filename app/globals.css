@@ -882,7 +882,10 @@ a:hover {
      the top"). Desktop-only; mobile keeps the normal 2rem (header is static
      there). Reported by Maayan 2026-06-25. */
   .container.project-main {
-    padding-top: 0.5rem;
+    /* Tuck the header right under the topnav — near-zero so the two
+       headers read as one stacked unit, not two with a dead band between
+       them. Reported by Maayan 2026-07-12. */
+    padding-top: 0.15rem;
   }
   .project-main .page-header {
     position: sticky;
@@ -894,8 +897,12 @@ a:hover {
        through. Use var(--bg) which both light and dark themes set
        to their surface. */
     background: var(--bg);
-    padding: 0.6rem 0;
+    /* Tight top padding + center-align so the short action row doesn't
+       float low against the tall title's baseline, leaving an empty band
+       above it. */
+    padding: 0.2rem 0 0.4rem;
     margin-bottom: 1rem;
+    align-items: center;
   }
   /* Shrunk state — applied by PageHeaderShrinkObserver once
      window.scrollY > 80. Trims height aggressively so the user can
@@ -7913,6 +7920,9 @@ details.crm-collapsible[open] > summary.crm-block-title::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 18ch;
+  /* Priority over the embedded source-mix bar so long Hebrew objection
+     names aren't squeezed down to "טלפו…"; the bar shrinks first. */
+  min-width: 9em;
 }
 .crm-pie-legend .crm-legend-count {
   color: var(--muted);
@@ -7952,15 +7962,30 @@ details.crm-collapsible[open] > summary.crm-block-title::before {
   background: var(--surface-hi, #f3f4f6);
   border: 1px solid var(--border);
   /* Inline width drives the bar's visible length. flex-shrink:0 keeps
-     it from collapsing when the row's free space is small. */
+     it from collapsing when the row's free space is small — but cap its
+     share so it can't starve the objection name next to it. */
   flex: 0 0 auto;
   min-width: 2%;
-  max-width: 55%;
+  max-width: 40%;
   transition: width 200ms ease;
 }
 .crm-pie-legend .crm-legend-bar-seg {
   display: block;
   height: 100%;
+}
+/* On narrow screens the source-mix bar competes with long Hebrew
+   objection names for row width (squeezing them to "טלפו…"). It's a
+   secondary indicator whose per-source detail is a desktop-hover-only
+   popover anyway — drop it so the label gets the full row, and the
+   count still carries the numeric size. */
+@media (max-width: 680px) {
+  .crm-pie-legend .crm-legend-bar {
+    display: none;
+  }
+  .crm-pie-legend .crm-legend-label {
+    min-width: 0;
+    max-width: none;
+  }
 }
 /* When the pie+legend block stands alone (trendline moved up to the
    status-funnel row), drop the 35/65 grid: the legend can now use
@@ -26286,6 +26311,217 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   }
 }
 
+/* ─── Funnel-flow visual redesign (2026-07-12) ───────────────────
+   Turns the three flat boxes + weak dashed connectors into premium
+   stage cards that read AS a funnel: a stage-colored accent cap, a
+   hero number, cost/Δ as pills, the conversion-% promoted to a bold
+   pill on a tapering "neck", and a proportional share-bar along each
+   card's bottom (leads=full → scheduled → meetings, so the eye sees
+   57 → 11 → 9 narrow). Cosmetic rules are unconditional (safe for the
+   mobile stack); layout that would fight the ≤680px column stack is
+   scoped to @media (min-width: 681px). Share width is fed per-card by
+   `--ff-share` set in ReportFunnelFlow.tsx (falls back to a full bar). */
+.rpt-ff-card {
+  padding: 0.85rem 0.95rem 0.7rem;
+  border-radius: 14px;
+  gap: 0.3rem;
+  --ff-color: var(--muted);
+}
+.rpt-ff-card.is-lead {
+  --ff-color: #667eea;
+  background: linear-gradient(180deg, color-mix(in srgb, #667eea 8%, var(--surface)) 0%, var(--surface) 60%);
+}
+.rpt-ff-card.is-sched {
+  --ff-color: #ec4899;
+  background: linear-gradient(180deg, color-mix(in srgb, #ec4899 7%, var(--surface)) 0%, var(--surface) 60%);
+}
+.rpt-ff-card.is-meet {
+  --ff-color: #f5576c;
+  background: linear-gradient(180deg, color-mix(in srgb, #f5576c 7%, var(--surface)) 0%, var(--surface) 60%);
+}
+.rpt-ff-card::before {
+  content: "";
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline: -1px;
+  block-size: 3px;
+  border-start-start-radius: 14px;
+  border-start-end-radius: 14px;
+  background: var(--ff-color);
+  z-index: 2;
+  pointer-events: none;
+}
+.rpt-ff-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+.rpt-ff-label::before {
+  content: "";
+  inline-size: 0.45rem;
+  block-size: 0.45rem;
+  border-radius: 50%;
+  background: var(--ff-color);
+  flex: none;
+}
+.rpt-ff-value {
+  font-size: 1.95rem;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.rpt-ff-meta {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border: 1px solid var(--border-soft);
+}
+.rpt-ff-meta b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.rpt-ff-delta {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-block-start: 0.15rem;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.rpt-ff-delta.is-bad {
+  color: #dc2626;
+  background: color-mix(in srgb, #ef4444 12%, var(--surface));
+}
+.rpt-ff-delta.is-good {
+  color: #16a34a;
+  background: color-mix(in srgb, #22c55e 12%, var(--surface));
+}
+.rpt-ff-delta.is-none,
+.rpt-ff-delta.is-new {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+}
+/* Relevant-leads sub-node → slim one-line inset chip (was a tall dashed box). */
+.rpt-ff-sub {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin-block-start: 0.5rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 9px;
+  background: var(--surface-alt);
+  border: 1px dashed color-mix(in srgb, #667eea 30%, var(--border-soft));
+}
+.rpt-ff-sub-arrow {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.rpt-ff-sub-card {
+  width: auto;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  text-align: start;
+}
+.rpt-ff-sub-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+@media (min-width: 681px) {
+  .rpt-funnel-flow {
+    align-items: stretch;
+    gap: 0.4rem;
+  }
+  /* Proportional funnel share-bar glued to each card's bottom; centered
+     fill = --ff-share (stage count / leads), so the three bars taper. */
+  .rpt-ff-card::after {
+    content: "";
+    margin-block-start: auto;
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      color-mix(in srgb, var(--muted) 14%, transparent) 0 calc((1 - var(--ff-share, 1)) / 2 * 100%),
+      color-mix(in srgb, var(--ff-color) 78%, transparent) calc((1 - var(--ff-share, 1)) / 2 * 100%) calc((1 + var(--ff-share, 1)) / 2 * 100%),
+      color-mix(in srgb, var(--muted) 14%, transparent) calc((1 + var(--ff-share, 1)) / 2 * 100%) 100%
+    );
+  }
+  /* Connector spans the equal card height + centers → the neck lines up
+     with the card mids (fixes the old top-anchored dashed line). */
+  .rpt-ff-arrow {
+    align-self: stretch;
+    justify-content: center;
+    padding-top: 0;
+    min-width: 76px;
+    position: relative;
+  }
+  /* Tapering wedge neck pointing to the target (physical left = flow dir). */
+  .rpt-ff-arrow-line {
+    position: absolute;
+    inset-inline: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 20px;
+    border-top: none;
+    background: linear-gradient(
+      to left,
+      color-mix(in srgb, var(--muted) 26%, transparent),
+      color-mix(in srgb, var(--muted) 7%, transparent)
+    );
+    clip-path: polygon(100% 18%, 100% 82%, 0 50%);
+    z-index: 0;
+  }
+  .rpt-ff-arrow-head {
+    display: none;
+  }
+  /* Conversion % = the hero of the gap: a bold tone-tinted pill on the neck. */
+  .rpt-ff-arrow .rpt-ff-rate {
+    position: relative;
+    z-index: 1;
+    font-size: 0.9rem;
+    font-weight: 800;
+    padding: 0.22rem 0.6rem;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.09);
+  }
+  .rpt-ff-arrow .rpt-ff-rate.is-green {
+    color: #16a34a;
+    background: color-mix(in srgb, #16a34a 9%, var(--surface));
+    border-color: color-mix(in srgb, #16a34a 35%, var(--border-soft));
+  }
+  .rpt-ff-arrow .rpt-ff-rate.is-amber {
+    color: #d97706;
+    background: color-mix(in srgb, #d97706 10%, var(--surface));
+    border-color: color-mix(in srgb, #d97706 35%, var(--border-soft));
+  }
+  .rpt-ff-arrow .rpt-ff-rate.is-red {
+    color: #dc2626;
+    background: color-mix(in srgb, #dc2626 9%, var(--surface));
+    border-color: color-mix(in srgb, #dc2626 38%, var(--border-soft));
+  }
+}
+
 /* ─── Native report — conversion funnel bar (drawFunnel) ─── */
 .rpt-conv-funnel {
   display: flex;
@@ -26487,7 +26723,9 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 }
 .rpt-budbar-row {
   display: grid;
-  grid-template-columns: minmax(5.5em, 8em) 1fr auto;
+  /* Wide enough that common channel names ("google-seach") clear the
+     icon + gap and don't clip to "…gle-seach". */
+  grid-template-columns: minmax(6em, 10.5em) 1fr auto;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
