@@ -24721,14 +24721,18 @@ html[data-theme="dark"] .prl-bdg.is-accent {
     top: 7rem;
     max-height: calc(100vh - 7.6rem);
   }
-  /* Native-rail only: extend the header + triage out to the same gutter edge
-     as .prl-body (same breakout calc) so קנקו / the triage strip line up with
-     the rail's right edge instead of floating in the content↔rail gap — most
-     visible when the agenda column pushes everything right. */
+  /* Native-rail only: line the header (קנקו) + triage strip up with the
+     CONTENT column's right edge (where the funnel/sections end), not the
+     container edge (which floats ~100px into the content↔rail gap) nor the
+     rail's outer edge. Same breakout calc as .prl-body pins the box's outer
+     edge to the gutter; the padding then reserves the rail column
+     (width 210px + 1rem gap + the rail's own 1.25rem pad) so the content
+     edge = the sections' edge, robust across agenda states. `:has(.prl)`
+     keeps the classic layout untouched. */
   .project-main:has(.prl) .project-top-stack,
   .prl-triage {
     margin-inline-start: calc(50% - 50vw + var(--agenda-col, 0px) / 2);
-    padding-inline-start: 1.25rem;
+    padding-inline-start: calc(210px + 2.25rem);
   }
 }
 @media (max-width: 820px) {
