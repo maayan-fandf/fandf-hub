@@ -26139,6 +26139,13 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   align-items: flex-start;
   gap: 0.5rem;
   flex-wrap: wrap;
+  /* Lift the funnel row above the following conversion-funnel card so a
+     card's hover popover (.rpt-ff-pop, which overflows downward) paints over
+     it. Needed since the glass backdrop-filter on .rpt-ff-card makes each
+     card a stacking context that would otherwise trap the popover's z-index
+     inside it, below the later-in-DOM conv-funnel. */
+  position: relative;
+  z-index: 2;
 }
 .rpt-ff-card {
   flex: 1;
