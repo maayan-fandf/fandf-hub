@@ -120,10 +120,11 @@ export default function CrmFunnelClient({
   /** Which slice of the card to show. "full" (default) = everything;
    *  "funnel" = KPIs / cost / status / trendline / sellers (the CRM rail
    *  section); "analysis" = objection distribution + journey collapsibles
-   *  (the התנגדויות rail section). Splitting lets one funnel feed two rail
-   *  sections; hiding is CSS-only (crm-view-*) so the shared source-chip
-   *  filter keeps driving both. */
-  view?: "full" | "funnel" | "analysis";
+   *  (the התנגדויות rail section); "campaigns" = ONLY the Facebook/Meta UTM
+   *  breakdown (rendered in the קמפיינים section). Splitting lets one funnel
+   *  feed multiple rail sections; hiding is CSS-only (crm-view-*) so the
+   *  shared source-chip filter keeps driving them. */
+  view?: "full" | "funnel" | "analysis" | "campaigns";
 }) {
   const sm = funnel.sourceMatrices;
   // Source-chip selection. When a CrmSourceFilterProvider is above us (the
@@ -448,6 +449,10 @@ export default function CrmFunnelClient({
       ease: "outCubic",
     });
   }, [selected]);
+
+  // The קמפיינים view carries ONLY the FB/Meta UTM breakdown — if this funnel
+  // has none (non-warehouse project), render nothing rather than an empty card.
+  if (view === "campaigns" && !funnel.fbBreakdown) return null;
 
   return (
     <section

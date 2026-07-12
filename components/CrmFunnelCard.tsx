@@ -77,7 +77,7 @@ export default async function CrmFunnelCard({
   /** Splits the card for the native rail: "funnel" (CRM section) vs
    *  "analysis" (התנגדויות ומסע). Default "full" keeps every current caller
    *  (classic project page, /morning) rendering the whole card. */
-  view?: "full" | "funnel" | "analysis";
+  view?: "full" | "funnel" | "analysis" | "campaigns";
   /** Threaded from the page's `?monthOverride=YYYY-MM` so this card
    *  matches whatever month the dashboard iframe is rendering. Empty
    *  means "no filter — show all rows we have." */

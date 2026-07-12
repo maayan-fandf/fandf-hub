@@ -715,6 +715,20 @@ export default async function ProjectOverviewPage({
       />
     </Suspense>
   ) : null;
+  // Rail-only: the Facebook/Meta UTM breakdown ("פילוח פייסבוק") shows in the
+  // קמפיינים section (moved out of the CRM funnel). Renders nothing if the
+  // funnel has no fbBreakdown (non-warehouse project).
+  const campaignsFbNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <CrmFunnelCard
+        company={companyForDashboard}
+        project={projectName}
+        monthFilter={monthOverride}
+        dateRange={crmDateRange}
+        view="campaigns"
+      />
+    </Suspense>
+  ) : null;
   const clarityNode =
     isRealEstateProject && !isClientUser ? (
       <Suspense fallback={null}>
@@ -946,6 +960,7 @@ export default async function ProjectOverviewPage({
               alertsNode={alertsNode}
               crmNode={railCrmNode}
               objNode={objectionsNode}
+              campaignsFbNode={campaignsFbNode}
               clarityNode={clarityNode}
               prisotNode={prisotNode}
               pricesNode={pricesNode}

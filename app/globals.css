@@ -6485,6 +6485,18 @@ html[data-theme="dark"] .quick-note-saved {
 .crm-view-analysis .crm-block-inline {
   display: none;
 }
+/* קמפיינים view carries ONLY the FB/Meta UTM breakdown — hide every other
+   direct child of the CRM section (head, source chips, funnel, cost, etc.).
+   The breakdown moved here out of the CRM funnel view (hidden there below). */
+.crm-view-campaigns > *:not(.crm-fb-breakdown) {
+  display: none;
+}
+.crm-view-campaigns .crm-fb-breakdown {
+  margin-top: 0;
+}
+.crm-view-funnel .crm-fb-breakdown {
+  display: none;
+}
 /* Inset cards — every inner block gets its own subtle border + bg so the
    funnel / objections / chips / pie / trendline read as separate areas
    instead of merging into the section background. The KPI row stays

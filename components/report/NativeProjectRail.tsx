@@ -38,6 +38,7 @@ export default async function NativeProjectRail({
   alertsNode,
   crmNode,
   objNode,
+  campaignsFbNode,
   prisotNode,
   pricesNode,
   clarityNode,
@@ -62,6 +63,9 @@ export default async function NativeProjectRail({
   /** התנגדויות ומסע — objection distribution + journey analyses (the CRM
    *  card's "analysis" view). */
   objNode?: ReactNode;
+  /** Facebook/Meta UTM breakdown (CRM card's "campaigns" view) — appended to
+   *  the קמפיינים section. Renders nothing if the funnel has no fbBreakdown. */
+  campaignsFbNode?: ReactNode;
   prisotNode?: ReactNode;
   pricesNode?: ReactNode;
   /** דף נחיתה insights (Clarity) — folded under סקירת פעילות when present. */
@@ -165,7 +169,12 @@ export default async function NativeProjectRail({
       group: "perf",
       label: "קמפיינים",
       icon: "📣",
-      content: <ReportCreativesTab data={data} />,
+      content: (
+        <>
+          <ReportCreativesTab data={data} />
+          {campaignsFbNode}
+        </>
+      ),
     });
     sections.push({
       id: "trends",
