@@ -547,6 +547,21 @@ body {
        header↔prompt gap while pinned. */
     background: var(--bg);
   }
+  /* Full-bleed the sticky bar edge-to-edge (a toolbar spanning the screen)
+     while its content stays constrained by the container. The ::before
+     extends 100vw past each side and body's `overflow-x: clip` trims it to
+     the viewport — same mechanism as the rail breakout, so it's immune to the
+     agenda column offset (no fragile calc()). Sits behind the header content
+     and above the scrolling page. */
+  .project-top-stack::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin-inline: -100vw;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border-soft);
+    z-index: -1;
+  }
 }
 .project-main .project-top-stack > .page-header {
   /* The wrapper owns the sticky now — neutralize the header's own sticky
