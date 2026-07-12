@@ -26953,3 +26953,114 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Mobile polish for the native project page ──────────────────────────
+   The layouts already collapse/scroll correctly on phones (the rail becomes a
+   horizontal strip, wide tables scroll, chart + KPI grids go single-column).
+   What was left "unoptimized" is a raft of sub-40px (some sub-24px) TAP
+   TARGETS across the rail, tables, charts and CRM funnel, plus a couple of
+   narrow-viewport overflow/clip cases. This block fixes those; audited via a
+   4-surface mobile pass (2026-07). */
+@media (max-width: 640px) {
+  /* Rail strip + triage — section-switch controls */
+  .prl-nav {
+    min-height: 44px;
+    padding-block: 0.5rem;
+  }
+  .prl-triage-chip {
+    min-height: 40px;
+    padding-block: 0.45rem;
+  }
+
+  /* Channels table: pacing / inline-budget controls + filter rows (the
+     owner-only edit controls were the tiniest, ~16-18px). */
+  .rpt-pace-btn,
+  .rpt-budcell-btn,
+  .rpt-pace .morning-copy-btn {
+    min-height: 34px;
+    padding-block: 0.35rem;
+    display: inline-flex;
+    align-items: center;
+  }
+  .rpt-mt-filter-opt {
+    padding: 0.5rem 0.5rem;
+  }
+  .rpt-mt-filter-opt input {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Trends: metric chips + quick-range buttons + platform head */
+  .rpt-chip,
+  .rpt-range-btn {
+    min-height: 40px;
+    padding-block: 0.5rem;
+  }
+  .rpt-trend-chips,
+  .rpt-range-btns {
+    gap: 0.4rem;
+  }
+  .rpt-plat-head {
+    flex-wrap: wrap;
+  }
+  .rpt-trend-totals {
+    margin-inline-start: 0;
+  }
+
+  /* CRM: source-chip filter — the section's primary mobile control */
+  .crm-source-chip {
+    padding-block: 0.45rem;
+  }
+  .crm-source-link,
+  .crm-source-search-btn {
+    padding-block: 0.4rem;
+  }
+  .crm-source-search-row {
+    padding-block: 0.5rem;
+  }
+  .section-head {
+    flex-wrap: wrap;
+  }
+
+  /* Header toolbar: action chips + month-picker trigger to ~38px */
+  .header-actions .btn-primary.btn-sm,
+  .header-actions .btn-ghost.btn-sm,
+  .header-actions .dash-dd-trigger {
+    height: 2.4rem;
+  }
+  /* Month-picker dropdown was anchored to the (possibly left-of-centre)
+     trigger with no clamp → clipped off the viewport edge. Pin it to the
+     viewport instead. */
+  .dash-dd-panel {
+    position: fixed;
+    inset-inline: 0.9rem;
+    width: auto;
+    min-width: 0;
+    max-width: calc(100vw - 1.8rem);
+  }
+
+  /* Report toolbar (חדש/קלאסי + תצוגת לקוח) — let it wrap rather than clip */
+  .rpt-railbar {
+    flex-wrap: wrap;
+  }
+}
+
+/* The FB-creative table (warehouse-only <details>) had no scroll box, so its
+   7 columns could push the page wide on a phone. Same treatment as the cost
+   table. Harmless on desktop (only scrolls if it actually overflows). */
+.crm-fb-creatives {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.crm-fb-table {
+  min-width: 380px;
+}
+
+/* Hover-only channel drill-down popovers get triggered by the synthetic
+   mouseenter on first tap and can overflow the viewport — and they're
+   non-essential (the number is already on the tile). Off on touch devices. */
+@media (hover: none) {
+  .crm-channel-tooltip {
+    display: none !important;
+  }
+}

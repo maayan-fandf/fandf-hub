@@ -103,9 +103,17 @@ export default function ProjectRailShell({
       if (!validIds.has(id)) return;
       setActiveState(id);
       syncUrl(id);
-      // Recharts' ResponsiveContainer measures on resize — nudge a
-      // just-revealed panel so charts lay out at the right width.
-      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+      requestAnimationFrame(() => {
+        // Recharts' ResponsiveContainer measures on resize — nudge a
+        // just-revealed panel so charts lay out at the right width.
+        window.dispatchEvent(new Event("resize"));
+        // On the mobile horizontal strip the active pill can sit off-screen
+        // (e.g. after a triage-chip jump) — bring it into view so the
+        // highlight is visible and the switch reads as having happened.
+        document
+          .querySelector(`.prl-rail [data-nav="${CSS.escape(id)}"]`)
+          ?.scrollIntoView({ inline: "center", block: "nearest" });
+      });
     },
     [syncUrl, validIds],
   );
@@ -254,6 +262,7 @@ export default function ProjectRailShell({
                   <button
                     key={s.id}
                     type="button"
+                    data-nav={s.id}
                     className={"prl-nav" + (active === s.id ? " is-active" : "")}
                     aria-current={active === s.id ? "page" : undefined}
                     onClick={() => setActive(s.id)}
