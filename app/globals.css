@@ -24715,7 +24715,20 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   }
   .prl-rail {
     position: sticky;
-    top: 0.8rem;
+    /* Clear the topnav + the (shrunk-by-scroll) sticky project header so the
+       rail's top sections aren't tucked behind them on scroll. This desktop
+       rule overrides the base .prl-rail top. */
+    top: 7rem;
+    max-height: calc(100vh - 7.6rem);
+  }
+  /* Native-rail only: extend the header + triage out to the same gutter edge
+     as .prl-body (same breakout calc) so קנקו / the triage strip line up with
+     the rail's right edge instead of floating in the content↔rail gap — most
+     visible when the agenda column pushes everything right. */
+  .project-main:has(.prl) .project-top-stack,
+  .prl-triage {
+    margin-inline-start: calc(50% - 50vw + var(--agenda-col, 0px) / 2);
+    padding-inline-start: 1.25rem;
   }
 }
 @media (max-width: 820px) {
