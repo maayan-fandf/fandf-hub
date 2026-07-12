@@ -24447,6 +24447,39 @@ button.budget-need:focus-visible {
   gap: 0.5rem;
   margin-top: 0.4rem;
 }
+/* Active filtered-period indicator in the sub-header — classic date-banner
+   parity, shown only when a month/range filter is applied (live mode = none).
+   Sits at the inline-start (right, RTL) end so it reads before the toggles. */
+.rpt-period-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-inline-end: auto;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--border-soft));
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  font-variant-numeric: tabular-nums;
+}
+.rpt-period-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 700;
+  line-height: 1;
+}
+.rpt-period-reset:hover {
+  background: color-mix(in srgb, var(--muted) 20%, transparent);
+  color: var(--ink);
+}
 /* Internal-only "preview as client" toggle in the railbar. */
 .rpt-clientview-toggle {
   display: inline-flex;
@@ -27387,5 +27420,71 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 @media (hover: none) {
   .crm-channel-tooltip {
     display: none !important;
+  }
+}
+
+/* ─── "Liquid glass" report panels (2026-07-12) ──────────────────────────
+   Owner wanted the native project report to match the classic dashboard's
+   frosted-glass look. Panels go translucent so the animated
+   ParticlesBackground shows through, and backdrop-filter frosts it. Tokens
+   track the theme (opaque surface hexes → alpha via color-mix). Scoped to
+   `.project-main` (the project report only) and appended last so it wins on
+   source order without !important. Reverts to solid under
+   prefers-reduced-transparency (accessibility + a perf escape hatch — blur
+   over a live canvas is the most GPU-expensive combination). */
+:root {
+  --glass-bg: color-mix(in srgb, var(--surface) 66%, transparent);
+  --glass-bg-soft: color-mix(in srgb, var(--surface) 55%, transparent);
+  --glass-border: color-mix(in srgb, var(--border) 55%, transparent);
+  --glass-blur: blur(14px) saturate(180%);
+}
+html[data-theme="dark"] {
+  --glass-bg: color-mix(in srgb, var(--surface) 60%, transparent);
+  --glass-bg-soft: color-mix(in srgb, var(--surface) 48%, transparent);
+  --glass-border: color-mix(in srgb, #ffffff 12%, transparent);
+}
+.project-main .project-section-metrics.is-native {
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.project-main .prl-rail,
+.project-main .rpt-plat-card,
+.project-main .rpt-conv-funnel,
+.project-main .rpt-dx,
+.project-main .rpt-window-chip,
+.project-main .rpt-ff-pop,
+.project-main .crm-kpi-tile,
+.project-main .rpt-ff-card,
+.project-main .project-section-crm .crm-block {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.project-main .rpt-ff-card.is-lead {
+  background: linear-gradient(180deg, color-mix(in srgb, #667eea 16%, var(--glass-bg)) 0%, var(--glass-bg) 62%);
+}
+.project-main .rpt-ff-card.is-sched {
+  background: linear-gradient(180deg, color-mix(in srgb, #ec4899 14%, var(--glass-bg)) 0%, var(--glass-bg) 62%);
+}
+.project-main .rpt-ff-card.is-meet {
+  background: linear-gradient(180deg, color-mix(in srgb, #f5576c 14%, var(--glass-bg)) 0%, var(--glass-bg) 62%);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .project-main .project-section-metrics.is-native,
+  .project-main .prl-rail,
+  .project-main .rpt-plat-card,
+  .project-main .rpt-conv-funnel,
+  .project-main .rpt-dx,
+  .project-main .rpt-window-chip,
+  .project-main .rpt-ff-pop,
+  .project-main .crm-kpi-tile,
+  .project-main .rpt-ff-card,
+  .project-main .project-section-crm .crm-block {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

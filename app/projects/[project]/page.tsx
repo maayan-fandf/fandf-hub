@@ -518,6 +518,40 @@ export default async function ProjectOverviewPage({
     const s = qs.toString();
     return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
   };
+  // Clear the active period filter (month / free range) back to live — keeps
+  // section + other params, drops monthOverride/from/to. Mirrors the classic
+  // dashboard's "↩ חזור לכל התקופה" reset on its date banner.
+  const periodResetHref = (): string => {
+    const qs = new URLSearchParams();
+    const keep = [
+      "resolved",
+      "person",
+      "view",
+      "channel",
+      "company",
+      "section",
+      "clientView",
+    ] as const;
+    for (const k of keep) {
+      const v = sp[k];
+      if (typeof v === "string" && v) qs.set(k, v);
+    }
+    const s = qs.toString();
+    return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
+  };
+  // Human-readable label for the active filtered period, shown in the sub-header
+  // (classic parity: only when a filter is applied; live mode shows nothing).
+  const fmtIsoHe = (iso: string): string => iso.split("-").reverse().join("/");
+  let periodLabel = "";
+  if (crmDateRange) {
+    periodLabel = `${fmtIsoHe(crmDateRange.from)} – ${fmtIsoHe(crmDateRange.to)}`;
+  } else if (monthOverride) {
+    const [y, mo] = monthOverride.split("-").map(Number);
+    const lastDay = new Date(y, mo, 0).getDate();
+    periodLabel = `${fmtIsoHe(`${monthOverride}-01`)} – ${fmtIsoHe(
+      `${monthOverride}-${String(lastDay).padStart(2, "0")}`,
+    )}`;
+  }
 
   // If a core call failed, it's likely an access-denied — show the first error.
   const firstError =
@@ -868,6 +902,22 @@ export default async function ProjectOverviewPage({
                 >
                   👁️ תצוגת לקוח
                 </Link>
+              )}
+              {dashboardPeriod && periodLabel && (
+                <span
+                  className="rpt-period-chip"
+                  title="התקופה המסוננת המוצגת בדוח"
+                >
+                  <span aria-hidden>📅</span> {periodLabel}
+                  <Link
+                    className="rpt-period-reset"
+                    href={periodResetHref()}
+                    title="חזרה לכל התקופה (הסרת הסינון)"
+                    aria-label="הסר סינון תאריכים"
+                  >
+                    ↩
+                  </Link>
+                </span>
               )}
             </div>
           )}
