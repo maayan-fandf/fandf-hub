@@ -24693,6 +24693,13 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 @media (max-width: 820px) {
   .prl-body {
     flex-direction: column;
+    /* In a column flex the inherited `align-items: flex-start` sizes the
+       content pane to its widest child (e.g. the 1035px channels table),
+       and `body { overflow-x: clip }` then chops off everything past the
+       viewport — half a data-dense section becomes unreachable on mobile.
+       Stretch clamps .prl-content to the column width; wide children
+       (tables) scroll inside their own overflow-x:auto wrappers. */
+    align-items: stretch;
   }
   .prl-rail {
     width: 100%;
