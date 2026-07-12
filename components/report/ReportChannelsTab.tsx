@@ -547,22 +547,40 @@ export default function ReportChannelsTab({
   // right cell (תקציב) is [0,.5], the left cell (עלות) is [.5,1]. Only in the
   // non-month view where both cells exist.
   const maxBudget = Math.max(1, ...visible.map((c) => c.budget));
+  // Fill COLOUR = the channel's pacing health (green on-pace → red badly off),
+  // so the bar reads good/bad at a glance. The fill LENGTH is still the spend,
+  // the track LENGTH is still the budget. Neutral slate when there's no pacing
+  // verdict yet (e.g. no configured daily budget to compare against).
+  const paceFill = (cls: string): string => {
+    switch (cls) {
+      case "pacing-on":
+        return "rgba(34,197,94,0.5)"; // green — on pace
+      case "pacing-mild":
+        return "rgba(234,179,8,0.5)"; // amber — slight drift
+      case "pacing-warn":
+        return "rgba(249,115,22,0.55)"; // orange — off pace
+      case "pacing-severe":
+        return "rgba(239,68,68,0.5)"; // red — badly off / budget exhausted
+      default:
+        return "rgba(100,116,139,0.36)"; // slate — no pacing verdict
+    }
+  };
   const spanBar = (
     budget: number,
     spend: number,
     a: number,
     b: number,
+    paceCls: string,
   ): { backgroundImage: string } | undefined => {
     const budgetR = Math.min(budget / maxBudget, 1);
     if (budgetR <= 0) return undefined;
-    const over = budget > 0 && spend > budget;
     const spendR = Math.min(spend / maxBudget, budgetR); // fill clamped into track
     const loc = (r: number) => Math.max(0, Math.min((r - a) / (b - a), 1)) * 100;
     const bL = loc(budgetR);
     const sL = loc(spendR);
     if (bL <= 0) return undefined;
-    const track = "rgba(20,184,166,0.13)";
-    const fill = over ? "rgba(239,68,68,0.34)" : "rgba(20,184,166,0.44)";
+    const track = "rgba(148,163,184,0.16)"; // neutral track = budget extent
+    const fill = paceFill(paceCls);
     return {
       backgroundImage: `linear-gradient(to left, ${fill} ${sL}%, ${track} ${sL}%, ${track} ${bL}%, transparent ${bL}%)`,
     };
@@ -835,7 +853,7 @@ export default function ReportChannelsTab({
                   {!isMonth && (
                     <td
                       className="rpt-budcell rpt-money-cell"
-                      style={spanBar(c.budget, c.spend, 0, 0.5)}
+                      style={spanBar(c.budget, c.spend, 0, 0.5, pacing?.cls ?? "")}
                     >
                       {canEditBudget && data.tabSlug ? (
                         <BudgetCell
@@ -851,7 +869,11 @@ export default function ReportChannelsTab({
                   )}
                   <td
                     className="rpt-money-cell"
-                    style={isMonth ? undefined : spanBar(c.budget, c.spend, 0.5, 1)}
+                    style={
+                      isMonth
+                        ? undefined
+                        : spanBar(c.budget, c.spend, 0.5, 1, pacing?.cls ?? "")
+                    }
                   >
                     {fmtILS(c.spend)}
                   </td>
