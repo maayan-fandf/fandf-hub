@@ -26241,6 +26241,50 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+/* On phones the horizontal funnel (card → arrow → card → arrow → card)
+   flex-wraps into a mess: a connector gets stranded at the end of a row
+   pointing into empty space and the last card drops to a full-width row
+   of its own. Stack it vertically instead — each card full width, the
+   connector a compact centered "↓ rate" reading top-to-bottom (leads →
+   scheduled → meetings). Threshold picked so we switch before the
+   horizontal layout starts to wrap (~590px of content + gutters). */
+@media (max-width: 680px) {
+  .rpt-funnel-flow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.2rem;
+  }
+  .rpt-ff-card {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+  .rpt-ff-arrow {
+    flex-direction: row;
+    align-self: center;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: 0.15rem 0;
+  }
+  .rpt-ff-arrow-line {
+    display: none;
+  }
+  .rpt-ff-arrow::after {
+    content: "↓";
+    font-size: 1.15rem;
+    color: var(--muted);
+    line-height: 1;
+  }
+}
+/* The per-channel breakdown pie is a hover-only popover — hide it on
+   touch devices (no hover) so it can never flash or affect layout. */
+@media (hover: none) {
+  .rpt-ff-pop {
+    display: none !important;
+  }
+}
 
 /* ─── Native report — conversion funnel bar (drawFunnel) ─── */
 .rpt-conv-funnel {
