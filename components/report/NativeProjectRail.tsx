@@ -86,7 +86,12 @@ export default async function NativeProjectRail({
         : Promise.resolve(null),
     ]);
     data = d;
-    if (links) adLinks = { gAdsUrl: links.gAdsUrl, fbAdsUrl: links.fbAdsUrl };
+    if (links)
+      adLinks = {
+        gAdsUrl: links.gAdsUrl,
+        fbAdsUrl: links.fbAdsUrl,
+        sheetUrl: links.sheetTabUrl || "",
+      };
     for (const [key, v] of Object.entries(dismissals)) {
       if (!key.includes("|pacing-variance|")) continue;
       pacingDismissals[key] = {

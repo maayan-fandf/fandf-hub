@@ -5,10 +5,17 @@ import { channelIcon } from "@/lib/channelIcon";
 import { pacingChannelKey } from "@/lib/budgetTypes";
 import ReportChannelCharts from "@/components/report/ReportChannelCharts";
 import CopyAmountButton from "@/components/CopyAmountButton";
+import GoogleAdsIcon from "@/components/GoogleAdsIcon";
+import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 
 /** Ads-manager deep links (Keys accounts → platform URL) for the pacing
- *  copy-and-open control. Built by the Apps Script (getProjectAdLinks). */
-export type ReportAdLinks = { gAdsUrl: string; fbAdsUrl: string };
+ *  copy-and-open control + the internal quick-links row. Built by the Apps
+ *  Script (getProjectAdLinks). `sheetUrl` = the "דוח ביצועים" Google Sheet. */
+export type ReportAdLinks = {
+  gAdsUrl: string;
+  fbAdsUrl: string;
+  sheetUrl?: string;
+};
 import {
   computeChannelPacing,
   costHeatStyle,
@@ -655,6 +662,49 @@ export default function ReportChannelsTab({
 
   return (
     <div className="rpt-channels">
+      {/* Internal quick-links (classic-report parity) — the performance-report
+          Google Sheet + the Google/Facebook ads managers. Gated by
+          canEditBudget (media/manager, not client/preview) and hidden in the
+          client view (see .rpt-clientview rule). */}
+      {canEditBudget &&
+        adLinks &&
+        (adLinks.sheetUrl || adLinks.gAdsUrl || adLinks.fbAdsUrl) && (
+          <div className="rpt-ch-quicklinks">
+            {adLinks.sheetUrl && (
+              <a
+                className="rpt-ch-qlink is-sheet"
+                href={adLinks.sheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="פתח את גיליון דוח הביצועים (Google Sheets)"
+              >
+                <span aria-hidden>📊</span> דוח ביצועים
+              </a>
+            )}
+            {adLinks.gAdsUrl && (
+              <a
+                className="rpt-ch-qlink is-gads"
+                href={adLinks.gAdsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="פתח את הקמפיינים ב-Google Ads"
+              >
+                <GoogleAdsIcon size="1em" /> Google Ads
+              </a>
+            )}
+            {adLinks.fbAdsUrl && (
+              <a
+                className="rpt-ch-qlink is-fbads"
+                href={adLinks.fbAdsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="פתח את הקמפיינים ב-Facebook Ads"
+              >
+                <FacebookAdsIcon size="1em" /> Facebook Ads
+              </a>
+            )}
+          </div>
+        )}
       {alerts.length > 0 && (
         <div className="rpt-ch-alerts">
           {alerts.map((a, i) => (

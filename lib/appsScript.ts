@@ -1479,6 +1479,9 @@ export type ProjectAdLinks = {
   fbAcctName: string;
   gAdsAcctName: string;
   adCampaignPatterns: string[];
+  /** Google-Sheet performance-report ("דוח ביצועים") deep link, from the
+   *  project's Keys `campaign ID` rich-text hyperlink. Empty if none. */
+  sheetTabUrl?: string;
 };
 
 export async function getProjectAdLinks(

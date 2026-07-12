@@ -24534,6 +24534,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
 .rpt-clientview .rpt-pace-action,                /* ⬇/⬆/🔍 budget-action arrows */
 .rpt-clientview .rpt-cr-badge-fatigue,           /* creative fatigue badges */
+.rpt-clientview .rpt-ch-quicklinks,              /* internal sheet/ads quick-links */
 .rpt-clientview .rpt-dx {                        /* "🔬 איבחון משפך" ad-vs-landing diagnosis */
   display: none !important;
 }
@@ -25110,6 +25111,44 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+}
+/* Internal quick-links row (classic-report parity): the דוח ביצועים sheet +
+   Google/Facebook ads managers, at the top of the ערוצים section. */
+.rpt-ch-quicklinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.rpt-ch-qlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.32rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+.rpt-ch-qlink svg {
+  font-size: 1.05em;
+  flex: none;
+}
+.rpt-ch-qlink:hover {
+  background: var(--surface-alt);
+}
+.rpt-ch-qlink.is-sheet:hover {
+  border-color: color-mix(in srgb, #0f9d58 55%, var(--border-soft));
+}
+.rpt-ch-qlink.is-gads:hover {
+  border-color: color-mix(in srgb, #4285f4 55%, var(--border-soft));
+}
+.rpt-ch-qlink.is-fbads:hover {
+  border-color: color-mix(in srgb, #1877f2 55%, var(--border-soft));
 }
 .rpt-ch-alert {
   border-radius: 8px;
