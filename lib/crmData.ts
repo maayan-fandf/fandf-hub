@@ -246,6 +246,10 @@ export type CrmFunnel = {
       cps: number;
       cpm: number;
     }[];
+    /** Per Google keyword (utm_term on google-source leads) — leads/scheduled/
+     *  held only (no spend join). Set by the Sehel warehouse funnel; absent on
+     *  BMBY (whose keyword drill lives only in the classic report). */
+    byKeyword?: { label: string; leads: number; scheduled: number; held: number }[];
   };
   /** Speed-to-lead (warehouse BMBY funnels only): response time from lead
    *  arrival to the first desk touch, per media channel, from
@@ -1957,7 +1961,14 @@ function aggregateSehelFunnel(
 
 /* ── Sehel warehouse funnel (Supabase sehel_* tables) ──────────────── */
 
-type SehelWhLead = {
+type SehelUtm = {
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+};
+type SehelWhLead = SehelUtm & {
   client_uuid: string | null;
   project_name: string | null;
   stage: string | null;
@@ -1965,6 +1976,24 @@ type SehelWhLead = {
   objections: string | null;
   registered_at: string | null;
   updated_at_sehel: string | null;
+};
+
+/** Sehel channel detection off utm_source (no channel_key like BMBY). fb =
+ *  Meta family (fb/ig/an/facebook/instagram/meta); google = search/discovery. */
+const isSehelFbSource = (s: string | null): boolean => {
+  const v = String(s ?? "").toLowerCase().trim();
+  return (
+    v === "fb" ||
+    v === "an" ||
+    v === "meta" ||
+    v.startsWith("facebook") ||
+    v === "ig" ||
+    v.startsWith("instagram")
+  );
+};
+const isSehelGoogleSource = (s: string | null): boolean => {
+  const v = String(s ?? "").toLowerCase().trim();
+  return v.startsWith("goo") || v.startsWith("google");
 };
 type SehelWhMeeting = {
   client_uuid: string | null;
@@ -2021,7 +2050,7 @@ async function computeSehelFunnelFromWarehouse(
   const leadsRaw = await supabaseRowsAll<SehelWhLead>(
     `sehel_leads_daily?or=(${orLike})` +
       `&registered_at=gte.${gte}&registered_at=lt.${lt}` +
-      `&select=client_uuid,project_name,stage,media_source_raw,objections,registered_at,updated_at_sehel` +
+      `&select=client_uuid,project_name,stage,media_source_raw,objections,registered_at,updated_at_sehel,utm_source,utm_medium,utm_campaign,utm_content,utm_term` +
       `&order=client_uuid.asc`,
   );
   const leads = leadsRaw.filter((l) => matchesProject(l.project_name));
@@ -2060,10 +2089,14 @@ async function computeSehelFunnelFromWarehouse(
   );
   const winMeetings = meetingsRaw.filter((m) => matchesProject(m.project_name));
   const srcByClient = new Map<string, string>();
+  const utmByClient = new Map<string, SehelUtm>();
   for (const l of leads)
-    if (l.client_uuid) srcByClient.set(l.client_uuid, l.media_source_raw ?? "");
+    if (l.client_uuid) {
+      srcByClient.set(l.client_uuid, l.media_source_raw ?? "");
+      utmByClient.set(l.client_uuid, l);
+    }
   // Meeting-clients whose lead registered OUTSIDE the window aren't in the
-  // cohort above — fetch just their source in one batch.
+  // cohort above — fetch their source + first-touch UTM in one batch.
   const missing = [
     ...new Set(
       winMeetings
@@ -2072,15 +2105,17 @@ async function computeSehelFunnelFromWarehouse(
     ),
   ];
   if (missing.length) {
-    const extra = await supabaseRowsAll<{
-      client_uuid: string;
-      media_source_raw: string | null;
-    }>(
+    const extra = await supabaseRowsAll<
+      { client_uuid: string; media_source_raw: string | null } & SehelUtm
+    >(
       `sehel_leads_daily?client_uuid=in.(${missing.map((u) => `"${u}"`).join(",")})` +
-        `&select=client_uuid,media_source_raw`,
+        `&select=client_uuid,media_source_raw,utm_source,utm_medium,utm_campaign,utm_content,utm_term`,
     );
     for (const r of extra)
-      if (r.client_uuid) srcByClient.set(r.client_uuid, r.media_source_raw ?? "");
+      if (r.client_uuid) {
+        srcByClient.set(r.client_uuid, r.media_source_raw ?? "");
+        utmByClient.set(r.client_uuid, r);
+      }
   }
   let sched = 0;
   let held = 0;
@@ -2101,7 +2136,150 @@ async function computeSehelFunnelFromWarehouse(
   base.sourceMatrices.scheduledMeetingsBySource = schedBySrc;
   base.sourceMatrices.meetingsBySource = heldBySrc;
   base.dataSource = "warehouse";
+  // Meta placement/audience/creative + Google keyword UTM drill.
+  try {
+    base.fbBreakdown = await buildSehelBreakdown(
+      leads,
+      winMeetings,
+      utmByClient,
+      from,
+      toExcl,
+    );
+  } catch {
+    /* leave fbBreakdown unset */
+  }
   return base;
+}
+
+/** Sehel UTM drill — mirrors buildFbBreakdown for Meta (placement=utm_medium,
+ *  audience=utm_term, creative=utm_content + spend) and ADDS a Google keyword
+ *  dimension (utm_term on google-source leads). Channel split is on utm_source
+ *  (Sehel has no channel_key). The lead's utm is already first-touch (per the
+ *  exporter), so in-window meetings attribute directly by client_uuid. Returns
+ *  undefined when there are no window UTM leads at all. */
+async function buildSehelBreakdown(
+  windowLeads: SehelUtm[],
+  winMeetings: Array<{ client_uuid: string | null; status_id: number | null }>,
+  utmByClient: Map<string, SehelUtm>,
+  from: string,
+  toExcl: string,
+): Promise<CrmFunnel["fbBreakdown"]> {
+  const fbLeads = windowLeads.filter((l) => isSehelFbSource(l.utm_source));
+  const gLeads = windowLeads.filter((l) => isSehelGoogleSource(l.utm_source));
+  if (!fbLeads.length && !gLeads.length) return undefined;
+  const TOP = 8;
+  const cl = (s: string) => s.replace(/\s+/g, " ").trim();
+  const deId = (raw: string): string => {
+    const v = cl(raw);
+    return /^\d{8,}$/.test(v) ? "אחר" : v;
+  };
+  // In-window meeting events per client; held = status_id 10.
+  const evByClient = new Map<string, { total: number; done: number }>();
+  for (const m of winMeetings) {
+    const c = String(m.client_uuid ?? "");
+    if (!c) continue;
+    const rec = evByClient.get(c) || { total: 0, done: 0 };
+    rec.total++;
+    if (Number(m.status_id) === 10) rec.done++;
+    evByClient.set(c, rec);
+  }
+  type Acc = { leads: number; sched: number; held: number };
+  // Group a channel's leads by a UTM label, then credit each meeting-client's
+  // events to the group of their first-touch lead (same channel only).
+  const build = (
+    leadSet: SehelUtm[],
+    getLabel: (u: SehelUtm) => string,
+    channelMatch: (s: string | null) => boolean,
+  ): Map<string, Acc> => {
+    const m = new Map<string, Acc>();
+    const ensure = (k: string): Acc => {
+      let r = m.get(k);
+      if (!r) { r = { leads: 0, sched: 0, held: 0 }; m.set(k, r); }
+      return r;
+    };
+    for (const l of leadSet) { const v = getLabel(l); if (v) ensure(v).leads++; }
+    for (const [c, ev] of evByClient) {
+      const u = utmByClient.get(c);
+      if (!u || !channelMatch(u.utm_source)) continue;
+      const v = getLabel(u);
+      if (!v) continue;
+      const r = ensure(v);
+      r.sched += ev.total;
+      r.held += ev.done;
+    }
+    return m;
+  };
+  const toRows = (m: Map<string, Acc>) => {
+    const sorted = [...m.entries()]
+      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.sched, held: r.held }))
+      .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
+    const head = sorted.slice(0, TOP);
+    const rest = sorted.slice(TOP).reduce(
+      (s, r) => ({ leads: s.leads + r.leads, scheduled: s.scheduled + r.scheduled, held: s.held + r.held }),
+      { leads: 0, scheduled: 0, held: 0 },
+    );
+    if (rest.leads > 0 || rest.scheduled > 0) head.push({ label: "אחר", ...rest });
+    return head;
+  };
+  // Sehel's utm_medium is inconsistent — ~half the fb rows carry a truncated
+  // 2-char code ("Fa"/"In"/"an"/"di"/"Ot") instead of a full placement
+  // ("Facebook_Mobile_Feed"). Normalize the known truncations so the column
+  // reads honestly; fall back to underscore→space for the clean values.
+  const normPlacement = (raw: string): string => {
+    const v = cl(raw);
+    if (!v) return "";
+    const map: Record<string, string> = {
+      Fa: "Facebook", In: "Instagram", an: "Audience Network",
+      di: "Display", d: "Display", Ot: "אחר", Others: "אחר", cpc: "Search",
+    };
+    if (map[v]) return map[v];
+    return v.replace(/_/g, " ");
+  };
+  const placement = build(fbLeads, (u) => normPlacement(String(u.utm_medium ?? "")), isSehelFbSource);
+  const audience = build(fbLeads, (u) => deId(String(u.utm_term ?? "")), isSehelFbSource);
+  const creativeAcc = build(fbLeads, (u) => {
+    const ad = normAdName(u.utm_content);
+    return ad && !/^\d{8,}$/.test(ad) ? ad : "";
+  }, isSehelFbSource);
+  const keyword = build(gLeads, (u) => deId(String(u.utm_term ?? "")), isSehelGoogleSource);
+
+  // Spend join for fb creatives (same facebook-ads-metrics Sheet as BMBY).
+  const campaigns = new Set<string>();
+  const addCamp = (u: SehelUtm) => {
+    const camp = cl(String(u.utm_campaign ?? ""));
+    if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
+  };
+  for (const l of fbLeads) addCamp(l);
+  for (const c of evByClient.keys()) {
+    const u = utmByClient.get(c);
+    if (u && isSehelFbSource(u.utm_source)) addCamp(u);
+  }
+  let spendByAd = new Map<string, { cost: number; impressions: number; websiteLeads: number }>();
+  try {
+    spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, from, toExcl);
+  } catch {
+    /* leave spend at 0 */
+  }
+  const byCreative = [...creativeAcc.entries()]
+    .map(([label, r]) => {
+      const spend = spendByAd.get(label)?.cost ?? 0;
+      return {
+        label, leads: r.leads, scheduled: r.sched, held: r.held, spend,
+        cpl: r.leads ? spend / r.leads : 0,
+        cps: r.sched ? spend / r.sched : 0,
+        cpm: r.held ? spend / r.held : 0,
+      };
+    })
+    .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled))
+    .slice(0, TOP);
+
+  return {
+    totalLeads: fbLeads.length,
+    byPlacement: toRows(placement),
+    byAudience: toRows(audience),
+    byCreative,
+    byKeyword: gLeads.length ? toRows(keyword) : undefined,
+  };
 }
 
 /* ── Salesforce funnel ─────────────────────────────────────────────── */

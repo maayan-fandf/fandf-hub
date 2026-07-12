@@ -17,3 +17,7 @@ next-env.d.ts
 # The private key belongs in Secret Manager, NEVER in the repo.
 .vapid_private.txt
 vapid_private.txt
+# Throwaway data-probe scripts (read .env.local locally; never part of a
+# deploy). Kept out so `git add -A` on a version commit doesn't sweep them in.
+scripts/probe-*.mjs
+scripts/probe-*.ts

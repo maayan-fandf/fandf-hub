@@ -1125,6 +1125,57 @@ export default function CrmFunnelClient({
         </details>
       ) : null}
 
+      {/* Google keyword drill (Sehel warehouse only) — utm_term on
+          google-source leads. Sibling of the FB block so Meta/Google stay
+          visually distinct; shown only when the warehouse populated it. */}
+      {funnel.fbBreakdown?.byKeyword && funnel.fbBreakdown.byKeyword.length > 0 ? (
+        <details className="crm-fb-breakdown crm-kw-breakdown" dir="rtl">
+          <summary className="crm-fb-head">
+            <span className="crm-fb-icon" aria-hidden>🔍</span>
+            מילות מפתח — Google
+            <span className="crm-fb-headsub">לפי utm_term (חיפוש בתשלום)</span>
+          </summary>
+          <div className="crm-fb-cols">
+            {(() => {
+              const list = funnel.fbBreakdown.byKeyword;
+              const max = list[0]?.leads || 1;
+              return (
+                <div className="crm-fb-col">
+                  <div className="crm-fb-col-title crm-fb-col-title-row">
+                    <span>מילת מפתח (Keyword)</span>
+                    <span className="crm-fb-col-legend" aria-hidden>
+                      לידים · תואמו · פגישות
+                    </span>
+                  </div>
+                  {list.map((r) => (
+                    <div
+                      key={r.label}
+                      className="crm-fb-row"
+                      title={`${r.label}: ${r.leads} לידים · ${r.scheduled} תואמו · ${r.held} פגישות`}
+                    >
+                      <div
+                        className="crm-fb-bar"
+                        style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
+                      />
+                      <span className="crm-fb-rowlabel">{r.label}</span>
+                      <span className="crm-fb-rowmetrics">
+                        <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
+                        <span className="crm-fb-rowsub" title="תואמו">
+                          {fmtInt(r.scheduled)}
+                        </span>
+                        <span className="crm-fb-rowsub" title="פגישות">
+                          {fmtInt(r.held)}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </details>
+      ) : null}
+
       {/* ── Warehouse "extras" (BMBY) — collapsed by default, parked below
           the FB breakdown so the funnel's core stays up top (owner). ── */}
 
