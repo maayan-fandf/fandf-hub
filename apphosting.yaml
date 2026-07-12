@@ -154,6 +154,14 @@ env:
     availability:
       - RUNTIME
 
+  # Separate rollout flag for the Sehel warehouse funnel (sehel_leads_daily /
+  # sehel_touches / sehel_meetings). Ships "0" — flip to "1" after the
+  # warehouse numbers are cross-checked against the Sehel Sheet funnel.
+  - variable: SUPABASE_SEHEL_WAREHOUSE
+    value: "0"
+    availability:
+      - RUNTIME
+
   # Canary allowlist (SUPABASE_CRM_PROJECTS) — when SET, enrichment +
   # warehouse-funnel run ONLY for those Keys.CRM names; when UNSET (this
   # variable omitted) = ALL bmby projects, with the wh>=sheet routing guard

@@ -35,6 +35,14 @@ export function useSupabaseCrmEnrichment(): boolean {
   return String(process.env.SUPABASE_CRM_ENRICHMENT || "").trim() === "1";
 }
 
+/** Separate flag for the Sehel warehouse funnel (sehel_leads_daily /
+ *  sehel_touches / sehel_meetings). Kept independent of the always-on BMBY
+ *  flag so Sehel projects can be verified + rolled out on their own — ships
+ *  "0" until the warehouse numbers are cross-checked against the Sheet. */
+export function useSupabaseSehelWarehouse(): boolean {
+  return String(process.env.SUPABASE_SEHEL_WAREHOUSE || "").trim() === "1";
+}
+
 /** Optional canary allowlist — a BASE64-encoded comma-separated list of
  *  Keys.CRM account names. When non-empty, enrichment runs ONLY for those
  *  projects (even with the master flag on); empty/unset = all bmby projects.

@@ -36,6 +36,7 @@ import { readKeysCached } from "@/lib/keys";
 import { computeCrmEnrichment, type CrmEnrichment } from "./crmEnrichment";
 import {
   useSupabaseCrmEnrichment,
+  useSupabaseSehelWarehouse,
   supabaseCrmProjectAllowed,
   supabaseConfigured,
   supabaseRowsAll,
@@ -1714,6 +1715,20 @@ async function computeSehelFunnel(
 ): Promise<CrmFunnel | null> {
   const { headers, rows } = await readSehel(subjectEmail);
   if (!rows.length) return null;
+  return aggregateSehelFunnel(headers, rows as unknown[][], crmAccount, window);
+}
+
+/** Pure Sehel funnel aggregation — shared by the Sheet path (above) and the
+ *  warehouse path (computeSehelFunnelFromWarehouse, below). Row source is
+ *  irrelevant; only the column NAMES matter (headers.indexOf), so the
+ *  warehouse path synthesizes rows with the same header names. Mirrors
+ *  aggregateBmbyFunnel. */
+function aggregateSehelFunnel(
+  headers: string[],
+  rows: unknown[][],
+  crmAccount: string,
+  window: DateWindow | null,
+): CrmFunnel | null {
   const iStage = headers.indexOf("שלב טיפול");
   const iMeetingDate = headers.indexOf("תאריך פגישה אחרונה");
   const iProject = headers.indexOf("פרויקט");
@@ -1938,6 +1953,155 @@ async function computeSehelFunnel(
     monthFilter: window?.kind === "month" ? window.month : "",
     windowLabel: window?.kind === "range" ? window.label : "",
   };
+}
+
+/* ── Sehel warehouse funnel (Supabase sehel_* tables) ──────────────── */
+
+type SehelWhLead = {
+  client_uuid: string | null;
+  project_name: string | null;
+  stage: string | null;
+  media_source_raw: string | null;
+  objections: string | null;
+  registered_at: string | null;
+  updated_at_sehel: string | null;
+};
+type SehelWhMeeting = {
+  client_uuid: string | null;
+  project_name: string | null;
+  status_id: number | null;
+  starts_at: string | null;
+};
+
+/** Warehouse-backed Sehel funnel. Leads are windowed on `registered_at` from
+ *  sehel_leads_daily and fed through the shared `aggregateSehelFunnel` (which
+ *  gives leads / sources / objections / status / stale / daily). The
+ *  scheduled + held counts are then OVERRIDDEN with authoritative
+ *  sehel_meetings events (held = status_id 10), attributed to the meeting-
+ *  client's lead source by client_uuid — so held stops relying on the Sheet's
+ *  stage heuristic. Sehel timestamps are tagged +00:00 (unlike BMBY's +03:00),
+ *  so the window compares in that space and `dateOnly` (not `ilDay`) keeps the
+ *  wall-clock day. Returns null so the caller keeps the Sheet funnel; window-
+ *  scoped, so the caller preserves the Sheet's project-wide stale tally. */
+async function computeSehelFunnelFromWarehouse(
+  crmAccount: string,
+  window: DateWindow | null,
+): Promise<CrmFunnel | null> {
+  if (!supabaseConfigured() || !window) return null;
+  let from = "";
+  let toExcl = "";
+  if (window.kind === "month") {
+    from = `${window.month}-01`;
+    const [y, mo] = window.month.split("-").map(Number);
+    toExcl =
+      mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+  } else {
+    from = window.from;
+    const d = new Date(`${window.to}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    toExcl = d.toISOString().slice(0, 10);
+  }
+  // Sehel project_name carries a "<project> <salesperson>" suffix, and a Keys
+  // account can be comma-joined — match server-side with a prefix `like` per
+  // candidate (double-quoted so a comma inside a name doesn't break the `or`),
+  // then refine on a word boundary in memory (same rule as the Sheet path).
+  const cands = crmAccountCandidates(crmAccount);
+  if (!cands.length) return null;
+  const orLike = cands
+    .map((c) => `project_name.like.${encodeURIComponent(`"${c}*"`)}`)
+    .join(",");
+  const targets = cands.map(norm);
+  const matchesProject = (p: string | null): boolean => {
+    const n = norm(p);
+    return targets.some((t) => n.startsWith(t) && (n === t || n[t.length] === " "));
+  };
+  // +00:00 window bounds (Sehel wall-clock is tagged UTC, not +03:00).
+  const gte = `${from}T00:00:00%2B00:00`;
+  const lt = `${toExcl}T00:00:00%2B00:00`;
+  const leadsRaw = await supabaseRowsAll<SehelWhLead>(
+    `sehel_leads_daily?or=(${orLike})` +
+      `&registered_at=gte.${gte}&registered_at=lt.${lt}` +
+      `&select=client_uuid,project_name,stage,media_source_raw,objections,registered_at,updated_at_sehel` +
+      `&order=client_uuid.asc`,
+  );
+  const leads = leadsRaw.filter((l) => matchesProject(l.project_name));
+  if (!leads.length) return null;
+
+  // Run the leads through the shared aggregator via synthesized rows in the
+  // Sheet column layout (only the column NAMES matter). The meeting columns
+  // are left empty — the authoritative counts are overridden below.
+  const synthHeaders = [
+    "פרויקט",
+    "שלב טיפול",
+    "תאריך פגישה אחרונה",
+    "התנגדויות",
+    "מקור הגעה",
+    "תאריך רישום",
+    "עדכון אחרון",
+  ];
+  const synthRows: unknown[][] = leads.map((l) => [
+    l.project_name ?? "",
+    l.stage ?? "",
+    "",
+    l.objections ?? "",
+    l.media_source_raw ?? "",
+    dateOnly(l.registered_at),
+    dateOnly(l.updated_at_sehel),
+  ]);
+  const base = aggregateSehelFunnel(synthHeaders, synthRows, crmAccount, window);
+  if (!base) return null;
+
+  // Authoritative meetings dated in the window (starts_at); held = status_id
+  // 10. Attribute each event to the meeting-client's lead source.
+  const meetingsRaw = await supabaseRowsAll<SehelWhMeeting>(
+    `sehel_meetings?or=(${orLike})` +
+      `&starts_at=gte.${gte}&starts_at=lt.${lt}` +
+      `&select=client_uuid,project_name,status_id,starts_at&order=event_uid.asc`,
+  );
+  const winMeetings = meetingsRaw.filter((m) => matchesProject(m.project_name));
+  const srcByClient = new Map<string, string>();
+  for (const l of leads)
+    if (l.client_uuid) srcByClient.set(l.client_uuid, l.media_source_raw ?? "");
+  // Meeting-clients whose lead registered OUTSIDE the window aren't in the
+  // cohort above — fetch just their source in one batch.
+  const missing = [
+    ...new Set(
+      winMeetings
+        .map((m) => m.client_uuid)
+        .filter((c): c is string => !!c && !srcByClient.has(c)),
+    ),
+  ];
+  if (missing.length) {
+    const extra = await supabaseRowsAll<{
+      client_uuid: string;
+      media_source_raw: string | null;
+    }>(
+      `sehel_leads_daily?client_uuid=in.(${missing.map((u) => `"${u}"`).join(",")})` +
+        `&select=client_uuid,media_source_raw`,
+    );
+    for (const r of extra)
+      if (r.client_uuid) srcByClient.set(r.client_uuid, r.media_source_raw ?? "");
+  }
+  let sched = 0;
+  let held = 0;
+  const schedBySrc: Record<string, number> = {};
+  const heldBySrc: Record<string, number> = {};
+  for (const m of winMeetings) {
+    const src = normSource(srcByClient.get(m.client_uuid ?? "") ?? "");
+    sched++;
+    if (src) schedBySrc[src] = (schedBySrc[src] || 0) + 1;
+    if (Number(m.status_id) === 10) {
+      held++;
+      if (src) heldBySrc[src] = (heldBySrc[src] || 0) + 1;
+    }
+  }
+  base.scheduledMeetings = sched;
+  base.meetings = held;
+  base.meetingRatePct = base.leads > 0 ? (held / base.leads) * 100 : null;
+  base.sourceMatrices.scheduledMeetingsBySource = schedBySrc;
+  base.sourceMatrices.meetingsBySource = heldBySrc;
+  base.dataSource = "warehouse";
+  return base;
 }
 
 /* ── Salesforce funnel ─────────────────────────────────────────────── */
@@ -2453,6 +2617,23 @@ export async function getCrmFunnelForProject(args: {
     funnel = await computeSalesforceFunnel(driveFolderOwner(), crmAccount, window);
   } else {
     funnel = await computeSehelFunnel(driveFolderOwner(), crmAccount, window);
+    // Symmetric to the BMBY block above: prefer the Sehel warehouse funnel
+    // when its (separate) flag is on and it's at least as complete as the
+    // Sheet on lead count. Window-scoped, so keep the Sheet's project-wide
+    // stale tally; the warehouse carries its own (window-scoped) objections.
+    // Never throws — a warehouse hiccup leaves the Sheet funnel intact.
+    if (useSupabaseSehelWarehouse() && supabaseCrmProjectAllowed(crmAccount)) {
+      try {
+        const sheetFunnel = funnel;
+        const wh = await computeSehelFunnelFromWarehouse(crmAccount, window);
+        if (wh && wh.leads > 0 && (!sheetFunnel || wh.leads >= sheetFunnel.leads)) {
+          if (sheetFunnel) wh.staleLeads = sheetFunnel.staleLeads;
+          funnel = wh;
+        }
+      } catch {
+        /* keep the Sheet funnel */
+      }
+    }
   }
   // Attribute media cost onto the lead sources (anda model) when spend
   // was supplied for this window.
