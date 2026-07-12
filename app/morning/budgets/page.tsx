@@ -1,6 +1,6 @@
 import {
   currentUserEmail,
-  getMorningFeed,
+  getAllProjectAdLinks,
   getMyProjects,
   tasksPeopleList,
 } from "@/lib/appsScript";
@@ -65,7 +65,7 @@ export default async function BudgetsPage() {
 
   const [
     budgetRes,
-    feedRes,
+    adLinksRes,
     peopleRes,
     dismissRes,
     rateRes,
@@ -74,7 +74,10 @@ export default async function BudgetsPage() {
     spikesRes,
   ] = await Promise.allSettled([
     getBudgetMaster(driveFolderOwner()),
-    getMorningFeed({ scope: "all", overrideEmail }),
+    // Ad-account / sheet deep-links via the lightweight bulk resolver — NOT
+    // the full morningFeed, which takes ~130s and times out at the 45s fetch
+    // limit, leaving the desk with no links (the original "broken links" bug).
+    getAllProjectAdLinks(subject),
     tasksPeopleList(),
     listAlertDismissals(),
     getUsdIlsRate(),
@@ -96,54 +99,47 @@ export default async function BudgetsPage() {
         ? budgetRes.reason.message
         : String(budgetRes.reason)
       : null;
-  const feed = feedRes.status === "fulfilled" ? feedRes.value : null;
+  const adLinkEntries =
+    adLinksRes.status === "fulfilled" ? adLinksRes.value : [];
   const peopleList =
     peopleRes.status === "fulfilled" && peopleRes.value.ok
       ? peopleRes.value.people
       : [];
 
-  // Per-project links from the morning feed, keyed by slug (== tab):
-  // ad-account deep links, the sheet tab URL, and the Hub project page.
+  // Per-project ad-account + sheet deep-links from the lightweight bulk
+  // resolver, keyed by BOTH the slug (== the budget `tab`) and the Hebrew
+  // name so the grid's tab→name lookup resolves either identifier. (projectHref
+  // is dropped: the grid falls back to /projects/{name}, which is identical.)
   const adLinks: Record<
     string,
-    {
-      gAdsUrl?: string;
-      fbAdsUrl?: string;
-      sheetTabUrl?: string;
-      projectHref?: string;
-    }
+    { gAdsUrl?: string; fbAdsUrl?: string; sheetTabUrl?: string }
   > = {};
-  // Live/inactive map (slug → is-inactive), keyed the same way as adLinks
-  // so the grid can look it up by tab. Uses the SAME definition as the
-  // projects home screen + top-nav (lib/projectEnded): a project is
-  // non-live when it ended (>5 days past) OR has no current-month spend.
-  // Every feed project gets an explicit true/false so the grid can tell a
-  // "live" project (false) from one missing from the feed (absent).
+  for (const e of adLinkEntries) {
+    const entry = {
+      gAdsUrl: e.gAdsUrl || undefined,
+      fbAdsUrl: e.fbAdsUrl || undefined,
+      sheetTabUrl: e.sheetTabUrl || undefined,
+    };
+    for (const k of [e.slug, e.name]) {
+      const key = (k || "").toLowerCase().trim();
+      if (key) adLinks[key] = entry;
+    }
+  }
+  // Live/inactive map derived from the budget master (the same project list the
+  // grid renders): non-live when ended (>5 days past) OR no current-month
+  // spend — same definition as the projects home screen + top-nav. Keyed by
+  // both tab and name. (This used to come from the morning feed, which now
+  // times out — so it was silently empty on prod.)
   const inactiveProjects: Record<string, boolean> = {};
-  if (feed) {
-    for (const pr of feed.projects) {
-      const entry = {
-        gAdsUrl: pr.gAdsUrl || undefined,
-        fbAdsUrl: pr.fbAdsUrl || undefined,
-        sheetTabUrl: pr.sheetTabUrl || undefined,
-        projectHref: pr.name
-          ? `/projects/${encodeURIComponent(pr.name)}`
-          : undefined,
-      };
-      const inactive = isProjectEndedByIso(pr.endIso) || !(pr.spend > 0);
-      // Register under BOTH the English slug AND the Hebrew name (both
-      // lowercased): the budget master's `tab` is the English slug, but on
-      // some Apps Script deployments the feed returns an empty slug and the
-      // grid ends up looking up by the Hebrew name instead. Keying both ways
-      // (plus the grid's tab→name lookup fallback) makes the join resolve
-      // regardless of which identifier each side carries. Without this, the
-      // whole ad-account / sheet deep-link column silently went blank on prod.
-      for (const k of [pr.slug, pr.name]) {
-        const key = (k || "").toLowerCase().trim();
-        if (!key) continue;
-        adLinks[key] = entry;
-        inactiveProjects[key] = inactive;
-      }
+  for (const p of master?.projects ?? []) {
+    const spendSum = Object.values(p.platforms).reduce(
+      (s, pl) => s + (pl?.spend || 0),
+      0,
+    );
+    const inactive = isProjectEndedByIso(p.endIso) || !(spendSum > 0);
+    for (const k of [p.tab, p.name]) {
+      const key = (k || "").toLowerCase().trim();
+      if (key) inactiveProjects[key] = inactive;
     }
   }
   const showAdLinks = canViewAdLinks(subject, peopleList);

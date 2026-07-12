@@ -1490,6 +1490,41 @@ export async function getProjectAdLinks(
   return callApi<ProjectAdLinks>("projectAdLinks", { project });
 }
 
+/** One entry per project in the bulk ad-links payload — keyed by BOTH the
+ *  Hebrew name and the slug (campaign ID) so a caller can look up by either. */
+export type ProjectAdLinksEntry = {
+  name: string;
+  slug: string;
+  fbAdsUrl: string;
+  gAdsUrl: string;
+  sheetTabUrl: string;
+};
+
+// Bulk ad-links for the budget desk, cached 5 min per subject email (the
+// Google URL carries a per-user &authuser). Uses the lightweight
+// `projectAdLinksAll` action (memoized Apps Script reads → a few seconds)
+// instead of the full morningFeed (~130s, which timed out at the 45s fetch
+// limit and left the desk with adLinks={} → every FB/Google/sheet button blank).
+const getAllProjectAdLinksCached = unstable_cache(
+  async (email: string): Promise<{ projects: ProjectAdLinksEntry[] }> =>
+    callApiAs<{ projects: ProjectAdLinksEntry[] }>(email, "projectAdLinksAll"),
+  ["projectAdLinksAll"],
+  { revalidate: 300, tags: ["project-ad-links-all"] },
+);
+
+/** Ad/sheet deep-links for every project, for the budget desk. Falls back to
+ *  [] on any error so the desk still renders (just without the links). */
+export async function getAllProjectAdLinks(
+  email: string,
+): Promise<ProjectAdLinksEntry[]> {
+  try {
+    const r = await getAllProjectAdLinksCached(email);
+    return r?.projects ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** Per-surface price snapshot returned by `getProjectPriceCheck`.
  *  - `name` is the stable surface key (used for CSS classes / per-surface
  *    icons), `label` is the Hebrew display string.
