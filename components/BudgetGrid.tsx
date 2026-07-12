@@ -348,7 +348,11 @@ export default function BudgetGrid({
                       p={p}
                       open={expanded.has(p.tab)}
                       onToggle={() => toggle(p.tab)}
-                      ad={adLinks[p.tab.toLowerCase()] || {}}
+                      ad={
+                        adLinks[p.tab.toLowerCase()] ||
+                        adLinks[(p.name || "").toLowerCase()] ||
+                        {}
+                      }
                       showAdLinks={showAdLinks}
                       canEdit={canEdit}
                       onEdit={applyEdit}
@@ -2235,7 +2239,8 @@ function groupAccountUrl(
   const accountKeys = new Set<string>();
   let firstUrl: string | undefined;
   for (const p of projects) {
-    const a = adLinks[p.tab.toLowerCase()];
+    const a =
+      adLinks[p.tab.toLowerCase()] || adLinks[(p.name || "").toLowerCase()];
     const u = platform === "google" ? a?.gAdsUrl : a?.fbAdsUrl;
     if (!u) continue;
     let key = u;

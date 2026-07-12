@@ -122,9 +122,7 @@ export default async function BudgetsPage() {
   const inactiveProjects: Record<string, boolean> = {};
   if (feed) {
     for (const pr of feed.projects) {
-      const key = (pr.slug || pr.name || "").toLowerCase();
-      if (!key) continue;
-      adLinks[key] = {
+      const entry = {
         gAdsUrl: pr.gAdsUrl || undefined,
         fbAdsUrl: pr.fbAdsUrl || undefined,
         sheetTabUrl: pr.sheetTabUrl || undefined,
@@ -132,7 +130,20 @@ export default async function BudgetsPage() {
           ? `/projects/${encodeURIComponent(pr.name)}`
           : undefined,
       };
-      inactiveProjects[key] = isProjectEndedByIso(pr.endIso) || !(pr.spend > 0);
+      const inactive = isProjectEndedByIso(pr.endIso) || !(pr.spend > 0);
+      // Register under BOTH the English slug AND the Hebrew name (both
+      // lowercased): the budget master's `tab` is the English slug, but on
+      // some Apps Script deployments the feed returns an empty slug and the
+      // grid ends up looking up by the Hebrew name instead. Keying both ways
+      // (plus the grid's tab→name lookup fallback) makes the join resolve
+      // regardless of which identifier each side carries. Without this, the
+      // whole ad-account / sheet deep-link column silently went blank on prod.
+      for (const k of [pr.slug, pr.name]) {
+        const key = (k || "").toLowerCase().trim();
+        if (!key) continue;
+        adLinks[key] = entry;
+        inactiveProjects[key] = inactive;
+      }
     }
   }
   const showAdLinks = canViewAdLinks(subject, peopleList);
