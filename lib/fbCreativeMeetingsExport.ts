@@ -296,7 +296,12 @@ async function computeSehelMeetingsMulti(
   ]);
   const leads = leadsRaw.filter((l) => matches(l.project_name));
   const meets = meetsRaw.filter((m) => matches(m.project_name));
-  if (!leads.length) return empty();
+  // No leads → nothing to attribute. No meetings AT ALL for the project →
+  // the sehel_meetings sync gap (see SEHEL_MEETINGS_SYNC_GAP.md): showing
+  // leads·0·0 on the cards would falsely imply the creatives drove no
+  // meetings. Bail so the cards fall back to ad-metrics-only, matching the
+  // funnel routing guard (which keeps such projects on the Sheet).
+  if (!leads.length || !meets.length) return empty();
 
   // First-touch attribution (first lead per client by registered_at).
   const fbAttr = new Map<string, { camp: string; ad: string; aud: string }>();

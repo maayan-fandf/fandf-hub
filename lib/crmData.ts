@@ -2804,7 +2804,22 @@ export async function getCrmFunnelForProject(args: {
       try {
         const sheetFunnel = funnel;
         const wh = await computeSehelFunnelFromWarehouse(crmAccount, window);
-        if (wh && wh.leads > 0 && (!sheetFunnel || wh.leads >= sheetFunnel.leads)) {
+        // sehel_meetings sync gap (2026-07): some projects have warehouse LEADS
+        // but NO warehouse meetings yet (כוכב הצפון אשדוד / תדהר / רייסדור /
+        // קיימא — see SEHEL_MEETINGS_SYNC_GAP.md). Superseding those would
+        // zero-out real meetings the Sheet still has. So take the warehouse only
+        // when it actually carries meetings — OR the Sheet also has none (no
+        // regression either way). Complete projects (CAZAR / אפרידר / HaGada /
+        // ברוריה) still win; the rest stay on the Sheet until Nadav backfills.
+        const whMeetings = (wh?.scheduledMeetings ?? 0) + (wh?.meetings ?? 0);
+        const sheetMeetings =
+          (sheetFunnel?.scheduledMeetings ?? 0) + (sheetFunnel?.meetings ?? 0);
+        if (
+          wh &&
+          wh.leads > 0 &&
+          (!sheetFunnel || wh.leads >= sheetFunnel.leads) &&
+          (whMeetings > 0 || sheetMeetings === 0)
+        ) {
           if (sheetFunnel) wh.staleLeads = sheetFunnel.staleLeads;
           funnel = wh;
         }

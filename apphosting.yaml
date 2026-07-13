@@ -155,10 +155,15 @@ env:
       - RUNTIME
 
   # Separate rollout flag for the Sehel warehouse funnel (sehel_leads_daily /
-  # sehel_touches / sehel_meetings). Ships "0" — flip to "1" after the
-  # warehouse numbers are cross-checked against the Sehel Sheet funnel.
+  # sehel_touches / sehel_meetings). Flipped to "1" 2026-07-13 after the
+  # warehouse cross-check: leads are healthy portfolio-wide and the funnel is
+  # sound where meetings exist (CAZAR / אפרידר / HaGada / ברוריה). The routing
+  # guard in lib/crmData only lets the warehouse supersede when it actually
+  # carries meetings, so projects still missing from sehel_meetings (כוכב הצפון
+  # אשדוד / תדהר / רייסדור / קיימא — see SEHEL_MEETINGS_SYNC_GAP.md) stay on the
+  # Sheet with no regression until Nadav backfills them.
   - variable: SUPABASE_SEHEL_WAREHOUSE
-    value: "0"
+    value: "1"
     availability:
       - RUNTIME
 
