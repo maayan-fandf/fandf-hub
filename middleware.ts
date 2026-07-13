@@ -29,6 +29,10 @@ export default auth((req) => {
     // called by the Apps Script report to replace the stale-prone Sheet export
     // (token-authed via APPS_SCRIPT_API_TOKEN). Unattended — skip NextAuth.
     path === "/api/fb-creative-meetings" ||
+    // Instant-budget-sync cache-bust webhook, pinged by the Apps Script onEdit
+    // trigger the moment the main sheet is edited (token-authed via
+    // APPS_SCRIPT_API_TOKEN). Unattended — must skip the NextAuth redirect.
+    path === "/api/revalidate-budgets" ||
     // Cloud Scheduler membership-reconcile cron. Same shared-secret
     // (X-Cron-Token / APPS_SCRIPT_API_TOKEN) auth as poll-tasks; must
     // skip the NextAuth redirect or Scheduler gets a 302→/signin
