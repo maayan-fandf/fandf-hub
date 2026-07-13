@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { sheetsClient } from "@/lib/sa";
 import { canSeeCampaigns } from "@/lib/userRole";
-import { revalidateBudgetMaster } from "@/lib/budgetMaster";
+import { bustBudgetCaches } from "@/lib/revalidateBudgets";
 
 export const dynamic = "force-dynamic";
 
@@ -209,7 +209,7 @@ export async function POST(req: Request) {
               })),
             },
           });
-          revalidateBudgetMaster();
+          bustBudgetCaches();
           return NextResponse.json({
             ok: true,
             tab: slug,
@@ -320,7 +320,7 @@ export async function POST(req: Request) {
       requestBody: { values: [[value]] },
     });
 
-    revalidateBudgetMaster();
+    bustBudgetCaches();
     return NextResponse.json({ ok: true, tab, row, value, channel: actualChannel });
   } catch (e) {
     return NextResponse.json(
