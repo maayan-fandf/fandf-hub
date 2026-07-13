@@ -502,7 +502,13 @@ export default function ReportMonthlyTrend({
                       // Partial selection → indeterminate tri-state.
                       if (el) el.indeterminate = !allChecked;
                     }}
-                    onChange={() => setSelected(null)}
+                    // Proper toggle (matches the ערוצים filter): when everything
+                    // is on, clicking clears to none (empty Set); otherwise it
+                    // selects all (null). Was always setSelected(null), so "כל
+                    // הערוצים" could never UN-select.
+                    onChange={() =>
+                      setSelected(allChecked ? new Set<string>() : null)
+                    }
                   />
                   <b>כל הערוצים</b>
                 </label>
