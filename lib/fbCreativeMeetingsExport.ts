@@ -224,6 +224,164 @@ export async function computeProjectMeetings(
   return aggregateMeetings(monthLeads, attr, jm, from, toExcl);
 }
 
+/* ── Sehel warehouse variant ──────────────────────────────────────────
+ * The Sehel tables (sehel_leads_daily / sehel_meetings) have no channel_key
+ * or project_id: channel is derived from utm_source, the project is matched by
+ * name PREFIX (a Sehel project_name carries a "<account> <salesperson>"
+ * suffix), timestamps are +00:00 wall-clock (no +3h shift — plain date slice,
+ * matching computeSehelFunnelFromWarehouse), and held = status_id 10. Same
+ * first-touch attribution + camp|ad / audience / keyword keys as the BMBY path
+ * so the result joins onto the identical creative cards. Sparse by nature —
+ * only utm-tagged leads attribute (most Sehel leads carry no UTM). */
+const isSehelFb = (s: unknown): boolean => {
+  const v = String(s ?? "").toLowerCase().trim();
+  return (
+    v === "fb" || v === "an" || v === "meta" ||
+    v.startsWith("facebook") || v === "ig" || v.startsWith("instagram")
+  );
+};
+const isSehelGoogle = (s: unknown): boolean => {
+  const v = String(s ?? "").toLowerCase().trim();
+  return v.startsWith("goo") || v.startsWith("google");
+};
+const sehelDay = (ts: string | null | undefined) => String(ts ?? "").slice(0, 10);
+
+type SehelLeadRow = {
+  client_uuid: string | null;
+  project_name: string | null;
+  utm_source: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+  registered_at: string | null;
+};
+type SehelMeetRow = {
+  client_uuid: string | null;
+  project_name: string | null;
+  status_id: number | null;
+  starts_at: string | null;
+};
+
+/** Multi-month Sehel per-creative attribution. Fetches the project's full
+ *  lead + meeting history ONCE, then slices each month in memory (mirrors the
+ *  BMBY multi-month path). Matches the project by name prefix off `crmName`. */
+async function computeSehelMeetingsMulti(
+  crmName: string,
+  mons: string[],
+): Promise<Array<{ month: string } & ProjectMeetings>> {
+  const empty = () => mons.map((m) => ({ month: m, creative: [], audience: [], keyword: [] }));
+  const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  const cands = [crmName, ...crmName.split(",").map((s) => s.trim())].filter(
+    (v, i, a) => v && a.indexOf(v) === i,
+  );
+  if (!cands.length) return empty();
+  const orLike = cands
+    .map((c) => `project_name.like.${encodeURIComponent(`"${c}*"`)}`)
+    .join(",");
+  const targets = cands.map(norm);
+  const matches = (p: string | null): boolean => {
+    const n = norm(p);
+    return targets.some((t) => n.startsWith(t) && (n === t || n[t.length] === " "));
+  };
+  const [leadsRaw, meetsRaw] = await Promise.all([
+    supabaseRowsAll<SehelLeadRow>(
+      `sehel_leads_daily?or=(${orLike})` +
+        `&select=client_uuid,project_name,utm_source,utm_campaign,utm_content,utm_term,registered_at` +
+        `&order=registered_at.asc`,
+    ),
+    supabaseRowsAll<SehelMeetRow>(
+      `sehel_meetings?or=(${orLike})` +
+        `&select=client_uuid,project_name,status_id,starts_at&order=event_uid.asc`,
+    ),
+  ]);
+  const leads = leadsRaw.filter((l) => matches(l.project_name));
+  const meets = meetsRaw.filter((m) => matches(m.project_name));
+  if (!leads.length) return empty();
+
+  // First-touch attribution (first lead per client by registered_at).
+  const fbAttr = new Map<string, { camp: string; ad: string; aud: string }>();
+  const gsAttr = new Map<string, { kw: string }>();
+  const seen = new Set<string>();
+  for (const l of leads) {
+    const c = String(l.client_uuid ?? "");
+    if (!c || seen.has(c)) continue;
+    seen.add(c);
+    if (isSehelFb(l.utm_source)) {
+      fbAttr.set(c, {
+        camp: clean(l.utm_campaign),
+        ad: normAdName(l.utm_content),
+        aud: clean(l.utm_term),
+      });
+    } else if (isSehelGoogle(l.utm_source)) {
+      gsAttr.set(c, { kw: clean(l.utm_term) });
+    }
+  }
+
+  return mons.map((mon) => {
+    const { from, toExcl } = monthWindow(mon);
+    // Per-client meeting-event tallies dated in the month; held = status_id 10.
+    const evByClient = new Map<string, { total: number; done: number }>();
+    for (const m of meets) {
+      const c = String(m.client_uuid ?? "");
+      if (!c) continue;
+      const d = sehelDay(m.starts_at);
+      if (!d || d < from || d >= toExcl) continue;
+      const rec = evByClient.get(c) || { total: 0, done: 0 };
+      rec.total++;
+      if (Number(m.status_id) === 10) rec.done++;
+      evByClient.set(c, rec);
+    }
+    type Rec = { extra: Record<string, string>; clients: Set<string>; sched: number; held: number };
+    const byKey = new Map<string, Rec>();
+    const byAud = new Map<string, Rec>();
+    const byKw = new Map<string, Rec>();
+    const ensure = (map: Map<string, Rec>, key: string, extra: Record<string, string>): Rec => {
+      let rec = map.get(key);
+      if (!rec) { rec = { extra, clients: new Set(), sched: 0, held: 0 }; map.set(key, rec); }
+      return rec;
+    };
+    // leads created this month, distinct client per group.
+    for (const l of leads) {
+      const c = String(l.client_uuid ?? "");
+      if (!c) continue;
+      const d = sehelDay(l.registered_at);
+      if (d < from || d >= toExcl) continue;
+      if (isSehelFb(l.utm_source)) {
+        const camp = clean(l.utm_campaign), ad = normAdName(l.utm_content);
+        if (camp && ad && !numericId(camp) && !numericId(ad)) ensure(byKey, camp + "|" + ad, { camp, ad }).clients.add(c);
+        const aud = clean(l.utm_term);
+        if (aud && !numericId(aud)) ensure(byAud, aud, { aud }).clients.add(c);
+      } else if (isSehelGoogle(l.utm_source)) {
+        const kw = clean(l.utm_term);
+        if (kw && !numericId(kw)) ensure(byKw, kw, { kw }).clients.add(c);
+      }
+    }
+    // meetings credited once per dimension to the first-touch group.
+    for (const [c, ev] of evByClient) {
+      const f = fbAttr.get(c);
+      if (f && f.camp && f.ad && !numericId(f.camp) && !numericId(f.ad)) {
+        const r = ensure(byKey, f.camp + "|" + f.ad, { camp: f.camp, ad: f.ad });
+        r.sched += ev.total; r.held += ev.done;
+      }
+      if (f && f.aud && !numericId(f.aud)) {
+        const r = ensure(byAud, f.aud, { aud: f.aud });
+        r.sched += ev.total; r.held += ev.done;
+      }
+      const g = gsAttr.get(c);
+      if (g && g.kw && !numericId(g.kw)) {
+        const r = ensure(byKw, g.kw, { kw: g.kw });
+        r.sched += ev.total; r.held += ev.done;
+      }
+    }
+    return {
+      month: mon,
+      creative: [...byKey.values()].map((r) => ({ campaign: r.extra.camp, ad: r.extra.ad, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+      audience: [...byAud.values()].map((r) => ({ audience: r.extra.aud, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+      keyword: [...byKw.values()].map((r) => ({ keyword: r.extra.kw, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+    };
+  });
+}
+
 /**
  * Live per-project read for the report endpoint: resolve the warehouse
  * project_id by (exact) name, then compute one month's meetings. Returns
@@ -257,6 +415,20 @@ export async function getProjectMeetingsLiveMulti(
     `v_report_v2_bmby_projects?select=project_id,project_name&project_name=eq.${encodeURIComponent(projectName)}&limit=1`,
   );
   if (!found.length) {
+    // Not a BMBY project — try the Sehel warehouse. Kept INDEPENDENT of the
+    // SUPABASE_SEHEL_WAREHOUSE funnel flag on purpose: these creative cards are
+    // internal-only and purely additive (they attach leads·scheduled·held to an
+    // existing card), so they don't need — and shouldn't wait on — the funnel
+    // supersede that flag also gates. Only claim Sehel results when the join
+    // actually produced attribution, so a genuine no-match (Salesforce / not in
+    // any warehouse) still degrades to no CRM row on the cards.
+    try {
+      const results = await computeSehelMeetingsMulti(projectName, mons);
+      if (results.some((r) => r.creative.length || r.audience.length || r.keyword.length))
+        return { project: projectName, projectId: null, results };
+    } catch {
+      /* fall through to empty */
+    }
     return {
       project: projectName,
       projectId: null,
