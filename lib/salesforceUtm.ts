@@ -93,14 +93,48 @@ export function normPhone(s: unknown): string {
   return d.length >= 9 ? d.slice(-9) : "";
 }
 
+/** Lowercased email, or "" for blanks and Salesforce's "[לא סופק]" placeholder
+ *  (anything without an @ is not a usable join key). */
+export function normEmail(s: unknown): string {
+  const v = String(s ?? "").trim().toLowerCase();
+  return v.includes("@") ? v : "";
+}
+
+/** Both join keys for the capture sheet. A lead is matched on PHONE first and
+ *  EMAIL as a fallback — either side can be missing/malformed, and matching on
+ *  only one of them silently drops those leads. */
+export type SfUtmIndex = {
+  byPhone: Map<string, SfUtm>;
+  byEmail: Map<string, SfUtm>;
+};
+
+/** Resolve a Salesforce lead's UTM: phone first, then email. */
+export function lookupSfUtm(
+  idx: SfUtmIndex,
+  phone: unknown,
+  email: unknown,
+): SfUtm | undefined {
+  const p = normPhone(phone);
+  if (p) {
+    const hit = idx.byPhone.get(p);
+    if (hit) return hit;
+  }
+  const e = normEmail(email);
+  if (e) return idx.byEmail.get(e);
+  return undefined;
+}
+
 /**
- * phone → UTM, across every project tab of the capture sheet (first row for a
- * phone wins). Returns an EMPTY map on any failure — a renamed/moved sheet
- * must never break the Salesforce funnel, it just means no UTM panel.
+ * Index the capture sheet by BOTH phone and email, across every project tab
+ * (first row for a given key wins). Returns EMPTY indexes on any failure — a
+ * renamed/moved sheet must never break the Salesforce funnel, it just means no
+ * UTM panel.
  */
-export const readSalesforceUtmMap = cache(
-  async (subjectEmail: string): Promise<Map<string, SfUtm>> => {
-    const out = new Map<string, SfUtm>();
+export const readSalesforceUtmIndex = cache(
+  async (subjectEmail: string): Promise<SfUtmIndex> => {
+    const byPhone = new Map<string, SfUtm>();
+    const byEmail = new Map<string, SfUtm>();
+    const out: SfUtmIndex = { byPhone, byEmail };
     try {
       const sheets = sheetsClient(subjectEmail);
       const meta = await sheets.spreadsheets.get({
@@ -122,7 +156,8 @@ export const readSalesforceUtmMap = cache(
         if (rows.length < 2) continue;
         const h = (rows[0] as unknown[]).map((x) => String(x ?? "").trim());
         const iPh = h.indexOf("phone");
-        if (iPh < 0) continue;
+        const iEm = h.indexOf("email");
+        if (iPh < 0 && iEm < 0) continue;
         const iSrc = h.indexOf("utm_source");
         const iCamp = h.indexOf("utm_campaign");
         const iMed = h.indexOf("utm_medium");
@@ -131,8 +166,9 @@ export const readSalesforceUtmMap = cache(
         const val = (r: unknown[], i: number) =>
           i >= 0 ? String(r[i] ?? "").trim() : "";
         for (const r of rows.slice(1)) {
-          const ph = normPhone(r[iPh]);
-          if (!ph || out.has(ph)) continue; // first tab that has them wins
+          const ph = iPh >= 0 ? normPhone(r[iPh]) : "";
+          const em = iEm >= 0 ? normEmail(r[iEm]) : "";
+          if (!ph && !em) continue;
           // Shape-classify the three loosely-tagged columns (they're swapped on
           // some tabs) instead of trusting their headers.
           const { placement, audience, creative } = classifyUtm([
@@ -140,13 +176,17 @@ export const readSalesforceUtmMap = cache(
             val(r, iTerm),
             val(r, iCont),
           ]);
-          out.set(ph, {
+          const rec: SfUtm = {
             source: val(r, iSrc),
             campaign: val(r, iCamp),
             placement,
             audience,
             creative,
-          });
+          };
+          // Index under BOTH keys (first row for a key wins) so a lead missing
+          // one of them on either side still resolves.
+          if (ph && !byPhone.has(ph)) byPhone.set(ph, rec);
+          if (em && !byEmail.has(em)) byEmail.set(em, rec);
         }
       }
     } catch {

@@ -43,9 +43,10 @@ import {
 } from "./supabase";
 import { fbAdSpendByCreative, normAdName } from "./fbCreatives";
 import {
-  readSalesforceUtmMap,
-  normPhone,
+  readSalesforceUtmIndex,
+  lookupSfUtm,
   type SfUtm,
+  type SfUtmIndex,
 } from "./salesforceUtm";
 
 // Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
@@ -699,41 +700,44 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
 ];
 
 /**
- * Salesforce — F&F's third CRM. Unlike BMBY/Sehel (where the meeting
- * metrics are inferred from free-text status taxonomies), Salesforce's
- * funnel is defined explicitly by Maayan's status→bucket matrix
- * (2026-05-24). The three cumulative buckets map onto the existing
- * CrmFunnel KPIs:
+ * Salesforce — F&F's third CRM. Unlike BMBY/Sehel (where the meeting metrics
+ * are inferred from free-text status taxonomies), Salesforce's funnel is
+ * defined explicitly by the owner's status→bucket matrix.
  *
- *   ליד חדש (every status)  → leads
- *   נקבעה או בוטלה פגישה    → scheduledMeetings (תואמה פגישה)
- *   התבצעה פגישה           → meetings (held)
+ * ⚠️ MATRIX CORRECTED 2026-07-13 (supersedes the 2026-05-24 one). The old
+ * mapping had three real bugs, all of which skewed the funnel:
+ *   • `ניסיון תיאום פגישה` (an ATTEMPT to schedule) was counted as תיאום
+ *     → over-counted scheduled meetings.
+ *   • `תיאום פגישה` (the ACTUAL scheduled status) was missing entirely
+ *     → those leads counted as neither scheduled nor held.
+ *   • `טופס הרשמה` was counted as בוצע → registration forms inflated held.
+ *   • `נסגר בהפסד` was missing entirely.
  *
- *   מצב ליד               ליד חדש  נקבעה/בוטלה  התבצעה
- *   לא רלוונטי              ✓
+ *   מצב ליד               ליד  תיאום  בוצע
  *   חדש                    ✓
  *   ניסיון יצירת קשר        ✓
- *   אין מענה               ✓
- *   שיחה                   ✓
- *   ניסיון תיאום פגישה      ✓         ✓
- *   טופס הרשמה             ✓         ✓          ✓
- *   פגישה התקיימה          ✓         ✓          ✓
+ *   ניסיון תיאום פגישה      ✓                  ← attempt only, NOT a תיאום
+ *   תיאום פגישה            ✓     ✓      ✓
+ *   נסגר בהפסד             ✓     ✓      ✓      ← met, then lost
+ *   פגישה התקיימה          ✓     ✓      ✓
+ *   טופס הרשמה             ✓     ✓             ← תיאום, NOT בוצע
  *   ליד חוזר               ✓
+ *   לא רלוונטי              ✓
  *
- * (טופס הרשמה — registering for the דיור-למשתכן lottery — is the real
- * conversion goal for these projects, so the owner counts it the same as
- * a held meeting.) `contacted` (נוצר קשר) isn't one of the matrix
- * buckets; it's derived as "any status past חדש" — i.e. a salesperson
- * has worked the lead — mirroring BMBY's "an outreach attempt was
- * logged" notion of contacted.
+ * held ⊆ scheduled, so the funnel stays monotonic. `טופס הרשמה` (registering
+ * for the דיור-למשתכן lottery) remains the conversion goal → contracts.
+ * `contacted` (נוצר קשר) isn't a matrix bucket; it's derived as "any status
+ * past חדש" — a salesperson has worked the lead — mirroring BMBY's notion.
  */
 const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
-  "ניסיון תיאום פגישה",
-  "טופס הרשמה",
+  "תיאום פגישה",
+  "נסגר בהפסד",
   "פגישה התקיימה",
+  "טופס הרשמה",
 ]);
 const SALESFORCE_HELD_STATUSES = new Set<string>([
-  "טופס הרשמה",
+  "תיאום פגישה",
+  "נסגר בהפסד",
   "פגישה התקיימה",
 ]);
 
@@ -743,9 +747,11 @@ export const SALESFORCE_STATUS_FUNNEL_ORDER = [
   "אין מענה",
   "שיחה",
   "ניסיון תיאום פגישה",
+  "תיאום פגישה",
   "טופס הרשמה",
   "פגישה התקיימה",
-  // off-funnel side states
+  // off-funnel / terminal side states
+  "נסגר בהפסד",
   "ליד חוזר",
   "לא רלוונטי",
 ];
@@ -2410,13 +2416,21 @@ async function computeSalesforceFunnel(
   const iObjection = headers.indexOf("התנגדות ראשית");
   if (iProject < 0) return null;
   // UTM drill: Salesforce carries no usable utm_* itself, so join the
-  // landing-page capture sheet by PHONE (see lib/salesforceUtm). An empty map
-  // (sheet moved / no access) simply means no panel — the funnel is unaffected.
+  // landing-page capture sheet on PHONE, falling back to EMAIL (either key can
+  // be missing/malformed on either side — matching on only one silently drops
+  // those leads). Empty indexes (sheet moved / no access) simply mean no panel;
+  // the funnel is unaffected.
   const iPhone = headers.indexOf("טלפון נייד");
-  const utmMap =
-    iPhone >= 0
-      ? await readSalesforceUtmMap(subjectEmail)
-      : new Map<string, SfUtm>();
+  const iEmail = headers.indexOf("דואר אלקטרוני");
+  const emptyIdx: SfUtmIndex = {
+    byPhone: new Map<string, SfUtm>(),
+    byEmail: new Map<string, SfUtm>(),
+  };
+  const utmIdx =
+    iPhone >= 0 || iEmail >= 0
+      ? await readSalesforceUtmIndex(subjectEmail)
+      : emptyIdx;
+  const hasUtm = utmIdx.byPhone.size > 0 || utmIdx.byEmail.size > 0;
   const utmLeads: SfUtmLead[] = [];
 
   // Exact match on פרויקט (like BMBY) — verified the two Keys.CRM
@@ -2494,8 +2508,12 @@ async function computeSalesforceFunnel(
     if (isContacted) contacted++;
     // UTM drill: this lead's own status IS its scheduled/held (status snapshot
     // — Salesforce has no meeting events), so credit it straight to its creative.
-    if (utmMap.size && iPhone >= 0) {
-      const u = utmMap.get(normPhone(arr[iPhone]));
+    if (hasUtm) {
+      const u = lookupSfUtm(
+        utmIdx,
+        iPhone >= 0 ? arr[iPhone] : "",
+        iEmail >= 0 ? arr[iEmail] : "",
+      );
       if (u) {
         utmLeads.push({
           utm: u,
