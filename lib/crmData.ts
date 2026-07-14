@@ -42,6 +42,11 @@ import {
   supabaseRowsAll,
 } from "./supabase";
 import { fbAdSpendByCreative, normAdName } from "./fbCreatives";
+import {
+  readSalesforceUtmMap,
+  normPhone,
+  type SfUtm,
+} from "./salesforceUtm";
 
 // Source workbook for per-lead CRM data. Migrated 2026-05-12 from the
 // previous "Consolidated" sheet (1YOL2Rry…) to the now-canonical
@@ -2284,6 +2289,111 @@ async function buildSehelBreakdown(
 
 /* ── Salesforce funnel ─────────────────────────────────────────────── */
 
+/* ── Salesforce UTM drill ───────────────────────────────────────────────
+ * Salesforce has no meeting EVENTS — its funnel is a current-status snapshot —
+ * so a lead's scheduled/held is decided by its own `מצב ליד`, NOT by joining an
+ * events table (the BMBY/Sehel model). That makes the breakdown a straight
+ * group-by over the project's in-window leads that matched a UTM row by phone.
+ * Same keys + output shape as BMBY/Sehel, so the existing פילוח פייסבוק panel
+ * and the Google-keyword block render unchanged. */
+type SfUtmLead = { utm: SfUtm; scheduled: boolean; held: boolean };
+
+const isSfFbSource = (s: unknown): boolean => {
+  const v = String(s ?? "").toLowerCase().trim();
+  return (
+    v === "fb" || v === "ig" || v === "an" || v === "meta" ||
+    v.startsWith("facebook") || v.startsWith("instagram")
+  );
+};
+const isSfGoogleSource = (s: unknown): boolean => {
+  const v = String(s ?? "").toLowerCase().trim();
+  return v.startsWith("goo") || v.startsWith("google") || v === "discovery";
+};
+
+async function buildSalesforceBreakdown(
+  utmLeads: SfUtmLead[],
+  from: string,
+  toExcl: string,
+): Promise<CrmFunnel["fbBreakdown"]> {
+  const fb = utmLeads.filter((l) => isSfFbSource(l.utm.source));
+  const gs = utmLeads.filter((l) => isSfGoogleSource(l.utm.source));
+  if (!fb.length && !gs.length) return undefined;
+  const TOP = 8;
+  const cl = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim();
+
+  type Rec = { leads: number; scheduled: number; held: number };
+  const group = (set: SfUtmLead[], label: (l: SfUtmLead) => string): Map<string, Rec> => {
+    const m = new Map<string, Rec>();
+    for (const l of set) {
+      const k = label(l);
+      if (!k) continue;
+      let r = m.get(k);
+      if (!r) { r = { leads: 0, scheduled: 0, held: 0 }; m.set(k, r); }
+      r.leads++;
+      if (l.scheduled) r.scheduled++;
+      if (l.held) r.held++;
+    }
+    return m;
+  };
+  const toRows = (m: Map<string, Rec>) => {
+    const sorted = [...m.entries()]
+      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.scheduled, held: r.held }))
+      .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
+    const head = sorted.slice(0, TOP);
+    const rest = sorted.slice(TOP).reduce(
+      (s, r) => ({ leads: s.leads + r.leads, scheduled: s.scheduled + r.scheduled, held: s.held + r.held }),
+      { leads: 0, scheduled: 0, held: 0 },
+    );
+    if (rest.leads > 0 || rest.scheduled > 0) head.push({ label: "אחר", ...rest });
+    return head;
+  };
+
+  // Dimensions are already shape-classified in lib/salesforceUtm (the sheet's
+  // medium/term/content columns are swapped on some tabs, so we can't trust
+  // them positionally). Numeric Meta ids were dropped there.
+  const placement = group(fb, (l) => l.utm.placement);
+  const audience = group(fb, (l) => l.utm.audience);
+  const keyword = group(gs, (l) => l.utm.audience); // google: free-text = keyword
+  const creativeAcc = group(fb, (l) => normAdName(l.utm.creative));
+
+  // Spend join — utm_campaign is a READABLE name ("Shbn_…_FB"), so it keys the
+  // fb-ads Sheet exactly like BMBY. Numeric campaign IDs are skipped (they
+  // can't join). Degrades to spend=0 on any failure.
+  const campaigns = new Set<string>();
+  for (const l of fb) {
+    const c = cl(l.utm.campaign);
+    if (c && !/^\d{8,}$/.test(c)) campaigns.add(c);
+  }
+  let spendByAd = new Map<string, { cost: number; impressions: number; websiteLeads: number }>();
+  if (campaigns.size && from && toExcl) {
+    try {
+      spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, from, toExcl);
+    } catch {
+      /* leave spend at 0 */
+    }
+  }
+  const byCreative = [...creativeAcc.entries()]
+    .map(([label, r]) => {
+      const spend = spendByAd.get(label)?.cost ?? 0;
+      return {
+        label, leads: r.leads, scheduled: r.scheduled, held: r.held, spend,
+        cpl: r.leads ? spend / r.leads : 0,
+        cps: r.scheduled ? spend / r.scheduled : 0,
+        cpm: r.held ? spend / r.held : 0,
+      };
+    })
+    .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled))
+    .slice(0, TOP);
+
+  return {
+    totalLeads: fb.length,
+    byPlacement: toRows(placement),
+    byAudience: toRows(audience),
+    byCreative,
+    byKeyword: gs.length ? toRows(keyword) : undefined,
+  };
+}
+
 async function computeSalesforceFunnel(
   subjectEmail: string,
   crmAccount: string,
@@ -2299,6 +2409,15 @@ async function computeSalesforceFunnel(
   const iSource = headers.indexOf("מקור ליד");
   const iObjection = headers.indexOf("התנגדות ראשית");
   if (iProject < 0) return null;
+  // UTM drill: Salesforce carries no usable utm_* itself, so join the
+  // landing-page capture sheet by PHONE (see lib/salesforceUtm). An empty map
+  // (sheet moved / no access) simply means no panel — the funnel is unaffected.
+  const iPhone = headers.indexOf("טלפון נייד");
+  const utmMap =
+    iPhone >= 0
+      ? await readSalesforceUtmMap(subjectEmail)
+      : new Map<string, SfUtm>();
+  const utmLeads: SfUtmLead[] = [];
 
   // Exact match on פרויקט (like BMBY) — verified the two Keys.CRM
   // account names match the Salesforce פרויקט values exactly. Multiple
@@ -2373,6 +2492,18 @@ async function computeSalesforceFunnel(
     if (isScheduledMeeting) scheduledMeetings++;
     if (isHeldMeeting) meetings++;
     if (isContacted) contacted++;
+    // UTM drill: this lead's own status IS its scheduled/held (status snapshot
+    // — Salesforce has no meeting events), so credit it straight to its creative.
+    if (utmMap.size && iPhone >= 0) {
+      const u = utmMap.get(normPhone(arr[iPhone]));
+      if (u) {
+        utmLeads.push({
+          utm: u,
+          scheduled: isScheduledMeeting,
+          held: isHeldMeeting,
+        });
+      }
+    }
     if (st) byStatus.set(st, (byStatus.get(st) || 0) + 1);
     const obj = String(arr[iObjection] ?? "").trim();
     if (obj) byObjection.set(obj, (byObjection.get(obj) || 0) + 1);
@@ -2421,9 +2552,40 @@ async function computeSalesforceFunnel(
   }
 
   if (leads === 0) return null;
+
+  // UTM breakdown — populates the SAME `fbBreakdown` panel (+ keyword block)
+  // BMBY/Sehel render. Window bounds scope the fb-ads spend join; with no
+  // window we fall back to the observed lead-date span. Never fatal.
+  let fbBreakdown: CrmFunnel["fbBreakdown"];
+  if (utmLeads.length) {
+    let from = minDate;
+    let toExcl = "";
+    if (window?.kind === "month") {
+      from = `${window.month}-01`;
+      const [y, mo] = window.month.split("-").map(Number);
+      toExcl =
+        mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+    } else if (window?.kind === "range") {
+      from = window.from;
+      const d = new Date(`${window.to}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      toExcl = d.toISOString().slice(0, 10);
+    } else if (maxDate) {
+      const d = new Date(`${maxDate}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      toExcl = d.toISOString().slice(0, 10);
+    }
+    try {
+      fbBreakdown = await buildSalesforceBreakdown(utmLeads, from, toExcl);
+    } catch {
+      /* spend/panel failure must never break the funnel */
+    }
+  }
+
   return {
     platform: "salesforce",
     crmAccount,
+    fbBreakdown,
     leads,
     contacted,
     scheduledMeetings,
