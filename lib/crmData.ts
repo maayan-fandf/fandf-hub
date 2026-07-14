@@ -2400,6 +2400,118 @@ async function buildSalesforceBreakdown(
   };
 }
 
+/**
+ * Per-(campaign|ad) / audience / keyword CRM attribution for a SALESFORCE
+ * project, in the exact shape the REPORT's FB creative cards join on
+ * (lib/reportCreatives → buildMeetLookups, keyed `${month}|${campaign}|${ad}`).
+ *
+ * Lives here (not in fbCreativeMeetingsExport) because everything it needs —
+ * the Salesforce tab reader, crmAccountCandidates, the status matrix, the UTM
+ * index — is already local. Salesforce has no meeting EVENTS: a lead's own
+ * `מצב ליד` IS its scheduled/held, so this is a group-by over the project's
+ * leads by creation month, joined to the capture sheet on phone→email.
+ *
+ * Returns per-month empties on any failure — the cards just render without a
+ * CRM row, exactly as they do today.
+ */
+export async function getSalesforceCreativeMeetings(
+  crmAccount: string,
+  months: string[],
+): Promise<
+  Array<{
+    month: string;
+    creative: { campaign: string; ad: string; leads: number; scheduled: number; held: number }[];
+    audience: { audience: string; leads: number; scheduled: number; held: number }[];
+    keyword: { keyword: string; leads: number; scheduled: number; held: number }[];
+  }>
+> {
+  const empty = () =>
+    months.map((m) => ({ month: m, creative: [], audience: [], keyword: [] }));
+  try {
+    const subjectEmail = driveFolderOwner();
+    const { headers, rows } = await readSalesforce(subjectEmail);
+    if (!rows.length) return empty();
+    const iProject = headers.findIndex((h) => h.startsWith("פרויקט"));
+    const iEntry = headers.findIndex((h) => h.startsWith("תאריך יצירה"));
+    const iStatus = headers.indexOf("מצב ליד");
+    const iPhone = headers.indexOf("טלפון נייד");
+    const iEmail = headers.indexOf("דואר אלקטרוני");
+    if (iProject < 0 || iEntry < 0) return empty();
+    const idx = await readSalesforceUtmIndex(subjectEmail);
+    if (!idx.byPhone.size && !idx.byEmail.size) return empty();
+
+    const targets = crmAccountCandidates(crmAccount).map(norm);
+    type Rec = { leads: number; scheduled: number; held: number };
+    type Bucket = {
+      cre: Map<string, Rec & { camp: string; ad: string }>;
+      aud: Map<string, Rec>;
+      kw: Map<string, Rec>;
+    };
+    const perMonth = new Map<string, Bucket>();
+    for (const m of months)
+      perMonth.set(m, { cre: new Map(), aud: new Map(), kw: new Map() });
+
+    for (const row of rows) {
+      const arr = row as unknown[];
+      if (!targets.includes(norm(arr[iProject]))) continue;
+      const bucket = perMonth.get(dateOnly(arr[iEntry]).slice(0, 7));
+      if (!bucket) continue; // lead created outside every requested month
+      const u = lookupSfUtm(
+        idx,
+        iPhone >= 0 ? arr[iPhone] : "",
+        iEmail >= 0 ? arr[iEmail] : "",
+      );
+      if (!u) continue;
+      const st = String(arr[iStatus] ?? "").trim();
+      const sched = SALESFORCE_SCHEDULED_STATUSES.has(st);
+      const held = SALESFORCE_HELD_STATUSES.has(st);
+      const bump = (r: Rec) => {
+        r.leads++;
+        if (sched) r.scheduled++;
+        if (held) r.held++;
+      };
+      if (isSfFbSource(u.source)) {
+        const camp = String(u.campaign ?? "").replace(/\s+/g, " ").trim();
+        const ad = normAdName(u.creative);
+        // Numeric Meta ids can't join the name-keyed ad rows — skip.
+        if (camp && ad && !/^\d{8,}$/.test(camp) && !/^\d{8,}$/.test(ad)) {
+          const k = `${camp}|${ad}`;
+          let r = bucket.cre.get(k);
+          if (!r) { r = { camp, ad, leads: 0, scheduled: 0, held: 0 }; bucket.cre.set(k, r); }
+          bump(r);
+        }
+        if (u.audience) {
+          let r = bucket.aud.get(u.audience);
+          if (!r) { r = { leads: 0, scheduled: 0, held: 0 }; bucket.aud.set(u.audience, r); }
+          bump(r);
+        }
+      } else if (isSfGoogleSource(u.source) && u.audience) {
+        let r = bucket.kw.get(u.audience);
+        if (!r) { r = { leads: 0, scheduled: 0, held: 0 }; bucket.kw.set(u.audience, r); }
+        bump(r);
+      }
+    }
+
+    return months.map((m) => {
+      const b = perMonth.get(m)!;
+      return {
+        month: m,
+        creative: [...b.cre.values()].map((r) => ({
+          campaign: r.camp, ad: r.ad, leads: r.leads, scheduled: r.scheduled, held: r.held,
+        })),
+        audience: [...b.aud.entries()].map(([audience, r]) => ({
+          audience, leads: r.leads, scheduled: r.scheduled, held: r.held,
+        })),
+        keyword: [...b.kw.entries()].map(([keyword, r]) => ({
+          keyword, leads: r.leads, scheduled: r.scheduled, held: r.held,
+        })),
+      };
+    });
+  } catch {
+    return empty();
+  }
+}
+
 async function computeSalesforceFunnel(
   subjectEmail: string,
   crmAccount: string,

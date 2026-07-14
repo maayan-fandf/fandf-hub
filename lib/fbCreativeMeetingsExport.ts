@@ -13,6 +13,7 @@
 import { supabaseRowsAll, supabaseConfigured } from "./supabase";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { normAdName } from "./fbCreatives";
+import { getSalesforceCreativeMeetings } from "./crmData";
 
 const SHEET_ID_CREATIVES =
   process.env.SHEET_ID_CREATIVES || "1q-WFtFLDnltznwYKax2yZ1O-q_VToULWN8-sn-8xXuA";
@@ -429,6 +430,17 @@ export async function getProjectMeetingsLiveMulti(
     // any warehouse) still degrades to no CRM row on the cards.
     try {
       const results = await computeSehelMeetingsMulti(projectName, mons);
+      if (results.some((r) => r.creative.length || r.audience.length || r.keyword.length))
+        return { project: projectName, projectId: null, results };
+    } catch {
+      /* fall through */
+    }
+    // Salesforce (Sheet-based, status snapshot — a lead's own מצב ליד is its
+    // scheduled/held; UTM joined from the capture sheet by phone→email). Last
+    // fallback: a project in NEITHER warehouse. Same claim-only-if-it-attributed
+    // rule, so a genuine no-match still renders the cards with no CRM row.
+    try {
+      const results = await getSalesforceCreativeMeetings(projectName, mons);
       if (results.some((r) => r.creative.length || r.audience.length || r.keyword.length))
         return { project: projectName, projectId: null, results };
     } catch {
