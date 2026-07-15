@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { WorkTaskStatus } from "@/lib/appsScript";
 
@@ -426,7 +427,7 @@ export default function TaskTransitionModal({
     if (e.target === e.currentTarget && !busy) onClose();
   }
 
-  return (
+  const modal = (
     <div
       className="task-transition-modal-backdrop"
       onClick={onBackdropClick}
@@ -652,4 +653,15 @@ export default function TaskTransitionModal({
       </div>
     </div>
   );
+
+  // Portal to <body> so the fixed-position backdrop can't be trapped by a
+  // transformed/animated ancestor (the task-detail .page-header runs the
+  // headerRise transform, which turns it into a containing block and pins
+  // the modal inside the content column instead of centring it over the
+  // viewport). Guarded for SSR — the modal only ever opens client-side, so
+  // both server and initial-hydration render `null` (open=false) and there
+  // is no hydration mismatch.
+  return typeof document !== "undefined"
+    ? createPortal(modal, document.body)
+    : null;
 }

@@ -1014,7 +1014,14 @@ export default function ReportChannelsTab({
                           return (
                             <CopyAmountButton
                               amount={String(Math.round(c.dailyRate))}
-                              copyId={data.slug}
+                              // Google: copy the slug too, so it can be pasted
+                              // into Google Ads' own search (its URL can't
+                              // pre-filter). FB: the fbAdsUrl already filters by
+                              // the project slug, so the clipboard only needs
+                              // the number — no slug (matches BudgetGrid).
+                              copyId={
+                                c.platform === "facebook" ? undefined : data.slug
+                              }
                               url={openUrl}
                               variant="ghost"
                               label="⧉"
