@@ -25,6 +25,7 @@
 
 import { sheetsClient, tasksApiClient, useFirestoreWrites } from "@/lib/sa";
 import { applyAutoTransition } from "@/lib/autoTransition";
+import { isQuietHours } from "@/lib/quietHours";
 import {
   createGoogleTasks,
   persistGoogleTasksCell,
@@ -114,6 +115,13 @@ async function fetchOne(ref: GTaskRef): Promise<FetchResult> {
  * overlapping invocations on the same job, but if it ever does (or if
  * a manual trigger races with the schedule), this drops the second. */
 let inFlight: Promise<PollResult> | null = null;
+
+/* Terminal rows whose refs were ALL confirmed closed/deleted by the
+ * leak sweep — skipped on subsequent cycles. Without this memo the
+ * sweep would re-fetch every done task's refs every minute forever
+ * (hundreds of Tasks-API gets per cycle). Container lifetime only:
+ * a restart re-verifies each terminal row once, which is the point. */
+const terminalSweepDone = new Set<string>();
 
 export type PollResult = {
   rowsScanned: number;
@@ -330,9 +338,13 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   let terminalLeakClosed = 0;
 
   for (const job of jobs) {
-    // Skip already-resolved comment rows (they're cosmetic — old refs
-    // are kept for audit, no recipient is meant to act on them).
-    if (job.resolved) continue;
+    // Skip already-resolved COMMENT rows (they're cosmetic — old refs
+    // are kept for audit, no recipient is meant to act on them). Task
+    // rows must NOT take this exit: firestoreRead derives
+    // resolved=(status==="done") for tasks, which made every done task
+    // skip the terminal-leak sweep below — open GTs on completed hub
+    // tasks stayed open forever (4 live leaks found 2026-07-16).
+    if (job.resolved && job.rowKind !== "task") continue;
 
     // Terminal task rows: don't dispatch transitions, but DO check that
     // every ref's GT is closed in the recipient's list. Best-effort —
@@ -340,12 +352,17 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     const terminal = job.hubStatus === "done" || job.hubStatus === "cancelled";
     if (terminal) {
       if (job.rowKind !== "task") continue;
+      if (terminalSweepDone.has(job.rowId)) continue;
+      let allSettled = true;
       for (const ref of job.refs) {
         if (!ref.t || !ref.l || !ref.u) continue;
         const f = await fetchOne(ref);
         if (f.ok && f.status === "completed") continue; // already closed
         if (!f.ok && f.deleted) continue; // already gone
-        if (!f.ok && !f.deleted) continue; // unknown — don't false-close
+        if (!f.ok && !f.deleted) {
+          allSettled = false; // unknown — re-check next cycle
+          continue;
+        }
         try {
           const tasksApi = tasksApiClient(ref.u);
           await tasksApi.tasks.patch({
@@ -358,14 +375,19 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
             `[pollTasks] terminal-leak: closed ${ref.t} for ${ref.u} (task ${job.rowId} status=${job.hubStatus})`,
           );
         } catch (e) {
+          allSettled = false;
           console.log(
             `[pollTasks] terminal-leak close failed for ${ref.t}/${ref.u}:`,
             e instanceof Error ? e.message : String(e),
           );
         }
       }
+      if (allSettled) terminalSweepDone.add(job.rowId);
       continue;
     }
+    // Row is active — forget any previous terminal sweep so a future
+    // re-completion gets swept anew after a revive.
+    terminalSweepDone.delete(job.rowId);
 
     const fetched = await Promise.all(job.refs.map(fetchOne));
     refsFetched += fetched.length;
@@ -491,6 +513,27 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   // Per-user GT id cache prevents re-listing the same tasklist for
   // each row with that recipient.
   const visibleGTsCache = new Map<string, Set<string>>();
+  // Per-cycle gtasks_sync pref cache. createGoogleTasks silently drops
+  // pref-off recipients (filterByGtasksPref), so treating them as
+  // "missing a GT" would re-detect the same un-spawnable pair every
+  // cycle forever (17/21 team members opted out 2026-05-14). Used ONLY
+  // by the missing/spawn computation — the stale-close pass stays
+  // pref-blind so opting out doesn't mass-close existing GTs.
+  const gtasksPrefCache = new Map<string, boolean>();
+  async function gtasksPrefOn(email: string): Promise<boolean> {
+    const lc = email.toLowerCase().trim();
+    const hit = gtasksPrefCache.get(lc);
+    if (hit !== undefined) return hit;
+    let on = true; // fail-open, matching filterByGtasksPref
+    try {
+      const { getUserPrefs } = await import("@/lib/userPrefs");
+      on = Boolean((await getUserPrefs(lc)).gtasks_sync);
+    } catch {
+      on = true;
+    }
+    gtasksPrefCache.set(lc, on);
+    return on;
+  }
   async function getVisibleGTs(email: string): Promise<Set<string>> {
     const lc = email.toLowerCase().trim();
     if (!lc) return new Set();
@@ -533,6 +576,12 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
   let rowsHealed = 0;
   let gtsSpawned = 0;
   let staleClosed = 0;
+  // "email|gtId" of every GT spawned by THIS cycle's reconcile — the
+  // orphan scan below must never close these (2026-07-16: 35/35 heals
+  // in 30 days were closed by the same cycle's orphan scan, because
+  // the scan's tracked-refs index is built from the cycle-start
+  // snapshot and can't see refs persisted mid-cycle).
+  const spawnedThisCycle = new Set<string>();
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (I_KIND < 0 || String(row[I_KIND] ?? "").trim() !== "task") continue;
@@ -586,15 +635,23 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
       if (!visible.has(ref.t)) continue;
       try {
         const tasksApi = tasksApiClient(ref.u);
-        await tasksApi.tasks.patch({
+        // DELETE, not patch(completed) (2026-07-16): a system close
+        // that stamps completed=NOW is indistinguishable from a human
+        // tick — userFastSync lists the user's GTs directly (no cell
+        // check) and would mint a phantom pending_complete claim on
+        // their next hub navigation whenever the stale ref's kind
+        // happens to match the current status (the email-mismatch
+        // case). A deleted GT is invisible to tasks.list and 404s on
+        // get, so neither dispatcher can misread it. Semantically
+        // right too — this GT should no longer exist for this stage.
+        await tasksApi.tasks.delete({
           tasklist: ref.l,
           task: ref.t,
-          requestBody: { status: "completed" },
         });
         visible.delete(ref.t);
         staleClosed++;
         console.log(
-          `[pollTasks] reconcile: closed stale GT for ${taskId} (${ref.u} kind=${ref.kind ?? "todo"})`,
+          `[pollTasks] reconcile: deleted stale GT for ${taskId} (${ref.u} kind=${ref.kind ?? "todo"})`,
         );
       } catch (e) {
         console.log(
@@ -617,6 +674,10 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
 
     const missing: { email: string; kind: GTaskKind }[] = [];
     for (const exp of expected) {
+      // Pref-off recipients can never be spawned for (createGoogleTasks
+      // filters them) — skip before any API work so they don't read as
+      // perpetually "missing".
+      if (!(await gtasksPrefOn(exp.email))) continue;
       // Collect EVERY matching ref, not just the first. The original
       // implementation used `find` which checked only the first match;
       // when a cell had accumulated multiple refs for the same
@@ -689,6 +750,14 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
     }
     if (missing.length === 0) continue;
 
+    // Quiet-hours symmetry (2026-07-16): applyAutoTransition DEFERS
+    // completions during quiet hours, so a todo GT ticked at night is
+    // "confirmed closed" here while its pending_complete claim hasn't
+    // landed yet — healing now would spawn a fresh duplicate of work
+    // the user just finished. Defer the spawn to the first work-hours
+    // cycle, the same cycle that finally processes the completion.
+    if (isQuietHours()) continue;
+
     // Spawn replacements. Build the task shape createGoogleTasks needs.
     // `status` is threaded so kind=todo spawns inside an in_progress
     // row pick up the `🛠️ בעבודה` prefix instead of the default
@@ -726,6 +795,7 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
             const set = visibleGTsCache.get(ref.u.toLowerCase()) ?? new Set();
             set.add(ref.t);
             visibleGTsCache.set(ref.u.toLowerCase(), set);
+            spawnedThisCycle.add(`${ref.u.toLowerCase()}|${ref.t}`);
           }
         }
       } catch (e) {
@@ -747,6 +817,10 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
         );
         rowsHealed++;
         gtsSpawned += spawnedThisRow;
+        // Self-heal the in-memory snapshot so the orphan scan's
+        // tracked-refs index (built from `rows` below) includes the
+        // refs we just persisted.
+        row[I_GT] = JSON.stringify(mergedRefs);
         // Phase 2 storage migration — best-effort dual-write mirror of
         // the reconciled google_tasks cell (bypasses tasksUpdateDirect).
         // Flag-gated, never throws, not awaited. Phase 4: skipped —
@@ -884,15 +958,46 @@ async function pollAllTaskCompletionsInner(): Promise<PollResult> {
           if (!allHubTaskIds.has(hubId)) continue;
           const cellRaw = cellByTaskId.get(hubId) || "";
           if (cellRaw.includes(t.id)) continue; // tracked
+          // Never close a GT this cycle's own reconcile just spawned —
+          // if its persist failed, the NEXT cycle's scan cleans it up
+          // (the originally intended behavior).
+          if (spawnedThisCycle.has(`${user}|${t.id}`)) continue;
+          // Live re-read guard (2026-07-16): the snapshot index above
+          // can't see refs persisted DURING this ~12s cycle (hub UI
+          // cascades, after()-deferred create spawns). Closing on
+          // snapshot evidence alone killed legitimate fresh GTs and
+          // their completed=NOW stamps then minted phantom
+          // pending_complete claims. Re-read the doc: only close if
+          // the CURRENT cell still doesn't track this GT. Orphan
+          // candidates are ~0/cycle in steady state, so the extra
+          // read is negligible.
+          if (fsWrites) {
+            try {
+              const { readTaskGoogleTasksRaw } = await import(
+                "@/lib/firestoreRead"
+              );
+              const liveRaw = await readTaskGoogleTasksRaw(hubId);
+              if (liveRaw.includes(t.id)) continue; // tracked after all
+            } catch {
+              // Can't verify against live state — don't close on
+              // stale evidence; next cycle retries.
+              continue;
+            }
+          }
           try {
-            await tasksApi.tasks.patch({
+            // DELETE, not patch(completed) — same rationale as the
+            // stale-close above: an untracked GT (persist-failure
+            // leftover) usually has the CURRENT status's kind, so a
+            // completed=NOW stamp would mint a phantom claim through
+            // userFastSync on the user's next navigation. Deleted GTs
+            // are invisible to both dispatchers.
+            await tasksApi.tasks.delete({
               tasklist: listId,
               task: t.id,
-              requestBody: { status: "completed" },
             });
             orphanLeakClosed++;
             console.log(
-              `[pollTasks] orphan-leak: closed ${t.id} for ${user} (hub task ${hubId})`,
+              `[pollTasks] orphan-leak: deleted ${t.id} for ${user} (hub task ${hubId})`,
             );
           } catch (e) {
             console.log(

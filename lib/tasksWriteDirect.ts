@@ -974,7 +974,15 @@ export async function createGoogleTasks(
   },
 ): Promise<GTaskRef[]> {
   const out: GTaskRef[] = [];
-  const allowed = await filterByGtasksPref(recipients);
+  // Normalize + dedupe before the pref gate — a recipient appearing
+  // twice (duplicate mention, author-also-assignee union upstream)
+  // must spawn ONE GT, not one per occurrence.
+  const unique = [
+    ...new Set(
+      recipients.map((e) => String(e || "").toLowerCase().trim()),
+    ),
+  ].filter(Boolean);
+  const allowed = await filterByGtasksPref(unique);
   if (allowed.length === 0) return out;
   const title = gtaskTitle(opts.kind, task, opts.reissued);
   let notes = gtaskNotes(task, opts.notePrefix);
@@ -2693,13 +2701,30 @@ async function tasksUpdateDirectInner(
     ) {
       // Generic revive (awaiting_handling ↔ in_progress, or revival
       // from done / cancelled / draft into a working state) — reopen
-      // whatever's there. Then refresh titles so the kind=todo
-      // entries' prefix reflects the new status: `📋 לבצע` for
+      // ONE entry per (recipient, kind): the newest, since refs are
+      // appended in insertion order. Reopening ALL refs resurrected
+      // every historical duplicate the cell had accumulated across
+      // prior submit/approve/bounce rounds (2026-07-16: one revive on
+      // T-mrlzaelo-4jlh re-opened 4 todo GTs for the same user at
+      // once — cells are never pruned, so old refs are corpses, not
+      // live entries). Then refresh titles so the kind=todo entries'
+      // prefix reflects the new status: `📋 לבצע` for
       // awaiting_handling, `🛠️ בעבודה` for in_progress. The patch is
       // a no-op for entries whose title is already correct, and
       // best-effort skipped for deleted entries via the same
       // patchGoogleTaskWithRetry helper.
-      await syncGoogleTasksStatus(fresh.google_tasks, "needsAction");
+      const newestPerUserKind = new Map<string, GTaskRef>();
+      for (const ref of fresh.google_tasks) {
+        if (!ref?.t || !ref?.u) continue;
+        newestPerUserKind.set(
+          `${ref.u.toLowerCase()}|${ref.kind ?? "todo"}`,
+          ref,
+        );
+      }
+      await syncGoogleTasksStatus(
+        [...newestPerUserKind.values()],
+        "needsAction",
+      );
       await patchGoogleTaskTitles(fresh);
     }
   }

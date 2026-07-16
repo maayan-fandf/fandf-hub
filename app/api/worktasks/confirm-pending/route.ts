@@ -52,7 +52,12 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    let claim: { by?: string; kind?: GTaskKind; prev?: WorkTaskStatus };
+    let claim: {
+      by?: string;
+      kind?: GTaskKind;
+      prev?: WorkTaskStatus;
+      dismissed?: boolean;
+    };
     try {
       claim = JSON.parse(claimRaw);
     } catch {
@@ -62,6 +67,14 @@ export async function POST(req: Request) {
         { ok: false, error: "סימון פגום — נוקה" },
         { status: 400 },
       );
+    }
+    if (claim.dismissed) {
+      // Dismissed tombstone (revert-pending keeps it to block claim
+      // re-minting) — nothing to confirm. Shouldn't normally be
+      // reachable (the banner hides dismissed claims); clear and
+      // report a no-op rather than transitioning off a dead claim.
+      await tasksUpdateDirect(subject, id, { pending_complete: "" });
+      return NextResponse.json({ ok: true, changed: false, cleared: true });
     }
     const kind = (claim.kind || "todo") as GTaskKind;
     const prev = (claim.prev || task.status) as WorkTaskStatus;

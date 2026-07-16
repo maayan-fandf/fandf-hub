@@ -127,14 +127,35 @@ export async function applyAutoTransition(
       try {
         const existing = JSON.parse(String(task.pending_complete));
         if (existing && existing.kind === kind && existing.prev === previous) {
-          return {
-            ok: true,
-            skipped: true,
-            taskId,
-            kind,
-            previous,
-            reason: `pending_complete already set for kind=${kind}/prev=${previous} — not re-stamping`,
-          };
+          // Dismissed tombstone (revert-pending, 2026-07-16): the claim
+          // is kept in place with dismissed=true instead of being
+          // cleared, so the SAME already-consumed GT completion can't
+          // re-mint a fresh claim on the next cycle (the "dismissed
+          // banner resurrects ≤1 min later" bug). A GENUINE re-tick —
+          // the user re-opened and re-completed the GT AFTER the
+          // dismissal — postdates dismissedAt and falls through to
+          // stamp a live claim over the tombstone.
+          const dismissedMs = existing.dismissed
+            ? Date.parse(String(existing.dismissedAt || ""))
+            : NaN;
+          const completedMs = Date.parse(String(input.completedAt || ""));
+          const freshReTick =
+            existing.dismissed === true &&
+            Number.isFinite(dismissedMs) &&
+            Number.isFinite(completedMs) &&
+            completedMs > dismissedMs;
+          if (!freshReTick) {
+            return {
+              ok: true,
+              skipped: true,
+              taskId,
+              kind,
+              previous,
+              reason: existing.dismissed
+                ? `dismissed-claim tombstone for kind=${kind}/prev=${previous} — not re-minting`
+                : `pending_complete already set for kind=${kind}/prev=${previous} — not re-stamping`,
+            };
+          }
         }
       } catch {
         /* corrupt/empty claim → fall through to normal handling */

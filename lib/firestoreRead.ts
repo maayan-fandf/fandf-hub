@@ -249,6 +249,22 @@ function shapeSnaps(taskSnap: SnapLike, commentSnap: SnapLike): ShapedRead {
   return { headers: [...HEADERS], rows, headerIdx: buildHeaderIdx() };
 }
 
+/** Live single-doc read of a task's google_tasks field, returned as a
+ *  raw JSON string ("" when the doc/field is missing). Used by the
+ *  poller's orphan scan to re-check GT tracking against CURRENT state
+ *  before closing — the cycle-start snapshot can't see refs persisted
+ *  mid-cycle (reconcile heals, hub UI cascades). Deliberately NOT
+ *  cache()-wrapped: the whole point is a fresh read. */
+export async function readTaskGoogleTasksRaw(taskId: string): Promise<string> {
+  const id = String(taskId ?? "").trim();
+  if (!id) return "";
+  const snap = await getDb().collection(FS_COLLECTIONS.tasks).doc(id).get();
+  if (!snap.exists) return "";
+  const v = (snap.data() ?? {}).google_tasks;
+  if (v == null || v === "") return "";
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
 async function readCommentsShapeImpl(): Promise<ShapedRead> {
   const db = getDb();
   const [taskSnap, commentSnap] = await Promise.all([

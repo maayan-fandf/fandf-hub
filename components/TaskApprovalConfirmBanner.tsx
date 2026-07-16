@@ -27,6 +27,9 @@ type Claim = {
   kind: "todo" | "approve" | "clarify";
   at: string;
   prev: string;
+  /** Set by revert-pending — the claim is kept as a tombstone (so the
+   *  same GT completion can't re-mint it) but must not render. */
+  dismissed?: boolean;
 };
 
 type Props = {
@@ -55,7 +58,7 @@ export default function TaskApprovalConfirmBanner({
   const [err, setErr] = useState<string | null>(null);
 
   const claim = parseClaim(claimJson);
-  if (!claim) return null;
+  if (!claim || claim.dismissed) return null;
 
   const actor =
     personDisplayName(claim.by, people) || claim.by || "מישהו";

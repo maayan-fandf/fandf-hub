@@ -160,6 +160,13 @@ export async function syncUserCompletions(
       id: t.id || "",
       title: t.title || "",
       notes: t.notes || "",
+      // Tasks-API completion timestamp — threaded into
+      // applyAutoTransition so its staleness guard works on THIS path
+      // too (it was poller-only before 2026-07-16; without it, any
+      // historical completed GT whose `updated` got bumped into the
+      // window — title/due patches, leak-sweep closes — could mint a
+      // phantom pending_complete claim on the next hub navigation).
+      completed: t.completed || "",
       hubTaskId: extractHubTaskId(t.notes),
     }))
     .filter((c) => c.hubTaskId);
@@ -175,6 +182,7 @@ export async function syncUserCompletions(
         taskId: c.hubTaskId,
         kind,
         completedBy: subjectEmail,
+        completedAt: c.completed,
       });
       if ("error" in result) {
         errored++;
@@ -182,6 +190,12 @@ export async function syncUserCompletions(
         skipped++;
       } else {
         dispatched++;
+        // Success-path log — this path was structurally invisible
+        // (only failures logged), so real-world phantom-claim counts
+        // could never be measured from Cloud Logging.
+        console.log(
+          `[userFastSync] dispatched ${c.hubTaskId} kind=${kind} by=${subjectEmail} completedAt=${c.completed}`,
+        );
       }
     } catch (e) {
       errored++;

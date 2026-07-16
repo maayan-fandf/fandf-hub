@@ -13,10 +13,19 @@ export const dynamic = "force-dynamic";
  * Dismisses a pending-completion claim without flipping the hub
  * status. Used when the assignee marked the GT complete to clear a
  * notification (the 9pm-dismissal case) rather than because they
- * actually finished the work. Clears the flag; the hub task stays
- * in its current status and the next pollTaskCompletions cycle is a
- * no-op (the GT is already completed in Google's storage so the
- * 2026-05-04 fetch-first guard short-circuits any re-patch).
+ * actually finished the work.
+ *
+ * Tombstone semantics (2026-07-16): the claim is NOT cleared — it is
+ * kept with {dismissed:true, dismissedBy, dismissedAt}. Clearing it
+ * let the very same completed GT re-mint an identical claim on the
+ * next poll cycle (staleness guard passes — the completion postdates
+ * the unchanged status — and the idempotency guard saw an empty
+ * field), resurrecting the banner ≤1 min after dismissal AND letting
+ * the reconciler respawn a duplicate GT (its heal gate reads the
+ * claim field). The tombstone keeps both guards armed; the banner
+ * skips dismissed claims; a real status change still clears the
+ * field wholesale (tasksUpdateDirect), and a GENUINE re-tick that
+ * postdates dismissedAt overwrites the tombstone with a live claim.
  *
  * Note: the GT itself is left as completed in the assignee's list.
  * Re-spawning isn't done automatically — if the task creator wants
@@ -52,8 +61,20 @@ export async function POST(req: Request) {
         { ok: true, changed: false, alreadyEmpty: true },
       );
     }
+    // Preserve the original claim (kind/prev/by/at) inside the
+    // tombstone — the idempotency guard matches on kind+prev.
+    let tomb: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(String(task.pending_complete));
+      if (parsed && typeof parsed === "object") tomb = parsed;
+    } catch {
+      /* corrupt claim — tombstone still records the dismissal */
+    }
+    tomb.dismissed = true;
+    tomb.dismissedBy = subject;
+    tomb.dismissedAt = new Date().toISOString();
     const result = await tasksUpdateDirect(subject, id, {
-      pending_complete: "",
+      pending_complete: JSON.stringify(tomb),
       note: `סומן כדחייה ע״י ${subject} — לא היה השלמה אמיתית`,
     });
     return NextResponse.json({ ok: true, changed: result.changed });
