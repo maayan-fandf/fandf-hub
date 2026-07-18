@@ -20568,6 +20568,21 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   display: inline-flex; align-items: center; gap: .4em;
   color: var(--muted); font-size: .85em; cursor: pointer;
 }
+.budget-toolbar-right {
+  display: inline-flex; align-items: center; gap: .9em; flex-wrap: wrap;
+}
+.budget-sort { display: inline-flex; align-items: center; gap: .3em; font-size: .85em; }
+.budget-sort-label { color: var(--muted); }
+.budget-sort button {
+  padding: .3em .7em; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); font-size: .95em; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.budget-sort button:hover { color: var(--text); }
+.budget-sort button.is-active {
+  color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+}
 .budget-legend {
   display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.1em;
   color: var(--muted); font-size: .8em; margin-bottom: 1em;
@@ -20589,6 +20604,9 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   overflow: hidden;
 }
 .budget-card.is-attention { border-color: rgba(245,158,11,.55); }
+/* Red-health clients get a stronger border so they pop in triage. Placed
+   after is-attention so it wins the cascade when both classes are set. */
+.budget-card.is-critical { border-color: rgba(239,68,68,.6); }
 
 .budget-summary {
   display: grid;
@@ -20615,6 +20633,21 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 /* blended programmatic CPL/CPS chips on the collapsed project row */
 .budget-recon-perf { display: inline-flex; gap: .3em; flex-wrap: wrap; margin-top: .1em; }
 .budget-recon-perf .budget-shift-chip { font-size: .92em; }
+/* results funnel (לידים · תיאומים · פגישות) on the collapsed project row */
+.budget-funnel {
+  display: inline-flex; align-items: center; gap: .35em; flex-wrap: wrap;
+  margin-top: .15em; color: var(--muted); font-size: .95em;
+}
+.budget-funnel b { color: var(--text); font-weight: 700; }
+.budget-funnel .bf-sep { color: var(--border); }
+/* per-client health verdict dot at the head of the project name */
+.budget-health {
+  display: inline-block; width: .62em; height: .62em; border-radius: 50%;
+  margin-inline-end: .4em; vertical-align: middle; cursor: help;
+}
+.budget-health-red   { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+.budget-health-amber { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.16); }
+.budget-health-green { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.14); }
 
 /* budget-consumed + time-elapsed mini bars on the summary row */
 .budget-progress {

@@ -102,6 +102,11 @@ export default function BudgetGrid({
     "all" | "attention" | "distribution" | "pacing"
   >("all");
   const [showInactive, setShowInactive] = useState(false);
+  // Row ordering: "grouped" = the default manager→company→project layout
+  // (attention-first within each company); "urgent" = triage mode, floats
+  // the worst-health company + project to the top of each group so a
+  // campaign manager sees trouble first without leaving the desk.
+  const [sortMode, setSortMode] = useState<"grouped" | "urgent">("grouped");
   // Optimistic "טיפלתי" snoozes lifted here (signal_key → on/off) so BOTH
   // the campaign row AND the project's platform-summary cell fade
   // immediately, before the next server read.
@@ -178,6 +183,28 @@ export default function BudgetGrid({
     };
   }, [projects, inactiveProjects, perf, spikes]);
 
+  // Per-project health verdict (🔴/🟠/🟢 + reasons + urgency), computed
+  // once and reused by the row dot, the critical-border, and the triage
+  // sort. Depends on localDismiss/dismissals so a "טיפלתי" recolors the
+  // dot and (in urgent mode) re-floats the row, exactly like the ⚠️.
+  const healthByTab = useMemo(() => {
+    const out: Record<string, HealthVerdict> = {};
+    for (const p of projects) {
+      const key = p.tab.toLowerCase();
+      out[key] = projectHealth(
+        p,
+        perf[key],
+        spikes[key],
+        dismissals,
+        localDismiss,
+        today,
+      );
+    }
+    return out;
+  }, [projects, perf, spikes, dismissals, localDismiss, today]);
+  const urgencyOf = (p: BudgetProject) =>
+    healthByTab[p.tab.toLowerCase()]?.urgency ?? 0;
+
   const visible = useMemo(() => {
     const list = projects.filter((p) => {
       if (isInactive(p, inactiveProjects) && !showInactive) return false;
@@ -226,18 +253,33 @@ export default function BudgetGrid({
         .sort((a, b) => a.localeCompare(b, "he")),
       ...(byMgr.has(UNASSIGNED_MANAGER) ? [UNASSIGNED_MANAGER] : []),
     ];
+    const urg = (p: BudgetProject) =>
+      healthByTab[p.tab.toLowerCase()]?.urgency ?? 0;
+    const projSort =
+      sortMode === "urgent"
+        ? (a: BudgetProject, b: BudgetProject) =>
+            urg(b) - urg(a) || a.name.localeCompare(b.name, "he")
+        : sortProjects;
     return ordered.map((m) => {
       const cm = byMgr.get(m)!;
       const companies = [...cm.keys()]
-        .sort((a, b) => a.localeCompare(b, "he"))
         .map((co) => ({
           company: co,
-          projects: cm.get(co)!.slice().sort(sortProjects),
-        }));
+          projects: cm.get(co)!.slice().sort(projSort),
+        }))
+        // Grouped: companies alphabetical. Urgent: worst-health company
+        // first (by its most-urgent project) so trouble floats up.
+        .sort((a, b) =>
+          sortMode === "urgent"
+            ? Math.max(...b.projects.map(urg)) -
+                Math.max(...a.projects.map(urg)) ||
+              a.company.localeCompare(b.company, "he")
+            : a.company.localeCompare(b.company, "he"),
+        );
       const projCount = companies.reduce((s, c) => s + c.projects.length, 0);
       return { manager: m, companies, projCount };
     });
-  }, [visible]);
+  }, [visible, sortMode, healthByTab]);
 
   function toggle(tab: string) {
     setExpanded((s) => {
@@ -288,14 +330,36 @@ export default function BudgetGrid({
             onClick={() => setFilter("all")}
           />
         </div>
-        <label className="budget-inactive-toggle">
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
-          />
-          הצג פרויקטים לא פעילים
-        </label>
+        <div className="budget-toolbar-right">
+          <div className="budget-sort" role="group" aria-label="מיון פרויקטים">
+            <span className="budget-sort-label">מיון:</span>
+            <button
+              type="button"
+              className={sortMode === "grouped" ? "is-active" : ""}
+              onClick={() => setSortMode("grouped")}
+              aria-pressed={sortMode === "grouped"}
+            >
+              לפי מנהל
+            </button>
+            <button
+              type="button"
+              className={sortMode === "urgent" ? "is-active" : ""}
+              onClick={() => setSortMode("urgent")}
+              aria-pressed={sortMode === "urgent"}
+              title="הצג קודם את הפרויקטים שהכי דורשים טיפול"
+            >
+              דחיפות
+            </button>
+          </div>
+          <label className="budget-inactive-toggle">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            הצג פרויקטים לא פעילים
+          </label>
+        </div>
       </div>
 
       <div className="budget-legend">
@@ -364,6 +428,7 @@ export default function BudgetGrid({
                       shift={shifts[p.tab.toLowerCase()]}
                       perf={perf[p.tab.toLowerCase()]}
                       spike={spikes[p.tab.toLowerCase()]}
+                      health={healthByTab[p.tab.toLowerCase()]}
                     />
                   ))}
                 </BudgetProjectList>
@@ -543,6 +608,7 @@ function ProjectRow({
   shift,
   perf,
   spike,
+  health,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -561,6 +627,8 @@ function ProjectRow({
   perf?: Record<string, ChannelPerf>;
   /** platform → overspend spike for this project (only spiking ones). */
   spike?: Partial<Record<Platform, SpendSpike>>;
+  /** Synthesized 🔴/🟠/🟢 verdict for the row dot + critical border. */
+  health?: HealthVerdict;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
@@ -584,7 +652,8 @@ function ProjectRow({
   // weighs the blend (Σspend ÷ Σleads), then colored via costChipStyle.
   let progSpend = 0,
     progLeads = 0,
-    progSched = 0;
+    progSched = 0,
+    progMeet = 0;
   if (perf) {
     for (const ch of Object.keys(perf)) {
       if (classifyChannel(ch) === "other") continue;
@@ -592,14 +661,18 @@ function ProjectRow({
       progSpend += e.spend;
       progLeads += e.leads;
       progSched += e.scheduled;
+      progMeet += e.meetings;
     }
   }
   const projCpl = progLeads > 0 ? progSpend / progLeads : 0;
   const projCps = progSched > 0 ? progSpend / progSched : 0;
+  const hasFunnel = progLeads > 0 || progSched > 0 || progMeet > 0;
   return (
     <li
       data-flip={p.tab}
-      className={`budget-card ${needsAttention(p) ? "is-attention" : ""}`}
+      className={`budget-card ${
+        health?.level === "red" ? "is-critical" : ""
+      } ${needsAttention(p) ? "is-attention" : ""}`}
     >
       <button
         type="button"
@@ -610,6 +683,7 @@ function ProjectRow({
         <span className={`budget-caret ${open ? "open" : ""}`}>▸</span>
         <span className="budget-proj">
           <span className="budget-proj-name">
+            <HealthDot v={health} />
             {hasChannelAlert(p, dismissals, localDismiss, today) && (
               <span
                 className="budget-alert"
@@ -646,6 +720,28 @@ function ProjectRow({
             <span className="budget-recon-perf">
               <CostChip label="CPL" metric="cpl" value={projCpl} />
               <CostChip label="CPS" metric="cps" value={projCps} />
+            </span>
+          )}
+          {hasFunnel && (
+            <span
+              className="budget-funnel"
+              title="לידים · תיאומים · פגישות — ערוצים פרוגרמטיים, החלון הנוכחי"
+            >
+              <span className="bf-seg">
+                <b>{progLeads.toLocaleString("he-IL")}</b> לידים
+              </span>
+              <span className="bf-sep" aria-hidden>
+                ·
+              </span>
+              <span className="bf-seg">
+                <b>{progSched.toLocaleString("he-IL")}</b> תיאומים
+              </span>
+              <span className="bf-sep" aria-hidden>
+                ·
+              </span>
+              <span className="bf-seg">
+                <b>{progMeet.toLocaleString("he-IL")}</b> פגישות
+              </span>
             </span>
           )}
         </span>
@@ -2548,6 +2644,129 @@ function needsAttention(p: BudgetProject): boolean {
   if (p.reconStatus === "over" || p.reconStatus === "under") return true;
   if (p.reconStatus === "no-target" && p.allocated > 0) return true;
   return hasPacingIssue(p) || hasStoppedChannel(p);
+}
+
+/* ── per-client health verdict (the "assess the situation" atom) ───────
+ * One 🔴/🟠/🟢 read per project, synthesized from the signals already on
+ * the desk (distribution reconciliation, pacing, stopped channels, spend
+ * spikes, runway, CPL trend) PLUS the CRM results rollup (spend-but-no-
+ * leads, leads-but-no-meetings). Every input reuses an existing predicate
+ * so the dot can never contradict the ⚠️/💡/pace chips on the same row.
+ * `urgency` drives the "דחיפות" triage sort (higher = more urgent). */
+type HealthLevel = "red" | "amber" | "green";
+type HealthVerdict = {
+  level: HealthLevel;
+  urgency: number;
+  reasons: string[];
+  label: string;
+};
+
+function projectHealth(
+  p: BudgetProject,
+  perf: Record<string, ChannelPerf> | undefined,
+  spike: Partial<Record<Platform, SpendSpike>> | undefined,
+  dismissals: Record<string, BudgetDismissal>,
+  localDismiss: Record<string, "on" | "off">,
+  today: string,
+): HealthVerdict {
+  const red: string[] = [];
+  const amber: string[] = [];
+
+  // Programmatic results rollup — same channel filter as the row's blended
+  // CPL/CPS (classifyChannel ≠ "other"), so כתבה/article/phone are excluded.
+  let progSpend = 0,
+    progLeads = 0,
+    progMeet = 0,
+    worstTrend = 0;
+  if (perf) {
+    for (const ch of Object.keys(perf)) {
+      if (classifyChannel(ch) === "other") continue;
+      const e = perf[ch];
+      progSpend += e.spend;
+      progLeads += e.leads;
+      progMeet += e.meetings;
+      if (e.cplTrend > worstTrend) worstTrend = e.cplTrend;
+    }
+  }
+
+  // Min runway across live programmatic channels — reuses RunwayHint's math
+  // ((budget − spend) ÷ the channel's daily rate from perf).
+  let minRunway = Infinity;
+  if (perf && p.remainingDays > 0) {
+    for (const r of p.rows) {
+      if (r.platform === "other" || r.ended) continue;
+      const remaining = r.budget - r.spend;
+      if (remaining <= 0) continue;
+      const dr = perf[r.channel.toLowerCase().trim()]?.dailyRate || 0;
+      if (dr <= 0) continue;
+      const days = remaining / dr;
+      if (days < minRunway) minRunway = days;
+    }
+  }
+
+  // ── RED — act now ──
+  if (hasStoppedChannel(p)) red.push("ערוץ מושהה עם תקציב שנותר — לא מוציא");
+  if (spike && Object.keys(spike).length > 0) red.push("חריגת הוצאה חדה היום");
+  if (progSpend >= 1000 && progLeads === 0) red.push("הוצאה משמעותית ללא לידים");
+  const bigGap = Math.max(1500, p.e3 * 0.15);
+  if (
+    (p.reconStatus === "over" || p.reconStatus === "under") &&
+    Math.abs(p.delta) >= bigGap
+  ) {
+    red.push(
+      p.reconStatus === "over"
+        ? `חלוקה חורגת מהיעד ב-${fmt(Math.abs(p.delta))}`
+        : `חסר ${fmt(Math.abs(p.delta))} לחלוקת היעד`,
+    );
+  }
+  if (Number.isFinite(minRunway) && minRunway <= 7)
+    red.push(`תקציב אוזל (~${Math.round(minRunway)} ימ׳)`);
+
+  // ── AMBER — watch ──
+  if (hasChannelAlert(p, dismissals, localDismiss, today))
+    amber.push("קצב יומי חורג בערוץ אחד או יותר");
+  if (
+    (p.reconStatus === "over" || p.reconStatus === "under") &&
+    Math.abs(p.delta) >= 1 &&
+    Math.abs(p.delta) < bigGap
+  ) {
+    amber.push(p.reconStatus === "over" ? "חלוקה מעל היעד" : "חלוקה מתחת ליעד");
+  }
+  if (p.reconStatus === "no-target" && p.allocated > 0)
+    amber.push("אין יעד E3 מוגדר");
+  if (worstTrend >= 0.3 && progLeads >= 5)
+    amber.push(`עלות לליד עולה (+${Math.round(worstTrend * 100)}% מול 90 ימים)`);
+  if (progLeads >= 10 && progMeet === 0 && progSpend >= 1000)
+    amber.push("לידים ללא פגישות");
+  if (Number.isFinite(minRunway) && minRunway > 7 && minRunway <= 21)
+    amber.push(`תקציב מתכלה (~${Math.round(minRunway)} ימ׳)`);
+
+  const level: HealthLevel = red.length ? "red" : amber.length ? "amber" : "green";
+  const reasons = [...red, ...amber];
+  const base = level === "red" ? 2 : level === "amber" ? 1 : 0;
+  // level bucket dominates; within a bucket more reasons then bigger gap.
+  const urgency =
+    base * 1_000_000 +
+    (red.length * 100 + amber.length * 10) * 1000 +
+    Math.min(999_999, Math.round(Math.abs(p.delta)));
+  const label = level === "red" ? "דורש טיפול" : level === "amber" ? "למעקב" : "תקין";
+  return { level, urgency, reasons, label };
+}
+
+/** The colored health dot rendered at the head of a project row. */
+function HealthDot({ v }: { v?: HealthVerdict }) {
+  if (!v) return null;
+  const title = v.reasons.length
+    ? `${v.label} — ${v.reasons.join(" · ")}`
+    : v.label;
+  return (
+    <span
+      className={`budget-health budget-health-${v.level}`}
+      title={title}
+      aria-label={title}
+      role="img"
+    />
+  );
 }
 
 /**
