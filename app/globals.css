@@ -25465,21 +25465,30 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   border-radius: 10px;
   background: var(--surface-alt);
   padding: 0.6rem 0.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  /* ONE shared grid (not a grid per row) so every channel's time-track has
+     the SAME width + origin. Previously each row was its own grid, so the
+     variable-width `auto` meta column (₪170,000/₪170,000 vs ₪2,267/₪4,000)
+     made each row's `1fr` track a different width — and the shared "today"
+     line (a single todayPct%) then landed at a different x on every row
+     (owner-reported 2026-07-18). Rows subgrid these columns → the today
+     marker and every date sit on one aligned vertical axis. */
+  display: grid;
+  grid-template-columns: minmax(90px, 11em) 1fr auto;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  font-size: 0.75rem;
 }
 .rpt-gantt-head {
+  grid-column: 1 / -1;
   font-size: 0.78rem;
   color: var(--ink-soft);
   font-weight: 600;
 }
 .rpt-gantt-row {
   display: grid;
-  grid-template-columns: minmax(90px, 11em) 1fr auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 0.6rem;
-  font-size: 0.75rem;
 }
 .rpt-gantt-row.is-cur .rpt-gantt-label {
   font-weight: 700;
