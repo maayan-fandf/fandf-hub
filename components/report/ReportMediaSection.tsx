@@ -207,6 +207,126 @@ function PlatCard({ plat, totals }: { plat: ReportPlat; totals: PlatTotals }) {
   );
 }
 
+/**
+ * Single-platform variant of the KPI band above — same threshold framing
+ * + prev-window deltas as the combined `פרסום ממומן` band, scoped to ONE
+ * platform. Used by the קריאייטיבים tab to head the Facebook section
+ * (replacing the old flat FB strip) and the Google Ads section, so each
+ * platform's detail is preceded by its own funnel summary. Returns null
+ * when the platform had no activity in the window.
+ */
+export function PlatformKpiBand({
+  plat,
+  totals,
+  prev,
+  activeAds,
+}: {
+  plat: ReportPlat;
+  totals: PlatTotals;
+  prev: PlatTotals | null;
+  /** Active-ads count from the creatives sheet (kept from the old FB
+   *  strip). Omitted / 0 → the card is dropped. */
+  activeAds?: number;
+}) {
+  if (!(totals.impressions > 0 || totals.clicks > 0 || totals.cost > 0)) {
+    return null;
+  }
+  const isGoogle = plat === "google";
+  // Google's outcome column is `conversions`; everyone else uses `leads`.
+  const outcomes = isGoogle ? totals.conversions : totals.leads;
+  const prevOutcomes = prev ? (isGoogle ? prev.conversions : prev.leads) : null;
+  const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
+  const prevCtr =
+    prev && prev.impressions > 0 ? prev.clicks / prev.impressions : null;
+  const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
+  const prevCpc = prev && prev.clicks > 0 ? prev.cost / prev.clicks : null;
+  const cpl = outcomes > 0 ? totals.cost / outcomes : 0;
+  const prevCpl =
+    prev && prevOutcomes && prevOutcomes > 0 ? prev.cost / prevOutcomes : null;
+  const c2l = totals.clicks > 0 ? Math.min(outcomes / totals.clicks, 1) : 0;
+  const i2l =
+    totals.impressions > 0 ? Math.min(outcomes / totals.impressions, 1) : 0;
+  // Platform-scoped ctx so kpiAlert's cost-gated thresholds (fbLeads /
+  // conversions) fire against THIS platform's spend, not the combined one.
+  const ctx = {
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    fbCost: plat === "facebook" ? totals.cost : 0,
+    googleCost: plat === "google" ? totals.cost : 0,
+  };
+  const outLabel = isGoogle ? "המרות" : "לידים";
+  const cplLabel = isGoogle ? "עלות להמרה" : "עלות לליד";
+  return (
+    <div className="rpt-plat-band">
+      <div className="rpt-plat-band-head">
+        <span className="rpt-plat-dot" style={{ background: PLAT_COLORS[plat] }} />
+        {PLAT_LABELS[plat]}
+      </div>
+      <div className="kpi-band rpt-kpi-band">
+        <KpiCard
+          label="חשיפות"
+          value={fmtInt(totals.impressions)}
+          tone=""
+          delta={<Delta current={totals.impressions} previous={prev?.impressions ?? null} goodDir="up" format={fmtInt} />}
+        />
+        <KpiCard
+          label="קליקים"
+          value={fmtInt(totals.clicks)}
+          tone=""
+          delta={<Delta current={totals.clicks} previous={prev?.clicks ?? null} goodDir="up" format={fmtInt} />}
+        />
+        <KpiCard
+          label="CTR"
+          value={fmtPct2(ctr)}
+          tone={kpiAlert("ctr", ctr, ctx)}
+          delta={<Delta current={ctr} previous={prevCtr} goodDir="up" format={fmtPct2} />}
+        />
+        <KpiCard
+          label="CPC ממוצע"
+          value={fmtILS2(cpc)}
+          tone=""
+          delta={<Delta current={cpc} previous={prevCpc} goodDir="down" format={fmtILS2} />}
+        />
+        <KpiCard
+          label={outLabel}
+          value={fmtInt(outcomes)}
+          tone={kpiAlert(isGoogle ? "conversions" : "fbLeads", outcomes, ctx)}
+          delta={<Delta current={outcomes} previous={prevOutcomes} goodDir="up" format={fmtInt} />}
+        />
+        <KpiCard
+          label="עלות"
+          value={fmtILS(totals.cost)}
+          tone=""
+          delta={<Delta current={totals.cost} previous={prev?.cost ?? null} goodDir="neutral" format={fmtILS} />}
+        />
+        {cpl > 0 && (
+          <KpiCard
+            label={cplLabel}
+            value={fmtILS(cpl)}
+            tone=""
+            delta={<Delta current={cpl} previous={prevCpl} goodDir="down" format={fmtILS} />}
+          />
+        )}
+        <KpiCard
+          label={isGoogle ? "קליק → המרה" : "קליק → ליד"}
+          value={fmtPct2(c2l)}
+          tone={kpiAlert("clickToLead", c2l, ctx)}
+          delta={null}
+        />
+        <KpiCard
+          label={isGoogle ? "חשיפה → המרה" : "חשיפה → ליד"}
+          value={fmtPct2(i2l)}
+          tone={kpiAlert("impToLead", i2l, ctx)}
+          delta={null}
+        />
+        {activeAds != null && activeAds > 0 && (
+          <KpiCard label="מודעות פעילות" value={fmtInt(activeAds)} tone="" delta={null} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ReportMediaSection({
   data,
 }: {

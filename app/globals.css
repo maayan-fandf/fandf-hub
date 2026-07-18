@@ -24959,6 +24959,17 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
   gap: 0.8rem;
 }
+/* Per-platform KPI band (Facebook / Google funnel summary) heading each
+   platform's creative detail on the קריאייטיבים tab. Reuses .kpi-band. */
+.rpt-plat-band { margin-top: 1.1rem; }
+.rpt-plat-band-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+}
 .rpt-plat-card {
   border: 1px solid var(--border-soft);
   border-radius: 10px;

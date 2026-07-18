@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import ReportMediaSection from "@/components/report/ReportMediaSection";
+import ReportMediaSection, {
+  PlatformKpiBand,
+} from "@/components/report/ReportMediaSection";
 import {
   fbStatusInfo,
   fmtInt,
@@ -169,30 +171,24 @@ export default function ReportCreativesTab({
     );
   }
   const { fb, google } = c;
+  const ap = data.adPlatform;
+  const prevAp = data.prevAdPlatform;
+  const googleActiveAds = google.ads.filter(
+    (a) => a.status === "Enabled",
+  ).length;
 
   return (
     <div className="rpt-creatives">
       <ReportMediaSection data={data} />
-      {(fb.topAds.length > 0 || fb.cost > 0) && (
-        <div className="kpi-band rpt-cr-kpis">
-          <div className="kpi-card">
-            <div className="kpi-label">FB — מודעות פעילות</div>
-            <div className="kpi-value">{fmtInt(fb.adCount)}</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-label">FB — עלות</div>
-            <div className="kpi-value">{fmtILS(fb.cost)}</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-label">FB — לידים</div>
-            <div className="kpi-value">{fmtInt(fb.leads)}</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-label">FB — עלות לליד</div>
-            <div className="kpi-value">{fb.cpl > 0 ? fmtILS(fb.cpl) : "—"}</div>
-          </div>
-        </div>
-      )}
+      {/* Facebook funnel summary — the rich per-platform band (impressions →
+          clicks → CTR/CPC → לידים → CPL + rates, with prev-window deltas),
+          replacing the old flat FB strip. */}
+      <PlatformKpiBand
+        plat="facebook"
+        totals={ap.facebook}
+        prev={prevAp?.facebook ?? null}
+        activeAds={fb.adCount}
+      />
 
       {fb.topAds.length > 0 && (
         <>
@@ -386,6 +382,15 @@ export default function ReportCreativesTab({
           </div>
         </>
       )}
+
+      {/* Google funnel summary — same band, scoped to Google (המרות /
+          קליק→המרה / חשיפה→המרה), heading the Google Ads detail. */}
+      <PlatformKpiBand
+        plat="google"
+        totals={ap.google}
+        prev={prevAp?.google ?? null}
+        activeAds={googleActiveAds}
+      />
 
       {google.ads.length > 0 && <GoogleAdsBlock ads={google.ads} />}
 
