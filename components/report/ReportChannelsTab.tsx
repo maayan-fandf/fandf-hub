@@ -53,6 +53,14 @@ const chLabel = (name: string) =>
 
 type DayPt = { date: string; cost: number; leads: number };
 
+/** A google channel LABEL that denotes the discovery/PMax/demand-gen
+ *  family (vs search). Mirrors reportData's googleCampaignKind so the
+ *  channel-row → daily-series mapping agrees with how the campaigns were
+ *  bucketed. A plain "google" label matches NEITHER this nor a search
+ *  token — it's treated as the non-discovery (search) side when a
+ *  discovery row exists, else as all-google (see hasGoogleDiscovery). */
+const GOOGLE_DISCOVERY_LABEL_RE = /discover|p-?max|demand|dgen|display/i;
+
 /** Zero-filled daily series clamped to the last date that actually has
  *  data, so the sparkline doesn't trail into future zeros — mirrors the
  *  legacy `_buildAdTrendlinePopover_` windowing (Index.html:6890). */
@@ -490,6 +498,13 @@ export default function ReportChannelsTab({
   const today = useMemo(ilToday, []);
 
   const channels = data.channels;
+  // Does this project break google into a discovery row? If so, a
+  // non-discovery google row is the search-only side of the split; if
+  // not, a lone "google" row still represents all-google. Computed from
+  // the full channel set so channel-filtering can't flip it.
+  const hasGoogleDiscovery = channels.some(
+    (c) => c.platform === "google" && GOOGLE_DISCOVERY_LABEL_RE.test(c.channel),
+  );
   const sorted = useMemo(() => {
     if (!sort) return channels;
     const val = SORT_VAL[sort.key];
@@ -824,22 +839,21 @@ export default function ReportChannelsTab({
             {visible.map((c) => {
               const subs = c.subCampaigns.filter((s) => s.name);
               const dot = STATUS_DOT[c.campaignStatus];
-              // For Google, pick the campaign-kind-split series so
-              // google-search and google-discovery get distinct trends
+              // For Google, pick the campaign-kind-split daily series so
+              // discovery and non-discovery rows get DISTINCT trends
               // (data.daily.google is the COMBINED series — showing it on
-              // both rows made them identical). Match the channel label to
-              // a split bucket; a plain "google" channel (no search/
-              // discovery token) falls back to the combined platform series.
+              // both rows made them identical). A discovery-labelled row →
+              // discovery series. A non-discovery google row → the
+              // search-only series WHEN discovery is a separate row (the
+              // two rows then partition google cleanly, e.g. אנדה's
+              // "google" + "Google-discovery"); otherwise a lone "google"
+              // row keeps the combined all-google series.
               const gk = data.dailyGoogleByKind;
               const trendSource =
                 c.platform === "google"
-                  ? gk &&
-                    /discover|p-?max|demand|dgen|display/i.test(c.channel)
+                  ? gk && GOOGLE_DISCOVERY_LABEL_RE.test(c.channel)
                     ? gk.discovery
-                    : gk &&
-                        /search|brand|generic|competitor|business|\bgs\b/i.test(
-                          c.channel,
-                        )
+                    : gk && hasGoogleDiscovery
                       ? gk.search
                       : (data.daily?.google ?? [])
                   : (data.daily?.facebook ?? []);
