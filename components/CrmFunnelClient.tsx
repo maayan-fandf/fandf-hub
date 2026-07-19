@@ -158,6 +158,15 @@ export default function CrmFunnelClient({
   // children via `overflow: hidden`, so we track hover state in React
   // and render a separate tooltip as a sibling of the pie.
   const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
+  // Viewport coords for the objection pie-slice tooltip, computed from the
+  // pie's bounding rect on hover so the tooltip can PORTAL to <body>
+  // (position:fixed) like the KPI-tile / legend-row popovers already do.
+  // The old inline (position:absolute) version was painted over / mis-
+  // overlapped by the sections that stack after the pie (מהירות מענה /
+  // מסע הליד), rendering it half-hidden (owner-reported 2026-07-18).
+  const [piePos, setPiePos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
 
   // Search-driven multi-select popover — an alternate UI for managing
   // the same `selected` set the chip row controls. Useful for grabbing
@@ -449,6 +458,15 @@ export default function CrmFunnelClient({
       ease: "outCubic",
     });
   }, [selected]);
+
+  // Show the objection pie-slice tooltip anchored below the pie (portaled
+  // to <body>). Coords come from the pie's own rect, so the tooltip lands
+  // just under the pie regardless of what stacks after it.
+  function showSlice(label: string) {
+    setHoveredSlice(label);
+    const r = pieRef.current?.getBoundingClientRect();
+    setPiePos(r ? { top: r.bottom + 6, left: r.left + r.width / 2 } : null);
+  }
 
   // The קמפיינים view carries ONLY the FB/Meta UTM breakdown — if this funnel
   // has none (non-warehouse project), render nothing rather than an empty card.
@@ -925,9 +943,9 @@ export default function CrmFunnelClient({
                         key={slice.label}
                         d={slice.d}
                         fill={slice.fill}
-                        onMouseEnter={() => setHoveredSlice(slice.label)}
+                        onMouseEnter={() => showSlice(slice.label)}
                         onMouseLeave={() => setHoveredSlice(null)}
-                        onFocus={() => setHoveredSlice(slice.label)}
+                        onFocus={() => showSlice(slice.label)}
                         onBlur={() => setHoveredSlice(null)}
                       >
                         <title>{slice.tooltip}</title>
@@ -944,18 +962,37 @@ export default function CrmFunnelClient({
                   objections so a per-channel breakdown isn't
                   meaningful — skip the tooltip for that slice. */}
               {(() => {
-                if (!hoveredSlice) return null;
+                if (!hoveredSlice || !piePos) return null;
                 const slice = pieData.slices.find((s) => s.label === hoveredSlice);
                 if (!slice || slice.isOther) return null;
                 const breakdown = objectionSourceBreakdowns.get(hoveredSlice);
                 if (!breakdown || breakdown.length === 0) return null;
-                return (
-                  <ChannelMiniPie
-                    data={breakdown}
-                    palette={palette}
-                    metric={hoveredSlice}
-                    visible
-                  />
+                // Portal to <body> (position:fixed) — same escape hatch the
+                // KPI-tile / legend-row popovers use, so the tooltip clears
+                // every ancestor stacking context instead of being painted
+                // over by the sections below the pie.
+                return createPortal(
+                  <div
+                    className="crm-channel-tooltip is-visible crm-channel-tooltip-portal"
+                    role="tooltip"
+                    style={{
+                      position: "fixed",
+                      top: piePos.top,
+                      left: piePos.left,
+                      transform: "translateX(-50%)",
+                      zIndex: 9999,
+                      pointerEvents: "none",
+                      opacity: 1,
+                      visibility: "visible",
+                    }}
+                  >
+                    <ChannelMiniPieContent
+                      data={breakdown}
+                      palette={palette}
+                      metric={hoveredSlice}
+                    />
+                  </div>,
+                  document.body,
                 );
               })()}
               <ul className="crm-pie-legend" ref={legendListRef}>
@@ -1616,34 +1653,6 @@ function ReturningPriorCell({
  * legend order matches whatever the caller chose (top-channel first
  * for KPIs; for objections, that's also top-channel first).
  */
-function ChannelMiniPie({
-  data,
-  palette,
-  metric,
-  visible = false,
-}: {
-  data: { source: string; count: number }[];
-  palette: Map<string, string>;
-  metric: string;
-  /** When true, the tooltip is always visible (used for the SVG-pie-
-   *  slice hover case where the parent can't carry a `*-has-popover`
-   *  CSS class). When false / omitted, visibility is driven by the
-   *  parent's `:hover` via CSS — the default for KPI tiles + legend
-   *  rows. */
-  visible?: boolean;
-}) {
-  const total = data.reduce((n, s) => n + s.count, 0);
-  if (total === 0) return null;
-  return (
-    <div
-      className={"crm-channel-tooltip" + (visible ? " is-visible" : "")}
-      role="tooltip"
-    >
-      <ChannelMiniPieContent data={data} palette={palette} metric={metric} />
-    </div>
-  );
-}
-
 /**
  * Inner content of the channel mini-pie popover (title + pie + legend) —
  * extracted from ChannelMiniPie so the portal-anchored KpiTile / legend-

@@ -6468,6 +6468,12 @@ html[data-theme="dark"] .quick-note-saved {
   padding: 1rem 1.1rem 1.2rem;
   /* margin-bottom removed — .project-main's flex-column gap is the
      single source of inter-section spacing on the project page. */
+  /* Contain ALL the section's z-index machinery (the source-dropdown lift,
+     the kpi-row hover lift to z-index:500) inside its own stacking context
+     so none of it can ever paint over the sticky project header on scroll.
+     The hover mini-pies are portaled to <body>, so they're outside this
+     context and still float above everything — unaffected. */
+  isolation: isolate;
 }
 /* Rail split: one funnel fetch feeds two sections. "funnel" (the CRM
    rail section) hides the objection + journey surfaces; "analysis" (the
@@ -7420,6 +7426,17 @@ html[data-theme="dark"] .crm-trend-hilite {
 /* Per-source pie picker — chip row + single donut. A flat pie via
    conic-gradient (not SVG) since the data is already pre-bucketed
    and we don't need interactive slices. */
+/* The source-chip block owns the open search-dropdown, which drops down
+   over the KPI row below it. Give the whole block its own stacking context
+   above later siblings so the dropdown's list can't be painted over by the
+   KPI tiles (each tile is an isolated stacking context) — the same "lower
+   half gets bled over" problem the hover popovers solved by portaling.
+   The search popover keeps an input + outside-click, so a z-index lift is
+   safer here than a portal. */
+.crm-source-chips-block {
+  position: relative;
+  z-index: 60;
+}
 .crm-source-chips {
   display: flex;
   flex-wrap: wrap;
