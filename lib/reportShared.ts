@@ -139,6 +139,11 @@ export type ProjectReportData = {
   prevAdPlatform: AdPlatform | null;
   /** Full unfiltered per-platform daily series (client windows it). */
   daily: Record<ReportPlat, DailyPoint[]>;
+  /** Google daily split into Search vs Discovery-family (PMax / Demand-Gen
+   *  / Display) by campaign name, so the ערוצים trend popover can show a
+   *  distinct series for google-search vs google-discovery — `daily.google`
+   *  is the combined platform series that made both rows look identical. */
+  dailyGoogleByKind?: { search: DailyPoint[]; discovery: DailyPoint[] };
   /** ALL CLIENTS channel rows enriched for the ערוצים tab (empty in
    *  range mode — the legacy pro-rating path isn't ported yet). */
   channels: ReportChannel[];

@@ -246,6 +246,48 @@ function aggregateWindow(
   return out;
 }
 
+/** Classify a Google campaign as Discovery-family (Discovery / PMax /
+ *  Demand-Gen / Display) vs plain Search, from its daily-feed name. The
+ *  Discovery family carries one of these tokens (verified across the
+ *  portfolio: `..._discovery`, `Google-discovery`, `pmax`, `DemandGen`,
+ *  `display`); everything else Google is Search (`_GS`/`gs`, brand /
+ *  generic / competitors / business). Lets the ערוצים trend popover show
+ *  a REAL per-channel daily series for google-search vs google-discovery
+ *  instead of the combined platform series (owner-reported 2026-07-19:
+ *  both google rows showed the same aggregated trend). */
+function googleCampaignKind(campaign: string): "discovery" | "search" {
+  return /discover|p-?max|demand[\s-]?gen|dgen|display/i.test(campaign)
+    ? "discovery"
+    : "search";
+}
+
+/** Google daily split by campaign kind — same by-date aggregation as
+ *  dailySeries, partitioned into search vs discovery. Empty array for a
+ *  kind with no matching campaigns in the window. */
+function googleDailyByKind(googleRows: RawDailyRow[]): {
+  search: DailyPoint[];
+  discovery: DailyPoint[];
+} {
+  const buckets: Record<"discovery" | "search", Map<string, DailyPoint>> = {
+    discovery: new Map(),
+    search: new Map(),
+  };
+  for (const r of googleRows) {
+    const m = buckets[googleCampaignKind(r.campaign)];
+    const p =
+      m.get(r.date) ??
+      { date: r.date, cost: 0, leads: 0, impressions: 0, clicks: 0 };
+    p.cost += r.cost;
+    p.leads += r.leads;
+    p.impressions += r.imp;
+    p.clicks += r.clk;
+    m.set(r.date, p);
+  }
+  const toSeries = (m: Map<string, DailyPoint>) =>
+    [...m.keys()].sort().map((k) => m.get(k)!);
+  return { search: toSeries(buckets.search), discovery: toSeries(buckets.discovery) };
+}
+
 /** Legacy `aggregateDailySeries_` (Code.js:7414) — per-platform, by date. */
 function dailySeries(rows: ProjectPlatformRows): Record<ReportPlat, DailyPoint[]> {
   const out = {} as Record<ReportPlat, DailyPoint[]>;
@@ -569,6 +611,7 @@ export const getProjectReportData = cache(
       adPlatform,
       prevAdPlatform,
       daily: dailySeries(rows),
+      dailyGoogleByKind: googleDailyByKind(rows.google),
       channels: reportChannels,
       creatives,
       company,

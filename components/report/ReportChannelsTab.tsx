@@ -824,11 +824,30 @@ export default function ReportChannelsTab({
             {visible.map((c) => {
               const subs = c.subCampaigns.filter((s) => s.name);
               const dot = STATUS_DOT[c.campaignStatus];
+              // For Google, pick the campaign-kind-split series so
+              // google-search and google-discovery get distinct trends
+              // (data.daily.google is the COMBINED series — showing it on
+              // both rows made them identical). Match the channel label to
+              // a split bucket; a plain "google" channel (no search/
+              // discovery token) falls back to the combined platform series.
+              const gk = data.dailyGoogleByKind;
+              const trendSource =
+                c.platform === "google"
+                  ? gk &&
+                    /discover|p-?max|demand|dgen|display/i.test(c.channel)
+                    ? gk.discovery
+                    : gk &&
+                        /search|brand|generic|competitor|business|\bgs\b/i.test(
+                          c.channel,
+                        )
+                      ? gk.search
+                      : (data.daily?.google ?? [])
+                  : (data.daily?.facebook ?? []);
               const trendDaily =
                 (c.platform === "google" || c.platform === "facebook") &&
                 c.spend > 0
                   ? windowDaily(
-                      data.daily?.[c.platform] ?? [],
+                      trendSource,
                       data.window.startIso,
                       data.window.endIso,
                     )
