@@ -7991,11 +7991,13 @@ details.crm-collapsible[open] > summary.crm-block-title::before {
   background: var(--surface-hi, #f3f4f6);
   border: 1px solid var(--border);
   /* Inline width drives the bar's visible length. flex-shrink:0 keeps
-     it from collapsing when the row's free space is small — but cap its
-     share so it can't starve the objection name next to it. */
+     it from collapsing when the row's free space is small. NO max-width:
+     the inline width already tops out at BAR_TRACK_PCT (40%) in JS with
+     the largest slice filling the track and the rest scaled linearly —
+     a CSS max-width here re-clamped every large slice to the same length
+     and broke the count-proportionality (5 looked like 2). */
   flex: 0 0 auto;
   min-width: 2%;
-  max-width: 40%;
   transition: width 200ms ease;
 }
 .crm-pie-legend .crm-legend-bar-seg {
@@ -8355,7 +8357,8 @@ details.crm-collapsible[open] > summary.crm-block-title::before {
   gap: 0.55rem;
   flex-wrap: wrap;
 }
-.prisot-folder-link {
+.prisot-folder-link,
+.prisot-xlsx-link {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--ink);
@@ -8363,7 +8366,8 @@ details.crm-collapsible[open] > summary.crm-block-title::before {
   text-decoration: none;
   transition: border-color 0.15s, background 0.15s;
 }
-.prisot-folder-link:hover {
+.prisot-folder-link:hover,
+.prisot-xlsx-link:hover {
   border-color: var(--accent, #6366f1);
   background: var(--surface-hi, var(--surface));
   text-decoration: none;
@@ -8585,7 +8589,8 @@ html[data-theme="dark"] .send-approval-warning {
 .prisot-declined-badge,
 .prisot-reviewer-chip,
 .prisot-send-approval-btn,
-.prisot-folder-link {
+.prisot-folder-link,
+.prisot-xlsx-link {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;

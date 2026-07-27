@@ -112,6 +112,10 @@ export default async function LatestPrisotCard({
   //   /api/drive/thumb/<id>  → resized rendering (works for any file)
   const imageSrc = `/api/drive/image/${encodeURIComponent(latest.id)}`;
   const thumbSrc = `/api/drive/thumb/${encodeURIComponent(latest.id)}`;
+  // Sheets-only .xlsx export, streamed through the hub under the SA so a
+  // client with no F&F Google session still gets the file (same rationale
+  // as the image/thumb proxies above) rather than a Google access wall.
+  const xlsxSrc = `/api/drive/xlsx/${encodeURIComponent(latest.id)}`;
 
   return (
     <section
@@ -336,6 +340,20 @@ export default async function LatestPrisotCard({
             >
               <GoogleDriveIcon size="1.05em" />
               <span>תיקייה</span>
+            </a>
+          )}
+          {/* Excel export — Sheets only (files.export is Workspace-native
+              types only; an image פריסה has nothing to convert). Served by
+              the hub proxy so it works for clients without a Google
+              session too. */}
+          {isSheet && (
+            <a
+              className="prisot-xlsx-link"
+              href={xlsxSrc}
+              download
+              title="הורד את הפריסה כקובץ Excel (.xlsx)"
+            >
+              ⬇️ הורד XLS
             </a>
           )}
           <a
