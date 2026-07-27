@@ -111,6 +111,11 @@ const TOP_STATUSES = 8;
 const TOP_OBJECTIONS = 5;
 const TOP_SOURCES_PER_ROW = 4;
 const TOP_OBJECTIONS_IN_PIE = 6;
+/** Max width (%) of an objection legend bar: the largest slice fills this,
+ *  the rest scale linearly down so bar length is strictly proportional to
+ *  count. The bar owns its ceiling here — .crm-legend-bar must NOT also
+ *  set max-width, or it re-clamps and breaks the proportion. */
+const BAR_TRACK_PCT = 40;
 
 export default function CrmFunnelClient({
   funnel,
@@ -1016,10 +1021,16 @@ export default function CrmFunnelClient({
                     // legend row 2026-05-12: bar width is proportional
                     // to the slice's count relative to the largest
                     // slice (max), so bigger objections render visibly
-                    // longer bars — matches the old block's relative
-                    // sizing. "אחר" rolls multiple objections, so it
-                    // shows no bar (the source mix wouldn't be
+                    // longer bars. "אחר" rolls multiple objections, so
+                    // it shows no bar (the source mix wouldn't be
                     // meaningful for the rollup).
+                    // Scale the LARGEST slice to the track's full width
+                    // (BAR_TRACK_PCT) and everything else linearly down,
+                    // so a count of 5 renders a bar exactly 5× a count of
+                    // 1. (Was `count/max * 100` then clamped by a CSS
+                    // max-width:40% — which flattened every slice ≥40% of
+                    // max to the same length, so 5/3/2 all looked equal;
+                    // owner-reported 2026-07-19.)
                     const objTotal = breakdown
                       ? breakdown.reduce((n, b) => n + b.count, 0)
                       : 0;
@@ -1027,7 +1038,7 @@ export default function CrmFunnelClient({
                       (m, x) => Math.max(m, x.count),
                       0,
                     ) || 1;
-                    const barWidthPct = (s.count / maxSliceCount) * 100;
+                    const barWidthPct = (s.count / maxSliceCount) * BAR_TRACK_PCT;
                     return (
                       <PieLegendRow
                         key={s.label}
