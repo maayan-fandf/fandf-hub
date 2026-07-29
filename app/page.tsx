@@ -68,9 +68,9 @@ export default async function HomePage() {
       // ALL CLIENTS (5-min cached, read as the folder owner) + the Keys
       // name→slug map power the per-project CRM funnel strip (leads /
       // sched / held + cost-per-metric). Both are cheap cached reads that
-      // overlap the ~6s morning feed, so they add ~no wall-clock. Read
-      // for everyone but only joined for internal users below — a client's
-      // result is discarded server-side, never serialized.
+      // overlap the ~6s morning feed, so they add ~no wall-clock. Joined
+      // for EVERY viewer incl. clients (each of whom only ever holds their
+      // own col-E projects) — see the metrics block below.
       getAllClientsAllRows(driveFolderOwner()),
       getSlugByProjectName(driveFolderOwner()),
     ]);
@@ -118,11 +118,16 @@ export default async function HomePage() {
   // (nothing got a data-ended / data-inactive stamp, so the filter hid
   // nothing). The direct read is the same source the project pages use.
   //
-  // Internal-only: leads + cost must never reach a client render, so gate on
-  // the caller not being a client (the morning feed — empty for clients — was
-  // the previous internal proxy for exactly this reason). When we can't build
-  // the metrics (a client, or the reads failed) the maps stay empty and the
-  // filters simply show everything, matching the prior no-feed behavior.
+  // Shown to CLIENTS TOO (owner decision 2026-07-27) — a client's pill now
+  // carries the same budget/time bars + CRM funnel (leads → תיאומים → פגישות
+  // with cost-per chips) as an internal user's. Safe because a client's
+  // project list is already scoped to projects where their email is on the
+  // Keys col-E client roster (projectsDirect: `visible = isAdmin || onClients
+  // || onStaff || @fandf.co.il`), so they can only ever see metrics for their
+  // OWN projects — the same spend / leads / CPL figures they already get in
+  // the פריסה card and their project report. When the reads fail the maps
+  // stay empty and the filters simply show everything (prior no-feed
+  // behavior).
   const todayIso = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
@@ -138,7 +143,6 @@ export default async function HomePage() {
 
   const showPortfolioMetrics =
     !!data &&
-    !data.isClient &&
     allClientsRes.status === "fulfilled" &&
     slugMapRes.status === "fulfilled";
   const funnelIndex = showPortfolioMetrics
@@ -480,10 +484,10 @@ function ProjectPillBadges({
 
 /**
  * Budget-used and time-elapsed progress bars shown at the bottom of each
- * project pill. Data comes from the morning-feed call that's already happening
- * for alert badges, so no additional API round-trip. Bars only render for users
- * who receive morning-feed data (admins + internal F&F) — external clients see
- * the pill without bars.
+ * project pill. Data is derived from the direct ALL CLIENTS read (not the
+ * flaky morning feed). Rendered for EVERY viewer including external clients
+ * (2026-07-27) — a client only ever holds their own col-E projects, and the
+ * same budget/spend figures appear in their פריסה card and project report.
  */
 function ProjectPillProgress({
   progress,
@@ -530,9 +534,10 @@ function ProjectPillProgress({
  * each with its blended cost-per-metric (spend ÷ count) — the same figures
  * the project page's totals row shows. Cost chips are colored on the
  * green→red gradient shared with the budget desk (costChipStyle). Counts
- * are campaign-to-date (the full flight window). Internal-only — the caller
- * only populates funnel data for users whose morning feed returned
- * projects, so external clients never see it.
+ * are campaign-to-date (the full flight window). Shown to CLIENTS TOO
+ * (owner decision 2026-07-27, colored chips included) — scoped to their own
+ * col-E projects, matching the leads / CPL / meetings they already see in
+ * the פריסה card and their project report.
  */
 function ProjectPillFunnel({ funnel }: { funnel: ProjectFunnelTotals }) {
   const ils = (v: number) =>
