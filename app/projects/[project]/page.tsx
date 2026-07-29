@@ -454,12 +454,21 @@ export default async function ProjectOverviewPage({
   const dashboardOpenUrl = isInternalUser ? dashboardFilteredUrl : proxyEmbedUrl;
   // Native in-hub report (phase-5): the native vertical-nav rail is now the
   // DEFAULT for internal users — they get it without any query param.
-  // Internal users can fall back to the legacy Apps Script iframe with
+  // Anyone can fall back to the legacy Apps Script iframe with
   // ?report=classic (legacy ?report=native links still resolve to native).
-  // Clients always keep the classic iframe until the native report has a
-  // client-view stripping mode (no ad-ops / negative-signal chrome) — do
-  // NOT flip clients here; that's the outward-facing cutover (task #56).
-  const useNativeReport = isInternalUser && sp.report !== "classic";
+  //
+  // CLIENT CUTOVER (2026-07-27, task #56 — owner-approved): clients now get
+  // the native report too, rendered in client-stripped mode via
+  // `reportClientView` below. Previously they stayed on the classic iframe
+  // pending that stripping mode — which has since shipped (the rpt-clientview
+  // CSS layer + NativeProjectRail's clientView prop, which force-disables
+  // every edit control and skips the ad-links fetch). Safe for external
+  // clients because NativeProjectRail reads its data as driveFolderOwner()
+  // (the SA), NOT as the viewer — the SA can only impersonate inside the
+  // F&F domain, which is exactly why the classic path had to proxy through
+  // /api/dashboard for them. `?report=classic` remains the instant per-URL
+  // fallback if a client hits trouble.
+  const useNativeReport = sp.report !== "classic";
   // Client-stripped render of the native report: real client-tier users always
   // get it; internal users can PREVIEW it with ?clientView=1 (to review the
   // client experience before the real client cutover — task #56). Drives the
