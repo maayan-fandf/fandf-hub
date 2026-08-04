@@ -237,9 +237,26 @@ export default async function MorningPage({
 
       {error && (
         <div className="error">
-          <strong>שגיאה בטעינת המידע.</strong>
-          <br />
-          {error}
+          {/* A timeout is by far the common failure here (the Apps Script
+              feed does per-project benchmark math across the roster), and
+              the raw "This operation was aborted" told the user nothing.
+              Name the cause + the action; keep the raw text for anything
+              that ISN'T a timeout so real errors stay diagnosable. */}
+          {/\baborted\b|timeout/i.test(error) ? (
+            <>
+              <strong>טעינת ההתראות ארכה יותר מדי.</strong>
+              <br />
+              המקור (Apps Script) איטי כרגע — רעננו את הדף בעוד רגע. אם זה
+              חוזר, שאר המידע בהאב עדיין זמין: התקציבים בלשונית ״תקציבים״
+              והתראות לפי פרויקט בעמוד הפרויקט.
+            </>
+          ) : (
+            <>
+              <strong>שגיאה בטעינת המידע.</strong>
+              <br />
+              {error}
+            </>
+          )}
         </div>
       )}
 

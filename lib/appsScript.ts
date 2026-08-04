@@ -25,6 +25,20 @@ type ApiError = { error: string; status: number };
  *  backend just times out again); only fast transient failures are. */
 const API_ATTEMPT_TIMEOUT_MS = 45_000;
 
+/** Per-action timeout overrides. `morningFeed` fans out per-project
+ *  benchmark math across the whole roster on the Apps Script side. MEASURED
+ *  2026-08-04 against live prod: 110.4s for scope=mine (200 OK, 28 signals)
+ *  — so the generic 45s budget aborted it on EVERY call ("This operation
+ *  was aborted" blanked /morning entirely, and the nav badge's
+ *  [morning/count] logged the same failure every few minutes).
+ *  170s gives real headroom over the measured duration while staying well
+ *  under Cloud Run's 300s request ceiling (apphosting.yaml sets no
+ *  runConfig.timeoutSeconds), so a genuinely hung call still fails cleanly
+ *  instead of hanging the render to the platform limit. */
+const ACTION_TIMEOUT_MS: Record<string, number> = {
+  morningFeed: 170_000,
+};
+
 /**
  * Fetch + parse the Apps Script JSON API with a per-attempt timeout and
  * transient-error retry. Apps Script fails two intermittent ways that both
@@ -42,7 +56,10 @@ async function apiFetchJson<T>(
   return withRetry(
     async () => {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), API_ATTEMPT_TIMEOUT_MS);
+      const timer = setTimeout(
+        () => ctrl.abort(),
+        ACTION_TIMEOUT_MS[label] ?? API_ATTEMPT_TIMEOUT_MS,
+      );
       try {
         const res = await fetch(url, {
           ...init,
@@ -840,12 +857,29 @@ export type MorningFeed = {
   projects: MorningProject[];
 };
 
-// Cache the morning feed for 60s per (email, scope, project). The
-// feed is heavy on the Apps Script side (~6s) because it does
-// per-project benchmark math. Caching keeps the first hit per minute
-// at full cost but every other home-page render in the same window
-// returns near-instantly. The cache key encodes all three params so
-// view-as / scope changes / per-project queries don't collide.
+// Cache the morning feed per (email, scope, project). The cache key
+// encodes all three params so view-as / scope changes / per-project
+// queries don't collide.
+//
+// TTL raised 60s → 300s (2026-08-04). The feed was assumed to take ~6s,
+// but it has grown with the roster and now measures ~110s in prod — i.e.
+// the entry EXPIRED LONG BEFORE a fetch could finish, so practically every
+// render was a cache miss paying the full 110s. A TTL comfortably longer
+// than the fetch means one slow load, then fast reads for the rest of the
+// window. Morning alerts are benchmark math over daily-ish data, so 5
+// minutes of staleness is immaterial; the "✓ טיפלתי" dismissal path
+// revalidates the `morning-feed` tag explicitly for instant feedback.
+// Process-local last-good feed per cache key — a serve-stale-on-error
+// floor, same shape as lib/keys.ts's lastGoodKeys. The Apps Script feed is
+// the heaviest call in the app and times out intermittently; before this,
+// one slow call replaced the whole /morning page with "שגיאה בטעינת
+// המידע · This operation was aborted" (owner-reported 2026-08-04). Once a
+// key has been fetched successfully, a later failure serves those signals
+// (flagged stale via `generatedAt`, which the page already renders) rather
+// than throwing. Keyed per (email, scope, project) because the feed is
+// roster-scoped — one shared slot would leak another user's projects.
+const lastGoodMorningFeed = new Map<string, MorningFeed>();
+
 const fetchMorningFeedCached = unstable_cache(
   async (cacheKey: string): Promise<MorningFeed> => {
     const { email, scope, project } = JSON.parse(cacheKey) as {
@@ -856,10 +890,27 @@ const fetchMorningFeedCached = unstable_cache(
     const params: Record<string, string> = {};
     if (scope) params.scope = scope;
     if (project) params.project = project;
-    return callApiAs<MorningFeed>(email, "morningFeed", params);
+    try {
+      const feed = await callApiAs<MorningFeed>(email, "morningFeed", params);
+      // Only snapshot a structurally-real feed — caching a malformed/empty
+      // payload would defeat the fallback (mirrors the keys.ts guard).
+      if (feed && Array.isArray(feed.projects)) {
+        lastGoodMorningFeed.set(cacheKey, feed);
+      }
+      return feed;
+    } catch (e) {
+      const stale = lastGoodMorningFeed.get(cacheKey);
+      if (stale) {
+        console.warn(
+          `[appsScript] morningFeed failed — serving last-good feed from ${stale.generatedAt} (${stale.projects.length} projects): ${String((e as Error)?.message ?? e).slice(0, 140)}`,
+        );
+        return stale;
+      }
+      throw e; // nothing cached for this key yet — surface the real error
+    }
   },
   ["morningFeed"],
-  { revalidate: 60, tags: ["morning-feed"] },
+  { revalidate: 300, tags: ["morning-feed"] },
 );
 
 export async function getMorningFeed(

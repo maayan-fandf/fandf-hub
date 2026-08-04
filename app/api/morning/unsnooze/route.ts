@@ -23,7 +23,7 @@ import { removeAlertDismissal } from "@/lib/alertDismissals";
  *
  * Fix: clear BOTH stores. Apps Script wipes the sheet copy + its memo;
  * removeAlertDismissal wipes the Firestore copy. Then revalidate the
- * morning-feed unstable_cache (60s window) so the next page render
+ * morning-feed unstable_cache (5-min window) so the next page render
  * doesn't return a stale cached payload that still flags the signal
  * as dismissed.
  *
@@ -64,9 +64,11 @@ export async function POST(req: NextRequest) {
     appsScript = { error: err instanceof Error ? err.message : String(err) };
   }
 
-  // Bust the hub's 60s morning-feed cache so the next render re-fetches
-  // and the user sees the alert re-appear immediately after refresh()
-  // instead of waiting up to a minute for the cache to expire.
+  // Bust the hub's morning-feed cache so the next render re-fetches and
+  // the user sees the alert re-appear immediately after refresh() instead
+  // of waiting out the 5-minute TTL. This tag-bust is what makes the long
+  // TTL safe: the slow feed is only re-paid when something actually
+  // changed, not on a timer.
   try {
     revalidateTag("morning-feed");
   } catch {
