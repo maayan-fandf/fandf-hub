@@ -20848,6 +20848,13 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
   line-height: 1; border-radius: 4px; vertical-align: middle;
   transition: opacity .12s, transform .12s;
 }
+/* "account name copied" flash on the Google group logo — sized to the
+   1.05em icon it replaces so the button doesn't reflow on click. */
+.budget-logo-copied {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.05em; height: 1.05em;
+  color: #22c55e; font-weight: 800; font-size: 1.05em; line-height: 1;
+}
 .budget-logo-link:hover { opacity: .75; transform: scale(1.12); }
 .budget-logo-link:focus-visible {
   outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px;

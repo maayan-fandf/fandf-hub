@@ -2278,6 +2278,50 @@ function PlatformIcon({
  *  and copies the project slug (so the F&F userscript filters by campaign
  *  name); Facebook just opens its account. Plain (non-clickable) logo when
  *  there's no url to open. */
+/** Logo button that COPIES an ad-account name instead of opening a URL.
+ *  Used for the Google group logo: the manager pastes the account name
+ *  into Google Ads Editor's account picker, which is a desktop app — so
+ *  opening the web Ads UI (what the FB logo does) would just be a stray
+ *  tab. Falls back to a plain inert icon when the group spans more than
+ *  one account and there's no single name to copy. */
+function PlatformLogoCopy({
+  platform,
+  name,
+  size = "1em",
+}: {
+  platform: Platform | "other";
+  name?: string;
+  size?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!name) return <PlatformIcon platform={platform} size={size} />;
+  return (
+    <button
+      type="button"
+      className="budget-logo-link"
+      title={`העתק את שם חשבון הפרסום "${name}" — להדבקה בבורר החשבונות של Google Ads Editor`}
+      onClick={async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(name);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        } catch {
+          /* best-effort */
+        }
+      }}
+    >
+      {copied ? (
+        <span className="budget-logo-copied" aria-label="שם החשבון הועתק">
+          ✓
+        </span>
+      ) : (
+        <PlatformIcon platform={platform} size={size} />
+      )}
+    </button>
+  );
+}
+
 function PlatformLogoLink({
   platform,
   href,
@@ -2318,6 +2362,25 @@ function PlatformLogoLink({
  *  they span more than one account — so a manager/company logo only opens an
  *  account when it's unambiguous. (Google urls carry a per-project filter
  *  hash, so for Google a group is "one account" only with one project.) */
+/** The single ad-account NAME shared by a manager/company group, or
+ *  undefined when the group spans more than one account (nothing
+ *  unambiguous to copy). Google Ads Editor's account picker searches by
+ *  this readable name — the CSV's `Account` column uses the numeric
+ *  Customer ID instead, which Editor needs for row routing but which is
+ *  useless for finding the account in the UI. */
+function groupAccountName(
+  projects: BudgetProject[],
+  platform: "google" | "facebook",
+): string | undefined {
+  const names = new Set<string>();
+  for (const p of projects) {
+    const n = (platform === "google" ? p.gAdsAcctName : p.fbAcctName) || "";
+    const t = n.trim();
+    if (t) names.add(t);
+  }
+  return names.size === 1 ? [...names][0] : undefined;
+}
+
 function groupAccountUrl(
   projects: BudgetProject[],
   adLinks: Record<string, ProjLinks>,
@@ -2462,11 +2525,13 @@ function ManagerCsvButtons({
   showAdLinks: boolean;
 }) {
   const q = `manager=${encodeURIComponent(manager)}`;
-  const gUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "google") : undefined;
+  // Google logo → copy the account NAME (paste into Ads Editor's account
+  // picker). FB logo → open Ads Manager for the account (web UI).
+  const gName = showAdLinks ? groupAccountName(projects, "google") : undefined;
   const fbUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "facebook") : undefined;
   return (
     <span className="budget-csv-actions">
-      <CsvPlatformButtons params={q} platform="google" label="Google" openUrl={gUrl} />
+      <CsvPlatformButtons params={q} platform="google" label="Google" copyName={gName} />
       <CsvPlatformButtons params={q} platform="facebook" label="FB" openUrl={fbUrl} />
     </span>
   );
@@ -2496,11 +2561,13 @@ function CompanyCsvButtons({
   const q =
     `company=${encodeURIComponent(company)}` +
     (manager ? `&manager=${encodeURIComponent(manager)}` : "");
-  const gUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "google") : undefined;
+  // Google logo → copy the account NAME (paste into Ads Editor's account
+  // picker). FB logo → open Ads Manager for the account (web UI).
+  const gName = showAdLinks ? groupAccountName(projects, "google") : undefined;
   const fbUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "facebook") : undefined;
   return (
     <span className="budget-csv-actions">
-      <CsvPlatformButtons params={q} platform="google" label="Google" openUrl={gUrl} />
+      <CsvPlatformButtons params={q} platform="google" label="Google" copyName={gName} />
       <CsvPlatformButtons params={q} platform="facebook" label="FB" openUrl={fbUrl} />
     </span>
   );
@@ -2511,13 +2578,21 @@ function CsvPlatformButtons({
   platform,
   label,
   openUrl,
+  copyName,
 }: {
   params: string;
   platform: "google" | "facebook";
   label: string;
   /** When set, the platform logo becomes a quick "open the ad account" link
-   *  (only passed when the group resolves to a single account). */
+   *  (only passed when the group resolves to a single account). Used by the
+   *  FB logo — Meta's Ads Manager is a web UI, so opening it is the useful
+   *  action. */
   openUrl?: string;
+  /** Ad-account NAME for the group. When set (Google), the logo copies it
+   *  instead of opening a URL — the target is Google Ads Editor's account
+   *  picker (a desktop app), so a web tab would be useless. Takes
+   *  precedence over openUrl. */
+  copyName?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -2547,7 +2622,13 @@ function CsvPlatformButtons({
   return (
     <span className="budget-csv-group" title={label}>
       <span className="budget-csv-logo">
-        {openUrl ? (
+        {copyName ? (
+          <PlatformLogoCopy
+            platform={platform}
+            name={copyName}
+            size="1.05em"
+          />
+        ) : openUrl ? (
           <PlatformLogoLink
             platform={platform}
             href={openUrl}
