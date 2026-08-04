@@ -398,6 +398,7 @@ export default function BudgetGrid({
                   <GroupTotals projects={cg.projects} />
                   <CompanyCsvButtons
                     company={cg.company}
+                    manager={mg.manager}
                     projects={cg.projects}
                     adLinks={adLinks}
                     showAdLinks={showAdLinks}
@@ -2474,16 +2475,27 @@ function ManagerCsvButtons({
 /** Per-company Google export (the per-חברה button on the company header). */
 function CompanyCsvButtons({
   company,
+  manager,
   projects,
   adLinks,
   showAdLinks,
 }: {
   company: string;
+  /** The manager section this company group is rendered INSIDE. Sent along
+   *  with the company so the export matches the rows actually on screen —
+   *  a company can span both managers (e.g. שיכון ובינוי), and without this
+   *  the company button exported the OTHER manager's projects too. That
+   *  included account-wide buckets like ארצי (its Keys pattern `artzi`
+   *  appears in every campaign of that Google account), so the download
+   *  came out as "every campaign in the account". Owner-reported. */
+  manager: string;
   projects: BudgetProject[];
   adLinks: Record<string, ProjLinks>;
   showAdLinks: boolean;
 }) {
-  const q = `company=${encodeURIComponent(company)}`;
+  const q =
+    `company=${encodeURIComponent(company)}` +
+    (manager ? `&manager=${encodeURIComponent(manager)}` : "");
   const gUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "google") : undefined;
   const fbUrl = showAdLinks ? groupAccountUrl(projects, adLinks, "facebook") : undefined;
   return (

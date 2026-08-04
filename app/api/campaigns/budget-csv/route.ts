@@ -62,15 +62,26 @@ export async function GET(req: Request) {
     getCampaignBudgets(owner),
   ]);
 
-  const projects = master.projects.filter((p) => {
-    // Company filter (the per-חברה button) takes precedence when present.
-    if (company) {
-      return company === "ללא חברה" ? !p.company : p.company === company;
-    }
+  // Both filters are ANDed when both are present. The desk nests
+  // manager → company → projects, so the per-חברה button now sends its
+  // parent manager too: a company can span BOTH managers (שיכון ובינוי
+  // does), and company-only filtering exported the other manager's
+  // projects as well — including account-wide buckets like ארצי, whose
+  // Keys pattern `artzi` matches every campaign in that Google account,
+  // so the file came out as "every campaign in the account".
+  // Owner-reported 2026-07-29.
+  const matchesManager = (p: (typeof master.projects)[number]): boolean => {
     if (!manager) return true;
     if (manager === UNASSIGNED_MANAGER) return p.managers.length === 0;
     return p.managers.includes(manager);
-  });
+  };
+  const matchesCompany = (p: (typeof master.projects)[number]): boolean => {
+    if (!company) return true;
+    return company === "ללא חברה" ? !p.company : p.company === company;
+  };
+  const projects = master.projects.filter(
+    (p) => matchesCompany(p) && matchesManager(p),
+  );
 
   type OutRow = {
     project: string;
@@ -174,7 +185,9 @@ export async function GET(req: Request) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jerusalem",
   }).format(new Date());
-  const scope = company || manager || "all";
+  // Include BOTH dimensions so a company's two manager-scoped exports don't
+  // download over each other with the same filename.
+  const scope = [company, manager].filter(Boolean).join("-") || "all";
   const safeScope = scope.replace(/[^a-z0-9_-]+/gi, "-") || "all";
   const filename = `${platform}-budgets-${safeScope}-${today}.csv`;
 
