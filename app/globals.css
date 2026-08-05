@@ -25770,6 +25770,11 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   flex-direction: column;
   align-items: center;
   gap: 0.05rem;
+  /* Grid items default to min-width:auto, so a column can't shrink below its
+     content's intrinsic width — one long value (e.g. "₪1,964") pushed the
+     3×1fr row wider than the card, which is overflow:hidden, so it clipped
+     instead of fitting. */
+  min-width: 0;
 }
 .rpt-cr-stat-l {
   font-size: 0.68rem;
@@ -25779,6 +25784,21 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   font-size: 0.82rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+/* The ₪-per figure under a CRM count (עלות לתיאום / עלות לביצוע). Its own
+   line so a four-digit ₪ can't widen the column past its 1fr share. */
+.rpt-cr-stat-sub {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .rpt-cr-links {
   display: flex;

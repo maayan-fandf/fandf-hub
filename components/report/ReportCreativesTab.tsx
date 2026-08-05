@@ -136,19 +136,28 @@ function CrmRow({
           {fmtInt(crmLeads)}
         </span>
       </div>
+      {/* count and ₪-per stack rather than sharing one line: at three columns
+          in a ~215px card a inline "1 · ₪1,964" is wider than its 1fr share,
+          and the card is overflow:hidden so it got clipped rather than
+          wrapped. The clipping fix pushed these figures UP, which is what
+          made a latent squeeze visible. */}
       <div className="rpt-cr-stat">
         <span className="rpt-cr-stat-l">תואמו</span>
         <span className="rpt-cr-stat-v" style={{ color: "#ec4899" }}>
           {fmtInt(scheduled)}
-          {costPerSched > 0 ? ` · ${fmtILS(costPerSched)}` : ""}
         </span>
+        {costPerSched > 0 && (
+          <span className="rpt-cr-stat-sub">{fmtILS(costPerSched)}</span>
+        )}
       </div>
       <div className="rpt-cr-stat">
         <span className="rpt-cr-stat-l">בוצעו</span>
         <span className="rpt-cr-stat-v" style={{ color: "#f5576c" }}>
           {fmtInt(held)}
-          {costPerHeld > 0 ? ` · ${fmtILS(costPerHeld)}` : ""}
         </span>
+        {costPerHeld > 0 && (
+          <span className="rpt-cr-stat-sub">{fmtILS(costPerHeld)}</span>
+        )}
       </div>
     </div>
   );
