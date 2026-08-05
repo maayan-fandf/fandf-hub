@@ -2416,17 +2416,17 @@ async function buildSalesforceBreakdown(
  */
 export async function getSalesforceCreativeMeetings(
   crmAccount: string,
-  months: string[],
+  windows: { key: string; from: string; toExcl: string }[],
 ): Promise<
   Array<{
-    month: string;
+    key: string;
     creative: { campaign: string; ad: string; leads: number; scheduled: number; held: number }[];
     audience: { audience: string; leads: number; scheduled: number; held: number }[];
     keyword: { keyword: string; leads: number; scheduled: number; held: number }[];
   }>
 > {
   const empty = () =>
-    months.map((m) => ({ month: m, creative: [], audience: [], keyword: [] }));
+    windows.map((w) => ({ key: w.key, creative: [], audience: [], keyword: [] }));
   try {
     const subjectEmail = driveFolderOwner();
     const { headers, rows } = await readSalesforce(subjectEmail);
@@ -2447,15 +2447,25 @@ export async function getSalesforceCreativeMeetings(
       aud: Map<string, Rec>;
       kw: Map<string, Rec>;
     };
-    const perMonth = new Map<string, Bucket>();
-    for (const m of months)
-      perMonth.set(m, { cre: new Map(), aud: new Map(), kw: new Map() });
+    const perWin = new Map<string, Bucket>();
+    for (const w of windows)
+      perWin.set(w.key, { cre: new Map(), aud: new Map(), kw: new Map() });
 
     for (const row of rows) {
       const arr = row as unknown[];
       if (!targets.includes(norm(arr[iProject]))) continue;
-      const bucket = perMonth.get(dateOnly(arr[iEntry]).slice(0, 7));
-      if (!bucket) continue; // lead created outside every requested month
+      // Salesforce is a STATUS SNAPSHOT, not a dated event source, so the
+      // window predicate is the lead's own creation DAY (it was its creation
+      // MONTH — narrowing to the day is the same clipping the BMBY/Sehel paths
+      // do, just at the granularity the caller now asks for). dateOnly returns
+      // "" for unparseable cells; those match no window and are skipped,
+      // exactly as a ""-keyed month lookup missed every bucket before.
+      const d = dateOnly(arr[iEntry]);
+      // Windows are ≤24 and non-overlapping, so a linear find beats building an
+      // index and stays correct for bounds that aren't month-aligned.
+      const win = d ? windows.find((x) => d >= x.from && d < x.toExcl) : undefined;
+      const bucket = win ? perWin.get(win.key) : undefined;
+      if (!bucket) continue; // lead created outside every requested window
       const u = lookupSfUtm(
         idx,
         iPhone >= 0 ? arr[iPhone] : "",
@@ -2492,10 +2502,10 @@ export async function getSalesforceCreativeMeetings(
       }
     }
 
-    return months.map((m) => {
-      const b = perMonth.get(m)!;
+    return windows.map((w) => {
+      const b = perWin.get(w.key)!;
       return {
-        month: m,
+        key: w.key,
         creative: [...b.cre.values()].map((r) => ({
           campaign: r.camp, ad: r.ad, leads: r.leads, scheduled: r.scheduled, held: r.held,
         })),

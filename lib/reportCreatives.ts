@@ -5,7 +5,9 @@ import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
 import { readKeysCached } from "@/lib/keys";
 import { normAdName } from "@/lib/fbCreatives";
 import {
-  getProjectMeetingsLiveMulti,
+  getProjectMeetingsLiveWindows,
+  monthWindow,
+  type MeetingsWindow,
   type ProjectMeetings,
 } from "@/lib/fbCreativeMeetingsExport";
 import type {
@@ -108,6 +110,52 @@ function monthsInRange(startIso: string, endIso: string): string[] {
     }
   }
   return out;
+}
+
+/** Next calendar day (UTC date-only arithmetic). ReportWindow.endIso is
+ *  INCLUSIVE (see aggregateCreatives' inRange) while the meetings layer takes a
+ *  half-open [from, toExcl) — so the window's upper bound must be shifted +1d
+ *  before it can clip a meetings bucket. */
+function nextDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * The month buckets the CRM row is summed over — with the FIRST and LAST month
+ * NARROWED to the report window's own edges.
+ *
+ * THE BUG THIS FIXES: cost/leads are day-clipped by inRange (the metrics rows
+ * are filtered against startIso/endIso), while scheduled/held came from WHOLE
+ * calendar months. On a partial-month or multi-month window the meetings figure
+ * therefore over-spanned the cost figure, and עלות לתיאום / עלות לביצוע came
+ * out understated — dividing real spend by meetings that happened outside the
+ * window it was spent in.
+ *
+ * Why edge-narrowing rather than one single [start..end) bucket: the month is
+ * the join key buildMeetLookups/sumOverMonths are built on (legacy
+ * `sumMeetingsOverMonths_`). The sum is still EXACTLY the window — a meeting
+ * event is additive and falls in exactly one bucket, and attribution is
+ * month-independent (built once over the full lead history) — so nothing is
+ * double-counted or lost at the seams. It also keeps crmLeads month-summed, so
+ * the only change there is the same edge-day clipping cost/leads already get.
+ */
+function windowBuckets(
+  months: string[],
+  startIso: string,
+  endIso: string,
+): MeetingsWindow[] {
+  const toExclWin = endIso ? nextDay(endIso) : "";
+  return months.map((mon) => {
+    const { from, toExcl } = monthWindow(mon);
+    return {
+      key: mon,
+      from: startIso && startIso > from ? startIso : from,
+      toExcl: toExclWin && toExclWin < toExcl ? toExclWin : toExcl,
+    };
+  });
 }
 
 /* ------------------------------ raw reader ------------------------------ */
@@ -397,8 +445,11 @@ function emptyLookups(): MeetLookups {
   return { creative: new Map(), audience: new Map(), keyword: new Map() };
 }
 
+/** Keyed by the caller's BUCKET KEY, not by month — the report passes bare
+ *  months for its (edge-clipped) window buckets, so `sumOverMonths` still looks
+ *  them up by month exactly as before. */
 function buildMeetLookups(
-  results: Array<{ month: string } & ProjectMeetings>,
+  results: Array<{ key: string } & ProjectMeetings>,
   crmName: string,
 ): MeetLookups {
   const out = emptyLookups();
@@ -406,19 +457,19 @@ function buildMeetLookups(
   for (const r of results) {
     for (const c of r.creative) {
       out.creative.set(
-        `${r.month}|${c.campaign}|${normAdName(c.ad)}`.toLowerCase(),
+        `${r.key}|${c.campaign}|${normAdName(c.ad)}`.toLowerCase(),
         { leads: c.leads || 0, scheduled: c.scheduled || 0, held: c.held || 0 },
       );
     }
     for (const a of r.audience) {
-      out.audience.set(`${r.month}|${projLc}|${clean(a.audience).toLowerCase()}`, {
+      out.audience.set(`${r.key}|${projLc}|${clean(a.audience).toLowerCase()}`, {
         leads: a.leads || 0,
         scheduled: a.scheduled || 0,
         held: a.held || 0,
       });
     }
     for (const k of r.keyword) {
-      out.keyword.set(`${r.month}|${projLc}|${clean(k.keyword).toLowerCase()}`, {
+      out.keyword.set(`${r.key}|${projLc}|${clean(k.keyword).toLowerCase()}`, {
         leads: k.leads || 0,
         scheduled: k.scheduled || 0,
         held: k.held || 0,
@@ -753,7 +804,10 @@ export const getProjectCreatives = cache(
       if (months.length) {
         crmName = await resolveCrmName(subjectEmail, projectName);
         try {
-          const live = await getProjectMeetingsLiveMulti(crmName, months);
+          const live = await getProjectMeetingsLiveWindows(
+            crmName,
+            windowBuckets(months, window.startIso, window.endIso),
+          );
           lookups = buildMeetLookups(live.results, crmName);
         } catch {
           /* meetings are an enrichment — cards render without them */

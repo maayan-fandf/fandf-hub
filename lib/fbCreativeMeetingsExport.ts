@@ -55,8 +55,15 @@ export type AudienceMeeting = { audience: string; leads: number; scheduled: numb
 export type KeywordMeeting = { keyword: string; leads: number; scheduled: number; held: number };
 export type ProjectMeetings = { creative: CreativeMeeting[]; audience: AudienceMeeting[]; keyword: KeywordMeeting[] };
 
+/** An arbitrary [from, toExcl) slice of the project's history, tagged with a
+ *  caller-chosen key. `key` is opaque here: the report uses the bare month for
+ *  its (edge-clipped) window buckets and an `h:`-prefixed month for the
+ *  whole-month history buckets, so both families ride ONE fetch without
+ *  colliding in the caller's lookup map. */
+export type MeetingsWindow = { key: string; from: string; toExcl: string };
+
 /** Resolve a month "YYYY-MM" → [from, toExcl) in the warehouse date space. */
-function monthWindow(mon: string): { from: string; toExcl: string } {
+export function monthWindow(mon: string): { from: string; toExcl: string } {
   const from = `${mon}-01`;
   const [y, m] = mon.split("-").map(Number);
   const toExcl =
@@ -263,14 +270,14 @@ type SehelMeetRow = {
   starts_at: string | null;
 };
 
-/** Multi-month Sehel per-creative attribution. Fetches the project's full
- *  lead + meeting history ONCE, then slices each month in memory (mirrors the
- *  BMBY multi-month path). Matches the project by name prefix off `crmName`. */
-async function computeSehelMeetingsMulti(
+/** Multi-window Sehel per-creative attribution. Fetches the project's full
+ *  lead + meeting history ONCE, then slices each window in memory (mirrors the
+ *  BMBY multi-window path). Matches the project by name prefix off `crmName`. */
+async function computeSehelMeetingsWindows(
   crmName: string,
-  mons: string[],
-): Promise<Array<{ month: string } & ProjectMeetings>> {
-  const empty = () => mons.map((m) => ({ month: m, creative: [], audience: [], keyword: [] }));
+  wins: MeetingsWindow[],
+): Promise<Array<{ key: string } & ProjectMeetings>> {
+  const empty = () => wins.map((w) => ({ key: w.key, creative: [], audience: [], keyword: [] }));
   const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
   const cands = [crmName, ...crmName.split(",").map((s) => s.trim())].filter(
     (v, i, a) => v && a.indexOf(v) === i,
@@ -323,9 +330,9 @@ async function computeSehelMeetingsMulti(
     }
   }
 
-  return mons.map((mon) => {
-    const { from, toExcl } = monthWindow(mon);
-    // Per-client meeting-event tallies dated in the month; held = status_id 10.
+  return wins.map((w) => {
+    const { from, toExcl } = w;
+    // Per-client meeting-event tallies dated in the window; held = status_id 10.
     const evByClient = new Map<string, { total: number; done: number }>();
     for (const m of meets) {
       const c = String(m.client_uuid ?? "");
@@ -346,7 +353,7 @@ async function computeSehelMeetingsMulti(
       if (!rec) { rec = { extra, clients: new Set(), sched: 0, held: 0 }; map.set(key, rec); }
       return rec;
     };
-    // leads created this month, distinct client per group.
+    // leads created in the window, distinct client per group.
     for (const l of leads) {
       const c = String(l.client_uuid ?? "");
       if (!c) continue;
@@ -380,7 +387,7 @@ async function computeSehelMeetingsMulti(
       }
     }
     return {
-      month: mon,
+      key: w.key,
       creative: [...byKey.values()].map((r) => ({ campaign: r.extra.camp, ad: r.extra.ad, leads: r.clients.size, scheduled: r.sched, held: r.held })),
       audience: [...byAud.values()].map((r) => ({ audience: r.extra.aud, leads: r.clients.size, scheduled: r.sched, held: r.held })),
       keyword: [...byKw.values()].map((r) => ({ keyword: r.extra.kw, leads: r.clients.size, scheduled: r.sched, held: r.held })),
@@ -415,8 +422,47 @@ export async function getProjectMeetingsLiveMulti(
   projectName: string,
   months: string[],
 ): Promise<{ project: string; projectId: number | null; results: Array<{ month: string } & ProjectMeetings> }> {
-  if (!supabaseConfigured()) throw new Error("Supabase not configured");
   const mons = months.length ? months : [currentMonthIL()];
+  const { project, projectId, results } = await getProjectMeetingsLiveWindows(
+    projectName,
+    mons.map((m) => ({ key: m, ...monthWindow(m) })),
+  );
+  // Re-key to `month`. The /api/fb-creative-meetings response shape is a live
+  // contract (the legacy Apps Script report reads it, Code.js:3119) and the
+  // cron's month-merged Sheet tabs depend on it — drop `key` so the JSON that
+  // goes over the wire is byte-identical to before.
+  return {
+    project,
+    projectId,
+    results: results.map(({ key, ...r }) => ({ month: key, ...r })),
+  };
+}
+
+/**
+ * Live per-project read over ARBITRARY [from, toExcl) windows — the generalized
+ * form of the multi-month path above.
+ *
+ * The month bucketing this replaces was always a SLICING choice, never a fetch
+ * constraint: the project's lead history and meeting history are both fetched
+ * whole and are window-independent (fetchAllLeads / fetchMeetings carry no date
+ * predicate), and attribution is built once over all of it. So N windows cost
+ * the same ~2 round-trips as 1, whatever their bounds.
+ *
+ * The report uses that to fix a real skew: it passes month buckets whose FIRST
+ * and LAST are narrowed to the report window's own edges, so scheduled/held
+ * span exactly what cost/leads span (see windowBuckets in lib/reportCreatives).
+ */
+export async function getProjectMeetingsLiveWindows(
+  projectName: string,
+  windows: MeetingsWindow[],
+): Promise<{
+  project: string;
+  projectId: number | null;
+  results: Array<{ key: string } & ProjectMeetings>;
+}> {
+  if (!supabaseConfigured()) throw new Error("Supabase not configured");
+  const cur = currentMonthIL();
+  const wins = windows.length ? windows : [{ key: cur, ...monthWindow(cur) }];
   const found = await supabaseRowsAll<{ project_id: number; project_name: string }>(
     `v_report_v2_bmby_projects?select=project_id,project_name&project_name=eq.${encodeURIComponent(projectName)}&limit=1`,
   );
@@ -429,7 +475,7 @@ export async function getProjectMeetingsLiveMulti(
     // actually produced attribution, so a genuine no-match (Salesforce / not in
     // any warehouse) still degrades to no CRM row on the cards.
     try {
-      const results = await computeSehelMeetingsMulti(projectName, mons);
+      const results = await computeSehelMeetingsWindows(projectName, wins);
       if (results.some((r) => r.creative.length || r.audience.length || r.keyword.length))
         return { project: projectName, projectId: null, results };
     } catch {
@@ -440,7 +486,7 @@ export async function getProjectMeetingsLiveMulti(
     // fallback: a project in NEITHER warehouse. Same claim-only-if-it-attributed
     // rule, so a genuine no-match still renders the cards with no CRM row.
     try {
-      const results = await getSalesforceCreativeMeetings(projectName, mons);
+      const results = await getSalesforceCreativeMeetings(projectName, wins);
       if (results.some((r) => r.creative.length || r.audience.length || r.keyword.length))
         return { project: projectName, projectId: null, results };
     } catch {
@@ -449,7 +495,7 @@ export async function getProjectMeetingsLiveMulti(
     return {
       project: projectName,
       projectId: null,
-      results: mons.map((m) => ({ month: m, creative: [], audience: [], keyword: [] })),
+      results: wins.map((w) => ({ key: w.key, creative: [], audience: [], keyword: [] })),
     };
   }
   const projectId = found[0].project_id;
@@ -458,13 +504,12 @@ export async function getProjectMeetingsLiveMulti(
   // slice per month in memory.
   const [allLeads, jm] = await Promise.all([fetchAllLeads(projectId), fetchMeetings(projName)]);
   const attr = buildAttr(allLeads);
-  const results = mons.map((mon) => {
-    const { from, toExcl } = monthWindow(mon);
-    const monthLeads = allLeads.filter((l) => {
+  const results = wins.map((w) => {
+    const winLeads = allLeads.filter((l) => {
       const d = ilDay(l.lead_created_at);
-      return d >= from && d < toExcl;
+      return d >= w.from && d < w.toExcl;
     });
-    return { month: mon, ...aggregateMeetings(monthLeads, attr, jm, from, toExcl) };
+    return { key: w.key, ...aggregateMeetings(winLeads, attr, jm, w.from, w.toExcl) };
   });
   return { project: projName, projectId, results };
 }
