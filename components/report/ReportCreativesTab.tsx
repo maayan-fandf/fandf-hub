@@ -4,6 +4,7 @@ import { useState } from "react";
 import ReportMediaSection, {
   PlatformKpiBand,
 } from "@/components/report/ReportMediaSection";
+import AdHistoryPopover from "@/components/report/AdHistoryPopover";
 import {
   fbStatusInfo,
   fmtInt,
@@ -311,6 +312,12 @@ export default function ReportCreativesTab({
                       costPerSched={a.costPerSched}
                       costPerHeld={a.costPerHeld}
                     />
+                    {/* Deliberately OUTSIDE CrmRow: that returns null when the
+                        in-window CRM figures are all zero — i.e. exactly the
+                        paused/old cards whose history is most worth reading. */}
+                    {a.history && (
+                      <AdHistoryPopover ad={a.ad} history={a.history} />
+                    )}
                   </div>
                   <div className="rpt-cr-links">
                     {landing && (

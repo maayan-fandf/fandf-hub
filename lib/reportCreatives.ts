@@ -12,6 +12,7 @@ import {
 } from "@/lib/fbCreativeMeetingsExport";
 import type {
   ReportAdDaily,
+  ReportAdHistoryMonth,
   ReportCreatives,
   ReportFbAd,
   ReportFbAdSet,
@@ -514,6 +515,58 @@ function dedupeDaily(
   return [...byDate.keys()].sort().map((k) => byDate.get(k)!);
 }
 
+/** The project's ad-metrics span — the deepest per-ad COST history that
+ *  exists. The Supermetrics connector exports a rolling lookback, so this
+ *  floor moves forward over time; the hover panel labels itself with it
+ *  rather than implying it knows an ad's whole life. */
+function adMetricsSpan(raw: ProjectCreativeRaw): { from: string; months: string[] } {
+  let lo = "";
+  let hi = "";
+  for (const r of raw.fbAds) {
+    if (!r.date) continue;
+    if (!lo || r.date < lo) lo = r.date;
+    if (!hi || r.date > hi) hi = r.date;
+  }
+  return lo && hi ? { from: lo, months: monthsInRange(lo, hi) } : { from: "", months: [] };
+}
+
+/**
+ * Per-(card key) per-month cost/leads over the WHOLE ad-metrics tab. Free: the
+ * tab is read whole and cached, and the report window is applied downstream in
+ * inRange — nothing extra is fetched here.
+ *
+ * KEY ASYMMETRY, reproduced on purpose: the cost side keys on the RAW ad name
+ * (`${campaign}|${ad}`.toLowerCase(), as the card itself does — adNameOf does
+ * NOT strip bidi marks) while the meetings side keys on normAdName (which
+ * does). Using one key for both would orphan every ad whose name carries
+ * Meta's injected U+200E. This mirrors the join the card already performs.
+ */
+function buildCostHistory(raw: ProjectCreativeRaw, startIso: string) {
+  const byMonth = new Map<string, Map<string, { cost: number; leads: number }>>();
+  const pre = new Map<string, { cost: number; leads: number }>();
+  for (const r of raw.fbAds) {
+    if (!r.date || !r.ad) continue;
+    const k = `${r.campaign}|${r.ad}`.toLowerCase();
+    let m = byMonth.get(k);
+    if (!m) {
+      m = new Map();
+      byMonth.set(k, m);
+    }
+    const mon = r.date.slice(0, 7);
+    const cell = m.get(mon) ?? { cost: 0, leads: 0 };
+    cell.cost += r.cost;
+    cell.leads += r.leads;
+    m.set(mon, cell);
+    if (startIso && r.date < startIso) {
+      const p = pre.get(k) ?? { cost: 0, leads: 0 };
+      p.cost += r.cost;
+      p.leads += r.leads;
+      pre.set(k, p);
+    }
+  }
+  return { byMonth, pre };
+}
+
 function aggregateCreatives(
   raw: ProjectCreativeRaw,
   startIso: string,
@@ -521,6 +574,7 @@ function aggregateCreatives(
   meet: MeetLookups,
   months: string[],
   crmName: string,
+  hist: { from: string; months: string[] } | null,
 ): ReportCreatives {
   // Legacy inRange (Code.js:3721): undated rows pass only with no window.
   const inRange = (d: string) => {
@@ -745,13 +799,58 @@ function aggregateCreatives(
     .sort((a, b) => b.impressions - a.impressions)
     .slice(0, TOP_KEYWORDS);
 
+  // History rides only the RENDERED cards — attaching before the slice would
+  // pay payload for ads nobody sees.
+  const topAds = ads.slice(0, sliceCap);
+  if (hist && hist.months.length) {
+    const { byMonth, pre } = buildCostHistory(raw, startIso);
+    for (const a of topAds) {
+      const costKey = `${a.campaign}|${a.ad}`.toLowerCase();
+      const meetBase = `${a.campaign}|${normAdName(a.ad)}`.toLowerCase();
+      const cm = byMonth.get(costKey);
+      const rows: ReportAdHistoryMonth[] = [];
+      const total = { cost: 0, leads: 0, scheduled: 0, held: 0 };
+      for (const mon of hist.months) {
+        const c = cm?.get(mon);
+        const v = meet.creative.get(`h:${mon}|${meetBase}`);
+        if (!c && !v) continue; // a month this ad didn't exist in
+        const row = {
+          month: mon,
+          cost: c?.cost ?? 0,
+          leads: c?.leads ?? 0,
+          scheduled: v?.scheduled ?? 0,
+          held: v?.held ?? 0,
+        };
+        rows.push(row);
+        total.cost += row.cost;
+        total.leads += row.leads;
+        total.scheduled += row.scheduled;
+        total.held += row.held;
+      }
+      const p = pre.get(costKey);
+      const pv = meet.creative.get(`pre|${meetBase}`);
+      const before = {
+        cost: p?.cost ?? 0,
+        leads: p?.leads ?? 0,
+        scheduled: pv?.scheduled ?? 0,
+        held: pv?.held ?? 0,
+      };
+      // Only worth a panel when it says something the card face doesn't:
+      // more than one month of life, or any activity before this window.
+      a.history =
+        rows.length > 1 || before.cost > 0 || before.scheduled > 0
+          ? { since: hist.from, months: rows, before, total }
+          : null;
+    }
+  }
+
   return {
     fb: {
       cost: totalCost,
       leads: totalLeads,
       cpl: totalLeads > 0 ? totalCost / totalLeads : 0,
       adCount: activeCount,
-      topAds: ads.slice(0, sliceCap),
+      topAds,
       topAdSets,
     },
     google: {
@@ -801,13 +900,24 @@ export const getProjectCreatives = cache(
       const months = monthsInRange(window.startIso, window.endIso);
       let lookups = emptyLookups();
       let crmName = projectName;
+      const hist = adMetricsSpan(raw);
       if (months.length) {
         crmName = await resolveCrmName(subjectEmail, projectName);
         try {
-          const live = await getProjectMeetingsLiveWindows(
-            crmName,
-            windowBuckets(months, window.startIso, window.endIso),
-          );
+          const live = await getProjectMeetingsLiveWindows(crmName, [
+            ...windowBuckets(months, window.startIso, window.endIso),
+            // Whole-month history buckets for the card hover, namespaced so
+            // they can never collide with a bare YYYY-MM window bucket. Free:
+            // the full lead + meeting history is already resident (both
+            // fetches are date-unfiltered), so these are extra in-memory
+            // passes, not extra round trips.
+            ...hist.months.map((m) => ({ key: `h:${m}`, ...monthWindow(m) })),
+            // Exact "before this report" bucket, floored at the ad-metrics
+            // span so `before` and `total` stay on the same clock as cost.
+            ...(hist.from && window.startIso && hist.from < window.startIso
+              ? [{ key: "pre", from: hist.from, toExcl: window.startIso }]
+              : []),
+          ]);
           lookups = buildMeetLookups(live.results, crmName);
         } catch {
           /* meetings are an enrichment — cards render without them */
@@ -820,6 +930,7 @@ export const getProjectCreatives = cache(
         lookups,
         months,
         crmName,
+        hist,
       );
       const has =
         out.fb.topAds.length > 0 ||

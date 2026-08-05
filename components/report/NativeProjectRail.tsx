@@ -120,6 +120,24 @@ export default async function NativeProjectRail({
     };
   }
 
+  // The per-ad history panel is an internal ad-ops affordance (out-of-window
+  // spend + past תואמו/בוצעו). Same rule as pixelLeads above: drop it from the
+  // PAYLOAD, not just from the CSS — otherwise the numbers sit in the RSC
+  // flight payload and in view-source for every client. The .rpt-clientview
+  // display:none entry is defence in depth, not the gate.
+  if (clientView && data?.creatives) {
+    data = {
+      ...data,
+      creatives: {
+        ...data.creatives,
+        fb: {
+          ...data.creatives.fb,
+          topAds: data.creatives.fb.topAds.map((a) => ({ ...a, history: null })),
+        },
+      },
+    };
+  }
+
   const groups: RailGroup[] = [
     { id: "work", label: "עבודה" },
     { id: "perf", label: "ביצועים" },

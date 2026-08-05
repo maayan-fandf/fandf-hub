@@ -1014,6 +1014,35 @@ export type ReportFbAd = {
   fatigueReason: "" | "declining" | "long";
   isWinner: boolean;
   daily: ReportAdDaily[];
+  /** Lifetime history behind the card's hover panel. INTERNAL ONLY — stripped
+   *  from the payload for clients in NativeProjectRail. null when the ad has
+   *  nothing to add beyond what the card face already shows. */
+  history?: ReportAdHistory | null;
+};
+
+/** One month of an ad's life. cost/leads come from the ad-metrics tab
+ *  (unclipped), scheduled/held from the `h:` whole-month warehouse buckets. */
+export type ReportAdHistoryMonth = {
+  month: string;
+  cost: number;
+  leads: number;
+  scheduled: number;
+  held: number;
+};
+
+/** An ad's whole observable life, for the קריאייטיבים card hover. */
+export type ReportAdHistory = {
+  /** Floor of the ad-metrics tab for this project. The Supermetrics connector
+   *  exports a ROLLING lookback (~200d), so this is the deepest per-ad COST
+   *  history that exists — and the panel must say so, because meeting history
+   *  reaches much further back (some projects to 2019) and a ₪/תיאום computed
+   *  over the difference would divide real meetings by ₪0. */
+  since: string;
+  months: ReportAdHistoryMonth[];
+  /** [since, window.startIso) — the observable life BEFORE this report. */
+  before: { cost: number; leads: number; scheduled: number; held: number };
+  /** Sum of `months` — the whole observable life. */
+  total: { cost: number; leads: number; scheduled: number; held: number };
 };
 
 export type ReportFbAdSet = {

@@ -24604,6 +24604,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-pd-card.is-warn,
 .rpt-clientview .rpt-ch-dot,                     /* campaign live/paused/mixed dots */
 .rpt-clientview .rpt-ch-diverge,                 /* CRM-vs-pixel ⚠️ (also stripped server-side) */
+.rpt-clientview .rpt-cr-hist-btn,                /* per-ad history hover (also stripped server-side) */
 .rpt-clientview .rpt-pace-mark,                  /* ✓טיפלתי handled mark */
 .rpt-clientview .rpt-pace-alert,                 /* pacing gap ⚠️ */
 .rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
@@ -27636,5 +27637,108 @@ html[data-theme="dark"] {
     background: var(--surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+}
+
+/* ── קריאייטיבים per-ad history hover ──────────────────────────────────
+   Internal-only (the payload is stripped for clients server-side in
+   NativeProjectRail; the .rpt-clientview rule below is defence in depth).
+   Colors follow .rpt-ff-pop — var(--surface)/var(--border-soft), so no
+   dark-mode override is needed. */
+.rpt-cr-hist-btn {
+  margin-top: 0.35rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.72rem;
+  cursor: help;
+  white-space: nowrap;
+}
+.rpt-cr-hist-btn:hover {
+  color: var(--text);
+  border-color: var(--brand);
+}
+/* Portaled to <body> and position:fixed — .rpt-cr-card is overflow:hidden and
+   .prl-panel animates transform, either of which would trap or clip an
+   in-tree panel. */
+.rpt-cr-hist {
+  position: fixed;
+  z-index: 70;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+  padding: 0.65rem 0.75rem;
+  direction: rtl;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-cr-hist-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
+.rpt-cr-hist-since {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rpt-cr-hist-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+.rpt-cr-hist-tbl th {
+  color: var(--muted);
+  font-weight: 500;
+  text-align: right;
+  padding: 0.1rem 0.25rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.rpt-cr-hist-tbl td {
+  padding: 0.12rem 0.25rem;
+  color: var(--ink-soft);
+}
+.rpt-cr-hist-before td {
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+}
+.rpt-cr-hist-total td {
+  font-weight: 600;
+  color: var(--text);
+}
+.rpt-cr-hist-foot {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.rpt-cr-hist-note {
+  margin-top: 0.25rem;
+  font-size: 0.66rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--muted);
+}
+/* The always-on card trendline paints over the stats block at z-index 3, and
+   both are summoned from the same card — suppress it while the panel is up. */
+.rpt-cr-card:has(.rpt-cr-hist-btn:hover) .rpt-cr-trend {
+  display: none;
+}
+/* No tap affordance: a first-tap synthetic mouseenter would strand a fixed
+   panel with no way to dismiss it — same opt-out as the other hover popovers. */
+@media (hover: none) {
+  .rpt-cr-hist-btn {
+    display: none;
   }
 }
