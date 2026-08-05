@@ -270,7 +270,10 @@ async function fetchProjectCreativeRaw(
         const camp = String(row[iCamp] ?? "").trim();
         const ad = adNameOf(row[iAd]);
         if (!camp || !ad || !mine(camp)) continue;
-        const k = `${camp}|${ad}`.toLowerCase();
+        // normAdName (not bare adNameOf) so the assets key agrees with the
+        // card key and the meetings key — see the card-identity note in
+        // aggregateCreatives.
+        const k = `${camp}|${normAdName(ad)}`.toLowerCase();
         if (out.fbAssets[k]) continue; // first row wins
         const cell = (i: number) => (i >= 0 ? String(row[i] ?? "").trim() : "");
         out.fbAssets[k] = {
@@ -531,22 +534,34 @@ function adMetricsSpan(raw: ProjectCreativeRaw): { from: string; months: string[
 }
 
 /**
+ * THE card identity, used by every join on this tab: the ad-metrics rows, the
+ * assets lookup, the cost history and the warehouse meetings all key on this.
+ *
+ * normAdName (which strips Meta's injected bidi marks) rather than bare
+ * adNameOf (which does not) — the two disagreed, so a card whose name carried
+ * a U+200E aggregated separately from its own meetings row while a sibling
+ * card matched the same row. Both then rendered the FULL count: 67 of 632
+ * cards (10.6%, 10 projects) double-counted their תואמו/בוצעו.
+ *
+ * Consequence, and it is owner-visible: cards that differed only by bidi marks
+ * now MERGE. Their cost/leads combine and the winner pick can move on the
+ * affected projects.
+ */
+function adKey(campaign: string, ad: string): string {
+  return `${campaign}|${normAdName(ad)}`.toLowerCase();
+}
+
+/**
  * Per-(card key) per-month cost/leads over the WHOLE ad-metrics tab. Free: the
  * tab is read whole and cached, and the report window is applied downstream in
  * inRange — nothing extra is fetched here.
- *
- * KEY ASYMMETRY, reproduced on purpose: the cost side keys on the RAW ad name
- * (`${campaign}|${ad}`.toLowerCase(), as the card itself does — adNameOf does
- * NOT strip bidi marks) while the meetings side keys on normAdName (which
- * does). Using one key for both would orphan every ad whose name carries
- * Meta's injected U+200E. This mirrors the join the card already performs.
  */
 function buildCostHistory(raw: ProjectCreativeRaw, startIso: string) {
   const byMonth = new Map<string, Map<string, { cost: number; leads: number }>>();
   const pre = new Map<string, { cost: number; leads: number }>();
   for (const r of raw.fbAds) {
     if (!r.date || !r.ad) continue;
-    const k = `${r.campaign}|${r.ad}`.toLowerCase();
+    const k = adKey(r.campaign, r.ad);
     let m = byMonth.get(k);
     if (!m) {
       m = new Map();
@@ -644,7 +659,7 @@ function aggregateCreatives(
   for (const r of raw.fbAds) {
     if (!inRange(r.date)) continue;
     if (!r.ad) continue;
-    const k = `${r.campaign}|${r.ad}`.toLowerCase();
+    const k = adKey(r.campaign, r.ad);
     const a =
       adAgg.get(k) ??
       ({
@@ -671,12 +686,35 @@ function aggregateCreatives(
     adAgg.set(k, a);
   }
 
+  // True per-ad first/last activity over the UNCLIPPED metrics tab. ageDays
+  // used to be measured off `a.daily`, which only holds rows that passed
+  // inRange — so on a one-month window it could never exceed 31 and the
+  // `ageDays >= 45 → "long"` fatigue branch below was unreachable, i.e. an ad
+  // was never flagged for age alone. Measuring the real calendar span makes
+  // that rule fire as written. NB the span is floored by the ad-metrics tab's
+  // rolling lookback (see adMetricsSpan), so a very old ad reads as at most
+  // "as old as the export reaches" — under-stated, never over-stated.
+  const adSpanAll = new Map<string, { first: string; last: string }>();
+  for (const r of raw.fbAds) {
+    if (!r.date || !r.ad) continue;
+    const k = adKey(r.campaign, r.ad);
+    const s = adSpanAll.get(k);
+    if (!s) adSpanAll.set(k, { first: r.date, last: r.date });
+    else {
+      if (r.date < s.first) s.first = r.date;
+      if (r.date > s.last) s.last = r.date;
+    }
+  }
+
   const ads: ReportFbAd[] = [...adAgg.entries()].map(([k, a]) => {
     const assets = raw.fbAssets[k];
     // Fatigue (legacy 3791-3827): calendar-span age, early-vs-recent CTR.
+    // The CTR halves stay WINDOW-scoped (they measure decline within the
+    // period being reported); only the age is lifetime.
     const daily = [...a.daily].sort((x, y) => (x.date < y.date ? -1 : 1));
-    const first = daily[0]?.date ?? "";
-    const last = daily[daily.length - 1]?.date ?? "";
+    const span = adSpanAll.get(k);
+    const first = span?.first ?? daily[0]?.date ?? "";
+    const last = span?.last ?? daily[daily.length - 1]?.date ?? "";
     const ageDays =
       first && last
         ? Math.max(
@@ -705,11 +743,9 @@ function aggregateCreatives(
       fatigued = true;
       fatigueReason = "long";
     }
-    const mtg = sumOverMonths(
-      meet.creative,
-      months,
-      `${a.campaign}|${normAdName(a.ad)}`.toLowerCase(),
-    );
+    // `k` IS the meetings base now that adKey normalizes — the join the
+    // duplicate-card fix collapsed into one identity.
+    const mtg = sumOverMonths(meet.creative, months, k);
     return {
       account: a.account || assets?.account || "",
       campaign: a.campaign,
@@ -805,14 +841,14 @@ function aggregateCreatives(
   if (hist && hist.months.length) {
     const { byMonth, pre } = buildCostHistory(raw, startIso);
     for (const a of topAds) {
-      const costKey = `${a.campaign}|${a.ad}`.toLowerCase();
-      const meetBase = `${a.campaign}|${normAdName(a.ad)}`.toLowerCase();
-      const cm = byMonth.get(costKey);
+      // One key for cost, meetings and assets alike now that adKey normalizes.
+      const key = adKey(a.campaign, a.ad);
+      const cm = byMonth.get(key);
       const rows: ReportAdHistoryMonth[] = [];
       const total = { cost: 0, leads: 0, scheduled: 0, held: 0 };
       for (const mon of hist.months) {
         const c = cm?.get(mon);
-        const v = meet.creative.get(`h:${mon}|${meetBase}`);
+        const v = meet.creative.get(`h:${mon}|${key}`);
         if (!c && !v) continue; // a month this ad didn't exist in
         const row = {
           month: mon,
@@ -827,8 +863,8 @@ function aggregateCreatives(
         total.scheduled += row.scheduled;
         total.held += row.held;
       }
-      const p = pre.get(costKey);
-      const pv = meet.creative.get(`pre|${meetBase}`);
+      const p = pre.get(key);
+      const pv = meet.creative.get(`pre|${key}`);
       const before = {
         cost: p?.cost ?? 0,
         leads: p?.leads ?? 0,
