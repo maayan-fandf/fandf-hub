@@ -402,6 +402,7 @@ function buildReportChannels(
       budget: r.budget,
       spend: r.spend,
       leads: r.leads,
+      pixelLeads: r.pixelLeads,
       scheduled: r.scheduled,
       meetings: r.meetings,
       dailyRate: r.dailyRate,

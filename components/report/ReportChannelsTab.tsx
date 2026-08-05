@@ -36,7 +36,9 @@ import {
  * row, the pacing cell with the 12% configured-vs-required rule
  * (⬇/⬆/🔍 + ✓טיפלתי snooze sharing the iframe/budget-desk dismissal
  * keys), campaign live/paused dots, flight chips + mini-gantt, and the
- * pickAlerts strip. Not yet ported: pixel-divergence ⚠️, CPL-trend ▲▼,
+ * pickAlerts strip, and the לידים cell's CRM-vs-pixel tooltip + ⚠️.
+ * Not yet ported: spend-divergence ⚠️ (its pixelCostFullRange came from a
+ * GADS+FB aggregation the native pipeline doesn't carry), CPL-trend ▲▼,
  * end-date-mismatch ⚠️, per-campaign tooltip detail, free-range mode.
  */
 
@@ -50,6 +52,57 @@ export type PacingDismissal = {
  *  hub port returns just the emoji). */
 const chLabel = (name: string) =>
   `${channelIcon(name) || "●"} ${name}`.trim();
+
+/**
+ * CRM-vs-pixel gap tooltip for the לידים cell — the port of the legacy
+ * `leadsCellTooltip` (Index.html:6243). Surfaces the pixel number on EVERY
+ * row with pixel data, not just the diverging ones, so the gap is readable
+ * at a glance. Channels with no pixel tracking (yad2, שילוט, phone…) read 0
+ * and get no tooltip rather than a misleading "פיקסל: 0". Internal-only by
+ * construction: `pixelLeads` is stripped from the client payload.
+ */
+function leadsTooltip(c: ReportChannel): string | undefined {
+  const pix = c.pixelLeads;
+  if (pix == null || !Number.isFinite(pix) || pix < 0) return undefined;
+  if (pix === 0 && c.leads > 0) return undefined;
+  let gap = "";
+  if (c.leads > 0) {
+    const diff = pix - c.leads;
+    const pct = Math.round((diff / c.leads) * 100);
+    const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
+    gap = `\nפער: ${sign}${Math.abs(pct)}%  (${diff >= 0 ? "+" : ""}${diff})`;
+  }
+  return `CRM: ${fmtInt(c.leads)} לידים\nפיקסל: ${fmtInt(pix)} אירועים${gap}`;
+}
+
+/**
+ * ⚠️ beside the לידים number when the pixel/CRM ratio is off — the port of
+ * the legacy `leadsDivergenceIndicator` (Index.html:6294), same gates and
+ * thresholds: ≥5 CRM leads (below that a single missed event tips the ratio
+ * on noise), non-zero pixel (a blank-pixel row isn't a malfunction), then
+ * ratio <0.7 or >1.8. Portfolio norm is ~1.14 — the pixel should read a bit
+ * ABOVE CRM, so under 0.7 is the real red flag. Returns the tooltip text,
+ * or undefined when there's nothing to flag.
+ */
+function leadsDivergence(c: ReportChannel): string | undefined {
+  const pix = c.pixelLeads;
+  if (pix == null || !Number.isFinite(pix) || pix <= 0) return undefined;
+  if (c.leads < 5) return undefined;
+  const ratio = pix / c.leads;
+  const msg =
+    ratio < 0.7
+      ? "פיקסל מתחת ל-70% מ-CRM — פיקסל אמור לתפוס יותר אירועים מ-CRM, לא פחות. בדוק שהפיקסל מותקן נכון ושהאירועים נרשמים."
+      : ratio > 1.8
+        ? "פיקסל גבוה פי 1.8+ מ-CRM — חריג לעומת שאר התיק (חציון 1.14). או שפיקסל סופר כפילויות, או ש-CRM מסנן הרבה לידים לא-רלוונטיים."
+        : "";
+  if (!msg) return undefined;
+  return (
+    `פער CRM vs פיקסל:\n` +
+    `CRM (גיליון): ${fmtInt(c.leads)} לידים\n` +
+    `פיקסל (גיליון): ${fmtInt(pix)} אירועים\n` +
+    `יחס: ${ratio.toFixed(2)}\n${msg}`
+  );
+}
 
 type DayPt = { date: string; cost: number; leads: number };
 
@@ -885,6 +938,7 @@ export default function ReportChannelsTab({
                 !!gapStillOff,
               );
               const chKey = c.channel.toLowerCase();
+              const leadsWarn = leadsDivergence(c);
               return (
                 <tr key={c.channel}>
                   <td
@@ -960,7 +1014,14 @@ export default function ReportChannelsTab({
                   >
                     {fmtILS(c.spend)}
                   </td>
-                  <td>{fmtInt(c.leads)}</td>
+                  <td title={leadsTooltip(c)}>
+                    {fmtInt(c.leads)}
+                    {leadsWarn && (
+                      <span className="rpt-ch-diverge" title={leadsWarn}>
+                        ⚠️
+                      </span>
+                    )}
+                  </td>
                   <td style={costHeatStyle("costPerLead", c.costPerLead)}>
                     {c.costPerLead > 0 ? fmtILS(c.costPerLead) : "—"}
                   </td>

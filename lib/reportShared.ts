@@ -108,6 +108,12 @@ export type ReportChannel = {
   budget: number;
   spend: number;
   leads: number;
+  /** ALL CLIENTS `לידים פיקסל` — the platform/pixel-recorded event count
+   *  for the same window, the internal cross-check against CRM `leads`.
+   *  Feeds the לידים cell's tooltip + divergence ⚠️. undefined ⇒ no pixel
+   *  data to show: either the column is missing or this is a client render
+   *  (NativeProjectRail strips it from the payload). */
+  pixelLeads?: number;
   scheduled: number;
   meetings: number;
   /** Sheet קצב יומי — the required daily budget ((G−H)/days-left). */

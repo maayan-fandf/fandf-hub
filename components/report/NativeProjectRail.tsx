@@ -108,6 +108,18 @@ export default async function NativeProjectRail({
     data = null;
   }
 
+  // CRM-vs-pixel numbers are an internal diagnostic (broken tracking /
+  // double-counting), not something a client should read. Strip them from
+  // the payload rather than hiding them in CSS like the other negatives —
+  // this way they never reach a client's browser at all, and the לידים
+  // cell's tooltip + ⚠️ simply have nothing to render.
+  if (clientView && data) {
+    data = {
+      ...data,
+      channels: data.channels.map((c) => ({ ...c, pixelLeads: undefined })),
+    };
+  }
+
   const groups: RailGroup[] = [
     { id: "work", label: "עבודה" },
     { id: "perf", label: "ביצועים" },

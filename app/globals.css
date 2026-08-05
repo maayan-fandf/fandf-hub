@@ -24603,6 +24603,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-pd-card.is-bad,             /* paid-diagnosis bad/warn cards */
 .rpt-clientview .rpt-pd-card.is-warn,
 .rpt-clientview .rpt-ch-dot,                     /* campaign live/paused/mixed dots */
+.rpt-clientview .rpt-ch-diverge,                 /* CRM-vs-pixel ⚠️ (also stripped server-side) */
 .rpt-clientview .rpt-pace-mark,                  /* ✓טיפלתי handled mark */
 .rpt-clientview .rpt-pace-alert,                 /* pacing gap ⚠️ */
 .rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
@@ -25404,6 +25405,17 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-ch-subs {
   color: var(--muted);
   font-size: 0.74rem;
+}
+/* CRM-vs-pixel divergence flag on the לידים cell — hover for the numbers.
+   Mirrors the legacy .divergence-flag (Index.html:2129). */
+.rpt-ch-diverge {
+  display: inline-block;
+  margin-inline-start: 0.25em;
+  font-size: 0.9em;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: help;
+  filter: drop-shadow(0 0 0.3em rgba(245, 158, 11, 0.55));
 }
 .rpt-ch-datechip {
   border: 1px solid var(--border-soft);

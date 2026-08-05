@@ -61,6 +61,12 @@ export type AllClientsRow = {
   /** Total leads recorded against this (project, channel) in the
    *  window. Source: `לידים CRM` column. */
   leads: number;
+  /** Pixel-recorded lead events (`לידים פיקסל`) over the same window —
+   *  the platform-side counterpart to `leads` (CRM). Internal diagnostic:
+   *  a pixel well under CRM means broken tracking, well over means dupes
+   *  or a hard CRM filter. 0 when the column is absent, and also for
+   *  channels that simply have no pixel (yad2, שילוט, phone…). */
+  pixelLeads?: number;
   /** Relevant leads (`לידים רלוונטים`) — the qualified subset that
    *  feeds the funnel-flow's leads→relevant conversion. 0/absent when the
    *  column is absent. */
@@ -161,6 +167,7 @@ async function readAllClientsRows(
   const iBudget = col("תקציב חודשי מאושר");
   const iSpend = col("עלות");
   const iLeads = col("לידים CRM");
+  const iPixelLeads = col("לידים פיקסל"); // optional; -1 tolerated
   const iRelevant = col("לידים רלוונטים"); // optional; -1 tolerated
   const iScheduled = col("תיאום וביטול");
   const iMeetings = col("ביצוע פגישות");
@@ -202,6 +209,7 @@ async function readAllClientsRows(
     spend: num(row[iSpend]),
     budget: num(row[iBudget]),
     leads: num(row[iLeads]),
+    pixelLeads: iPixelLeads >= 0 ? num(row[iPixelLeads]) : 0,
     relevant: iRelevant >= 0 ? num(row[iRelevant]) : 0,
     scheduled: num(row[iScheduled]),
     meetings: num(row[iMeetings]),
@@ -280,6 +288,7 @@ function consolidateForProject(
       existing.spend += r.spend;
       existing.budget += r.budget;
       existing.leads += r.leads;
+      existing.pixelLeads = (existing.pixelLeads ?? 0) + (r.pixelLeads ?? 0);
       existing.scheduled += r.scheduled;
       existing.meetings += r.meetings;
       existing.dailyRate += r.dailyRate;
