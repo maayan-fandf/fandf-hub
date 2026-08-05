@@ -25789,11 +25789,12 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   text-align: center;
 }
 /* The ₪-per figure under a CRM count (עלות לתיאום / עלות לביצוע). Its own
-   line so a four-digit ₪ can't widen the column past its 1fr share. */
+   line so a four-digit ₪ can't widen the column past its 1fr share. No color
+   here: it keeps its metric's color (pink for תואמו, red for בוצעו), set
+   inline alongside the count it belongs to — the two read as one figure. */
 .rpt-cr-stat-sub {
   font-size: 0.68rem;
   font-weight: 600;
-  color: var(--muted);
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   max-width: 100%;

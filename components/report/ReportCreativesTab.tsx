@@ -147,7 +147,9 @@ function CrmRow({
           {fmtInt(scheduled)}
         </span>
         {costPerSched > 0 && (
-          <span className="rpt-cr-stat-sub">{fmtILS(costPerSched)}</span>
+          <span className="rpt-cr-stat-sub" style={{ color: "#ec4899" }}>
+            {fmtILS(costPerSched)}
+          </span>
         )}
       </div>
       <div className="rpt-cr-stat">
@@ -156,7 +158,9 @@ function CrmRow({
           {fmtInt(held)}
         </span>
         {costPerHeld > 0 && (
-          <span className="rpt-cr-stat-sub">{fmtILS(costPerHeld)}</span>
+          <span className="rpt-cr-stat-sub" style={{ color: "#f5576c" }}>
+            {fmtILS(costPerHeld)}
+          </span>
         )}
       </div>
     </div>
