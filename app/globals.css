@@ -27763,3 +27763,164 @@ html[data-theme="dark"] {
     display: none;
   }
 }
+
+/* ── Media-campaign card (non-real-estate projects) ─────────────────
+   The counterpart to the CRM funnel card: clients without a sales
+   funnel (עיריית תל אביב) are reported on reach + installs instead.
+   Reuses .crm-kpi-tile / -value / -label / -sub for the tiles so the
+   two card families read as one product; only the grid and the tables
+   are new. Kept theme-aware the same way the crm-* rules are —
+   html[data-theme="dark"] overrides, not a media query. */
+.media-card {
+  padding: 0.2rem 0 0.4rem;
+}
+.media-intro {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 0.2rem;
+}
+.media-kpi-row {
+  /* auto-fit rather than the crm card's fixed 5: the tile count here
+     depends on which metrics the client's campaigns actually carry. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 0.6rem;
+  margin: 0.7rem 0 0.9rem;
+}
+.media-block-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 1.1rem 0 0.4rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.media-block-dates {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.media-block {
+  margin-bottom: 1.1rem;
+}
+
+/* Tables scroll inside their own box — the channel table is 11 columns
+   and the rail column is narrow on a laptop. */
+.media-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.media-table th,
+.media-table td {
+  padding: 0.34rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+}
+.media-table th {
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--muted);
+  border-bottom-width: 2px;
+}
+.media-table tbody tr:hover {
+  background: color-mix(in srgb, var(--border) 30%, transparent);
+}
+.media-total-row td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+}
+.media-table-sub {
+  margin: 0.45rem 0 0.2rem;
+  font-size: 0.74rem;
+  background: color-mix(in srgb, var(--border) 18%, transparent);
+  border-radius: 6px;
+}
+.media-muted {
+  color: var(--muted);
+}
+.media-nowrap {
+  white-space: nowrap;
+}
+
+/* Per-campaign drill-in. <details> keeps this zero-JS — the rail is a
+   server-rendered section and shouldn't pull a client bundle just to
+   expand a row. */
+.media-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.media-details > summary::-webkit-details-marker {
+  display: none;
+}
+.media-details > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-inline-end: 0.35rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.media-details[open] > summary::before {
+  transform: rotate(-90deg); /* RTL: opens toward the start edge */
+}
+
+/* Utilisation bar. Capped at 120% of track width so an overspend still
+   renders inside the cell; the printed % is uncapped. */
+.media-pace {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.media-pace-track {
+  width: 46px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  flex: none;
+}
+.media-pace-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.media-pace-fill.is-ok {
+  background: #22c55e;
+}
+.media-pace-fill.is-warn {
+  background: #f59e0b;
+}
+.media-pace-fill.is-low {
+  background: #ef4444;
+}
+.media-pace-num {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* Source-quality callouts — these describe the SHEET, not the media
+   buy, so they're deliberately quieter than a real alert. */
+.media-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.2rem;
+}
+.media-flag {
+  font-size: 0.76rem;
+  line-height: 1.55;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid #f59e0b;
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  color: var(--text);
+}

@@ -1,0 +1,396 @@
+import {
+  getMediaWorkbook,
+  ratio,
+  cpm,
+  type MediaCampaign,
+  type MediaChannelRow,
+} from "@/lib/mediaCampaigns";
+
+/**
+ * Media-performance card for non-real-estate projects — the counterpart
+ * to CrmFunnelCard, which reports a sales funnel this client doesn't
+ * have. Pure server component: everything here is static once rendered,
+ * and per-campaign drill-in uses <details> so it costs no client JS.
+ *
+ * `view="actuals"` renders the flights that ran; `view="plan"` renders
+ * the forward media plan. Both come from one cached workbook read.
+ * Returns null when the project has no workbook wired up, so the rail
+ * simply doesn't get the section.
+ */
+
+const fmtInt = (n: number): string =>
+  n.toLocaleString("he-IL", { maximumFractionDigits: 0 });
+const fmtILS = (n: number): string => "₪" + fmtInt(n);
+const fmtPct = (n: number | null, digits = 1): string =>
+  n === null
+    ? "—"
+    : (n * 100).toLocaleString("he-IL", { maximumFractionDigits: digits }) + "%";
+const fmt2 = (n: number | null): string =>
+  n === null ? "—" : n.toLocaleString("he-IL", { maximumFractionDigits: 2 });
+
+/** Compact form for the KPI tiles — 6.6M reads better than 6,617,930 at
+ *  tile size, and the exact figure is one table down. */
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 10_000) return Math.round(n / 1000) + "K";
+  return fmtInt(n);
+}
+
+function fmtRange(from: string, to: string): string {
+  const d = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    return m ? `${m[3]}.${m[2]}.${m[1].slice(2)}` : iso;
+  };
+  if (!from && !to) return "";
+  return `${d(from)} – ${d(to)}`;
+}
+
+/** Utilisation bar. Over 100% is real (a channel can overshoot), so the
+ *  fill is capped for layout but the number next to it isn't. */
+function PaceBar({ pace }: { pace: number | null }) {
+  if (pace === null) return <span className="media-muted">—</span>;
+  const pct = Math.max(0, Math.min(1.2, pace));
+  const tone = pace >= 0.9 ? "ok" : pace >= 0.6 ? "warn" : "low";
+  return (
+    <span className="media-pace">
+      <span className="media-pace-track">
+        <span
+          className={"media-pace-fill is-" + tone}
+          style={{ width: `${(pct / 1.2) * 100}%` }}
+        />
+      </span>
+      <span className="media-pace-num">{fmtPct(pace, 0)}</span>
+    </span>
+  );
+}
+
+/** Sum a metric across every channel row of every campaign. */
+function totalOf(
+  campaigns: MediaCampaign[],
+  pick: (c: MediaCampaign) => number,
+): number {
+  return campaigns.reduce((a, c) => a + pick(c), 0);
+}
+
+function ChannelTable({ rows }: { rows: MediaChannelRow[] }) {
+  return (
+    <table className="media-table media-table-sub">
+      <thead>
+        <tr>
+          <th>ערוץ</th>
+          <th>פלטפורמה</th>
+          <th>יעד</th>
+          <th>תקציב</th>
+          <th>הוצאה</th>
+          <th>ניצול</th>
+          <th>חשיפות</th>
+          <th>הקלקות</th>
+          <th>התקנות</th>
+          <th>CPM</th>
+          <th>CPC</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => {
+          const cost = r.cost ?? 0;
+          return (
+            <tr key={i}>
+              <td className="media-nowrap">{r.channel}</td>
+              <td className="media-muted">{r.platform || "—"}</td>
+              <td className="media-muted">{r.note || "—"}</td>
+              <td>{r.budget === null ? "—" : fmtILS(r.budget)}</td>
+              <td>{r.cost === null ? "—" : fmtILS(r.cost)}</td>
+              <td>
+                <PaceBar pace={r.budget ? ratio(cost, r.budget) : null} />
+              </td>
+              <td>{r.impressions === null ? "—" : fmtInt(r.impressions)}</td>
+              <td>{r.clicks === null ? "—" : fmtInt(r.clicks)}</td>
+              <td>{r.installs ? fmtInt(r.installs) : "—"}</td>
+              <td>{fmt2(cpm(cost, r.impressions ?? 0))}</td>
+              <td>{fmt2(ratio(cost, r.clicks ?? 0))}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+export default async function MediaCampaignsCard({
+  project,
+  view = "actuals",
+}: {
+  project: string;
+  view?: "actuals" | "plan";
+}) {
+  const wb = await getMediaWorkbook(project).catch(() => null);
+  if (!wb) return null;
+
+  if (view === "plan") {
+    if (!wb.plans.length) return null;
+    return (
+      <div className="media-card">
+        <p className="media-intro">
+          תחזית מדיה מתוכננת — מה שהוגדר בבריף לפני העלייה לאוויר. הביצועים
+          בפועל מוצגים בקטע ״ביצועי מדיה״.
+        </p>
+        {wb.plans.map((p, i) => (
+          <div className="media-block" key={i}>
+            <h4 className="media-block-title">
+              {p.title}
+              {p.from || p.to ? (
+                <span className="media-block-dates">
+                  {fmtRange(p.from, p.to)}
+                </span>
+              ) : null}
+            </h4>
+            <table className="media-table">
+              <thead>
+                <tr>
+                  <th>ערוץ</th>
+                  <th>תקציב ברוטו</th>
+                  <th>נטו מדיה</th>
+                  <th>חשיפות (תחזית)</th>
+                  <th>הקלקות (תחזית)</th>
+                  <th>תוצאות (תחזית)</th>
+                  <th>CPA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.rows.map((r, j) => (
+                  <tr key={j}>
+                    <td className="media-nowrap">{r.channel}</td>
+                    <td>{r.grossBudget === null ? "—" : fmtILS(r.grossBudget)}</td>
+                    <td>{r.netMedia === null ? "—" : fmtILS(r.netMedia)}</td>
+                    <td>{r.impressions === null ? "—" : fmtInt(r.impressions)}</td>
+                    <td>{r.clicks === null ? "—" : fmtInt(r.clicks)}</td>
+                    <td>{r.results === null ? "—" : fmtInt(r.results)}</td>
+                    <td>{fmt2(ratio(r.netMedia ?? 0, r.results ?? 0))}</td>
+                  </tr>
+                ))}
+                <tr className="media-total-row">
+                  <td>סה״כ</td>
+                  <td>{fmtILS(p.grossBudget)}</td>
+                  <td />
+                  <td>{fmtInt(p.impressions)}</td>
+                  <td>{fmtInt(p.clicks)}</td>
+                  <td>{fmtInt(p.results)}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const cs = wb.campaigns;
+  if (!cs.length) return null;
+
+  const allocated = totalOf(cs, (c) => c.allocated);
+  const spent = totalOf(cs, (c) => c.spent);
+  const impressions = totalOf(cs, (c) => c.impressions);
+  const clicks = totalOf(cs, (c) => c.clicks);
+  const installs = totalOf(cs, (c) => c.installs);
+  const views = totalOf(cs, (c) => c.views);
+
+  // Channel rollup across every flight.
+  const byChannel = new Map<
+    string,
+    { spend: number; impressions: number; clicks: number; installs: number }
+  >();
+  for (const c of cs) {
+    for (const ch of c.channels) {
+      const cur = byChannel.get(ch.channel) ?? {
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        installs: 0,
+      };
+      cur.spend += ch.cost ?? 0;
+      cur.impressions += ch.impressions ?? 0;
+      cur.clicks += ch.clicks ?? 0;
+      cur.installs += ch.installs ?? 0;
+      byChannel.set(ch.channel, cur);
+    }
+  }
+  const channelRows = [...byChannel.entries()].sort(
+    (a, b) => b[1].spend - a[1].spend,
+  );
+
+  // Data-quality strip. Both checks describe the SOURCE, not the media:
+  // an allocation with no spend is an import gap (DV360 actuals never
+  // reach this workbook — its DV tab is #REF!), and a sub-shekel CPM is
+  // not a rate anyone buys, so the impression count is wrong.
+  const unfunded = cs.filter((c) => c.unfundedChannels.length > 0);
+  const suspectCpm = cs.flatMap((c) =>
+    c.channels
+      .filter((ch) => {
+        const v = cpm(ch.cost ?? 0, ch.impressions ?? 0);
+        return v !== null && v < 1 && (ch.cost ?? 0) > 0;
+      })
+      .map((ch) => ({ campaign: c.name, channel: ch.channel })),
+  );
+
+  const period = fmtRange(
+    cs[cs.length - 1]?.from ?? "",
+    cs[0]?.to ?? "",
+  );
+
+  return (
+    <div className="media-card">
+      <p className="media-intro">
+        {cs.length} קמפיינים · {period}. הלקוח הזה נמדד על חשיפה והתקנות, לא
+        על לידים — הנתונים מגיעים מגיליון המדיה של הצוות.{" "}
+        <a href={wb.sheetUrl} target="_blank" rel="noopener noreferrer">
+          פתיחת הגיליון
+        </a>
+      </p>
+
+      <div className="media-kpi-row">
+        <div className="crm-kpi-tile">
+          <div className="crm-kpi-value">{fmtILS(allocated)}</div>
+          <div className="crm-kpi-label">תקציב מוקצה</div>
+        </div>
+        <div className="crm-kpi-tile">
+          <div className="crm-kpi-value">{fmtILS(spent)}</div>
+          <div className="crm-kpi-label">הוצאה בפועל</div>
+          <div className="crm-kpi-sub">
+            ניצול {fmtPct(ratio(spent, allocated), 0)}
+          </div>
+        </div>
+        <div className="crm-kpi-tile">
+          <div className="crm-kpi-value">{fmtCompact(impressions)}</div>
+          <div className="crm-kpi-label">חשיפות</div>
+          <div className="crm-kpi-sub">CPM {fmt2(cpm(spent, impressions))}</div>
+        </div>
+        <div className="crm-kpi-tile">
+          <div className="crm-kpi-value">{fmtCompact(clicks)}</div>
+          <div className="crm-kpi-label">הקלקות לחנות</div>
+          <div className="crm-kpi-sub">CTR {fmtPct(ratio(clicks, impressions), 2)}</div>
+        </div>
+        <div className="crm-kpi-tile">
+          <div className="crm-kpi-value">{fmtCompact(installs)}</div>
+          <div className="crm-kpi-label">התקנות</div>
+          <div className="crm-kpi-sub">
+            {installs > 0 ? `₪${fmt2(ratio(spent, installs))} להתקנה` : "—"}
+          </div>
+        </div>
+        <div className="crm-kpi-tile">
+          <div className="crm-kpi-value">{fmtCompact(views)}</div>
+          <div className="crm-kpi-label">צפיות בווידאו</div>
+        </div>
+      </div>
+
+      {(unfunded.length > 0 || suspectCpm.length > 0) && (
+        <div className="media-flags">
+          {unfunded.length > 0 && (
+            <div className="media-flag">
+              <strong>תקציב ללא דיווח הוצאה</strong> —{" "}
+              {unfunded
+                .map((c) => `${c.name} (${c.unfundedChannels.join(", ")})`)
+                .join(" · ")}
+              . הערוצים האלה מקבלים הקצאה בבריף אבל לא מדווחים עלות לגיליון, כך
+              שאחוז הניצול המוצג נמוך מהאמיתי.
+            </div>
+          )}
+          {suspectCpm.length > 0 && (
+            <div className="media-flag">
+              <strong>בדיקת נתונים</strong> — CPM מתחת לשקל בקמפיינים{" "}
+              {suspectCpm.map((s) => `${s.campaign} / ${s.channel}`).join(" · ")}
+              . מחיר כזה לא נרכש בפועל, כך שספירת החשיפות שם כנראה שגויה.
+            </div>
+          )}
+        </div>
+      )}
+
+      <h4 className="media-block-title">קמפיינים</h4>
+      <table className="media-table">
+        <thead>
+          <tr>
+            <th>קמפיין</th>
+            <th>תקופה</th>
+            <th>תקציב</th>
+            <th>הוצאה</th>
+            <th>ניצול</th>
+            <th>חשיפות</th>
+            <th>הקלקות</th>
+            <th>התקנות</th>
+            <th>CPM</th>
+            <th>CTR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cs.map((c) => (
+            <tr key={c.sheetRow}>
+              <td>
+                <details className="media-details">
+                  <summary>{c.name}</summary>
+                  <ChannelTable rows={c.channels} />
+                </details>
+              </td>
+              <td className="media-muted media-nowrap">
+                {fmtRange(c.from, c.to)}
+              </td>
+              <td>{fmtILS(c.allocated)}</td>
+              <td>{fmtILS(c.spent)}</td>
+              <td>
+                <PaceBar pace={ratio(c.spent, c.allocated)} />
+              </td>
+              <td>{fmtInt(c.impressions)}</td>
+              <td>{fmtInt(c.clicks)}</td>
+              <td>{c.installs ? fmtInt(c.installs) : "—"}</td>
+              <td>{fmt2(cpm(c.spent, c.impressions))}</td>
+              <td>{fmtPct(ratio(c.clicks, c.impressions), 2)}</td>
+            </tr>
+          ))}
+          <tr className="media-total-row">
+            <td>סה״כ</td>
+            <td />
+            <td>{fmtILS(allocated)}</td>
+            <td>{fmtILS(spent)}</td>
+            <td>
+              <PaceBar pace={ratio(spent, allocated)} />
+            </td>
+            <td>{fmtInt(impressions)}</td>
+            <td>{fmtInt(clicks)}</td>
+            <td>{fmtInt(installs)}</td>
+            <td>{fmt2(cpm(spent, impressions))}</td>
+            <td>{fmtPct(ratio(clicks, impressions), 2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 className="media-block-title">ערוצים</h4>
+      <table className="media-table">
+        <thead>
+          <tr>
+            <th>ערוץ</th>
+            <th>הוצאה</th>
+            <th>נתח</th>
+            <th>חשיפות</th>
+            <th>הקלקות</th>
+            <th>התקנות</th>
+            <th>CPM</th>
+            <th>CPC</th>
+          </tr>
+        </thead>
+        <tbody>
+          {channelRows.map(([name, v]) => (
+            <tr key={name}>
+              <td className="media-nowrap">{name}</td>
+              <td>{fmtILS(v.spend)}</td>
+              <td>{fmtPct(ratio(v.spend, spent), 0)}</td>
+              <td>{fmtInt(v.impressions)}</td>
+              <td>{fmtInt(v.clicks)}</td>
+              <td>{v.installs ? fmtInt(v.installs) : "—"}</td>
+              <td>{fmt2(cpm(v.spend, v.impressions))}</td>
+              <td>{fmt2(ratio(v.spend, v.clicks))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

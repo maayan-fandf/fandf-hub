@@ -27,7 +27,9 @@ import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import ProjectPriceCheckSection from "@/components/ProjectPriceCheckSection";
 import ClientPrisaApprovalPrompt from "@/components/ClientPrisaApprovalPrompt";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
+import MediaCampaignsCard from "@/components/MediaCampaignsCard";
 import { getCrmFunnelForProject } from "@/lib/crmData";
+import { hasMediaWorkbook } from "@/lib/mediaCampaigns";
 import { isRealEstateType } from "@/lib/keys";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
@@ -768,6 +770,22 @@ export default async function ProjectOverviewPage({
       />
     </Suspense>
   ) : null;
+  // The mirror image of the CRM nodes above: a non-real-estate project
+  // (עיריית תל אביב / דיגיתל שלי) has no funnel to report, so it gets a
+  // reach-and-installs card fed by the media team's own workbook instead.
+  // Gated on hasMediaWorkbook so the other general rows (צוות F&F) stay
+  // exactly as they are — this is opt-in per project, not per type.
+  const hasMedia = !isRealEstateProject && hasMediaWorkbook(projectName);
+  const mediaNode = hasMedia ? (
+    <Suspense fallback={null}>
+      <MediaCampaignsCard project={projectName} view="actuals" />
+    </Suspense>
+  ) : null;
+  const mediaPlanNode = hasMedia ? (
+    <Suspense fallback={null}>
+      <MediaCampaignsCard project={projectName} view="plan" />
+    </Suspense>
+  ) : null;
 
   return (
     <main
@@ -973,6 +991,8 @@ export default async function ProjectOverviewPage({
               clarityNode={clarityNode}
               prisotNode={prisotNode}
               pricesNode={pricesNode}
+              mediaNode={mediaNode}
+              mediaPlanNode={mediaPlanNode}
             />
           </Suspense>
           </CrmSourceFilterProvider>
@@ -993,6 +1013,19 @@ export default async function ProjectOverviewPage({
       {discussionBlock}
 
       {alertsNode}
+
+      {/* Media card also gets a home on the classic (?report=classic)
+          layout — it's the whole performance story for these projects,
+          so falling back to the classic view shouldn't lose it. */}
+      {mediaNode && (
+        <section className="project-section">
+          <div className="section-head" title="📣 ביצועי מדיה">
+            <h2>📣 ביצועי מדיה</h2>
+          </div>
+          {mediaNode}
+          {mediaPlanNode}
+        </section>
+      )}
 
       {/* Dashboard iframe, inline under the comment/task cards. Spans the
           full container width. No standalone page header — the section

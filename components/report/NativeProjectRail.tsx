@@ -42,6 +42,8 @@ export default async function NativeProjectRail({
   prisotNode,
   pricesNode,
   clarityNode,
+  mediaNode,
+  mediaPlanNode,
   tasksBadge = 0,
 }: {
   projectName: string;
@@ -70,6 +72,12 @@ export default async function NativeProjectRail({
   pricesNode?: ReactNode;
   /** דף נחיתה insights (Clarity) — folded under סקירת פעילות when present. */
   clarityNode?: ReactNode;
+  /** ביצועי מדיה — the non-real-estate reach/installs card. Mutually
+   *  exclusive with the CRM nodes in practice: a project either has a
+   *  sales funnel or it doesn't. */
+  mediaNode?: ReactNode;
+  /** פריסת מדיה — the forward plan behind mediaNode. */
+  mediaPlanNode?: ReactNode;
   tasksBadge?: number;
 }) {
   // A client (or an internal user previewing the client view) never gets the
@@ -213,9 +221,11 @@ export default async function NativeProjectRail({
       icon: "📈",
       content: <ReportTrendsTab data={data} />,
     });
-  } else {
+  } else if (!mediaNode) {
     // No campaign-ID / report fetch failed — still give the section so the
-    // rail isn't missing its spine; it explains the gap.
+    // rail isn't missing its spine; it explains the gap. Suppressed when a
+    // media card is present: that project reports from its own workbook, so
+    // the missing campaign ID is expected, not a gap worth announcing.
     sections.push({
       id: "overview",
       group: "perf",
@@ -227,6 +237,25 @@ export default async function NativeProjectRail({
           פלטפורמות להצגה.
         </div>
       ),
+    });
+  }
+
+  if (mediaNode) {
+    sections.push({
+      id: "media",
+      group: "perf",
+      label: "ביצועי מדיה",
+      icon: "📣",
+      content: mediaNode,
+    });
+  }
+  if (mediaPlanNode) {
+    sections.push({
+      id: "media-plan",
+      group: "plan",
+      label: "פריסת מדיה",
+      icon: "🗂️",
+      content: mediaPlanNode,
     });
   }
 
@@ -271,7 +300,9 @@ export default async function NativeProjectRail({
     <ProjectRailShell
       groups={groups}
       sections={sections}
-      defaultSection="overview"
+      // A media-workbook project has no "overview" section at all, so
+      // landing on it would show the rail's not-found fallback.
+      defaultSection={!data && mediaNode ? "media" : "overview"}
       initialSection={initialSection}
       triage={triage}
     />
