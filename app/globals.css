@@ -905,7 +905,10 @@ a:hover {
     align-items: center;
   }
   /* Shrunk state — applied by PageHeaderShrinkObserver once
-     window.scrollY > 80. Trims height aggressively so the user can
+     window.scrollY > 80 (and dropped again only below 24 — see the
+     hysteresis note there; this block is what changes the document
+     height that made a single threshold oscillate). Trims height
+     aggressively so the user can
      still see the row of action chips (+ משימה חדשה, picker, Drive,
      etc.) even after scrolling deep into the dashboard. */
   .project-main .page-header.is-scrolled {
