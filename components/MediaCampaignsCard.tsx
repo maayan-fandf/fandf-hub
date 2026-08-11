@@ -45,12 +45,112 @@ function fmtRange(from: string, to: string): string {
   return `${d(from)} – ${d(to)}`;
 }
 
+function paceTone(pace: number | null): string {
+  return pace === null ? "na" : pace >= 0.9 ? "ok" : pace >= 0.6 ? "warn" : "low";
+}
+
+const DAY_MS = 86400000;
+const tOf = (iso: string): number => Date.parse(iso + "T00:00:00Z");
+
+/**
+ * Flight calendar — the campaigns laid out on a real time axis.
+ *
+ * This is the shape of the account: the budget doesn't run continuously,
+ * it fires in short bursts tied to the municipal calendar (חופים in
+ * summer, רישום לגנים in January, מקלטים in March, pride in June). A
+ * table sorted by date can't show that the gaps are as deliberate as the
+ * flights. Bar length is the flight's duration, the fill is how much of
+ * its budget it actually spent.
+ *
+ * Fixed label columns on both sides rather than labels floating at the
+ * bar ends: in the rail the track is ~400px for 13 months, so a 4-day
+ * flight is a 3px bar and any label anchored to it would collide with
+ * its neighbours or overflow the container.
+ */
+function FlightCalendar({ campaigns }: { campaigns: MediaCampaign[] }) {
+  const rows = campaigns
+    .filter((c) => Number.isFinite(tOf(c.from)) && Number.isFinite(tOf(c.to)))
+    .sort((a, b) => tOf(a.from) - tOf(b.from));
+  if (rows.length < 2) return null;
+
+  const t0 = Math.min(...rows.map((c) => tOf(c.from)));
+  const t1 = Math.max(...rows.map((c) => tOf(c.to)));
+  const pad = 8 * DAY_MS;
+  const span = t1 - t0 + pad * 2;
+  const pos = (ms: number): number => ((ms - t0 + pad) / span) * 100;
+
+  const ticks: { pos: number; label: string; isYear: boolean }[] = [];
+  const cur = new Date(t0);
+  cur.setUTCDate(1);
+  while (cur.getTime() <= t1) {
+    const month = cur.getUTCMonth();
+    ticks.push({
+      pos: pos(cur.getTime()),
+      label: month === 0 ? String(cur.getUTCFullYear()) : String(month + 1),
+      isYear: month === 0,
+    });
+    cur.setUTCMonth(month + 1);
+  }
+
+  return (
+    <div className="media-cal">
+      <div className="media-cal-row media-cal-axis">
+        <div className="media-cal-name" />
+        <div className="media-cal-track">
+          {ticks.map((k, i) => (
+            <span
+              key={i}
+              className={"media-cal-tick" + (k.isYear ? " is-year" : "")}
+              style={{ insetInlineStart: `${k.pos}%` }}
+            >
+              {k.label}
+            </span>
+          ))}
+        </div>
+        <div className="media-cal-spend" />
+      </div>
+      {rows.map((c) => {
+        const start = pos(tOf(c.from));
+        const width = Math.max(0.8, pos(tOf(c.to)) - start);
+        const pace = ratio(c.spent, c.allocated);
+        return (
+          <div className="media-cal-row" key={c.sheetRow}>
+            <div className="media-cal-name" title={c.name}>
+              {c.name}
+            </div>
+            <div className="media-cal-track">
+              {ticks.map((k, i) => (
+                <span
+                  key={i}
+                  className={"media-cal-grid" + (k.isYear ? " is-year" : "")}
+                  style={{ insetInlineStart: `${k.pos}%` }}
+                />
+              ))}
+              <div
+                className="media-cal-bar"
+                style={{ insetInlineStart: `${start}%`, width: `${width}%` }}
+                title={`${fmtRange(c.from, c.to)} · ${fmtILS(c.spent)} מתוך ${fmtILS(c.allocated)}`}
+              >
+                <span
+                  className={"media-cal-fill is-" + paceTone(pace)}
+                  style={{ width: `${Math.min(100, (pace ?? 0) * 100)}%` }}
+                />
+              </div>
+            </div>
+            <div className="media-cal-spend">{fmtILS(c.spent)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Utilisation bar. Over 100% is real (a channel can overshoot), so the
  *  fill is capped for layout but the number next to it isn't. */
 function PaceBar({ pace }: { pace: number | null }) {
   if (pace === null) return <span className="media-muted">—</span>;
   const pct = Math.max(0, Math.min(1.2, pace));
-  const tone = pace >= 0.9 ? "ok" : pace >= 0.6 ? "warn" : "low";
+  const tone = paceTone(pace);
   return (
     <span className="media-pace">
       <span className="media-pace-track">
@@ -247,6 +347,14 @@ export default async function MediaCampaignsCard({
           פתיחת הגיליון
         </a>
       </p>
+
+      <h4 className="media-block-title">
+        לוח העלייה לאוויר
+        <span className="media-block-dates">
+          אורך הפס = משך הטיסה · המילוי = ניצול התקציב
+        </span>
+      </h4>
+      <FlightCalendar campaigns={cs} />
 
       <div className="media-kpi-row">
         <div className="crm-kpi-tile">

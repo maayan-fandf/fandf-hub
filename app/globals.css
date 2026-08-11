@@ -27924,3 +27924,108 @@ html[data-theme="dark"] {
   background: color-mix(in srgb, #f59e0b 8%, transparent);
   color: var(--text);
 }
+
+/* ── Flight calendar ────────────────────────────────────────────────
+   Campaigns on a real time axis. Three-part row: a fixed name column,
+   a proportional track, a fixed spend column. Labels never anchor to
+   the bars themselves — in the rail the track is ~400px for 13 months,
+   so the shortest flight (מקלטים, 4 days) is a ~3px bar and anything
+   attached to it would collide with its neighbours. */
+.media-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0.5rem 0 1rem;
+}
+.media-cal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 22px;
+}
+.media-cal-name {
+  flex: none;
+  width: 120px;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-cal-spend {
+  flex: none;
+  width: 66px;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.media-cal-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+}
+
+/* Axis row: same three-part grid so the ticks line up with the bars. */
+.media-cal-axis {
+  min-height: 16px;
+  margin-bottom: 2px;
+}
+.media-cal-axis .media-cal-track {
+  height: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.media-cal-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(50%); /* logical-safe: RTL mirrors the axis too */
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.media-cal-tick.is-year {
+  font-weight: 700;
+  color: var(--text);
+}
+.media-cal-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  opacity: 0.5;
+}
+.media-cal-grid.is-year {
+  opacity: 1;
+}
+
+.media-cal-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 3px;
+}
+.media-cal-fill {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0.85;
+}
+.media-cal-fill.is-ok { background: #22c55e; }
+.media-cal-fill.is-warn { background: #f59e0b; }
+.media-cal-fill.is-low { background: #ef4444; }
+.media-cal-fill.is-na { background: var(--muted); }
+
+/* The name column costs a third of a narrow rail. Below that, drop it
+   and let the bars carry the shape on their own — the table underneath
+   still names every flight. */
+@media (max-width: 620px) {
+  .media-cal-name { width: 78px; font-size: 0.68rem; }
+  .media-cal-spend { display: none; }
+}
