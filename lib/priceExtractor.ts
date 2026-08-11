@@ -107,9 +107,21 @@ export type DetectedPrice = {
  *
  *   "החל מ-3,199,000"       → anchored ✓
  *   "מ-2,175,000 ₪"        → anchored ✓
+ *   "החל מ-₪2,350,000"      → anchored ✓
  *   "מחיר: 1,800,000 ₪"     → anchored ✓
  *   "מחיר התחלתי 2.5 מיליון" → anchored ✓
  *   "ע״ס כ-500,000 ₪"       → NOT anchored — anti-pattern wins
+ *
+ * The optional currency marker before the number is not cosmetic. Pages put
+ * the shekel on whichever side the copywriter felt like, and they are not
+ * consistent WITHIN a page: the eastern landing page writes the 2-3 room
+ * line as `החל מ-₪2,350,000` (sign leading) and the 4-5 room line right
+ * beneath it as `החל מ-4,190,000 ₪` (sign trailing). Without this the
+ * leading-sign line failed the anchor test, the only anchored price left
+ * was the 4-5 room one, and "lowest anchored" reported the project's
+ * priciest typology as its starting price — ₪4,190,000 against the
+ * ₪2,350,000 every other surface advertised, which read as a 78% drift
+ * that did not exist. (Maayan, 2026-08-11.)
  *
  * Dash class accepts the whole Unicode dash family — Yad2 sponsored
  * pages render the headline as `החל מ – 3,320,000` (U+2013 en dash)
@@ -121,8 +133,12 @@ export type DetectedPrice = {
  * Members: hyphen-minus, Hebrew makaf, Unicode hyphen, non-breaking
  * hyphen, en dash, em dash, minus sign.
  */
-const HEADLINE_ANCHOR_RE =
-  /(?:החל\s*מ|מחיר\s*התחלתי|מחיר:?|^)\s*[-־‐‑–—−]?\s*$/;
+const HEADLINE_ANCHOR_RE = new RegExp(
+  // Built from CURRENCY_RE rather than repeating the marker list, so adding
+  // a new currency spelling there fixes both the plausibility gate and the
+  // anchor test instead of only one of them.
+  `(?:החל\\s*מ|מחיר\\s*התחלתי|מחיר:?|^)\\s*[-־‐‑–—−]?\\s*(?:${CURRENCY_RE.source})?\\s*$`,
+);
 
 /**
  * Anti-anchor markers — phrases that, when they appear right before
