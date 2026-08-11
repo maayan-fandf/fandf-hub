@@ -118,6 +118,55 @@ export default function ProjectRailShell({
     [syncUrl, validIds],
   );
 
+  // Cross-tree section jumps. Surfaces that live OUTSIDE this shell — the
+  // client approval banner's "צפו בפריסה" link (ClientPrisaApprovalPrompt)
+  // sits above the rail — can't reach setActive, and a plain #anchor link is
+  // inert here: an inactive panel is display:none, so the browser has nothing
+  // to scroll to and nothing flips the section. They dispatch
+  // `hub:rail-section` with { section, anchor? } instead (same `hub:` event
+  // idiom as the command palette); we switch, then bring the anchor into view.
+  const setActiveRef = useRef(setActive);
+  useEffect(() => {
+    setActiveRef.current = setActive;
+  });
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { section?: string; anchor?: string }
+        | undefined;
+      const section = String(detail?.section || "");
+      if (!section) return;
+      setActiveRef.current(section); // no-ops on an id this rail doesn't have
+      const anchor = String(detail?.anchor || "");
+      if (!anchor) return;
+      // Getting the anchor on screen needs a short settle loop, not one
+      // scrollIntoView:
+      //   - a hidden panel still HAS the element (display:none → offsetParent
+      //     null), and scrolling to a zero-height box goes nowhere — which is
+      //     the very bug this jump exists to fix;
+      //   - panels are Suspense-streamed (a cold Drive read on the פריסות card
+      //     is ~1–2s), so the page grows under us and an early scroll clamps
+      //     short.
+      // Bounded, and a no-op once the target is comfortably in view — the rail
+      // pane sits high on the page, so the switch alone often suffices.
+      let tries = 12;
+      const settle = () => {
+        const el = document.getElementById(anchor);
+        if (!el?.offsetParent) {
+          if (--tries > 0) setTimeout(settle, 220);
+          return;
+        }
+        const top = el.getBoundingClientRect().top;
+        if (top >= 0 && top < window.innerHeight * 0.5) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (--tries > 0) setTimeout(settle, 400);
+      };
+      requestAnimationFrame(settle);
+    };
+    window.addEventListener("hub:rail-section", onJump);
+    return () => window.removeEventListener("hub:rail-section", onJump);
+  }, []);
+
   // Live-derived badges/triage read from the rendered (Suspense-streamed)
   // panels — surfaces "where's the fire" on the rail without blocking the
   // server sections on slow counts. Alerts: count the signal rows once
