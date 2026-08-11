@@ -80,19 +80,22 @@ export type CrmFunnel = {
   scheduledMeetings: number;
   /** Of `scheduledMeetings`, the canceled subset ("פגישה בוטלה" / בוטלו).
    *  So תואמה = תואמו (non-canceled = held + upcoming) + בוטלו (this).
-   *  Surfaced for the KPI card breakdown. Optional — only the BMBY
-   *  funnel populates it (Sehel/Salesforce have no clean canceled state). */
+   *  Surfaced for the KPI card breakdown. Optional — BMBY populates it
+   *  from the status, Salesforce from the "בוטלה" meeting status in
+   *  מצב ליד 3. Sehel has no clean canceled state, so it stays absent. */
   canceledMeetings?: number;
   /** "פגישות" — meetings that actually took place (held). Subset of
    *  scheduledMeetings. BMBY: status matches "פגישה 1/2/3" or "פגישה
    *  התקיימה". Sehel: status in {אחרי פגישה, פגישה ללא סיכום} —
-   *  the post-meeting stages, best-guess pending upstream answer. */
+   *  the post-meeting stages, best-guess pending upstream answer.
+   *  Salesforce: the "התקיימה" meeting status, or any opportunity stage
+   *  past it (see the SALESFORCE status matrix). */
   meetings: number;
-  /** "חוזים/עסקאות" — leads at the contract/sale terminal status. A
-   *  CURRENT-snapshot count (not dated), so windowed figures drift; it's
+  /** "חוזים/עסקאות" — leads at the contract/sale terminal. A CURRENT-
+   *  snapshot count (not dated), so windowed figures drift; it's
    *  independent of `meetings` (a held lead can also sign). BMBY: "חוזה";
-   *  Sehel: "| עסקה"; Salesforce: "טופס הרשמה" (the registration = the
-   *  conversion goal). 0 when none. */
+   *  Sehel: "| עסקה"; Salesforce: the הומר conversion flag, surfaced as
+   *  "טופסי הרשמה" (the דיור-למשתכן registration = the goal). 0 when none. */
   contracts: number;
   /** meetings / leads as a 0-100 number (UI formats with %). null when
    *  leads === 0 so the card can show "—" instead of dividing by zero. */
@@ -351,19 +354,34 @@ const readSehel = cache((subjectEmail: string) =>
   fetchTabFromSheet(subjectEmail, "מאגר שכל!A:T"),
 );
 // Salesforce: single "Salesforce" tab in the same archive workbook (the
-// two שיכון ובינוי projects — Essence + שיכון ובינוי חולון — use it).
-// Header is row 1; A:P covers all 16 cols (~2K rows). NOTE: the project
-// and creation-date headers carry a literal "↑" sort glyph
-// ("פרויקט ↑" / "תאריך יצירה ↑"), so those columns are matched by
-// prefix, not exact string, in computeSalesforceFunnel.
+// שיכון ובינוי projects use it — a mirror of the client's own SHBNCRM
+// tab, rolling ~3 months). Header is row 1. NOTE: the project and
+// creation-date headers carry a literal "↑" sort glyph ("פרויקט ↑" /
+// "תאריך יצירה ↑"), so those columns are matched by prefix, not exact
+// string, in computeSalesforceFunnel.
+//
+// Range widened P→T on 2026-08-11: the upstream tab grew three columns
+// past P — `מצב ליד2` (Q), `הזדמנות ID` (R) and `מצב ליד 3` (S) — and
+// A:P silently truncated all of them, so the funnel kept reading the
+// COARSEST status column while the resolved ones sat just out of range.
+// See the SALESFORCE_STATUS_COLUMNS block for what each one means.
 const readSalesforce = cache((subjectEmail: string) =>
-  fetchTabFromSheet(subjectEmail, "Salesforce!A:P"),
+  fetchTabFromSheet(subjectEmail, "Salesforce!A:T"),
 );
 
 /* ── Utility ────────────────────────────────────────────────────────── */
 
 function norm(s: unknown): string {
   return String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Sheet boolean. UNFORMATTED_VALUE hands back a real boolean for a checkbox
+ *  cell but the literal text "TRUE" for a plain string one, and the Salesforce
+ *  export writes the latter — accept both (plus 1 / כן) rather than guessing. */
+function isTruthyFlag(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "כן";
 }
 
 /**
@@ -704,53 +722,133 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
  * are inferred from free-text status taxonomies), Salesforce's funnel is
  * defined explicitly by the owner's status→bucket matrix.
  *
- * ⚠️ MATRIX CORRECTED 2026-07-13 (supersedes the 2026-05-24 one). The old
- * mapping had three real bugs, all of which skewed the funnel:
- *   • `ניסיון תיאום פגישה` (an ATTEMPT to schedule) was counted as תיאום
- *     → over-counted scheduled meetings.
- *   • `תיאום פגישה` (the ACTUAL scheduled status) was missing entirely
- *     → those leads counted as neither scheduled nor held.
- *   • `טופס הרשמה` was counted as בוצע → registration forms inflated held.
- *   • `נסגר בהפסד` was missing entirely.
+ * ⚠️ MATRIX REWRITTEN 2026-08-11 for שיכון ובינוי's three-stage taxonomy
+ * (supersedes the 2026-07-13 one). Salesforce splits a lead's life across a
+ * LEAD stage, an OPPORTUNITY stage and — inside the opportunity — a MEETING
+ * status, and the tab now carries three progressively-resolved views of the
+ * same lead side by side:
  *
- *   מצב ליד               ליד  תיאום  בוצע
- *   חדש                    ✓
- *   ניסיון יצירת קשר        ✓
- *   ניסיון תיאום פגישה      ✓                  ← attempt only, NOT a תיאום
- *   תיאום פגישה            ✓     ✓      ✓
- *   נסגר בהפסד             ✓     ✓      ✓      ← met, then lost
- *   פגישה התקיימה          ✓     ✓      ✓
- *   טופס הרשמה             ✓     ✓             ← תיאום, NOT בוצע
- *   ליד חוזר               ✓
- *   לא רלוונטי              ✓
+ *   מצב ליד    (I) — raw LEAD stage. Every CONVERTED lead collapses to the
+ *                    single value "טופס הרשמה" (the lead-side label for
+ *                    הומר), so opportunities and meetings are invisible here.
+ *   מצב ליד2   (Q) — converted leads resolve to their OPPORTUNITY stage
+ *                    (תיאום פגישה / פגישה התקיימה / נסגר בהפסד / …).
+ *   מצב ליד 3  (S) — as Q, but an opportunity that has a MEETING row shows
+ *                    that meeting's own status instead.
  *
- * held ⊆ scheduled, so the funnel stays monotonic. `טופס הרשמה` (registering
- * for the דיור-למשתכן lottery) remains the conversion goal → contracts.
+ * We read the most-resolved column present and fall back leftwards, because
+ * the archive mirror gains each new column a sync behind the client's tab.
+ *
+ *   ┌─ שלב הליד ─────────────────┐   ליד  תיאום  בוצע  בוטלה
+ *   │ חדש                        │    ✓
+ *   │ ניסיון יצירת קשר            │    ✓
+ *   │ ניסיון תיאום פגישה          │    ✓                       ← attempt only
+ *   │ לא רלוונטי                  │    ✓
+ *   │ הומר ⇢ "טופס הרשמה"         │    ✓                       ← a CONVERSION,
+ *   └────────────────────────────┘                              not a meeting
+ *   ┌─ שלב ההזדמנות ─────────────┐
+ *   │ תיאום פגישה                 │    ✓     ✓
+ *   │ פגישה התקיימה               │    ✓     ✓     ✓
+ *   │ ממתין לחתימת לקוח            │    ✓     ✓     ✓
+ *   │ תהליך אישור מכירות           │    ✓     ✓     ✓
+ *   │ בקשת רכישה                  │    ✓     ✓     ✓
+ *   │ חוזה בחתימה                 │    ✓     ✓     ✓
+ *   │ סגור / נסגר בהפסד            │    ✓     ✓           ← see note below
+ *   └────────────────────────────┘
+ *   ┌─ סטטוס פגישה (מצב ליד 3) ───┐
+ *   │ טרם התקיימה                 │    ✓     ✓
+ *   │ התקיימה                     │    ✓     ✓     ✓
+ *   │ בוטלה                       │    ✓     ✓            ✓
+ *   └────────────────────────────┘
+ *
+ * Three corrections over the old matrix, all of which skewed the funnel:
+ *   • `טופס הרשמה` counted as תיאום → lottery registrations were reported as
+ *     booked meetings. On the 2026-08-11 snapshot that alone inflated
+ *     scheduled ~4-5× across the SHBN projects (חולון 121 → 33, Essence
+ *     55 → 10, דרך השלום 82 → 16).
+ *   • `נסגר בהפסד` counted as בוצע → a closed-lost opportunity was reported
+ *     as a HELD meeting. Under מצב ליד 3, 132 of its 135 rows resolve to
+ *     בוטלה (the meeting was CANCELLED) and just 1 to התקיימה.
+ *   • Meetings were invisible altogether, because column I never shows them.
+ *
+ * `סגור`/`נסגר בהפסד` stays in תיאום but leaves בוצע. An opportunity can
+ * close at any stage, but 133 of the 135 on the snapshot did have a meeting
+ * row — and under מצב ליד 3 those already resolve to בוטלה/התקיימה, leaving
+ * 2 rows where the choice is immaterial. That is what makes the מצב ליד2
+ * fallback near-lossless: scheduled 255 under either column, held 54 vs 55.
+ *
+ * held ⊆ scheduled and cancelled ⊆ scheduled, so the funnel stays monotonic.
  * `contacted` (נוצר קשר) isn't a matrix bucket; it's derived as "any status
  * past חדש" — a salesperson has worked the lead — mirroring BMBY's notion.
+ * `contracts` is no longer read off the status at all: it comes from the
+ * הומר flag, the one field that survives the column resolution (see
+ * computeSalesforceFunnel).
  */
-const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
-  "תיאום פגישה",
-  "נסגר בהפסד",
+
+/** Status columns, most-resolved first. `fetchTabFromSheet` collapses runs of
+ *  whitespace in headers, so "מצב ליד 3" keeps its single space; the un-spaced
+ *  spelling is accepted too since the client writes the header both ways. */
+const SALESFORCE_STATUS_COLUMNS = [
+  "מצב ליד 3",
+  "מצב ליד3",
+  "מצב ליד2",
+  "מצב ליד",
+];
+
+/** Index of the most-resolved status column present, or -1 for none. */
+function salesforceStatusIndex(headers: string[]): number {
+  for (const name of SALESFORCE_STATUS_COLUMNS) {
+    const i = headers.indexOf(name);
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/** Opportunity stages at or past "meeting held" — reaching one of them means
+ *  the meeting took place, even when no meeting row resolved into מצב ליד 3. */
+const SALESFORCE_POST_MEETING_STAGES = [
   "פגישה התקיימה",
-  "טופס הרשמה",
-]);
+  "ממתין לחתימת לקוח",
+  "תהליך אישור מכירות",
+  "בקשת רכישה",
+  "חוזה בחתימה",
+];
+
 const SALESFORCE_HELD_STATUSES = new Set<string>([
+  "התקיימה",
+  ...SALESFORCE_POST_MEETING_STAGES,
+]);
+/** Cancelled subset of scheduled — surfaces as "בוטלו" on the תואמה tile. */
+const SALESFORCE_CANCELED_STATUSES = new Set<string>(["בוטלה"]);
+const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
+  "טרם התקיימה",
   "תיאום פגישה",
+  "סגור",
   "נסגר בהפסד",
-  "פגישה התקיימה",
+  ...SALESFORCE_CANCELED_STATUSES,
+  ...SALESFORCE_HELD_STATUSES,
 ]);
 
 export const SALESFORCE_STATUS_FUNNEL_ORDER = [
+  // שלב הליד
   "חדש",
   "ניסיון יצירת קשר",
   "אין מענה",
   "שיחה",
   "ניסיון תיאום פגישה",
+  "טופס הרשמה", // = הומר — the conversion out of the lead stage
+  // שלב ההזדמנות, then the meeting status that supersedes it in מצב ליד 3
   "תיאום פגישה",
-  "טופס הרשמה",
+  "טרם התקיימה",
+  "התקיימה",
+  "בוטלה",
   "פגישה התקיימה",
+  "ממתין לחתימת לקוח",
+  "תהליך אישור מכירות",
+  "בקשת רכישה",
+  "חוזה בחתימה",
   // off-funnel / terminal side states
+  "סגור",
   "נסגר בהפסד",
   "ליד חוזר",
   "לא רלוונטי",
@@ -2296,10 +2394,12 @@ async function buildSehelBreakdown(
 /* ── Salesforce funnel ─────────────────────────────────────────────── */
 
 /* ── Salesforce UTM drill ───────────────────────────────────────────────
- * Salesforce has no meeting EVENTS — its funnel is a current-status snapshot —
- * so a lead's scheduled/held is decided by its own `מצב ליד`, NOT by joining an
- * events table (the BMBY/Sehel model). That makes the breakdown a straight
- * group-by over the project's in-window leads that matched a UTM row by phone.
+ * Salesforce exposes no meeting EVENTS table — its funnel is a current-status
+ * snapshot — so a lead's scheduled/held is decided by its own resolved status
+ * (מצב ליד 3, which already folds the meeting's status back onto the lead),
+ * NOT by joining an events table (the BMBY/Sehel model). That makes the
+ * breakdown a straight group-by over the project's in-window leads that
+ * matched a UTM row by phone.
  * Same keys + output shape as BMBY/Sehel, so the existing פילוח פייסבוק panel
  * and the Google-keyword block render unchanged. */
 type SfUtmLead = { utm: SfUtm; scheduled: boolean; held: boolean };
@@ -2407,9 +2507,10 @@ async function buildSalesforceBreakdown(
  *
  * Lives here (not in fbCreativeMeetingsExport) because everything it needs —
  * the Salesforce tab reader, crmAccountCandidates, the status matrix, the UTM
- * index — is already local. Salesforce has no meeting EVENTS: a lead's own
- * `מצב ליד` IS its scheduled/held, so this is a group-by over the project's
- * leads by creation month, joined to the capture sheet on phone→email.
+ * index — is already local. Salesforce exposes no meeting EVENTS table: a
+ * lead's own resolved status (מצב ליד 3) IS its scheduled/held, so this is a
+ * group-by over the project's leads by creation month, joined to the capture
+ * sheet on phone→email.
  *
  * Returns per-month empties on any failure — the cards just render without a
  * CRM row, exactly as they do today.
@@ -2433,7 +2534,7 @@ export async function getSalesforceCreativeMeetings(
     if (!rows.length) return empty();
     const iProject = headers.findIndex((h) => h.startsWith("פרויקט"));
     const iEntry = headers.findIndex((h) => h.startsWith("תאריך יצירה"));
-    const iStatus = headers.indexOf("מצב ליד");
+    const iStatus = salesforceStatusIndex(headers);
     const iPhone = headers.indexOf("טלפון נייד");
     const iEmail = headers.indexOf("דואר אלקטרוני");
     if (iProject < 0 || iEntry < 0) return empty();
@@ -2533,9 +2634,19 @@ async function computeSalesforceFunnel(
   // ("פרויקט ↑" / "תאריך יצירה ↑") — match by prefix, not exact string.
   const iProject = headers.findIndex((h) => h.startsWith("פרויקט"));
   const iEntry = headers.findIndex((h) => h.startsWith("תאריך יצירה"));
-  const iStatus = headers.indexOf("מצב ליד");
+  const iStatus = salesforceStatusIndex(headers);
+  // Only מצב ליד 3 folds the meeting's own status onto the lead, so it's the
+  // only column that can tell a CANCELLED meeting from one that never got
+  // booked. On the older columns the cancelled count isn't 0, it's UNKNOWN —
+  // so leave the field absent there rather than reporting a confident "בוטלו 0".
+  const hasMeetingStatuses = iStatus >= 0 && /^מצב ליד ?3$/.test(headers[iStatus]);
   const iSource = headers.indexOf("מקור ליד");
   const iObjection = headers.indexOf("התנגדות ראשית");
+  // Conversion flag (הומר). Drives `contracts` instead of the status, because
+  // the status column no longer reports it consistently: once מצב ליד 3
+  // resolves a converted lead into its opportunity/meeting status, only the
+  // converted leads that never got that far still read "טופס הרשמה".
+  const iHomer = headers.indexOf("הומר");
   if (iProject < 0) return null;
   // UTM drill: Salesforce carries no usable utm_* itself, so join the
   // landing-page capture sheet on PHONE, falling back to EMAIL (either key can
@@ -2562,15 +2673,19 @@ async function computeSalesforceFunnel(
   const targets = crmAccountCandidates(crmAccount).map(norm);
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה (נקבעה או בוטלה פגישה)
+  let canceledMeetings = 0;  // בוטלו — the cancelled subset of scheduled
   let meetings = 0;          // פגישות (התבצעה פגישה — held)
   let contacted = 0;
+  let contracts = 0;         // טופסי הרשמה — the הומר conversion terminal
   const byStatus = new Map<string, number>();
   const byObjection = new Map<string, number>();
   const bySource = new Map<string, number>();
   const leadsBySource = new Map<string, number>();
   const contactedBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
+  const canceledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
+  const contractsBySource = new Map<string, number>();
   // Stale-leads — anchored on תאריך יצירה only (no contact/update column
   // exists for Salesforce). Runs BEFORE the monthFilter bail so it sees
   // every project row, not just the filtered cohort.
@@ -2622,14 +2737,22 @@ async function computeSalesforceFunnel(
     // Funnel buckets per Maayan's status matrix (see the block above
     // SALESFORCE_STATUS_FUNNEL_ORDER). scheduledMeetings ⊇ meetings.
     const isScheduledMeeting = SALESFORCE_SCHEDULED_STATUSES.has(st);
+    const isCanceledMeeting = SALESFORCE_CANCELED_STATUSES.has(st);
     const isHeldMeeting = SALESFORCE_HELD_STATUSES.has(st);
     // contacted (נוצר קשר): any status past "חדש" (new/untouched).
     const isContacted = st !== "" && st !== "חדש";
+    // contracts (טופסי הרשמה): the הומר flag. Falls back to the lead-side
+    // label when the column is missing — identical counts, since every
+    // converted lead reads "טופס הרשמה" in the unresolved מצב ליד column.
+    const isConverted =
+      iHomer >= 0 ? isTruthyFlag(arr[iHomer]) : st === "טופס הרשמה";
     if (isScheduledMeeting) scheduledMeetings++;
+    if (isCanceledMeeting) canceledMeetings++;
     if (isHeldMeeting) meetings++;
     if (isContacted) contacted++;
-    // UTM drill: this lead's own status IS its scheduled/held (status snapshot
-    // — Salesforce has no meeting events), so credit it straight to its creative.
+    if (isConverted) contracts++;
+    // UTM drill: this lead's own resolved status IS its scheduled/held (status
+    // snapshot — no meeting-events table), so credit it straight to its creative.
     if (hasUtm) {
       const u = lookupSfUtm(
         utmIdx,
@@ -2653,7 +2776,9 @@ async function computeSalesforceFunnel(
       leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
       if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
       if (isScheduledMeeting) scheduledMeetingsBySource.set(src, (scheduledMeetingsBySource.get(src) || 0) + 1);
+      if (isCanceledMeeting) canceledMeetingsBySource.set(src, (canceledMeetingsBySource.get(src) || 0) + 1);
       if (isHeldMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
+      if (isConverted) contractsBySource.set(src, (contractsBySource.get(src) || 0) + 1);
     }
     if (obj && src) {
       let m2 = objectionSourceMatrix.get(obj);
@@ -2679,16 +2804,6 @@ async function computeSalesforceFunnel(
       if (!minDate || d < minDate) minDate = d;
       if (!maxDate || d > maxDate) maxDate = d;
     }
-  }
-
-  // Contracts — for Salesforce the conversion goal is "טופס הרשמה" (lottery
-  // registration), counted as the contract/sale terminal. From the status
-  // matrix; current-status snapshot.
-  const contractsBySource = new Map<string, number>();
-  let contracts = byStatus.get("טופס הרשמה") || 0;
-  {
-    const m = statusSourceMatrix.get("טופס הרשמה");
-    if (m) for (const [s, c] of m) contractsBySource.set(s, c);
   }
 
   if (leads === 0) return null;
@@ -2729,6 +2844,7 @@ async function computeSalesforceFunnel(
     leads,
     contacted,
     scheduledMeetings,
+    canceledMeetings: hasMeetingStatuses ? canceledMeetings : undefined,
     meetings,
     contracts,
     meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
@@ -2740,7 +2856,9 @@ async function computeSalesforceFunnel(
       statusObserved: byStatus,
       funnelOrder: SALESFORCE_STATUS_FUNNEL_ORDER,
       leadsBySource, contactedBySource,
-      scheduledMeetingsBySource, meetingsBySource,
+      scheduledMeetingsBySource,
+      canceledMeetingsBySource: hasMeetingStatuses ? canceledMeetingsBySource : undefined,
+      meetingsBySource,
       contractsBySource,
       statusSourceMatrix, objectionSourceMatrix,
     }),

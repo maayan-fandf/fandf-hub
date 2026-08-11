@@ -735,7 +735,14 @@ export default function CrmFunnelClient({
           value={<CountUp value={kpis.scheduledMeetings} format={fmtInt} />}
           sub={pct(kpis.scheduledMeetings, kpis.leads)}
           note={
-            funnel.platform === "bmby" && kpis.scheduledMeetings > 0
+            // Gate on the FIELD, not the platform: BMBY always carries it, and
+            // Salesforce joined it once מצב ליד 3 started folding the meeting's
+            // own status (טרם התקיימה / התקיימה / בוטלה) onto the lead. Without
+            // the split a project like חולון shows 33 תואמה against 5 פגישות
+            // with nothing to explain the gap — 27 of them were cancelled.
+            // Absent (Sehel, or Salesforce still on an older status column)
+            // means UNKNOWN, so we show no split rather than an invented 0.
+            funnel.canceledMeetings != null && kpis.scheduledMeetings > 0
               ? `תואמו ${fmtInt(kpis.scheduledMeetings - kpis.canceledMeetings)} · בוטלו ${fmtInt(kpis.canceledMeetings)}`
               : undefined
           }
