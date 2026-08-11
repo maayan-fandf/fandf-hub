@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import {
   getMediaWorkbook,
   ratio,
@@ -244,6 +245,7 @@ export default async function MediaCampaignsCard({
                 </span>
               ) : null}
             </h4>
+            <div className="media-tw">
             <table className="media-table">
               <thead>
                 <tr>
@@ -279,6 +281,7 @@ export default async function MediaCampaignsCard({
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>
         ))}
       </div>
@@ -333,26 +336,23 @@ export default async function MediaCampaignsCard({
       .map((ch) => ({ campaign: c.name, channel: ch.channel })),
   );
 
-  const period = fmtRange(
-    cs[cs.length - 1]?.from ?? "",
-    cs[0]?.to ?? "",
-  );
-
   return (
     <div className="media-card">
-      <p className="media-intro">
-        {cs.length} קמפיינים · {period}. הלקוח הזה נמדד על חשיפה והתקנות, לא
-        על לידים — הנתונים מגיעים מגיליון המדיה של הצוות.{" "}
-        <a href={wb.sheetUrl} target="_blank" rel="noopener noreferrer">
-          פתיחת הגיליון
-        </a>
-      </p>
-
       <h4 className="media-block-title">
         לוח העלייה לאוויר
         <span className="media-block-dates">
           אורך הפס = משך הטיסה · המילוי = ניצול התקציב
         </span>
+        {/* The one thing the removed intro paragraph carried that wasn't
+            prose — keep the route back to the source, drop the narration. */}
+        <a
+          className="media-source-link"
+          href={wb.sheetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          גיליון המקור
+        </a>
       </h4>
       <FlightCalendar campaigns={cs} />
 
@@ -414,6 +414,7 @@ export default async function MediaCampaignsCard({
       )}
 
       <h4 className="media-block-title">קמפיינים</h4>
+      <div className="media-tw">
       <table className="media-table">
         <thead>
           <tr>
@@ -431,27 +432,24 @@ export default async function MediaCampaignsCard({
         </thead>
         <tbody>
           {cs.map((c) => (
-            <tr key={c.sheetRow}>
-              <td>
-                <details className="media-details">
-                  <summary>{c.name}</summary>
-                  <ChannelTable rows={c.channels} />
-                </details>
-              </td>
-              <td className="media-muted media-nowrap">
-                {fmtRange(c.from, c.to)}
-              </td>
-              <td>{fmtILS(c.allocated)}</td>
-              <td>{fmtILS(c.spent)}</td>
-              <td>
-                <PaceBar pace={ratio(c.spent, c.allocated)} />
-              </td>
-              <td>{fmtInt(c.impressions)}</td>
-              <td>{fmtInt(c.clicks)}</td>
-              <td>{c.installs ? fmtInt(c.installs) : "—"}</td>
-              <td>{fmt2(cpm(c.spent, c.impressions))}</td>
-              <td>{fmtPct(ratio(c.clicks, c.impressions), 2)}</td>
-            </tr>
+            <Fragment key={c.sheetRow}>
+              <tr>
+                <td className="media-nowrap">{c.name}</td>
+                <td className="media-muted media-nowrap">
+                  {fmtRange(c.from, c.to)}
+                </td>
+                <td>{fmtILS(c.allocated)}</td>
+                <td>{fmtILS(c.spent)}</td>
+                <td>
+                  <PaceBar pace={ratio(c.spent, c.allocated)} />
+                </td>
+                <td>{fmtInt(c.impressions)}</td>
+                <td>{fmtInt(c.clicks)}</td>
+                <td>{c.installs ? fmtInt(c.installs) : "—"}</td>
+                <td>{fmt2(cpm(c.spent, c.impressions))}</td>
+                <td>{fmtPct(ratio(c.clicks, c.impressions), 2)}</td>
+              </tr>
+            </Fragment>
           ))}
           <tr className="media-total-row">
             <td>סה״כ</td>
@@ -469,8 +467,34 @@ export default async function MediaCampaignsCard({
           </tr>
         </tbody>
       </table>
+      </div>
+
+      {/* Channel breakdowns as SIBLINGS of the campaigns table, not rows
+          inside it. A table nested in a cell hands that cell its own
+          max-content width — the 11-column channel table was dragging the
+          10-column campaigns table out to 885px in a 667px rail, and no
+          amount of overflow/width containment on the inner wrapper cuts
+          that off, because the <details> in between passes the
+          contribution straight through even while closed. */}
+      <h4 className="media-block-title">פילוח ערוצים</h4>
+      <div className="media-drills">
+        {cs.map((c) => (
+          <details className="media-details media-drill" key={c.sheetRow}>
+            <summary>
+              {c.name}
+              <span className="media-drill-meta">
+                {c.channels.length} ערוצים · {fmtILS(c.spent)}
+              </span>
+            </summary>
+            <div className="media-tw">
+              <ChannelTable rows={c.channels} />
+            </div>
+          </details>
+        ))}
+      </div>
 
       <h4 className="media-block-title">ערוצים</h4>
+      <div className="media-tw">
       <table className="media-table">
         <thead>
           <tr>
@@ -499,6 +523,7 @@ export default async function MediaCampaignsCard({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

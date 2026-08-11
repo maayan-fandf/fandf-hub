@@ -27807,14 +27807,20 @@ html[data-theme="dark"] {
 }
 
 /* Tables scroll inside their own box — the channel table is 11 columns
-   and the rail column is narrow on a laptop. */
+   and the rail column is narrow on a laptop.
+   The scroll container has to be a WRAPPER, not the table: `display:
+   block` on a <table> turns it into a block box whose `width: 100%`
+   sizes the box, while the table content inside falls back to an
+   anonymous shrink-to-fit table. That's what left the rows sitting at
+   content width with dead space beside them. */
+.media-tw {
+  overflow-x: auto;
+}
 .media-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
-  display: block;
-  overflow-x: auto;
   white-space: nowrap;
 }
 .media-table th,
@@ -28028,4 +28034,43 @@ html[data-theme="dark"] {
 @media (max-width: 620px) {
   .media-cal-name { width: 78px; font-size: 0.68rem; }
   .media-cal-spend { display: none; }
+}
+
+/* Route back to the source workbook, now that the intro prose that used
+   to carry it is gone. Sits at the end of the calendar's heading row. */
+.media-source-link {
+  margin-inline-start: auto;
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+/* Per-campaign channel breakdowns. A sibling list rather than rows in the
+   campaigns table: nesting the 11-column channel table inside a cell hands
+   that cell its own max-content width and drags the parent table wider than
+   the rail, and containment on the inner wrapper can't cut it off. */
+.media-drills {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.media-drill {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+}
+.media-drill > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+.media-drill-meta {
+  margin-inline-start: auto;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.media-drill[open] {
+  background: color-mix(in srgb, var(--border) 14%, transparent);
 }
