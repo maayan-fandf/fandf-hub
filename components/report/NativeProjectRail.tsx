@@ -94,7 +94,18 @@ export default async function NativeProjectRail({
         () => ({}) as Awaited<ReturnType<typeof listAlertDismissals>>,
       ),
       effectiveCanEdit
-        ? getProjectAdLinks(projectName).catch(() => null)
+        ? getProjectAdLinks(projectName).catch((e) => {
+            // Swallowing this silently is exactly how the ערוצים quick-links
+            // (דוח ביצועים / Google Ads / Facebook Ads) disappear with no
+            // trace: every other part of the tab still renders, so nothing
+            // reads as broken and the row just isn't there. Log it so the
+            // next disappearance is diagnosable from the server output.
+            console.error(
+              `[NativeProjectRail] projectAdLinks failed for "${projectName}" — quick-links row will be hidden:`,
+              e instanceof Error ? e.message : String(e),
+            );
+            return null;
+          })
         : Promise.resolve(null),
     ]);
     data = d;

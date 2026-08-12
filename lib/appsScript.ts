@@ -1535,10 +1535,59 @@ export type ProjectAdLinks = {
   sheetTabUrl?: string;
 };
 
+const getProjectAdLinksCached = unstable_cache(
+  async (email: string, project: string): Promise<ProjectAdLinks> =>
+    callApiAs<ProjectAdLinks>(email, "projectAdLinks", { project }),
+  ["projectAdLinks"],
+  { revalidate: 300, tags: ["project-ad-links"] },
+);
+
+/** Last successful payload per (user, project), per server instance. Same
+ *  defence as `_lastAvailableMonths` on the project page: the links are
+ *  slow-changing (a Keys account name + a sheet hyperlink), so replaying the
+ *  previous answer across a transient Apps Script blip is safe and strictly
+ *  better than the alternative. */
+const _lastGoodAdLinks = new Map<string, ProjectAdLinks>();
+
+/**
+ * Cached + blip-tolerant, because the consumer degrades INVISIBLY. When this
+ * call fails, NativeProjectRail catches it and the ערוצים tab simply renders
+ * without its quick-links row (דוח ביצועים / Google Ads / Facebook Ads) —
+ * everything else on the tab is fine, so nothing reads as broken and the
+ * buttons just aren't there. Maayan hit exactly that on מרום ראשון
+ * (2026-08-12); the action itself measured healthy at 5-12s against a 45s
+ * budget, so the trigger is a transient failure, not a slow backend.
+ *
+ * Two layers: a 5-minute cache keyed by (user, project) — the Google URL
+ * carries a per-user `authuser`, so the email HAS to be in the key — cuts the
+ * number of live calls from one-per-render to one-per-5-min, and the last-good
+ * map covers a failure that lands on a cache miss.
+ */
 export async function getProjectAdLinks(
   project: string,
 ): Promise<ProjectAdLinks> {
-  return callApi<ProjectAdLinks>("projectAdLinks", { project });
+  const user = await currentUserEmail();
+  const key = `${user}|${project}`;
+  try {
+    const links = await getProjectAdLinksCached(user, project);
+    // Only remember a payload that actually carries a link. An all-empty
+    // result is a legitimate answer ("no FB/Google account in Keys"), but it
+    // is not worth replaying over a later failure.
+    if (links && (links.gAdsUrl || links.fbAdsUrl || links.sheetTabUrl)) {
+      _lastGoodAdLinks.set(key, links);
+    }
+    return links;
+  } catch (e) {
+    const last = _lastGoodAdLinks.get(key);
+    if (last) {
+      console.warn(
+        `[appsScript] projectAdLinks failed for "${project}" — serving last-good links:`,
+        e instanceof Error ? e.message : String(e),
+      );
+      return last;
+    }
+    throw e;
+  }
 }
 
 /** One entry per project in the bulk ad-links payload — keyed by BOTH the
