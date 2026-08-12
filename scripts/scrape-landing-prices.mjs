@@ -254,6 +254,26 @@ const browser = await puppeteer.launch({
   args: ["--no-sandbox", "--disable-setuid-sandbox", "--lang=he-IL"],
 });
 
+/**
+ * A Keys landing cell can legitimately hold SEVERAL urls. Essence carries
+ *   "https://essence.shbn.co.il/, https://landing.shbn.co.il/essence"
+ * and the whole string used to go straight into page.goto(), so the read
+ * died on the first host — whose TLS cert genuinely doesn't cover it
+ * (ERR_TLS_CERT_ALTNAME_INVALID) — and never reached the second, which
+ * serves the price fine (₪4,355,000, matching the project's Facebook copy).
+ * The project simply read "לא זוהה מחיר" on the hub. (Maayan, 2026-08-12.)
+ *
+ * Split on whitespace/commas and keep anything that looks like an http url.
+ * Checked against all 45 rows of LANDING_PRICES: 44 yield exactly one
+ * candidate (query strings and all), Essence yields two.
+ */
+function landingCandidates(cell) {
+  return String(cell ?? "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => /^https?:\/\/\S+$/i.test(s));
+}
+
 // Shared per-URL fetch+extract — used for both the project's landing
 // page AND its (optional) Yad2 listing. Returns { headline, all, status,
 // notes, pageType } so the caller can keep them in separate columns of
@@ -261,7 +281,7 @@ const browser = await puppeteer.launch({
 // startingPrice() Yad2 rule (return null when no anchored price — see
 // classifyYad2Page docs in lib/priceExtractor.ts), and pageType records
 // sponsored/organic/unknown for the LANDING_PRICES schema.
-async function scrapeOne(url, label) {
+async function scrapeUrl(url, label) {
   const out = {
     headline: "",
     all: "",
@@ -344,6 +364,44 @@ async function scrapeOne(url, label) {
   return out;
 }
 
+/**
+ * Try every url in the cell, in order, and keep the first that actually
+ * reads. A dead first url (bad cert, retired host, typo) no longer costs the
+ * project its whole price surface. When more than one candidate exists the
+ * note records which one was used, or — if they all failed — what each one
+ * did, so the sheet says why rather than just "no price".
+ *
+ * `organic-no-anchor` counts as a successful read: the page WAS fetched and
+ * classified, there is simply no headline anchor to compare (see
+ * classifyYad2Page). Retrying the next url would not improve on that.
+ */
+async function scrapeOne(cell, label) {
+  const urls = landingCandidates(cell);
+  if (!urls.length) {
+    return { headline: "", all: "", allJson: "[]", status: "skipped", notes: "", pageType: "", usedUrl: "" };
+  }
+  const attempts = [];
+  let last = null;
+  for (const url of urls) {
+    const r = await scrapeUrl(url, label);
+    r.usedUrl = url;
+    if (r.status === "ok" || r.status === "organic-no-anchor") {
+      if (urls.length > 1) {
+        r.notes = [`${label}: used ${url} (${urls.length} urls in Keys: ${cell})`, r.notes]
+          .filter(Boolean)
+          .join(" | ");
+      }
+      return r;
+    }
+    attempts.push(`${url} → ${r.status}`);
+    last = r;
+  }
+  if (urls.length > 1 && last) {
+    last.notes = `${label}: all ${urls.length} urls failed — ${attempts.join("; ")} | ${last.notes}`.slice(0, 480);
+  }
+  return last;
+}
+
 const rows = [];
 for (const p of projects) {
   const startedAt = Date.now();
@@ -358,7 +416,12 @@ for (const p of projects) {
   const row = {
     slug: p.slug,
     project: p.project,
-    landing_url: p.landing,
+    // The url this row's prices actually came FROM, not the raw Keys cell.
+    // Identical for the 64 of 65 cells that hold a single url; for a
+    // multi-url cell it's the one that read, which is also what the project
+    // page's "פתח דף נחיתה" link uses — that link was rendering the whole
+    // comma-joined string and going nowhere. Full cell kept in `notes`.
+    landing_url: landing.usedUrl || p.landing,
     headline_price: landing.headline,
     all_prices: landing.all,
     all_prices_json: landing.allJson,
