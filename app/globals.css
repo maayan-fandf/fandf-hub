@@ -9415,62 +9415,60 @@ html[data-theme="dark"] .price-check-card-outlier.price-check-card-min {
   background-clip: padding-box;
 }
 
-/* Auto-apply the themed scrollbar to high-traffic scrollable
-   surfaces that don't add the utility class explicitly. Saves
-   touching dozens of components for a purely visual concern;
-   anything new can still opt-in via `.themed-scrollbar`. The
-   selector list is intentionally short — only user-visible chrome
-   like popovers, dropdowns, agenda rail, and command palette. */
-.mention-dropdown,
-.projects-nav-projects,
-.assignee-grid,
-.palette-results,
-.nav-gmail-tasks-popover,
-.agenda-panel,
-.tasks-company-dropdown-list {
+/* PROJECT-WIDE DEFAULT — every scrolling surface gets the themed bar.
+   This replaces the hand-maintained allowlist that used to sit here
+   (.mention-dropdown, .palette-results, .agenda-panel, …). The allowlist
+   kept missing things: whoever added a new popover had to remember to
+   append its class, and a default you have to remember isn't a default —
+   the report channel-filter panel shipped with the raw OS scrollbar for
+   exactly that reason.
+
+   `*` carries ZERO specificity, so every container that deliberately
+   wants something else still wins on its own class selector without any
+   `!important` — `.stats-tabs` keeps its hidden bar, `.sms-filter-list`
+   keeps its indigo thumb. The per-component blocks elsewhere in this
+   file (.chat-message-list, .tasks-table-wrap, .kanban-*, .combobox-panel,
+   .forecast-*) now merely restate this and are kept only because a few of
+   them add extras on top.
+
+   `scrollbar-color` inherits, `scrollbar-width` does not — hence `*`
+   rather than styling `html` alone. Chrome ≥121 / Firefox / Safari ≥18.2
+   honour the two standard properties and then IGNORE ::-webkit-scrollbar;
+   the webkit block below is what older Safari and Chrome fall back to.
+   Both paths are tuned to the same 8px / var(--border) look.
+
+   This includes the page-level scrollbar (`*` matches `html`), so the
+   main document bar is thin too — intentional, for consistency. */
+* {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
-.mention-dropdown::-webkit-scrollbar,
-.projects-nav-projects::-webkit-scrollbar,
-.assignee-grid::-webkit-scrollbar,
-.palette-results::-webkit-scrollbar,
-.nav-gmail-tasks-popover::-webkit-scrollbar,
-.agenda-panel::-webkit-scrollbar,
-.tasks-company-dropdown-list::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-.mention-dropdown::-webkit-scrollbar-track,
-.projects-nav-projects::-webkit-scrollbar-track,
-.assignee-grid::-webkit-scrollbar-track,
-.palette-results::-webkit-scrollbar-track,
-.nav-gmail-tasks-popover::-webkit-scrollbar-track,
-.agenda-panel::-webkit-scrollbar-track,
-.tasks-company-dropdown-list::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
-.mention-dropdown::-webkit-scrollbar-thumb,
-.projects-nav-projects::-webkit-scrollbar-thumb,
-.assignee-grid::-webkit-scrollbar-thumb,
-.palette-results::-webkit-scrollbar-thumb,
-.nav-gmail-tasks-popover::-webkit-scrollbar-thumb,
-.agenda-panel::-webkit-scrollbar-thumb,
-.tasks-company-dropdown-list::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-.mention-dropdown::-webkit-scrollbar-thumb:hover,
-.projects-nav-projects::-webkit-scrollbar-thumb:hover,
-.assignee-grid::-webkit-scrollbar-thumb:hover,
-.palette-results::-webkit-scrollbar-thumb:hover,
-.nav-gmail-tasks-popover::-webkit-scrollbar-thumb:hover,
-.agenda-panel::-webkit-scrollbar-thumb:hover,
-.tasks-company-dropdown-list::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: var(--muted, var(--border));
   background-clip: padding-box;
+}
+/* Old-webkit only: kill the stepper arrows and the dead square where a
+   vertical and a horizontal bar meet, both of which read as "OS chrome"
+   next to a rounded thumb. The standard properties have no equivalent
+   because they never draw either. */
+*::-webkit-scrollbar-button {
+  display: none;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ─── View-as banner ──────────────────────────────────────────────
