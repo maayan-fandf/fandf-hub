@@ -25885,11 +25885,15 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   color: var(--ink-soft);
 }
 /* Google RSA assets */
+/* Masonry-by-columns, not grid. A campaign card's height depends on how many
+   ads and headlines it holds — one campaign with 2 ads stands several times
+   taller than one with a single ad — and a row-based grid has to leave the
+   short cell's remainder empty, which showed as large holes down the block.
+   CSS columns pack the next card straight into the gap instead. `columns`
+   keeps the same ~420px minimum the grid had. */
 .rpt-cr-gcamps {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
-  gap: 0.8rem;
-  align-items: start;
+  columns: 420px 2;
+  column-gap: 0.8rem;
 }
 .rpt-cr-gcamp {
   border: 1px solid var(--border-soft);
@@ -25899,6 +25903,10 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* Cards must not be split down the middle by a column break. */
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin-bottom: 0.8rem;
 }
 .rpt-cr-gcamp-head {
   display: flex;

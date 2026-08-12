@@ -1062,21 +1062,50 @@ function aggregateCreatives(
   // creatives never fold together. Per-asset metrics ARE summed across the
   // merged ads — different ad groups mean different impressions, so unlike
   // summing WITHIN an ad this doesn't double-count.
-  const sigOf = (ad: DgDraft) =>
-    [
-      ad.campaign,
-      [...ad.images.map((i) => i.imageUrl || i.videoUrl)].sort().join(","),
-      [...ad.copy.map((c) => `${c.fieldType}:${c.text}`)].sort().join(","),
-    ].join("||");
+  // Matching on the EXACT asset set wasn't enough. Ad groups routinely run the
+  // same creative with an image or two added or dropped — ahuzat-afridar's
+  // "Rm"/"חיפשו" ads carry 15 images and its "55+" ad carries 14 of the same
+  // ones, which rendered as two nearly identical cards.
+  //
+  // Overlap is what separates them, and the data leaves a wide gap to cut in.
+  // Across every pair of ads inside one campaign: 110 pairs identical, 24 pairs
+  // between 0.6 and 0.99 (all of them the same creative re-targeted), only 3
+  // between 0.3 and 0.59, and 132 below 0.3 — genuinely different creatives.
+  // 0.6 sits in near-empty space, so it catches all the duplicates without
+  // being able to reach the distinct ones.
+  const MERGE_OVERLAP = 0.6;
+  const keysOf = (ad: DgDraft) =>
+    new Set(ad.images.map((i) => i.imageUrl || i.videoUrl));
+  const overlap = (a: Set<string>, b: Set<string>) => {
+    if (!a.size || !b.size) return 0;
+    let inter = 0;
+    for (const x of a) if (b.has(x)) inter++;
+    return inter / (a.size + b.size - inter);
+  };
 
   const merged = new Map<string, DgDraft>();
+  const groupKeys = new Map<string, Set<string>>();
   for (const ad of dgAdAgg.values()) {
-    const sig = sigOf(ad);
-    const cur = merged.get(sig);
-    if (!cur) {
-      merged.set(sig, ad);
+    const mine2 = keysOf(ad);
+    // First group in the same campaign that this creative substantially shares
+    // its images with. Greedy rather than exhaustive clustering — with a handful
+    // of ads per campaign the difference never shows.
+    let sig: string | undefined;
+    for (const [k, g] of merged) {
+      if (g.campaign !== ad.campaign) continue;
+      if (overlap(mine2, groupKeys.get(k)!) >= MERGE_OVERLAP) {
+        sig = k;
+        break;
+      }
+    }
+    if (sig === undefined) {
+      const k = `${ad.campaign}||${ad.adIds.join(",") || ad.adGroups.join(",")}`;
+      merged.set(k, ad);
+      groupKeys.set(k, mine2);
       continue;
     }
+    const cur = merged.get(sig)!;
+    for (const x of mine2) groupKeys.get(sig)!.add(x);
     for (const g of ad.adGroups) if (!cur.adGroups.includes(g)) cur.adGroups.push(g);
     for (const id of ad.adIds) if (!cur.adIds.includes(id)) cur.adIds.push(id);
     if (cur.status !== ad.status) cur.status = "mixed";
