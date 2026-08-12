@@ -47,6 +47,42 @@ function FbAdImage({ ad }: { ad: ReportFbAd }) {
   );
 }
 
+/** Meta ad-preview links (`כל מודעות פפיסבוק`, 365-day window — the assets
+ *  tab only reaches 60, so most cards showing 📷 אין תצוגה still have one).
+ *
+ *  No role check here on purpose: `previews` is stripped from the payload for
+ *  client viewers in NativeProjectRail, so the field being present IS the
+ *  permission. The link needs a Business Manager session on the ad account to
+ *  resolve — a client would land on a Facebook error page.
+ *
+ *  One row per creative, so an ad name fronting several creatives gets one
+ *  link each: the card shows a single ad name but Meta ran more than one
+ *  image behind it. */
+function AdPreviewLinks({ previews }: { previews?: string[] }) {
+  if (!previews?.length) return null;
+  const single = previews.length === 1;
+  return (
+    <div className="rpt-cr-previews">
+      {previews.map((url, i) => (
+        <a
+          key={url}
+          className="rpt-cr-preview"
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={
+            single
+              ? "פתיחת תצוגת המודעה בפייסבוק (דורש חיבור ל-Business Manager)"
+              : `גרסה ${i + 1} מתוך ${previews.length} שרצו תחת שם המודעה הזה`
+          }
+        >
+          👁 {single ? "צפה במודעה" : `גרסה ${i + 1}`}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 /** Hover trendline (legacy _buildAdTrendlinePopover_): dense calendar
  *  days over the report window clamped to the last date with data; two
  *  sparklines — cost #14b8a6, leads #8b5cf6. */
@@ -266,6 +302,7 @@ export default function ReportCreativesTab({
                         {status.label}
                       </span>
                     )}
+                    <AdPreviewLinks previews={a.previews} />
                   </div>
                   <div className="rpt-cr-body">
                     <div className="rpt-cr-name" title={a.ad}>

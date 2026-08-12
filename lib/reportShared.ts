@@ -1035,6 +1035,20 @@ export type ReportFbAd = {
    *  from the payload for clients in NativeProjectRail. null when the ad has
    *  nothing to add beyond what the card face already shows. */
   history?: ReportAdHistory | null;
+  /** Meta ad-preview links from `כל מודעות פפיסבוק`, one per creative behind
+   *  this ad name (six Digitel ad names carry 2–3). Reaches back 365 days,
+   *  where the assets tab only reaches 60 — so most cards that render
+   *  📷 אין תצוגה still have a working link here.
+   *
+   *  INTERNAL ONLY, and for a harder reason than `history`: the URL only
+   *  resolves for a viewer holding a Business Manager session on the ad
+   *  account. A client would get a Facebook error page, so the link must
+   *  never reach them (stripped in NativeProjectRail).
+   *
+   *  The `d=` token is reminted by every Supermetrics refresh of that tab, so
+   *  a link cached longer than the refresh interval will 400. Don't persist
+   *  these anywhere. */
+  previews?: string[];
 };
 
 /** One month of an ad's life. cost/leads come from the ad-metrics tab

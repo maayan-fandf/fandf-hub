@@ -144,6 +144,11 @@ export default async function NativeProjectRail({
   // PAYLOAD, not just from the CSS — otherwise the numbers sit in the RSC
   // flight payload and in view-source for every client. The .rpt-clientview
   // display:none entry is defence in depth, not the gate.
+  //
+  // `previews` rides along for a stronger reason than tidiness: a Meta
+  // ad-preview link only resolves for a viewer holding a Business Manager
+  // session on that ad account, so to a client it is a link to a Facebook
+  // error page. Never ship it to one.
   if (clientView && data?.creatives) {
     data = {
       ...data,
@@ -151,7 +156,11 @@ export default async function NativeProjectRail({
         ...data.creatives,
         fb: {
           ...data.creatives.fb,
-          topAds: data.creatives.fb.topAds.map((a) => ({ ...a, history: null })),
+          topAds: data.creatives.fb.topAds.map((a) => ({
+            ...a,
+            history: null,
+            previews: undefined,
+          })),
         },
       },
     };

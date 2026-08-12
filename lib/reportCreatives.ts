@@ -190,6 +190,11 @@ type ProjectCreativeRaw = {
   }[];
   /** (campaign|ad).lc → assets, first-row-wins, project-matched. */
   fbAssets: Record<string, FbAssetRec>;
+  /** (campaign|ad).lc → Meta ad-preview links, ALL of them rather than
+   *  first-row-wins: that tab carries one row per creative, so an ad name
+   *  fronting several creatives yields several links and the card can offer
+   *  each. Project-matched. */
+  fbPreviews: Record<string, string[]>;
   /** Facebook-adsets rows (SSOT for the FB cost/leads KPIs). */
   fbAdSets: {
     date: string;
@@ -241,6 +246,7 @@ async function fetchProjectCreativeRaw(
   const out: ProjectCreativeRaw = {
     fbAds: [],
     fbAssets: {},
+    fbPreviews: {},
     fbAdSets: [],
     gKeywords: [],
     gAds: [],
@@ -271,13 +277,44 @@ async function fetchProjectCreativeRaw(
       // Clicks / Cost / Conversions past N and made every figure read 0 while
       // the text and CTA (columns I-N) still showed. Read wide.
       "'discovery'!A1:Z",
+      // Ad-preview links. Its own query runs a 365-day window against the
+      // assets tab's 60, so it is the only place a creative older than two
+      // months can still be looked at — hence reading a second FB tab whose
+      // other four columns duplicate what we already have.
+      "'כל מודעות פפיסבוק'!A1:F",
     ],
     valueRenderOption: "UNFORMATTED_VALUE",
     dateTimeRenderOption: "FORMATTED_STRING",
   });
-  const [vMetrics, vAssets, vAdsets, vKw, vGAds, vDiscovery] = (
+  const [vMetrics, vAssets, vAdsets, vKw, vGAds, vDiscovery, vPreviews] = (
     bg.data.valueRanges ?? []
   ).map((r) => (r?.values ?? []) as unknown[][]);
+
+  // כל מודעות פפיסבוק → (campaign|ad).lc → [preview URL, …].
+  if (vPreviews.length > 1) {
+    const h = vPreviews[0].map(clean);
+    const iCamp = findCol(h, ["Campaign name"]);
+    const iAd = findCol(h, ["Ad name"]);
+    const iUrl = findCol(h, [
+      "Ad preview URL: mobile feed",
+      "Ad preview URL",
+      "Mobile feed preview URL",
+    ]);
+    if (iCamp >= 0 && iAd >= 0 && iUrl >= 0) {
+      for (let r = 1; r < vPreviews.length; r++) {
+        const row = vPreviews[r];
+        const camp = String(row[iCamp] ?? "").trim();
+        const ad = adNameOf(row[iAd]);
+        const url = String(row[iUrl] ?? "").trim();
+        if (!camp || !ad || !url.startsWith("http") || !mine(camp)) continue;
+        const k = `${camp}|${normCardName(ad)}`.toLowerCase();
+        const list = (out.fbPreviews[k] ??= []);
+        // The tab repeats a row per adset, so the same creative shows up more
+        // than once — dedupe on the URL itself, not on position.
+        if (!list.includes(url)) list.push(url);
+      }
+    }
+  }
 
   // facebook-ads-assets links → (campaign|ad).lc lookup, first row wins.
   if (vAssets.length > 1) {
@@ -900,6 +937,9 @@ function aggregateCreatives(
       // stay the real fbcdn thumbnail for the onError fallback).
       thumb: assets?.thumb ?? "",
       image: assets?.image ?? "",
+      // Omitted rather than [] when there's nothing — an empty array per ad
+      // is dead weight in the flight payload, and the card tests truthiness.
+      previews: raw.fbPreviews[k]?.length ? raw.fbPreviews[k] : undefined,
       impressions: a.impressions,
       clicks: a.clicks,
       cost: a.cost,

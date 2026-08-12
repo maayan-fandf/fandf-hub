@@ -24606,6 +24606,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-ch-dot,                     /* campaign live/paused/mixed dots */
 .rpt-clientview .rpt-ch-diverge,                 /* CRM-vs-pixel ⚠️ (also stripped server-side) */
 .rpt-clientview .rpt-cr-hist-btn,                /* per-ad history hover (also stripped server-side) */
+.rpt-clientview .rpt-cr-previews,                /* Meta ad-preview links — need a Business Manager session (also stripped server-side) */
 .rpt-clientview .rpt-pace-mark,                  /* ✓טיפלתי handled mark */
 .rpt-clientview .rpt-pace-alert,                 /* pacing gap ⚠️ */
 .rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
@@ -25711,6 +25712,46 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-cr-status.is-deleted,
 .rpt-cr-status.is-issue {
   color: #dc2626;
+}
+/* Meta ad-preview links, bottom-start — the opposite corner from the status
+   pill so the two never collide on a narrow card. */
+.rpt-cr-previews {
+  position: absolute;
+  bottom: 0.35rem;
+  inset-inline-start: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  /* Leave the status pill its corner. */
+  max-width: calc(100% - 5rem);
+}
+/* `.rpt-cr-thumb a` above makes every anchor in the thumb an absolute,
+   full-bleed overlay (that rule exists for the landing-page wrapper). These
+   anchors have to opt back out of it or they'd cover the creative. */
+.rpt-cr-thumb .rpt-cr-preview {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--border-soft);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.rpt-cr-thumb .rpt-cr-preview:hover,
+.rpt-cr-thumb .rpt-cr-preview:focus-visible {
+  background: var(--surface);
+  border-color: var(--border);
 }
 .rpt-cr-body {
   display: flex;
