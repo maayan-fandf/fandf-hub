@@ -264,7 +264,13 @@ async function fetchProjectCreativeRaw(
       // space (the legacy getSheetByNameLoose_ absorbed it silently).
       "'גוגל '!A1:AZ",
       // Demand Gen assets. Joins the same batchGet rather than a second read.
-      "'discovery'!A1:N",
+      // A1:Z, NOT the exact current width: this query gets fields added to it
+      // from the Supermetrics side, and a range pinned to today's last column
+      // silently truncates the moment that happens. It did — the range was
+      // A1:N while the query grew to 20 columns, which pushed Impressions /
+      // Clicks / Cost / Conversions past N and made every figure read 0 while
+      // the text and CTA (columns I-N) still showed. Read wide.
+      "'discovery'!A1:Z",
     ],
     valueRenderOption: "UNFORMATTED_VALUE",
     dateTimeRenderOption: "FORMATTED_STRING",
@@ -458,6 +464,7 @@ async function fetchProjectCreativeRaw(
   if (vDiscovery.length > 1) {
     const h = vDiscovery[0].map(clean);
     const iCamp = findCol(h, ["Campaign name"]);
+    const iChannel = findCol(h, ["Advertising channel type"]);
     const iCampStatus = findCol(h, ["Campaign status"]);
     const iAdGroup = findCol(h, ["Ad group name"]);
     const iAdId = findCol(h, ["Ad ID"]);
@@ -488,6 +495,18 @@ async function fetchProjectCreativeRaw(
         const row = vDiscovery[r];
         const camp = cell(row, iCamp);
         if (!mine(camp)) continue;
+        // Demand Gen only. AdGroupAdAssetView returns assets for EVERY Google
+        // ad type, and search RSAs are the bulk of it — 2,475 of the tab's
+        // 3,281 text rows. They already have their own block (GoogleAdsBlock,
+        // fed by the גוגל tab), so letting them in here duplicated search copy
+        // under a creatives heading. Prefer the channel-type column; fall back
+        // to the campaign-name convention when the column isn't there yet, so
+        // this holds between a code deploy and the next Supermetrics refresh.
+        const channel = cell(row, iChannel);
+        const isDemandGen = channel
+          ? /demand|discovery/i.test(channel)
+          : /discovery|demand/i.test(camp);
+        if (!isDemandGen) continue;
         const imageUrl = cell(row, iImg);
         // The stub "https://www.youtube.com/watch?v=" (no id) shows up on
         // non-video rows, so require a real id before calling it a video.
