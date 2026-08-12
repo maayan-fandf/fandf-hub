@@ -185,39 +185,65 @@ export default async function NativeProjectRail({
     });
   }
 
+  // A media-workbook client (דיגיתל שלי) reports from the media team's own
+  // sheet, and only part of its spend carries a campaign ID at all — so the
+  // platform-wide rollups would present a partial picture as if it were the
+  // headline. Those three sections are therefore dropped for these projects
+  // and the rail keeps just משימות והודעות / ביצועי מדיה / קמפיינים /
+  // פריסת מדיה. קמפיינים survives because the creative cards are the one
+  // platform view the workbook has no equivalent for.
+  const mediaLed = Boolean(mediaNode);
+
+  // Pushed ahead of the campaign sections so ביצועי מדיה leads the ביצועים
+  // group — sections render in push order within a group, and on these
+  // projects the workbook is the headline, not the platform data.
+  if (mediaNode) {
+    sections.push({
+      id: "media",
+      group: "perf",
+      label: "ביצועי מדיה",
+      icon: "📣",
+      content: mediaNode,
+    });
+  }
+
   if (data) {
-    sections.push({
-      id: "overview",
-      group: "perf",
-      label: "סקירת פעילות",
-      icon: "🧭",
-      content: (
-        <>
-          <ReportHeader data={data} />
-          <ReportOverviewTab data={data} />
-          {clarityNode}
-        </>
-      ),
-    });
-    sections.push({
-      id: "channels",
-      group: "perf",
-      label: "ערוצים",
-      icon: "📊",
-      content: (
-        <ReportChannelsTab
-          data={data}
-          pacingDismissals={pacingDismissals}
-          canEditBudget={effectiveCanEdit}
-          adLinks={adLinks}
-        />
-      ),
-    });
+    if (!mediaLed) {
+      sections.push({
+        id: "overview",
+        group: "perf",
+        label: "סקירת פעילות",
+        icon: "🧭",
+        content: (
+          <>
+            <ReportHeader data={data} />
+            <ReportOverviewTab data={data} />
+            {clarityNode}
+          </>
+        ),
+      });
+      sections.push({
+        id: "channels",
+        group: "perf",
+        label: "ערוצים",
+        icon: "📊",
+        content: (
+          <ReportChannelsTab
+            data={data}
+            pacingDismissals={pacingDismissals}
+            canEditBudget={effectiveCanEdit}
+            adLinks={adLinks}
+          />
+        ),
+      });
+    }
     sections.push({
       id: "campaigns",
       group: "perf",
       label: "קמפיינים",
-      icon: "📣",
+      // 🎨 rather than 📣 — ביצועי מדיה already owns 📣, and on a media-led
+      // project the two sit adjacent in the same group.
+      icon: mediaLed ? "🎨" : "📣",
       content: (
         <>
           <ReportCreativesTab data={data} />
@@ -225,13 +251,15 @@ export default async function NativeProjectRail({
         </>
       ),
     });
-    sections.push({
-      id: "trends",
-      group: "perf",
-      label: "מגמות",
-      icon: "📈",
-      content: <ReportTrendsTab data={data} />,
-    });
+    if (!mediaLed) {
+      sections.push({
+        id: "trends",
+        group: "perf",
+        label: "מגמות",
+        icon: "📈",
+        content: <ReportTrendsTab data={data} />,
+      });
+    }
   } else if (!mediaNode) {
     // No campaign-ID / report fetch failed — still give the section so the
     // rail isn't missing its spine; it explains the gap. Suppressed when a
@@ -251,15 +279,6 @@ export default async function NativeProjectRail({
     });
   }
 
-  if (mediaNode) {
-    sections.push({
-      id: "media",
-      group: "perf",
-      label: "ביצועי מדיה",
-      icon: "📣",
-      content: mediaNode,
-    });
-  }
   if (mediaPlanNode) {
     sections.push({
       id: "media-plan",
@@ -311,9 +330,16 @@ export default async function NativeProjectRail({
     <ProjectRailShell
       groups={groups}
       sections={sections}
-      // A media-workbook project has no "overview" section at all, so
-      // landing on it would show the rail's not-found fallback.
-      defaultSection={!data && mediaNode ? "media" : "overview"}
+      // A media-workbook project lands on its own workbook, always. The
+      // `!data` guard this replaces was written when such a project had no
+      // campaign ID and therefore no platform data — the media card was the
+      // only thing to land on. Give one a campaign ID (דיגיתל שלי, 2026-08-12)
+      // and `data` turns truthy, which silently demoted the media card to a
+      // nav click and dropped the client on a generic platform overview.
+      // For these projects the media team's hand-kept workbook IS the report;
+      // the platform sections are supplementary, so presence of `data` must
+      // not change where you land.
+      defaultSection={mediaNode ? "media" : "overview"}
       initialSection={initialSection}
       triage={triage}
     />
