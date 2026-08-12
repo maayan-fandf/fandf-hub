@@ -902,14 +902,23 @@ export default function ReportChannelsTab({
               // "google" + "Google-discovery"); otherwise a lone "google"
               // row keeps the combined all-google series.
               const gk = data.dailyGoogleByKind;
+              // `c.daily` is this row's OWN campaigns (matched by its סוג
+              // tokens — the same set `configuredDaily` sums), so prefer it
+              // whenever the server could build it. The google-by-kind split
+              // below was the narrow version of this fix and stays as the
+              // fallback for rows with no tokens to match on; facebook had no
+              // equivalent at all, which is why every facebook row showed the
+              // whole platform's spend under its own name.
               const trendSource =
-                c.platform === "google"
-                  ? gk && GOOGLE_DISCOVERY_LABEL_RE.test(c.channel)
-                    ? gk.discovery
-                    : gk && hasGoogleDiscovery
-                      ? gk.search
-                      : (data.daily?.google ?? [])
-                  : (data.daily?.facebook ?? []);
+                c.daily?.length
+                  ? c.daily
+                  : c.platform === "google"
+                    ? gk && GOOGLE_DISCOVERY_LABEL_RE.test(c.channel)
+                      ? gk.discovery
+                      : gk && hasGoogleDiscovery
+                        ? gk.search
+                        : (data.daily?.google ?? [])
+                    : (data.daily?.facebook ?? []);
               const trendDaily =
                 (c.platform === "google" || c.platform === "facebook") &&
                 c.spend > 0

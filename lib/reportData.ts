@@ -331,6 +331,55 @@ function lastDayOfMonth(yearMonth: string): string {
 }
 
 /**
+ * The row's סוג-קמפיין tokens — one set per sub-campaign, all of which must
+ * appear in a platform campaign's name for it to belong to this row. `+`/`-`
+ * stay inside tokens so "60+" won't substring-match "45-60".
+ *
+ * Shared by the configured-budget attribution and the per-row daily series
+ * BY DESIGN: the trend a row shows has to cover exactly the campaigns whose
+ * budget that row reports, or the popover and the קצב יומי cell would be
+ * describing different things.
+ */
+function campaignTokenSets(subs: { name: string }[]): string[][] {
+  return subs
+    .map((s) =>
+      s.name
+        .toLowerCase()
+        .split(/[^a-z0-9֐-׿+\-]+/)
+        .filter((t) => t.length >= 2),
+    )
+    .filter((ts) => ts.length);
+}
+
+/** Daily series for the platform rows whose campaign matches any token set —
+ *  i.e. this channel row's own campaigns. Null when nothing matched, so the
+ *  client can fall back to the platform series rather than draw an empty
+ *  chart. */
+function channelDailySeries(
+  platRows: RawDailyRow[],
+  tokenSets: string[][],
+): DailyPoint[] | undefined {
+  if (!tokenSets.length) return undefined;
+  const byDate = new Map<string, DailyPoint>();
+  let matched = 0;
+  for (const r of platRows) {
+    const nameLower = r.campaign.toLowerCase();
+    if (!tokenSets.some((ts) => ts.every((t) => nameLower.includes(t)))) continue;
+    matched++;
+    const p =
+      byDate.get(r.date) ??
+      { date: r.date, cost: 0, leads: 0, impressions: 0, clicks: 0 };
+    p.cost += r.cost;
+    p.leads += r.leads;
+    p.impressions += r.imp;
+    p.clicks += r.clk;
+    byDate.set(r.date, p);
+  }
+  if (!matched) return undefined;
+  return [...byDate.keys()].sort().map((k) => byDate.get(k)!);
+}
+
+/**
  * Enrich ALL CLIENTS channel rows into the ערוצים tab's rows. The
  * configured-daily attribution ports lib/budgetMaster's סוג-token loop
  * (tokens must ALL appear in the campaign name, platform-scoped;
@@ -346,6 +395,7 @@ function buildReportChannels(
   projCampaigns: CampaignBudgetItem[],
   avg7dByPlat: Record<string, number> | undefined,
   enrich: boolean,
+  platformRows: ProjectPlatformRows,
 ): ReportChannel[] {
   const platCount = new Map<string, number>();
   const plats = rows.map((r) => {
@@ -358,15 +408,17 @@ function buildReportChannels(
     const subs = r.subCampaigns ?? [];
     let configuredDaily: number | null = null;
     let campaignStatus: ReportChannel["campaignStatus"] = "none";
-    if (enrich && (platform === "google" || platform === "facebook")) {
-      const tokenSets = subs
-        .map((s) =>
-          s.name
-            .toLowerCase()
-            .split(/[^a-z0-9֐-׿+\-]+/)
-            .filter((t) => t.length >= 2),
+    const isAdPlatform = platform === "google" || platform === "facebook";
+    const tokenSets = isAdPlatform ? campaignTokenSets(subs) : [];
+    // Per-row trend series. Computed outside the `enrich` gate because the
+    // popover renders in month mode too, where enrichment is off.
+    const daily = isAdPlatform
+      ? channelDailySeries(
+          platformRows[platform as "google" | "facebook"],
+          tokenSets,
         )
-        .filter((ts) => ts.length);
+      : undefined;
+    if (enrich && isAdPlatform) {
       if (tokenSets.length) {
         let sum = 0;
         let activeCount = 0;
@@ -415,6 +467,7 @@ function buildReportChannels(
       configuredDaily,
       campaignStatus,
       avg7d,
+      daily,
     };
   });
 }
@@ -540,6 +593,7 @@ export const getProjectReportData = cache(
         campaigns,
         avg7dByPlat,
         mode === "live",
+        rows,
       );
     }
 

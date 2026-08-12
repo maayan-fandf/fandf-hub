@@ -133,6 +133,15 @@ export type ReportChannel = {
    *  when this row is its platform's ONLY channel (else the platform
    *  average would be meaningless per-row). */
   avg7d: number | null;
+  /** Daily series for THIS ROW's campaigns only — the same campaigns
+   *  `configuredDaily` sums, matched by the row's סוג tokens. Feeds the
+   *  ערוצים trend popover so it stops showing the whole platform on every
+   *  row of that platform (cazar's two facebook rows both reported the
+   *  platform's ₪6,921 / 15 leads while their own cells read ₪4,877/12 and
+   *  ₪2,044/0 — and the popover header prints the channel name, so it read
+   *  as that row's data). Undefined when the row has no tokens or nothing
+   *  matched; the client then falls back to the platform series. */
+  daily?: DailyPoint[];
 };
 
 export type ProjectReportData = {
