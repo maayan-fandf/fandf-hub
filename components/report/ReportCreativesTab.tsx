@@ -472,6 +472,23 @@ export default function ReportCreativesTab({
  * The per-asset figures are the real ones; the ad's own total lives in the
  * ערוצים tab.
  */
+/** Google's ad status → pill, mirroring fbStatusInfo. "mixed" appears when a
+ *  merged card's ads don't agree — e.g. the creative is live against one
+ *  audience and paused against another. */
+function dgStatusInfo(raw: string): {
+  label: string;
+  cls: string;
+  off: boolean;
+} {
+  const s = String(raw || "").toUpperCase().trim();
+  if (!s) return { label: "", cls: "", off: false };
+  if (s === "ENABLED") return { label: "🟢 פעילה", cls: "on", off: false };
+  if (s === "PAUSED") return { label: "⏸️ מושהית", cls: "off", off: true };
+  if (s === "REMOVED") return { label: "🗑️ הוסרה", cls: "off", off: true };
+  if (s === "MIXED") return { label: "◐ חלקית", cls: "mixed", off: false };
+  return { label: s, cls: "", off: false };
+}
+
 function GoogleDgBlock({
   ads,
 }: {
@@ -479,25 +496,64 @@ function GoogleDgBlock({
 }) {
   return (
     <>
+      {/* Not titled "Demand Gen": AdGroupAdAssetView returns assets for EVERY
+          Google ad type, so a search campaign shows up here too as a card with
+          19 headlines/descriptions and no images. The title says Google so the
+          search cards aren't read as mislabelled. */}
       <h3 className="rpt-cr-title">
-        🖼️ קריאייטיבים — Demand Gen
+        🖼️ נכסי קריאייטיב — Google
         <span className="rpt-cr-title-note">
           {" "}
           · 60 הימים האחרונים (לא לפי תקופת הדוח) · הנתונים הם לכל נכס בנפרד
         </span>
       </h3>
       <div className="rpt-cr-dgads">
-        {ads.map((ad) => (
-          <div key={ad.adId || `${ad.campaign}|${ad.adGroup}`} className="rpt-cr-dgad">
+        {ads.map((ad) => {
+          const st = dgStatusInfo(ad.status);
+          return (
+          <div
+            key={ad.adIds.join("+") || ad.campaign}
+            className={"rpt-cr-dgad" + (st.off ? " is-off" : "")}
+          >
             <div className="rpt-cr-dgad-head">
+              {st.label && (
+                <span
+                  className={`rpt-cr-dgstatus is-${st.cls}`}
+                  title={
+                    ad.adIds.length > 1
+                      ? `סטטוס של ${ad.adIds.length} המודעות המשתמשות בקריאייטיב הזה`
+                      : "סטטוס המודעה ב-Google Ads"
+                  }
+                >
+                  {st.label}
+                </span>
+              )}
               <span className="rpt-cr-dgad-camp" title={ad.campaign}>
                 {ad.campaign}
               </span>
               <span className="rpt-cr-dgad-meta">
-                {ad.adGroup ? `${ad.adGroup} · ` : ""}
                 {ad.images.length} תמונות · {ad.copy.length} טקסטים
               </span>
             </div>
+            {/* The same creative typically runs against several audiences.
+                They're merged into one card; this says which. */}
+            {ad.adGroups.length > 0 && (
+              <div
+                className="rpt-cr-dggroups"
+                title={ad.adGroups.join("\n")}
+              >
+                <span className="rpt-cr-dggroups-l">
+                  {ad.adGroups.length > 1
+                    ? `רץ ב-${ad.adGroups.length} קבוצות מודעות:`
+                    : "קבוצת מודעות:"}
+                </span>
+                {ad.adGroups.map((g) => (
+                  <span key={g} className="rpt-cr-dggroup">
+                    {g}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {ad.images.length > 0 && (
               <div className="rpt-cr-dgimgs">
@@ -575,7 +631,8 @@ function GoogleDgBlock({
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

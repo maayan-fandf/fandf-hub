@@ -1127,9 +1127,16 @@ export type ReportCreatives = {
  * asset report, so the card shows per-asset numbers only.
  */
 export type ReportGoogleDgAd = {
-  adId: string;
   campaign: string;
-  adGroup: string;
+  /** ENABLED / PAUSED / REMOVED, or "mixed" when merged ads disagree. */
+  status: string;
+  campaignStatus: string;
+  /** Ad groups this identical creative set runs in. Advertisers routinely
+   *  target several audiences with one set of assets, so this is normally
+   *  several — the card is merged and lists them rather than repeating the
+   *  same 25 images four times. */
+  adGroups: string[];
+  adIds: string[];
   images: ReportGoogleAsset[];
   copy: ReportGoogleCopy[];
   /** Largest single-asset cost in the ad. Used only to order the ads — a

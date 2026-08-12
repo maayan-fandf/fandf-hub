@@ -28262,3 +28262,49 @@ html[data-theme="dark"] {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Ad status pill + merged ad-group list on a Demand Gen card. */
+.rpt-cr-dgad.is-off {
+  opacity: 0.66;
+}
+.rpt-cr-dgstatus {
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--border) 30%, transparent);
+}
+.rpt-cr-dgstatus.is-on {
+  background: color-mix(in srgb, #16a34a 18%, transparent);
+  color: #15803d;
+}
+.rpt-cr-dgstatus.is-off {
+  background: color-mix(in srgb, #64748b 20%, transparent);
+  color: var(--muted);
+}
+.rpt-cr-dgstatus.is-mixed {
+  background: color-mix(in srgb, #f59e0b 20%, transparent);
+  color: #b45309;
+}
+.rpt-cr-dggroups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem;
+  margin: -0.2rem 0 0.5rem;
+  font-size: 0.7rem;
+}
+.rpt-cr-dggroups-l {
+  color: var(--muted);
+}
+.rpt-cr-dggroup {
+  border-radius: 6px;
+  padding: 0.05rem 0.4rem;
+  background: color-mix(in srgb, var(--border) 22%, transparent);
+  color: var(--ink-soft);
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

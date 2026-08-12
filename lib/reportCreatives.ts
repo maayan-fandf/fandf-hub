@@ -212,8 +212,10 @@ type ProjectCreativeRaw = {
    *  dimension either: the query is a rolling 60-day snapshot. */
   gAssets: {
     campaign: string;
+    campaignStatus: string;
     adGroup: string;
     adId: string;
+    adStatus: string;
     fieldType: string;
     assetType: string;
     name: string;
@@ -456,8 +458,10 @@ async function fetchProjectCreativeRaw(
   if (vDiscovery.length > 1) {
     const h = vDiscovery[0].map(clean);
     const iCamp = findCol(h, ["Campaign name"]);
+    const iCampStatus = findCol(h, ["Campaign status"]);
     const iAdGroup = findCol(h, ["Ad group name"]);
     const iAdId = findCol(h, ["Ad ID"]);
+    const iAdStatus = findCol(h, ["Ad status"]);
     const iField = findCol(h, ["Asset field type"]);
     const iType = findCol(h, ["Asset type"]);
     const iName = findCol(h, ["Asset name"]);
@@ -493,8 +497,10 @@ async function fetchProjectCreativeRaw(
         if (!imageUrl && !videoUrl && !text) continue;
         out.gAssets.push({
           campaign: camp,
+          campaignStatus: cell(row, iCampStatus),
           adGroup: cell(row, iAdGroup),
           adId: cell(row, iAdId),
+          adStatus: cell(row, iAdStatus),
           fieldType: cell(row, iField),
           assetType: cell(row, iType),
           name: cell(row, iName),
@@ -988,16 +994,21 @@ function aggregateCreatives(
     adsPerImage.set(a.imageUrl, s);
   }
 
-  const dgAdAgg = new Map<string, ReportGoogleDgAd>();
+  // Pass 1 — collect each ad's own assets, keyed by ad id.
+  type DgDraft = ReportGoogleDgAd & { adGroup: string };
+  const dgAdAgg = new Map<string, DgDraft>();
   for (const a of raw.gAssets) {
     const adKeyG = a.adId || `${a.campaign}|${a.adGroup}`;
     if (!adKeyG) continue;
     let ad = dgAdAgg.get(adKeyG);
     if (!ad) {
       ad = {
-        adId: a.adId,
         campaign: a.campaign,
+        campaignStatus: a.campaignStatus,
+        status: a.adStatus,
         adGroup: a.adGroup,
+        adGroups: a.adGroup ? [a.adGroup] : [],
+        adIds: a.adId ? [a.adId] : [],
         images: [],
         copy: [],
         topAssetCost: 0,
@@ -1033,10 +1044,68 @@ function aggregateCreatives(
       });
     }
   }
+
+  // Pass 2 — merge ads that are the SAME creative running against different
+  // audiences. On נתיבות four ad groups ("All users", "מחפשים דירה להשקעה",
+  // "חיפשו רייסדור", "Google-engaged audiences") carry an identical set of ~25
+  // images and 10 texts, which rendered as four near-identical cards.
+  //
+  // Signature is campaign + the exact asset set, so genuinely different
+  // creatives never fold together. Per-asset metrics ARE summed across the
+  // merged ads — different ad groups mean different impressions, so unlike
+  // summing WITHIN an ad this doesn't double-count.
+  const sigOf = (ad: DgDraft) =>
+    [
+      ad.campaign,
+      [...ad.images.map((i) => i.imageUrl || i.videoUrl)].sort().join(","),
+      [...ad.copy.map((c) => `${c.fieldType}:${c.text}`)].sort().join(","),
+    ].join("||");
+
+  const merged = new Map<string, DgDraft>();
+  for (const ad of dgAdAgg.values()) {
+    const sig = sigOf(ad);
+    const cur = merged.get(sig);
+    if (!cur) {
+      merged.set(sig, ad);
+      continue;
+    }
+    for (const g of ad.adGroups) if (!cur.adGroups.includes(g)) cur.adGroups.push(g);
+    for (const id of ad.adIds) if (!cur.adIds.includes(id)) cur.adIds.push(id);
+    if (cur.status !== ad.status) cur.status = "mixed";
+    if (ad.topAssetCost > cur.topAssetCost) cur.topAssetCost = ad.topAssetCost;
+    const addTo = <T extends { impressions: number; clicks: number; cost: number; conversions: number }>(
+      dst: T | undefined,
+      src: T,
+    ) => {
+      if (!dst) return false;
+      dst.impressions += src.impressions;
+      dst.clicks += src.clicks;
+      dst.cost += src.cost;
+      dst.conversions += src.conversions;
+      return true;
+    };
+    for (const im of ad.images) {
+      const key = im.imageUrl || im.videoUrl;
+      if (!addTo(cur.images.find((x) => (x.imageUrl || x.videoUrl) === key), im)) {
+        cur.images.push(im);
+      }
+    }
+    for (const c of ad.copy) {
+      if (!addTo(cur.copy.find((x) => x.fieldType === c.fieldType && x.text === c.text), c)) {
+        cur.copy.push(c);
+      }
+    }
+  }
+
   const COPY_ORDER = ["Headline", "Long headline", "Description", "Business name"];
-  const dgAds = [...dgAdAgg.values()]
+  const dgAds: ReportGoogleDgAd[] = [...merged.values()]
     .map((ad) => ({
-      ...ad,
+      campaign: ad.campaign,
+      campaignStatus: ad.campaignStatus,
+      status: ad.status,
+      adGroups: ad.adGroups,
+      adIds: ad.adIds,
+      topAssetCost: ad.topAssetCost,
       images: ad.images.sort((x, y) => y.cost - x.cost),
       copy: ad.copy.sort(
         (x, y) =>
@@ -1046,9 +1115,13 @@ function aggregateCreatives(
       ),
     }))
     .filter((ad) => ad.images.length || ad.copy.length)
-    // Ordered by the ad's biggest single asset — a lower bound on its spend.
-    // Summing its assets would overstate it (median 1.8x), so it isn't used.
-    .sort((x, y) => y.topAssetCost - x.topAssetCost)
+    // Live creatives first, then by the ad's biggest single asset — a lower
+    // bound on its spend. Summing its assets would overstate it (median 1.8x),
+    // so that total is never computed.
+    .sort((x, y) => {
+      const live = (s: string) => (/enabled|active/i.test(s) ? 0 : 1);
+      return live(x.status) - live(y.status) || y.topAssetCost - x.topAssetCost;
+    })
     .slice(0, TOP_GOOGLE_DG_ADS);
 
   // Google: window totals over ALL rows; keyword agg over named rows.
