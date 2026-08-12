@@ -28308,3 +28308,45 @@ html[data-theme="dark"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Paused Google creatives fold away by default — on a project with a long
+   history they outnumber the live ones and push them below the fold. */
+.rpt-cr-dgpaused {
+  margin-top: 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--border) 8%, transparent);
+}
+.rpt-cr-dgpaused > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rpt-cr-dgpaused > summary::-webkit-details-marker {
+  display: none;
+}
+.rpt-cr-dgpaused > summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+.rpt-cr-dgpaused[open] > summary::before {
+  content: "▾";
+}
+.rpt-cr-dgpaused-hint {
+  margin-inline-start: auto;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.rpt-cr-dgpaused[open] .rpt-cr-dgpaused-hint {
+  visibility: hidden;
+}
+.rpt-cr-dgpaused > .rpt-cr-dgads {
+  padding: 0 0.6rem 0.6rem;
+}

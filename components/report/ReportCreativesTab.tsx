@@ -494,6 +494,11 @@ function GoogleDgBlock({
 }: {
   ads: NonNullable<ProjectReportData["creatives"]>["google"]["dgAds"];
 }) {
+  // Paused creatives are reference material, not what you came to look at —
+  // on נתיבות four of six cards are paused and they pushed the live pair off
+  // the first screen. Live stays open, paused folds into one summary line.
+  const live = ads.filter((a) => !dgStatusInfo(a.status).off);
+  const paused = ads.filter((a) => dgStatusInfo(a.status).off);
   return (
     <>
       {/* Not titled "Demand Gen": AdGroupAdAssetView returns assets for EVERY
@@ -507,14 +512,38 @@ function GoogleDgBlock({
           · 60 הימים האחרונים (לא לפי תקופת הדוח) · הנתונים הם לכל נכס בנפרד
         </span>
       </h3>
-      <div className="rpt-cr-dgads">
-        {ads.map((ad) => {
-          const st = dgStatusInfo(ad.status);
-          return (
-          <div
-            key={ad.adIds.join("+") || ad.campaign}
-            className={"rpt-cr-dgad" + (st.off ? " is-off" : "")}
-          >
+      {live.length > 0 && (
+        <div className="rpt-cr-dgads">
+          {live.map((ad) => (
+            <DgAdCard key={ad.adIds.join("+") || ad.campaign} ad={ad} />
+          ))}
+        </div>
+      )}
+      {paused.length > 0 && (
+        <details className="rpt-cr-dgpaused">
+          <summary>
+            ⏸️ {paused.length} קריאייטיבים מושהים
+            <span className="rpt-cr-dgpaused-hint">לחצו להצגה</span>
+          </summary>
+          <div className="rpt-cr-dgads">
+            {paused.map((ad) => (
+              <DgAdCard key={ad.adIds.join("+") || ad.campaign} ad={ad} />
+            ))}
+          </div>
+        </details>
+      )}
+    </>
+  );
+}
+
+function DgAdCard({
+  ad,
+}: {
+  ad: NonNullable<ProjectReportData["creatives"]>["google"]["dgAds"][number];
+}) {
+  const st = dgStatusInfo(ad.status);
+  return (
+    <div className={"rpt-cr-dgad" + (st.off ? " is-off" : "")}>
             <div className="rpt-cr-dgad-head">
               {st.label && (
                 <span
@@ -556,7 +585,7 @@ function GoogleDgBlock({
             )}
 
             {ad.images.length > 0 && (
-              <div className="rpt-cr-dgimgs">
+              <div className="rpt-cr-dgimgs themed-scrollbar">
                 {ad.images.map((im, i) => (
                   <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
                     {im.imageUrl ? (
@@ -630,11 +659,7 @@ function GoogleDgBlock({
                 )}
               </div>
             )}
-          </div>
-          );
-        })}
-      </div>
-    </>
+    </div>
   );
 }
 
