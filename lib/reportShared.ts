@@ -1109,7 +1109,81 @@ export type ReportCreatives = {
     conversions: number;
     topKeywords: ReportKeyword[];
     ads: ReportGoogleAd[];
+    /** Demand Gen ads, each with the images and copy it is built from. Empty
+     *  when the project runs no Demand Gen campaigns. */
+    dgAds: ReportGoogleDgAd[];
   };
+};
+
+/**
+ * One Demand Gen ad and the assets it is assembled from — several images plus
+ * several headlines/descriptions, the way Google's own asset list shows it.
+ *
+ * There is deliberately NO ad-level cost/impressions here. Google reports
+ * metrics PER ASSET (verified: 28 distinct cost values across one ad's 30
+ * assets), and an impression is credited to every asset shown in it, so adding
+ * an ad's rows up overstates its spend — median 1.8x across the portfolio,
+ * worst case 6x. The honest ad-level figure would need the Ad report, not the
+ * asset report, so the card shows per-asset numbers only.
+ */
+export type ReportGoogleDgAd = {
+  adId: string;
+  campaign: string;
+  adGroup: string;
+  images: ReportGoogleAsset[];
+  copy: ReportGoogleCopy[];
+  /** Largest single-asset cost in the ad. Used only to order the ads — a
+   *  lower bound on the ad's spend, never displayed as its total. */
+  topAssetCost: number;
+};
+
+/**
+ * One Demand Gen creative asset, de-duplicated across the ad groups and ads it
+ * appears in. Google links the same uploaded image to many ads, so the raw tab
+ * carries a row per (ad, asset); the numbers here are that asset's totals.
+ *
+ * NB the source query has no Date dimension — it is a rolling 60-day snapshot,
+ * NOT the report window the FB cards obey. The block says so in its subtitle;
+ * don't silently compare these against window-scoped figures.
+ */
+export type ReportGoogleAsset = {
+  /** tpc.googlesyndication.com URL. Verified hotlinkable — plain <img src>. */
+  imageUrl: string;
+  /** youtube.com/watch?v=… for video assets; "" for images. */
+  videoUrl: string;
+  /** Uploaded filename when Google has one ("לוגו-צרפתי_1:1.jpg"). Often "". */
+  name: string;
+  /** "Marketing image" / "Square marketing image" / "Logo" / … A `Logo` row IS
+   *  the ad's business image. */
+  fieldType: string;
+  /** Google's own rating. Mostly "Pending information" — 1,357 of 1,511 rows
+   *  at the time of writing — so it is displayed but never sorted on. */
+  performance: string;
+  /** CTA shown with this asset, where Google reports one. */
+  cta: string;
+  /** Per-asset landing page. */
+  finalUrl: string;
+  /** How many OTHER ads in this project reuse the same image. 152 of the 323
+   *  distinct images run in more than one ad, so this is common enough to be
+   *  worth saying on the card. 0 = unique to this ad. */
+  sharedWith: number;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+};
+
+/** A text asset — headline, long headline, description or business name —
+ *  with the numbers Google attributes to it. `fieldType` distinguishes them;
+ *  the copy itself all arrives through one `assetTextText` field. */
+export type ReportGoogleCopy = {
+  fieldType: string;
+  text: string;
+  performance: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
 };
 
 /** Legacy `fbStatusInfo` (Index.html:3597) — FB ad status → pill. */

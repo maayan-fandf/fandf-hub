@@ -422,6 +422,8 @@ export default function ReportCreativesTab({
         activeAds={googleActiveAds}
       />
 
+      {google.dgAds.length > 0 && <GoogleDgBlock ads={google.dgAds} />}
+
       {google.ads.length > 0 && <GoogleAdsBlock ads={google.ads} />}
 
       {google.topKeywords.length > 0 && (
@@ -456,6 +458,126 @@ export default function ReportCreativesTab({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Demand Gen creatives, grouped the way Google's own asset list shows them:
+ * ONE AD is assembled from several images plus several headlines and
+ * descriptions, and Google scores each asset separately.
+ *
+ * No ad-level total is printed. Metrics here are per asset, and an impression
+ * is credited to every asset shown in it, so adding an ad's rows up overstates
+ * its spend — measured at a median 1.8x across the portfolio, worst case 6x.
+ * The per-asset figures are the real ones; the ad's own total lives in the
+ * ערוצים tab.
+ */
+function GoogleDgBlock({
+  ads,
+}: {
+  ads: NonNullable<ProjectReportData["creatives"]>["google"]["dgAds"];
+}) {
+  return (
+    <>
+      <h3 className="rpt-cr-title">
+        🖼️ קריאייטיבים — Demand Gen
+        <span className="rpt-cr-title-note">
+          {" "}
+          · 60 הימים האחרונים (לא לפי תקופת הדוח) · הנתונים הם לכל נכס בנפרד
+        </span>
+      </h3>
+      <div className="rpt-cr-dgads">
+        {ads.map((ad) => (
+          <div key={ad.adId || `${ad.campaign}|${ad.adGroup}`} className="rpt-cr-dgad">
+            <div className="rpt-cr-dgad-head">
+              <span className="rpt-cr-dgad-camp" title={ad.campaign}>
+                {ad.campaign}
+              </span>
+              <span className="rpt-cr-dgad-meta">
+                {ad.adGroup ? `${ad.adGroup} · ` : ""}
+                {ad.images.length} תמונות · {ad.copy.length} טקסטים
+              </span>
+            </div>
+
+            {ad.images.length > 0 && (
+              <div className="rpt-cr-dgimgs">
+                {ad.images.map((im, i) => (
+                  <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
+                    {im.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={im.imageUrl}
+                        alt={im.name || im.fieldType}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <a
+                        className="rpt-cr-dgvid"
+                        href={im.videoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        ▶ וידאו
+                      </a>
+                    )}
+                    <figcaption title={im.name || im.fieldType}>
+                      <span className="rpt-cr-dgimg-kind">{im.fieldType}</span>
+                      <span className="rpt-cr-dgimg-nums">
+                        {fmtILS(im.cost)} · {fmtInt(im.clicks)} קליקים
+                      </span>
+                      {im.sharedWith > 0 && (
+                        <span
+                          className="rpt-cr-dgimg-shared"
+                          title={`התמונה משמשת גם ב-${im.sharedWith} מודעות נוספות בפרויקט`}
+                        >
+                          ↻ {im.sharedWith}
+                        </span>
+                      )}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            )}
+
+            {ad.copy.length > 0 && (
+              <ul className="rpt-cr-dgcopy">
+                {ad.copy.map((c, i) => (
+                  <li key={`${c.fieldType}-${i}`}>
+                    <span className="rpt-cr-dgcopy-kind">{c.fieldType}</span>
+                    <span className="rpt-cr-dgcopy-text">{c.text}</span>
+                    <span className="rpt-cr-dgcopy-nums">
+                      {fmtInt(c.impressions)} חשיפות · {fmtInt(c.clicks)} קליקים
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {(ad.images[0]?.cta || ad.images[0]?.finalUrl) && (
+              <div className="rpt-cr-gmeta">
+                {ad.images[0]?.cta && (
+                  <span className="rpt-cr-gcta" title="Call to action">
+                    {ad.images[0].cta}
+                  </span>
+                )}
+                {ad.images[0]?.finalUrl && (
+                  <a
+                    className="rpt-cr-glink"
+                    href={ad.images[0].finalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={ad.images[0].finalUrl}
+                  >
+                    דף נחיתה ↗
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

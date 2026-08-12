@@ -28077,3 +28077,188 @@ html[data-theme="dark"] {
 .media-drill[open] {
   background: color-mix(in srgb, var(--border) 14%, transparent);
 }
+
+/* ─── Demand Gen creatives (קריאייטיבים → Google) ────────────────────
+   Reuses the FB card shell (.rpt-cr-card / -thumb / -body / -stats) so the
+   two platforms read as one wall of creatives. Only the two genuinely new
+   bits live here. */
+
+/* The block is a rolling 60-day view — the Supermetrics `discovery` query
+   has no Date dimension, so it does NOT follow the report window like every
+   other block on the tab. Quiet, but present, so nobody diffs it against the
+   ערוצים table and concludes the hub is wrong. */
+.rpt-cr-title-note {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Google's own asset rating. Rendered only when it is NOT "Pending
+   information", which is the majority state — see ReportGoogleAsset. */
+.rpt-cr-gperf {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--border) 30%, transparent);
+}
+
+/* CTA / rating / landing-page row at the foot of a Demand Gen card. */
+.rpt-cr-gmeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+.rpt-cr-gcta {
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  background: color-mix(in srgb, #4285f4 85%, #000);
+}
+.rpt-cr-glink {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  margin-inline-start: auto;
+}
+.rpt-cr-glink:hover {
+  text-decoration: underline;
+}
+/* Demand Gen copy table: the text column carries the weight, the rest are
+   figures. Long headlines wrap rather than stretching the table. */
+.rpt-cr-gcopy-text {
+  max-width: 34rem;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* ─── Demand Gen ad composition ──────────────────────────────────────
+   One ad = several images + several texts, so a card is a small stack
+   rather than a single creative tile. */
+.rpt-cr-dgads {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.rpt-cr-dgad {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.6rem 0.7rem;
+}
+.rpt-cr-dgad-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.rpt-cr-dgad-camp {
+  font-weight: 700;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 32rem;
+}
+.rpt-cr-dgad-meta {
+  margin-inline-start: auto;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Images scroll horizontally: an ad can carry 30 of them and a wrapping grid
+   would push the copy list off the first screen. */
+.rpt-cr-dgimgs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+}
+.rpt-cr-dgimg {
+  margin: 0;
+  flex: 0 0 132px;
+}
+.rpt-cr-dgimg img {
+  width: 132px;
+  height: 132px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  display: block;
+}
+.rpt-cr-dgvid {
+  width: 132px;
+  height: 132px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.rpt-cr-dgimg figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+.rpt-cr-dgimg-kind {
+  color: var(--muted);
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpt-cr-dgimg-nums {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-cr-dgimg-shared {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.rpt-cr-dgcopy {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.rpt-cr-dgcopy li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+.rpt-cr-dgcopy-kind {
+  flex: 0 0 7.5rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.rpt-cr-dgcopy-text {
+  flex: 1 1 auto;
+  line-height: 1.35;
+}
+.rpt-cr-dgcopy-nums {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

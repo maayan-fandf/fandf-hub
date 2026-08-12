@@ -17,6 +17,7 @@ import type {
   ReportFbAd,
   ReportFbAdSet,
   ReportGoogleAd,
+  ReportGoogleDgAd,
   ReportKeyword,
   ReportWindow,
 } from "@/lib/reportShared";
@@ -42,6 +43,9 @@ const TOP_ADS_HISTORICAL = 3;
 const WINNER_MIN_LEADS = 3;
 const TOP_KEYWORDS = 10;
 const TOP_ADSETS = 5;
+/** Demand Gen ads shown per project. Median ad carries 3 assets, the biggest
+ *  seen carries 30, so a handful of ads is already a lot of cards. */
+const TOP_GOOGLE_DG_ADS = 6;
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -204,6 +208,28 @@ type ProjectCreativeRaw = {
   }[];
   /** גוגל RSA assets (no date dimension — live snapshot). */
   gAds: ReportGoogleAd[];
+  /** `discovery` tab — Demand Gen assets, one row per (ad, asset). No date
+   *  dimension either: the query is a rolling 60-day snapshot. */
+  gAssets: {
+    campaign: string;
+    adGroup: string;
+    adId: string;
+    fieldType: string;
+    assetType: string;
+    name: string;
+    performance: string;
+    /** Copy of a text-shaped asset. One field serves Headline, Long headline,
+     *  Description AND Business name — `fieldType` says which. */
+    text: string;
+    cta: string;
+    finalUrl: string;
+    imageUrl: string;
+    videoUrl: string;
+    impressions: number;
+    clicks: number;
+    cost: number;
+    conversions: number;
+  }[];
 };
 
 async function fetchProjectCreativeRaw(
@@ -216,6 +242,7 @@ async function fetchProjectCreativeRaw(
     fbAdSets: [],
     gKeywords: [],
     gAds: [],
+    gAssets: [],
   };
   const matchMap = await buildMatchMap(subjectEmail);
   const slugLower = slug.toLowerCase();
@@ -234,11 +261,13 @@ async function fetchProjectCreativeRaw(
       // NB the RSA-assets tab is literally named "גוגל " WITH a trailing
       // space (the legacy getSheetByNameLoose_ absorbed it silently).
       "'גוגל '!A1:AZ",
+      // Demand Gen assets. Joins the same batchGet rather than a second read.
+      "'discovery'!A1:N",
     ],
     valueRenderOption: "UNFORMATTED_VALUE",
     dateTimeRenderOption: "FORMATTED_STRING",
   });
-  const [vMetrics, vAssets, vAdsets, vKw, vGAds] = (
+  const [vMetrics, vAssets, vAdsets, vKw, vGAds, vDiscovery] = (
     bg.data.valueRanges ?? []
   ).map((r) => (r?.values ?? []) as unknown[][]);
 
@@ -418,6 +447,70 @@ async function fetchProjectCreativeRaw(
       }
     }
     out.gAds.sort((a, b) => b.impressions - a.impressions);
+  }
+
+  // discovery → Demand Gen assets, one row per (ad, asset). Keeps text assets
+  // as well as media: `assetTextText` carries the copy for Headline, Long
+  // headline, Description and Business name alike, and `assetFieldType` says
+  // which. Rows with neither media nor copy are dropped.
+  if (vDiscovery.length > 1) {
+    const h = vDiscovery[0].map(clean);
+    const iCamp = findCol(h, ["Campaign name"]);
+    const iAdGroup = findCol(h, ["Ad group name"]);
+    const iAdId = findCol(h, ["Ad ID"]);
+    const iField = findCol(h, ["Asset field type"]);
+    const iType = findCol(h, ["Asset type"]);
+    const iName = findCol(h, ["Asset name"]);
+    const iPerf = findCol(h, ["Asset performance"]);
+    const iText = findCol(h, ["Text (Text assets)", "Text"]);
+    const iCta = findCol(h, ["Call to action"]);
+    const iCtaCarousel = findCol(h, [
+      "Call to action text (Demand gen carousel card assets)",
+    ]);
+    const iFinal = findCol(h, ["Final URL (Assets)"]);
+    const iImg = findCol(h, ["Full size image URL"]);
+    const iVid = findCol(h, [
+      "YouTube video URL (YouTube video assets)",
+      "YouTube video URL",
+    ]);
+    const iImp = findCol(h, ["Impressions"]);
+    const iClk = findCol(h, ["Clicks"]);
+    const iCost = findCol(h, ["Cost"]);
+    const iConv = findCol(h, ["Conversions"]);
+    const cell = (row: unknown[], i: number) =>
+      i >= 0 ? String(row[i] ?? "").trim() : "";
+    if (iCamp >= 0) {
+      for (let r = 1; r < vDiscovery.length; r++) {
+        const row = vDiscovery[r];
+        const camp = cell(row, iCamp);
+        if (!mine(camp)) continue;
+        const imageUrl = cell(row, iImg);
+        // The stub "https://www.youtube.com/watch?v=" (no id) shows up on
+        // non-video rows, so require a real id before calling it a video.
+        const rawVid = cell(row, iVid);
+        const videoUrl = /watch\?v=.+/.test(rawVid) ? rawVid : "";
+        const text = cell(row, iText);
+        if (!imageUrl && !videoUrl && !text) continue;
+        out.gAssets.push({
+          campaign: camp,
+          adGroup: cell(row, iAdGroup),
+          adId: cell(row, iAdId),
+          fieldType: cell(row, iField),
+          assetType: cell(row, iType),
+          name: cell(row, iName),
+          performance: cell(row, iPerf),
+          text,
+          cta: cell(row, iCta) || cell(row, iCtaCarousel),
+          finalUrl: cell(row, iFinal),
+          imageUrl,
+          videoUrl,
+          impressions: iImp >= 0 ? num(row[iImp]) : 0,
+          clicks: iClk >= 0 ? num(row[iClk]) : 0,
+          cost: iCost >= 0 ? num(row[iCost]) : 0,
+          conversions: iConv >= 0 ? num(row[iConv]) : 0,
+        });
+      }
+    }
   }
 
   return out;
@@ -878,6 +971,86 @@ function aggregateCreatives(
   const activeCount = ads.filter(isActive).length;
   const sliceCap = Math.max(TOP_ADS, activeCount + TOP_ADS_HISTORICAL);
 
+  // Demand Gen assets: Google links one uploaded image to many ads, so the
+  // tab holds a row per (ad, asset) and the same picture repeats. Fold them by
+  // asset URL so a creative appears ONCE with its real totals — the same
+  // reasoning as the FB card key, arrived at the other way round.
+  //
+  // Not window-clipped: the query carries no Date dimension (rolling 60 days).
+  // The block's subtitle says so; see ReportGoogleAsset.
+  // How many ads each image appears in — 152 of 323 images are reused, so a
+  // card that didn't say so would imply the picture belongs to one ad.
+  const adsPerImage = new Map<string, Set<string>>();
+  for (const a of raw.gAssets) {
+    if (!a.imageUrl) continue;
+    const s = adsPerImage.get(a.imageUrl) ?? new Set<string>();
+    s.add(a.adId || `${a.campaign}|${a.adGroup}`);
+    adsPerImage.set(a.imageUrl, s);
+  }
+
+  const dgAdAgg = new Map<string, ReportGoogleDgAd>();
+  for (const a of raw.gAssets) {
+    const adKeyG = a.adId || `${a.campaign}|${a.adGroup}`;
+    if (!adKeyG) continue;
+    let ad = dgAdAgg.get(adKeyG);
+    if (!ad) {
+      ad = {
+        adId: a.adId,
+        campaign: a.campaign,
+        adGroup: a.adGroup,
+        images: [],
+        copy: [],
+        topAssetCost: 0,
+      };
+      dgAdAgg.set(adKeyG, ad);
+    }
+    if (a.cost > ad.topAssetCost) ad.topAssetCost = a.cost;
+    const media = a.imageUrl || a.videoUrl;
+    if (media) {
+      ad.images.push({
+        imageUrl: a.imageUrl,
+        videoUrl: a.videoUrl,
+        name: a.name,
+        fieldType: a.fieldType,
+        performance: a.performance,
+        cta: a.cta,
+        finalUrl: a.finalUrl,
+        sharedWith: Math.max(0, (adsPerImage.get(a.imageUrl)?.size ?? 1) - 1),
+        impressions: a.impressions,
+        clicks: a.clicks,
+        cost: a.cost,
+        conversions: a.conversions,
+      });
+    } else if (a.text) {
+      ad.copy.push({
+        fieldType: a.fieldType,
+        text: a.text,
+        performance: a.performance,
+        impressions: a.impressions,
+        clicks: a.clicks,
+        cost: a.cost,
+        conversions: a.conversions,
+      });
+    }
+  }
+  const COPY_ORDER = ["Headline", "Long headline", "Description", "Business name"];
+  const dgAds = [...dgAdAgg.values()]
+    .map((ad) => ({
+      ...ad,
+      images: ad.images.sort((x, y) => y.cost - x.cost),
+      copy: ad.copy.sort(
+        (x, y) =>
+          (COPY_ORDER.indexOf(x.fieldType) < 0 ? 99 : COPY_ORDER.indexOf(x.fieldType)) -
+            (COPY_ORDER.indexOf(y.fieldType) < 0 ? 99 : COPY_ORDER.indexOf(y.fieldType)) ||
+          y.impressions - x.impressions,
+      ),
+    }))
+    .filter((ad) => ad.images.length || ad.copy.length)
+    // Ordered by the ad's biggest single asset — a lower bound on its spend.
+    // Summing its assets would overstate it (median 1.8x), so it isn't used.
+    .sort((x, y) => y.topAssetCost - x.topAssetCost)
+    .slice(0, TOP_GOOGLE_DG_ADS);
+
   // Google: window totals over ALL rows; keyword agg over named rows.
   let googleClicks = 0;
   let googleConversions = 0;
@@ -974,6 +1147,7 @@ function aggregateCreatives(
       conversions: googleConversions,
       topKeywords,
       ads: raw.gAds,
+      dgAds,
     },
   };
 }
