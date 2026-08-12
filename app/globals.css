@@ -25713,6 +25713,22 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-cr-status.is-issue {
   color: #dc2626;
 }
+/* Archive card: creative survives, metrics don't. Takes the vertical space the
+   stats grid would have used so the card keeps its shape in the grid. */
+.rpt-cr-nodata {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.6rem;
+  border-radius: 6px;
+  border: 1px dashed var(--border-soft);
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: help;
+}
 /* Meta ad-preview links, bottom-start — the opposite corner from the status
    pill so the two never collide on a narrow card. */
 .rpt-cr-previews {

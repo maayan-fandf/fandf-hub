@@ -76,7 +76,11 @@ function AdPreviewLinks({ previews }: { previews?: string[] }) {
               : `גרסה ${i + 1} מתוך ${previews.length} שרצו תחת שם המודעה הזה`
           }
         >
-          👁 {single ? "צפה במודעה" : `גרסה ${i + 1}`}
+          {/* 🖼 not 👁️ — the links row already has "👁️ תצוגת מודעה", which is
+              the promoted POST (public). This one renders the creative as it
+              appeared in feed, and is the only route to it once the 60-day
+              assets window has dropped the image. */}
+          🖼 {single ? "קריאייטיב" : `גרסה ${i + 1}`}
         </a>
       ))}
     </div>
@@ -330,48 +334,63 @@ export default function ReportCreativesTab({
                         <div className="rpt-cr-copy-text">{a.body}</div>
                       </details>
                     )}
-                    <div className="rpt-cr-stats">
-                      <div className="rpt-cr-stat">
-                        <span className="rpt-cr-stat-l">עלות</span>
-                        <span className="rpt-cr-stat-v">{fmtILS(a.cost)}</span>
+                    {/* An archive card: the creative outlived its metrics.
+                        Every figure would be a zero meaning "not measured in
+                        this window", which reads as "spent nothing" — so say
+                        the true thing instead of drawing an empty grid. */}
+                    {a.noWindowData ? (
+                      <div
+                        className="rpt-cr-nodata"
+                        title="הקריאייטיב נשמר בארכיון של 365 יום, אבל הקמפיין רץ לפני תחילת חלון הנתונים של הדוח — אין לו עלות או חשיפות למדוד"
+                      >
+                        אין נתונים בטווח
                       </div>
-                      <div className="rpt-cr-stat">
-                        <span className="rpt-cr-stat-l">לידים</span>
-                        <span className="rpt-cr-stat-v">{fmtInt(a.leads)}</span>
-                      </div>
-                      <div className="rpt-cr-stat">
-                        <span className="rpt-cr-stat-l">CPL</span>
-                        <span className="rpt-cr-stat-v">
-                          {a.cpl > 0 ? fmtILS(a.cpl) : "—"}
-                        </span>
-                      </div>
-                    </div>
-                    {(a.impressions > 0 || a.clicks > 0) && (
-                      <div className="rpt-cr-stats rpt-cr-stats-sec">
-                        <div className="rpt-cr-stat">
-                          <span className="rpt-cr-stat-l">חשיפות</span>
-                          <span className="rpt-cr-stat-v">{fmtInt(a.impressions)}</span>
+                    ) : (
+                      <>
+                        <div className="rpt-cr-stats">
+                          <div className="rpt-cr-stat">
+                            <span className="rpt-cr-stat-l">עלות</span>
+                            <span className="rpt-cr-stat-v">{fmtILS(a.cost)}</span>
+                          </div>
+                          <div className="rpt-cr-stat">
+                            <span className="rpt-cr-stat-l">לידים</span>
+                            <span className="rpt-cr-stat-v">{fmtInt(a.leads)}</span>
+                          </div>
+                          <div className="rpt-cr-stat">
+                            <span className="rpt-cr-stat-l">CPL</span>
+                            <span className="rpt-cr-stat-v">
+                              {a.cpl > 0 ? fmtILS(a.cpl) : "—"}
+                            </span>
+                          </div>
                         </div>
-                        <div className="rpt-cr-stat">
-                          <span className="rpt-cr-stat-l">קליקים</span>
-                          <span className="rpt-cr-stat-v">{fmtInt(a.clicks)}</span>
-                        </div>
-                        <div className="rpt-cr-stat">
-                          <span className="rpt-cr-stat-l">CTR</span>
-                          <span className="rpt-cr-stat-v">
-                            {a.ctr > 0 ? fmtPct2(a.ctr) : "—"}
-                          </span>
-                        </div>
-                      </div>
+                        {(a.impressions > 0 || a.clicks > 0) && (
+                          <div className="rpt-cr-stats rpt-cr-stats-sec">
+                            <div className="rpt-cr-stat">
+                              <span className="rpt-cr-stat-l">חשיפות</span>
+                              <span className="rpt-cr-stat-v">{fmtInt(a.impressions)}</span>
+                            </div>
+                            <div className="rpt-cr-stat">
+                              <span className="rpt-cr-stat-l">קליקים</span>
+                              <span className="rpt-cr-stat-v">{fmtInt(a.clicks)}</span>
+                            </div>
+                            <div className="rpt-cr-stat">
+                              <span className="rpt-cr-stat-l">CTR</span>
+                              <span className="rpt-cr-stat-v">
+                                {a.ctr > 0 ? fmtPct2(a.ctr) : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        <CrmRow
+                          crmLeads={a.crmLeads}
+                          scheduled={a.scheduled}
+                          held={a.held}
+                          costPerSched={a.costPerSched}
+                          costPerHeld={a.costPerHeld}
+                          groupLevel={a.meetingsAtGroupLevel}
+                        />
+                      </>
                     )}
-                    <CrmRow
-                      crmLeads={a.crmLeads}
-                      scheduled={a.scheduled}
-                      held={a.held}
-                      costPerSched={a.costPerSched}
-                      costPerHeld={a.costPerHeld}
-                      groupLevel={a.meetingsAtGroupLevel}
-                    />
                     {/* Deliberately OUTSIDE CrmRow: that returns null when the
                         in-window CRM figures are all zero — i.e. exactly the
                         paused/old cards whose history is most worth reading. */}

@@ -1035,6 +1035,13 @@ export type ReportFbAd = {
    *  from the payload for clients in NativeProjectRail. null when the ad has
    *  nothing to add beyond what the card face already shows. */
   history?: ReportAdHistory | null;
+  /** This card exists only because a creative for it survives in the 365-day
+   *  assets tab — the ad has no row in the metrics window at all, so every
+   *  figure on it would be a zero that means "not measured here", not "no
+   *  spend". The card renders the creative and says אין נתונים בטווח instead
+   *  of a stats grid. Appended after the top-N slice, so it can never displace
+   *  a card that does carry numbers. */
+  noWindowData?: boolean;
   /** Meta ad-preview links from `כל מודעות פפיסבוק`, one per creative behind
    *  this ad name (six Digitel ad names carry 2–3). Reaches back 365 days,
    *  where the assets tab only reaches 60 — so most cards that render

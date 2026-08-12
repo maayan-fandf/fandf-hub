@@ -38,6 +38,11 @@ import type {
 const CACHE_TAG = "reportCreatives";
 const TTL_SECONDS = 900; // 15 min (legacy CREATIVE_MAP caches 60)
 
+/** Optional companion to `facebook-ads-assets links`: same columns, 365-day
+ *  window, scoped to whichever ad accounts have been added to it by hand.
+ *  Absent by default — see the guarded read in fetchProjectCreativeRaw. */
+const ASSETS_LONG_TAB = "facebook-ads-assets 365";
+
 const TOP_ADS = 8;
 const TOP_ADS_HISTORICAL = 3;
 const WINNER_MIN_LEADS = 3;
@@ -190,6 +195,11 @@ type ProjectCreativeRaw = {
   }[];
   /** (campaign|ad).lc → assets, first-row-wins, project-matched. */
   fbAssets: Record<string, FbAssetRec>;
+  /** (campaign|ad).lc → original names, for creatives ONLY the 365-day assets
+   *  tab could supply. Every one of these is outside the metrics window, so it
+   *  has no cost/impressions row anywhere — the card says so rather than
+   *  printing zeros. Empty unless the long tab exists. */
+  fbAssetsLongOnly: Record<string, { campaign: string; ad: string }>;
   /** (campaign|ad).lc → Meta ad-preview links, ALL of them rather than
    *  first-row-wins: that tab carries one row per creative, so an ad name
    *  fronting several creatives yields several links and the card can offer
@@ -246,6 +256,7 @@ async function fetchProjectCreativeRaw(
   const out: ProjectCreativeRaw = {
     fbAds: [],
     fbAssets: {},
+    fbAssetsLongOnly: {},
     fbPreviews: {},
     fbAdSets: [],
     gKeywords: [],
@@ -259,6 +270,29 @@ async function fetchProjectCreativeRaw(
 
   const sheets = sheetsClient(subjectEmail);
   const ssId = envOrThrow("SHEET_ID_CREATIVES");
+
+  // Long-window creative assets: same shape as `facebook-ads-assets links` but
+  // 365 days over a single ad account (the shared 60-day query costs ~40min
+  // across 20 accounts; one account over a year is ~43 rows).
+  //
+  // Read OUTSIDE the batchGet on purpose: the tab is added by hand per account
+  // so it may not exist, and one bad range fails the WHOLE batch. A missing or
+  // renamed tab must degrade to "no archive creatives", never to "the
+  // קריאייטיבים tab is broken".
+  //
+  // Kicked off BEFORE awaiting the batch so it overlaps it — otherwise the 18
+  // projects that will never have this tab each pay a serial round-trip, and a
+  // 404 round-trip at that, on every cache miss.
+  const assetsLongP: Promise<unknown[][]> = sheets.spreadsheets.values
+    .get({
+      spreadsheetId: ssId,
+      range: `'${ASSETS_LONG_TAB}'!A1:Z`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    })
+    .then((r) => (r.data.values ?? []) as unknown[][])
+    .catch(() => []);
+
   const bg = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: ssId,
     ranges: [
@@ -290,6 +324,8 @@ async function fetchProjectCreativeRaw(
     bg.data.valueRanges ?? []
   ).map((r) => (r?.values ?? []) as unknown[][]);
 
+  const vAssetsLong = await assetsLongP;
+
   // כל מודעות פפיסבוק → (campaign|ad).lc → [preview URL, …].
   if (vPreviews.length > 1) {
     const h = vPreviews[0].map(clean);
@@ -316,9 +352,22 @@ async function fetchProjectCreativeRaw(
     }
   }
 
-  // facebook-ads-assets links → (campaign|ad).lc lookup, first row wins.
-  if (vAssets.length > 1) {
-    const h = vAssets[0].map(clean);
+  /**
+   * Index an assets-shaped tab into out.fbAssets, keyed (campaign|ad).lc.
+   *
+   * Run over the 60-day tab first and the 365-day one second. The
+   * already-present check does double duty: first-row-wins WITHIN a tab, and
+   * — on the second pass — never letting the long window overwrite the short
+   * one. The 60-day query is the fresher, more authoritative source for
+   * anything it covers; the long tab exists only to fill what has aged out.
+   *
+   * Returns the (campaign, ad) pairs this pass contributed, so the caller can
+   * tell which creatives exist ONLY in the long tab.
+   */
+  const indexAssets = (rows: unknown[][]) => {
+    const added = new Map<string, { campaign: string; ad: string }>();
+    if (rows.length < 2) return added;
+    const h = rows[0].map(clean);
     const iCamp = findCol(h, ["Campaign name"]);
     const iAd = findCol(h, ["Ad name"]);
     const iAcc = findCol(h, ["Account name", "Account Name", "Account"]);
@@ -338,33 +387,39 @@ async function fetchProjectCreativeRaw(
       "Ad preview URL: mobile feed",
       "Ad preview URL",
     ]);
-    if (iCamp >= 0 && iAd >= 0) {
-      for (let r = 1; r < vAssets.length; r++) {
-        const row = vAssets[r];
-        const camp = String(row[iCamp] ?? "").trim();
-        const ad = adNameOf(row[iAd]);
-        if (!camp || !ad || !mine(camp)) continue;
-        // Keyed by the FULL ad name so each format variant keeps its own
-        // thumbnail, preview link and Ad status — the assets tab has a row
-        // per real ad, so this is the finer, more faithful join. (Was
-        // normAdName, which collapsed the variants onto one asset row and
-        // handed every card the first variant's creative + status.)
-        const k = `${camp}|${normCardName(ad)}`.toLowerCase();
-        if (out.fbAssets[k]) continue; // first row wins
-        const cell = (i: number) => (i >= 0 ? String(row[i] ?? "").trim() : "");
-        out.fbAssets[k] = {
-          account: cell(iAcc),
-          status: cell(iStatus),
-          image: cell(iImage),
-          thumb: cell(iThumb),
-          destUrl: cell(iDest),
-          body: cell(iBody),
-          title: cell(iTitle),
-          url: cell(iUrl),
-        };
-      }
+    if (iCamp < 0 || iAd < 0) return added;
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const camp = String(row[iCamp] ?? "").trim();
+      const ad = adNameOf(row[iAd]);
+      if (!camp || !ad || !mine(camp)) continue;
+      // Keyed by the FULL ad name so each format variant keeps its own
+      // thumbnail, preview link and Ad status — the assets tab has a row
+      // per real ad, so this is the finer, more faithful join. (Was
+      // normAdName, which collapsed the variants onto one asset row and
+      // handed every card the first variant's creative + status.)
+      const k = `${camp}|${normCardName(ad)}`.toLowerCase();
+      if (out.fbAssets[k]) continue; // see the doc block above
+      const cell = (i: number) => (i >= 0 ? String(row[i] ?? "").trim() : "");
+      out.fbAssets[k] = {
+        account: cell(iAcc),
+        status: cell(iStatus),
+        image: cell(iImage),
+        thumb: cell(iThumb),
+        destUrl: cell(iDest),
+        body: cell(iBody),
+        title: cell(iTitle),
+        url: cell(iUrl),
+      };
+      added.set(k, { campaign: camp, ad });
     }
-  }
+    return added;
+  };
+
+  indexAssets(vAssets);
+  // Whatever only the long tab could supply — the creatives that aged out of
+  // the 60-day window. These become the אין נתונים בטווח cards downstream.
+  out.fbAssetsLongOnly = Object.fromEntries(indexAssets(vAssetsLong));
 
   // facebook-ads-metrics → per-day per-ad rows.
   if (vMetrics.length > 1) {
@@ -1251,6 +1306,52 @@ function aggregateCreatives(
   // History rides only the RENDERED cards — attaching before the slice would
   // pay payload for ads nobody sees.
   const topAds = ads.slice(0, sliceCap);
+
+  // Creatives that survive only in the 365-day assets tab: they ran before the
+  // metrics window opens, so there is no cost/impressions row for them
+  // anywhere. Appended AFTER the slice and kept out of the winner/sort maths
+  // entirely — they have no numbers to be ranked on, and letting them compete
+  // for sliceCap would drop a card that does have them. `noWindowData` tells
+  // the card to show the creative and say so instead of printing zeros.
+  const carded = new Set(ads.map((a) => cardKey(a.campaign, a.ad)));
+  for (const [k, { campaign, ad }] of Object.entries(raw.fbAssetsLongOnly)) {
+    if (carded.has(k)) continue;
+    const assets = raw.fbAssets[k];
+    if (!assets) continue;
+    topAds.push({
+      account: assets.account,
+      campaign,
+      ad,
+      status: assets.status,
+      url: assets.url,
+      destUrl: assets.destUrl,
+      body: assets.body,
+      title: assets.title,
+      thumb: assets.thumb,
+      image: assets.image,
+      noWindowData: true,
+      previews: raw.fbPreviews[k]?.length ? raw.fbPreviews[k] : undefined,
+      impressions: 0,
+      clicks: 0,
+      cost: 0,
+      leads: 0,
+      cpl: 0,
+      ctr: 0,
+      crmLeads: 0,
+      scheduled: 0,
+      held: 0,
+      costPerSched: 0,
+      costPerHeld: 0,
+      ageDays: 0,
+      ctrEarly: 0,
+      ctrRecent: 0,
+      fatigued: false,
+      fatigueReason: "",
+      isWinner: false,
+      daily: [],
+      history: null,
+    });
+  }
   if (hist && hist.months.length) {
     const { byMonth, pre } = buildCostHistory(raw, startIso);
     for (const a of topAds) {
