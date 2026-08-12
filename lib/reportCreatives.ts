@@ -464,7 +464,6 @@ async function fetchProjectCreativeRaw(
   if (vDiscovery.length > 1) {
     const h = vDiscovery[0].map(clean);
     const iCamp = findCol(h, ["Campaign name"]);
-    const iChannel = findCol(h, ["Advertising channel type"]);
     const iCampStatus = findCol(h, ["Campaign status"]);
     const iAdGroup = findCol(h, ["Ad group name"]);
     const iAdId = findCol(h, ["Ad ID"]);
@@ -495,18 +494,8 @@ async function fetchProjectCreativeRaw(
         const row = vDiscovery[r];
         const camp = cell(row, iCamp);
         if (!mine(camp)) continue;
-        // Demand Gen only. AdGroupAdAssetView returns assets for EVERY Google
-        // ad type, and search RSAs are the bulk of it — 2,475 of the tab's
-        // 3,281 text rows. They already have their own block (GoogleAdsBlock,
-        // fed by the גוגל tab), so letting them in here duplicated search copy
-        // under a creatives heading. Prefer the channel-type column; fall back
-        // to the campaign-name convention when the column isn't there yet, so
-        // this holds between a code deploy and the next Supermetrics refresh.
-        const channel = cell(row, iChannel);
-        const isDemandGen = channel
-          ? /demand|discovery/i.test(channel)
-          : /discovery|demand/i.test(camp);
-        if (!isDemandGen) continue;
+        // Text-only ads are filtered out later, at the AD level — a Demand Gen
+        // ad's headline rows carry no image and must be kept as its copy.
         const imageUrl = cell(row, iImg);
         // The stub "https://www.youtube.com/watch?v=" (no id) shows up on
         // non-video rows, so require a real id before calling it a video.
@@ -1133,7 +1122,20 @@ function aggregateCreatives(
           y.impressions - x.impressions,
       ),
     }))
-    .filter((ad) => ad.images.length || ad.copy.length)
+    // Keep only ads that actually have a creative to show. AdGroupAdAssetView
+    // returns assets for EVERY Google ad type and search RSAs are the bulk of
+    // it — they have their own block, fed by the גוגל tab, so letting them in
+    // here duplicated search copy under a creatives heading.
+    //
+    // The discriminator is media, not the campaign name and not the channel
+    // type. AdvertisingChannelType looked like the principled answer, but the
+    // Sheets connector silently DROPS that field: it rewrote the query
+    // definition without it on the next refresh and the column never appeared.
+    // Measured over all 247 ads in the tab, "has an image or video" agrees
+    // with the naming convention on 244 and is RIGHT on the 3 it differs on —
+    // fandf_afridar_ahuzat-afridar_discover is spelled without the "y", so a
+    // name test drops three genuine Demand Gen ads carrying marketing images.
+    .filter((ad) => ad.images.length > 0)
     // Live creatives first, then by the ad's biggest single asset — a lower
     // bound on its spend. Summing its assets would overstate it (median 1.8x),
     // so that total is never computed.
