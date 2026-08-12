@@ -1016,6 +1016,14 @@ export type ReportFbAd = {
   held: number;
   costPerSched: number;
   costPerHeld: number;
+  /** True when these CRM figures cover the whole creative rather than this
+   *  one card. Format variants ("… - Video" / "- Static" / "- Carousel") are
+   *  separate ads with separate spend, but the CRM cannot tell them apart —
+   *  Meta's utm_content drops the suffix, so 0 of 618 rows in
+   *  fb-creative-meetings carry one. The counts are therefore attached to a
+   *  single variant of the group instead of repeated on each, and this flag
+   *  lets the card say so. */
+  meetingsAtGroupLevel?: boolean;
   ageDays: number;
   ctrEarly: number;
   ctrRecent: number;

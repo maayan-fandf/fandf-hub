@@ -117,18 +117,27 @@ function CrmRow({
   held,
   costPerSched,
   costPerHeld,
+  groupLevel = false,
 }: {
   crmLeads: number;
   scheduled: number;
   held: number;
   costPerSched: number;
   costPerHeld: number;
+  /** These counts cover every format variant of this creative, not just this
+   *  card — the CRM can't tell Video/Static/Carousel apart. Say so rather
+   *  than letting the number read as this one ad's. */
+  groupLevel?: boolean;
 }) {
   if (!crmLeads && !scheduled && !held) return null;
   return (
     <div
       className="rpt-cr-stats rpt-cr-stats-crm"
-      title="לידים, תואמו ובוצעו מה-CRM שמקורם בקריאייטיב זה — כולל עלות לתיאום ולביצוע"
+      title={
+        groupLevel
+          ? "לידים, תואמו ובוצעו מה-CRM עבור הקריאייטיב כולו — כל הווריאציות (Video / Static / Carousel) יחד. ה-CRM לא מבדיל ביניהן, ולכן הנתון מוצג פעם אחת ולא על כל וריאציה"
+          : "לידים, תואמו ובוצעו מה-CRM שמקורם בקריאייטיב זה — כולל עלות לתיאום ולביצוע"
+      }
     >
       <div className="rpt-cr-stat">
         <span className="rpt-cr-stat-l">לידים</span>
@@ -324,6 +333,7 @@ export default function ReportCreativesTab({
                       held={a.held}
                       costPerSched={a.costPerSched}
                       costPerHeld={a.costPerHeld}
+                      groupLevel={a.meetingsAtGroupLevel}
                     />
                     {/* Deliberately OUTSIDE CrmRow: that returns null when the
                         in-window CRM figures are all zero — i.e. exactly the

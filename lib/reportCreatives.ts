@@ -270,10 +270,12 @@ async function fetchProjectCreativeRaw(
         const camp = String(row[iCamp] ?? "").trim();
         const ad = adNameOf(row[iAd]);
         if (!camp || !ad || !mine(camp)) continue;
-        // normAdName (not bare adNameOf) so the assets key agrees with the
-        // card key and the meetings key — see the card-identity note in
-        // aggregateCreatives.
-        const k = `${camp}|${normAdName(ad)}`.toLowerCase();
+        // Keyed by the FULL ad name so each format variant keeps its own
+        // thumbnail, preview link and Ad status — the assets tab has a row
+        // per real ad, so this is the finer, more faithful join. (Was
+        // normAdName, which collapsed the variants onto one asset row and
+        // handed every card the first variant's creative + status.)
+        const k = `${camp}|${normCardName(ad)}`.toLowerCase();
         if (out.fbAssets[k]) continue; // first row wins
         const cell = (i: number) => (i >= 0 ? String(row[i] ?? "").trim() : "");
         out.fbAssets[k] = {
@@ -552,6 +554,37 @@ function adKey(campaign: string, ad: string): string {
 }
 
 /**
+ * CARD identity — the ad name as Meta shows it, minus only the invisible
+ * bidi/zero-width marks Meta sprinkles through it.
+ *
+ * Deliberately NOT normAdName. That one additionally strips a trailing
+ * " - Video / Static / Carousel", which is right where it was written (the
+ * CRM join in lib/fbCreatives: Meta's utm_content drops the suffix, so the
+ * metrics side has to drop it too to match) and wrong for card identity:
+ * those are three separate ads with separate budgets and separate results,
+ * and collapsing them hid exactly the comparison this tab exists to make.
+ *
+ * חלומות בן שמן, 01–12/08: Video ₪5,494/23 leads, Static ₪1,657/7,
+ * Carousel ₪265/0 — rendered as ONE card of ₪7,416/30, labelled
+ * "2026-07-23A - Carousel" because that variant's row happened to come
+ * first in the export. The card named the only variant that produced
+ * nothing. (Maayan, 2026-08-12.)
+ *
+ * The bidi strip stays: it is what the duplicate-card fix was actually
+ * about, and two cards differing only by a U+200E really are one ad.
+ */
+function normCardName(s: string): string {
+  return String(s ?? "")
+    .replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cardKey(campaign: string, ad: string): string {
+  return `${campaign}|${normCardName(ad)}`.toLowerCase();
+}
+
+/**
  * Per-(card key) per-month cost/leads over the WHOLE ad-metrics tab. Free: the
  * tab is read whole and cached, and the report window is applied downstream in
  * inRange — nothing extra is fetched here.
@@ -561,7 +594,7 @@ function buildCostHistory(raw: ProjectCreativeRaw, startIso: string) {
   const pre = new Map<string, { cost: number; leads: number }>();
   for (const r of raw.fbAds) {
     if (!r.date || !r.ad) continue;
-    const k = adKey(r.campaign, r.ad);
+    const k = cardKey(r.campaign, r.ad);
     let m = byMonth.get(k);
     if (!m) {
       m = new Map();
@@ -659,7 +692,7 @@ function aggregateCreatives(
   for (const r of raw.fbAds) {
     if (!inRange(r.date)) continue;
     if (!r.ad) continue;
-    const k = adKey(r.campaign, r.ad);
+    const k = cardKey(r.campaign, r.ad);
     const a =
       adAgg.get(k) ??
       ({
@@ -697,7 +730,7 @@ function aggregateCreatives(
   const adSpanAll = new Map<string, { first: string; last: string }>();
   for (const r of raw.fbAds) {
     if (!r.date || !r.ad) continue;
-    const k = adKey(r.campaign, r.ad);
+    const k = cardKey(r.campaign, r.ad);
     const s = adSpanAll.get(k);
     if (!s) adSpanAll.set(k, { first: r.date, last: r.date });
     else {
@@ -743,9 +776,10 @@ function aggregateCreatives(
       fatigued = true;
       fatigueReason = "long";
     }
-    // `k` IS the meetings base now that adKey normalizes — the join the
-    // duplicate-card fix collapsed into one identity.
-    const mtg = sumOverMonths(meet.creative, months, k);
+    // `k` is now the CARD key (per variant); the meetings export is keyed at
+    // the normAdName level, so look those up under the group key. The
+    // per-group de-duplication happens right after this map.
+    const mtg = sumOverMonths(meet.creative, months, adKey(a.campaign, a.ad));
     return {
       account: a.account || assets?.account || "",
       campaign: a.campaign,
@@ -779,6 +813,49 @@ function aggregateCreatives(
       daily: dedupeDaily(a.daily),
     };
   });
+
+  // CRM meetings can't be split across format variants — Meta's utm_content
+  // drops the " - Video/Static/Carousel" suffix, so the export has no row that
+  // belongs to one variant (0 of 618 carry a suffix). Now that each variant is
+  // its own card they'd EACH render the group's full תואמו/בוצעו, which is the
+  // duplicate-render the merge originally fixed. So hand the counts to one
+  // variant of the group — the one that produced the leads they came from —
+  // and flag it, rather than repeating them or inventing a pro-rata split.
+  // Single-variant groups (the overwhelming majority) are untouched.
+  const meetingsOwner = new Set<ReportFbAd>();
+  const byGroup = new Map<string, ReportFbAd[]>();
+  for (const a of ads) {
+    const g = adKey(a.campaign, a.ad);
+    const list = byGroup.get(g);
+    if (list) list.push(a);
+    else byGroup.set(g, [a]);
+  }
+  for (const group of byGroup.values()) {
+    if (group.length === 1) {
+      meetingsOwner.add(group[0]);
+      continue;
+    }
+    const owner = group.reduce((best, a) =>
+      a.leads !== best.leads
+        ? a.leads > best.leads
+          ? a
+          : best
+        : a.cost > best.cost
+          ? a
+          : best,
+    );
+    meetingsOwner.add(owner);
+    owner.meetingsAtGroupLevel =
+      owner.crmLeads > 0 || owner.scheduled > 0 || owner.held > 0;
+    for (const a of group) {
+      if (a === owner) continue;
+      a.crmLeads = 0;
+      a.scheduled = 0;
+      a.held = 0;
+      a.costPerSched = 0;
+      a.costPerHeld = 0;
+    }
+  }
 
   // Winner: picked over the UNsliced list (legacy 3903).
   const winner = ads
@@ -841,14 +918,17 @@ function aggregateCreatives(
   if (hist && hist.months.length) {
     const { byMonth, pre } = buildCostHistory(raw, startIso);
     for (const a of topAds) {
-      // One key for cost, meetings and assets alike now that adKey normalizes.
-      const key = adKey(a.campaign, a.ad);
+      // Cost history is per CARD (this variant's own spend); the meetings
+      // buckets are only keyed at the group level, and only the group's
+      // meetings owner may render them — same rule as the card face above.
+      const key = cardKey(a.campaign, a.ad);
+      const mKey = meetingsOwner.has(a) ? adKey(a.campaign, a.ad) : null;
       const cm = byMonth.get(key);
       const rows: ReportAdHistoryMonth[] = [];
       const total = { cost: 0, leads: 0, scheduled: 0, held: 0 };
       for (const mon of hist.months) {
         const c = cm?.get(mon);
-        const v = meet.creative.get(`h:${mon}|${key}`);
+        const v = mKey ? meet.creative.get(`h:${mon}|${mKey}`) : undefined;
         if (!c && !v) continue; // a month this ad didn't exist in
         const row = {
           month: mon,
@@ -864,7 +944,7 @@ function aggregateCreatives(
         total.held += row.held;
       }
       const p = pre.get(key);
-      const pv = meet.creative.get(`pre|${key}`);
+      const pv = mKey ? meet.creative.get(`pre|${mKey}`) : undefined;
       const before = {
         cost: p?.cost ?? 0,
         leads: p?.leads ?? 0,
