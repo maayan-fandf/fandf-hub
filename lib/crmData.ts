@@ -76,7 +76,9 @@ export type CrmFunnel = {
    *  Broader than `meetings` — always `scheduledMeetings >= meetings`.
    *  BMBY: status.includes("פגישה"). Sehel: status.includes("פגישה")
    *  OR a meeting date is set — best-guess equivalent pending upstream
-   *  clarification. */
+   *  clarification. Salesforce: the SALESFORCE status matrix, which since
+   *  2026-08-12 also counts "טופס הרשמה" — so there `scheduledMeetings`
+   *  overlaps `contracts` by design rather than being disjoint from it. */
   scheduledMeetings: number;
   /** Of `scheduledMeetings`, the canceled subset ("פגישה בוטלה" / בוטלו).
    *  So תואמה = תואמו (non-canceled = held + upcoming) + בוטלו (this).
@@ -744,8 +746,9 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
  *   │ ניסיון יצירת קשר            │    ✓
  *   │ ניסיון תיאום פגישה          │    ✓                       ← attempt only
  *   │ לא רלוונטי                  │    ✓
- *   │ הומר ⇢ "טופס הרשמה"         │    ✓                       ← a CONVERSION,
- *   └────────────────────────────┘                              not a meeting
+ *   │ הומר ⇢ "טופס הרשמה"         │    ✓     ✓                 ← a booking, per
+ *   └────────────────────────────┘                              the 2026-08-12
+ *                                                               amendment below
  *   ┌─ שלב ההזדמנות ─────────────┐
  *   │ תיאום פגישה                 │    ✓     ✓
  *   │ פגישה התקיימה               │    ✓     ✓     ✓
@@ -761,11 +764,20 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
  *   │ בוטלה                       │    ✓     ✓            ✓
  *   └────────────────────────────┘
  *
+ * ⚠️ AMENDED 2026-08-12 (Maayan, relaying the client): `טופס הרשמה` counts
+ * toward תיאום after all. For דיור-למשתכן the registration IS the booking the
+ * campaign is buying, and the client reports it inside תואמה — so the hub
+ * matches. It stays OUT of בוצע (nothing was held) and still drives
+ * `contracts` independently, which means the תואמה and טופסי הרשמה tiles now
+ * deliberately overlap. This knowingly reverses the first bullet below; it is
+ * not a regression, don't "fix" it back. On the 2026-08-12 snapshot: Essence
+ * 10 → 55, חולון 33 → 121, דרך השלום 16 → 83, אור יהודה 111 → 358.
+ *
  * Three corrections over the old matrix, all of which skewed the funnel:
  *   • `טופס הרשמה` counted as תיאום → lottery registrations were reported as
  *     booked meetings. On the 2026-08-11 snapshot that alone inflated
  *     scheduled ~4-5× across the SHBN projects (חולון 121 → 33, Essence
- *     55 → 10, דרך השלום 82 → 16).
+ *     55 → 10, דרך השלום 82 → 16).  ⟵ REVERSED by the amendment above.
  *   • `נסגר בהפסד` counted as בוצע → a closed-lost opportunity was reported
  *     as a HELD meeting. Under מצב ליד 3, 132 of its 135 rows resolve to
  *     בוטלה (the meeting was CANCELLED) and just 1 to התקיימה.
@@ -821,6 +833,13 @@ const SALESFORCE_HELD_STATUSES = new Set<string>([
 /** Cancelled subset of scheduled — surfaces as "בוטלו" on the תואמה tile. */
 const SALESFORCE_CANCELED_STATUSES = new Set<string>(["בוטלה"]);
 const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
+  // The דיור-למשתכן registration — the client's own definition of a booking
+  // (2026-08-12 amendment). Under מצב ליד 3 only converted leads that never
+  // reached an opportunity still read this; the ones that did are already
+  // scheduled via their opportunity status, so each conversion is counted
+  // exactly once. Verified on the 2026-08-12 snapshot: every הומר row outside
+  // the scheduled set carries precisely this status, none carries another.
+  "טופס הרשמה",
   "טרם התקיימה",
   "תיאום פגישה",
   "סגור",
