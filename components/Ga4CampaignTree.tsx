@@ -2,7 +2,20 @@
 
 import { useState } from "react";
 import PlatformIcon from "@/components/PlatformIcon";
-import type { Ga4TreeNode } from "@/lib/ga4Report";
+// `import type` ONLY. lib/ga4Report imports lib/sa → googleapis, which
+// needs node's `net`/`worker_threads`; importing any runtime VALUE from
+// it here drags that whole chain into the client bundle and 500s the
+// entire project page, not just this section. Types are erased at
+// compile time and are safe — a value import is not.
+import type { Ga4TreeNode, Ga4TreeView } from "@/lib/ga4Report";
+
+/** The view labels live here rather than in ga4Report for the reason
+ *  above: they are UI strings, and this is the only consumer. */
+const GA4_TREE_VIEWS: { id: Ga4TreeView; label: string }[] = [
+  { id: "adset", label: "קבוצות מודעות" },
+  { id: "placement", label: "מיקומים" },
+  { id: "ad", label: "מודעות" },
+];
 
 /**
  * channel → campaign → ad group / ad, expandable.
@@ -21,13 +34,18 @@ import type { Ga4TreeNode } from "@/lib/ga4Report";
  * says which via each node's `childLabel`.
  */
 export default function Ga4CampaignTree({
-  nodes,
+  trees,
   showConv,
 }: {
-  nodes: Ga4TreeNode[];
+  trees: Record<Ga4TreeView, Ga4TreeNode[]>;
   showConv: boolean;
 }) {
+  const [view, setView] = useState<Ga4TreeView>("adset");
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Expanded keys are per view: a campaign's key is stable across views
+  // but its children are not, so carrying the open set over would leave
+  // rows expanded that no longer exist.
+  const nodes = trees[view] ?? [];
   const toggle = (key: string) =>
     setOpen((cur) => {
       const next = new Set(cur);
@@ -88,7 +106,29 @@ export default function Ga4CampaignTree({
 
   return (
     <div className="ga4w-block">
-      <h3 className="ga4w-h3">מאיפה הגיעה התנועה</h3>
+      <div className="ga4w-tree-head">
+        <h3 className="ga4w-h3">מאיפה הגיעה התנועה</h3>
+        {/* Switches only the THIRD level. Channel and campaign rows are
+            identical across views, so their numbers stay put while the
+            breakdown underneath changes — which is what makes comparing
+            the three worth doing. */}
+        <div className="ga4w-viewsw" role="group" aria-label="רמת פילוח">
+          {GA4_TREE_VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              className={"ga4w-viewsw-btn" + (v.id === view ? " is-active" : "")}
+              aria-pressed={v.id === view}
+              onClick={() => {
+                setView(v.id);
+                setOpen(new Set());
+              }}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="ga4w-table-wrap">
         <table className="ga4w-table ga4w-tree">
           <thead>
@@ -106,9 +146,13 @@ export default function Ga4CampaignTree({
         </table>
       </div>
       <div className="ga4w-note">
-        לחיצה על ערוץ פותחת את הקמפיינים שלו, ולחיצה על קמפיין את קבוצות
-        המודעות (בגוגל) או המודעות (במטא). ״חלק״ מחושב מסך הכניסות מקמפיינים
-        בתקופה.
+        לחיצה על ערוץ פותחת את הקמפיינים שלו, ולחיצה על קמפיין את הרמה
+        שנבחרה למעלה.{" "}
+        {view === "adset" &&
+          "קבוצת מודעות נלקחת מ-ad group בגוגל ומ-utm_term במטא."}
+        {view === "placement" &&
+          "מיקום נלקח מ-utm_medium — במטא זהו מיקום המודעה (פיד, סטוריז, טור ימני)."}
+        {view === "ad" && "מודעה נלקחת מ-utm_content."}
       </div>
     </div>
   );
@@ -121,6 +165,7 @@ function childWord(n: number, plural?: string): string {
   if (plural === "קמפיינים") return "קמפיין";
   if (plural === "קבוצות מודעות") return "קבוצת מודעות";
   if (plural === "מודעות") return "מודעה";
+  if (plural === "מיקומים") return "מיקום";
   return plural ?? "";
 }
 

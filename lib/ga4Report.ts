@@ -76,6 +76,142 @@ function mergeRate(weightedSum: number, sessions: number): number {
   return sessions > 0 ? weightedSum / sessions : 0;
 }
 
+/**
+ * Undo URL encoding in a UTM value.
+ *
+ * The same ad set arrives both ways from Meta — `RM+ENG` alongside
+ * `RM ENG`, `Frequent+international+travelers` alongside
+ * `Frequent international travelers` — so without this one ad set
+ * becomes two rows splitting its own traffic. `cleanCampaign` already
+ * does this for campaign names; leaf values need it just as much.
+ *
+ * decodeURIComponent throws on a lone `%`, which real UTM values do
+ * contain, so the raw value is the fallback rather than an exception.
+ */
+function decodeUtm(raw: string): string {
+  const v = (raw || "").trim();
+  if (!v) return "";
+  const spaced = v.replace(/\+/g, " ");
+  try {
+    return decodeURIComponent(spaced).trim();
+  } catch {
+    return spaced;
+  }
+}
+
+/**
+ * Build one channel → campaign → leaf tree.
+ *
+ * Row shape is fixed: dimension 0 is sessionSourceMedium, 1 is the
+ * campaign name, and everything after that is candidate leaf columns
+ * tried in order — the first non-empty one wins. That ordering is how
+ * `adset` resolves per platform without branching: Google's ad-group
+ * column comes first and Meta's utm_term second, so a Google row takes
+ * the ad group and a Meta row (whose ad-group column is unset) falls
+ * through to the ad set.
+ *
+ * Metrics are fixed at sessions, keyEvents, sessionKeyEventRate,
+ * engagedSessions, averageSessionDuration. Rates and durations are
+ * session-weighted at every level, so a channel's figure is the true
+ * blend of its campaigns rather than an average of averages.
+ */
+function buildTree(
+  rows: Row[],
+  leafDims: number[],
+  childLabel: string,
+  labels: Record<string, string>,
+  classify: (sourceMedium: string) => string,
+): Ga4TreeNode[] {
+  type Acc = {
+    label: string;
+    platform: string;
+    sessions: number;
+    keyEvents: number;
+    rateW: number;
+    engaged: number;
+    durW: number;
+    childLabel?: string;
+    kids: Map<string, Acc>;
+  };
+  const mk = (label: string, platform: string): Acc => ({
+    label,
+    platform,
+    sessions: 0,
+    keyEvents: 0,
+    rateW: 0,
+    engaged: 0,
+    durW: 0,
+    kids: new Map(),
+  });
+  const roots = new Map<string, Acc>();
+
+  for (const r of rows) {
+    const bucket = classify(dim(r, 0));
+    const campaign = cleanCampaign(dim(r, 1));
+    const sessions = met(r, 0);
+    const ke = met(r, 1);
+    const rate = met(r, 2);
+    const engaged = met(r, 3);
+    const dur = met(r, 4);
+    const platform =
+      bucket === "googleads" ? "google" : bucket === "meta" ? "facebook" : bucket;
+
+    const bump = (a: Acc) => {
+      a.sessions += sessions;
+      a.keyEvents += ke;
+      a.rateW += rate * sessions;
+      a.engaged += engaged;
+      a.durW += dur * sessions;
+    };
+
+    const root = roots.get(bucket) ?? mk(labels[bucket] ?? labels.other, platform);
+    bump(root);
+    roots.set(bucket, root);
+
+    // Organic, direct and referral have no campaign. They still belong
+    // in this table — it is the only channel breakdown in the section —
+    // they just have nothing to expand into.
+    if (!campaign) continue;
+    root.childLabel = "קמפיינים";
+    const campKey = campaign.toLowerCase().replace(/[_-]+/g, "-");
+    const camp = root.kids.get(campKey) ?? mk(campaign, platform);
+    bump(camp);
+    root.kids.set(campKey, camp);
+
+    let leaf = "";
+    for (const i of leafDims) {
+      const v = decodeUtm(dim(r, i));
+      if (v && v !== "(not set)" && v !== "(data not available)") {
+        leaf = v;
+        break;
+      }
+    }
+    if (!leaf) continue;
+    camp.childLabel = childLabel;
+    const node = camp.kids.get(leaf) ?? mk(leaf, platform);
+    bump(node);
+    camp.kids.set(leaf, node);
+  }
+
+  const toNode = (a: Acc, key: string): Ga4TreeNode => ({
+    key,
+    label: a.label,
+    platform: a.platform,
+    sessions: a.sessions,
+    keyEvents: a.keyEvents,
+    convRate: mergeRate(a.rateW, a.sessions),
+    engagementRate: a.sessions > 0 ? a.engaged / a.sessions : 0,
+    avgSeconds: mergeRate(a.durW, a.sessions),
+    childLabel: a.kids.size > 0 ? a.childLabel : undefined,
+    children: [...a.kids.entries()]
+      .map(([k, v]) => toNode(v, `${key}/${k}`))
+      .sort((x, y) => y.sessions - x.sessions),
+  });
+  return [...roots.entries()]
+    .map(([k, v]) => toNode(v, k))
+    .sort((a, b) => b.sessions - a.sessions);
+}
+
 export type Ga4PageRow = {
   path: string;
   sessions: number;
@@ -116,6 +252,20 @@ export type Ga4TreeNode = {
   childLabel?: string;
   children: Ga4TreeNode[];
 };
+
+/**
+ * What the third level of the tree breaks down by.
+ *
+ * Each is a different GA4 dimension, and for `adset` a different one per
+ * platform — Google names its ad groups in `sessionGoogleAdsAdGroupName`
+ * while Meta writes the AD SET into utm_term (`RM+ENG`,
+ * `Frequent international travelers`, `First-time buyer (real estate)`,
+ * `Geo`, `LL Lead`) and the AD into utm_content (`2026-06-23A`,
+ * `2026-07-20B - video`). Placement is utm_medium on Meta
+ * (`Facebook_Mobile_Feed`, `Instagram_Stories`, `an`) and the ordinary
+ * medium elsewhere.
+ */
+export type Ga4TreeView = "adset" | "placement" | "ad";
 
 export type Ga4CityRow = { city: string; sessions: number; keyEvents: number };
 
@@ -329,8 +479,8 @@ export type Ga4ReportData = {
    *  Empty unless the property tags key events — otherwise every
    *  placement trivially has zero conversions. */
   placementLeaks: Ga4PlacementLeak[];
-  /** channel → campaign → ad group / ad, for the expandable table. */
-  tree: Ga4TreeNode[];
+  /** channel → campaign → third level, one tree per view. */
+  tree: Record<Ga4TreeView, Ga4TreeNode[]>;
   devices: Ga4DeviceRow[];
   /** Null when the property tags no key events at all — a conversion
    *  block reading 0% would be indistinguishable from real failure. */
@@ -547,6 +697,12 @@ const META_SOURCES = new Set([
   "an",
   "audiencenetwork",
   "audience_network",
+  // Threads. Two sessions of `th / Threads_Feed` on one campaign were
+  // enough to put a Facebook campaign under "אחר" with a Facebook logo
+  // beside it — Meta keeps adding surfaces, and each arrives as a new
+  // two-letter source.
+  "th",
+  "threads",
 ]);
 const PAID_MEDIUMS = new Set(["cpc", "ppc", "paid", "paidsearch", "paid_search"]);
 
@@ -811,7 +967,10 @@ async function fetchGa4ReportUncached(
   const devices: Ga4DeviceRow[] = [];
   const byEvent: { event: string; count: number }[] = [];
   const placementLeaks: Ga4PlacementLeak[] = [];
-  const tree: Ga4TreeNode[] = [];
+  const treeByView: Record<Ga4TreeView, Ga4TreeNode[]> = { adset: [], placement: [], ad: [] };
+  // Batch 2 supplies the ad-set rows; the other two views come from
+  // batch 3, so the rows are hoisted to where all three can be built.
+  let adsetRows: Row[] = [];
   // `convRate` accumulates rate x sessions and is divided out below.
   const byCountry = new Map<
     string,
@@ -869,11 +1028,13 @@ async function fetchGa4ReportUncached(
       // an endpoint per level and lets the UI expand instantly.
       withFilter({
         dateRanges: [cur],
+        // Ad-group column first, utm_term second: a Google row takes the
+        // ad group, a Meta row falls through to the ad set. See buildTree.
         dimensions: [
           { name: "sessionSourceMedium" },
           { name: "sessionCampaignName" },
           { name: "sessionGoogleAdsAdGroupName" },
-          { name: "sessionManualAdContent" },
+          { name: "sessionManualTerm" },
         ],
         metrics: [
           { name: "sessions" },
@@ -971,136 +1132,9 @@ async function fetchGa4ReportUncached(
       });
     }
     placementLeaks.sort((a, b) => b.sessions - a.sessions);
+    adsetRows = rTree?.rows ?? [];
 
-    // ── channel → campaign → ad group / ad ──────────────────────────
-    // Accumulators carry convRate as rate x sessions and are divided out
-    // at the end, the same session-weighting used everywhere else.
-    type Acc = {
-      label: string;
-      platform: string;
-      sessions: number;
-      keyEvents: number;
-      rateW: number;
-      engaged: number;
-      durW: number;
-      childLabel?: string;
-      /** Raw rows, held only between the two passes below. */
-      raw?: { adGroup: string; adContent: string; sessions: number; ke: number; rate: number; engaged: number; dur: number }[];
-      kids: Map<string, Acc>;
-    };
-    const mkAcc = (label: string, platform: string): Acc => ({
-      label,
-      platform,
-      sessions: 0,
-      keyEvents: 0,
-      rateW: 0,
-      engaged: 0,
-      durW: 0,
-      kids: new Map(),
-    });
-    const roots = new Map<string, Acc>();
 
-    for (const r of rTree?.rows ?? []) {
-      const bucket = classifySource(dim(r, 0));
-      const campaign = cleanCampaign(dim(r, 1));
-      const adGroup = dim(r, 2).trim();
-      const adContent = dim(r, 3).trim();
-      const sessions = met(r, 0);
-      const ke = met(r, 1);
-      const rate = met(r, 2);
-      const engaged = met(r, 3);
-      const dur = met(r, 4);
-
-      const platform =
-        bucket === "googleads" ? "google" : bucket === "meta" ? "facebook" : bucket;
-
-      const root =
-        roots.get(bucket) ??
-        mkAcc(SOURCE_LABELS[bucket] ?? SOURCE_LABELS.other, platform);
-
-      const bump = (a: Acc) => {
-        a.sessions += sessions;
-        a.keyEvents += ke;
-        a.rateW += rate * sessions;
-        a.engaged += engaged;
-        a.durW += dur * sessions;
-      };
-      bump(root);
-
-      // Organic, direct and referral have no campaign. They still belong
-      // in this table — it is now the only channel breakdown in the
-      // section — they just have nothing to expand into.
-      if (!campaign) {
-        roots.set(bucket, root);
-        continue;
-      }
-      root.childLabel = "קמפיינים";
-      const campKey = campaign.toLowerCase().replace(/[_-]+/g, "-");
-      const camp = root.kids.get(campKey) ?? mkAcc(campaign, platform);
-      bump(camp);
-      // Leaves are decided per CAMPAIGN in a second pass, not here: a
-      // Google campaign has some rows carrying an ad-group name and
-      // others carrying only an asset id, and choosing per row put
-      // `Rm`, `חיפשו`, `55+` and `797432864778` side by side as if they
-      // were the same kind of thing.
-      camp.raw = camp.raw ?? [];
-      camp.raw.push({ adGroup, adContent, sessions, ke, rate, engaged, dur });
-      root.kids.set(campKey, camp);
-      roots.set(bucket, root);
-    }
-
-    // Second pass: one leaf dimension per campaign. Google wins with ad
-    // groups wherever it has any — the asset ids underneath are opaque
-    // numbers — and rows with no group are collected rather than dropped
-    // so the children still sum to the campaign. Meta campaigns have no
-    // groups at all and fall through to their ad codes.
-    for (const root of roots.values()) {
-      for (const camp of root.kids.values()) {
-        const raw = camp.raw ?? [];
-        const useGroups = raw.some(
-          (x) => x.adGroup && x.adGroup !== "(not set)",
-        );
-        camp.childLabel = useGroups ? "קבוצות מודעות" : "מודעות";
-        for (const x of raw) {
-          const name = useGroups
-            ? x.adGroup && x.adGroup !== "(not set)"
-              ? x.adGroup
-              : "ללא קבוצת מודעות"
-            : x.adContent && x.adContent !== "(not set)"
-              ? x.adContent
-              : "";
-          if (!name) continue;
-          const leaf = camp.kids.get(name) ?? mkAcc(name, camp.platform);
-          leaf.sessions += x.sessions;
-          leaf.keyEvents += x.ke;
-          leaf.rateW += x.rate * x.sessions;
-          leaf.engaged += x.engaged;
-          leaf.durW += x.dur * x.sessions;
-          camp.kids.set(name, leaf);
-        }
-        delete camp.raw;
-      }
-    }
-
-    const toNode = (a: Acc, key: string): Ga4TreeNode => ({
-      key,
-      label: a.label,
-      platform: a.platform,
-      sessions: a.sessions,
-      keyEvents: a.keyEvents,
-      convRate: mergeRate(a.rateW, a.sessions),
-      engagementRate: a.sessions > 0 ? a.engaged / a.sessions : 0,
-      avgSeconds: mergeRate(a.durW, a.sessions),
-      childLabel: a.kids.size > 0 ? a.childLabel : undefined,
-      children: [...a.kids.entries()]
-        .map(([k, v]) => toNode(v, `${key}/${k}`))
-        .sort((x, y) => y.sessions - x.sessions),
-    });
-    tree.push(
-      ...[...roots.entries()]
-        .map(([k, v]) => toNode(v, k))
-        .sort((a, b) => b.sessions - a.sessions),
-    );
   } catch {
     // Non-fatal — the section renders without these blocks.
   }
@@ -1110,7 +1144,7 @@ async function fetchGa4ReportUncached(
   let returning: Ga4Returning | null = null;
   const intro: Ga4IntroRow[] = [];
   try {
-    const [rDemo, rReturn, rIntro] = await batchRun(subjectEmail, propertyId, [
+    const [rDemo, rReturn, rPlacementView, rAdView, rIntro] = await batchRun(subjectEmail, propertyId, [
       // Age and gender CROSSED, not two marginals — a grouped bar chart
       // needs the cells. Verified to survive GA4's demographic
       // thresholding: 12 populated cells on a landing page with 798
@@ -1131,6 +1165,30 @@ async function fetchGa4ReportUncached(
         ],
         limit: 10,
       }),
+      // The other two tree views. Separate reports rather than one query
+      // with every leaf dimension: crossing sourceMedium x campaign x
+      // adGroup x term x content is ~1,800 rows on a single property and
+      // would truncate against any sane limit, while three 3-dimension
+      // reports stay around 100 rows each.
+      ...(["sessionMedium", "sessionManualAdContent"] as const).map((leaf) =>
+        withFilter({
+          dateRanges: [cur],
+          dimensions: [
+            { name: "sessionSourceMedium" },
+            { name: "sessionCampaignName" },
+            { name: leaf },
+          ],
+          metrics: [
+            { name: "sessions" },
+            { name: "keyEvents" },
+            { name: "sessionKeyEventRate" },
+            { name: "engagedSessions" },
+            { name: "averageSessionDuration" },
+          ],
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+          limit: 400,
+        }),
+      ),
       // First-touch campaign credit, compared below against the
       // last-touch table already fetched in batch 1.
       withFilter({
@@ -1233,6 +1291,31 @@ async function fetchGa4ReportUncached(
     }
     intro.sort((a, b) => b.introKeyEvents - b.closeKeyEvents - (a.introKeyEvents - a.closeKeyEvents));
     intro.splice(5);
+
+    // Three views of the same hierarchy. The adset rows come from the
+    // batch-2 report (ad group OR utm_term); placement and ad each have
+    // their own report in this batch.
+    treeByView.adset = buildTree(
+      adsetRows,
+      [2, 3],
+      "קבוצות מודעות",
+      SOURCE_LABELS,
+      classifySource,
+    );
+    treeByView.placement = buildTree(
+      rPlacementView?.rows ?? [],
+      [2],
+      "מיקומים",
+      SOURCE_LABELS,
+      classifySource,
+    );
+    treeByView.ad = buildTree(
+      rAdView?.rows ?? [],
+      [2],
+      "מודעות",
+      SOURCE_LABELS,
+      classifySource,
+    );
   } catch {
     // Non-fatal — Google Signals may simply be off for this property.
   }
@@ -1287,7 +1370,7 @@ async function fetchGa4ReportUncached(
     // nothing to convert, every placement trivially shows zero and the
     // block would accuse the whole account.
     placementLeaks: curKe > 0 ? placementLeaks : [],
-    tree,
+    tree: treeByView,
     israel: { ...israel, convRate: mergeRate(israel.convRate, israel.sessions) },
     abroad: (() => {
       const all = [...byCountry.values()];
@@ -1455,8 +1538,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v15: tree carries all channels + engagement/duration; AN folded back into meta.
-  const key = `ga4Report:v15:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v18: UTM leaf values decoded so +-encoded duplicates merge.
+  const key = `ga4Report:v18:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

@@ -9260,6 +9260,34 @@ html[data-theme="dark"] .rpt-util-fill-time {
 /* Expandable channel → campaign → ad-group tree. Depth is shown by
    indent + weight rather than nested tables, so every level keeps the
    same column grid and the numbers stay comparable down the tree. */
+.ga4w-tree-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.ga4w-tree-head .ga4w-h3 { margin: 0; }
+.ga4w-viewsw { display: inline-flex; gap: 0.2rem; }
+.ga4w-viewsw-btn {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ga4w-viewsw-btn:hover { background: var(--surface-soft); color: var(--ink); }
+.ga4w-viewsw-btn.is-active {
+  background: var(--surface-soft);
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .ga4w-tree-row.is-parent { cursor: pointer; }
 .ga4w-tree-row.is-parent:hover td { background: var(--surface-soft); }
 .ga4w-tree-row.is-open > td { background: var(--surface-soft); }

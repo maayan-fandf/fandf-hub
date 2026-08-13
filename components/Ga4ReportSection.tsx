@@ -102,8 +102,8 @@ export default async function Ga4ReportSection({
           have nothing to expand into), so the flat source block is gone.
           The flat campaign table survives only as a fallback for
           properties where the ad-group dimensions come back empty. */}
-      {(data.tree?.length ?? 0) > 0 ? (
-        <Ga4CampaignTree nodes={data.tree} showConv={!!data.conversions} />
+      {(data.tree?.adset?.length ?? 0) > 0 ? (
+        <Ga4CampaignTree trees={data.tree} showConv={!!data.conversions} />
       ) : data.sources.length > 0 ? (
         <Sources data={data} showConv={!!data.conversions} />
       ) : (
