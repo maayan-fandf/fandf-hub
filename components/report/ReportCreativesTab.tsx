@@ -47,6 +47,43 @@ function FbAdImage({ ad }: { ad: ReportFbAd }) {
   );
 }
 
+/**
+ * Demand Gen asset image.
+ *
+ * Exists for the onError branch the DG grid was missing. These are served from
+ * `tpc.googlesyndication.com` — a Google ad-serving host that ad blockers block
+ * by default — so for anyone running one, the request never leaves the browser
+ * and the figure rendered as blank space above a caption, which reads as a
+ * broken report rather than a blocked request. The URLs themselves are healthy
+ * (verified 2026-08-13: HTTP 200, real JPEG/PNG bytes), and the hub sends no
+ * CSP, so when these don't appear it is the viewer's extension, not us.
+ *
+ * Same discipline as FbAdImage, which has had a fallback chain since v562.
+ */
+function DgAssetImage({ src, alt }: { src: string; alt: string }) {
+  const [dead, setDead] = useState(false);
+  if (dead) {
+    return (
+      <div
+        className="rpt-cr-dgnoimg"
+        title="התמונה מתארחת ב-tpc.googlesyndication.com — דומיין שחוסמי פרסומות חוסמים כברירת מחדל. אם מותקן לך חוסם, זו כנראה הסיבה."
+      >
+        🚫 נחסמה
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setDead(true)}
+    />
+  );
+}
+
 /** Meta ad-preview links (`כל מודעות פפיסבוק`, 365-day window — the assets
  *  tab only reaches 60, so most cards showing 📷 אין תצוגה still have one).
  *
@@ -218,8 +255,22 @@ function CrmRow({
 
 export default function ReportCreativesTab({
   data,
+  showPreviews = false,
 }: {
   data: ProjectReportData;
+  /** Render the Meta ad-preview links on each card.
+   *
+   *  OFF by default, and deliberately opt-in per project rather than "show
+   *  them whenever we have them". On a normal project the assets tab's 60-day
+   *  window covers the campaigns you're actually looking at, so the creative
+   *  is already on the card — the links add nothing and a six-variant ad turns
+   *  into six chips of clutter over an image you can see perfectly well.
+   *
+   *  They earn their place only where the creative CAN'T be shown: דיגיתל שלי
+   *  runs in bursts around municipal dates, so most of its ads aged out of
+   *  that window and the card has no image at all. NativeProjectRail passes
+   *  this for media-workbook projects only. */
+  showPreviews?: boolean;
 }) {
   const c = data.creatives;
   if (!c) {
@@ -306,7 +357,7 @@ export default function ReportCreativesTab({
                         {status.label}
                       </span>
                     )}
-                    <AdPreviewLinks previews={a.previews} />
+                    {showPreviews && <AdPreviewLinks previews={a.previews} />}
                   </div>
                   <div className="rpt-cr-body">
                     <div className="rpt-cr-name" title={a.ad}>
@@ -645,12 +696,9 @@ function DgAdCard({
                 {ad.images.map((im, i) => (
                   <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
                     {im.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <DgAssetImage
                         src={im.imageUrl}
                         alt={im.name || im.fieldType}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
                       />
                     ) : (
                       <a

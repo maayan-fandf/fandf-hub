@@ -28258,6 +28258,23 @@ html[data-theme="dark"] {
   background: var(--surface-alt);
   display: block;
 }
+/* Blocked DG asset. Same 132px box as the image it replaces so the strip
+   keeps its rhythm — NOT .rpt-cr-noimg, which is absolutely positioned to
+   fill .rpt-cr-thumb and would escape this figure. */
+.rpt-cr-dgnoimg {
+  width: 132px;
+  height: 132px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  border: 1px dashed var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+}
 .rpt-cr-dgvid {
   width: 132px;
   height: 132px;

@@ -166,6 +166,31 @@ export default async function NativeProjectRail({
     };
   }
 
+  // A media-workbook project (דיגיתל שלי): its own sheet is the report, and
+  // its creatives mostly predate the assets tab's 60-day window.
+  const mediaLed = Boolean(mediaNode);
+
+  // Ad-preview links exist to stand in for a creative that can't be rendered.
+  // Everywhere else the card already shows the image, so they're clutter — and
+  // shipping 1–6 signed Meta URLs per card to a viewer who will never see a
+  // link for them is pure payload. Drop them the same way `history` and the
+  // client-view strip above do: out of the PAYLOAD, not just the render.
+  if (!mediaLed && data?.creatives) {
+    data = {
+      ...data,
+      creatives: {
+        ...data.creatives,
+        fb: {
+          ...data.creatives.fb,
+          topAds: data.creatives.fb.topAds.map((a) => ({
+            ...a,
+            previews: undefined,
+          })),
+        },
+      },
+    };
+  }
+
   const groups: RailGroup[] = [
     { id: "work", label: "עבודה" },
     { id: "perf", label: "ביצועים" },
@@ -201,8 +226,6 @@ export default async function NativeProjectRail({
   // and the rail keeps just משימות והודעות / ביצועי מדיה / קמפיינים /
   // פריסת מדיה. קמפיינים survives because the creative cards are the one
   // platform view the workbook has no equivalent for.
-  const mediaLed = Boolean(mediaNode);
-
   // Pushed ahead of the campaign sections so ביצועי מדיה leads the ביצועים
   // group — sections render in push order within a group, and on these
   // projects the workbook is the headline, not the platform data.
@@ -255,7 +278,10 @@ export default async function NativeProjectRail({
       icon: mediaLed ? "🎨" : "📣",
       content: (
         <>
-          <ReportCreativesTab data={data} />
+          {/* Ad-preview links only where the creative can't be rendered —
+              see the prop's doc block. On a normal project the card already
+              shows the image, so they'd be clutter. */}
+          <ReportCreativesTab data={data} showPreviews={mediaLed} />
           {campaignsFbNode}
         </>
       ),
