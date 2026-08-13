@@ -1,6 +1,7 @@
 import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
 import { resolveGa4Target } from "@/lib/ga4Project";
-import { lookupCity, project, MAP_W, MAP_H, OUTLINE_PATH } from "@/lib/israelMap";
+import { lookupCity } from "@/lib/israelMap";
+import Ga4CityMap from "@/components/Ga4CityMap";
 import {
   fetchGa4Report,
   reportWindow,
@@ -81,12 +82,20 @@ export default async function Ga4ReportSection({
       </div>
       <div className="ga4w-cmp">לעומת התקופה הקודמת ({fmtRange(data.prevWindow.start, data.prevWindow.end)})</div>
 
+      {/* Conversions sit directly under the headline KPIs, not below the
+          campaign table — they are the outcome everything else explains. */}
+      {data.conversions && (
+        <Conversions c={data.conversions} sessions={data.totals.sessions} />
+      )}
+
       {data.trend.length > 1 && <TrendChart points={data.trend} />}
 
-      {data.sources.length > 0 && <Sources data={data} />}
+      {data.sources.length > 0 && (
+        <Sources data={data} showConv={!!data.conversions} />
+      )}
 
       {data.campaigns && data.campaigns.length > 0 && (
-        <Campaigns data={data} />
+        <Campaigns data={data} showConv={!!data.conversions} />
       )}
       {!data.campaigns && isInternal && (
         <div className="ga4w-warn">
@@ -99,18 +108,25 @@ export default async function Ga4ReportSection({
       {/* Every optional block is read defensively. A cached payload from
           an older schema is missing these keys entirely, and a section
           that crashes the whole project page is far worse than one that
-          quietly renders a block short — SCHEMA_V in lib/ga4Report.ts is
-          the real fix, this is the seatbelt. */}
-      {data.conversions && (
-        <Conversions c={data.conversions} sessions={data.totals.sessions} />
-      )}
-
+          quietly renders a block short — the version in the cache key in
+          lib/ga4Report.ts is the real fix, this is the seatbelt. */}
       {(data.devices?.length ?? 0) > 0 && (
         <Devices rows={data.devices} hasKeyEvents={!!data.conversions} />
       )}
 
       {(data.cities?.length ?? 0) > 0 && (
-        <VisitorMap cities={data.cities} abroad={data.abroadSessions ?? 0} />
+        <Ga4CityMap
+          project={project}
+          cities={data.cities}
+          abroad={data.abroadSessions ?? 0}
+          unmapped={data.cities.reduce(
+            (n, c) => (lookupCity(c.city) ? n : n + c.sessions),
+            0,
+          )}
+          windowStart={data.window.start}
+          windowEnd={data.window.end}
+          showConv={!!data.conversions}
+        />
       )}
 
       {(data.pages?.length ?? 0) > 1 && <Pages rows={data.pages} host={target.host} />}
@@ -181,7 +197,19 @@ function TrendChart({ points }: { points: Ga4Point[] }) {
 
 /* ── Sources ──────────────────────────────────────────────────────── */
 
-function Sources({ data }: { data: Ga4ReportData }) {
+/**
+ * `showConv` gates the conversion columns on the property actually
+ * tagging key events — otherwise every row reads 0%, which looks like
+ * each channel fails to convert rather than like nothing is measured.
+ *
+ * The rate here is keyEvents ÷ sessions, NOT GA4's sessionKeyEventRate.
+ * That metric is a ratio and cannot be summed when several
+ * source/medium rows collapse into one bucket, so it is recomputed from
+ * the additive parts. It therefore counts a session that fires two key
+ * events twice and can read slightly higher than the headline rate —
+ * hence the הערה under the table.
+ */
+function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean }) {
   const total = data.sources.reduce((n, s) => n + s.sessions, 0);
   if (total <= 0) return null;
   return (
@@ -204,6 +232,8 @@ function Sources({ data }: { data: Ga4ReportData }) {
             <th>כניסות</th>
             <th>חלק מהתנועה</th>
             <th>גלישה מעורבת</th>
+            {showConv && <th>אירועי מפתח</th>}
+            {showConv && <th>שיעור המרה</th>}
           </tr>
         </thead>
         <tbody>
@@ -216,17 +246,28 @@ function Sources({ data }: { data: Ga4ReportData }) {
               <td>{fmtInt(s.sessions)}</td>
               <td>{fmtPct(s.sessions / total)}</td>
               <td>{s.sessions > 0 ? fmtPct(s.engaged / s.sessions) : "—"}</td>
+              {showConv && <td>{fmtInt(s.keyEvents)}</td>}
+              {showConv && (
+                <td>{s.sessions > 0 ? fmtPct(s.keyEvents / s.sessions) : "—"}</td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
+      {showConv && (
+        <div className="ga4w-note">
+          שיעור ההמרה בטבלה זו מחושב כאירועי מפתח חלקי כניסות, ולכן עשוי להיות
+          גבוה מעט משיעור ההמרה הכללי שלמעלה — סשן שכלל שני אירועי מפתח נספר
+          פעמיים.
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── Campaigns ────────────────────────────────────────────────────── */
 
-function Campaigns({ data }: { data: Ga4ReportData }) {
+function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean }) {
   const rows = data.campaigns ?? [];
   return (
     <div className="ga4w-block">
@@ -239,6 +280,8 @@ function Campaigns({ data }: { data: Ga4ReportData }) {
               <th>כניסות</th>
               <th>גלישה מעורבת</th>
               <th>זמן ממוצע</th>
+              {showConv && <th>אירועי מפתח</th>}
+              {showConv && <th>שיעור המרה</th>}
             </tr>
           </thead>
           <tbody>
@@ -248,6 +291,10 @@ function Campaigns({ data }: { data: Ga4ReportData }) {
                 <td>{fmtInt(c.sessions)}</td>
                 <td>{c.sessions > 0 ? fmtPct(c.engaged / c.sessions) : "—"}</td>
                 <td>{fmtDuration(c.avgSeconds)}</td>
+                {showConv && <td>{fmtInt(c.keyEvents)}</td>}
+                {showConv && (
+                  <td>{c.sessions > 0 ? fmtPct(c.keyEvents / c.sessions) : "—"}</td>
+                )}
               </tr>
             ))}
             {data.unattributedSessions > 0 && (
@@ -342,20 +389,51 @@ function Devices({
 }) {
   const total = rows.reduce((n, r) => n + r.sessions, 0);
   if (total <= 0) return null;
+
+  // Donut rather than a pie: these splits are extremely lopsided (96%
+  // mobile is typical here), so a filled pie is one colour with two
+  // slivers. The hole carries the dominant share as a label, which is
+  // the number anyone actually reads off this chart.
+  const R = 15.9155; // circumference 100, so dash lengths ARE percentages
+  const C = 100;
+  let offset = 25; // rotate so the first segment starts at 12 o'clock
+  const arcs = rows
+    .filter((r) => r.sessions > 0)
+    .map((r) => {
+      const pct = (r.sessions / total) * 100;
+      const arc = { ...r, pct, dash: `${pct} ${C - pct}`, offset };
+      offset = (offset - pct + C) % C;
+      return arc;
+    });
+  const top = rows.reduce((a, b) => (b.sessions > a.sessions ? b : a), rows[0]);
+
   return (
     <div className="ga4w-block">
       <h3 className="ga4w-h3">לפי מכשיר</h3>
-      <div className="ga4w-stack">
-        {rows.map((r) => (
-          <div
-            key={r.device}
-            className={`ga4w-stack-seg is-dev-${r.device}`}
-            style={{ width: `${(r.sessions / total) * 100}%` }}
-            title={`${r.label}: ${fmtInt(r.sessions)}`}
-          />
-        ))}
-      </div>
-      <table className="ga4w-table">
+      <div className="ga4w-donut-wrap">
+        <svg viewBox="0 0 42 42" className="ga4w-donut" role="img" aria-label="פילוח לפי מכשיר">
+          <circle className="ga4w-donut-track" cx="21" cy="21" r={R} />
+          {arcs.map((a) => (
+            <circle
+              key={a.device}
+              className={`ga4w-donut-seg is-dev-${a.device}`}
+              cx="21"
+              cy="21"
+              r={R}
+              strokeDasharray={a.dash}
+              strokeDashoffset={a.offset}
+            >
+              <title>{`${a.label}: ${fmtInt(a.sessions)} (${fmtPct(a.sessions / total)})`}</title>
+            </circle>
+          ))}
+          <text className="ga4w-donut-pct" x="21" y="20.6">
+            {fmtPct(top.sessions / total)}
+          </text>
+          <text className="ga4w-donut-lbl" x="21" y="24.6">
+            {top.label}
+          </text>
+        </svg>
+        <table className="ga4w-table ga4w-donut-side">
         <thead>
           <tr>
             <th>מכשיר</th>
@@ -380,99 +458,7 @@ function Devices({
             </tr>
           ))}
         </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ── Map ──────────────────────────────────────────────────────────── */
-
-/**
- * Visitors by Israeli city, as dots on a simplified national silhouette.
- *
- * GA4 exposes no coordinates, so the positions come from our own
- * gazetteer (lib/israelMap.ts). Cities not in it are counted into
- * "other" rather than dropped, so the totals under the map always add
- * up to what GA actually reported.
- *
- * Dot area — not radius — is proportional to sessions, so a city with
- * ten times the traffic looks ten times as big rather than a hundred.
- */
-function VisitorMap({
-  cities,
-  abroad,
-}: {
-  cities: NonNullable<Ga4ReportData["cities"]>;
-  abroad: number;
-}) {
-  const plotted: { x: number; y: number; city: string; sessions: number }[] = [];
-  let unmapped = 0;
-  for (const c of cities) {
-    const pt = lookupCity(c.city);
-    if (!pt) {
-      unmapped += c.sessions;
-      continue;
-    }
-    const { x, y } = project(pt.lat, pt.lon);
-    plotted.push({ x, y, city: c.city, sessions: c.sessions });
-  }
-  if (plotted.length === 0) return null;
-
-  const max = Math.max(...plotted.map((p) => p.sessions), 1);
-  const r = (n: number) => 1.4 + Math.sqrt(n / max) * 6.5;
-  const top = cities.slice(0, 8);
-  const totalIl = cities.reduce((n, c) => n + c.sessions, 0);
-
-  return (
-    <div className="ga4w-block">
-      <h3 className="ga4w-h3">מאיפה הגולשים</h3>
-      <div className="ga4w-map">
-        <svg
-          viewBox={`0 0 ${MAP_W} ${MAP_H}`}
-          role="img"
-          aria-label="מפת מבקרים לפי עיר"
-          className="ga4w-map-svg"
-        >
-          <path className="ga4w-map-land" d={OUTLINE_PATH} />
-          {/* Largest last so small cities are never hidden underneath. */}
-          {[...plotted]
-            .sort((a, b) => a.sessions - b.sessions)
-            .map((p) => (
-              <circle
-                key={p.city}
-                cx={p.x}
-                cy={p.y}
-                r={r(p.sessions)}
-                className="ga4w-map-dot"
-              >
-                <title>{`${p.city}: ${fmtInt(p.sessions)}`}</title>
-              </circle>
-            ))}
-        </svg>
-        <table className="ga4w-table ga4w-map-list">
-          <thead>
-            <tr>
-              <th>עיר</th>
-              <th>כניסות</th>
-              <th>חלק</th>
-            </tr>
-          </thead>
-          <tbody>
-            {top.map((c) => (
-              <tr key={c.city}>
-                <td>{c.city}</td>
-                <td>{fmtInt(c.sessions)}</td>
-                <td>{fmtPct(c.sessions / Math.max(1, totalIl))}</td>
-              </tr>
-            ))}
-          </tbody>
         </table>
-      </div>
-      <div className="ga4w-note">
-        {fmtInt(totalIl)} כניסות מישראל
-        {unmapped > 0 && ` · ${fmtInt(unmapped)} מיישובים שאינם על המפה`}
-        {abroad > 0 && ` · ${fmtInt(abroad)} מחוץ לישראל (לרוב תנועת בוטים)`}
-        {" · "}מיקום מבוסס על כתובת ה-IP ולכן מקורב
       </div>
     </div>
   );

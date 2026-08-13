@@ -35,6 +35,7 @@ export type Ga4SourceBucket = {
   label: string;
   sessions: number;
   engaged: number;
+  keyEvents: number;
 };
 
 export type Ga4CampaignRow = {
@@ -42,6 +43,7 @@ export type Ga4CampaignRow = {
   sessions: number;
   engaged: number;
   avgSeconds: number;
+  keyEvents: number;
 };
 
 export type Ga4PageRow = {
@@ -367,15 +369,25 @@ async function fetchGa4ReportUncached(
         { name: "sessionKeyEventRate" },
       ],
     }),
-    // 4 — where the traffic came from.
+    // 4 — where the traffic came from, with its conversion performance.
+    //     sessionKeyEventRate is NOT requested per row here: it is a
+    //     ratio, so it cannot be summed when several source/medium rows
+    //     collapse into one bucket. keyEvents and sessions are additive,
+    //     and the rate is recomputed from those after bucketing.
     withFilter({
       dateRanges: [cur],
       dimensions: [{ name: "sessionSourceMedium" }],
-      metrics: [{ name: "sessions" }, { name: "engagedSessions" }],
+      metrics: [
+        { name: "sessions" },
+        { name: "engagedSessions" },
+        { name: "keyEvents" },
+      ],
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
       limit: 200,
     }),
-    // 5 — per campaign, and per page when the project owns several.
+    // 5 — per campaign. Same reasoning: campaign rows are merged after
+    //     sanitising (case, separators, +-encoding), so only additive
+    //     metrics are safe to request.
     withFilter({
       dateRanges: [cur],
       dimensions: [{ name: "sessionCampaignName" }],
@@ -383,6 +395,7 @@ async function fetchGa4ReportUncached(
         { name: "sessions" },
         { name: "engagedSessions" },
         { name: "averageSessionDuration" },
+        { name: "keyEvents" },
       ],
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
       limit: 200,
@@ -421,9 +434,11 @@ async function fetchGa4ReportUncached(
       label: SOURCE_LABELS[key] ?? SOURCE_LABELS.other,
       sessions: 0,
       engaged: 0,
+      keyEvents: 0,
     };
     b.sessions += met(r, 0);
     b.engaged += met(r, 1);
+    b.keyEvents += met(r, 2);
     bucket.set(key, b);
   }
   const sources = [...bucket.values()].sort((a, b) => b.sessions - a.sessions);
@@ -454,6 +469,7 @@ async function fetchGa4ReportUncached(
       sessions: 0,
       engaged: 0,
       avgSeconds: 0,
+      keyEvents: 0,
     };
     // Duration is a per-session average, so combine it weighted by
     // sessions rather than averaging the averages.
@@ -461,6 +477,7 @@ async function fetchGa4ReportUncached(
     row.sessions += sessions;
     row.engaged += met(r, 1);
     row.avgSeconds = row.sessions > 0 ? totalSecs / row.sessions : 0;
+    row.keyEvents += met(r, 3);
     campMap.set(k, row);
   }
   const coverage = paidSessions > 0 ? usable / paidSessions : 0;
@@ -615,6 +632,102 @@ async function fetchGa4ReportUncached(
 }
 
 /**
+ * Which campaigns brought traffic to ONE city — the map drill-down.
+ *
+ * Kept out of the main payload on purpose: the full city x campaign
+ * matrix is 100+ cities wide on a busy property, and a viewer opens at
+ * most one of them. Served by /api/analytics/city.
+ *
+ * Combines the project's page filter with a city filter using an AND
+ * group, so the result is "traffic to this project's pages, from this
+ * city" rather than the whole property's traffic from that city.
+ */
+export async function fetchCityCampaigns(
+  subjectEmail: string,
+  propertyId: string,
+  paths: string[],
+  city: string,
+  win: { start: string; end: string },
+): Promise<Ga4CampaignRow[]> {
+  const mode = await detectAttributionMode(subjectEmail, propertyId);
+  const normed = paths.map(normPath).filter(Boolean);
+  const wholeSite = normed.length === 1 && normed[0] === "/";
+
+  const cityFilter = {
+    filter: { fieldName: "city", stringFilter: { value: city, matchType: "EXACT" } },
+  };
+  let dimensionFilter: Record<string, unknown> = cityFilter;
+  if (!wholeSite) {
+    const rawValues = await resolveRawPageValues(subjectEmail, propertyId, mode, paths);
+    if (rawValues.length === 0) return [];
+    dimensionFilter = {
+      andGroup: {
+        expressions: [
+          { filter: { fieldName: mode, inListFilter: { values: rawValues } } },
+          cityFilter,
+        ],
+      },
+    };
+  }
+
+  const [report] = await batchRun(subjectEmail, propertyId, [
+    {
+      dateRanges: [{ startDate: win.start, endDate: win.end }],
+      dimensions: [{ name: "sessionCampaignName" }],
+      metrics: [
+        { name: "sessions" },
+        { name: "engagedSessions" },
+        { name: "averageSessionDuration" },
+        { name: "keyEvents" },
+      ],
+      dimensionFilter,
+      orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+      limit: 50,
+    },
+  ]);
+
+  const byName = new Map<string, Ga4CampaignRow>();
+  let unattributed = 0;
+  for (const r of report?.rows ?? []) {
+    const sessions = met(r, 0);
+    const name = cleanCampaign(dim(r, 0));
+    if (!name) {
+      unattributed += sessions;
+      continue;
+    }
+    const k = name.toLowerCase().replace(/[_-]+/g, "-");
+    const row = byName.get(k) ?? {
+      campaign: name,
+      sessions: 0,
+      engaged: 0,
+      avgSeconds: 0,
+      keyEvents: 0,
+    };
+    const totalSecs = row.avgSeconds * row.sessions + met(r, 2) * sessions;
+    row.sessions += sessions;
+    row.engaged += met(r, 1);
+    row.avgSeconds = row.sessions > 0 ? totalSecs / row.sessions : 0;
+    row.keyEvents += met(r, 3);
+    byName.set(k, row);
+  }
+
+  const out = [...byName.values()].sort((a, b) => b.sessions - a.sessions).slice(0, 10);
+  // Surfaced as a row rather than hidden, matching the main table — the
+  // percentages a viewer computes in their head must have a denominator
+  // they can see.
+  if (unattributed > 0) {
+    out.push({
+      campaign: "לא שויך לקמפיין",
+      sessions: unattributed,
+      engaged: 0,
+      avgSeconds: 0,
+      keyEvents: 0,
+    });
+  }
+  return out;
+}
+
+/**
  * Cached entry point.
  *
  * 30 min while the window is still open — the newest point is yesterday
@@ -634,7 +747,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  const key = `ga4Report:v2:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v3: keyEvents added to Ga4SourceBucket and Ga4CampaignRow.
+  const key = `ga4Report:v3:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

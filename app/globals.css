@@ -9031,6 +9031,82 @@ html[data-theme="dark"] .ga4w-chart-area { fill: #a5b4fc; opacity: 0.15; }
 html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
 .ga4w-map-list { flex: 1 1 15rem; min-width: 12rem; }
 
+/* Donut: r is 15.9155 so the circumference is exactly 100 and every
+   stroke-dasharray value is literally a percentage. */
+.ga4w-donut-wrap {
+  display: flex;
+  gap: 1.1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ga4w-donut { width: 132px; height: 132px; flex: none; transform: rotate(0deg); }
+.ga4w-donut-track {
+  fill: none;
+  stroke: var(--surface-soft);
+  stroke-width: 5;
+}
+.ga4w-donut-seg {
+  fill: none;
+  stroke-width: 5;
+  transition: stroke-width var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+}
+.ga4w-donut-seg:hover { stroke-width: 6.2; }
+.ga4w-donut-seg.is-dev-mobile  { stroke: #6366f1; }
+.ga4w-donut-seg.is-dev-desktop { stroke: #0ea5e9; }
+.ga4w-donut-seg.is-dev-tablet  { stroke: #f472b6; }
+.ga4w-donut-seg.is-dev-other   { stroke: #94a3b8; }
+.ga4w-donut-pct {
+  text-anchor: middle;
+  font-size: 5.4px;
+  font-weight: 800;
+  fill: var(--ink);
+}
+.ga4w-donut-lbl {
+  text-anchor: middle;
+  font-size: 2.9px;
+  fill: var(--muted);
+}
+.ga4w-donut-side { flex: 1 1 16rem; min-width: 13rem; }
+
+/* City drill-down */
+.ga4w-map-side { flex: 1 1 17rem; min-width: 13rem; }
+.ga4w-map-dot.is-clickable { cursor: pointer; }
+.ga4w-map-dot.is-clickable:hover { fill-opacity: 0.85; }
+.ga4w-map-dot.is-open {
+  fill-opacity: 0.95;
+  stroke-width: 1.2;
+}
+.ga4w-row-click { cursor: pointer; }
+.ga4w-row-click:hover td { background: var(--surface-soft); }
+.ga4w-row-click.is-open td { background: var(--surface-soft); font-weight: 600; }
+.ga4w-drill {
+  margin-top: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  background: var(--surface);
+}
+.ga4w-drill-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+}
+.ga4w-drill-close {
+  margin-inline-start: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  border-radius: 5px;
+}
+.ga4w-drill-close:hover { background: var(--surface-soft); color: var(--ink); }
+
 .ga4w-table-wrap { overflow-x: auto; }
 .ga4w-table {
   width: 100%;

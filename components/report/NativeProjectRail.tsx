@@ -9,6 +9,7 @@ import ProjectRailShell, {
   type RailTriage,
 } from "@/components/report/ProjectRailShell";
 import ReportHeader, { LandingPreview } from "@/components/report/ReportHeader";
+import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
 import ReportOverviewTab from "@/components/report/ReportOverviewTab";
 import ReportChannelsTab, {
   type PacingDismissal,
@@ -313,7 +314,10 @@ export default async function NativeProjectRail({
         id: "analytics",
         group: "perf",
         label: "אנליטיקס",
-        icon: "📊",
+        // The real GA mark rather than an emoji — this section is
+        // entirely Google Analytics data, and 📊 was already doing
+        // generic duty elsewhere in the rail.
+        icon: <GoogleAnalyticsMark size={15} />,
         content: ga4ReportNode,
       });
     }

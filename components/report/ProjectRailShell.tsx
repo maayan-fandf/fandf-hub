@@ -30,8 +30,10 @@ export type RailSection = {
   id: string;
   group: string;
   label: string;
-  /** Emoji glyph (the project page speaks emoji elsewhere). */
-  icon: string;
+  /** Usually an emoji glyph — the project page speaks emoji. Widened to
+   *  ReactNode so a section can supply a real brand mark instead, which
+   *  אנליטיקס does with the Google Analytics logo. */
+  icon: ReactNode;
   badge?: RailBadge | null;
   content: ReactNode;
 };
