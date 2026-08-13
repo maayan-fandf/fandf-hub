@@ -736,10 +736,20 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
   const rows = d.rows;
   if (rows.length === 0) return null;
 
-  const W = 560;
-  const H = 190;
-  const PAD_B = 26;
-  const PAD_T = 10;
+  // Sized to roughly the panel width so the SVG renders near 1:1 rather
+  // than being capped narrow and left stranded against one edge — it was
+  // 544px inside a 925px block with 381px of dead space beside it. A
+  // uniform upscale was not the answer either: it magnifies the 8px axis
+  // text along with the bars, which is what made this block "comically
+  // big" earlier. Widening the viewBox keeps type at its designed size.
+  const W = 880;
+  const H = 210;
+  const PAD_B = 30;
+  const PAD_T = 12;
+  // Gutter reserved for the y-axis labels. Without it the plot started
+  // at x=0 while the tick text ran to x=28, so the first bracket's bar
+  // was drawn straight over "120" / "100" / "80".
+  const PAD_L = 46;
   const max = Math.max(...rows.flatMap((r) => [r.male, r.female]), 1);
   // A "nice" step from the 1/2/5 series, so gridlines land on round
   // numbers AND the top sits just above the tallest bar. Rounding to
@@ -747,10 +757,11 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
   // chart was empty headroom.
   const step = niceStep(max);
   const top = Math.ceil(max / step) * step;
-  const slot = W / rows.length;
-  // Wider bars in a tighter pair: at slot/3 the two bars filled less
-  // than half their slot and the groups read as isolated slivers.
-  const barW = Math.min(34, slot / 2.5);
+  const slot = (W - PAD_L) / rows.length;
+  // Bar width tracks the slot so a 6-bracket chart and a 3-bracket one
+  // both fill their slots; the cap stops a two-bracket chart rendering
+  // two slabs.
+  const barW = Math.min(48, slot / 2.6);
   const y = (v: number) => PAD_T + (1 - v / top) * (H - PAD_T - PAD_B);
 
   const share = d.totalUsers > 0 ? d.knownUsers / d.totalUsers : 0;
@@ -774,14 +785,14 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
       >
         {Array.from({ length: top / step + 1 }, (_, i) => i * step).map((v) => (
           <g key={v}>
-            <line className="ga4w-demo-grid-line" x1={26} x2={W} y1={y(v)} y2={y(v)} />
-            <text className="ga4w-demo-tick" x={20} y={y(v) + 3}>
+            <line className="ga4w-demo-grid-line" x1={PAD_L} x2={W} y1={y(v)} y2={y(v)} />
+            <text className="ga4w-demo-tick" x={PAD_L - 8} y={y(v) + 4}>
               {v}
             </text>
           </g>
         ))}
         {rows.map((r, i) => {
-          const cx = i * slot + slot / 2;
+          const cx = PAD_L + i * slot + slot / 2;
           return (
             <g key={r.bucket}>
               <rect
@@ -802,7 +813,7 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
               >
                 <title>{`נשים ${r.bucket}: ${fmtInt(r.female)}`}</title>
               </rect>
-              <text className="ga4w-demo-xlbl" x={cx} y={H - 8}>
+              <text className="ga4w-demo-xlbl" x={cx} y={H - 9}>
                 {r.bucket}
               </text>
             </g>

@@ -9190,15 +9190,22 @@ html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
    and magnifies the 8px axis text along with them — the whole block ends
    up dominating the section. It shrinks below the cap on narrow screens,
    which is the direction that actually needs to be responsive. */
+/* Cap raised to roughly the panel width and centred. At 34rem the SVG
+   was 544px inside a 925px block and, being a plain block in an RTL
+   container, sat flush against one edge with 381px of dead space beside
+   it. The viewBox was widened to match so this renders near 1:1 rather
+   than upscaling — an upscale magnifies the axis text along with the
+   bars, which is what made this block look oversized before. */
 .ga4w-demo-chart {
   width: 100%;
-  max-width: 34rem;
+  max-width: 56rem;
   height: auto;
   display: block;
+  margin-inline: auto;
 }
 .ga4w-demo-grid-line { stroke: var(--border); stroke-width: 0.5; opacity: 0.55; }
-.ga4w-demo-tick { font-size: 8px; fill: var(--muted); text-anchor: end; }
-.ga4w-demo-xlbl { font-size: 9px; fill: var(--muted); text-anchor: middle; }
+.ga4w-demo-tick { font-size: 11px; fill: var(--muted); text-anchor: end; }
+.ga4w-demo-xlbl { font-size: 12px; fill: var(--muted); text-anchor: middle; }
 .ga4w-demo-bar { rx: 2; }
 .ga4w-demo-bar.is-male { fill: #6d5ce7; }
 .ga4w-demo-bar.is-female { fill: #52c9c2; }
