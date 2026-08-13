@@ -208,9 +208,31 @@ export type Ga4ReportData = {
   /** Israeli cities only, biggest first. Foreign traffic is filtered out
    *  upstream — it is bot/proxy noise on these properties. */
   cities: Ga4CityRow[];
-  /** Sessions from outside Israel, kept as a single number so the map
-   *  never silently implies 100% of traffic is plotted. */
-  abroadSessions: number;
+  /**
+   * Traffic from outside Israel.
+   *
+   * Kept in detail rather than as one number because on some projects it
+   * is not a rounding error: /mia-beer-yaakov drew 1,410 sessions from
+   * India, 488 from Bangladesh and 172 from Ethiopia over 28 days
+   * against 2,484 Israeli — roughly half the traffic to a Hebrew
+   * landing page for a town near Rishon LeZion, converting at zero.
+   *
+   * What makes it invisible elsewhere is that its engagement rate
+   * (0.51) is almost identical to Israel's (0.52), so nothing in a
+   * normal report flags it.
+   */
+  abroad: {
+    sessions: number;
+    keyEvents: number;
+    convRate: number;
+    topCountries: {
+      country: string;
+      sessions: number;
+      keyEvents: number;
+      convRate: number;
+    }[];
+  };
+  israel: { sessions: number; keyEvents: number; convRate: number };
   devices: Ga4DeviceRow[];
   /** Null when the property tags no key events at all — a conversion
    *  block reading 0% would be indistinguishable from real failure. */
@@ -649,14 +671,26 @@ async function fetchGa4ReportUncached(
   const cities: Ga4CityRow[] = [];
   const devices: Ga4DeviceRow[] = [];
   const byEvent: { event: string; count: number }[] = [];
-  let abroadSessions = 0;
+  // `convRate` accumulates rate x sessions and is divided out below.
+  const byCountry = new Map<
+    string,
+    { sessions: number; keyEvents: number; convRate: number }
+  >();
+  const israel = { sessions: 0, keyEvents: 0, convRate: 0 };
 
   try {
     const [rCity, rDevice, rEvent] = await batchRun(subjectEmail, propertyId, [
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: "city" }, { name: "country" }],
-        metrics: [{ name: "sessions" }, { name: "keyEvents" }],
+        metrics: [
+          { name: "sessions" },
+          { name: "keyEvents" },
+          // Session rate per row, session-weighted on aggregation — see
+          // mergeRate. Dividing keyEvents by sessions here would report
+          // Israel at 11% against a 4.6% headline on the same project.
+          { name: "sessionKeyEventRate" },
+        ],
         orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
         limit: 300,
       }),
@@ -684,15 +718,24 @@ async function fetchGa4ReportUncached(
       const name = dim(r, 0).trim();
       const country = dim(r, 1).trim();
       const sessions = met(r, 0);
-      // Foreign traffic on these properties is bot/proxy noise (one
-      // property logged Delhi 192 / Dhaka 185 / Addis Ababa 124 sessions
-      // in 28 days). Counted, never mapped.
-      if (country !== "Israel") {
-        abroadSessions += sessions;
+      const ke = met(r, 1);
+      // Foreign traffic is counted and reported, never mapped — the map
+      // is of Israel. Aggregated by country so the waste block can name
+      // which countries the budget went to.
+      const rate = met(r, 2);
+      if (country && country !== "Israel") {
+        const c = byCountry.get(country) ?? { sessions: 0, keyEvents: 0, convRate: 0 };
+        c.sessions += sessions;
+        c.keyEvents += ke;
+        c.convRate += rate * sessions;
+        byCountry.set(country, c);
         continue;
       }
+      israel.sessions += sessions;
+      israel.keyEvents += ke;
+      israel.convRate += rate * sessions;
       if (!name || name === "(not set)") continue;
-      cities.push({ city: name, sessions, keyEvents: met(r, 1) });
+      cities.push({ city: name, sessions, keyEvents: ke });
     }
 
     for (const r of rDevice?.rows ?? []) {
@@ -895,7 +938,28 @@ async function fetchGa4ReportUncached(
     unattributedSessions: unattributed,
     pages,
     cities: cities.sort((a, b) => b.sessions - a.sessions),
-    abroadSessions,
+    israel: { ...israel, convRate: mergeRate(israel.convRate, israel.sessions) },
+    abroad: (() => {
+      const all = [...byCountry.values()];
+      const sessions = all.reduce((n, c) => n + c.sessions, 0);
+      return {
+        sessions,
+        keyEvents: all.reduce((n, c) => n + c.keyEvents, 0),
+        convRate: mergeRate(
+          all.reduce((n, c) => n + c.convRate, 0),
+          sessions,
+        ),
+        topCountries: [...byCountry.entries()]
+          .map(([country, v]) => ({
+            country,
+            sessions: v.sessions,
+            keyEvents: v.keyEvents,
+            convRate: mergeRate(v.convRate, v.sessions),
+          }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 6),
+      };
+    })(),
     devices,
     // Null rather than a zeroed block when the property tags nothing:
     // "0% conversion" and "conversions were never configured" look
@@ -1041,8 +1105,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v7: keyEvents added to trend points.
-  const key = `ga4Report:v7:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v9: convRate added to israel/abroad (GA session rate, not derived).
+  const key = `ga4Report:v9:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

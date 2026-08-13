@@ -9205,6 +9205,31 @@ html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
 .ga4w-demo-leg strong { color: var(--ink); font-weight: 600; }
 .ga4w-demo-leg em { font-style: normal; opacity: 0.8; }
 
+/* Foreign-traffic alert. Amber rather than red — this is "look at your
+   geo targeting", not "something is broken". */
+.ga4w-alert {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+}
+html[data-theme="dark"] .ga4w-alert {
+  border-color: #b45309;
+  background: #2a1a05;
+}
+.ga4w-alert .ga4w-h3 { color: #92400e; }
+html[data-theme="dark"] .ga4w-alert .ga4w-h3 { color: #fde68a; }
+.ga4w-alert-lead {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.ga4w-alert .ga4w-table th { border-bottom-color: #fcd34d; }
+html[data-theme="dark"] .ga4w-alert .ga4w-table th { border-bottom-color: #b45309; }
+.ga4w-alert-row td { font-weight: 600; }
+.ga4w-alert .ga4w-chips { margin-top: 0.6rem; justify-content: flex-start; }
+
 .ga4w-table-wrap { overflow-x: auto; }
 .ga4w-table {
   width: 100%;

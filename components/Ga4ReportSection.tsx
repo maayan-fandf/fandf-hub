@@ -123,11 +123,13 @@ export default async function Ga4ReportSection({
         <Devices rows={data.devices} hasKeyEvents={!!data.conversions} />
       )}
 
+      {data.abroad && <ForeignTraffic abroad={data.abroad} israel={data.israel} />}
+
       {(data.cities?.length ?? 0) > 0 && (
         <Ga4CityMap
           project={project}
           cities={data.cities}
-          abroad={data.abroadSessions ?? 0}
+          abroad={data.abroad?.sessions ?? 0}
           unmapped={data.cities.reduce(
             (n, c) => (lookupCity(c.city) ? n : n + c.sessions),
             0,
@@ -460,6 +462,93 @@ function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
           Analytics למסע רב-ערוצי.
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Foreign traffic ──────────────────────────────────────────────── */
+
+/**
+ * Budget reaching traffic that cannot convert.
+ *
+ * Only renders above FOREIGN_MIN_SHARE. A few percent of overseas
+ * traffic is normal and legitimate — Israelis travelling, agency staff,
+ * VPNs — so showing this at every level would train people to ignore it.
+ * The threshold is set where the pattern stops looking like travellers:
+ * /mia-beer-yaakov ran at roughly half its traffic foreign, essentially
+ * none of it converting.
+ *
+ * What makes this worth its own block rather than a line on the map is
+ * that nothing else surfaces it. The foreign traffic's engagement rate
+ * (0.51) is almost identical to Israel's (0.52), so it passes every
+ * quality check in the section; only the country split gives it away.
+ */
+const FOREIGN_MIN_SHARE = 0.2;
+
+function ForeignTraffic({
+  abroad,
+  israel,
+}: {
+  abroad: NonNullable<Ga4ReportData["abroad"]>;
+  israel: Ga4ReportData["israel"];
+}) {
+  const total = abroad.sessions + (israel?.sessions ?? 0);
+  if (total <= 0) return null;
+  const share = abroad.sessions / total;
+  if (share < FOREIGN_MIN_SHARE || abroad.sessions < 50) return null;
+
+  // Rates come from GA session-weighted (see mergeRate), not keyEvents
+  // over sessions — the derived ratio reported Israel at 11% against a
+  // 4.6% headline for the same project.
+  const foreignCvr = abroad.convRate;
+  const israelCvr = israel?.convRate ?? 0;
+
+  return (
+    <div className="ga4w-block ga4w-alert">
+      <h3 className="ga4w-h3">⚠️ תנועה מחוץ לישראל</h3>
+      <p className="ga4w-alert-lead">
+        {fmtPct(share)} מהכניסות לדף הגיעו מחוץ לישראל (
+        {fmtInt(abroad.sessions)} כניסות). דף נחיתה בעברית לפרויקט נדל״ן בישראל
+        לא אמור לקבל תנועה כזו בהיקף הזה — כדאי לבדוק את הגדרות המיקוד
+        הגאוגרפי בקמפיינים.
+      </p>
+      <table className="ga4w-table">
+        <thead>
+          <tr>
+            <th>מקור</th>
+            <th>כניסות</th>
+            <th>אירועי מפתח</th>
+            <th>שיעור המרה</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ישראל</td>
+            <td>{fmtInt(israel?.sessions ?? 0)}</td>
+            <td>{fmtInt(israel?.keyEvents ?? 0)}</td>
+            <td>{fmtPct(israelCvr)}</td>
+          </tr>
+          <tr className="ga4w-alert-row">
+            <td>מחוץ לישראל</td>
+            <td>{fmtInt(abroad.sessions)}</td>
+            <td>{fmtInt(abroad.keyEvents)}</td>
+            <td>{fmtPct(foreignCvr)}</td>
+          </tr>
+        </tbody>
+      </table>
+      {abroad.topCountries.length > 0 && (
+        <div className="ga4w-chips">
+          {abroad.topCountries.map((c) => (
+            <span className="ga4w-chip" key={c.country}>
+              {c.country} · {fmtInt(c.sessions)}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="ga4w-note">
+        חלק מהתנועה הזו לגיטימית (ישראלים בחו״ל, VPN), אך כשהיקפה גבוה והמרות
+        כמעט אפסיות מדובר לרוב בתנועת בוטים או במיקוד גאוגרפי רחב מדי.
+      </div>
     </div>
   );
 }
