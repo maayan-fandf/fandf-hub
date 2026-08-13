@@ -18,6 +18,7 @@ import {
   tasksPeopleList,
   type CommentItem,
   type MentionItem,
+  type MorningFeed,
   type MorningProject,
 } from "@/lib/appsScript";
 import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePicker";
@@ -156,10 +157,11 @@ export default async function ProjectOverviewPage({
   // batch to resolve.
   //
   // `getMorningFeed` is intentionally NOT in this batch — it's the
-  // last Apps-Script-backed call on this page (~1–3s cold) and feeds
-  // an alerts section below the משימות cards. It's now streamed in
-  // via <Suspense> further down so the משימות / תיוגים / הערות cards
-  // don't wait for it.
+  // last Apps-Script-backed call on this page and feeds an alerts
+  // section below the משימות cards. It's streamed in via <Suspense>
+  // further down so the משימות / תיוגים / הערות cards don't wait for
+  // it — which matters more than the original note implied: the call
+  // is ~110s cold, not the "~1–3s" this comment used to claim.
   const meP = currentUserEmail().catch(() => "");
   const projectsP = getMyProjects().catch(() => null);
   const driveFolderP = projectsP.then(async (data) => {
@@ -1122,10 +1124,52 @@ export default async function ProjectOverviewPage({
 /* ─── Sections ───────────────────────────────────────────────────── */
 
 /**
+ * This project's row out of the morning feed.
+ *
+ * Deliberately asks for the SCOPE-keyed feed, not `{project}`. Every other
+ * caller — the /api/morning/count nav badge (which polls constantly), the home
+ * grid, /morning, /morning/forecast — shares scope-keyed cache entries, so one
+ * of them is essentially always warm. A `{project: name}` key is used by
+ * nothing else: with `unstable_cache`'s 300s TTL it is cold on virtually every
+ * visit, and cold is not cheap. MEASURED 2026-08-13 against live prod:
+ * 107–122s for `project=Essence`, 104–109s for `scope=mine` — the stale
+ * comment this replaces claimed "~1–3s cold, ~5ms warm via the 60s wrapper",
+ * which was true once and is off by ~40× now (see ACTION_TIMEOUT_MS in
+ * lib/appsScript.ts, which already records the 110.4s measurement).
+ *
+ * The consequence was silent and bad: the caller wraps this in
+ * `.catch(() => null)`, so when the cold call didn't come back the whole
+ * Apps-Script half of the alerts vanished — Essence showed 3 CRM signals while
+ * /morning showed the same 3 plus 6 budget/pacing/tracking ones — with nothing
+ * on screen saying anything was missing.
+ *
+ * Falls back to the project-scoped call only when the project isn't in the
+ * user's own feed, which is the one case the warm path can't serve: an admin
+ * opening a project they aren't rostered on. Rare, so it pays the cold cost
+ * rarely.
+ *
+ * Matched by NAME rather than taking `projects[0]`. The old code trusted
+ * position, which on a multi-project feed would have rendered a DIFFERENT
+ * project's alerts on this page.
+ */
+async function findProjectInMorningFeed(
+  projectName: string,
+): Promise<MorningProject | null> {
+  const pick = (feed: MorningFeed | null) =>
+    feed?.projects?.find((p) => p.name === projectName) ?? null;
+  try {
+    const mine = pick(await getMorningFeed({ scope: "mine" }));
+    if (mine) return mine;
+    return pick(await getMorningFeed({ project: projectName }));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Async server component for the alerts row. Lives below the project
- * cards and is wrapped in <Suspense> so its data fetch (the
- * Apps-Script-backed getMorningFeed, ~1–3s cold, ~5ms warm via the
- * 60s unstable_cache wrapper) doesn't block the rest of the page.
+ * cards and is wrapped in <Suspense> so its data fetch doesn't block the
+ * rest of the page (see findProjectInMorningFeed for the cost picture).
  *
  * Returns nothing visible while in flight (fallback=null) and nothing
  * visible if the project has no current signals — keeps the layout
@@ -1149,8 +1193,8 @@ async function ProjectAlertsSection({
   // dominance check (one month of CRM rows is too sparse — channel
   // objection profiles are slow-moving characteristics computed over
   // a wider window). Both rely on the same cached raw Sheets read.
-  const [alertsData, crmFunnel, crmFunnelAllTime, allClientsRows, crmDismissals] = await Promise.all([
-    getMorningFeed({ project: projectName }).catch(() => null),
+  const [dashboardProject, crmFunnel, crmFunnelAllTime, allClientsRows, crmDismissals] = await Promise.all([
+    findProjectInMorningFeed(projectName),
     company
       ? getCrmFunnelForProject({ company, project: projectName, monthFilter: monthOverride })
           .catch(() => null)
@@ -1171,7 +1215,6 @@ async function ProjectAlertsSection({
     // (best-effort — an outage shows them un-dismissed).
     listAlertDismissals().catch(() => ({})),
   ]);
-  const dashboardProject: MorningProject | null = alertsData?.projects[0] ?? null;
   const dashboardSignals = dashboardProject?.signals ?? [];
   const rawCrmSignals = computeCrmAlerts({
     funnel: crmFunnel,
