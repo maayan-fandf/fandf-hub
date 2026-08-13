@@ -201,6 +201,33 @@ export function calendarReadonlyClient(subjectEmail: string) {
 }
 
 /**
+ * Bearer token for the Google Analytics Data + Admin APIs (scope:
+ * `analytics.readonly`, added to DWD on 2026-08-13).
+ *
+ * Returns a raw token rather than a googleapis client because the
+ * `googleapis` build vendored here does not ship `analyticsdata` /
+ * `analyticsadmin` surfaces — same reason `lib/clarity.ts` talks REST.
+ * The token-off-the-JWT trick matches driveFolders.ts / chat.ts.
+ *
+ * GA4 grants property access to PEOPLE, not to service accounts, so the
+ * impersonated subject is what decides which properties are visible.
+ * For external viewers `getSAClient` swaps in DRIVE_FOLDER_OWNER, which
+ * is how a client-facing page can read a property the client themselves
+ * has no GA login for.
+ */
+export async function analyticsAccessToken(
+  subjectEmail: string,
+): Promise<string> {
+  const jwt = getSAClient(subjectEmail, [
+    "https://www.googleapis.com/auth/analytics.readonly",
+  ]);
+  const resp = await jwt.getAccessToken();
+  const token = resp?.token;
+  if (!token) throw new Error("analytics: missing impersonation token");
+  return token;
+}
+
+/**
  * Gmail send-as client. Impersonates the email sender (usually the task
  * author) so the approval-request email lands "from" a real person,
  * matching the Apps Script MailApp behavior.

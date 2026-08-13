@@ -44,7 +44,15 @@ function renderSummary(text: string) {
   });
 }
 
-function LandingPreview({ url, project }: { url: string; project: string }) {
+/**
+ * Landing-page screenshot cards. Exported because they are rendered
+ * next to the GA4 live-traffic section (NativeProjectRail) rather than
+ * in this header — the screenshot and that page's traffic numbers read
+ * as one unit. Kept OUTSIDE Ga4LiveSection deliberately: that section
+ * hides itself whenever a project's GA property can't be resolved, and
+ * the thumbnails must survive that.
+ */
+export function LandingPreview({ url, project }: { url: string; project: string }) {
   const urls = url
     .split(/[\s,;]+/)
     .map((s) => s.trim())
@@ -249,7 +257,8 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
         </div>
       )}
 
-      {data.landingUrl && <LandingPreview url={data.landingUrl} project={data.project} />}
+      {/* LandingPreview moved out of the header — it now renders beside
+          the GA4 live-traffic section. See NativeProjectRail. */}
 
       <AiSummary data={data} />
     </div>

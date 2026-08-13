@@ -9,7 +9,7 @@ import ReportChannelsTab, {
   type ReportAdLinks,
 } from "@/components/report/ReportChannelsTab";
 import ReportCreativesTab from "@/components/report/ReportCreativesTab";
-import ReportHeader from "@/components/report/ReportHeader";
+import ReportHeader, { LandingPreview } from "@/components/report/ReportHeader";
 
 /**
  * Tabbed client shell for the native project report — the "tab-divided,
@@ -122,6 +122,15 @@ export default function ProjectReportTabs({
       >
         <FreezeWhenHidden active={tab === "summary"}>
           <ReportHeader data={data} />
+          {/* LandingPreview used to live inside ReportHeader. It was
+              pulled out so the rail can place it beside the GA4 traffic
+              section; on this classic path there is no such section
+              nearby, so it stays where it always was — directly under
+              the header. Without this the ?report=classic view would
+              silently lose its landing screenshots. */}
+          {data.landingUrl && (
+            <LandingPreview url={data.landingUrl} project={data.project} />
+          )}
         </FreezeWhenHidden>
       </div>
       <div

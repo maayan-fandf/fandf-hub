@@ -25,6 +25,7 @@ import DashboardMonthOverridePicker from "@/components/DashboardMonthOverridePic
 import LatestPrisotCard from "@/components/LatestPrisotCard";
 import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
+import Ga4LiveSection from "@/components/Ga4LiveSection";
 import ProjectPriceCheckSection from "@/components/ProjectPriceCheckSection";
 import ClientPrisaApprovalPrompt from "@/components/ClientPrisaApprovalPrompt";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
@@ -752,6 +753,20 @@ export default async function ProjectOverviewPage({
         />
       </Suspense>
     ) : null;
+  // Live GA4 traffic. Same real-estate gate as Clarity but deliberately
+  // WITHOUT `!isClientUser` — a client seeing live visitors on their own
+  // landing page is the point. The section resolves its own property
+  // from the Keys landing URL and renders nothing when it can't, so a
+  // project with no landing page simply never shows it.
+  const ga4Node = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <Ga4LiveSection
+        subjectEmail={userEmail}
+        project={projectName}
+        monthFilter={monthOverride}
+      />
+    </Suspense>
+  ) : null;
   const prisotNode = isRealEstateProject ? (
     <Suspense fallback={null}>
       <LatestPrisotCard
@@ -991,6 +1006,7 @@ export default async function ProjectOverviewPage({
               objNode={objectionsNode}
               campaignsFbNode={campaignsFbNode}
               clarityNode={clarityNode}
+              ga4Node={ga4Node}
               prisotNode={prisotNode}
               pricesNode={pricesNode}
               mediaNode={mediaNode}
@@ -1109,6 +1125,8 @@ export default async function ProjectOverviewPage({
       {/* CRM funnel / Clarity insights / פריסות / מחירים — all shared with
           the rail's leads + planning sections (node variables above). */}
       {crmNode}
+
+      {ga4Node}
 
       {clarityNode}
 

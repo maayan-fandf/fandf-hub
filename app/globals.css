@@ -8768,6 +8768,135 @@ html[data-theme="dark"] .clarity-kpi-tile-warn .clarity-kpi-tile-value {
   .clarity-kpi-tile-value { font-size: 1.15rem; }
 }
 
+/* ── GA4 live traffic section ─────────────────────────────────────────
+   Realtime visitors on the project's landing page, polled every 45s by
+   components/Ga4LiveClient.tsx. Unlike the Clarity block above this one
+   is client-visible, hence the explicit source line at the bottom. */
+.ga4-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.9rem 0 1rem;
+}
+.ga4-hero-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+}
+.ga4-hero-num.is-live { color: #059669; }
+html[data-theme="dark"] .ga4-hero-num.is-live { color: #34d399; }
+.ga4-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.65);
+  animation: ga4Pulse 2s var(--md-sys-motion-easing-standard) infinite;
+}
+@keyframes ga4Pulse {
+  70% { box-shadow: 0 0 0 0.7rem rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ga4-dot { animation: none; }
+}
+.ga4-hero-cap {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.ga4-hero-note {
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0.85;
+  margin-top: 0.2rem;
+}
+.ga4-note-block {
+  margin-top: 0.6rem;
+  text-align: center;
+  line-height: 1.6;
+}
+.ga4-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+.ga4-chip {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.ga4-chip-city { opacity: 0.85; }
+.ga4-chip-key {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+  color: #065f46;
+}
+html[data-theme="dark"] .ga4-chip-key {
+  border-color: #047857;
+  background: #052e23;
+  color: #6ee7b7;
+}
+.ga4-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+.ga4-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ga4-kpi-label {
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.ga4-kpi-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.ga4-source {
+  margin-top: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.ga4-source-path {
+  font-size: 0.7rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.05rem 0.3rem;
+  margin-inline-end: 0.25rem;
+  direction: ltr;
+  display: inline-block;
+  unicode-bidi: embed;
+}
+@media (max-width: 640px) {
+  .ga4-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .ga4-hero-num { font-size: 2.4rem; }
+  .ga4-kpi-value { font-size: 1.15rem; }
+}
+
 /* ── "מחירים מפורסמים" section ────────────────────────────────────────
    Per-project price-comparison shelf at the bottom of /projects/[name].
    Renders 4 cards (אתר / יד2 / גוגל / פייסבוק), each showing the

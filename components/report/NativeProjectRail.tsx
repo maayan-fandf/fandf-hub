@@ -8,7 +8,7 @@ import ProjectRailShell, {
   type RailGroup,
   type RailTriage,
 } from "@/components/report/ProjectRailShell";
-import ReportHeader from "@/components/report/ReportHeader";
+import ReportHeader, { LandingPreview } from "@/components/report/ReportHeader";
 import ReportOverviewTab from "@/components/report/ReportOverviewTab";
 import ReportChannelsTab, {
   type PacingDismissal,
@@ -42,6 +42,7 @@ export default async function NativeProjectRail({
   prisotNode,
   pricesNode,
   clarityNode,
+  ga4Node,
   mediaNode,
   mediaPlanNode,
   tasksBadge = 0,
@@ -72,6 +73,9 @@ export default async function NativeProjectRail({
   pricesNode?: ReactNode;
   /** דף נחיתה insights (Clarity) — folded under סקירת פעילות when present. */
   clarityNode?: ReactNode;
+  /** Live GA4 traffic on the landing page — sits above clarityNode in the
+   *  same section. Client-visible, unlike clarityNode. */
+  ga4Node?: ReactNode;
   /** ביצועי מדיה — the non-real-estate reach/installs card. Mutually
    *  exclusive with the CRM nodes in practice: a project either has a
    *  sales funnel or it doesn't. */
@@ -250,6 +254,15 @@ export default async function NativeProjectRail({
           <>
             <ReportHeader data={data} />
             <ReportOverviewTab data={data} />
+            {/* Landing-page screenshots sit directly above the GA4 live
+                traffic section: the picture of the page and that page's
+                visitor numbers belong together. Rendered here rather
+                than inside Ga4LiveSection so they still show on projects
+                whose GA property can't be resolved. */}
+            {data.landingUrl && (
+              <LandingPreview url={data.landingUrl} project={data.project} />
+            )}
+            {ga4Node}
             {clarityNode}
           </>
         ),
