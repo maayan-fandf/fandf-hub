@@ -95,6 +95,52 @@ export type Ga4ConversionData = {
   byEvent: { event: string; count: number }[];
 };
 
+export type Ga4DemoRow = { bucket: string; users: number; keyEvents: number };
+
+/**
+ * Age and gender, which need Google Signals switched on for the
+ * property. Two properties in the estate have it off entirely and
+ * return nothing, so this is null rather than empty in that case.
+ *
+ * `knownShare` is the fraction of users GA could actually classify, and
+ * it is NOT incidental — measured 21% / 22% / 32% across properties,
+ * because only signed-in Google users with ads personalisation get a
+ * bracket. Every figure here therefore describes that minority, and the
+ * UI must say so; presented as "the audience" it would be false.
+ */
+export type Ga4Demographics = {
+  age: Ga4DemoRow[];
+  gender: Ga4DemoRow[];
+  knownUsers: number;
+  totalUsers: number;
+};
+
+/**
+ * New vs returning visitors, and how each converts.
+ *
+ * This is the honest answer to "can we see multi-channel journeys". GA4's
+ * Data API exposes no conversion path, no assist and no time-to-
+ * conversion field, and comparing first-touch to last-touch turned out
+ * to be redundant here: key-event totals are conserved exactly across
+ * the two attributions on every property measured, and Meta's share
+ * moves by under 1.2 points. The reason is structural — F&F traffic is
+ * overwhelmingly single-session, so there is barely any journey for the
+ * two attributions to disagree about.
+ *
+ * What DOES carry signal is whether people convert on the first visit or
+ * come back to do it: returning users were 18% of sessions but 35% of
+ * key events on one property, and 9% vs 22% on another.
+ */
+export type Ga4Returning = {
+  rows: {
+    kind: "new" | "returning";
+    label: string;
+    sessions: number;
+    keyEvents: number;
+    convRate: number;
+  }[];
+};
+
 export type Ga4ReportData = {
   window: { start: string; end: string };
   prevWindow: { start: string; end: string };
@@ -120,6 +166,9 @@ export type Ga4ReportData = {
   /** Null when the property tags no key events at all — a conversion
    *  block reading 0% would be indistinguishable from real failure. */
   conversions: Ga4ConversionData | null;
+  /** Null when Google Signals is off for the property. */
+  demographics: Ga4Demographics | null;
+  returning: Ga4Returning | null;
   mode: AttributionMode;
   /** True when the project owns its whole domain and no filter was applied. */
   wholeSite: boolean;
@@ -599,6 +648,80 @@ async function fetchGa4ReportUncached(
     // Non-fatal — the section renders without these blocks.
   }
 
+  // Third batch — demographics (Google Signals) and new vs returning.
+  let demographics: Ga4Demographics | null = null;
+  let returning: Ga4Returning | null = null;
+  try {
+    const demoReq = (dimension: string) =>
+      withFilter({
+        dateRanges: [cur],
+        dimensions: [{ name: dimension }],
+        metrics: [{ name: "totalUsers" }, { name: "keyEvents" }],
+        orderBys: [{ metric: { metricName: "totalUsers" }, desc: true }],
+        limit: 15,
+      });
+    const [rAge, rGender, rReturn] = await batchRun(subjectEmail, propertyId, [
+      demoReq("userAgeBracket"),
+      demoReq("userGender"),
+      withFilter({
+        dateRanges: [cur],
+        dimensions: [{ name: "newVsReturning" }],
+        metrics: [
+          { name: "sessions" },
+          { name: "keyEvents" },
+          { name: "sessionKeyEventRate" },
+        ],
+        limit: 10,
+      }),
+    ]);
+
+    // GA4 returns "unknown" as its own bucket for unclassified users, so
+    // it is split out into knownUsers rather than shown as a category.
+    const parseDemo = (rep: Report | undefined) => {
+      const rows: Ga4DemoRow[] = [];
+      let known = 0;
+      let total = 0;
+      for (const r of rep?.rows ?? []) {
+        const bucket = dim(r, 0).trim();
+        const users = met(r, 0);
+        if (!bucket) continue;
+        total += users;
+        if (bucket.toLowerCase() === "unknown") continue;
+        known += users;
+        rows.push({ bucket, users, keyEvents: met(r, 1) });
+      }
+      return { rows, known, total };
+    };
+    const age = parseDemo(rAge);
+    const gender = parseDemo(rGender);
+    if (age.rows.length > 0 || gender.rows.length > 0) {
+      demographics = {
+        age: age.rows,
+        gender: gender.rows,
+        knownUsers: Math.max(age.known, gender.known),
+        totalUsers: Math.max(age.total, gender.total),
+      };
+    }
+
+    const retRows: Ga4Returning["rows"] = [];
+    for (const r of rReturn?.rows ?? []) {
+      const raw = dim(r, 0).trim().toLowerCase();
+      // GA4 emits a "(not set)" bucket here for sessions it cannot
+      // classify; it carries no meaning for the question being asked.
+      if (raw !== "new" && raw !== "returning") continue;
+      retRows.push({
+        kind: raw,
+        label: raw === "new" ? "מבקרים חדשים" : "מבקרים חוזרים",
+        sessions: met(r, 0),
+        keyEvents: met(r, 1),
+        convRate: met(r, 2),
+      });
+    }
+    if (retRows.length > 0) returning = { rows: retRows };
+  } catch {
+    // Non-fatal — Google Signals may simply be off for this property.
+  }
+
   const pages: Ga4PageRow[] = [];
   if (!wholeSite && normed.length > 1) {
     const [pageReport] = await batchRun(subjectEmail, propertyId, [
@@ -660,6 +783,8 @@ async function fetchGa4ReportUncached(
             byEvent: byEvent.slice(0, 6),
           }
         : null,
+    demographics,
+    returning,
     mode,
     wholeSite,
   };
@@ -788,9 +913,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v4: convRate added to Ga4SourceBucket and Ga4CampaignRow (the true
-  // GA session rate, replacing a derived keyEvents/sessions ratio).
-  const key = `ga4Report:v4:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v5: demographics + returning added.
+  const key = `ga4Report:v5:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

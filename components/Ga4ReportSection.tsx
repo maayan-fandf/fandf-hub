@@ -110,6 +110,10 @@ export default async function Ga4ReportSection({
           that crashes the whole project page is far worse than one that
           quietly renders a block short — the version in the cache key in
           lib/ga4Report.ts is the real fix, this is the seatbelt. */}
+      {data.returning && <Returning r={data.returning} />}
+
+      {data.demographics && <Demographics d={data.demographics} />}
+
       {(data.devices?.length ?? 0) > 0 && (
         <Devices rows={data.devices} hasKeyEvents={!!data.conversions} />
       )}
@@ -362,6 +366,137 @@ function Conversions({
       <div className="ga4w-note">
         אירועי מפתח מוגדרים בנפרד בכל נכס Google Analytics, ולכן אינם ניתנים
         להשוואה בין פרויקטים. ספירת הלידים הרשמית היא זו שב-CRM.
+      </div>
+    </div>
+  );
+}
+
+/* ── New vs returning ─────────────────────────────────────────────── */
+
+/**
+ * The honest stand-in for "multi-channel journeys".
+ *
+ * GA4's Data API has no conversion path, assist or time-to-conversion
+ * field, and a first-touch vs last-touch comparison proved redundant on
+ * this estate — key-event totals are conserved exactly across the two
+ * attributions and channel shares move under 1.2 points, because the
+ * traffic is overwhelmingly single-session. What people actually want to
+ * know is whether visitors convert on the first visit or come back to do
+ * it, and that does vary a lot between projects.
+ */
+function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
+  const total = r.rows.reduce((n, x) => n + x.sessions, 0);
+  if (total <= 0) return null;
+  const ret = r.rows.find((x) => x.kind === "returning");
+  const nw = r.rows.find((x) => x.kind === "new");
+  // The lift is the point of the block — returning visitors are a small
+  // slice of sessions and a much larger slice of conversions.
+  const lift =
+    ret && nw && nw.convRate > 0 ? ret.convRate / nw.convRate : null;
+
+  return (
+    <div className="ga4w-block">
+      <h3 className="ga4w-h3">מבקרים חדשים מול חוזרים</h3>
+      <table className="ga4w-table">
+        <thead>
+          <tr>
+            <th>סוג מבקר</th>
+            <th>כניסות</th>
+            <th>חלק מהתנועה</th>
+            <th>אירועי מפתח</th>
+            <th>שיעור המרה</th>
+          </tr>
+        </thead>
+        <tbody>
+          {r.rows.map((x) => (
+            <tr key={x.kind}>
+              <td>{x.label}</td>
+              <td>{fmtInt(x.sessions)}</td>
+              <td>{fmtPct(x.sessions / total)}</td>
+              <td>{fmtInt(x.keyEvents)}</td>
+              <td>{fmtPct(x.convRate)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {lift && lift > 1.15 && (
+        <div className="ga4w-note">
+          מבקרים חוזרים ממירים פי {lift.toFixed(1)} ממבקרים חדשים — כלומר חלק
+          מהלידים נסגר רק בביקור השני. זהו המדד הקרוב ביותר שקיים ב-Google
+          Analytics למסע רב-ערוצי.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Demographics ─────────────────────────────────────────────────── */
+
+/**
+ * Age and gender from Google Signals.
+ *
+ * The known-share caption is mandatory, not decorative: only signed-in
+ * Google users with ads personalisation get classified, which was 21-32%
+ * of users across the properties measured. Every bar here describes that
+ * minority, and a viewer who reads it as the whole audience would be
+ * badly misled — so the denominator is stated in words above the bars
+ * and every percentage is explicitly "of the identified users".
+ */
+function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) {
+  const share = d.totalUsers > 0 ? d.knownUsers / d.totalUsers : 0;
+  const bars = (rows: typeof d.age) => {
+    const max = Math.max(...rows.map((r) => r.users), 1);
+    return rows.map((r) => (
+      <div className="ga4w-bar-row" key={r.bucket}>
+        <span className="ga4w-bar-lbl">{r.bucket}</span>
+        <span className="ga4w-bar-track">
+          <span
+            className="ga4w-bar-fill"
+            style={{ width: `${(r.users / max) * 100}%` }}
+          />
+        </span>
+        <span className="ga4w-bar-val">
+          {fmtInt(r.users)}
+          {d.knownUsers > 0 && (
+            <em> · {fmtPct(r.users / d.knownUsers)}</em>
+          )}
+        </span>
+      </div>
+    ));
+  };
+
+  return (
+    <div className="ga4w-block">
+      <h3 className="ga4w-h3">גיל ומגדר</h3>
+      <div className="ga4w-note ga4w-demo-caveat">
+        Google מזהה גיל ומגדר רק עבור חלק מהגולשים (מחוברים לחשבון Google עם
+        התאמה אישית של מודעות). כאן זוהו {fmtInt(d.knownUsers)} מתוך{" "}
+        {fmtInt(d.totalUsers)} משתמשים — {fmtPct(share)}. כל האחוזים למטה הם
+        מתוך המזוהים בלבד, ולא מכלל הגולשים.
+      </div>
+      <div className="ga4w-demo-grid">
+        {d.age.length > 0 && (
+          <div>
+            <div className="ga4w-demo-h">גיל</div>
+            {bars(d.age)}
+          </div>
+        )}
+        {d.gender.length > 0 && (
+          <div>
+            <div className="ga4w-demo-h">מגדר</div>
+            {bars(
+              d.gender.map((g) => ({
+                ...g,
+                bucket:
+                  g.bucket.toLowerCase() === "male"
+                    ? "גברים"
+                    : g.bucket.toLowerCase() === "female"
+                      ? "נשים"
+                      : g.bucket,
+              })),
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
