@@ -51,7 +51,7 @@ const RULES: { test: RegExp; icon: string; platform?: string }[] = [
   { test: /(?:^|[-_\s])(?:youtube|יוטיוב|yt)(?:$|[-_\s])/, icon: "▶️" },
   { test: /(?:^|[-_\s])(?:linkedin|לינקדאין)/, icon: "💼" },
   { test: /(?:^|[-_\s])(?:twitter)(?:$|[-_\s])|^x$/, icon: "🐦" },
-  { test: /(?:^|[-_\s])(?:yad\s?2|יד\s?2)(?:$|[-_\s])/, icon: "🏠" },
+  { test: /(?:^|[-_\s])(?:yad\s?2|יד\s?2)(?:$|[-_\s])/, icon: "🏠", platform: "yad2" },
   { test: /(?:^|[-_\s])(?:madlan|מדלן)(?:$|[-_\s])|(?:^|[-_\s])nadlan(?:\.|[-_\s])|(?:^|[-_\s])(?:נדלן)(?:$|[-_\s])/, icon: "🏘️" },
   { test: /(?:^|[-_\s])(?:onmap|אונמפ)(?:$|[-_\s])/, icon: "🗺️" },
   { test: /(?:^|[-_\s])(?:outbrain|אאוטבריין)/, icon: "📰", platform: "outbrain" },

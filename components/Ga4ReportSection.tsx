@@ -96,16 +96,16 @@ export default async function Ga4ReportSection({
 
       {data.trend.length > 1 && <TrendChart points={data.trend} />}
 
-      {data.sources.length > 0 && (
-        <Sources data={data} showConv={!!data.conversions} />
-      )}
-
-      {/* The expandable tree supersedes the flat campaign table when it
-          has anything in it — same numbers, one more level of depth.
-          The flat table stays as the fallback for properties where the
-          extra dimensions come back empty. */}
+      {/* ONE channel table, not two. The source table and the campaign
+          table were the same numbers at two depths — the tree now carries
+          every channel including organic/direct/referral (which simply
+          have nothing to expand into), so the flat source block is gone.
+          The flat campaign table survives only as a fallback for
+          properties where the ad-group dimensions come back empty. */}
       {(data.tree?.length ?? 0) > 0 ? (
         <Ga4CampaignTree nodes={data.tree} showConv={!!data.conversions} />
+      ) : data.sources.length > 0 ? (
+        <Sources data={data} showConv={!!data.conversions} />
       ) : (
         data.campaigns &&
         data.campaigns.length > 0 && (

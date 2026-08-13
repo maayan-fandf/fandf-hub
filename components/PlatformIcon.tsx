@@ -118,6 +118,29 @@ export default function PlatformIcon({
     );
   }
 
+  if (p === "yad2") {
+    // Yad2's wordmark is unreadable at 14px, so this is the monogram:
+    // their orange with the "2" that carries the brand at small sizes.
+    return svg(
+      <>
+        <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#FF4B00" />
+        <text
+          x="12"
+          y="17.4"
+          textAnchor="middle"
+          fontSize="15"
+          fontWeight="800"
+          fill="#fff"
+          fontFamily="Arial, Helvetica, sans-serif"
+        >
+          2
+        </text>
+      </>,
+      "0 0 24 24",
+      "יד2",
+    );
+  }
+
   if (p === "outbrain") {
     return svg(
       <>

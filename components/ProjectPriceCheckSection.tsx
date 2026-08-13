@@ -372,13 +372,13 @@ function InventoryRows({ surface }: { surface: ProjectPriceSurface }) {
  *  real logos via PlatformIcon — see SurfaceIcon below. */
 const SURFACE_ICONS: Record<ProjectPriceSurface["name"], string> = {
   landing: "🌐",
-  yad2: "🏠",
+  yad2: "",
   google: "",
   facebook: "",
 };
 
 function SurfaceIcon({ name }: { name: ProjectPriceSurface["name"] }) {
-  if (name === "google" || name === "facebook") {
+  if (name === "google" || name === "facebook" || name === "yad2") {
     return <PlatformIcon platform={name} size="1em" />;
   }
   return <>{SURFACE_ICONS[name]}</>;

@@ -74,6 +74,8 @@ export default function Ga4CampaignTree({
         </td>
         <td>{fmtInt(node.sessions)}</td>
         <td>{total > 0 ? fmtPct(node.sessions / total) : "—"}</td>
+        <td>{fmtPct(node.engagementRate)}</td>
+        <td>{fmtDuration(node.avgSeconds)}</td>
         {showConv && <td>{fmtInt(node.keyEvents)}</td>}
         {showConv && <td>{fmtPct(node.convRate)}</td>}
       </tr>,
@@ -86,7 +88,7 @@ export default function Ga4CampaignTree({
 
   return (
     <div className="ga4w-block">
-      <h3 className="ga4w-h3">פילוח לפי ערוץ וקמפיין</h3>
+      <h3 className="ga4w-h3">מאיפה הגיעה התנועה</h3>
       <div className="ga4w-table-wrap">
         <table className="ga4w-table ga4w-tree">
           <thead>
@@ -94,6 +96,8 @@ export default function Ga4CampaignTree({
               <th>ערוץ / קמפיין</th>
               <th>כניסות</th>
               <th>חלק</th>
+              <th>גלישה מעורבת</th>
+              <th>זמן ממוצע</th>
               {showConv && <th>אירועי מפתח</th>}
               {showConv && <th>שיעור המרה</th>}
             </tr>
@@ -118,6 +122,12 @@ function childWord(n: number, plural?: string): string {
   if (plural === "קבוצות מודעות") return "קבוצת מודעות";
   if (plural === "מודעות") return "מודעה";
   return plural ?? "";
+}
+
+function fmtDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}:${String(s % 60).padStart(2, "0")}` : `${s}ש'`;
 }
 
 function fmtInt(n: number): string {
