@@ -25,11 +25,14 @@ export default async function Ga4ReportSection({
   subjectEmail,
   project,
   monthFilter,
+  dateRange,
   isInternal = false,
 }: {
   subjectEmail: string;
   project: string;
   monthFilter?: string;
+  /** Free date range from the shared page picker (?from=&to=). */
+  dateRange?: { from: string; to: string };
   /** Tagging-health warnings are internal-only; clients see the section
    *  quietly omit a block rather than a diagnostic about broken UTMs. */
   isInternal?: boolean;
@@ -37,7 +40,7 @@ export default async function Ga4ReportSection({
   const target = await resolveGa4Target(subjectEmail, project).catch(() => null);
   if (!target) return null;
 
-  const win = reportWindow(monthFilter);
+  const win = reportWindow(monthFilter, dateRange);
   const data = await fetchGa4Report(
     subjectEmail,
     target.propertyId,
@@ -175,20 +178,34 @@ function TrendChart({ points }: { points: Ga4Point[] }) {
   const W = 800;
   const H = 150;
   const PAD = 6;
-  const max = Math.max(...points.map((p) => p.sessions), 1);
+  const maxSessions = Math.max(...points.map((p) => p.sessions), 1);
+  const maxKe = Math.max(...points.map((p) => p.keyEvents), 1);
+  const hasKe = points.some((p) => p.keyEvents > 0);
   const step = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
   const x = (i: number) => PAD + i * step;
-  const y = (v: number) => H - PAD - (v / max) * (H - PAD * 2);
+  const y = (v: number, max: number) =>
+    H - PAD - (v / max) * (H - PAD * 2);
 
-  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.sessions).toFixed(1)}`).join(" ");
+  const path = (pick: (p: Ga4Point) => number, max: number) =>
+    points
+      .map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(pick(p), max).toFixed(1)}`)
+      .join(" ");
+
+  const line = path((p) => p.sessions, maxSessions);
   const area = `${line} L${x(points.length - 1).toFixed(1)},${H - PAD} L${x(0).toFixed(1)},${H - PAD} Z`;
+  // Key events are one to two orders of magnitude smaller than sessions,
+  // so they get their own scale — on a shared axis the line would sit
+  // flat on the floor and read as zero. That means the two lines show
+  // SHAPE against each other, never magnitude, which the legend says.
+  const keLine = hasKe ? path((p) => p.keyEvents, maxKe) : "";
   const peak = points.reduce((a, b) => (b.sessions > a.sessions ? b : a), points[0]);
 
   return (
     <div className="ga4w-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="כניסות יומיות לדף הנחיתה">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="כניסות ואירועי מפתח יומיים">
         <path className="ga4w-chart-area" d={area} />
         <path className="ga4w-chart-line" d={line} />
+        {hasKe && <path className="ga4w-chart-ke" d={keLine} />}
       </svg>
       <div className="ga4w-chart-axis">
         <span>{fmtDate(points[0].date)}</span>
@@ -197,6 +214,21 @@ function TrendChart({ points }: { points: Ga4Point[] }) {
         </span>
         <span>{fmtDate(points[points.length - 1].date)}</span>
       </div>
+      {hasKe && (
+        <div className="ga4w-chart-legend">
+          <span className="ga4w-leg">
+            <span className="ga4w-leg-swatch is-sessions" aria-hidden="true" />
+            כניסות
+          </span>
+          <span className="ga4w-leg">
+            <span className="ga4w-leg-swatch is-ke" aria-hidden="true" />
+            אירועי מפתח (שיא {fmtInt(maxKe)})
+          </span>
+          <span className="ga4w-leg-note">
+            הקווים בקנה מידה נפרד — משווים מגמה, לא גודל
+          </span>
+        </div>
+      )}
     </div>
   );
 }

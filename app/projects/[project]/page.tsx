@@ -778,6 +778,7 @@ export default async function ProjectOverviewPage({
         subjectEmail={userEmail}
         project={projectName}
         monthFilter={monthOverride}
+        dateRange={crmDateRange}
         isInternal={isInternalUser}
       />
     </Suspense>

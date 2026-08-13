@@ -8923,8 +8923,73 @@ html[data-theme="dark"] .ga4-chip-key {
 html[data-theme="dark"] .ga4w-delta.is-up { color: #34d399; }
 html[data-theme="dark"] .ga4w-delta.is-down { color: #f87171; }
 
-.ga4w-chart { margin-top: 0.9rem; }
+/* direction:ltr is load-bearing, not cosmetic. The page is RTL, so the
+   axis row's flex order was mirrored — the oldest date rendered on the
+   RIGHT while the line it labels starts on the LEFT, so the two
+   contradicted each other. Time reads left-to-right here, as on every
+   other chart. */
+.ga4w-chart { margin-top: 0.9rem; direction: ltr; }
 .ga4w-chart svg { width: 100%; height: auto; display: block; }
+.ga4w-chart-ke {
+  fill: none;
+  stroke: #f59e0b;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+html[data-theme="dark"] .ga4w-chart-ke { stroke: #fbbf24; }
+.ga4w-chart-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  direction: rtl;
+}
+.ga4w-leg { display: inline-flex; align-items: center; gap: 0.3rem; }
+.ga4w-leg-swatch {
+  width: 0.85rem;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+.ga4w-leg-swatch.is-sessions { border-top-color: #6366f1; }
+.ga4w-leg-swatch.is-ke { border-top-color: #f59e0b; border-top-style: dashed; }
+html[data-theme="dark"] .ga4w-leg-swatch.is-sessions { border-top-color: #a5b4fc; }
+html[data-theme="dark"] .ga4w-leg-swatch.is-ke { border-top-color: #fbbf24; }
+.ga4w-leg-note { opacity: 0.8; }
+
+/* Range picker */
+.ga4w-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.ga4w-range { display: inline-flex; gap: 0.2rem; }
+.ga4w-range.is-pending { opacity: 0.55; }
+.ga4w-range-btn {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
+}
+.ga4w-range-btn:hover { background: var(--surface-soft); color: var(--ink); }
+.ga4w-range-btn.is-active {
+  background: var(--surface-soft);
+  border-color: var(--text, var(--ink));
+  color: var(--ink);
+  font-weight: 600;
+}
 .ga4w-chart-line {
   fill: none;
   stroke: #6366f1;

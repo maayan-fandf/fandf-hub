@@ -28,7 +28,15 @@ import { normPath, detectAttributionMode, type AttributionMode } from "@/lib/ga4
 
 const DATA_API = "https://analyticsdata.googleapis.com/v1beta";
 
-export type Ga4Point = { date: string; sessions: number; users: number };
+export type Ga4Point = {
+  date: string;
+  sessions: number;
+  users: number;
+  keyEvents: number;
+};
+
+/** Days covered when neither a free range nor a month override is set. */
+const DEFAULT_WINDOW_DAYS = 28;
 
 export type Ga4SourceBucket = {
   key: string;
@@ -245,7 +253,10 @@ const daysBetween = (a: string, b: string): number =>
  * against ~0.38 for the same property's full days — so including it
  * would make every project look like it fell off a cliff this morning.
  */
-export function reportWindow(monthFilter?: string): {
+export function reportWindow(
+  monthFilter?: string,
+  dateRange?: { from: string; to: string },
+): {
   start: string;
   end: string;
   prevStart: string;
@@ -253,10 +264,20 @@ export function reportWindow(monthFilter?: string): {
 } {
   const yesterday = addDays(ilToday(), -1);
   let end = yesterday;
-  let start = addDays(end, -27);
+  let start = addDays(end, -(DEFAULT_WINDOW_DAYS - 1));
 
+  // Precedence matches the rest of the page: an explicit ?from/?to range
+  // from the shared DateRangePicker wins, then ?monthOverride, then the
+  // default trailing window. This section must never show a different
+  // period from the CRM funnel and the report beside it.
   const m = (monthFilter || "").trim();
-  if (/^\d{4}-\d{2}$/.test(m)) {
+  if (dateRange?.from && dateRange?.to && dateRange.from <= dateRange.to) {
+    start = new Date(`${dateRange.from}T00:00:00Z`);
+    const to = new Date(`${dateRange.to}T00:00:00Z`);
+    // Still never include today — a partial day craters engagement.
+    end = to < yesterday ? to : yesterday;
+    if (end < start) end = start;
+  } else if (/^\d{4}-\d{2}$/.test(m)) {
     const [y, mo] = m.split("-").map(Number);
     const first = new Date(Date.UTC(y, mo - 1, 1));
     const last = new Date(Date.UTC(y, mo, 0));
@@ -458,7 +479,11 @@ async function fetchGa4ReportUncached(
     withFilter({
       dateRanges: [cur],
       dimensions: [{ name: "date" }],
-      metrics: [{ name: "sessions" }, { name: "totalUsers" }],
+      metrics: [
+        { name: "sessions" },
+        { name: "totalUsers" },
+        { name: "keyEvents" },
+      ],
       orderBys: [{ dimension: { dimensionName: "date" } }],
       limit: 400,
     }),
@@ -522,6 +547,7 @@ async function fetchGa4ReportUncached(
     date: dim(r, 0),
     sessions: met(r, 0),
     users: met(r, 1),
+    keyEvents: met(r, 2),
   }));
 
   // With two dateRanges GA4 appends a `dateRange` dimension LAST and
@@ -1015,8 +1041,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v6: demographics crossed by gender, plus intro-credit rows.
-  const key = `ga4Report:v6:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v7: keyEvents added to trend points.
+  const key = `ga4Report:v7:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],
