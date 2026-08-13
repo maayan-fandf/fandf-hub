@@ -5,6 +5,7 @@ import { resolveGa4Target } from "@/lib/ga4Project";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
 import Ga4CampaignTree from "@/components/Ga4CampaignTree";
+import Ga4Demographics from "@/components/Ga4Demographics";
 import {
   fetchGa4Report,
   reportWindow,
@@ -15,10 +16,12 @@ import {
 /**
  * אנליטיקס — the period-scoped GA4 section, between קמפיינים and מגמות.
  *
- * Fully server-rendered: the trend is inline SVG, so this adds no client
- * JS and no second timer competing with Ga4LiveClient for the realtime
- * quota. Returns null on any failure, like every other optional section
- * on this page.
+ * Every GA4 call happens here on the server; the charts are inline SVG,
+ * so nothing on this section polls and nothing competes with
+ * Ga4LiveClient for the realtime quota. The tree and the demographics
+ * toggle only re-read data that already shipped with the page; the city
+ * map is the one component that fetches, and only on a click. Returns
+ * null on any failure, like every other optional section on this page.
  *
  * Client-visible (real-estate gate only), which is why every number here
  * is either exact or explicitly labelled, and why conversions are absent
@@ -129,7 +132,12 @@ export default async function Ga4ReportSection({
 
       {(data.intro?.length ?? 0) > 0 && <IntroCredit rows={data.intro} />}
 
-      {data.demographics && <Demographics d={data.demographics} />}
+      {data.demographics && (
+        <Ga4Demographics
+          d={data.demographics}
+          siteKeyEvents={data.conversions?.keyEvents ?? 0}
+        />
+      )}
 
       {(data.devices?.length ?? 0) > 0 && (
         <Devices rows={data.devices} hasKeyEvents={!!data.conversions} />
@@ -717,132 +725,6 @@ function IntroCredit({ rows }: { rows: NonNullable<Ga4ReportData["intro"]> }) {
   );
 }
 
-/* ── Demographics ─────────────────────────────────────────────────── */
-
-/**
- * Age brackets as grouped bars split by gender, matching the shape used
- * in Meta Ads Manager so the two read the same way side by side.
- *
- * The known-share caption is mandatory, not decorative: only signed-in
- * Google users with ads personalisation get classified, which was 15% on
- * this landing page and 21-32% property-wide. Every bar describes that
- * minority, so the denominator is stated in words and each percentage is
- * explicitly "of the identified users".
- *
- * There is no 13-17 column, unlike Meta's chart — GA4 never classifies
- * under-18s, so its absence here is a schema fact rather than zero data.
- */
-function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) {
-  const rows = d.rows;
-  if (rows.length === 0) return null;
-
-  // Sized to roughly the panel width so the SVG renders near 1:1 rather
-  // than being capped narrow and left stranded against one edge — it was
-  // 544px inside a 925px block with 381px of dead space beside it. A
-  // uniform upscale was not the answer either: it magnifies the 8px axis
-  // text along with the bars, which is what made this block "comically
-  // big" earlier. Widening the viewBox keeps type at its designed size.
-  const W = 880;
-  const H = 210;
-  const PAD_B = 30;
-  const PAD_T = 12;
-  // Gutter reserved for the y-axis labels. Without it the plot started
-  // at x=0 while the tick text ran to x=28, so the first bracket's bar
-  // was drawn straight over "120" / "100" / "80".
-  const PAD_L = 46;
-  const max = Math.max(...rows.flatMap((r) => [r.male, r.female]), 1);
-  // A "nice" step from the 1/2/5 series, so gridlines land on round
-  // numbers AND the top sits just above the tallest bar. Rounding to
-  // tens instead put the axis at 120 for a max of 95 — a quarter of the
-  // chart was empty headroom.
-  const step = niceStep(max);
-  const top = Math.ceil(max / step) * step;
-  const slot = (W - PAD_L) / rows.length;
-  // Bar width tracks the slot so a 6-bracket chart and a 3-bracket one
-  // both fill their slots; the cap stops a two-bracket chart rendering
-  // two slabs.
-  const barW = Math.min(48, slot / 2.6);
-  const y = (v: number) => PAD_T + (1 - v / top) * (H - PAD_T - PAD_B);
-
-  const share = d.totalUsers > 0 ? d.knownUsers / d.totalUsers : 0;
-  const known = Math.max(1, d.knownUsers);
-
-  return (
-    <div className="ga4w-block">
-      <h3 className="ga4w-h3">התפלגות גיל ומגדר</h3>
-      <div className="ga4w-note ga4w-demo-caveat">
-        Google מזהה גיל ומגדר רק עבור חלק מהגולשים (מחוברים לחשבון Google עם
-        התאמה אישית של מודעות). כאן זוהו {fmtInt(d.knownUsers)} מתוך{" "}
-        {fmtInt(d.totalUsers)} משתמשים — {fmtPct(share)}. כל האחוזים הם מתוך
-        המזוהים בלבד.
-      </div>
-
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="ga4w-demo-chart"
-        role="img"
-        aria-label="התפלגות גיל ומגדר"
-      >
-        {Array.from({ length: top / step + 1 }, (_, i) => i * step).map((v) => (
-          <g key={v}>
-            <line className="ga4w-demo-grid-line" x1={PAD_L} x2={W} y1={y(v)} y2={y(v)} />
-            <text className="ga4w-demo-tick" x={PAD_L - 8} y={y(v) + 4}>
-              {v}
-            </text>
-          </g>
-        ))}
-        {rows.map((r, i) => {
-          const cx = PAD_L + i * slot + slot / 2;
-          return (
-            <g key={r.bucket}>
-              <rect
-                className="ga4w-demo-bar is-male"
-                x={cx - barW - 1}
-                y={y(r.male)}
-                width={barW}
-                height={Math.max(0, y(0) - y(r.male))}
-              >
-                <title>{`גברים ${r.bucket}: ${fmtInt(r.male)}`}</title>
-              </rect>
-              <rect
-                className="ga4w-demo-bar is-female"
-                x={cx + 1}
-                y={y(r.female)}
-                width={barW}
-                height={Math.max(0, y(0) - y(r.female))}
-              >
-                <title>{`נשים ${r.bucket}: ${fmtInt(r.female)}`}</title>
-              </rect>
-              <text className="ga4w-demo-xlbl" x={cx} y={H - 9}>
-                {r.bucket}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-
-      <div className="ga4w-demo-legend">
-        <div className="ga4w-demo-leg">
-          <span className="ga4w-dot is-male" aria-hidden="true" />
-          <strong>גברים</strong>
-          <span>
-            {fmtPct(d.maleUsers / known)} ({fmtInt(d.maleUsers)})
-          </span>
-          {d.maleKeyEvents > 0 && <em>{keyEventWord(d.maleKeyEvents)}</em>}
-        </div>
-        <div className="ga4w-demo-leg">
-          <span className="ga4w-dot is-female" aria-hidden="true" />
-          <strong>נשים</strong>
-          <span>
-            {fmtPct(d.femaleUsers / known)} ({fmtInt(d.femaleUsers)})
-          </span>
-          {d.femaleKeyEvents > 0 && <em>{keyEventWord(d.femaleKeyEvents)}</em>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Devices ──────────────────────────────────────────────────────── */
 
 function Devices({
@@ -1001,39 +883,6 @@ function Kpi({
 function delta(cur: number, prev: number): number | null {
   if (!Number.isFinite(cur) || !Number.isFinite(prev) || prev <= 0) return null;
   return (cur - prev) / prev;
-}
-
-/**
- * The smallest round step from the 1 / 2 / 5 x 10^n series that keeps
- * the axis to at most MAX_TICKS gridlines.
- *
- * Chosen this way round, rather than by rounding a target step upward:
- * for a tallest bar of 95 the target-based version returned 50 — an axis
- * with two gridlines — while rounding to tens returned an axis top of
- * 120, a quarter of the chart in empty headroom. Smallest-step-that-fits
- * gives 20 (five gridlines, top 100, 5% headroom).
- */
-// 6, not 5: at 5 a tallest bar of ~110 rejects step 20 (six gridlines)
-// and falls to step 50, topping the axis at 150 and leaving the bar at
-// 73% of the plot. Six gridlines read fine in a 154px plot and keep
-// headroom near 9%.
-const MAX_TICKS = 6;
-
-function niceStep(max: number): number {
-  if (!Number.isFinite(max) || max <= 0) return 1;
-  for (let exp = 0; exp < 12; exp++) {
-    const mag = Math.pow(10, exp);
-    for (const m of [1, 2, 5]) {
-      const step = m * mag;
-      if (Math.ceil(max / step) <= MAX_TICKS) return step;
-    }
-  }
-  return Math.pow(10, 12);
-}
-
-/** "1 אירועי מפתח" is broken Hebrew. */
-function keyEventWord(n: number): string {
-  return n === 1 ? "אירוע מפתח אחד" : `${fmtInt(n)} אירועי מפתח`;
 }
 
 function fmtInt(n: number): string {
