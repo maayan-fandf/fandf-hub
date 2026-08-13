@@ -247,20 +247,11 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
               <td>{fmtPct(s.sessions / total)}</td>
               <td>{s.sessions > 0 ? fmtPct(s.engaged / s.sessions) : "—"}</td>
               {showConv && <td>{fmtInt(s.keyEvents)}</td>}
-              {showConv && (
-                <td>{s.sessions > 0 ? fmtPct(s.keyEvents / s.sessions) : "—"}</td>
-              )}
+              {showConv && <td>{fmtPct(s.convRate)}</td>}
             </tr>
           ))}
         </tbody>
       </table>
-      {showConv && (
-        <div className="ga4w-note">
-          שיעור ההמרה בטבלה זו מחושב כאירועי מפתח חלקי כניסות, ולכן עשוי להיות
-          גבוה מעט משיעור ההמרה הכללי שלמעלה — סשן שכלל שני אירועי מפתח נספר
-          פעמיים.
-        </div>
-      )}
     </div>
   );
 }
@@ -292,9 +283,7 @@ function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean 
                 <td>{c.sessions > 0 ? fmtPct(c.engaged / c.sessions) : "—"}</td>
                 <td>{fmtDuration(c.avgSeconds)}</td>
                 {showConv && <td>{fmtInt(c.keyEvents)}</td>}
-                {showConv && (
-                  <td>{c.sessions > 0 ? fmtPct(c.keyEvents / c.sessions) : "—"}</td>
-                )}
+                {showConv && <td>{fmtPct(c.convRate)}</td>}
               </tr>
             ))}
             {data.unattributedSessions > 0 && (

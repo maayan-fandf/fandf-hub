@@ -10,6 +10,7 @@ type CampaignRow = {
   engaged: number;
   avgSeconds: number;
   keyEvents: number;
+  convRate: number;
 };
 
 /**
@@ -185,13 +186,7 @@ export default function Ga4CityMap({
                           <td className="ga4w-camp">{r.campaign}</td>
                           <td>{fmtInt(r.sessions)}</td>
                           {showConv && <td>{fmtInt(r.keyEvents)}</td>}
-                          {showConv && (
-                            <td>
-                              {r.sessions > 0
-                                ? fmtPct(r.keyEvents / r.sessions)
-                                : "—"}
-                            </td>
-                          )}
+                          {showConv && <td>{fmtPct(r.convRate)}</td>}
                         </tr>
                       ))}
                     </tbody>

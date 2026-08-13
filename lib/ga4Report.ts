@@ -36,6 +36,8 @@ export type Ga4SourceBucket = {
   sessions: number;
   engaged: number;
   keyEvents: number;
+  /** Share of sessions that converted. See `mergeRate`. */
+  convRate: number;
 };
 
 export type Ga4CampaignRow = {
@@ -44,7 +46,27 @@ export type Ga4CampaignRow = {
   engaged: number;
   avgSeconds: number;
   keyEvents: number;
+  convRate: number;
 };
+
+/**
+ * Combine GA4's `sessionKeyEventRate` across rows that we merge.
+ *
+ * The rate must come from GA, not from keyEvents/sessions. GA defines it
+ * as (sessions with at least one key event) / sessions, so a session
+ * firing two key events counts once. Deriving it instead overstates by
+ * up to 3.2x on properties that fire several key events per session —
+ * measured 8.90% against a true 2.80% on 533952214 and 8.50% against
+ * 2.96% on 403508264.
+ *
+ * A rate cannot be summed, but it CAN be weighted by sessions and then
+ * divided by the total, because rate_i x sessions_i is exactly the
+ * converting-session count for that row. So this stays exact through
+ * source bucketing and campaign-name merging.
+ */
+function mergeRate(weightedSum: number, sessions: number): number {
+  return sessions > 0 ? weightedSum / sessions : 0;
+}
 
 export type Ga4PageRow = {
   path: string;
@@ -370,10 +392,9 @@ async function fetchGa4ReportUncached(
       ],
     }),
     // 4 — where the traffic came from, with its conversion performance.
-    //     sessionKeyEventRate is NOT requested per row here: it is a
-    //     ratio, so it cannot be summed when several source/medium rows
-    //     collapse into one bucket. keyEvents and sessions are additive,
-    //     and the rate is recomputed from those after bucketing.
+    //     sessionKeyEventRate IS requested per row and recombined via
+    //     mergeRate — deriving it from keyEvents/sessions would overstate
+    //     by up to 3.2x. See mergeRate's doc block.
     withFilter({
       dateRanges: [cur],
       dimensions: [{ name: "sessionSourceMedium" }],
@@ -381,13 +402,13 @@ async function fetchGa4ReportUncached(
         { name: "sessions" },
         { name: "engagedSessions" },
         { name: "keyEvents" },
+        { name: "sessionKeyEventRate" },
       ],
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
       limit: 200,
     }),
-    // 5 — per campaign. Same reasoning: campaign rows are merged after
-    //     sanitising (case, separators, +-encoding), so only additive
-    //     metrics are safe to request.
+    // 5 — per campaign. Same treatment: rows merge after sanitising
+    //     (case, separators, +-encoding), so the rate is session-weighted.
     withFilter({
       dateRanges: [cur],
       dimensions: [{ name: "sessionCampaignName" }],
@@ -396,6 +417,7 @@ async function fetchGa4ReportUncached(
         { name: "engagedSessions" },
         { name: "averageSessionDuration" },
         { name: "keyEvents" },
+        { name: "sessionKeyEventRate" },
       ],
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
       limit: 200,
@@ -427,6 +449,7 @@ async function fetchGa4ReportUncached(
   const [prevEr, prevDur, prevEng, prevKe, prevKeRate] = pickRange(rQuality, "date_range_1", 5);
 
   const bucket = new Map<string, Ga4SourceBucket>();
+  // convRate accumulates rate x sessions here and is divided out below.
   for (const r of rSources?.rows ?? []) {
     const key = classifySource(dim(r, 0));
     const b = bucket.get(key) ?? {
@@ -435,13 +458,18 @@ async function fetchGa4ReportUncached(
       sessions: 0,
       engaged: 0,
       keyEvents: 0,
+      convRate: 0,
     };
-    b.sessions += met(r, 0);
+    const sessions = met(r, 0);
+    b.sessions += sessions;
     b.engaged += met(r, 1);
     b.keyEvents += met(r, 2);
+    b.convRate += met(r, 3) * sessions;
     bucket.set(key, b);
   }
-  const sources = [...bucket.values()].sort((a, b) => b.sessions - a.sessions);
+  const sources = [...bucket.values()]
+    .map((b) => ({ ...b, convRate: mergeRate(b.convRate, b.sessions) }))
+    .sort((a, b) => b.sessions - a.sessions);
 
   // Campaign coverage is measured against PAID sessions only — organic,
   // direct and referral legitimately have no campaign name and must not
@@ -470,20 +498,26 @@ async function fetchGa4ReportUncached(
       engaged: 0,
       avgSeconds: 0,
       keyEvents: 0,
+      convRate: 0,
     };
     // Duration is a per-session average, so combine it weighted by
-    // sessions rather than averaging the averages.
+    // sessions rather than averaging the averages. convRate accumulates
+    // rate x sessions and is divided out below, same reasoning.
     const totalSecs = row.avgSeconds * row.sessions + met(r, 2) * sessions;
     row.sessions += sessions;
     row.engaged += met(r, 1);
     row.avgSeconds = row.sessions > 0 ? totalSecs / row.sessions : 0;
     row.keyEvents += met(r, 3);
+    row.convRate += met(r, 4) * sessions;
     campMap.set(k, row);
   }
   const coverage = paidSessions > 0 ? usable / paidSessions : 0;
   const campaigns =
     coverage >= CAMPAIGN_COVERAGE_MIN
-      ? [...campMap.values()].sort((a, b) => b.sessions - a.sessions).slice(0, 8)
+      ? [...campMap.values()]
+          .map((c) => ({ ...c, convRate: mergeRate(c.convRate, c.sessions) }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 8)
       : null;
 
   // Second batch — geography, device and the per-event conversion split.
@@ -679,6 +713,7 @@ export async function fetchCityCampaigns(
         { name: "engagedSessions" },
         { name: "averageSessionDuration" },
         { name: "keyEvents" },
+        { name: "sessionKeyEventRate" },
       ],
       dimensionFilter,
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
@@ -702,16 +737,21 @@ export async function fetchCityCampaigns(
       engaged: 0,
       avgSeconds: 0,
       keyEvents: 0,
+      convRate: 0,
     };
     const totalSecs = row.avgSeconds * row.sessions + met(r, 2) * sessions;
     row.sessions += sessions;
     row.engaged += met(r, 1);
     row.avgSeconds = row.sessions > 0 ? totalSecs / row.sessions : 0;
     row.keyEvents += met(r, 3);
+    row.convRate += met(r, 4) * sessions;
     byName.set(k, row);
   }
 
-  const out = [...byName.values()].sort((a, b) => b.sessions - a.sessions).slice(0, 10);
+  const out = [...byName.values()]
+    .map((c) => ({ ...c, convRate: mergeRate(c.convRate, c.sessions) }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, 10);
   // Surfaced as a row rather than hidden, matching the main table — the
   // percentages a viewer computes in their head must have a denominator
   // they can see.
@@ -722,6 +762,7 @@ export async function fetchCityCampaigns(
       engaged: 0,
       avgSeconds: 0,
       keyEvents: 0,
+      convRate: 0,
     });
   }
   return out;
@@ -747,8 +788,9 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v3: keyEvents added to Ga4SourceBucket and Ga4CampaignRow.
-  const key = `ga4Report:v3:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v4: convRate added to Ga4SourceBucket and Ga4CampaignRow (the true
+  // GA session rate, replacing a derived keyEvents/sessions ratio).
+  const key = `ga4Report:v4:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],
