@@ -85,6 +85,64 @@ export type Ga4PageRow = {
 
 export type Ga4CityRow = { city: string; sessions: number; keyEvents: number };
 
+/**
+ * A placement or medium delivering traffic that never converts.
+ *
+ * Meta writes the PLACEMENT into utm_medium, so `sessionMedium` carries
+ * values like `Facebook_Right_Column`, `Instagram_Stories` and `an`
+ * alongside ordinary mediums like `cpc` and `organic`. Querying it gives
+ * placement-level visibility that nothing else in the hub has.
+ *
+ * The case this exists for: on גינדי over 28 days
+ * `Facebook_Right_Column` was the LARGEST placement by volume — 1,888
+ * sessions — with exactly 0 key events, while its siblings converted
+ * normally (Facebook_Mobile_Feed 534/138, Instagram_Feed 101/31). Its
+ * traffic was US 1,290, Sweden 323, Ireland 273: the same three-country
+ * signature that placement shows on seven other properties, for ~3,034
+ * sessions and zero conversions in total.
+ *
+ * Deliberately not restricted to Meta placements. Keeping ordinary
+ * mediums in scope lets the same rule catch a Google campaign delivering
+ * to the wrong country, which is a real case on this estate.
+ */
+export type Ga4PlacementLeak = {
+  placement: string;
+  sessions: number;
+  keyEvents: number;
+  foreignSessions: number;
+  foreignShare: number;
+  topCountries: string[];
+};
+
+/* Thresholds, kept together so they can be tuned in one place.
+ * MIN_SESSIONS keeps dormant pages out — residual bot traffic dominates
+ * anything with a handful of sessions. MIN_FOREIGN_SHARE is what
+ * separates "this placement performs badly" from "this placement is not
+ * reaching the country we sell in". */
+const LEAK_MIN_SESSIONS = 40;
+const LEAK_MIN_FOREIGN_SHARE = 0.6;
+
+/**
+ * Mediums that are not bought media and so can never be a "placement".
+ *
+ * Without this the block flags `referral` and `(none)` — on קאזר both
+ * tripped the rule (93 sessions at 91% foreign, 52 at 81%) — and then
+ * advises checking the campaign's placement settings, which cannot fix
+ * traffic nobody bought. `cpc` deliberately stays in scope: it is paid,
+ * and it is how a Google campaign delivering to the wrong country shows
+ * up here.
+ */
+const NON_PAID_MEDIUMS = new Set([
+  "(none)",
+  "(not set)",
+  "(data not available)",
+  "referral",
+  "organic",
+  "email",
+  "sms",
+  "affiliate",
+]);
+
 export type Ga4DeviceRow = {
   device: "mobile" | "desktop" | "tablet" | "other";
   label: string;
@@ -233,6 +291,10 @@ export type Ga4ReportData = {
     }[];
   };
   israel: { sessions: number; keyEvents: number; convRate: number };
+  /** Placements/mediums delivering non-converting foreign traffic.
+   *  Empty unless the property tags key events — otherwise every
+   *  placement trivially has zero conversions. */
+  placementLeaks: Ga4PlacementLeak[];
   devices: Ga4DeviceRow[];
   /** Null when the property tags no key events at all — a conversion
    *  block reading 0% would be indistinguishable from real failure. */
@@ -690,6 +752,7 @@ async function fetchGa4ReportUncached(
   const cities: Ga4CityRow[] = [];
   const devices: Ga4DeviceRow[] = [];
   const byEvent: { event: string; count: number }[] = [];
+  const placementLeaks: Ga4PlacementLeak[] = [];
   // `convRate` accumulates rate x sessions and is divided out below.
   const byCountry = new Map<
     string,
@@ -698,7 +761,7 @@ async function fetchGa4ReportUncached(
   const israel = { sessions: 0, keyEvents: 0, convRate: 0 };
 
   try {
-    const [rCity, rDevice, rEvent] = await batchRun(subjectEmail, propertyId, [
+    const [rCity, rDevice, rEvent, rPlacement] = await batchRun(subjectEmail, propertyId, [
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: "city" }, { name: "country" }],
@@ -730,6 +793,16 @@ async function fetchGa4ReportUncached(
         metrics: [{ name: "keyEvents" }],
         orderBys: [{ metric: { metricName: "keyEvents" }, desc: true }],
         limit: 25,
+      }),
+      // Placement x country. Meta puts the placement in utm_medium, so
+      // this is the only view in the hub that can see one placement
+      // inside a campaign misbehaving.
+      withFilter({
+        dateRanges: [cur],
+        dimensions: [{ name: "sessionMedium" }, { name: "country" }],
+        metrics: [{ name: "sessions" }, { name: "keyEvents" }],
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+        limit: 400,
       }),
     ]);
 
@@ -775,6 +848,48 @@ async function fetchGa4ReportUncached(
       const count = met(r, 0);
       if (count > 0) byEvent.push({ event: dim(r, 0), count });
     }
+
+    type LeakAcc = {
+      sessions: number;
+      keyEvents: number;
+      foreign: number;
+      countries: Map<string, number>;
+    };
+    const byPlacement = new Map<string, LeakAcc>();
+    for (const r of rPlacement?.rows ?? []) {
+      const placement = dim(r, 0).trim();
+      const country = dim(r, 1).trim();
+      if (!placement || NON_PAID_MEDIUMS.has(placement.toLowerCase())) continue;
+      const sessions = met(r, 0);
+      const acc =
+        byPlacement.get(placement) ??
+        { sessions: 0, keyEvents: 0, foreign: 0, countries: new Map() };
+      acc.sessions += sessions;
+      acc.keyEvents += met(r, 1);
+      if (country && country !== "Israel") {
+        acc.foreign += sessions;
+        acc.countries.set(country, (acc.countries.get(country) ?? 0) + sessions);
+      }
+      byPlacement.set(placement, acc);
+    }
+    for (const [placement, acc] of byPlacement) {
+      if (acc.sessions < LEAK_MIN_SESSIONS) continue;
+      if (acc.keyEvents > 0) continue;
+      const foreignShare = acc.sessions > 0 ? acc.foreign / acc.sessions : 0;
+      if (foreignShare < LEAK_MIN_FOREIGN_SHARE) continue;
+      placementLeaks.push({
+        placement,
+        sessions: acc.sessions,
+        keyEvents: acc.keyEvents,
+        foreignSessions: acc.foreign,
+        foreignShare,
+        topCountries: [...acc.countries.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([c]) => c),
+      });
+    }
+    placementLeaks.sort((a, b) => b.sessions - a.sessions);
   } catch {
     // Non-fatal — the section renders without these blocks.
   }
@@ -957,6 +1072,10 @@ async function fetchGa4ReportUncached(
     unattributedSessions: unattributed,
     pages,
     cities: cities.sort((a, b) => b.sessions - a.sessions),
+    // Suppressed entirely when the property tags no key events: with
+    // nothing to convert, every placement trivially shows zero and the
+    // block would accuse the whole account.
+    placementLeaks: curKe > 0 ? placementLeaks : [],
     israel: { ...israel, convRate: mergeRate(israel.convRate, israel.sessions) },
     abroad: (() => {
       const all = [...byCountry.values()];
@@ -1124,8 +1243,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v10: Audience Network split out of the meta source bucket.
-  const key = `ga4Report:v10:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v12: placementLeaks excludes non-paid mediums.
+  const key = `ga4Report:v12:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

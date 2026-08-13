@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { channelIcon } from "@/lib/channelIcon";
+import ChannelIcon from "@/components/ChannelIcon";
 import { pacingChannelKey } from "@/lib/budgetTypes";
 import ReportChannelCharts from "@/components/report/ReportChannelCharts";
 import CopyAmountButton from "@/components/CopyAmountButton";
@@ -49,9 +50,22 @@ export type PacingDismissal = {
 };
 
 /** "emoji name" channel label (legacy channelIcon returned both; the
- *  hub port returns just the emoji). */
+ *  hub port returns just the emoji). Kept as a STRING helper for the
+ *  places that need one — `title` attributes and chart series labels
+ *  cannot hold a React element. */
 const chLabel = (name: string) =>
   `${channelIcon(name) || "●"} ${name}`.trim();
+
+/** Rendered form of the same label: real brand logo for Google, Meta,
+ *  Instagram, TikTok, Taboola and Outbrain, emoji for everything with no
+ *  brand to show. */
+function ChLabel({ name }: { name: string }) {
+  return (
+    <span className="rpt-ch-lbl">
+      <ChannelIcon name={name} fallback="●" /> {name}
+    </span>
+  );
+}
 
 /**
  * CRM-vs-pixel gap tooltip for the לידים cell — the port of the legacy
@@ -498,7 +512,7 @@ function ChannelGantt({
         return (
           <div key={c.channel} className={"rpt-gantt-row" + (cur ? " is-cur" : "")}>
             <span className="rpt-gantt-label" title={c.channel}>
-              {chLabel(c.channel)}
+              <ChLabel name={c.channel} />
             </span>
             <span className="rpt-gantt-track">
               {todayPct !== null && (
@@ -859,7 +873,7 @@ export default function ReportChannelsTab({
                           checked={on}
                           onChange={() => toggleChannel(c.channel)}
                         />
-                        {chLabel(c.channel)}
+                        <ChLabel name={c.channel} />
                       </label>
                     );
                   })}
@@ -956,7 +970,7 @@ export default function ReportChannelsTab({
                       (trendDaily.length >= 2 ? " has-trend" : "")
                     }
                   >
-                    <span className="rpt-ch-label">{chLabel(c.channel)}</span>
+                    <span className="rpt-ch-label"><ChLabel name={c.channel} /></span>
                     {dot && (
                       <span
                         className={`rpt-ch-dot ${dot.cls}`}

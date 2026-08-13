@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { CrmSourceFilterContext } from "./CrmSourceFilterContext";
 import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
+import ChannelIcon from "@/components/ChannelIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
 import CountUp from "./anim/CountUp";
@@ -698,9 +699,9 @@ export default function CrmFunnelClient({
                   style={{ background: palette.get(source) }}
                   aria-hidden="true"
                 />
-                {icon ? (
-                  <span className="crm-source-chip-icon" aria-hidden="true">{icon}</span>
-                ) : null}
+                <span className="crm-source-chip-icon" aria-hidden="true">
+                  <ChannelIcon name={source} />
+                </span>
                 <span className="crm-source-chip-name">{source}</span>
                 <span className="crm-source-chip-count">{total}</span>
                 {cost && cost.cpl > 0 && (
@@ -829,11 +830,10 @@ export default function CrmFunnelClient({
               </thead>
               <tbody>
                 {funnel.channelCosts.map((c) => {
-                  const ic = channelIcon(c.channel);
                   return (
                     <tr key={c.channel}>
                       <td className="crm-cost-ch">
-                        {ic ? <span aria-hidden="true">{ic}</span> : null} {c.label}
+                        <ChannelIcon name={c.channel} /> {c.label}
                       </td>
                       <td>{fmtILS(c.spend)}</td>
                       <td>{fmtInt(c.leads)}</td>

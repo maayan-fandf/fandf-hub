@@ -26733,19 +26733,24 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   border-color: color-mix(in srgb, #ef4444 45%, var(--border-soft));
   color: #b91c1c;
 }
-/* Landing preview */
+/* Landing preview. Centred and given more room now that it sits beside
+   the GA4 traffic section rather than tucked at the bottom of the report
+   header — it is the picture of the page all those numbers describe, so
+   it reads as a heading for them rather than an afterthought. */
 .rpt-landing-grid {
   display: grid;
   gap: 0.6rem;
+  justify-items: center;
 }
 .rpt-landing-grid.is-multi {
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 .rpt-landing {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   overflow: hidden;
-  max-width: 420px;
+  width: 100%;
+  max-width: 620px;
 }
 .rpt-landing a {
   display: block;

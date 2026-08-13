@@ -124,7 +124,20 @@ export default async function Ga4ReportSection({
         <Devices rows={data.devices} hasKeyEvents={!!data.conversions} />
       )}
 
-      {data.abroad && <ForeignTraffic abroad={data.abroad} israel={data.israel} />}
+      {/* Both diagnostics are INTERNAL ONLY. They describe campaign
+          misconfiguration, not the project's performance, and some of
+          these campaigns are run by other agencies — telling a client
+          "80% of your traffic is foreign and never converts" without
+          the media context behind it alarms rather than informs. The
+          numbers they are computed from remain visible to clients in
+          the map and source blocks; only the diagnosis is withheld. */}
+      {isInternal && data.abroad && (
+        <ForeignTraffic abroad={data.abroad} israel={data.israel} />
+      )}
+
+      {isInternal && (data.placementLeaks?.length ?? 0) > 0 && (
+        <PlacementLeaks rows={data.placementLeaks} />
+      )}
 
       {(data.cities?.length ?? 0) > 0 && (
         <Ga4CityMap
@@ -564,6 +577,71 @@ function ForeignTraffic({
       <div className="ga4w-note">
         חלק מהתנועה הזו לגיטימית (ישראלים בחו״ל, VPN), אך כשהיקפה גבוה והמרות
         כמעט אפסיות מדובר לרוב בתנועת בוטים או במיקוד גאוגרפי רחב מדי.
+      </div>
+    </div>
+  );
+}
+
+/* ── Placement leaks ──────────────────────────────────────────────── */
+
+/**
+ * Placements delivering real volume with zero conversions and mostly
+ * foreign traffic.
+ *
+ * Sits below the country-level block because it answers the next
+ * question: the country split says traffic is arriving from the wrong
+ * place, this says which placement is buying it. Meta writes the
+ * placement into utm_medium, so a single placement inside an otherwise
+ * healthy campaign becomes visible — `Facebook_Right_Column` was גינדי's
+ * largest placement by volume at 1,888 sessions and 0 conversions while
+ * Facebook_Mobile_Feed converted 138 times from 534.
+ *
+ * Wording is deliberately restrained. This is client-visible, some of
+ * these campaigns are run by other agencies, and "no conversions
+ * recorded" is a fact while "someone is wasting your money" is an
+ * accusation the data cannot support on its own.
+ */
+function PlacementLeaks({
+  rows,
+}: {
+  rows: NonNullable<Ga4ReportData["placementLeaks"]>;
+}) {
+  const wasted = rows.reduce((n, r) => n + r.sessions, 0);
+  return (
+    <div className="ga4w-block ga4w-alert">
+      <h3 className="ga4w-h3">⚠️ מיקומי פרסום ללא המרות</h3>
+      <p className="ga4w-alert-lead">
+        המיקומים הבאים הביאו {fmtInt(wasted)} כניסות לדף בתקופה, לא נרשמה בהם
+        אף המרה, ורוב התנועה מהם הגיעה מחוץ לישראל. שווה לבדוק אותם בהגדרות
+        המיקומים של הקמפיין.
+      </p>
+      <div className="ga4w-table-wrap">
+        <table className="ga4w-table">
+          <thead>
+            <tr>
+              <th>מיקום</th>
+              <th>כניסות</th>
+              <th>מחוץ לישראל</th>
+              <th>מדינות עיקריות</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.placement}>
+                <td className="ga4w-camp">{r.placement}</td>
+                <td>{fmtInt(r.sessions)}</td>
+                <td>{fmtPct(r.foreignShare)}</td>
+                <td>{r.topCountries.join(" · ") || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="ga4w-note">
+        ״מיקום״ הוא שדה ה-utm_medium שמגיע מהפלטפורמה — במטא זהו מיקום המודעה
+        (פיד, סטוריז, טור ימני), ובגוגל סוג הרכישה. מיקום ללא המרות אינו
+        בהכרח תקלה, אך בשילוב עם תנועה שרובה מחוץ לישראל זהו לרוב סימן להגדרת
+        מיקוד רחבה מדי.
       </div>
     </div>
   );
