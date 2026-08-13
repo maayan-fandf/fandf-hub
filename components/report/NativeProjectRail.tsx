@@ -43,6 +43,7 @@ export default async function NativeProjectRail({
   pricesNode,
   clarityNode,
   ga4Node,
+  ga4ReportNode,
   mediaNode,
   mediaPlanNode,
   tasksBadge = 0,
@@ -76,6 +77,9 @@ export default async function NativeProjectRail({
   /** Live GA4 traffic on the landing page — sits above clarityNode in the
    *  same section. Client-visible, unlike clarityNode. */
   ga4Node?: ReactNode;
+  /** Period-scoped GA4 — gets its OWN rail section (אנליטיקס) between
+   *  קמפיינים and מגמות, rather than folding under סקירת פעילות. */
+  ga4ReportNode?: ReactNode;
   /** ביצועי מדיה — the non-real-estate reach/installs card. Mutually
    *  exclusive with the CRM nodes in practice: a project either has a
    *  sales funnel or it doesn't. */
@@ -299,6 +303,20 @@ export default async function NativeProjectRail({
         </>
       ),
     });
+    // אנליטיקס sits between קמפיינים and מגמות: campaigns say what we
+    // bought, this says who actually arrived, trends say where it is
+    // heading. Pushed outside the !mediaLed guard below because it does
+    // not depend on platform data at all — it reads GA directly — but it
+    // is still only ever non-null for real-estate projects (page.tsx).
+    if (ga4ReportNode) {
+      sections.push({
+        id: "analytics",
+        group: "perf",
+        label: "אנליטיקס",
+        icon: "📊",
+        content: ga4ReportNode,
+      });
+    }
     if (!mediaLed) {
       sections.push({
         id: "trends",

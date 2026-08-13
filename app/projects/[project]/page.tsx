@@ -26,6 +26,7 @@ import LatestPrisotCard from "@/components/LatestPrisotCard";
 import CrmFunnelCard from "@/components/CrmFunnelCard";
 import ClarityInsightsSection from "@/components/ClarityInsightsSection";
 import Ga4LiveSection from "@/components/Ga4LiveSection";
+import Ga4ReportSection from "@/components/Ga4ReportSection";
 import ProjectPriceCheckSection from "@/components/ProjectPriceCheckSection";
 import ClientPrisaApprovalPrompt from "@/components/ClientPrisaApprovalPrompt";
 import PageHeaderShrinkObserver from "@/components/PageHeaderShrinkObserver";
@@ -767,6 +768,20 @@ export default async function ProjectOverviewPage({
       />
     </Suspense>
   ) : null;
+  // Period-scoped GA4 — its own rail section between קמפיינים and מגמות.
+  // Unlike ga4Node it does NOT self-hide on a past month: GA4 history is
+  // fine, and this section is scoped to the report window like everything
+  // else in that group.
+  const ga4ReportNode = isRealEstateProject ? (
+    <Suspense fallback={null}>
+      <Ga4ReportSection
+        subjectEmail={userEmail}
+        project={projectName}
+        monthFilter={monthOverride}
+        isInternal={isInternalUser}
+      />
+    </Suspense>
+  ) : null;
   const prisotNode = isRealEstateProject ? (
     <Suspense fallback={null}>
       <LatestPrisotCard
@@ -1007,6 +1022,7 @@ export default async function ProjectOverviewPage({
               campaignsFbNode={campaignsFbNode}
               clarityNode={clarityNode}
               ga4Node={ga4Node}
+              ga4ReportNode={ga4ReportNode}
               prisotNode={prisotNode}
               pricesNode={pricesNode}
               mediaNode={mediaNode}
@@ -1127,6 +1143,8 @@ export default async function ProjectOverviewPage({
       {crmNode}
 
       {ga4Node}
+
+      {ga4ReportNode}
 
       {clarityNode}
 

@@ -8897,6 +8897,191 @@ html[data-theme="dark"] .ga4-chip-key {
   .ga4-kpi-value { font-size: 1.15rem; }
 }
 
+/* ── אנליטיקס section (period-scoped GA4) ─────────────────────────────
+   Sits between קמפיינים and מגמות. Server-rendered, inline SVG chart —
+   see components/Ga4ReportSection.tsx. Reuses .ga4-kpi* from the live
+   section above so the two read as siblings. */
+.ga-mark {
+  vertical-align: -0.16em;
+  margin-inline-end: 0.15rem;
+  flex: none;
+}
+.ga4w-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+.ga4w-cmp {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.ga4w-delta { font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.ga4w-delta.is-up { color: #059669; }
+.ga4w-delta.is-down { color: #dc2626; }
+.ga4w-delta.is-flat { color: var(--muted); }
+html[data-theme="dark"] .ga4w-delta.is-up { color: #34d399; }
+html[data-theme="dark"] .ga4w-delta.is-down { color: #f87171; }
+
+.ga4w-chart { margin-top: 0.9rem; }
+.ga4w-chart svg { width: 100%; height: auto; display: block; }
+.ga4w-chart-line {
+  fill: none;
+  stroke: #6366f1;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.ga4w-chart-area { fill: #6366f1; opacity: 0.12; stroke: none; }
+html[data-theme="dark"] .ga4w-chart-line { stroke: #a5b4fc; }
+html[data-theme="dark"] .ga4w-chart-area { fill: #a5b4fc; opacity: 0.15; }
+.ga4w-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+.ga4w-chart-peak { font-weight: 600; }
+
+.ga4w-block { margin-top: 1.1rem; }
+.ga4w-h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 0.5rem;
+}
+.ga4w-stack {
+  display: flex;
+  width: 100%;
+  height: 0.75rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  margin-bottom: 0.6rem;
+}
+.ga4w-stack-seg { height: 100%; }
+.ga4w-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-inline-end: 0.35rem;
+}
+/* One palette for both the stacked bar and its legend dots. */
+.ga4w-stack-seg.is-meta,     .ga4w-dot.is-meta     { background: #3b82f6; }
+.ga4w-stack-seg.is-googleads,.ga4w-dot.is-googleads{ background: #f59e0b; }
+.ga4w-stack-seg.is-taboola,  .ga4w-dot.is-taboola  { background: #14b8a6; }
+.ga4w-stack-seg.is-organic,  .ga4w-dot.is-organic  { background: #22c55e; }
+.ga4w-stack-seg.is-direct,   .ga4w-dot.is-direct   { background: #a855f7; }
+.ga4w-stack-seg.is-referral, .ga4w-dot.is-referral { background: #ec4899; }
+.ga4w-stack-seg.is-other,    .ga4w-dot.is-other    { background: #94a3b8; }
+
+.ga4w-stack-seg.is-dev-mobile,  .ga4w-dot.is-dev-mobile  { background: #6366f1; }
+.ga4w-stack-seg.is-dev-desktop, .ga4w-dot.is-dev-desktop { background: #0ea5e9; }
+.ga4w-stack-seg.is-dev-tablet,  .ga4w-dot.is-dev-tablet  { background: #f472b6; }
+.ga4w-stack-seg.is-dev-other,   .ga4w-dot.is-dev-other   { background: #94a3b8; }
+
+.ga4w-chip {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--ink);
+  white-space: nowrap;
+  direction: ltr;
+}
+.ga4w-note {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* Map: fixed-width silhouette beside a scrollable city list. The SVG is
+   ~2.6x taller than wide (Israel really is), so it is capped by height
+   and the list takes the remaining width. */
+.ga4w-map {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.ga4w-map-svg {
+  height: 240px;
+  width: auto;
+  flex: none;
+}
+.ga4w-map-land {
+  fill: var(--surface-soft);
+  stroke: var(--border);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+.ga4w-map-dot {
+  fill: #6366f1;
+  fill-opacity: 0.55;
+  stroke: #4338ca;
+  stroke-width: 0.4;
+  vector-effect: non-scaling-stroke;
+}
+html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
+.ga4w-map-list { flex: 1 1 15rem; min-width: 12rem; }
+
+.ga4w-table-wrap { overflow-x: auto; }
+.ga4w-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.ga4w-table th {
+  text-align: start;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ga4w-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ga4w-table tbody tr:last-child td { border-bottom: none; }
+.ga4w-camp {
+  direction: ltr;
+  text-align: end;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ga4w-unattr td { color: var(--muted); font-style: italic; }
+.ga4w-warn {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+html[data-theme="dark"] .ga4w-warn {
+  color: #fde68a;
+  background: #422006;
+  border-color: #b45309;
+}
+.ga4w-caveat { margin-top: 0.4rem; line-height: 1.7; }
+@media (max-width: 640px) {
+  .ga4w-kpis { grid-template-columns: repeat(2, 1fr); }
+  .ga4w-camp { max-width: 11rem; }
+}
+
 /* ── "מחירים מפורסמים" section ────────────────────────────────────────
    Per-project price-comparison shelf at the bottom of /projects/[name].
    Renders 4 cards (אתר / יד2 / גוגל / פייסבוק), each showing the
