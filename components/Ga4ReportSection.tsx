@@ -112,6 +112,8 @@ export default async function Ga4ReportSection({
           lib/ga4Report.ts is the real fix, this is the seatbelt. */}
       {data.returning && <Returning r={data.returning} />}
 
+      {(data.intro?.length ?? 0) > 0 && <IntroCredit rows={data.intro} />}
+
       {data.demographics && <Demographics d={data.demographics} />}
 
       {(data.devices?.length ?? 0) > 0 && (
@@ -430,73 +432,164 @@ function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
   );
 }
 
+/* ── Campaign introduction credit ─────────────────────────────────── */
+
+/**
+ * Campaigns that brought in people who converted later under a different
+ * campaign — first-touch credit exceeding last-touch credit.
+ *
+ * The one place first vs last touch genuinely diverges here. A
+ * channel-level version of this was measured and rejected: key-event
+ * totals are conserved exactly across the two attributions and channel
+ * shares move under 1.2 points, so it would have drawn a chart that
+ * always agrees with itself. At campaign level the difference is real,
+ * because a campaign that stops running keeps its first-touch credit
+ * while last-touch moves to whatever is live now.
+ *
+ * Called "הביאו לידים שנסגרו מאוחר יותר" rather than assisted
+ * conversions — GA4 has no assist or path data, and this is the
+ * narrower claim the data actually supports.
+ */
+function IntroCredit({ rows }: { rows: NonNullable<Ga4ReportData["intro"]> }) {
+  return (
+    <div className="ga4w-block">
+      <h3 className="ga4w-h3">קמפיינים שהביאו לידים שנסגרו מאוחר יותר</h3>
+      <table className="ga4w-table">
+        <thead>
+          <tr>
+            <th>קמפיין</th>
+            <th>הביא (מגע ראשון)</th>
+            <th>סגר (מגע אחרון)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.campaign}>
+              <td className="ga4w-camp">{r.campaign}</td>
+              <td>{fmtInt(r.introKeyEvents)}</td>
+              <td>{fmtInt(r.closeKeyEvents)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="ga4w-note">
+        אלה קמפיינים שהמשתמש נחשף אליהם בביקור הראשון, אך ההמרה עצמה נרשמה
+        בביקור מאוחר יותר — לרוב קמפיינים שכבר אינם רצים. הפילוח לפי קמפיין
+        שלמעלה מייחס את ההמרה למגע האחרון בלבד, ולכן קמפיינים אלה אינם מופיעים
+        בו.
+      </div>
+    </div>
+  );
+}
+
 /* ── Demographics ─────────────────────────────────────────────────── */
 
 /**
- * Age and gender from Google Signals.
+ * Age brackets as grouped bars split by gender, matching the shape used
+ * in Meta Ads Manager so the two read the same way side by side.
  *
  * The known-share caption is mandatory, not decorative: only signed-in
- * Google users with ads personalisation get classified, which was 21-32%
- * of users across the properties measured. Every bar here describes that
- * minority, and a viewer who reads it as the whole audience would be
- * badly misled — so the denominator is stated in words above the bars
- * and every percentage is explicitly "of the identified users".
+ * Google users with ads personalisation get classified, which was 15% on
+ * this landing page and 21-32% property-wide. Every bar describes that
+ * minority, so the denominator is stated in words and each percentage is
+ * explicitly "of the identified users".
+ *
+ * There is no 13-17 column, unlike Meta's chart — GA4 never classifies
+ * under-18s, so its absence here is a schema fact rather than zero data.
  */
 function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) {
+  const rows = d.rows;
+  if (rows.length === 0) return null;
+
+  const W = 560;
+  const H = 190;
+  const PAD_B = 26;
+  const PAD_T = 10;
+  const max = Math.max(...rows.flatMap((r) => [r.male, r.female]), 1);
+  // Round the axis up to something human so gridlines land on whole
+  // numbers rather than 113.
+  const step = Math.max(1, Math.ceil(max / 4 / 10) * 10);
+  const top = Math.ceil(max / step) * step;
+  const slot = W / rows.length;
+  const barW = Math.min(26, slot / 3);
+  const y = (v: number) => PAD_T + (1 - v / top) * (H - PAD_T - PAD_B);
+
   const share = d.totalUsers > 0 ? d.knownUsers / d.totalUsers : 0;
-  const bars = (rows: typeof d.age) => {
-    const max = Math.max(...rows.map((r) => r.users), 1);
-    return rows.map((r) => (
-      <div className="ga4w-bar-row" key={r.bucket}>
-        <span className="ga4w-bar-lbl">{r.bucket}</span>
-        <span className="ga4w-bar-track">
-          <span
-            className="ga4w-bar-fill"
-            style={{ width: `${(r.users / max) * 100}%` }}
-          />
-        </span>
-        <span className="ga4w-bar-val">
-          {fmtInt(r.users)}
-          {d.knownUsers > 0 && (
-            <em> · {fmtPct(r.users / d.knownUsers)}</em>
-          )}
-        </span>
-      </div>
-    ));
-  };
+  const known = Math.max(1, d.knownUsers);
 
   return (
     <div className="ga4w-block">
-      <h3 className="ga4w-h3">גיל ומגדר</h3>
+      <h3 className="ga4w-h3">התפלגות גיל ומגדר</h3>
       <div className="ga4w-note ga4w-demo-caveat">
         Google מזהה גיל ומגדר רק עבור חלק מהגולשים (מחוברים לחשבון Google עם
         התאמה אישית של מודעות). כאן זוהו {fmtInt(d.knownUsers)} מתוך{" "}
-        {fmtInt(d.totalUsers)} משתמשים — {fmtPct(share)}. כל האחוזים למטה הם
-        מתוך המזוהים בלבד, ולא מכלל הגולשים.
+        {fmtInt(d.totalUsers)} משתמשים — {fmtPct(share)}. כל האחוזים הם מתוך
+        המזוהים בלבד.
       </div>
-      <div className="ga4w-demo-grid">
-        {d.age.length > 0 && (
-          <div>
-            <div className="ga4w-demo-h">גיל</div>
-            {bars(d.age)}
-          </div>
-        )}
-        {d.gender.length > 0 && (
-          <div>
-            <div className="ga4w-demo-h">מגדר</div>
-            {bars(
-              d.gender.map((g) => ({
-                ...g,
-                bucket:
-                  g.bucket.toLowerCase() === "male"
-                    ? "גברים"
-                    : g.bucket.toLowerCase() === "female"
-                      ? "נשים"
-                      : g.bucket,
-              })),
-            )}
-          </div>
-        )}
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="ga4w-demo-chart"
+        role="img"
+        aria-label="התפלגות גיל ומגדר"
+      >
+        {Array.from({ length: top / step + 1 }, (_, i) => i * step).map((v) => (
+          <g key={v}>
+            <line className="ga4w-demo-grid-line" x1={26} x2={W} y1={y(v)} y2={y(v)} />
+            <text className="ga4w-demo-tick" x={20} y={y(v) + 3}>
+              {v}
+            </text>
+          </g>
+        ))}
+        {rows.map((r, i) => {
+          const cx = i * slot + slot / 2;
+          return (
+            <g key={r.bucket}>
+              <rect
+                className="ga4w-demo-bar is-male"
+                x={cx - barW - 2}
+                y={y(r.male)}
+                width={barW}
+                height={Math.max(0, y(0) - y(r.male))}
+              >
+                <title>{`גברים ${r.bucket}: ${fmtInt(r.male)}`}</title>
+              </rect>
+              <rect
+                className="ga4w-demo-bar is-female"
+                x={cx + 2}
+                y={y(r.female)}
+                width={barW}
+                height={Math.max(0, y(0) - y(r.female))}
+              >
+                <title>{`נשים ${r.bucket}: ${fmtInt(r.female)}`}</title>
+              </rect>
+              <text className="ga4w-demo-xlbl" x={cx} y={H - 8}>
+                {r.bucket}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      <div className="ga4w-demo-legend">
+        <div className="ga4w-demo-leg">
+          <span className="ga4w-dot is-male" aria-hidden="true" />
+          <strong>גברים</strong>
+          <span>
+            {fmtPct(d.maleUsers / known)} ({fmtInt(d.maleUsers)})
+          </span>
+          {d.maleKeyEvents > 0 && <em>{fmtInt(d.maleKeyEvents)} אירועי מפתח</em>}
+        </div>
+        <div className="ga4w-demo-leg">
+          <span className="ga4w-dot is-female" aria-hidden="true" />
+          <strong>נשים</strong>
+          <span>
+            {fmtPct(d.femaleUsers / known)} ({fmtInt(d.femaleUsers)})
+          </span>
+          {d.femaleKeyEvents > 0 && (
+            <em>{fmtInt(d.femaleKeyEvents)} אירועי מפתח</em>
+          )}
+        </div>
       </div>
     </div>
   );

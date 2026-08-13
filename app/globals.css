@@ -9107,52 +9107,38 @@ html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
 }
 .ga4w-drill-close:hover { background: var(--surface-soft); color: var(--ink); }
 
-/* Demographics: horizontal bars, since the buckets are ordinal (age)
-   and the comparison is within a column, not across the two. */
+/* Demographics: grouped bars per age bracket split by gender — the same
+   shape Meta Ads Manager uses, so the two read alike side by side. */
 .ga4w-demo-caveat {
   margin-bottom: 0.7rem;
   border-inline-start: 3px solid var(--border);
   padding-inline-start: 0.6rem;
 }
-.ga4w-demo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1.2rem;
-}
-.ga4w-demo-h {
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: var(--muted);
-  margin-bottom: 0.35rem;
-}
-.ga4w-bar-row {
-  display: grid;
-  grid-template-columns: 4.2rem 1fr auto;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.3rem;
+.ga4w-demo-chart { width: 100%; height: auto; display: block; }
+.ga4w-demo-grid-line { stroke: var(--border); stroke-width: 0.5; opacity: 0.55; }
+.ga4w-demo-tick { font-size: 8px; fill: var(--muted); text-anchor: end; }
+.ga4w-demo-xlbl { font-size: 9px; fill: var(--muted); text-anchor: middle; }
+.ga4w-demo-bar { rx: 2; }
+.ga4w-demo-bar.is-male { fill: #6d5ce7; }
+.ga4w-demo-bar.is-female { fill: #52c9c2; }
+.ga4w-dot.is-male { background: #6d5ce7; }
+.ga4w-dot.is-female { background: #52c9c2; }
+.ga4w-demo-legend {
+  display: flex;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.5rem;
   font-size: 0.75rem;
 }
-.ga4w-bar-lbl { color: var(--ink); direction: ltr; text-align: end; }
-.ga4w-bar-track {
-  height: 0.55rem;
-  border-radius: 999px;
-  background: var(--surface-soft);
-  overflow: hidden;
-}
-.ga4w-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: #6366f1;
-}
-html[data-theme="dark"] .ga4w-bar-fill { background: #a5b4fc; }
-.ga4w-bar-val {
+.ga4w-demo-leg {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
-.ga4w-bar-val em { font-style: normal; opacity: 0.75; }
+.ga4w-demo-leg strong { color: var(--ink); font-weight: 600; }
+.ga4w-demo-leg em { font-style: normal; opacity: 0.8; }
 
 .ga4w-table-wrap { overflow-x: auto; }
 .ga4w-table {

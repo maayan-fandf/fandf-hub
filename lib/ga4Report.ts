@@ -95,7 +95,18 @@ export type Ga4ConversionData = {
   byEvent: { event: string; count: number }[];
 };
 
-export type Ga4DemoRow = { bucket: string; users: number; keyEvents: number };
+/** One age bracket, split by gender — the shape a grouped bar chart needs. */
+export type Ga4DemoRow = {
+  bucket: string;
+  male: number;
+  female: number;
+  maleKeyEvents: number;
+  femaleKeyEvents: number;
+};
+
+/** GA4's age brackets, in order. It never classifies under-18s, so
+ *  unlike Meta's equivalent chart there is no 13-17 column. */
+export const AGE_ORDER = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
 
 /**
  * Age and gender, which need Google Signals switched on for the
@@ -109,8 +120,12 @@ export type Ga4DemoRow = { bucket: string; users: number; keyEvents: number };
  * UI must say so; presented as "the audience" it would be false.
  */
 export type Ga4Demographics = {
-  age: Ga4DemoRow[];
-  gender: Ga4DemoRow[];
+  /** Age brackets in AGE_ORDER, each split by gender. */
+  rows: Ga4DemoRow[];
+  maleUsers: number;
+  femaleUsers: number;
+  maleKeyEvents: number;
+  femaleKeyEvents: number;
   knownUsers: number;
   totalUsers: number;
 };
@@ -131,6 +146,32 @@ export type Ga4Demographics = {
  * come back to do it: returning users were 18% of sessions but 35% of
  * key events on one property, and 9% vs 22% on another.
  */
+/**
+ * Campaigns that introduced converting users but did not close them.
+ *
+ * This is the ONE place first-touch and last-touch attribution genuinely
+ * diverge on this estate. A channel-level comparison was measured and
+ * rejected — key-event totals are conserved exactly across the two
+ * attributions and channel shares move under 1.2 points — but at
+ * CAMPAIGN level a real difference survives, because a campaign that has
+ * stopped running keeps its first-touch credit while all last-touch
+ * credit moves to whatever is live now.
+ *
+ * Measured on 526091009: Gohari-iris_2026-03-05_FB holds 5 first-touch
+ * key events against 0 last-touch, Gohari-Jade_2026-03-05_FB 3 against
+ * 0, and "New Leads Campaign" 4 while being absent from the last-touch
+ * list entirely — roughly 5% of key events.
+ *
+ * Deliberately NOT called assisted conversions: GA4 has no assist or
+ * path data, and this is a narrower, verifiable claim — "this campaign
+ * brought people who converted later".
+ */
+export type Ga4IntroRow = {
+  campaign: string;
+  introKeyEvents: number;
+  closeKeyEvents: number;
+};
+
 export type Ga4Returning = {
   rows: {
     kind: "new" | "returning";
@@ -169,6 +210,8 @@ export type Ga4ReportData = {
   /** Null when Google Signals is off for the property. */
   demographics: Ga4Demographics | null;
   returning: Ga4Returning | null;
+  /** Campaigns with materially more first-touch than last-touch credit. */
+  intro: Ga4IntroRow[];
   mode: AttributionMode;
   /** True when the project owns its whole domain and no filter was applied. */
   wholeSite: boolean;
@@ -651,18 +694,19 @@ async function fetchGa4ReportUncached(
   // Third batch — demographics (Google Signals) and new vs returning.
   let demographics: Ga4Demographics | null = null;
   let returning: Ga4Returning | null = null;
+  const intro: Ga4IntroRow[] = [];
   try {
-    const demoReq = (dimension: string) =>
+    const [rDemo, rReturn, rIntro] = await batchRun(subjectEmail, propertyId, [
+      // Age and gender CROSSED, not two marginals — a grouped bar chart
+      // needs the cells. Verified to survive GA4's demographic
+      // thresholding: 12 populated cells on a landing page with 798
+      // identified users.
       withFilter({
         dateRanges: [cur],
-        dimensions: [{ name: dimension }],
+        dimensions: [{ name: "userAgeBracket" }, { name: "userGender" }],
         metrics: [{ name: "totalUsers" }, { name: "keyEvents" }],
-        orderBys: [{ metric: { metricName: "totalUsers" }, desc: true }],
-        limit: 15,
-      });
-    const [rAge, rGender, rReturn] = await batchRun(subjectEmail, propertyId, [
-      demoReq("userAgeBracket"),
-      demoReq("userGender"),
+        limit: 60,
+      }),
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: "newVsReturning" }],
@@ -673,33 +717,64 @@ async function fetchGa4ReportUncached(
         ],
         limit: 10,
       }),
+      // First-touch campaign credit, compared below against the
+      // last-touch table already fetched in batch 1.
+      withFilter({
+        dateRanges: [cur],
+        dimensions: [{ name: "firstUserCampaignName" }],
+        metrics: [{ name: "keyEvents" }],
+        orderBys: [{ metric: { metricName: "keyEvents" }, desc: true }],
+        limit: 100,
+      }),
     ]);
 
-    // GA4 returns "unknown" as its own bucket for unclassified users, so
-    // it is split out into knownUsers rather than shown as a category.
-    const parseDemo = (rep: Report | undefined) => {
-      const rows: Ga4DemoRow[] = [];
-      let known = 0;
-      let total = 0;
-      for (const r of rep?.rows ?? []) {
-        const bucket = dim(r, 0).trim();
-        const users = met(r, 0);
-        if (!bucket) continue;
-        total += users;
-        if (bucket.toLowerCase() === "unknown") continue;
-        known += users;
-        rows.push({ bucket, users, keyEvents: met(r, 1) });
+    // "unknown" appears independently in EITHER dimension — GA emits
+    // real `unknown | male` rows for users whose gender it knows but
+    // whose age it doesn't. A cell is only plottable when both are
+    // known; everything else feeds the unclassified remainder, so the
+    // caption's denominator stays honest.
+    const byAge = new Map<string, Ga4DemoRow>();
+    let totalUsers = 0;
+    let knownUsers = 0;
+    let maleUsers = 0;
+    let femaleUsers = 0;
+    let maleKeyEvents = 0;
+    let femaleKeyEvents = 0;
+    for (const r of rDemo?.rows ?? []) {
+      const age = dim(r, 0).trim();
+      const gender = dim(r, 1).trim().toLowerCase();
+      const users = met(r, 0);
+      const ke = met(r, 1);
+      if (!age) continue;
+      totalUsers += users;
+      if (age.toLowerCase() === "unknown") continue;
+      if (gender !== "male" && gender !== "female") continue;
+      knownUsers += users;
+      const row =
+        byAge.get(age) ??
+        { bucket: age, male: 0, female: 0, maleKeyEvents: 0, femaleKeyEvents: 0 };
+      if (gender === "male") {
+        row.male += users;
+        row.maleKeyEvents += ke;
+        maleUsers += users;
+        maleKeyEvents += ke;
+      } else {
+        row.female += users;
+        row.femaleKeyEvents += ke;
+        femaleUsers += users;
+        femaleKeyEvents += ke;
       }
-      return { rows, known, total };
-    };
-    const age = parseDemo(rAge);
-    const gender = parseDemo(rGender);
-    if (age.rows.length > 0 || gender.rows.length > 0) {
+      byAge.set(age, row);
+    }
+    if (byAge.size > 0) {
       demographics = {
-        age: age.rows,
-        gender: gender.rows,
-        knownUsers: Math.max(age.known, gender.known),
-        totalUsers: Math.max(age.total, gender.total),
+        rows: AGE_ORDER.filter((a) => byAge.has(a)).map((a) => byAge.get(a)!),
+        maleUsers,
+        femaleUsers,
+        maleKeyEvents,
+        femaleKeyEvents,
+        knownUsers,
+        totalUsers,
       };
     }
 
@@ -718,6 +793,32 @@ async function fetchGa4ReportUncached(
       });
     }
     if (retRows.length > 0) returning = { rows: retRows };
+
+    // Compare first-touch credit against the last-touch counts already
+    // gathered above. Only campaigns that introduced MORE converters
+    // than they closed are kept: the reverse direction is just "this
+    // campaign is running now", which the main table already shows.
+    const lastTouch = new Map<string, number>();
+    for (const r of rCampaigns?.rows ?? []) {
+      const name = cleanCampaign(dim(r, 0));
+      if (!name) continue;
+      const k = name.toLowerCase().replace(/[_-]+/g, "-");
+      lastTouch.set(k, (lastTouch.get(k) ?? 0) + met(r, 3));
+    }
+    for (const r of rIntro?.rows ?? []) {
+      const name = cleanCampaign(dim(r, 0));
+      if (!name) continue;
+      const introKe = met(r, 0);
+      if (introKe <= 0) continue;
+      const k = name.toLowerCase().replace(/[_-]+/g, "-");
+      const closeKe = lastTouch.get(k) ?? 0;
+      // A one-event gap is noise; require a real difference so this
+      // block stays a finding rather than a rounding artefact.
+      if (introKe - closeKe < 2) continue;
+      intro.push({ campaign: name, introKeyEvents: introKe, closeKeyEvents: closeKe });
+    }
+    intro.sort((a, b) => b.introKeyEvents - b.closeKeyEvents - (a.introKeyEvents - a.closeKeyEvents));
+    intro.splice(5);
   } catch {
     // Non-fatal — Google Signals may simply be off for this property.
   }
@@ -785,6 +886,7 @@ async function fetchGa4ReportUncached(
         : null,
     demographics,
     returning,
+    intro,
     mode,
     wholeSite,
   };
@@ -913,8 +1015,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v5: demographics + returning added.
-  const key = `ga4Report:v5:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v6: demographics crossed by gender, plus intro-credit rows.
+  const key = `ga4Report:v6:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],
