@@ -408,11 +408,29 @@ async function resolveRawPageValues(
  * paid-vs-organic split built on it would report our own campaigns as
  * free traffic.
  */
-const META_SOURCES = new Set(["fb", "facebook", "ig", "instagram", "an", "meta", "msg"]);
+/**
+ * `an` (Meta Audience Network) is deliberately NOT in this set.
+ *
+ * It is technically Meta inventory, but bucketing it with Facebook and
+ * Instagram produces a materially wrong conclusion. Measured on
+ * /mia-beer-yaakov over 28 days: an/an served 1,347 sessions to India,
+ * 464 to Bangladesh, 166 to Ethiopia, 120 to Nepal and 81 to Congo for
+ * 9 key events in total, while fb/Facebook_Mobile_Feed served 1,035
+ * Israeli sessions for 103. Blended, Meta reads 3.5% against Google's
+ * 11% and looks like the weaker channel — split, Facebook and Instagram
+ * are the strongest thing on the account and Audience Network is the
+ * entire problem.
+ *
+ * This is also where the section's foreign-traffic block comes from:
+ * the two findings are the same finding.
+ */
+const META_SOURCES = new Set(["fb", "facebook", "ig", "instagram", "meta", "msg"]);
+const AUDIENCE_NETWORK_SOURCES = new Set(["an", "audiencenetwork", "audience_network"]);
 const PAID_MEDIUMS = new Set(["cpc", "ppc", "paid", "paidsearch", "paid_search"]);
 
 const SOURCE_LABELS: Record<string, string> = {
   meta: "מטא (פייסבוק/אינסטגרם)",
+  audiencenetwork: "Audience Network (מטא)",
   googleads: "גוגל (ממומן)",
   taboola: "טאבולה / אאוטבריין",
   organic: "חיפוש אורגני",
@@ -426,6 +444,7 @@ function classifySource(sourceMedium: string): string {
     .toLowerCase()
     .split("/")
     .map((s) => s.trim());
+  if (AUDIENCE_NETWORK_SOURCES.has(rawSource)) return "audiencenetwork";
   if (META_SOURCES.has(rawSource)) return "meta";
   if (rawSource.includes("facebook") || rawSource.includes("instagram")) return "meta";
   if (rawSource.includes("google") && PAID_MEDIUMS.has(rawMedium)) return "googleads";
@@ -1105,8 +1124,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v9: convRate added to israel/abroad (GA session rate, not derived).
-  const key = `ga4Report:v9:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v10: Audience Network split out of the meta source bucket.
+  const key = `ga4Report:v10:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

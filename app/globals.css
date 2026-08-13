@@ -9043,6 +9043,12 @@ html[data-theme="dark"] .ga4w-chart-area { fill: #a5b4fc; opacity: 0.15; }
 .ga4w-stack-seg.is-direct,   .ga4w-dot.is-direct   { background: #a855f7; }
 .ga4w-stack-seg.is-referral, .ga4w-dot.is-referral { background: #ec4899; }
 .ga4w-stack-seg.is-other,    .ga4w-dot.is-other    { background: #94a3b8; }
+/* Audience Network: a paler Meta blue, so the stacked bar reads it as
+   Meta inventory while still separating it from Facebook/Instagram. */
+.ga4w-stack-seg.is-audiencenetwork,
+.ga4w-dot.is-audiencenetwork { background: #93c5fd; }
+.ga4w-src-cell { display: flex; align-items: center; gap: 0.35rem; }
+.ga4w-chmark { flex: none; }
 
 .ga4w-stack-seg.is-dev-mobile,  .ga4w-dot.is-dev-mobile  { background: #6366f1; }
 .ga4w-stack-seg.is-dev-desktop, .ga4w-dot.is-dev-desktop { background: #0ea5e9; }
@@ -9179,7 +9185,17 @@ html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
   border-inline-start: 3px solid var(--border);
   padding-inline-start: 0.6rem;
 }
-.ga4w-demo-chart { width: 100%; height: auto; display: block; }
+/* Capped at roughly its natural viewBox width. Left uncapped it scales
+   to the full panel (~1,200px), which blows the bars up to ~300px tall
+   and magnifies the 8px axis text along with them — the whole block ends
+   up dominating the section. It shrinks below the cap on narrow screens,
+   which is the direction that actually needs to be responsive. */
+.ga4w-demo-chart {
+  width: 100%;
+  max-width: 34rem;
+  height: auto;
+  display: block;
+}
 .ga4w-demo-grid-line { stroke: var(--border); stroke-width: 0.5; opacity: 0.55; }
 .ga4w-demo-tick { font-size: 8px; fill: var(--muted); text-anchor: end; }
 .ga4w-demo-xlbl { font-size: 9px; fill: var(--muted); text-anchor: middle; }

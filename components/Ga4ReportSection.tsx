@@ -1,4 +1,5 @@
 import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
+import ChannelMark from "@/components/ChannelMark";
 import { resolveGa4Target } from "@/lib/ga4Project";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
@@ -237,6 +238,15 @@ function TrendChart({ points }: { points: Ga4Point[] }) {
 
 /* ── Sources ──────────────────────────────────────────────────────── */
 
+/** Channels that carry a brand logo instead of a colour dot. Keep in
+ *  sync with the branches in ChannelMark. */
+const MARKED_CHANNELS = new Set([
+  "meta",
+  "audiencenetwork",
+  "googleads",
+  "taboola",
+]);
+
 /**
  * `showConv` gates the conversion columns on the property actually
  * tagging key events — otherwise every row reads 0%, which looks like
@@ -279,8 +289,14 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
         <tbody>
           {data.sources.map((s) => (
             <tr key={s.key}>
-              <td>
-                <span className={`ga4w-dot is-${s.key}`} aria-hidden="true" />
+              <td className="ga4w-src-cell">
+                {/* Logo for the paid platforms, colour dot for everything
+                    else — the badge is the signal that money is behind
+                    the row, so giving organic/direct one would erase it. */}
+                <ChannelMark channel={s.key} />
+                {!MARKED_CHANNELS.has(s.key) && (
+                  <span className={`ga4w-dot is-${s.key}`} aria-hidden="true" />
+                )}
                 {s.label}
               </td>
               <td>{fmtInt(s.sessions)}</td>
