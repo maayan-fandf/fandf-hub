@@ -4,6 +4,7 @@ import ChannelIcon from "@/components/ChannelIcon";
 import { resolveGa4Target } from "@/lib/ga4Project";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
+import Ga4CampaignTree from "@/components/Ga4CampaignTree";
 import {
   fetchGa4Report,
   reportWindow,
@@ -99,8 +100,17 @@ export default async function Ga4ReportSection({
         <Sources data={data} showConv={!!data.conversions} />
       )}
 
-      {data.campaigns && data.campaigns.length > 0 && (
-        <Campaigns data={data} showConv={!!data.conversions} />
+      {/* The expandable tree supersedes the flat campaign table when it
+          has anything in it — same numbers, one more level of depth.
+          The flat table stays as the fallback for properties where the
+          extra dimensions come back empty. */}
+      {(data.tree?.length ?? 0) > 0 ? (
+        <Ga4CampaignTree nodes={data.tree} showConv={!!data.conversions} />
+      ) : (
+        data.campaigns &&
+        data.campaigns.length > 0 && (
+          <Campaigns data={data} showConv={!!data.conversions} />
+        )
       )}
       {!data.campaigns && isInternal && (
         <div className="ga4w-warn">

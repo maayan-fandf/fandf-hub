@@ -83,6 +83,38 @@ export type Ga4PageRow = {
   avgSeconds: number;
 };
 
+/**
+ * One node of the channel → campaign → ad-group tree.
+ *
+ * Three levels, not four, because that is what GA4 actually carries:
+ *
+ *   Google campaigns expose `sessionGoogleAdsAdGroupName` with real
+ *   names (`Rm`, `חיפשו`, `55+`, `גנרי`, `מותג`) and BELOW that only
+ *   `sessionManualAdContent`, which for Google is an opaque asset id
+ *   (797432864778) sitting roughly 1:1 with the ad group — a fourth
+ *   level of numbers nobody can read.
+ *
+ *   Meta campaigns leave the ad-group dimension `(not set)` entirely and
+ *   put F&F's own ad codes in `sessionManualAdContent` instead
+ *   (2026-05-26A, 2026-05-20A, 2026-05-26B s30).
+ *
+ * So the third level is "ad group" on Google and "ad" on Meta. The node
+ * carries `childLabel` so the UI can name it correctly per branch rather
+ * than picking one word that is wrong half the time.
+ */
+export type Ga4TreeNode = {
+  key: string;
+  label: string;
+  /** Platform key for the logo — resolved from the channel bucket. */
+  platform: string;
+  sessions: number;
+  keyEvents: number;
+  convRate: number;
+  /** Hebrew name for what this node's children ARE. */
+  childLabel?: string;
+  children: Ga4TreeNode[];
+};
+
 export type Ga4CityRow = { city: string; sessions: number; keyEvents: number };
 
 /**
@@ -295,6 +327,8 @@ export type Ga4ReportData = {
    *  Empty unless the property tags key events — otherwise every
    *  placement trivially has zero conversions. */
   placementLeaks: Ga4PlacementLeak[];
+  /** channel → campaign → ad group / ad, for the expandable table. */
+  tree: Ga4TreeNode[];
   devices: Ga4DeviceRow[];
   /** Null when the property tags no key events at all — a conversion
    *  block reading 0% would be indistinguishable from real failure. */
@@ -753,6 +787,7 @@ async function fetchGa4ReportUncached(
   const devices: Ga4DeviceRow[] = [];
   const byEvent: { event: string; count: number }[] = [];
   const placementLeaks: Ga4PlacementLeak[] = [];
+  const tree: Ga4TreeNode[] = [];
   // `convRate` accumulates rate x sessions and is divided out below.
   const byCountry = new Map<
     string,
@@ -761,7 +796,7 @@ async function fetchGa4ReportUncached(
   const israel = { sessions: 0, keyEvents: 0, convRate: 0 };
 
   try {
-    const [rCity, rDevice, rEvent, rPlacement] = await batchRun(subjectEmail, propertyId, [
+    const [rCity, rDevice, rEvent, rPlacement, rTree] = await batchRun(subjectEmail, propertyId, [
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: "city" }, { name: "country" }],
@@ -803,6 +838,26 @@ async function fetchGa4ReportUncached(
         metrics: [{ name: "sessions" }, { name: "keyEvents" }],
         orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
         limit: 400,
+      }),
+      // The channel → campaign → ad-group tree. One query with all four
+      // dimensions rather than three drill-down round trips: the whole
+      // tree is ~60-150 rows on a real property, which is cheaper than
+      // an endpoint per level and lets the UI expand instantly.
+      withFilter({
+        dateRanges: [cur],
+        dimensions: [
+          { name: "sessionSourceMedium" },
+          { name: "sessionCampaignName" },
+          { name: "sessionGoogleAdsAdGroupName" },
+          { name: "sessionManualAdContent" },
+        ],
+        metrics: [
+          { name: "sessions" },
+          { name: "keyEvents" },
+          { name: "sessionKeyEventRate" },
+        ],
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+        limit: 500,
       }),
     ]);
 
@@ -890,6 +945,120 @@ async function fetchGa4ReportUncached(
       });
     }
     placementLeaks.sort((a, b) => b.sessions - a.sessions);
+
+    // ── channel → campaign → ad group / ad ──────────────────────────
+    // Accumulators carry convRate as rate x sessions and are divided out
+    // at the end, the same session-weighting used everywhere else.
+    type Acc = {
+      label: string;
+      platform: string;
+      sessions: number;
+      keyEvents: number;
+      rateW: number;
+      childLabel?: string;
+      /** Raw rows, held only between the two passes below. */
+      raw?: { adGroup: string; adContent: string; sessions: number; ke: number; rate: number }[];
+      kids: Map<string, Acc>;
+    };
+    const mkAcc = (label: string, platform: string): Acc => ({
+      label,
+      platform,
+      sessions: 0,
+      keyEvents: 0,
+      rateW: 0,
+      kids: new Map(),
+    });
+    const roots = new Map<string, Acc>();
+
+    for (const r of rTree?.rows ?? []) {
+      const bucket = classifySource(dim(r, 0));
+      const campaign = cleanCampaign(dim(r, 1));
+      // Rows with no real campaign are organic/direct/referral traffic;
+      // the tree is about bought media, and they already have their own
+      // row in the source table above.
+      if (!campaign) continue;
+      const adGroup = dim(r, 2).trim();
+      const adContent = dim(r, 3).trim();
+      const sessions = met(r, 0);
+      const ke = met(r, 1);
+      const rate = met(r, 2);
+
+      const platform =
+        bucket === "googleads" ? "google" : bucket === "meta" ? "facebook" : bucket;
+
+      const root =
+        roots.get(bucket) ??
+        mkAcc(SOURCE_LABELS[bucket] ?? SOURCE_LABELS.other, platform);
+      root.childLabel = "קמפיינים";
+      const campKey = campaign.toLowerCase().replace(/[_-]+/g, "-");
+      const camp = root.kids.get(campKey) ?? mkAcc(campaign, platform);
+
+      const bump = (a: Acc) => {
+        a.sessions += sessions;
+        a.keyEvents += ke;
+        a.rateW += rate * sessions;
+      };
+      bump(root);
+      bump(camp);
+      // Leaves are decided per CAMPAIGN in a second pass, not here: a
+      // Google campaign has some rows carrying an ad-group name and
+      // others carrying only an asset id, and choosing per row put
+      // `Rm`, `חיפשו`, `55+` and `797432864778` side by side as if they
+      // were the same kind of thing.
+      camp.raw = camp.raw ?? [];
+      camp.raw.push({ adGroup, adContent, sessions, ke, rate });
+      root.kids.set(campKey, camp);
+      roots.set(bucket, root);
+    }
+
+    // Second pass: one leaf dimension per campaign. Google wins with ad
+    // groups wherever it has any — the asset ids underneath are opaque
+    // numbers — and rows with no group are collected rather than dropped
+    // so the children still sum to the campaign. Meta campaigns have no
+    // groups at all and fall through to their ad codes.
+    for (const root of roots.values()) {
+      for (const camp of root.kids.values()) {
+        const raw = camp.raw ?? [];
+        const useGroups = raw.some(
+          (x) => x.adGroup && x.adGroup !== "(not set)",
+        );
+        camp.childLabel = useGroups ? "קבוצות מודעות" : "מודעות";
+        for (const x of raw) {
+          const name = useGroups
+            ? x.adGroup && x.adGroup !== "(not set)"
+              ? x.adGroup
+              : "ללא קבוצת מודעות"
+            : x.adContent && x.adContent !== "(not set)"
+              ? x.adContent
+              : "";
+          if (!name) continue;
+          const leaf = camp.kids.get(name) ?? mkAcc(name, camp.platform);
+          leaf.sessions += x.sessions;
+          leaf.keyEvents += x.ke;
+          leaf.rateW += x.rate * x.sessions;
+          camp.kids.set(name, leaf);
+        }
+        delete camp.raw;
+      }
+    }
+
+    const toNode = (a: Acc, key: string): Ga4TreeNode => ({
+      key,
+      label: a.label,
+      platform: a.platform,
+      sessions: a.sessions,
+      keyEvents: a.keyEvents,
+      convRate: mergeRate(a.rateW, a.sessions),
+      childLabel: a.kids.size > 0 ? a.childLabel : undefined,
+      children: [...a.kids.entries()]
+        .map(([k, v]) => toNode(v, `${key}/${k}`))
+        .sort((x, y) => y.sessions - x.sessions),
+    });
+    tree.push(
+      ...[...roots.entries()]
+        .map(([k, v]) => toNode(v, k))
+        .sort((a, b) => b.sessions - a.sessions),
+    );
   } catch {
     // Non-fatal — the section renders without these blocks.
   }
@@ -1076,6 +1245,7 @@ async function fetchGa4ReportUncached(
     // nothing to convert, every placement trivially shows zero and the
     // block would accuse the whole account.
     placementLeaks: curKe > 0 ? placementLeaks : [],
+    tree,
     israel: { ...israel, convRate: mergeRate(israel.convRate, israel.sessions) },
     abroad: (() => {
       const all = [...byCountry.values()];
@@ -1243,8 +1413,8 @@ export async function fetchGa4Report(
   // to the new component — which crashed the page on `data.devices.length`
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
-  // v12: placementLeaks excludes non-paid mediums.
-  const key = `ga4Report:v12:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v14: tree leaves chosen per campaign, not per row.
+  const key = `ga4Report:v14:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

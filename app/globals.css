@@ -9257,6 +9257,37 @@ html[data-theme="dark"] .rpt-util-fill-time {
   color: #0f172a;
 }
 
+/* Expandable channel → campaign → ad-group tree. Depth is shown by
+   indent + weight rather than nested tables, so every level keeps the
+   same column grid and the numbers stay comparable down the tree. */
+.ga4w-tree-row.is-parent { cursor: pointer; }
+.ga4w-tree-row.is-parent:hover td { background: var(--surface-soft); }
+.ga4w-tree-row.is-open > td { background: var(--surface-soft); }
+.ga4w-tree-row.is-d0 td { font-weight: 600; }
+.ga4w-tree-row.is-d1 td { font-weight: 500; }
+.ga4w-tree-row.is-d2 .ga4w-tree-lbl { opacity: 0.85; direction: ltr; }
+.ga4w-tree-name { display: flex; align-items: center; gap: 0.35rem; }
+.ga4w-tree-caret {
+  width: 0.85rem;
+  flex: none;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.ga4w-tree-caret.is-leaf { opacity: 0; }
+.ga4w-tree-lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 24rem;
+}
+.ga4w-tree-lbl.is-chan { direction: rtl; }
+.ga4w-tree-count {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
+@media (max-width: 640px) { .ga4w-tree-lbl { max-width: 10rem; } }
+
 .ga4w-table-wrap { overflow-x: auto; }
 .ga4w-table {
   width: 100%;
