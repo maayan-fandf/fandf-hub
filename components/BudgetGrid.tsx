@@ -5,6 +5,7 @@ import CopyAmountButton from "./CopyAmountButton";
 import PrisaButton from "./PrisaButton";
 import GoogleAdsIcon from "./GoogleAdsIcon";
 import FacebookAdsIcon from "./FacebookAdsIcon";
+import SharedPlatformIcon from "./PlatformIcon";
 import {
   E3_PLATFORMS,
   MANAGER_ORDER,
@@ -2251,6 +2252,9 @@ function FilterChip({
 
 /** Brand mark for a platform — reuses the project's Google Ads / Facebook
  *  Ads SVGs; TikTok/Taboola/Outbrain fall back to their channel emoji. */
+/** Thin wrapper over the shared component — kept so the ~9 call sites in
+ *  this file don't all need touching. The emoji fallbacks that used to
+ *  live here (🎵 TikTok, 📰 Taboola/Outbrain) are now real logos. */
 function PlatformIcon({
   platform,
   size = "1em",
@@ -2258,19 +2262,7 @@ function PlatformIcon({
   platform: Platform | "other";
   size?: string;
 }) {
-  if (platform === "google") return <GoogleAdsIcon size={size} />;
-  if (platform === "facebook") return <FacebookAdsIcon size={size} />;
-  const emoji =
-    platform === "tiktok"
-      ? "🎵"
-      : platform === "taboola" || platform === "outbrain"
-        ? "📰"
-        : "";
-  return emoji ? (
-    <span aria-hidden style={{ fontSize: size, lineHeight: 1 }}>
-      {emoji}
-    </span>
-  ) : null;
+  return <SharedPlatformIcon platform={platform} size={size} />;
 }
 
 /** A platform logo that doubles as a quick "open the ad account" link —

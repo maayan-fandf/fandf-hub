@@ -2,6 +2,7 @@ import {
   getProjectPriceCheck,
   type ProjectPriceSurface,
 } from "@/lib/appsScript";
+import PlatformIcon from "@/components/PlatformIcon";
 
 /**
  * "מחירים מפורסמים" section — renders the project's advertised
@@ -147,7 +148,6 @@ function PriceCheckCard({
    *  deep-links (internal ad-ops surfaces the client can't use). */
   clientMode?: boolean;
 }) {
-  const icon = SURFACE_ICONS[surface.name] ?? "•";
   // Empty-state copy — distinguishes "we don't have a source for this
   // channel yet" (`no-input`) from "we tried and the source had nothing"
   // (`no-price` / scraper error). The first invites the user to add the
@@ -194,7 +194,7 @@ function PriceCheckCard({
     <div className={cls}>
       <div className="price-check-card-head">
         <span className="price-check-card-icon" aria-hidden>
-          {icon}
+          <SurfaceIcon name={surface.name} />
         </span>
         <span className="price-check-card-label">{surface.label}</span>
         {!clientMode && <AdStatusChip surface={surface} />}
@@ -368,12 +368,21 @@ function InventoryRows({ surface }: { surface: ProjectPriceSurface }) {
   );
 }
 
+/** Emoji only where no brand exists. Google and Facebook render their
+ *  real logos via PlatformIcon — see SurfaceIcon below. */
 const SURFACE_ICONS: Record<ProjectPriceSurface["name"], string> = {
   landing: "🌐",
   yad2: "🏠",
-  google: "🔍",
-  facebook: "📘",
+  google: "",
+  facebook: "",
 };
+
+function SurfaceIcon({ name }: { name: ProjectPriceSurface["name"] }) {
+  if (name === "google" || name === "facebook") {
+    return <PlatformIcon platform={name} size="1em" />;
+  }
+  return <>{SURFACE_ICONS[name]}</>;
+}
 
 const LINK_LABEL: Record<ProjectPriceSurface["name"], string> = {
   landing: "פתח דף נחיתה",

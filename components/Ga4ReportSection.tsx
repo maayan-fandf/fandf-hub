@@ -1,5 +1,5 @@
 import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
-import ChannelMark from "@/components/ChannelMark";
+import PlatformIcon from "@/components/PlatformIcon";
 import { resolveGa4Target } from "@/lib/ga4Project";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
@@ -239,7 +239,7 @@ function TrendChart({ points }: { points: Ga4Point[] }) {
 /* ── Sources ──────────────────────────────────────────────────────── */
 
 /** Channels that carry a brand logo instead of a colour dot. Keep in
- *  sync with the branches in ChannelMark. */
+ *  sync with the branches in PlatformIcon. */
 const MARKED_CHANNELS = new Set([
   "meta",
   "audiencenetwork",
@@ -293,7 +293,7 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
                 {/* Logo for the paid platforms, colour dot for everything
                     else — the badge is the signal that money is behind
                     the row, so giving organic/direct one would erase it. */}
-                <ChannelMark channel={s.key} />
+                <PlatformIcon platform={s.key} size="1.05em" />
                 {!MARKED_CHANNELS.has(s.key) && (
                   <span className={`ga4w-dot is-${s.key}`} aria-hidden="true" />
                 )}
