@@ -1,5 +1,6 @@
 import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
 import PlatformIcon from "@/components/PlatformIcon";
+import ChannelIcon from "@/components/ChannelIcon";
 import { resolveGa4Target } from "@/lib/ga4Project";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
@@ -347,7 +348,14 @@ function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean 
           <tbody>
             {rows.map((c) => (
               <tr key={c.campaign}>
-                <td className="ga4w-camp">{c.campaign}</td>
+                {/* The platform is encoded in the campaign NAME here
+                    (_FB, _GS, discovery), and channelPlatform already
+                    resolves those suffixes — so the same resolver that
+                    labels channels labels campaigns, with no second
+                    mapping to keep in sync. */}
+                <td className="ga4w-camp">
+                  <ChannelIcon name={c.campaign} /> {c.campaign}
+                </td>
                 <td>{fmtInt(c.sessions)}</td>
                 <td>{c.sessions > 0 ? fmtPct(c.engaged / c.sessions) : "—"}</td>
                 <td>{fmtDuration(c.avgSeconds)}</td>
@@ -680,7 +688,9 @@ function IntroCredit({ rows }: { rows: NonNullable<Ga4ReportData["intro"]> }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.campaign}>
-              <td className="ga4w-camp">{r.campaign}</td>
+              <td className="ga4w-camp">
+                <ChannelIcon name={r.campaign} /> {r.campaign}
+              </td>
               <td>{fmtInt(r.introKeyEvents)}</td>
               <td>{fmtInt(r.closeKeyEvents)}</td>
             </tr>

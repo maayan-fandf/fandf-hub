@@ -9246,6 +9246,17 @@ html[data-theme="dark"] .ga4w-alert .ga4w-table th { border-bottom-color: #b4530
 .ga4w-alert-row td { font-weight: 600; }
 .ga4w-alert .ga4w-chips { margin-top: 0.6rem; justify-content: flex-start; }
 
+/* Time-progress bar. Was inline #16213e, which is fine on white and
+   invisible on the dark-theme track — the fill and the track were both
+   near-black. Light keeps the original navy; dark uses a slate light
+   enough to separate from the track while staying quieter than the
+   budget bar above it, which is the one carrying the verdict. */
+.rpt-util-fill-time { background: #16213e; color: #fff; }
+html[data-theme="dark"] .rpt-util-fill-time {
+  background: #64748b;
+  color: #0f172a;
+}
+
 .ga4w-table-wrap { overflow-x: auto; }
 .ga4w-table {
   width: 100%;

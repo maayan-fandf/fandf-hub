@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import PlatformIcon from "@/components/PlatformIcon";
 import {
   REPORT_PLATS,
   PLAT_LABELS,
@@ -146,7 +147,10 @@ function PlatCard({ plat, totals }: { plat: ReportPlat; totals: PlatTotals }) {
   return (
     <div className="rpt-plat-card">
       <div className="rpt-plat-head">
-        <span className="rpt-plat-dot" style={{ background: PLAT_COLORS[plat] }} />
+        {/* Logo instead of the colour dot — the dot's colour still
+            carries meaning inside the charts below, but at the card
+            heading the brand mark says which platform faster. */}
+        <PlatformIcon platform={plat} size="1.05em" />
         <span className="rpt-plat-name">{PLAT_LABELS[plat]}</span>
         <span className="rpt-plat-cost">{fmtILS(totals.cost)}</span>
       </div>
@@ -259,7 +263,7 @@ export function PlatformKpiBand({
   return (
     <div className="rpt-plat-band">
       <div className="rpt-plat-band-head">
-        <span className="rpt-plat-dot" style={{ background: PLAT_COLORS[plat] }} />
+        <PlatformIcon platform={plat} size="1.05em" />
         {PLAT_LABELS[plat]}
       </div>
       <div className="kpi-band rpt-kpi-band">

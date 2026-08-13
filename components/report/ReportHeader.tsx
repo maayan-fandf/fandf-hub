@@ -218,9 +218,14 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
                   התקדמות בזמן: {Math.round(pace.dayPct)}%
                 </div>
                 <div className="rpt-util-track">
+                  {/* Colour lives in CSS, not inline: this bar was
+                      hardcoded #16213e, a near-black navy that vanishes
+                      against the dark-theme track. The budget bar above
+                      keeps its inline colour because that colour is
+                      data — it encodes the pacing verdict. */}
                   <div
-                    className="rpt-util-fill"
-                    style={{ width: `${pace.dayPct}%`, background: "#16213e" }}
+                    className="rpt-util-fill rpt-util-fill-time"
+                    style={{ width: `${pace.dayPct}%` }}
                   >
                     {Math.round(pace.dayPct)}%
                   </div>

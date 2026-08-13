@@ -58,7 +58,9 @@ const RULES: { test: RegExp; icon: string; platform?: string }[] = [
   { test: /(?:^|[-_\s])(?:taboola|טאבולה)/, icon: "📰", platform: "taboola" },
   { test: /(?:^|[-_\s])(?:ynet|walla|mako|calcalist|globes|גלובס|haaretz|הארץ|jerusalempost|ashdodnet|n1[123]|i1[123])/, icon: "📰" },
   { test: /(?:^|[-_\s])(?:כתבה|article)/, icon: "📄" },
-  { test: /(?:^|[-_\s])dis?c?over/, icon: "🧭" },
+  /* F&F name their Google Demand Gen campaigns `…-discovery` with no
+     `google` token, so this rule carries the platform key too. */
+  { test: /(?:^|[-_\s])dis?c?over/, icon: "🧭", platform: "google" },
   { test: /(?:^|[-_\s])(?:פניה|פנייה|טלפו[נן]|כוכבית|phone|call)|(?:^|[-_\s])פ\.\s?(?:טלפ|פניה)/, icon: "📞" },
   { test: /(?:^|[-_\s])(?:שילוט|שלטי|חוצות|billboard)/, icon: "🪧" },
   { test: /(?:^|[-_\s])(?:דיוור|mail)/, icon: "✉️" },

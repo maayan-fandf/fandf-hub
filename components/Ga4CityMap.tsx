@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { lookupCity, project, MAP_W, MAP_H, OUTLINE_PATH } from "@/lib/israelMap";
+import ChannelIcon from "@/components/ChannelIcon";
 
 export type CityRow = { city: string; sessions: number; keyEvents: number };
 type CampaignRow = {
@@ -183,7 +184,9 @@ export default function Ga4CityMap({
                     <tbody>
                       {rows.map((r) => (
                         <tr key={r.campaign}>
-                          <td className="ga4w-camp">{r.campaign}</td>
+                          <td className="ga4w-camp">
+                            <ChannelIcon name={r.campaign} /> {r.campaign}
+                          </td>
                           <td>{fmtInt(r.sessions)}</td>
                           {showConv && <td>{fmtInt(r.keyEvents)}</td>}
                           {showConv && <td>{fmtPct(r.convRate)}</td>}

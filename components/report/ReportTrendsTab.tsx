@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import PlatformIcon from "@/components/PlatformIcon";
 import {
   LineChart,
   Line,
@@ -284,7 +285,7 @@ function PlatTrendChart({
   return (
     <div className="rpt-trend-card">
       <div className="rpt-plat-head">
-        <span className="rpt-plat-dot" style={{ background: PLAT_COLORS[plat] }} />
+        <PlatformIcon platform={plat} size="1.05em" />
         <span className="rpt-plat-name">{PLAT_LABELS[plat]}</span>
         <span className="rpt-trend-totals">
           {fmtILS(totals.cost)} · {fmtInt(totals.leads)} לידים
