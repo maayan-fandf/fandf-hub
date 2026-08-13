@@ -741,12 +741,16 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
   const PAD_B = 26;
   const PAD_T = 10;
   const max = Math.max(...rows.flatMap((r) => [r.male, r.female]), 1);
-  // Round the axis up to something human so gridlines land on whole
-  // numbers rather than 113.
-  const step = Math.max(1, Math.ceil(max / 4 / 10) * 10);
+  // A "nice" step from the 1/2/5 series, so gridlines land on round
+  // numbers AND the top sits just above the tallest bar. Rounding to
+  // tens instead put the axis at 120 for a max of 95 — a quarter of the
+  // chart was empty headroom.
+  const step = niceStep(max);
   const top = Math.ceil(max / step) * step;
   const slot = W / rows.length;
-  const barW = Math.min(26, slot / 3);
+  // Wider bars in a tighter pair: at slot/3 the two bars filled less
+  // than half their slot and the groups read as isolated slivers.
+  const barW = Math.min(34, slot / 2.5);
   const y = (v: number) => PAD_T + (1 - v / top) * (H - PAD_T - PAD_B);
 
   const share = d.totalUsers > 0 ? d.knownUsers / d.totalUsers : 0;
@@ -782,7 +786,7 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
             <g key={r.bucket}>
               <rect
                 className="ga4w-demo-bar is-male"
-                x={cx - barW - 2}
+                x={cx - barW - 1}
                 y={y(r.male)}
                 width={barW}
                 height={Math.max(0, y(0) - y(r.male))}
@@ -791,7 +795,7 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
               </rect>
               <rect
                 className="ga4w-demo-bar is-female"
-                x={cx + 2}
+                x={cx + 1}
                 y={y(r.female)}
                 width={barW}
                 height={Math.max(0, y(0) - y(r.female))}
@@ -813,7 +817,7 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
           <span>
             {fmtPct(d.maleUsers / known)} ({fmtInt(d.maleUsers)})
           </span>
-          {d.maleKeyEvents > 0 && <em>{fmtInt(d.maleKeyEvents)} אירועי מפתח</em>}
+          {d.maleKeyEvents > 0 && <em>{keyEventWord(d.maleKeyEvents)}</em>}
         </div>
         <div className="ga4w-demo-leg">
           <span className="ga4w-dot is-female" aria-hidden="true" />
@@ -821,9 +825,7 @@ function Demographics({ d }: { d: NonNullable<Ga4ReportData["demographics"]> }) 
           <span>
             {fmtPct(d.femaleUsers / known)} ({fmtInt(d.femaleUsers)})
           </span>
-          {d.femaleKeyEvents > 0 && (
-            <em>{fmtInt(d.femaleKeyEvents)} אירועי מפתח</em>
-          )}
+          {d.femaleKeyEvents > 0 && <em>{keyEventWord(d.femaleKeyEvents)}</em>}
         </div>
       </div>
     </div>
@@ -988,6 +990,39 @@ function Kpi({
 function delta(cur: number, prev: number): number | null {
   if (!Number.isFinite(cur) || !Number.isFinite(prev) || prev <= 0) return null;
   return (cur - prev) / prev;
+}
+
+/**
+ * The smallest round step from the 1 / 2 / 5 x 10^n series that keeps
+ * the axis to at most MAX_TICKS gridlines.
+ *
+ * Chosen this way round, rather than by rounding a target step upward:
+ * for a tallest bar of 95 the target-based version returned 50 — an axis
+ * with two gridlines — while rounding to tens returned an axis top of
+ * 120, a quarter of the chart in empty headroom. Smallest-step-that-fits
+ * gives 20 (five gridlines, top 100, 5% headroom).
+ */
+// 6, not 5: at 5 a tallest bar of ~110 rejects step 20 (six gridlines)
+// and falls to step 50, topping the axis at 150 and leaving the bar at
+// 73% of the plot. Six gridlines read fine in a 154px plot and keep
+// headroom near 9%.
+const MAX_TICKS = 6;
+
+function niceStep(max: number): number {
+  if (!Number.isFinite(max) || max <= 0) return 1;
+  for (let exp = 0; exp < 12; exp++) {
+    const mag = Math.pow(10, exp);
+    for (const m of [1, 2, 5]) {
+      const step = m * mag;
+      if (Math.ceil(max / step) <= MAX_TICKS) return step;
+    }
+  }
+  return Math.pow(10, 12);
+}
+
+/** "1 אירועי מפתח" is broken Hebrew. */
+function keyEventWord(n: number): string {
+  return n === 1 ? "אירוע מפתח אחד" : `${fmtInt(n)} אירועי מפתח`;
 }
 
 function fmtInt(n: number): string {
