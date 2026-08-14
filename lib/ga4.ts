@@ -373,6 +373,85 @@ function pathTokens(paths: string[]): Set<string> {
 }
 
 /**
+ * Event names GA4 counts as key events but which the property does NOT
+ * define as key events — and which every report here therefore excludes.
+ *
+ * This should be an empty set and on 65 of 68 properties it is. On three
+ * it is not, and the gap is large: 472039720 counts `generate_lead` and
+ * `c2c_2` while defining only `purchase` and `Thankyoupage`; 533952214
+ * counts `generate_lead` alongside the `generate_lead_GA` that replaced
+ * it; 403508264 counts `send_button` against a defined `Thank-you`. In
+ * each case a replacement key event was created and the event it replaced
+ * kept its flag — measured 2026-08-14, still counting 1:1 with its fires
+ * on the day of measurement, so this is live data and not old history.
+ *
+ * The cost is not cosmetic. On 533952214 both events fire on the SAME
+ * sessions, so 1,217 "key events" over 28 days describe 406 conversions —
+ * the session conversion rate is identical either way (2.88%), which is
+ * what proves they are the same conversions counted twice over.
+ *
+ * Returns an empty array when the definitions cannot be read (the Admin
+ * API is a separate enablement). Unknown means "change nothing": under-
+ * reporting a client's conversions because an API call failed would be a
+ * far worse failure than the over-count this corrects.
+ *
+ * Detection looks at the last 28 days regardless of which period is being
+ * reported, so the same names are excluded from the current window and
+ * its comparison period — a filter that shifted between the two would
+ * make every delta meaningless. The gap that leaves: a ghost that stopped
+ * firing more than 28 days ago is not detected, so a rewound month can
+ * still carry one. Widening the detection window would instead rewrite
+ * periods when the event may legitimately have been a declared key event,
+ * which is the worse of the two errors.
+ */
+const ghostCache = new Map<string, { expiresAt: number; ghosts: string[] }>();
+const GHOST_TTL_MS = 12 * 60 * 60 * 1000;
+
+export async function ghostKeyEvents(
+  subjectEmail: string,
+  propertyId: string,
+): Promise<string[]> {
+  const hit = ghostCache.get(propertyId);
+  if (hit && hit.expiresAt > Date.now()) return hit.ghosts;
+
+  let ghosts: string[] = [];
+  try {
+    const token = await analyticsAccessToken(subjectEmail);
+    const res = await fetch(
+      `https://analyticsadmin.googleapis.com/v1beta/properties/${propertyId}/keyEvents?pageSize=200`,
+      { headers: { authorization: `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!res.ok) throw new Error(String(res.status));
+    const json = (await res.json()) as { keyEvents?: { eventName?: string }[] };
+    const defined = new Set(
+      (json.keyEvents ?? []).map((k) => (k.eventName ?? "").trim()).filter(Boolean),
+    );
+    // An empty definition list means the Admin API answered but the
+    // property declares nothing. Excluding everything it counts would
+    // zero the section, so treat it the same as unknown.
+    if (defined.size > 0) {
+      // Property-wide on purpose: which events carry the key-event flag
+      // is a property fact, and asking without the page filter keeps this
+      // answerable before the page filter itself has been resolved.
+      const rows = await callGa4(subjectEmail, propertyId, "runReport", {
+        dateRanges: [{ startDate: "28daysAgo", endDate: "yesterday" }],
+        dimensions: [{ name: "eventName" }],
+        metrics: [{ name: "keyEvents" }],
+        limit: 200,
+      });
+      for (const r of rows) {
+        const name = dim(r, 0).trim();
+        if (name && met(r, 0) > 0 && !defined.has(name)) ghosts.push(name);
+      }
+    }
+  } catch {
+    ghosts = [];
+  }
+  ghostCache.set(propertyId, { expiresAt: Date.now() + GHOST_TTL_MS, ghosts });
+  return ghosts;
+}
+
+/**
  * "Does a key event on this page belong to this project?"
  *
  * Exported because BOTH GA4 surfaces need the identical answer. The live

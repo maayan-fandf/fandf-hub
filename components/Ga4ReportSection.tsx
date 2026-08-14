@@ -129,6 +129,21 @@ export default async function Ga4ReportSection({
           <Campaigns data={data} showConv={!!data.conversions} />
         )
       )}
+      {/* Internal only. It is a GA4 configuration fault, not a campaign
+          result, and it needs someone with property access to act — a
+          client reading "your analytics is misconfigured" can do nothing
+          with it. The corrected numbers stay visible to everyone. */}
+      {isInternal && (data.ghostEvents?.length ?? 0) > 0 && (
+        <div className="ga4w-warn">
+          ⚠️ Google Analytics סופר כאירועי מפתח גם{" "}
+          <strong>{data.ghostEvents.join(", ")}</strong> — אירועים שאינם
+          מוגדרים כאירועי מפתח בנכס. הם הוסרו מהספירה כאן, ולכן המספרים
+          בסעיף זה נמוכים מאלה שב-GA4 עצמו. לתיקון: בהגדרות האירועים בנכס יש
+          לסמן את האירוע ככוכב ומיד לבטל את הסימון — כרגע אין הגדרה שאפשר
+          למחוק, ולכן הדגל ממשיך להיספר.
+        </div>
+      )}
+
       {!data.campaigns && isInternal && (
         <div className="ga4w-warn">
           ⚠️ תיוג הקמפיינים בפרויקט הזה חלקי — רק{" "}

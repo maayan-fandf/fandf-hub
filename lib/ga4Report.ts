@@ -28,6 +28,7 @@ import {
   normPath,
   detectAttributionMode,
   ownsConversionPath,
+  ghostKeyEvents,
   type AttributionMode,
 } from "@/lib/ga4";
 
@@ -505,6 +506,13 @@ export type Ga4ReportData = {
    * rather than appearing from a page the reader cannot see in the table.
    */
   conversionPaths: string[];
+  /**
+   * Events GA4 counted as key events without defining them as such, and
+   * which this report therefore excluded. Non-empty means the property's
+   * GA4 configuration needs fixing — and that these numbers will NOT
+   * match GA4's own reports, which still include them.
+   */
+  ghostEvents: string[];
 };
 
 /* ── Date helpers (Asia/Jerusalem, matching the rest of the codebase) ── */
@@ -876,6 +884,31 @@ async function fetchGa4ReportUncached(
         inListFilter: { values: [...rawValues.page, ...rawValues.conversion] },
       },
     };
+  }
+
+  // Events GA4 counts as key events without defining them as such. Every
+  // report below drops them, which is the only way to correct the count:
+  // these queries mix traffic metrics and key events in one request, so
+  // the metric cannot be filtered on its own — but a report-level NOT on
+  // eventName can, because the traffic metrics survive it.
+  //
+  // They survive it because no session consists solely of the excluded
+  // event: session_start fires on every one. Measured on both affected
+  // properties — sessions, users, engagement rate and engaged sessions
+  // all moved 0.00%, average duration by 0.2%, while key events went
+  // 110 → 36 and 1,217 → 406.
+  const ghosts = await ghostKeyEvents(subjectEmail, propertyId).catch(() => []);
+  const notGhosts = ghosts.length
+    ? {
+        notExpression: {
+          filter: { fieldName: "eventName", inListFilter: { values: ghosts } },
+        },
+      }
+    : null;
+  if (notGhosts) {
+    filter = filter
+      ? { andGroup: { expressions: [filter, notGhosts] } }
+      : notGhosts;
   }
 
   const cur = { startDate: win.start, endDate: win.end };
@@ -1516,6 +1549,7 @@ async function fetchGa4ReportUncached(
     mode,
     wholeSite,
     conversionPaths,
+    ghostEvents: ghosts,
   };
 }
 
@@ -1544,7 +1578,18 @@ export async function fetchCityCampaigns(
   const cityFilter = {
     filter: { fieldName: "city", stringFilter: { value: city, matchType: "EXACT" } },
   };
-  let dimensionFilter: Record<string, unknown> = cityFilter;
+  // Same exclusion as the main report — this drill-down carries key
+  // events per campaign, and a city whose conversions are counted
+  // differently from the map it opened from is worse than no drill-down.
+  const ghosts = await ghostKeyEvents(subjectEmail, propertyId).catch(() => []);
+  const expressions: Record<string, unknown>[] = [cityFilter];
+  if (ghosts.length) {
+    expressions.push({
+      notExpression: {
+        filter: { fieldName: "eventName", inListFilter: { values: ghosts } },
+      },
+    });
+  }
   if (!wholeSite) {
     const rawValues = await resolveRawPageValues(subjectEmail, propertyId, mode, paths);
     if (rawValues.page.length === 0) return [];
@@ -1552,20 +1597,15 @@ export async function fetchCityCampaigns(
     // this drill-down carries key events per campaign, and leaving them
     // out would show the city's campaigns converting at zero while the
     // section above them reports real conversions.
-    dimensionFilter = {
-      andGroup: {
-        expressions: [
-          {
-            filter: {
-              fieldName: mode,
-              inListFilter: { values: [...rawValues.page, ...rawValues.conversion] },
-            },
-          },
-          cityFilter,
-        ],
+    expressions.push({
+      filter: {
+        fieldName: mode,
+        inListFilter: { values: [...rawValues.page, ...rawValues.conversion] },
       },
-    };
+    });
   }
+  const dimensionFilter: Record<string, unknown> =
+    expressions.length === 1 ? cityFilter : { andGroup: { expressions } };
 
   const [report] = await batchRun(subjectEmail, propertyId, [
     {
@@ -1654,7 +1694,8 @@ export async function fetchGa4Report(
   // v18: UTM leaf values decoded so +-encoded duplicates merge.
   // v19: pagePath-mode conversion pages folded into the page filter, so
   //      `conversions` goes from null to populated on those properties.
-  const key = `ga4Report:v19:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v20: events GA4 counts but does not define as key events excluded.
+  const key = `ga4Report:v20:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],
