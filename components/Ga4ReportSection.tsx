@@ -7,6 +7,7 @@ import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
 import Ga4CampaignTree from "@/components/Ga4CampaignTree";
 import Ga4Demographics from "@/components/Ga4Demographics";
+import { StandardHead, StandardCells } from "@/components/Ga4Columns";
 import {
   fetchGa4Report,
   reportWindow,
@@ -202,7 +203,14 @@ export default async function Ga4ReportSection({
         />
       )}
 
-      {(data.pages?.length ?? 0) > 1 && <Pages rows={data.pages} host={target.host} />}
+      {(data.pages?.length ?? 0) > 1 && (
+        <Pages
+          rows={data.pages}
+          host={target.host}
+          showConv={!!data.conversions}
+          mode={data.mode}
+        />
+      )}
 
       <div className="ga4-source">
         מקור: Google Analytics 4 · נכס <strong>{target.propertyName}</strong> ·{" "}
@@ -345,16 +353,7 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
         ))}
       </div>
       <table className="ga4w-table">
-        <thead>
-          <tr>
-            <th>מקור</th>
-            <th>כניסות</th>
-            <th>חלק מהתנועה</th>
-            <th>גלישה מעורבת</th>
-            {showConv && <th>אירועי מפתח</th>}
-            {showConv && <th>שיעור המרה</th>}
-          </tr>
-        </thead>
+        <StandardHead first="מקור" showConv={showConv} />
         <tbody>
           {data.sources.map((s) => (
             <tr key={s.key}>
@@ -368,11 +367,15 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
                 )}
                 {s.label}
               </td>
-              <td>{fmtInt(s.sessions)}</td>
-              <td>{fmtPct(s.sessions / total)}</td>
-              <td>{s.sessions > 0 ? fmtPct(s.engaged / s.sessions) : "—"}</td>
-              {showConv && <td>{fmtInt(s.keyEvents)}</td>}
-              {showConv && <td>{fmtPct(s.convRate)}</td>}
+              <StandardCells
+                sessions={s.sessions}
+                total={total}
+                engaged={s.engaged}
+                avgSeconds={s.avgSeconds}
+                keyEvents={s.keyEvents}
+                convRate={s.convRate}
+                showConv={showConv}
+              />
             </tr>
           ))}
         </tbody>
@@ -385,21 +388,13 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
 
 function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean }) {
   const rows = data.campaigns ?? [];
+  const total = rows.reduce((n, c) => n + c.sessions, 0);
   return (
     <div className="ga4w-block">
       <h3 className="ga4w-h3">פילוח לפי קמפיין</h3>
       <div className="ga4w-table-wrap">
         <table className="ga4w-table">
-          <thead>
-            <tr>
-              <th>קמפיין</th>
-              <th>כניסות</th>
-              <th>גלישה מעורבת</th>
-              <th>זמן ממוצע</th>
-              {showConv && <th>אירועי מפתח</th>}
-              {showConv && <th>שיעור המרה</th>}
-            </tr>
-          </thead>
+          <StandardHead first="קמפיין" showConv={showConv} />
           <tbody>
             {rows.map((c) => (
               <tr key={c.campaign}>
@@ -411,11 +406,15 @@ function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean 
                 <td className="ga4w-camp">
                   <ChannelIcon name={c.campaign} /> {c.campaign}
                 </td>
-                <td>{fmtInt(c.sessions)}</td>
-                <td>{c.sessions > 0 ? fmtPct(c.engaged / c.sessions) : "—"}</td>
-                <td>{fmtDuration(c.avgSeconds)}</td>
-                {showConv && <td>{fmtInt(c.keyEvents)}</td>}
-                {showConv && <td>{fmtPct(c.convRate)}</td>}
+                <StandardCells
+                  sessions={c.sessions}
+                  total={total}
+                  engaged={c.engaged}
+                  avgSeconds={c.avgSeconds}
+                  keyEvents={c.keyEvents}
+                  convRate={c.convRate}
+                  showConv={showConv}
+                />
               </tr>
             ))}
             {data.unattributedSessions > 0 && (
@@ -424,8 +423,7 @@ function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean 
               <tr className="ga4w-unattr">
                 <td>לא שויך לקמפיין</td>
                 <td>{fmtInt(data.unattributedSessions)}</td>
-                <td>—</td>
-                <td>—</td>
+                <td colSpan={showConv ? 5 : 3}>—</td>
               </tr>
             )}
           </tbody>
@@ -526,23 +524,20 @@ function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
     <div className="ga4w-block">
       <h3 className="ga4w-h3">מבקרים חדשים מול חוזרים</h3>
       <table className="ga4w-table">
-        <thead>
-          <tr>
-            <th>סוג מבקר</th>
-            <th>כניסות</th>
-            <th>חלק מהתנועה</th>
-            <th>אירועי מפתח</th>
-            <th>שיעור המרה</th>
-          </tr>
-        </thead>
+        <StandardHead first="סוג מבקר" showConv />
         <tbody>
           {r.rows.map((x) => (
             <tr key={x.kind}>
               <td>{x.label}</td>
-              <td>{fmtInt(x.sessions)}</td>
-              <td>{fmtPct(x.sessions / total)}</td>
-              <td>{fmtInt(x.keyEvents)}</td>
-              <td>{fmtPct(x.convRate)}</td>
+              <StandardCells
+                sessions={x.sessions}
+                total={total}
+                engaged={x.engaged}
+                avgSeconds={x.avgSeconds}
+                keyEvents={x.keyEvents}
+                convRate={x.convRate}
+                showConv
+              />
             </tr>
           ))}
         </tbody>
@@ -605,26 +600,31 @@ function ForeignTraffic({
         הגאוגרפי בקמפיינים.
       </p>
       <table className="ga4w-table">
-        <thead>
-          <tr>
-            <th>מקור</th>
-            <th>כניסות</th>
-            <th>אירועי מפתח</th>
-            <th>שיעור המרה</th>
-          </tr>
-        </thead>
+        <StandardHead first="מקור" showConv />
         <tbody>
           <tr>
             <td>ישראל</td>
-            <td>{fmtInt(israel?.sessions ?? 0)}</td>
-            <td>{fmtInt(israel?.keyEvents ?? 0)}</td>
-            <td>{fmtPct(israelCvr)}</td>
+            <StandardCells
+              sessions={israel?.sessions ?? 0}
+              total={total}
+              engaged={israel?.engaged ?? 0}
+              avgSeconds={israel?.avgSeconds ?? 0}
+              keyEvents={israel?.keyEvents ?? 0}
+              convRate={israelCvr}
+              showConv
+            />
           </tr>
           <tr className="ga4w-alert-row">
             <td>מחוץ לישראל</td>
-            <td>{fmtInt(abroad.sessions)}</td>
-            <td>{fmtInt(abroad.keyEvents)}</td>
-            <td>{fmtPct(foreignCvr)}</td>
+            <StandardCells
+              sessions={abroad.sessions}
+              total={total}
+              engaged={abroad.engaged}
+              avgSeconds={abroad.avgSeconds}
+              keyEvents={abroad.keyEvents}
+              convRate={foreignCvr}
+              showConv
+            />
           </tr>
         </tbody>
       </table>
@@ -817,18 +817,11 @@ function Devices({
             {top.label}
           </text>
         </svg>
+        {/* The conversion columns only earn their place when the property
+            tags key events — otherwise they are a column of 0% that looks
+            like every device fails to convert. */}
         <table className="ga4w-table ga4w-donut-side">
-        <thead>
-          <tr>
-            <th>מכשיר</th>
-            <th>כניסות</th>
-            <th>חלק מהתנועה</th>
-            {/* The conversion-rate column only earns its place when the
-                property tags key events — otherwise it is a column of
-                0% that looks like every device fails to convert. */}
-            {hasKeyEvents && <th>שיעור המרה</th>}
-          </tr>
-        </thead>
+        <StandardHead first="מכשיר" showConv={hasKeyEvents} />
         <tbody>
           {rows.map((r) => (
             <tr key={r.device}>
@@ -836,9 +829,15 @@ function Devices({
                 <span className={`ga4w-dot is-dev-${r.device}`} aria-hidden="true" />
                 {r.label}
               </td>
-              <td>{fmtInt(r.sessions)}</td>
-              <td>{fmtPct(r.sessions / total)}</td>
-              {hasKeyEvents && <td>{fmtPct(r.keyEventRate)}</td>}
+              <StandardCells
+                sessions={r.sessions}
+                total={total}
+                engaged={r.engaged}
+                avgSeconds={r.avgSeconds}
+                keyEvents={r.keyEvents}
+                convRate={r.keyEventRate}
+                showConv={hasKeyEvents}
+              />
             </tr>
           ))}
         </tbody>
@@ -853,22 +852,25 @@ function Devices({
 function Pages({
   rows,
   host,
+  showConv,
+  mode,
 }: {
-  rows: { path: string; sessions: number; engagementRate: number; avgSeconds: number }[];
+  rows: NonNullable<Ga4ReportData["pages"]>;
   host: string;
+  showConv: boolean;
+  mode: Ga4ReportData["mode"];
 }) {
+  const total = rows.reduce((n, p) => n + p.sessions, 0);
+  // In pagePath mode the key event fires on a thank-you page, which this
+  // table deliberately excludes — so a per-page conversion figure here
+  // would read 0 for every row and mean nothing. The columns stay for
+  // alignment with the rest of the section, filled with "—" and a note.
+  const perPageConv = showConv && mode === "landingPage";
   return (
     <div className="ga4w-block">
       <h3 className="ga4w-h3">לפי עמוד נחיתה</h3>
       <table className="ga4w-table">
-        <thead>
-          <tr>
-            <th>עמוד</th>
-            <th>כניסות</th>
-            <th>גלישה מעורבת</th>
-            <th>זמן ממוצע</th>
-          </tr>
-        </thead>
+        <StandardHead first="עמוד" showConv={showConv} />
         <tbody>
           {rows.map((p) => (
             <tr key={p.path}>
@@ -879,12 +881,21 @@ function Pages({
                 </code>
               </td>
               <td>{fmtInt(p.sessions)}</td>
+              <td>{total > 0 ? fmtPct(p.sessions / total) : "—"}</td>
               <td>{fmtPct(p.engagementRate)}</td>
               <td>{fmtDuration(p.avgSeconds)}</td>
+              {showConv && <td>{perPageConv ? fmtInt(p.keyEvents) : "—"}</td>}
+              {showConv && <td>{perPageConv ? fmtPct(p.convRate) : "—"}</td>}
             </tr>
           ))}
         </tbody>
       </table>
+      {showConv && !perPageConv && (
+        <div className="ga4w-note">
+          אירועי המפתח בנכס הזה נרשמים בעמוד תודה נפרד ולא בעמוד הנחיתה עצמו,
+          ולכן לא ניתן לייחס אותם לעמוד נחיתה מסוים.
+        </div>
+      )}
     </div>
   );
 }

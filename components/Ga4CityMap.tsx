@@ -3,8 +3,16 @@
 import { useState } from "react";
 import { lookupCity, project, MAP_W, MAP_H, OUTLINE_PATH } from "@/lib/israelMap";
 import ChannelIcon from "@/components/ChannelIcon";
+import { StandardHead, StandardCells } from "@/components/Ga4Columns";
 
-export type CityRow = { city: string; sessions: number; keyEvents: number };
+export type CityRow = {
+  city: string;
+  sessions: number;
+  engaged: number;
+  avgSeconds: number;
+  keyEvents: number;
+  convRate: number;
+};
 type CampaignRow = {
   campaign: string;
   sessions: number;
@@ -61,6 +69,9 @@ export default function Ga4CityMap({
   const max = Math.max(...plotted.map((p) => p.sessions), 1);
   const radius = (n: number) => 1.4 + Math.sqrt(n / max) * 6.5;
   const totalIl = cities.reduce((n, c) => n + c.sessions, 0);
+  // Denominator for the drill-down's `חלק`: the campaigns of ONE city, so
+  // the share is of that city rather than of the map.
+  const drillTotal = (rows ?? []).reduce((n, r) => n + r.sessions, 0);
 
   const pick = async (city: string) => {
     if (open === city) {
@@ -124,14 +135,7 @@ export default function Ga4CityMap({
 
         <div className="ga4w-map-side">
           <table className="ga4w-table ga4w-map-list">
-            <thead>
-              <tr>
-                <th>עיר</th>
-                <th>כניסות</th>
-                <th>חלק</th>
-                {showConv && <th>המרות</th>}
-              </tr>
-            </thead>
+            <StandardHead first="עיר" showConv={showConv} />
             <tbody>
               {cities.slice(0, 8).map((c) => (
                 <tr
@@ -142,9 +146,20 @@ export default function Ga4CityMap({
                   }
                 >
                   <td>{c.city}</td>
-                  <td>{fmtInt(c.sessions)}</td>
-                  <td>{fmtPct(c.sessions / Math.max(1, totalIl))}</td>
-                  {showConv && <td>{fmtInt(c.keyEvents)}</td>}
+                  {/* Share is of MAPPED Israeli sessions, not of all
+                      traffic — foreign sessions and unrecognised towns
+                      are counted in the note below the map, and folding
+                      them into this denominator would make every city's
+                      share quietly smaller than the map suggests. */}
+                  <StandardCells
+                    sessions={c.sessions}
+                    total={totalIl}
+                    engaged={c.engaged}
+                    avgSeconds={c.avgSeconds}
+                    keyEvents={c.keyEvents}
+                    convRate={c.convRate}
+                    showConv={showConv}
+                  />
                 </tr>
               ))}
             </tbody>
@@ -173,23 +188,25 @@ export default function Ga4CityMap({
               {state === "idle" && rows && rows.length > 0 && (
                 <div className="ga4w-table-wrap">
                   <table className="ga4w-table">
-                    <thead>
-                      <tr>
-                        <th>קמפיין</th>
-                        <th>כניסות</th>
-                        {showConv && <th>אירועי מפתח</th>}
-                        {showConv && <th>שיעור המרה</th>}
-                      </tr>
-                    </thead>
+                    <StandardHead first="קמפיין" showConv={showConv} />
                     <tbody>
                       {rows.map((r) => (
                         <tr key={r.campaign}>
                           <td className="ga4w-camp">
                             <ChannelIcon name={r.campaign} /> {r.campaign}
                           </td>
-                          <td>{fmtInt(r.sessions)}</td>
-                          {showConv && <td>{fmtInt(r.keyEvents)}</td>}
-                          {showConv && <td>{fmtPct(r.convRate)}</td>}
+                          {/* Share is of the CITY's sessions — this table
+                              answers "who brought this city", so the
+                              denominator has to be the city itself. */}
+                          <StandardCells
+                            sessions={r.sessions}
+                            total={drillTotal}
+                            engaged={r.engaged}
+                            avgSeconds={r.avgSeconds}
+                            keyEvents={r.keyEvents}
+                            convRate={r.convRate}
+                            showConv={showConv}
+                          />
                         </tr>
                       ))}
                     </tbody>
@@ -215,8 +232,4 @@ export default function Ga4CityMap({
 function fmtInt(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return Math.round(n).toLocaleString("en-US");
-}
-function fmtPct(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  return `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}%`;
 }

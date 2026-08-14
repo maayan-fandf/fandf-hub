@@ -44,11 +44,24 @@ export type Ga4Point = {
 /** Days covered when neither a free range nor a month override is set. */
 const DEFAULT_WINDOW_DAYS = 28;
 
+/**
+ * The six numbers every breakdown in this section reports, in the order
+ * the tables print them: כניסות · חלק · גלישה מעורבת · זמן ממוצע ·
+ * אירועי מפתח · שיעור המרה.
+ *
+ * They are carried on every row type rather than fetched per block on
+ * demand, because a table that drops two columns reads as "this
+ * breakdown cannot be compared to the others" — and every one of these
+ * breakdowns IS the same sessions sliced a different way. `חלק` is not
+ * stored: it is the row's share of its own block's total, computed where
+ * it is rendered.
+ */
 export type Ga4SourceBucket = {
   key: string;
   label: string;
   sessions: number;
   engaged: number;
+  avgSeconds: number;
   keyEvents: number;
   /** Share of sessions that converted. See `mergeRate`. */
   convRate: number;
@@ -223,6 +236,8 @@ export type Ga4PageRow = {
   sessions: number;
   engagementRate: number;
   avgSeconds: number;
+  keyEvents: number;
+  convRate: number;
 };
 
 /**
@@ -273,7 +288,14 @@ export type Ga4TreeNode = {
  */
 export type Ga4TreeView = "adset" | "placement" | "ad";
 
-export type Ga4CityRow = { city: string; sessions: number; keyEvents: number };
+export type Ga4CityRow = {
+  city: string;
+  sessions: number;
+  engaged: number;
+  avgSeconds: number;
+  keyEvents: number;
+  convRate: number;
+};
 
 /**
  * A placement or medium delivering traffic that never converts.
@@ -337,6 +359,8 @@ export type Ga4DeviceRow = {
   device: "mobile" | "desktop" | "tablet" | "other";
   label: string;
   sessions: number;
+  engaged: number;
+  avgSeconds: number;
   keyEvents: number;
   keyEventRate: number;
 };
@@ -433,6 +457,8 @@ export type Ga4Returning = {
     kind: "new" | "returning";
     label: string;
     sessions: number;
+    engaged: number;
+    avgSeconds: number;
     keyEvents: number;
     convRate: number;
   }[];
@@ -471,16 +497,26 @@ export type Ga4ReportData = {
    */
   abroad: {
     sessions: number;
+    engaged: number;
+    avgSeconds: number;
     keyEvents: number;
     convRate: number;
     topCountries: {
       country: string;
       sessions: number;
+      engaged: number;
+      avgSeconds: number;
       keyEvents: number;
       convRate: number;
     }[];
   };
-  israel: { sessions: number; keyEvents: number; convRate: number };
+  israel: {
+    sessions: number;
+    engaged: number;
+    avgSeconds: number;
+    keyEvents: number;
+    convRate: number;
+  };
   /** Placements/mediums delivering non-converting foreign traffic.
    *  Empty unless the property tags key events — otherwise every
    *  placement trivially has zero conversions. */
@@ -969,6 +1005,7 @@ async function fetchGa4ReportUncached(
         { name: "engagedSessions" },
         { name: "keyEvents" },
         { name: "sessionKeyEventRate" },
+        { name: "averageSessionDuration" },
       ],
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
       limit: 200,
@@ -1024,12 +1061,15 @@ async function fetchGa4ReportUncached(
       label: SOURCE_LABELS[key] ?? SOURCE_LABELS.other,
       sessions: 0,
       engaged: 0,
+      avgSeconds: 0,
       keyEvents: 0,
       convRate: 0,
     };
     const sessions = met(r, 0);
+    const totalSecs = b.avgSeconds * b.sessions + met(r, 4) * sessions;
     b.sessions += sessions;
     b.engaged += met(r, 1);
+    b.avgSeconds = b.sessions > 0 ? totalSecs / b.sessions : 0;
     b.keyEvents += met(r, 2);
     b.convRate += met(r, 3) * sessions;
     bucket.set(key, b);
@@ -1106,15 +1146,23 @@ async function fetchGa4ReportUncached(
   // `convRate` accumulates rate x sessions and is divided out below.
   const byCountry = new Map<
     string,
-    { sessions: number; keyEvents: number; convRate: number }
+    {
+      sessions: number;
+      engaged: number;
+      avgSeconds: number;
+      keyEvents: number;
+      convRate: number;
+    }
   >();
-  const israel = { sessions: 0, keyEvents: 0, convRate: 0 };
+  const israel = { sessions: 0, engaged: 0, avgSeconds: 0, keyEvents: 0, convRate: 0 };
 
   try {
     const [rCity, rDevice, rEvent, rPlacement, rTree] = await batchRun(subjectEmail, propertyId, [
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: "city" }, { name: "country" }],
+        // Metrics are APPENDED, never reordered — every met(r, n) below
+        // is positional.
         metrics: [
           { name: "sessions" },
           { name: "keyEvents" },
@@ -1122,6 +1170,8 @@ async function fetchGa4ReportUncached(
           // mergeRate. Dividing keyEvents by sessions here would report
           // Israel at 11% against a 4.6% headline on the same project.
           { name: "sessionKeyEventRate" },
+          { name: "engagedSessions" },
+          { name: "averageSessionDuration" },
         ],
         orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
         limit: 300,
@@ -1133,6 +1183,8 @@ async function fetchGa4ReportUncached(
           { name: "sessions" },
           { name: "keyEvents" },
           { name: "sessionKeyEventRate" },
+          { name: "engagedSessions" },
+          { name: "averageSessionDuration" },
         ],
         orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
         limit: 10,
@@ -1189,19 +1241,45 @@ async function fetchGa4ReportUncached(
       // is of Israel. Aggregated by country so the waste block can name
       // which countries the budget went to.
       const rate = met(r, 2);
+      const engaged = met(r, 3);
+      const secs = met(r, 4);
+      // Duration is a per-session average, so it combines weighted by
+      // sessions — the same treatment convRate gets, for the same reason.
+      const addDuration = (
+        acc: { sessions: number; avgSeconds: number },
+        addSessions: number,
+      ) => {
+        const total = acc.avgSeconds * acc.sessions + secs * addSessions;
+        return acc.sessions + addSessions > 0 ? total / (acc.sessions + addSessions) : 0;
+      };
       if (country && country !== "Israel") {
-        const c = byCountry.get(country) ?? { sessions: 0, keyEvents: 0, convRate: 0 };
+        const c =
+          byCountry.get(country) ??
+          { sessions: 0, engaged: 0, avgSeconds: 0, keyEvents: 0, convRate: 0 };
+        c.avgSeconds = addDuration(c, sessions);
         c.sessions += sessions;
+        c.engaged += engaged;
         c.keyEvents += ke;
         c.convRate += rate * sessions;
         byCountry.set(country, c);
         continue;
       }
+      israel.avgSeconds = addDuration(israel, sessions);
       israel.sessions += sessions;
+      israel.engaged += engaged;
       israel.keyEvents += ke;
       israel.convRate += rate * sessions;
       if (!name || name === "(not set)") continue;
-      cities.push({ city: name, sessions, keyEvents: ke });
+      // One row per city already — no accumulation, so the rate is used
+      // directly rather than weighted.
+      cities.push({
+        city: name,
+        sessions,
+        engaged,
+        avgSeconds: secs,
+        keyEvents: ke,
+        convRate: rate,
+      });
     }
 
     for (const r of rDevice?.rows ?? []) {
@@ -1215,6 +1293,8 @@ async function fetchGa4ReportUncached(
         sessions: met(r, 0),
         keyEvents: met(r, 1),
         keyEventRate: met(r, 2),
+        engaged: met(r, 3),
+        avgSeconds: met(r, 4),
       });
     }
 
@@ -1294,6 +1374,8 @@ async function fetchGa4ReportUncached(
           { name: "sessions" },
           { name: "keyEvents" },
           { name: "sessionKeyEventRate" },
+          { name: "engagedSessions" },
+          { name: "averageSessionDuration" },
         ],
         limit: 10,
       }),
@@ -1394,6 +1476,8 @@ async function fetchGa4ReportUncached(
         sessions: met(r, 0),
         keyEvents: met(r, 1),
         convRate: met(r, 2),
+        engaged: met(r, 3),
+        avgSeconds: met(r, 4),
       });
     }
     if (retRows.length > 0) returning = { rows: retRows };
@@ -1462,6 +1546,8 @@ async function fetchGa4ReportUncached(
           { name: "sessions" },
           { name: "engagementRate" },
           { name: "averageSessionDuration" },
+          { name: "keyEvents" },
+          { name: "sessionKeyEventRate" },
         ],
         orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
         limit: 50,
@@ -1475,15 +1561,23 @@ async function fetchGa4ReportUncached(
       // "לפי עמוד נחיתה" and a thank-you page is not a landing page.
       if (conversionOnly.has(p)) continue;
       const sessions = met(r, 0);
-      const row = byPath.get(p) ?? { path: p, sessions: 0, engagementRate: 0, avgSeconds: 0 };
+      const row =
+        byPath.get(p) ??
+        { path: p, sessions: 0, engagementRate: 0, avgSeconds: 0, keyEvents: 0, convRate: 0 };
       const totalEr = row.engagementRate * row.sessions + met(r, 1) * sessions;
       const totalSecs = row.avgSeconds * row.sessions + met(r, 2) * sessions;
       row.sessions += sessions;
       row.engagementRate = row.sessions > 0 ? totalEr / row.sessions : 0;
       row.avgSeconds = row.sessions > 0 ? totalSecs / row.sessions : 0;
+      row.keyEvents += met(r, 3);
+      row.convRate += met(r, 4) * sessions;
       byPath.set(p, row);
     }
-    pages.push(...[...byPath.values()].sort((a, b) => b.sessions - a.sessions));
+    pages.push(
+      ...[...byPath.values()]
+        .map((p) => ({ ...p, convRate: mergeRate(p.convRate, p.sessions) }))
+        .sort((a, b) => b.sessions - a.sessions),
+    );
   }
 
   if (curSessions === 0 && trend.length === 0) return null;
@@ -1513,6 +1607,11 @@ async function fetchGa4ReportUncached(
       const sessions = all.reduce((n, c) => n + c.sessions, 0);
       return {
         sessions,
+        engaged: all.reduce((n, c) => n + c.engaged, 0),
+        avgSeconds: mergeRate(
+          all.reduce((n, c) => n + c.avgSeconds * c.sessions, 0),
+          sessions,
+        ),
         keyEvents: all.reduce((n, c) => n + c.keyEvents, 0),
         convRate: mergeRate(
           all.reduce((n, c) => n + c.convRate, 0),
@@ -1522,6 +1621,8 @@ async function fetchGa4ReportUncached(
           .map(([country, v]) => ({
             country,
             sessions: v.sessions,
+            engaged: v.engaged,
+            avgSeconds: v.avgSeconds,
             keyEvents: v.keyEvents,
             convRate: mergeRate(v.convRate, v.sessions),
           }))
@@ -1695,7 +1796,10 @@ export async function fetchGa4Report(
   // v19: pagePath-mode conversion pages folded into the page filter, so
   //      `conversions` goes from null to populated on those properties.
   // v20: events GA4 counts but does not define as key events excluded.
-  const key = `ga4Report:v20:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v21: every breakdown row carries the standard six measures, so
+  //      sources/cities/devices/returning/pages/israel/abroad all gained
+  //      fields. A v20 payload renders "—" in half the new columns.
+  const key = `ga4Report:v21:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

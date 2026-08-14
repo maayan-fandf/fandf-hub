@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PlatformIcon from "@/components/PlatformIcon";
+import { StandardHead, StandardCells } from "@/components/Ga4Columns";
 // `import type` ONLY. lib/ga4Report imports lib/sa → googleapis, which
 // needs node's `net`/`worker_threads`; importing any runtime VALUE from
 // it here drags that whole chain into the client bundle and 500s the
@@ -90,12 +91,18 @@ export default function Ga4CampaignTree({
             </span>
           )}
         </td>
-        <td>{fmtInt(node.sessions)}</td>
-        <td>{total > 0 ? fmtPct(node.sessions / total) : "—"}</td>
-        <td>{fmtPct(node.engagementRate)}</td>
-        <td>{fmtDuration(node.avgSeconds)}</td>
-        {showConv && <td>{fmtInt(node.keyEvents)}</td>}
-        {showConv && <td>{fmtPct(node.convRate)}</td>}
+        {/* Share is always of the CHANNEL total, at every depth — a
+            campaign's 12% is 12% of the section's traffic, not of its
+            own channel, so the numbers stay comparable down the tree. */}
+        <StandardCells
+          sessions={node.sessions}
+          total={total}
+          engagementRate={node.engagementRate}
+          avgSeconds={node.avgSeconds}
+          keyEvents={node.keyEvents}
+          convRate={node.convRate}
+          showConv={showConv}
+        />
       </tr>,
     );
     for (const kid of node.children) walk(kid, depth + 1, isOpen);
@@ -131,17 +138,7 @@ export default function Ga4CampaignTree({
       </div>
       <div className="ga4w-table-wrap">
         <table className="ga4w-table ga4w-tree">
-          <thead>
-            <tr>
-              <th>ערוץ / קמפיין</th>
-              <th>כניסות</th>
-              <th>חלק</th>
-              <th>גלישה מעורבת</th>
-              <th>זמן ממוצע</th>
-              {showConv && <th>אירועי מפתח</th>}
-              {showConv && <th>שיעור המרה</th>}
-            </tr>
-          </thead>
+          <StandardHead first="ערוץ / קמפיין" showConv={showConv} />
           <tbody>{rows}</tbody>
         </table>
       </div>
@@ -169,17 +166,3 @@ function childWord(n: number, plural?: string): string {
   return plural ?? "";
 }
 
-function fmtDuration(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  const m = Math.floor(s / 60);
-  return m > 0 ? `${m}:${String(s % 60).padStart(2, "0")}` : `${s}ש'`;
-}
-
-function fmtInt(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  return Math.round(n).toLocaleString("en-US");
-}
-function fmtPct(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  return `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}%`;
-}

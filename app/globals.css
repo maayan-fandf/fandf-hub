@@ -9137,10 +9137,14 @@ html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
   font-size: 2.9px;
   fill: var(--muted);
 }
-.ga4w-donut-side { flex: 1 1 16rem; min-width: 13rem; }
+/* min-width sized for the standard six columns, not for the three these
+   tables used to carry: below it the flex wraps and the table takes the
+   full block width, which is far better than seven columns crushed into
+   13rem beside a chart. */
+.ga4w-donut-side { flex: 1 1 26rem; min-width: 24rem; }
 
 /* City drill-down */
-.ga4w-map-side { flex: 1 1 17rem; min-width: 13rem; }
+.ga4w-map-side { flex: 1 1 26rem; min-width: 24rem; }
 .ga4w-map-dot.is-clickable { cursor: pointer; }
 .ga4w-map-dot.is-clickable:hover { fill-opacity: 0.85; }
 .ga4w-map-dot.is-open {
