@@ -442,12 +442,6 @@ export default function ReportCreativesTab({
                         />
                       </>
                     )}
-                    {/* Deliberately OUTSIDE CrmRow: that returns null when the
-                        in-window CRM figures are all zero — i.e. exactly the
-                        paused/old cards whose history is most worth reading. */}
-                    {a.history && (
-                      <AdHistoryPopover ad={a.ad} history={a.history} />
-                    )}
                   </div>
                   <div className="rpt-cr-links">
                     {landing && (
@@ -459,6 +453,17 @@ export default function ReportCreativesTab({
                       <a href={a.url} target="_blank" rel="noopener noreferrer">
                         👁️ תצוגת מודעה
                       </a>
+                    )}
+                    {/* In the links row rather than the card body: it is one of
+                        the card's three ways out, so it belongs with the other
+                        two instead of as a stray pill above them.
+
+                        Still deliberately OUTSIDE CrmRow — that returns null
+                        when the in-window CRM figures are all zero, i.e.
+                        exactly the paused/old cards whose history is most
+                        worth reading. */}
+                    {a.history && (
+                      <AdHistoryPopover ad={a.ad} history={a.history} />
                     )}
                   </div>
                   <AdTrend title={a.ad} daily={a.daily} window={data.window} />

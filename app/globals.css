@@ -26294,11 +26294,16 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   background: #f59e0b;
   color: #fff;
 }
+/* Top-END, opposite the winner badge — NOT bottom-start, which is where
+   the links row sits: the badge floated over "דף נחיתה" / "תצוגת מודעה"
+   and swallowed the click. The thumbnail's other two corners are taken
+   by the preview links (bottom-start) and the status chip (bottom-end),
+   so this is the one corner that overlays nothing. */
 .rpt-cr-badge-fatigue {
   background: color-mix(in srgb, #ef4444 85%, #000);
   color: #fff;
-  top: auto;
-  bottom: 0.4rem;
+  inset-inline-start: auto;
+  inset-inline-end: 0.4rem;
 }
 .rpt-cr-thumb {
   position: relative;
@@ -26504,12 +26509,19 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   overflow-wrap: anywhere;
   text-align: center;
 }
+/* Wraps rather than overflows: all three items are ~260px against a
+   ~230px card interior, so on a narrow grid היסטוריה drops to a second
+   line. It flows there naturally instead of being pushed to the far end
+   with an auto margin, which left it stranded alone across the card. */
 .rpt-cr-links {
   display: flex;
-  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
   padding: 0.4rem 0.65rem 0.55rem;
   font-size: 0.74rem;
 }
+.rpt-cr-links .rpt-cr-hist-btn { margin-top: 0; }
 .rpt-cr-links a {
   color: var(--brand);
   text-decoration: none;
