@@ -26259,9 +26259,15 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   font-weight: 700;
   color: var(--ink-soft);
 }
+/* 265, not 230: the columns stretch to fill, so the real card width is
+   whatever is left after the column count is decided — and at a 1000px
+   section a 230px minimum resolves to four ~240px cards, which is inside
+   the width where the links row no longer fits on one line. A 265px
+   minimum drops that to three ~325px cards and clears it at every
+   section width the rail produces. */
 .rpt-cr-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
   gap: 0.8rem;
 }
 .rpt-cr-card {
@@ -26509,17 +26515,17 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   overflow-wrap: anywhere;
   text-align: center;
 }
-/* Wraps rather than overflows: all three items are ~260px against a
-   ~230px card interior, so on a narrow grid היסטוריה drops to a second
-   line. It flows there naturally instead of being pushed to the far end
-   with an auto margin, which left it stranded alone across the card. */
+/* Three items where there used to be two, so the row is tightened to buy
+   the ~20px that keeps them on one line: the grid minimum above does the
+   rest. flex-wrap stays as a backstop — a second line is survivable, a
+   row overflowing its card is not. */
 .rpt-cr-links {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.35rem 0.6rem;
-  padding: 0.4rem 0.65rem 0.55rem;
-  font-size: 0.74rem;
+  gap: 0.35rem 0.45rem;
+  padding: 0.4rem 0.55rem 0.55rem;
+  font-size: 0.72rem;
 }
 .rpt-cr-links .rpt-cr-hist-btn { margin-top: 0; }
 .rpt-cr-links a {
