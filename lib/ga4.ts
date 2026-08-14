@@ -373,6 +373,39 @@ function pathTokens(paths: string[]): Set<string> {
 }
 
 /**
+ * "Does a key event on this page belong to this project?"
+ *
+ * Exported because BOTH GA4 surfaces need the identical answer. The live
+ * block counts client-side and the period report filters API-side, but if
+ * they disagree the same project page shows a live conversion counter
+ * ticking above a period section reporting none — which is exactly what
+ * לוריא did before this was shared.
+ *
+ * In `landingPage` mode GA has already credited the conversion back to
+ * the entry page, so ownership is plain set membership. In `pagePath`
+ * mode the key event fires on a separate thank-you page that no column
+ * links back to the project, so the link is distinctive-token overlap
+ * with the project's own paths — generic tokens stripped, so two projects
+ * sharing a domain cannot claim each other's leads.
+ */
+export function ownsConversionPath(
+  mode: AttributionMode,
+  paths: string[],
+): (page: string) => boolean {
+  const want = new Set(paths.map(normPath).filter(Boolean));
+  const tokens = pathTokens(paths);
+  return (page: string): boolean => {
+    const norm = normPath(page);
+    if (want.has(norm)) return true;
+    if (mode === "landingPage") return false;
+    return norm
+      .split(/[^a-z0-9֐-׿]+/)
+      .filter(Boolean)
+      .some((t) => tokens.has(t));
+  };
+}
+
+/**
  * Today-so-far and last-7-days totals for this project's pages.
  *
  * The dimension used is decided per property by `detectAttributionMode`:

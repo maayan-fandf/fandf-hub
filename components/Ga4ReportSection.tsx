@@ -2,6 +2,7 @@ import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
 import PlatformIcon from "@/components/PlatformIcon";
 import ChannelIcon from "@/components/ChannelIcon";
 import { resolveGa4Target } from "@/lib/ga4Project";
+import { getProjectFlightWindow } from "@/lib/allClients";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
 import Ga4CampaignTree from "@/components/Ga4CampaignTree";
@@ -46,7 +47,15 @@ export default async function Ga4ReportSection({
   const target = await resolveGa4Target(subjectEmail, project).catch(() => null);
   if (!target) return null;
 
-  const win = reportWindow(monthFilter, dateRange);
+  // Default to the campaign's own flight dates rather than a trailing 28
+  // days, so this section and the report header beside it describe the
+  // same period. Best-effort: a project with no flight falls back to the
+  // trailing window inside reportWindow().
+  const flight = await getProjectFlightWindow({
+    subjectEmail,
+    project,
+  }).catch(() => null);
+  const win = reportWindow(monthFilter, dateRange, flight);
   const data = await fetchGa4Report(
     subjectEmail,
     target.propertyId,
@@ -61,7 +70,12 @@ export default async function Ga4ReportSection({
         <h2>
           <GoogleAnalyticsMark /> אנליטיקס — תנועה ואיכות גלישה
         </h2>
+        {/* The dates alone would read as an arbitrary window. Naming the
+            flight is what tells a reader the section covers the campaign
+            rather than some trailing period — and that a running flight
+            is measured only up to yesterday. */}
         <span className="section-link-static">
+          {win.source === "flight" && "תקופת הקמפיין · "}
           {fmtRange(data.window.start, data.window.end)}
         </span>
       </div>
@@ -188,6 +202,14 @@ export default async function Ga4ReportSection({
             campaign can appear in the table above. */}
         {data.mode === "pagePath" && !data.wholeSite && (
           <> · הספירה מבוססת על צפיות בעמודי הפרויקט, ולא על עמוד הכניסה לאתר</>
+        )}
+        {/* Named, not summarised. In pagePath mode the key events fire on
+            a page that appears nowhere else in this section, so without
+            this line the conversion count comes from a source the reader
+            cannot see — and on a shared domain the natural question is
+            whether it is really this project's thank-you page. */}
+        {(data.conversionPaths?.length ?? 0) > 0 && (
+          <> · אירועי המפתח נספרים גם מ-{data.conversionPaths.join(", ")}</>
         )}
         <div className="ga4w-caveat">
           ״כניסות״ נספרות ב-Google Analytics ואינן זהות למספר הקליקים — מבקר

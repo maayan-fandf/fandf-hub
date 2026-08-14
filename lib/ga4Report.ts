@@ -24,7 +24,12 @@
 
 import { unstable_cache } from "next/cache";
 import { analyticsAccessToken } from "@/lib/sa";
-import { normPath, detectAttributionMode, type AttributionMode } from "@/lib/ga4";
+import {
+  normPath,
+  detectAttributionMode,
+  ownsConversionPath,
+  type AttributionMode,
+} from "@/lib/ga4";
 
 const DATA_API = "https://analyticsdata.googleapis.com/v1beta";
 
@@ -493,6 +498,13 @@ export type Ga4ReportData = {
   mode: AttributionMode;
   /** True when the project owns its whole domain and no filter was applied. */
   wholeSite: boolean;
+  /**
+   * Pages credited to this project for their conversions but not for
+   * their traffic — the thank-you pages of `pagePath` mode. Named in the
+   * source line so "110 key events" can be traced to where they fired,
+   * rather than appearing from a page the reader cannot see in the table.
+   */
+  conversionPaths: string[];
 };
 
 /* ── Date helpers (Asia/Jerusalem, matching the rest of the codebase) ── */
@@ -515,6 +527,19 @@ const daysBetween = (a: string, b: string): number =>
       86_400_000,
   );
 
+/** Where the window came from, so the UI can say so. */
+export type Ga4WindowSource = "range" | "month" | "flight" | "trailing";
+
+/**
+ * The longest flight this will report on in one go. A flight is normally
+ * weeks; the guard is for a row whose סיום was typed years out, which
+ * would otherwise ask GA4 for a decade of daily rows and draw a trend
+ * with a point per pixel. Beyond this the window keeps the flight's END
+ * and walks the start forward, so the section still describes the live
+ * part of the campaign rather than its archaeology.
+ */
+const MAX_FLIGHT_DAYS = 550;
+
 /**
  * The window this section reports on.
  *
@@ -526,33 +551,58 @@ const daysBetween = (a: string, b: string): number =>
 export function reportWindow(
   monthFilter?: string,
   dateRange?: { from: string; to: string },
+  flight?: { startIso: string; endIso: string } | null,
 ): {
   start: string;
   end: string;
   prevStart: string;
   prevEnd: string;
+  source: Ga4WindowSource;
 } {
   const yesterday = addDays(ilToday(), -1);
   let end = yesterday;
   let start = addDays(end, -(DEFAULT_WINDOW_DAYS - 1));
+  let source: Ga4WindowSource = "trailing";
 
   // Precedence matches the rest of the page: an explicit ?from/?to range
   // from the shared DateRangePicker wins, then ?monthOverride, then the
-  // default trailing window. This section must never show a different
-  // period from the CRM funnel and the report beside it.
+  // campaign's own flight dates, and only then a trailing window. This
+  // section must never show a different period from the CRM funnel and
+  // the report beside it.
   const m = (monthFilter || "").trim();
   if (dateRange?.from && dateRange?.to && dateRange.from <= dateRange.to) {
+    source = "range";
     start = new Date(`${dateRange.from}T00:00:00Z`);
     const to = new Date(`${dateRange.to}T00:00:00Z`);
     // Still never include today — a partial day craters engagement.
     end = to < yesterday ? to : yesterday;
     if (end < start) end = start;
   } else if (/^\d{4}-\d{2}$/.test(m)) {
+    source = "month";
     const [y, mo] = m.split("-").map(Number);
     const first = new Date(Date.UTC(y, mo - 1, 1));
     const last = new Date(Date.UTC(y, mo, 0));
     start = first;
     end = last < yesterday ? last : yesterday;
+  } else if (flight?.startIso && flight?.endIso && flight.startIso <= flight.endIso) {
+    // The campaign's own dates, which is what the report header beside
+    // this section already paces against. A running flight ends in the
+    // future, so the end is clamped to yesterday exactly like the picker
+    // range above — the window is the flight SO FAR, not the flight as
+    // planned.
+    source = "flight";
+    start = new Date(`${flight.startIso}T00:00:00Z`);
+    const to = new Date(`${flight.endIso}T00:00:00Z`);
+    end = to < yesterday ? to : yesterday;
+    if (end < start) {
+      // A flight that has not started yet has nothing to report; fall
+      // back rather than render an inverted or single-day window.
+      source = "trailing";
+      end = yesterday;
+      start = addDays(end, -(DEFAULT_WINDOW_DAYS - 1));
+    } else if (daysBetween(iso(start), iso(end)) > MAX_FLIGHT_DAYS) {
+      start = addDays(end, -MAX_FLIGHT_DAYS);
+    }
   }
   const len = daysBetween(iso(start), iso(end));
   return {
@@ -560,6 +610,7 @@ export function reportWindow(
     end: iso(end),
     prevStart: iso(addDays(start, -(len + 1))),
     prevEnd: iso(addDays(start, -1)),
+    source,
   };
 }
 
@@ -610,7 +661,18 @@ async function batchRun(
  * pages over 28 days is ~4,100 rows, which silently truncates against
  * any sane row limit and would quietly lose days from the trend.
  */
-const rawValuesCache = new Map<string, { expiresAt: number; values: string[] }>();
+type PageValues = {
+  /** Raw values for the project's own pages — its traffic. */
+  page: string[];
+  /**
+   * Extra raw values carrying its conversions. Only ever non-empty in
+   * `pagePath` mode, where the key event fires on a thank-you page that
+   * is not one of the project's landing paths.
+   */
+  conversion: string[];
+};
+
+const rawValuesCache = new Map<string, { expiresAt: number; values: PageValues }>();
 const RAW_TTL_MS = 6 * 60 * 60 * 1000;
 
 async function resolveRawPageValues(
@@ -618,9 +680,12 @@ async function resolveRawPageValues(
   propertyId: string,
   mode: AttributionMode,
   paths: string[],
-): Promise<string[]> {
+): Promise<PageValues> {
   const want = new Set(paths.map(normPath).filter(Boolean));
-  const key = `${propertyId}|${mode}|${[...want].sort().join(",")}`;
+  // v2: the shape changed when conversion pages were added. The cache is
+  // in-process and dies with the process, but a stale entry inside one
+  // running server would silently keep the old zero-conversion answer.
+  const key = `v2|${propertyId}|${mode}|${[...want].sort().join(",")}`;
   const hit = rawValuesCache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.values;
 
@@ -628,15 +693,24 @@ async function resolveRawPageValues(
     {
       dateRanges: [{ startDate: "90daysAgo", endDate: "today" }],
       dimensions: [{ name: mode }],
-      metrics: [{ name: "sessions" }],
+      // keyEvents is here to decide which token-matched pages are worth
+      // pulling in: a page that merely shares a token but never converted
+      // would add its sessions to the project's traffic for no gain.
+      metrics: [{ name: "sessions" }, { name: "keyEvents" }],
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
       limit: 1000,
     },
   ]);
-  const values: string[] = [];
+  const owns = ownsConversionPath(mode, paths);
+  const values: PageValues = { page: [], conversion: [] };
   for (const r of report?.rows ?? []) {
     const raw = dim(r, 0);
-    if (raw && want.has(normPath(raw))) values.push(raw);
+    if (!raw) continue;
+    if (want.has(normPath(raw))) {
+      values.page.push(raw);
+    } else if (met(r, 1) > 0 && owns(raw)) {
+      values.conversion.push(raw);
+    }
   }
   rawValuesCache.set(key, { expiresAt: Date.now() + RAW_TTL_MS, values });
   return values;
@@ -776,11 +850,31 @@ async function fetchGa4ReportUncached(
   const wholeSite = normed.length === 1 && normed[0] === "/";
 
   let filter: Record<string, unknown> | undefined;
+  // Pages included ONLY for their conversions, kept aside so the
+  // "לפי עמוד נחיתה" table can leave them out — a thank-you page listed
+  // as a landing page would be plainly wrong under that heading.
+  let conversionPaths: string[] = [];
   if (!wholeSite) {
     const rawValues = await resolveRawPageValues(subjectEmail, propertyId, mode, paths);
-    if (rawValues.length === 0) return null;
+    if (rawValues.page.length === 0) return null;
+    conversionPaths = [...new Set(rawValues.conversion.map(normPath))];
+    // The conversion pages ride in the SAME filter rather than a second
+    // query. A GA4 page filter is event-scoped, so "sessions on the
+    // landing page" and "key events on the thank-you page" cannot come
+    // from one request — but a converting session viewed both pages, so
+    // it is already inside the landing-page filter and adding the
+    // thank-you page does not double-count it. What it does add is the
+    // handful of sessions that reached ONLY the thank-you page. Measured
+    // on לוריא: 66 such sessions against 5,632, in exchange for 110 key
+    // events that were otherwise invisible. The alternative — a second
+    // filtered query per report — would put this section at 12 GA4
+    // requests against a 10-per-property concurrency limit we have
+    // already hit.
     filter = {
-      filter: { fieldName: mode, inListFilter: { values: rawValues } },
+      filter: {
+        fieldName: mode,
+        inListFilter: { values: [...rawValues.page, ...rawValues.conversion] },
+      },
     };
   }
 
@@ -802,7 +896,12 @@ async function fetchGa4ReportUncached(
         { name: "keyEvents" },
       ],
       orderBys: [{ dimension: { dimensionName: "date" } }],
-      limit: 400,
+      // One row per day, so the limit has to clear the longest window this
+      // section can ask for. 400 was set when the window was always 28
+      // days; a campaign flight can run far longer, and the rows are
+      // ordered by DATE rather than size, so truncation would silently
+      // cut the chart off mid-flight rather than drop small days.
+      limit: MAX_FLIGHT_DAYS + 50,
     }),
     // 2 — totals, both windows. Separate from the trend because summing
     //     totalUsers across days double-counts anyone who returns.
@@ -1335,9 +1434,13 @@ async function fetchGa4ReportUncached(
         limit: 50,
       }),
     ]);
+    const conversionOnly = new Set(conversionPaths);
     const byPath = new Map<string, Ga4PageRow>();
     for (const r of pageReport?.rows ?? []) {
       const p = normPath(dim(r, 0));
+      // In the filter for its conversions only — this table is headed
+      // "לפי עמוד נחיתה" and a thank-you page is not a landing page.
+      if (conversionOnly.has(p)) continue;
       const sessions = met(r, 0);
       const row = byPath.get(p) ?? { path: p, sessions: 0, engagementRate: 0, avgSeconds: 0 };
       const totalEr = row.engagementRate * row.sessions + met(r, 1) * sessions;
@@ -1412,6 +1515,7 @@ async function fetchGa4ReportUncached(
     intro,
     mode,
     wholeSite,
+    conversionPaths,
   };
 }
 
@@ -1443,11 +1547,20 @@ export async function fetchCityCampaigns(
   let dimensionFilter: Record<string, unknown> = cityFilter;
   if (!wholeSite) {
     const rawValues = await resolveRawPageValues(subjectEmail, propertyId, mode, paths);
-    if (rawValues.length === 0) return [];
+    if (rawValues.page.length === 0) return [];
+    // Conversion pages included for the same reason as the main report:
+    // this drill-down carries key events per campaign, and leaving them
+    // out would show the city's campaigns converting at zero while the
+    // section above them reports real conversions.
     dimensionFilter = {
       andGroup: {
         expressions: [
-          { filter: { fieldName: mode, inListFilter: { values: rawValues } } },
+          {
+            filter: {
+              fieldName: mode,
+              inListFilter: { values: [...rawValues.page, ...rawValues.conversion] },
+            },
+          },
           cityFilter,
         ],
       },
@@ -1539,7 +1652,9 @@ export async function fetchGa4Report(
   // when devices/cities/conversions were added, and would have stayed
   // broken for up to the 24h closed-window TTL.
   // v18: UTM leaf values decoded so +-encoded duplicates merge.
-  const key = `ga4Report:v18:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v19: pagePath-mode conversion pages folded into the page filter, so
+  //      `conversions` goes from null to populated on those properties.
+  const key = `ga4Report:v19:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
     [key],

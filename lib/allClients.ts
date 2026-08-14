@@ -324,6 +324,37 @@ export const getAllClientsCurrentForProject = cache(
 );
 
 /**
+ * The project's campaign FLIGHT window: earliest התחלה and latest סיום
+ * across its current channel rows.
+ *
+ * Same envelope the native report's header already reports on and draws
+ * its pacing bar from (lib/reportData.ts, live mode) — lifted out so the
+ * GA4 section can default to the campaign's own dates instead of a
+ * trailing 28 days, and the two stop describing different periods.
+ *
+ * Null when the project has no current rows or none of them carry both
+ * dates: a campaign with no flight has no window to default to, and
+ * guessing one would silently reshape every number in the section.
+ */
+export const getProjectFlightWindow = cache(
+  async (args: {
+    subjectEmail: string;
+    project: string;
+    projectSlug?: string;
+  }): Promise<{ startIso: string; endIso: string } | null> => {
+    const channels = await getAllClientsCurrentForProject(args).catch(() => []);
+    let startIso = "";
+    let endIso = "";
+    for (const c of channels) {
+      if (c.startIso && (!startIso || c.startIso < startIso)) startIso = c.startIso;
+      if (c.endIso && c.endIso > endIso) endIso = c.endIso;
+    }
+    if (!startIso || !endIso || startIso > endIso) return null;
+    return { startIso, endIso };
+  },
+);
+
+/**
  * Like getAllClientsCurrentForProject but returns the project's "חודשי"
  * (monthly) rows for a single calendar month (`yearMonth` = "YYYY-MM",
  * matched on the row's startIso) — one consolidated row per channel.
