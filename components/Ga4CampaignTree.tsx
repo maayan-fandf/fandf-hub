@@ -137,7 +137,7 @@ export default function Ga4CampaignTree({
         </div>
       </div>
       <div className="ga4w-table-wrap">
-        <table className="ga4w-table ga4w-tree">
+        <table className="ga4w-table ga4w-table-std ga4w-tree">
           <StandardHead first="ערוץ / קמפיין" showConv={showConv} />
           <tbody>{rows}</tbody>
         </table>

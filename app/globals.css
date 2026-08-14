@@ -9137,14 +9137,15 @@ html[data-theme="dark"] .ga4w-map-dot { fill: #a5b4fc; stroke: #c7d2fe; }
   font-size: 2.9px;
   fill: var(--muted);
 }
-/* min-width sized for the standard six columns, not for the three these
-   tables used to carry: below it the flex wraps and the table takes the
-   full block width, which is far better than seven columns crushed into
-   13rem beside a chart. */
-.ga4w-donut-side { flex: 1 1 26rem; min-width: 24rem; }
+/* Sized for the standard six columns, not for the three these tables used
+   to carry: below this the flex wraps and the table takes the full block
+   width, which is far better than seven columns crushed beside a chart.
+   overflow-x lets the fixed-width table scroll here rather than pushing
+   the whole section sideways. */
+.ga4w-donut-side { flex: 1 1 26rem; min-width: 24rem; overflow-x: auto; }
 
 /* City drill-down */
-.ga4w-map-side { flex: 1 1 26rem; min-width: 24rem; }
+.ga4w-map-side { flex: 1 1 26rem; min-width: 24rem; overflow-x: auto; }
 .ga4w-map-dot.is-clickable { cursor: pointer; }
 .ga4w-map-dot.is-clickable:hover { fill-opacity: 0.85; }
 .ga4w-map-dot.is-open {
@@ -9349,6 +9350,40 @@ html[data-theme="dark"] .rpt-util-fill-time {
   white-space: nowrap;
 }
 .ga4w-table tbody tr:last-child td { border-bottom: none; }
+
+/* Standard six-column tables (see components/Ga4Columns.tsx).
+   ────────────────────────────────────────────────────────────────────
+   Auto layout sizes every column to its own table's content, so the same
+   six measures landed at different x positions in each block — כניסות
+   under חלק under nothing in particular, and the eye had to re-find the
+   column in every table. Fixed widths put them at identical offsets.
+
+   In RTL the label column comes first and therefore sits on the RIGHT,
+   which is what makes this work across tables of different widths: the
+   six metric columns are packed against the LEFT edge, the label column
+   absorbs whatever is left over, and every one of these tables starts at
+   the same left edge of the block — including the two that sit beside a
+   chart, since the chart is the first flex child and lands on the right.
+   So a 925px table and a 775px table still line up. */
+.ga4w-table-std {
+  table-layout: fixed;
+  /* Below this the columns would crush rather than align, so the table
+     keeps its width and its container scrolls instead. */
+  min-width: 44rem;
+}
+.ga4w-table-std th:nth-child(2), .ga4w-table-std td:nth-child(2) { width: 4.5rem; }
+.ga4w-table-std th:nth-child(3), .ga4w-table-std td:nth-child(3) { width: 3.5rem; }
+.ga4w-table-std th:nth-child(4), .ga4w-table-std td:nth-child(4) { width: 6rem; }
+.ga4w-table-std th:nth-child(5), .ga4w-table-std td:nth-child(5) { width: 5rem; }
+.ga4w-table-std th:nth-child(6), .ga4w-table-std td:nth-child(6) { width: 6rem; }
+.ga4w-table-std th:nth-child(7), .ga4w-table-std td:nth-child(7) { width: 5.5rem; }
+/* The label column takes the remainder, so it is the one that has to
+   degrade — a long campaign name is worth truncating to keep the numbers
+   in line. */
+.ga4w-table-std td:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ga4w-camp {
   direction: ltr;
   text-align: end;

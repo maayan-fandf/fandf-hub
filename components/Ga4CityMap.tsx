@@ -134,7 +134,7 @@ export default function Ga4CityMap({
         </svg>
 
         <div className="ga4w-map-side">
-          <table className="ga4w-table ga4w-map-list">
+          <table className="ga4w-table ga4w-table-std ga4w-map-list">
             <StandardHead first="עיר" showConv={showConv} />
             <tbody>
               {cities.slice(0, 8).map((c) => (
@@ -187,7 +187,7 @@ export default function Ga4CityMap({
               )}
               {state === "idle" && rows && rows.length > 0 && (
                 <div className="ga4w-table-wrap">
-                  <table className="ga4w-table">
+                  <table className="ga4w-table ga4w-table-std">
                     <StandardHead first="קמפיין" showConv={showConv} />
                     <tbody>
                       {rows.map((r) => (

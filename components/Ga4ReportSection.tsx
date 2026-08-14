@@ -352,7 +352,8 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
           />
         ))}
       </div>
-      <table className="ga4w-table">
+      <div className="ga4w-table-wrap">
+      <table className="ga4w-table ga4w-table-std">
         <StandardHead first="מקור" showConv={showConv} />
         <tbody>
           {data.sources.map((s) => (
@@ -380,6 +381,7 @@ function Sources({ data, showConv }: { data: Ga4ReportData; showConv: boolean })
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -393,7 +395,7 @@ function Campaigns({ data, showConv }: { data: Ga4ReportData; showConv: boolean 
     <div className="ga4w-block">
       <h3 className="ga4w-h3">פילוח לפי קמפיין</h3>
       <div className="ga4w-table-wrap">
-        <table className="ga4w-table">
+        <table className="ga4w-table ga4w-table-std">
           <StandardHead first="קמפיין" showConv={showConv} />
           <tbody>
             {rows.map((c) => (
@@ -523,7 +525,8 @@ function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
   return (
     <div className="ga4w-block">
       <h3 className="ga4w-h3">מבקרים חדשים מול חוזרים</h3>
-      <table className="ga4w-table">
+      <div className="ga4w-table-wrap">
+      <table className="ga4w-table ga4w-table-std">
         <StandardHead first="סוג מבקר" showConv />
         <tbody>
           {r.rows.map((x) => (
@@ -542,6 +545,7 @@ function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
           ))}
         </tbody>
       </table>
+      </div>
       {lift && lift > 1.15 && (
         <div className="ga4w-note">
           מבקרים חוזרים ממירים פי {lift.toFixed(1)} ממבקרים חדשים — כלומר חלק
@@ -599,7 +603,8 @@ function ForeignTraffic({
         לא אמור לקבל תנועה כזו בהיקף הזה — כדאי לבדוק את הגדרות המיקוד
         הגאוגרפי בקמפיינים.
       </p>
-      <table className="ga4w-table">
+      <div className="ga4w-table-wrap">
+      <table className="ga4w-table ga4w-table-std">
         <StandardHead first="מקור" showConv />
         <tbody>
           <tr>
@@ -628,6 +633,7 @@ function ForeignTraffic({
           </tr>
         </tbody>
       </table>
+      </div>
       {abroad.topCountries.length > 0 && (
         <div className="ga4w-chips">
           {abroad.topCountries.map((c) => (
@@ -820,7 +826,8 @@ function Devices({
         {/* The conversion columns only earn their place when the property
             tags key events — otherwise they are a column of 0% that looks
             like every device fails to convert. */}
-        <table className="ga4w-table ga4w-donut-side">
+        <div className="ga4w-donut-side">
+        <table className="ga4w-table ga4w-table-std">
         <StandardHead first="מכשיר" showConv={hasKeyEvents} />
         <tbody>
           {rows.map((r) => (
@@ -842,6 +849,7 @@ function Devices({
           ))}
         </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -869,7 +877,8 @@ function Pages({
   return (
     <div className="ga4w-block">
       <h3 className="ga4w-h3">לפי עמוד נחיתה</h3>
-      <table className="ga4w-table">
+      <div className="ga4w-table-wrap">
+      <table className="ga4w-table ga4w-table-std">
         <StandardHead first="עמוד" showConv={showConv} />
         <tbody>
           {rows.map((p) => (
@@ -890,6 +899,7 @@ function Pages({
           ))}
         </tbody>
       </table>
+      </div>
       {showConv && !perPageConv && (
         <div className="ga4w-note">
           אירועי המפתח בנכס הזה נרשמים בעמוד תודה נפרד ולא בעמוד הנחיתה עצמו,
