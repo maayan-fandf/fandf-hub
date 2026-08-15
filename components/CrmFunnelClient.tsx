@@ -340,32 +340,81 @@ export default function CrmFunnelClient({
 
   // ── Status funnel rows (filtered + top-N + funnel-ordered) ────────
   const statusRows = useMemo(() => {
-    const candidates: { label: string; count: number; sources: StackedSource[] }[] = [];
+    const offFunnel = new Set(sm.offFunnelStatuses ?? []);
+    const stages: {
+      label: string;
+      srcMap: Record<string, number>;
+      isOffFunnel: boolean;
+    }[] = [];
     for (const status of sm.statusFunnelOrder) {
       const srcMap = sm.statusBySource[status] || {};
-      const { count, sources } = projectRow(srcMap, TOP_SOURCES_PER_ROW);
-      if (count === 0) continue;
-      candidates.push({ label: status, count, sources });
+      if (projectRow(srcMap, TOP_SOURCES_PER_ROW).count === 0) continue;
+      stages.push({ label: status, srcMap, isOffFunnel: offFunnel.has(status) });
     }
-    // Pick top-N by filtered count, then re-sort by canonical funnel
-    // order so the narrative reads top → bottom as a sales funnel.
+
+    // "At this stage or later" accumulates from the bottom of the LINEAR
+    // funnel, over every linear stage rather than the displayed ones, and
+    // per SOURCE rather than as a flat total. Three faults lived here:
+    //
+    // Side states were summed in, so every disqualified lead was credited
+    // with having reached each stage above it — Essence read 46 at
+    // "ניסיון תיאום פגישה or beyond" when 32 of those were לא רלוונטי and
+    // the KPI beside it said 2 meetings were ever scheduled.
+    //
+    // The sum ran over the top-N SURVIVORS, so a stage squeezed out of
+    // the display silently vanished from the totals of the stages above
+    // it, while the percentage beside them was still taken against all
+    // leads.
+    //
+    // And the coloured segments were sized against the count at exactly
+    // that stage while the bar they sit in was sized by the cumulative —
+    // so the bar's own width said one number and its channel split
+    // described a different, smaller population.
+    const linear = stages.filter((s) => !s.isOffFunnel);
+    const cumMaps = new Map<string, Record<string, number>>();
+    const acc: Record<string, number> = {};
+    for (let i = linear.length - 1; i >= 0; i--) {
+      for (const [src, c] of Object.entries(linear[i].srcMap)) {
+        acc[src] = (acc[src] ?? 0) + c;
+      }
+      cumMaps.set(linear[i].label, { ...acc });
+    }
+
+    const rows = stages.map((s) => {
+      const own = projectRow(s.srcMap, TOP_SOURCES_PER_ROW);
+      // An off-funnel row shows its own occupancy: there is no "or later"
+      // for a state the funnel does not continue through.
+      const shown = s.isOffFunnel
+        ? own
+        : projectRow(cumMaps.get(s.label) ?? s.srcMap, TOP_SOURCES_PER_ROW);
+      return {
+        label: s.label,
+        isOffFunnel: s.isOffFunnel,
+        count: own.count,
+        cumulative: shown.count,
+        sources: shown.sources,
+      };
+    });
+
+    // Pick top-N by the count AT the stage, then re-sort by canonical
+    // funnel order so the narrative reads top → bottom as a sales funnel.
     const order = new Map(sm.statusFunnelOrder.map((s, i) => [s, i]));
-    const top = [...candidates]
+    const top = [...rows]
       .sort((a, b) => b.count - a.count)
       .slice(0, TOP_STATUSES)
       .sort((a, b) => (order.get(a.label) ?? 999) - (order.get(b.label) ?? 999));
-    // Cumulative counts from the end → narrowing funnel from top to bottom.
-    const cumulative: number[] = new Array(top.length).fill(0);
-    let acc = 0;
-    for (let i = top.length - 1; i >= 0; i--) {
-      acc += top[i].count;
-      cumulative[i] = acc;
-    }
-    const maxCum = cumulative[0] || 1;
-    return top.map((row, i) => ({
+
+    // Scaled against the widest LINEAR bar, so an off-funnel state cannot
+    // become the yardstick the funnel is read against — לא רלוונטי is
+    // half of Essence's leads and would otherwise set the scale for
+    // stages it is not part of.
+    const maxCum = Math.max(
+      1,
+      ...rows.filter((r) => !r.isOffFunnel).map((r) => r.cumulative),
+    );
+    return top.map((row) => ({
       ...row,
-      cumulative: cumulative[i],
-      widthPct: (cumulative[i] / maxCum) * 100,
+      widthPct: Math.min(100, (row.cumulative / maxCum) * 100),
     }));
   }, [selected, sm]);
 
@@ -885,24 +934,43 @@ export default function CrmFunnelClient({
               <ul className="crm-matrix" ref={statusListRef}>
                 {statusRows.map((row) => {
                   const cumPct = (row.cumulative / Math.max(1, kpis.leads) * 100).toFixed(1);
-                  const tooltip =
-                    `${row.label} — ${row.cumulative} (${cumPct}% מהלידים הגיעו לשלב הזה או מעבר)\n` +
-                    `מתוכם ${row.count} (${pct(row.count, kpis.leads)}) נמצאים כעת בשלב הזה בדיוק`;
+                  // "הגיעו לשלב הזה או מעבר" (reached this stage or past
+                  // it) claimed history the data does not hold — a lead
+                  // carries one current status, not a trail. The wording
+                  // now describes what is actually summed: who is sitting
+                  // at this stage or a later one right now.
+                  const tooltip = row.isOffFunnel
+                    ? `${row.label} — ${row.count} (${pct(row.count, kpis.leads)} מהלידים)\n` +
+                      `סטטוס מחוץ למשפך: הליד יצא מהתהליך, ולכן אינו נספר בשלבים שמעליו`
+                    : `${row.label} — ${row.cumulative} (${cumPct}% מהלידים נמצאים בשלב הזה או בשלב מתקדם יותר)\n` +
+                      `מתוכם ${row.count} (${pct(row.count, kpis.leads)}) נמצאים כעת בשלב הזה בדיוק`;
                   return (
-                    <li key={row.label} data-flip={row.label} className="crm-matrix-row" title={tooltip}>
+                    <li
+                      key={row.label}
+                      data-flip={row.label}
+                      className={"crm-matrix-row" + (row.isOffFunnel ? " is-offfunnel" : "")}
+                      title={tooltip}
+                    >
                       <span className="crm-matrix-label" title={row.label}>{row.label}</span>
                       <span className="crm-matrix-bar" style={{ width: `${row.widthPct}%` }}>
                         {row.sources.map((s) => {
-                          const w = (s.count / row.count) * 100;
+                          // Denominator is the number the BAR is drawn
+                          // from, so the segments describe the population
+                          // the bar's width represents.
+                          const w = (s.count / Math.max(1, row.cumulative)) * 100;
                           if (w < 0.5) return null;
                           return (
                             <span
-                              key={s.source}
+                              // The rest bucket is literally labelled
+                              // "אחר", which collides with a real source
+                              // of that name — React then drops one of
+                              // the two segments.
+                              key={s.isOther ? "__rest__" : s.source}
                               className={"crm-matrix-seg" + (s.isOther ? " crm-matrix-seg-rest" : "")}
                               style={s.isOther
                                 ? { width: `${w}%` }
                                 : { width: `${w}%`, background: palette.get(s.source) }}
-                              title={`${channelIcon(s.source)} ${s.source} — ${s.count} (${pct(s.count, row.count)})`.trim()}
+                              title={`${channelIcon(s.source)} ${s.source} — ${s.count} (${pct(s.count, row.cumulative)})`.trim()}
                             />
                           );
                         })}

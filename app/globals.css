@@ -7405,6 +7405,21 @@ html[data-theme="dark"] .crm-trend-hilite {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+/* Side and terminal states (לא רלוונטי, סגור, מאגר…). Their number is a
+   plain occupancy count, while every row above it is "at this stage or
+   later" — two different measures in one column, so the row is dimmed
+   and separated to stop it being read as the bottom of the funnel. */
+.crm-matrix-row.is-offfunnel {
+  opacity: 0.72;
+  border-top: 1px dashed var(--border-soft, var(--border));
+  padding-top: 0.3rem;
+}
+/* Only the FIRST one carries the divider — the general sibling
+   combinator matches every off-funnel row that follows another. */
+.crm-matrix-row.is-offfunnel ~ .crm-matrix-row.is-offfunnel {
+  border-top: none;
+  padding-top: 0;
+}
 .crm-matrix-legend {
   list-style: none;
   margin: 0.5rem 0 0;

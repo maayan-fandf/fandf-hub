@@ -125,6 +125,13 @@ export type CrmFunnel = {
      *  re-sorts the picks by this list so the funnel narrative is
      *  preserved under any chip selection. */
     statusFunnelOrder: string[];
+    /** The subset of statusFunnelOrder that is NOT a linear funnel stage
+     *  — side and terminal states (לא רלוונטי, סגור, מאגר…) plus any
+     *  status the canonical order does not recognise. These must be
+     *  excluded from the funnel's "at this stage or later" arithmetic:
+     *  a lead sitting in לא רלוונטי has left the funnel, and where it
+     *  got to before that is not recoverable from its status. */
+    offFunnelStatuses: string[];
     /** source → lead count. Every counted row contributed once. */
     leadsBySource: Record<string, number>;
     /** source → contacted count. Subset of leadsBySource. */
@@ -675,7 +682,19 @@ function computeJourneyVelocity(
  * re-sorts the picks by the array's position; unknown stages append at
  * the end via `buildSourceMatrices`.
  */
-export const BMBY_STATUS_FUNNEL_ORDER = [
+/**
+ * The off-funnel states are split into their own array rather than just
+ * trailing the linear ones behind a comment, because the funnel chart
+ * has to be able to TELL THEM APART at runtime, not just order them.
+ *
+ * It builds each stage's "at this stage or later" figure by summing the
+ * counts below it, which is only valid down a linear funnel. With the
+ * side states merged into one array they were summed too, so every
+ * disqualified lead was credited with having reached every stage above
+ * it: Essence showed 46 leads at "ניסיון תיאום פגישה or beyond" when 32
+ * of those were "לא רלוונטי" and only 2 ever scheduled a meeting.
+ */
+const BMBY_LINEAR_STATUSES = [
   "ליד",
   "אינטרנט",
   "טלפון",
@@ -695,7 +714,11 @@ export const BMBY_STATUS_FUNNEL_ORDER = [
   "שיחת מכירה",
   "ברכישה",
   "חוזה",
-  // off-funnel side states — visually trail the linear funnel
+];
+
+/** Side and terminal states — a lead here has left the linear funnel,
+ *  and its position in it is no longer knowable from its status. */
+export const BMBY_OFF_FUNNEL_STATUSES = [
   "פגישה בוטלה",
   "מאגר",
   "תעסוקה",
@@ -704,7 +727,12 @@ export const BMBY_STATUS_FUNNEL_ORDER = [
   "לא רלוונטי",
 ];
 
-export const SEHEL_STATUS_FUNNEL_ORDER = [
+export const BMBY_STATUS_FUNNEL_ORDER = [
+  ...BMBY_LINEAR_STATUSES,
+  ...BMBY_OFF_FUNNEL_STATUSES,
+];
+
+const SEHEL_LINEAR_STATUSES = [
   "| פניה חדשה",
   "| נוצר קשר ראשוני",
   "| בקשר",
@@ -715,8 +743,13 @@ export const SEHEL_STATUS_FUNNEL_ORDER = [
   "| אחרי פגישה",
   "| פגישות",
   "| עסקה",
-  // off-funnel side states
-  "| הרשמה",
+];
+
+export const SEHEL_OFF_FUNNEL_STATUSES = ["| הרשמה"];
+
+export const SEHEL_STATUS_FUNNEL_ORDER = [
+  ...SEHEL_LINEAR_STATUSES,
+  ...SEHEL_OFF_FUNNEL_STATUSES,
 ];
 
 /**
@@ -848,7 +881,7 @@ const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
   ...SALESFORCE_HELD_STATUSES,
 ]);
 
-export const SALESFORCE_STATUS_FUNNEL_ORDER = [
+const SALESFORCE_LINEAR_STATUSES = [
   // שלב הליד
   "חדש",
   "ניסיון יצירת קשר",
@@ -866,11 +899,20 @@ export const SALESFORCE_STATUS_FUNNEL_ORDER = [
   "תהליך אישור מכירות",
   "בקשת רכישה",
   "חוזה בחתימה",
-  // off-funnel / terminal side states
+];
+
+/** See BMBY_OFF_FUNNEL_STATUSES — these must stay OUT of the funnel's
+ *  cumulative. "לא רלוונטי" alone was 32 of Essence's 65 leads. */
+export const SALESFORCE_OFF_FUNNEL_STATUSES = [
   "סגור",
   "נסגר בהפסד",
   "ליד חוזר",
   "לא רלוונטי",
+];
+
+export const SALESFORCE_STATUS_FUNNEL_ORDER = [
+  ...SALESFORCE_LINEAR_STATUSES,
+  ...SALESFORCE_OFF_FUNNEL_STATUSES,
 ];
 
 /**
@@ -1340,6 +1382,7 @@ function aggregateBmbyFunnel(
       allSourcesMap: bySource,
       statusObserved: byStatus,
       funnelOrder: BMBY_STATUS_FUNNEL_ORDER,
+      offFunnel: BMBY_OFF_FUNNEL_STATUSES,
       leadsBySource, contactedBySource,
       scheduledMeetingsBySource, canceledMeetingsBySource, meetingsBySource,
       contractsBySource,
@@ -2068,6 +2111,7 @@ function aggregateSehelFunnel(
       allSourcesMap: bySource,
       statusObserved: byStatus,
       funnelOrder: SEHEL_STATUS_FUNNEL_ORDER,
+      offFunnel: SEHEL_OFF_FUNNEL_STATUSES,
       leadsBySource, contactedBySource,
       scheduledMeetingsBySource, meetingsBySource,
       contractsBySource,
@@ -2874,6 +2918,7 @@ async function computeSalesforceFunnel(
       allSourcesMap: bySource,
       statusObserved: byStatus,
       funnelOrder: SALESFORCE_STATUS_FUNNEL_ORDER,
+      offFunnel: SALESFORCE_OFF_FUNNEL_STATUSES,
       leadsBySource, contactedBySource,
       scheduledMeetingsBySource,
       canceledMeetingsBySource: hasMeetingStatuses ? canceledMeetingsBySource : undefined,
@@ -2906,6 +2951,7 @@ function buildSourceMatrices(args: {
   allSourcesMap: Map<string, number>;
   statusObserved: Map<string, number>;
   funnelOrder: readonly string[];
+  offFunnel: readonly string[];
   leadsBySource: Map<string, number>;
   contactedBySource: Map<string, number>;
   scheduledMeetingsBySource: Map<string, number>;
@@ -2932,9 +2978,15 @@ function buildSourceMatrices(args: {
     .filter(([s]) => !seen.has(s))
     .sort((a, b) => b[1] - a[1])
     .map(([s]) => s);
+  // A status the canonical order does not know about goes in the
+  // off-funnel set too: an unrecognised label has no knowable position in
+  // the funnel, and assuming one would put its leads into the "reached
+  // this stage or later" figure of every stage above it.
+  const off = new Set([...args.offFunnel, ...tail]);
   return {
     allSources,
     statusFunnelOrder: [...ordered, ...tail],
+    offFunnelStatuses: [...ordered, ...tail].filter((s) => off.has(s)),
     leadsBySource: toRec(args.leadsBySource),
     contactedBySource: toRec(args.contactedBySource),
     scheduledMeetingsBySource: toRec(args.scheduledMeetingsBySource),
