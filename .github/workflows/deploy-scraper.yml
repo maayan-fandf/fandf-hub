@@ -1,0 +1,128 @@
+# Rebuild + redeploy the price scraper whenever its code changes.
+#
+# Why this exists: the hub deploys itself through Firebase App Hosting on
+# every push, but the scraper is a Cloud Run job baked into a container
+# image, and its deploy was manual. Eight commits to the extractor sat
+# unshipped for two months — including the fix for a price that the hub
+# was visibly reporting wrong — because nothing connected "merged" to
+# "running". Any fix to lib/priceExtractor.ts is invisible in production
+# until an image is built, so the build has to be automatic.
+#
+# Deliberately NOT a copy of scraper/deploy.sh. That script bootstraps
+# the whole estate (creates service accounts, grants IAM, writes the
+# Cloud Scheduler entry) and needs permissions no CI job should hold.
+# This one does the only thing that has to happen repeatedly: build the
+# image, then point the existing job at that exact digest. Run deploy.sh
+# by hand when the infrastructure itself changes.
+name: deploy-scraper
+
+on:
+  push:
+    branches: [main]
+    # Only the files that end up INSIDE the image. A change to the Next.js
+    # app cannot alter the scraper's behaviour, and rebuilding on every
+    # push would burn Cloud Build minutes for nothing.
+    paths:
+      - "lib/priceExtractor.ts"
+      - "scripts/scrape-landing-prices.mjs"
+      - "scraper/**"
+      - ".github/workflows/deploy-scraper.yml"
+  workflow_dispatch:
+    inputs:
+      run_after_deploy:
+        description: "Execute the job once after deploying"
+        type: boolean
+        default: false
+
+# Two deploys racing would leave the job pointing at whichever digest
+# finished last, not the newest commit.
+concurrency:
+  group: deploy-scraper
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: fandf-dashboard
+  REGION: europe-west4
+  JOB_NAME: fandf-price-scraper
+  REPO_NAME: fandf-scraper
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for Workload Identity Federation — the job mints a
+      # short-lived OIDC token instead of holding a service-account key.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build image
+        run: |
+          set -euo pipefail
+          IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${JOB_NAME}:latest"
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+          gcloud builds submit \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --config=scraper/cloudbuild.yaml \
+            --substitutions="_IMAGE_URI=$IMAGE_URI" \
+            --gcs-source-staging-dir="gs://${PROJECT_ID}_cloudbuild/source" \
+            .
+
+      # By digest, never by the :latest tag — a tag-based deploy is how a
+      # freshly built image failed to reach the running container on
+      # 2026-08-16 while every step still reported success.
+      - name: Resolve digest and deploy
+        run: |
+          set -euo pipefail
+          DIGEST="$(gcloud artifacts docker images describe "$IMAGE_URI" \
+            --project="$PROJECT_ID" --format='value(image_summary.digest)')"
+          if [ -z "$DIGEST" ]; then
+            echo "::error::could not resolve a digest for $IMAGE_URI"
+            exit 1
+          fi
+          PINNED="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${JOB_NAME}@${DIGEST}"
+          echo "deploying $PINNED"
+          echo "PINNED=$PINNED" >> "$GITHUB_ENV"
+          gcloud run jobs update "$JOB_NAME" \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --image="$PINNED"
+
+      # The image can only be verified by running it: the scraper prints a
+      # sha256 of the extractor it loaded, and comparing that against the
+      # checked-out file proves the container carries THIS commit's code.
+      - name: Report expected extractor fingerprint
+        run: |
+          set -euo pipefail
+          EXPECTED="$(sha256sum lib/priceExtractor.ts | cut -c1-12)"
+          {
+            echo "### Scraper deployed"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| image | \`${PINNED}\` |"
+            echo "| expected \`priceExtractor sha256\` | \`${EXPECTED}\` |"
+            echo ""
+            echo "Verify after the next run:"
+            echo ""
+            echo '```'
+            echo "gcloud logging read \"resource.labels.job_name=${JOB_NAME} AND textPayload:priceExtractor\" --limit=1 --project=${PROJECT_ID} --format=\"value(textPayload)\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute job
+        if: inputs.run_after_deploy
+        run: |
+          gcloud run jobs execute "$JOB_NAME" \
+            --project="$PROJECT_ID" --region="$REGION" --wait

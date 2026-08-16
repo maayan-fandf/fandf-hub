@@ -1,6 +1,17 @@
 # Only the scraper script + its single import are needed in the image.
 # Everything else from the hub repo (Next.js app, dashboard, tests,
 # build artifacts) just bloats the build context and slows pushes.
+#
+# Named `Dockerfile.dockerignore`, NOT `.dockerignore`. Docker reads an
+# ignore file from the CONTEXT root, and the context here is the repo
+# root — so `scraper/.dockerignore` was never read by anything, which is
+# why builds uploaded 607 files / 20.6 MiB instead of the five below.
+# BuildKit looks for `<dockerfile-path>.dockerignore` first, so this name
+# applies the rules without putting a `*`-then-whitelist file at the repo
+# root, where Firebase App Hosting's builds would also be in its path.
+# BuildKit is enabled explicitly in scraper/cloudbuild.yaml; if it ever
+# is not, this file is simply ignored and the build still succeeds with
+# the larger context.
 *
 !scraper/Dockerfile
 !scraper/package.json

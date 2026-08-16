@@ -7,7 +7,11 @@
 # scraper's needed files, so the build is fast even though the context
 # is the whole repo.
 steps:
+  # DOCKER_BUILDKIT=1 so the builder honours scraper/Dockerfile.dockerignore.
+  # The classic builder only reads an ignore file from the context root,
+  # and putting one there would also sit in Firebase App Hosting's path.
   - name: gcr.io/cloud-builders/docker
+    env: ["DOCKER_BUILDKIT=1"]
     args:
       - build
       - --file=scraper/Dockerfile
