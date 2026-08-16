@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense, cache } from "react";
 import { redirect } from "next/navigation";
 import HomeFilterBar from "@/components/HomeFilterBar";
 import StaggerReveal from "@/components/anim/StaggerReveal";
@@ -12,7 +13,6 @@ import {
   GENERAL_PROJECT_NAME,
   type Project,
   type MyCountsPerProject,
-  type MorningFeed,
 } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
@@ -57,28 +57,37 @@ export default async function HomePage() {
   // entry — otherwise the morning feed would fetch twice per request.
   const morningScope = morningScopeFor(effectiveMe);
 
-  const [projectsRes, countsRes, morningRes, allClientsRes, slugMapRes] =
+  // `getMorningFeed` is deliberately NOT in this batch — same reasoning as
+  // app/projects/[project]/page.tsx L161. MEASURED 2026-08-16 on a cold
+  // cache: the feed is 132s for scope=all, every other read here totals
+  // ~3.5s, and a full cold render of this page was 111.2s against 1.7s
+  // warm. Since `allSettled` resolves on the SLOWEST entry, one Apps
+  // Script call for three decorative badge pills was setting the whole
+  // page's wall-clock. It now streams in via <Suspense> below (see
+  // morningAlertCounts) so the grid paints off the fast reads alone.
+  //
+  // Nothing else on this page needs it: the metrics, the ended/inactive
+  // filters and the funnel strip were all moved onto the direct ALL
+  // CLIENTS read (see the block below) — the badges were the last
+  // holdout.
+  const [projectsRes, countsRes, allClientsRes, slugMapRes] =
     await Promise.allSettled([
       getMyProjects(viewAs || undefined),
       getMyCounts(viewAs || undefined),
-      // Morning feed powers alert badges AND the "hide ended" filter (via
-      // endIso). Returns empty for clients (gated internal-only) so we
-      // silently swallow access errors.
-      getMorningFeed({ scope: morningScope, overrideEmail: viewAs || undefined }),
       // ALL CLIENTS (5-min cached, read as the folder owner) + the Keys
       // name→slug map power the per-project CRM funnel strip (leads /
-      // sched / held + cost-per-metric). Both are cheap cached reads that
-      // overlap the ~6s morning feed, so they add ~no wall-clock. Joined
-      // for EVERY viewer incl. clients (each of whom only ever holds their
-      // own col-E projects) — see the metrics block below.
+      // sched / held + cost-per-metric). Measured cold at 0.68s and 2.0s
+      // respectively (the latter carries the one-time JWT/DWD handshake),
+      // so together with the counts read they set the ~3.5s floor this
+      // page now renders at. Joined for EVERY viewer incl. clients (each
+      // of whom only ever holds their own col-E projects) — see the
+      // metrics block below.
       getAllClientsAllRows(driveFolderOwner()),
       getSlugByProjectName(driveFolderOwner()),
     ]);
 
   const data = projectsRes.status === "fulfilled" ? projectsRes.value : null;
   const counts = countsRes.status === "fulfilled" ? countsRes.value : null;
-  const morning: MorningFeed | null =
-    morningRes.status === "fulfilled" ? morningRes.value : null;
   const error =
     projectsRes.status === "rejected"
       ? projectsRes.reason instanceof Error
@@ -211,43 +220,9 @@ export default async function HomePage() {
     byCompany.set(g.company || "__ungrouped", { openTasks, openMentions });
   }
 
-  // Alert counts per project + per company, built from the morning feed.
-  // Dismissed signals are explicitly excluded so badges reflect what still
-  // needs attention — matches the severity-count logic inside the feed.
-  // Alert badge counts stay sourced from the morning feed — the alert
-  // *signals* are the morning-feed computation itself and have no direct
-  // equivalent. When the feed is down, pills just show no alert badge (the
-  // metrics + filters no longer depend on it).
-  const alertsByProject = new Map<string, AlertCounts>();
-  if (morning) {
-    for (const p of morning.projects) {
-      const ac: AlertCounts = { severe: 0, warn: 0, info: 0 };
-      for (const s of p.signals) {
-        if (s.dismissed) continue;
-        if (s.severity === "severe") ac.severe++;
-        else if (s.severity === "warn") ac.warn++;
-        else if (s.severity === "info") ac.info++;
-      }
-      if (ac.severe || ac.warn || ac.info) {
-        alertsByProject.set(p.name, ac);
-      }
-    }
-  }
-  const alertsByCompany = new Map<string, AlertCounts>();
-  for (const g of grouped) {
-    const agg: AlertCounts = { severe: 0, warn: 0, info: 0 };
-    for (const p of g.projects) {
-      const ac = alertsByProject.get(p.name);
-      if (ac) {
-        agg.severe += ac.severe;
-        agg.warn += ac.warn;
-        agg.info += ac.info;
-      }
-    }
-    if (agg.severe || agg.warn || agg.info) {
-      alertsByCompany.set(g.company || "__ungrouped", agg);
-    }
-  }
+  // Alert counts are no longer computed here — they arrive via the two
+  // <Suspense>-wrapped components below, off `morningAlertCounts`. See
+  // the note on the fetch batch above for why.
 
   return (
     <main className="container">
@@ -341,9 +316,13 @@ export default async function HomePage() {
                   <span className="company-group-name">
                     {g.company || "ללא חברה"}
                   </span>
-                  <AlertPills
-                    counts={alertsByCompany.get(g.company || "__ungrouped")}
-                  />
+                  <Suspense fallback={null}>
+                    <CompanyAlertPills
+                      projectNames={g.projects.map((p) => p.name)}
+                      scope={morningScope}
+                      overrideEmail={viewAs || undefined}
+                    />
+                  </Suspense>
                   <ProjectPillBadges
                     counts={byCompany.get(g.company || "__ungrouped")}
                   />
@@ -361,7 +340,6 @@ export default async function HomePage() {
                 <ul className="project-list">
                   {g.projects.map((p) => {
                     const pc = byProject[p.name];
-                    const ac = alertsByProject.get(p.name);
                     const pg = progressByProject.get(p.name);
                     const pf = funnelByProject.get(p.name);
                     const ended = isProjectEndedByIso(
@@ -381,7 +359,13 @@ export default async function HomePage() {
                         <Link href={projectHref(p.name, p.company)}>
                           <div className="project-pill-top">
                             <span className="project-pill-name">{p.name}</span>
-                            <AlertPills counts={ac} />
+                            <Suspense fallback={null}>
+                              <ProjectAlertPills
+                                projectName={p.name}
+                                scope={morningScope}
+                                overrideEmail={viewAs || undefined}
+                              />
+                            </Suspense>
                             <ProjectPillBadges counts={pc} />
                           </div>
                           {pg && <ProjectPillProgress progress={pg} />}
@@ -401,6 +385,106 @@ export default async function HomePage() {
 }
 
 /* ─── Subcomponents ──────────────────────────────────────────────── */
+
+/**
+ * Per-project alert counts from the morning feed, keyed by project name.
+ *
+ * Wrapped in React `cache()`, NOT `unstable_cache` — the cross-request
+ * caching already lives one layer down in `fetchMorningFeedCached`
+ * (lib/appsScript.ts), and nesting one unstable_cache inside another
+ * resolves broken in this codebase (the 2026-05-16 nav bug written up at
+ * lib/projectEnded.ts L57-114). `cache()` here does exactly one job: the
+ * ~84 <Suspense> boundaries on this page — one per project plus one per
+ * company — all await THE SAME promise, so the grid costs one feed call,
+ * not eighty-four.
+ *
+ * The two args are primitives on purpose. React `cache()` keys on
+ * argument identity, so passing an array or object would defeat the
+ * dedup and every boundary would fetch its own copy.
+ *
+ * Catches internally and resolves to an empty map on failure. This is
+ * load-bearing: the repo has no error.tsx anywhere in app/, so an
+ * uncaught throw inside a Suspense child has no boundary to land on and
+ * would take down the whole route — for decorative badges. Same
+ * fail-quiet contract as findProjectInMorningFeed on the project page.
+ */
+const morningAlertCounts = cache(
+  async (
+    scope: "all" | "mine",
+    overrideEmail: string | undefined,
+  ): Promise<Map<string, AlertCounts>> => {
+    const byProject = new Map<string, AlertCounts>();
+    try {
+      const feed = await getMorningFeed({ scope, overrideEmail });
+      // Dismissed signals are excluded so badges reflect what still needs
+      // attention — matches the severity-count logic inside the feed.
+      for (const p of feed.projects) {
+        const ac: AlertCounts = { severe: 0, warn: 0, info: 0 };
+        for (const s of p.signals) {
+          if (s.dismissed) continue;
+          if (s.severity === "severe") ac.severe++;
+          else if (s.severity === "warn") ac.warn++;
+          else if (s.severity === "info") ac.info++;
+        }
+        if (ac.severe || ac.warn || ac.info) byProject.set(p.name, ac);
+      }
+    } catch {
+      // Feed down or timed out — pills simply don't appear. The metrics
+      // and the ended/inactive filters don't depend on it.
+    }
+    return byProject;
+  },
+);
+
+/**
+ * Streamed alert pills for one project pill. Renders nothing until the
+ * feed lands (fallback=null) and nothing when the project has no active
+ * signals, so the common case is invisible either way.
+ */
+async function ProjectAlertPills({
+  projectName,
+  scope,
+  overrideEmail,
+}: {
+  projectName: string;
+  scope: "all" | "mine";
+  overrideEmail: string | undefined;
+}) {
+  const counts = await morningAlertCounts(scope, overrideEmail);
+  return <AlertPills counts={counts.get(projectName)} />;
+}
+
+/**
+ * Streamed alert pills for a collapsed company bar — the sum of its
+ * projects' counts. Takes the project NAMES rather than the counts so it
+ * can await the same cached feed the per-project pills use; summing here
+ * instead of in the page body is what lets the company bar stream
+ * alongside them rather than gating on them.
+ */
+async function CompanyAlertPills({
+  projectNames,
+  scope,
+  overrideEmail,
+}: {
+  projectNames: string[];
+  scope: "all" | "mine";
+  overrideEmail: string | undefined;
+}) {
+  const counts = await morningAlertCounts(scope, overrideEmail);
+  const agg: AlertCounts = { severe: 0, warn: 0, info: 0 };
+  for (const name of projectNames) {
+    const ac = counts.get(name);
+    if (!ac) continue;
+    agg.severe += ac.severe;
+    agg.warn += ac.warn;
+    agg.info += ac.info;
+  }
+  return (
+    <AlertPills
+      counts={agg.severe || agg.warn || agg.info ? agg : undefined}
+    />
+  );
+}
 
 /**
  * Alert-severity pills — shown at both company and project levels when

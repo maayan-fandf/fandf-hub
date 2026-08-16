@@ -876,8 +876,18 @@ export type MorningFeed = {
 // המידע · This operation was aborted" (owner-reported 2026-08-04). Once a
 // key has been fetched successfully, a later failure serves those signals
 // (flagged stale via `generatedAt`, which the page already renders) rather
-// than throwing. Keyed per (email, scope, project) because the feed is
-// roster-scoped — one shared slot would leak another user's projects.
+// than throwing. Keyed by the same cacheKey string getMorningFeed builds,
+// so it inherits that function's sharing rules exactly: scope=mine and
+// project-scoped feeds stay per-person (they ARE roster-scoped — one
+// shared slot there would leak another user's projects), while the
+// internal scope=all feed deliberately shares one slot. See the block in
+// getMorningFeed for why that is sound and what gates it.
+//
+// Two things stop a refused caller's empty envelope from pinning "no
+// alerts" onto the shared slot for the whole process lifetime: the gate
+// in getMorningFeed keeps non-internal callers off that key at all, and
+// the `scope !== "none"` test in the guard below refuses to snapshot a
+// refusal even if one somehow arrives.
 const lastGoodMorningFeed = new Map<string, MorningFeed>();
 
 const fetchMorningFeedCached = unstable_cache(
@@ -890,11 +900,50 @@ const fetchMorningFeedCached = unstable_cache(
     const params: Record<string, string> = {};
     if (scope) params.scope = scope;
     if (project) params.project = project;
+
+    // How long each fill took, logged because this call is on a slow
+    // drift toward its own abort ceiling and the crash lands SILENTLY.
+    // Measured: 110.4s (scope=mine, 2026-08-04) → 118.0s mine / 132.3s
+    // all (2026-08-16), against ACTION_TIMEOUT_MS.morningFeed = 170s.
+    //
+    // When it finally crosses, nothing else in this file will say so: a
+    // timeout is deliberately not retryable (see the `retryable` guard
+    // in apiFetchJson) so `onRetry` never fires, the last-good warn
+    // below only fires when a snapshot exists to serve, and the
+    // user-visible symptom — a project grid with no alert pills — is
+    // pixel-identical to a normal cold load. This line is the leading
+    // indicator instead of the post-mortem: grep `[appsScript]
+    // morningFeed` and watch the trend against the 170s figure printed
+    // alongside it.
+    //
+    // Fires on a cache FILL only, never on a hit, so it stays quiet by
+    // construction — and re-measuring by hand costs ~2min of wall-clock
+    // (scripts/probe-home-timings.mjs), which is why it's worth having
+    // recorded automatically.
+    const startedAt = Date.now();
+    const took = () => `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+    const abortsAt = `${(ACTION_TIMEOUT_MS.morningFeed ?? API_ATTEMPT_TIMEOUT_MS) / 1000}s`;
+
     try {
       const feed = await callApiAs<MorningFeed>(email, "morningFeed", params);
+      console.log(
+        `[appsScript] morningFeed scope=${scope ?? "mine"}${
+          project ? ` project=${project}` : ""
+        } filled in ${took()} (aborts at ${abortsAt}) — ${
+          feed?.projects?.length ?? 0
+        } projects`,
+      );
       // Only snapshot a structurally-real feed — caching a malformed/empty
       // payload would defeat the fallback (mirrors the keys.ts guard).
-      if (feed && Array.isArray(feed.projects)) {
+      //
+      // `scope !== "none"` rejects Apps Script's REFUSAL envelope, which
+      // is `{ scope: 'none', projects: [] }` (Code.js L5847-5857) and
+      // otherwise passes the Array.isArray test intact — snapshotting it
+      // would pin "no alerts" as last-good for the whole process
+      // lifetime. Testing `scope` rather than `projects.length` on
+      // purpose: an empty roster is a legitimately empty feed and should
+      // still be serve-able, a refusal never is.
+      if (feed && Array.isArray(feed.projects) && feed.scope !== "none") {
         lastGoodMorningFeed.set(cacheKey, feed);
       }
       return feed;
@@ -902,16 +951,52 @@ const fetchMorningFeedCached = unstable_cache(
       const stale = lastGoodMorningFeed.get(cacheKey);
       if (stale) {
         console.warn(
-          `[appsScript] morningFeed failed — serving last-good feed from ${stale.generatedAt} (${stale.projects.length} projects): ${String((e as Error)?.message ?? e).slice(0, 140)}`,
+          `[appsScript] morningFeed failed after ${took()} — serving last-good feed from ${stale.generatedAt} (${stale.projects.length} projects): ${String((e as Error)?.message ?? e).slice(0, 140)}`,
         );
         return stale;
       }
+      // The genuinely silent case: no snapshot to fall back on, so the
+      // badges just don't render and nothing upstream logs it. Say so
+      // explicitly before rethrowing — a duration at or near `abortsAt`
+      // here is the ceiling being hit, which reads very differently from
+      // a fast failure (Apps Script down, quota, bad token).
+      console.warn(
+        `[appsScript] morningFeed scope=${scope ?? "mine"} FAILED after ${took()} (aborts at ${abortsAt}) with no last-good to serve — alert badges will be missing: ${String((e as Error)?.message ?? e).slice(0, 140)}`,
+      );
       throw e; // nothing cached for this key yet — surface the real error
     }
   },
   ["morningFeed"],
   { revalidate: 300, tags: ["morning-feed"] },
 );
+
+/**
+ * Internal-domain test, deliberately mirroring the Apps Script gate
+ * EXACTLY rather than approximating it. In client-dashboard/Code.js,
+ * `_isInternalEmail_` (L9271) is a bare domain-suffix match against
+ * `CONFIG.TASKS_SA.INTERNAL_DOMAIN` ('fandf.co.il', L98), and
+ * `_hubIsAdmin_` (L10445) checks CONFIG.ADMIN_EMAILS — all three of
+ * which are themselves @fandf.co.il. So `isAdmin || isInternal`, the
+ * gate `_morningFeed_` (L5838) applies before returning any data,
+ * reduces exactly to this suffix test.
+ *
+ * That equivalence is what makes the shared cache key below safe, so
+ * if the Apps Script gate ever widens (a second internal domain, a
+ * non-domain staff allowlist) this MUST widen with it — otherwise the
+ * shared entry starts serving people Apps Script would have refused.
+ *
+ * Yes, this is the fourth copy of the same one-line domain test in
+ * lib/ (commentsDirect.ts, commentsWriteDirect.ts, sa.ts's
+ * effectiveSubject). Left local rather than reaching for one of those:
+ * they are private to modules with unrelated invariants, and a security
+ * predicate that silently changes meaning because another feature
+ * widened it is worse than a duplicate. Consolidating all four behind
+ * one exported helper is worth doing as its own change.
+ */
+const MORNING_INTERNAL_DOMAIN = "@fandf.co.il";
+function isInternalForMorningFeed(email: string): boolean {
+  return email.toLowerCase().trim().endsWith(MORNING_INTERNAL_DOMAIN);
+}
 
 export async function getMorningFeed(
   opts: {
@@ -925,12 +1010,65 @@ export async function getMorningFeed(
   } = {},
 ): Promise<MorningFeed> {
   const email = opts.overrideEmail || (await currentUserEmail());
+
+  // ── Shared cache entry for scope=all ──────────────────────────────
+  // MEASURED 2026-08-16: this call is 132s for scope=all (118s for
+  // scope=mine) and every other read the home page makes totals ~3.5s.
+  // Keying the cache per-email meant each staff member paid their own
+  // 132s cold fill for a byte-identical payload.
+  //
+  // Identical is not an assumption — read _morningFeed_ in
+  // client-dashboard/Code.js L5838: on scope='all' `allowedSet` is never
+  // populated, `scoped = allProjects` (no per-user filtering at all), and
+  // dismissals come from `_getAllAlertDismissals_()` which is global, not
+  // per-user. Only the echoed envelope (email / isAdmin / isInternal)
+  // varies by caller.
+  //
+  // Gated on the REQUESTER being internal, never on the scope string
+  // alone: /morning reads `scope` straight off the query string
+  // (app/morning/page.tsx L41), so an external client can and does ask
+  // for scope=all. Today Apps Script hands them an empty envelope; if we
+  // keyed purely on scope they would instead be served an internal
+  // user's filled entry — a portfolio-wide leak. `project` is excluded
+  // too, because a project-scoped feed IS access-gated per caller
+  // (Code.js L5878).
+  const shared =
+    opts.scope === "all" && !opts.project && isInternalForMorningFeed(email);
+
+  // Lazy-imported like every other @/lib/sa use in this file, to keep
+  // googleapis out of the module graph for callers that never need it.
+  const sharedSubject = shared
+    ? (await import("@/lib/sa")).driveFolderOwner()
+    : "";
+
+  // The shared entry is always filled AS this one fixed identity rather
+  // than as whichever staffer happened to arrive first, so its contents
+  // can't vary by who triggered the fill. But driveFolderOwner() is just
+  // an env read (DRIVE_FOLDER_OWNER, lib/sa.ts L538) with no guarantee
+  // it stays on-domain — and if it were ever pointed off-domain, every
+  // shared fill would become Apps Script's refusal envelope and blank
+  // the badges for all staff at once. Re-test it and fall back to
+  // per-email keying rather than trust the env.
+  const useShared = shared && isInternalForMorningFeed(sharedSubject);
+
   const cacheKey = JSON.stringify({
-    email,
+    email: useShared ? sharedSubject : email,
     scope: opts.scope,
     project: opts.project,
   });
-  return fetchMorningFeedCached(cacheKey);
+  const feed = await fetchMorningFeedCached(cacheKey);
+
+  // Restore the caller's own email on the envelope so no consumer can
+  // observe that the entry was shared. `isAdmin` is deliberately left
+  // as the filling identity's: deriving the real one would mean
+  // duplicating CONFIG.ADMIN_EMAILS here and letting it drift. That is
+  // only safe while every scope=all consumer reads it as
+  // `isAdmin || isInternal` (app/morning/page.tsx L220, L295, L302,
+  // L309) — both true for anyone who reaches this branch. Reading
+  // `isAdmin` ALONE off a scope=all feed would be wrong; nothing does
+  // today. api/morning/count L49 gates on it but only ever asks for
+  // scope=mine, which never takes this path.
+  return useShared && feed.email !== email ? { ...feed, email } : feed;
 }
 
 export type DismissResult = {
