@@ -201,6 +201,43 @@ export function calendarReadonlyClient(subjectEmail: string) {
 }
 
 /**
+ * The Workspace identity the hub reads Google Analytics as.
+ *
+ * FIXED, deliberately — not the signed-in viewer. GA4 grants property
+ * access to PEOPLE, so impersonating the viewer made every GA4 section's
+ * visibility depend on that person's GA seats. Measured 2026-08-16 over
+ * the 45 properties the hub can map a project onto:
+ *
+ *   maayan 45/45 · felix 29/45 · nadav 24/45 · itay 0/45
+ *
+ * Itay saw live traffic on no project at all, and silently: the sections
+ * catch the 403 and render nothing, so it looks like a project without a
+ * landing page rather than a permission problem.
+ *
+ * It was also backwards. `effectiveSubject` already swaps non-@fandf.co.il
+ * emails for DRIVE_FOLDER_OWNER, so external CLIENTS saw live traffic
+ * that F&F's own staff could not — the people paying for the report were
+ * better served than the people writing it.
+ *
+ * Access control is untouched. WHICH projects a person may open is
+ * decided against Keys (`getMyProjectsDirect` on the page, re-derived per
+ * request in /api/analytics/live) and never by GA permissions; this only
+ * decides whose identity signs the Analytics call. Handing GA4 seats to
+ * every employee would have been the other fix, but it is 25 accounts of
+ * manual work that has to be repeated for each new property and hire.
+ *
+ * Override with GA4_SUBJECT_EMAIL. Whoever it names must be able to read
+ * every property the hub reports on — if they can't, those projects go
+ * blank for EVERYONE at once, so re-run scripts/probe-ga4-coverage.mjs
+ * before changing it.
+ */
+export function analyticsSubject(): string {
+  return (process.env.GA4_SUBJECT_EMAIL || driveFolderOwner())
+    .toLowerCase()
+    .trim();
+}
+
+/**
  * Bearer token for the Google Analytics Data + Admin APIs (scope:
  * `analytics.readonly`, added to DWD on 2026-08-13).
  *
@@ -209,16 +246,10 @@ export function calendarReadonlyClient(subjectEmail: string) {
  * `analyticsadmin` surfaces — same reason `lib/clarity.ts` talks REST.
  * The token-off-the-JWT trick matches driveFolders.ts / chat.ts.
  *
- * GA4 grants property access to PEOPLE, not to service accounts, so the
- * impersonated subject is what decides which properties are visible.
- * For external viewers `getSAClient` swaps in DRIVE_FOLDER_OWNER, which
- * is how a client-facing page can read a property the client themselves
- * has no GA login for.
+ * Takes no subject on purpose — see `analyticsSubject` above.
  */
-export async function analyticsAccessToken(
-  subjectEmail: string,
-): Promise<string> {
-  const jwt = getSAClient(subjectEmail, [
+export async function analyticsAccessToken(): Promise<string> {
+  const jwt = getSAClient(analyticsSubject(), [
     "https://www.googleapis.com/auth/analytics.readonly",
   ]);
   const resp = await jwt.getAccessToken();

@@ -143,10 +143,16 @@ const ADMIN_API = "https://analyticsadmin.googleapis.com/v1beta";
  * `defaultUri`. Costs one call per property, so it is only ever built
  * for projects the sheet could not resolve, and cached for 12h.
  *
+ * "Visible" means visible to the hub's fixed analytics identity (see
+ * `analyticsSubject` in lib/sa.ts), which is what makes one process-wide
+ * cache correct. While GA4 was read as the signed-in user this map was
+ * still cached globally — so it silently described whichever viewer
+ * happened to warm it first.
+ *
  * Returns an empty map when the Admin API is disabled (403) — callers
  * treat that the same as "not found".
  */
-async function loadHostMap(subjectEmail: string): Promise<Map<string, PropRef>> {
+async function loadHostMap(): Promise<Map<string, PropRef>> {
   const now = Date.now();
   if (hostMapCache && hostMapCache.expiresAt > now) return hostMapCache.byHost;
   if (hostMapInFlight) return hostMapInFlight;
@@ -154,7 +160,7 @@ async function loadHostMap(subjectEmail: string): Promise<Map<string, PropRef>> 
   hostMapInFlight = (async () => {
     const byHost = new Map<string, PropRef>();
     try {
-      const token = await analyticsAccessToken(subjectEmail);
+      const token = await analyticsAccessToken();
       const hdr = { authorization: `Bearer ${token}` };
       const sres = await fetch(`${ADMIN_API}/accountSummaries?pageSize=200`, {
         headers: hdr,
@@ -254,7 +260,7 @@ export const resolveGa4Target = cache(
     }
 
     // Strategy 2 — authoritative host→stream mapping.
-    const byHost = await loadHostMap(subjectEmail);
+    const byHost = await loadHostMap();
     const viaHost = byHost.get(host);
     if (viaHost) {
       return {

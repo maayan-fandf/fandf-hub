@@ -55,7 +55,6 @@ export async function GET(req: Request) {
     if (!target) return NextResponse.json({ ok: false, reason: "no-property" });
 
     const rows = await fetchCityCampaigns(
-      email,
       target.propertyId,
       target.paths,
       city,

@@ -58,7 +58,6 @@ export default async function Ga4ReportSection({
   }).catch(() => null);
   const win = reportWindow(monthFilter, dateRange, flight);
   const data = await fetchGa4Report(
-    subjectEmail,
     target.propertyId,
     target.paths,
     win,

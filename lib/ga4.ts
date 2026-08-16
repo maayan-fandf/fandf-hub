@@ -3,8 +3,10 @@
  *
  * Talks raw REST for the same reason `lib/clarity.ts` does: the
  * `googleapis` build vendored here ships no `analyticsdata` surface.
- * Auth is the hub's existing service account impersonating a real F&F
- * identity — see `analyticsAccessToken` in lib/sa.ts.
+ * Auth is the hub's existing service account impersonating ONE fixed F&F
+ * identity — not the viewer, see `analyticsSubject` in lib/sa.ts. Nothing
+ * in this file takes a subject: what a viewer is allowed to see is
+ * decided against Keys before any of it is called.
  *
  * ── The one constraint that shapes this whole file ──
  *
@@ -116,12 +118,11 @@ type ReportRow = {
 };
 
 async function callGa4(
-  subjectEmail: string,
   propertyId: string,
   method: "runReport" | "runRealtimeReport",
   body: Record<string, unknown>,
 ): Promise<ReportRow[]> {
-  const token = await analyticsAccessToken(subjectEmail);
+  const token = await analyticsAccessToken();
   const res = await fetch(`${DATA_API}/properties/${propertyId}:${method}`, {
     method: "POST",
     headers: {
@@ -163,7 +164,6 @@ const titleCache = new Map<string, { expiresAt: number; titles: string[] }>();
 const TITLE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export async function fetchTitlesForPaths(
-  subjectEmail: string,
   propertyId: string,
   paths: string[],
 ): Promise<string[]> {
@@ -177,7 +177,7 @@ export async function fetchTitlesForPaths(
   // fired on these landing pages (measured on 472039720 — 546 users over
   // 7 days against 5 recorded views), so ranking by it would push real
   // pages past the row limit and lose their titles.
-  const rows = await callGa4(subjectEmail, propertyId, "runReport", {
+  const rows = await callGa4(propertyId, "runReport", {
     dateRanges: [{ startDate: "7daysAgo", endDate: "today" }],
     dimensions: [{ name: "pagePath" }, { name: "pageTitle" }],
     metrics: [{ name: "activeUsers" }],
@@ -212,22 +212,21 @@ export async function fetchTitlesForPaths(
  * silently dropping people.
  */
 export async function fetchLive(
-  subjectEmail: string,
   propertyId: string,
   paths: string[],
 ): Promise<Ga4Live> {
-  const titles = await fetchTitlesForPaths(subjectEmail, propertyId, paths).catch(
+  const titles = await fetchTitlesForPaths(propertyId, paths).catch(
     () => [] as string[],
   );
   const want = new Set(titles);
 
   const [deviceRows, cityRows] = await Promise.all([
-    callGa4(subjectEmail, propertyId, "runRealtimeReport", {
+    callGa4(propertyId, "runRealtimeReport", {
       dimensions: [{ name: "unifiedScreenName" }, { name: "deviceCategory" }],
       metrics: [{ name: "activeUsers" }, { name: "keyEvents" }],
       limit: 250,
     }),
-    callGa4(subjectEmail, propertyId, "runRealtimeReport", {
+    callGa4(propertyId, "runRealtimeReport", {
       dimensions: [{ name: "unifiedScreenName" }, { name: "city" }],
       metrics: [{ name: "activeUsers" }],
       limit: 250,
@@ -308,7 +307,6 @@ const MODE_TTL_MS = 6 * 60 * 60 * 1000;
 const NOT_SET_LIMIT = 0.5;
 
 export async function detectAttributionMode(
-  subjectEmail: string,
   propertyId: string,
 ): Promise<AttributionMode> {
   const hit = modeCache.get(propertyId);
@@ -316,7 +314,7 @@ export async function detectAttributionMode(
 
   let mode: AttributionMode = "pagePath";
   try {
-    const rows = await callGa4(subjectEmail, propertyId, "runReport", {
+    const rows = await callGa4(propertyId, "runReport", {
       dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
       dimensions: [{ name: "landingPage" }],
       metrics: [{ name: "sessions" }],
@@ -407,16 +405,13 @@ function pathTokens(paths: string[]): Set<string> {
 const ghostCache = new Map<string, { expiresAt: number; ghosts: string[] }>();
 const GHOST_TTL_MS = 12 * 60 * 60 * 1000;
 
-export async function ghostKeyEvents(
-  subjectEmail: string,
-  propertyId: string,
-): Promise<string[]> {
+export async function ghostKeyEvents(propertyId: string): Promise<string[]> {
   const hit = ghostCache.get(propertyId);
   if (hit && hit.expiresAt > Date.now()) return hit.ghosts;
 
   let ghosts: string[] = [];
   try {
-    const token = await analyticsAccessToken(subjectEmail);
+    const token = await analyticsAccessToken();
     const res = await fetch(
       `https://analyticsadmin.googleapis.com/v1beta/properties/${propertyId}/keyEvents?pageSize=200`,
       { headers: { authorization: `Bearer ${token}` }, cache: "no-store" },
@@ -433,7 +428,7 @@ export async function ghostKeyEvents(
       // Property-wide on purpose: which events carry the key-event flag
       // is a property fact, and asking without the page filter keeps this
       // answerable before the page filter itself has been resolved.
-      const rows = await callGa4(subjectEmail, propertyId, "runReport", {
+      const rows = await callGa4(propertyId, "runReport", {
         dateRanges: [{ startDate: "28daysAgo", endDate: "yesterday" }],
         dimensions: [{ name: "eventName" }],
         metrics: [{ name: "keyEvents" }],
@@ -512,7 +507,6 @@ export function ownsConversionPath(
  * reasoning as the client-side URL filter in lib/clarity.ts.
  */
 export async function fetchWindows(
-  subjectEmail: string,
   propertyId: string,
   paths: string[],
 ): Promise<{
@@ -525,7 +519,7 @@ export async function fetchWindows(
   const want = new Set(paths.map(normPath).filter(Boolean));
   const tokens = pathTokens(paths);
   const conversionPaths = new Set<string>();
-  const mode = await detectAttributionMode(subjectEmail, propertyId);
+  const mode = await detectAttributionMode(propertyId);
 
   // In landingPage mode GA has done the attribution properly, so a
   // conversion counts for this project exactly when the session started
@@ -542,7 +536,7 @@ export async function fetchWindows(
   };
 
   const query = (startDate: string) =>
-    callGa4(subjectEmail, propertyId, "runReport", {
+    callGa4(propertyId, "runReport", {
       dateRanges: [{ startDate, endDate: "today" }],
       dimensions: [{ name: mode }],
       metrics: [

@@ -43,8 +43,8 @@ export default async function Ga4LiveSection({
   if (!target) return null;
 
   const [live, windows] = await Promise.all([
-    fetchLive(subjectEmail, target.propertyId, target.paths).catch(() => null),
-    fetchWindows(subjectEmail, target.propertyId, target.paths).catch(() => null),
+    fetchLive(target.propertyId, target.paths).catch(() => null),
+    fetchWindows(target.propertyId, target.paths).catch(() => null),
   ]);
   if (!live) return null;
 

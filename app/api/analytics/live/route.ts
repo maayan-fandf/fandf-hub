@@ -56,8 +56,8 @@ export async function GET(req: Request) {
     }
 
     const [live, windows] = await Promise.all([
-      fetchLive(email, target.propertyId, target.paths),
-      fetchWindows(email, target.propertyId, target.paths).catch(() => null),
+      fetchLive(target.propertyId, target.paths),
+      fetchWindows(target.propertyId, target.paths).catch(() => null),
     ]);
 
     return NextResponse.json({

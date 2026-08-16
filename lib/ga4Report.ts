@@ -670,11 +670,10 @@ const met = (r: Row, i: number): number => {
 };
 
 async function batchRun(
-  subjectEmail: string,
   propertyId: string,
   requests: Record<string, unknown>[],
 ): Promise<Report[]> {
-  const token = await analyticsAccessToken(subjectEmail);
+  const token = await analyticsAccessToken();
   const res = await fetch(`${DATA_API}/properties/${propertyId}:batchRunReports`, {
     method: "POST",
     headers: {
@@ -720,7 +719,6 @@ const rawValuesCache = new Map<string, { expiresAt: number; values: PageValues }
 const RAW_TTL_MS = 6 * 60 * 60 * 1000;
 
 async function resolveRawPageValues(
-  subjectEmail: string,
   propertyId: string,
   mode: AttributionMode,
   paths: string[],
@@ -733,7 +731,7 @@ async function resolveRawPageValues(
   const hit = rawValuesCache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.values;
 
-  const [report] = await batchRun(subjectEmail, propertyId, [
+  const [report] = await batchRun(propertyId, [
     {
       dateRanges: [{ startDate: "90daysAgo", endDate: "today" }],
       dimensions: [{ name: mode }],
@@ -880,12 +878,11 @@ function cleanCampaign(raw: string): string {
 /* ── The fetch ────────────────────────────────────────────────────── */
 
 async function fetchGa4ReportUncached(
-  subjectEmail: string,
   propertyId: string,
   paths: string[],
   win: { start: string; end: string; prevStart: string; prevEnd: string },
 ): Promise<Ga4ReportData | null> {
-  const mode = await detectAttributionMode(subjectEmail, propertyId);
+  const mode = await detectAttributionMode(propertyId);
 
   // A project sitting at the domain root owns the whole property, so
   // filtering to landingPage == "/" would throw away every session that
@@ -899,7 +896,7 @@ async function fetchGa4ReportUncached(
   // as a landing page would be plainly wrong under that heading.
   let conversionPaths: string[] = [];
   if (!wholeSite) {
-    const rawValues = await resolveRawPageValues(subjectEmail, propertyId, mode, paths);
+    const rawValues = await resolveRawPageValues(propertyId, mode, paths);
     if (rawValues.page.length === 0) return null;
     conversionPaths = [...new Set(rawValues.conversion.map(normPath))];
     // The conversion pages ride in the SAME filter rather than a second
@@ -933,7 +930,7 @@ async function fetchGa4ReportUncached(
   // properties — sessions, users, engagement rate and engaged sessions
   // all moved 0.00%, average duration by 0.2%, while key events went
   // 110 → 36 and 1,217 → 406.
-  const ghosts = await ghostKeyEvents(subjectEmail, propertyId).catch(() => []);
+  const ghosts = await ghostKeyEvents(propertyId).catch(() => []);
   const notGhosts = ghosts.length
     ? {
         notExpression: {
@@ -952,7 +949,7 @@ async function fetchGa4ReportUncached(
   const withFilter = (req: Record<string, unknown>) =>
     filter ? { ...req, dimensionFilter: filter } : req;
 
-  const reports = await batchRun(subjectEmail, propertyId, [
+  const reports = await batchRun(propertyId, [
     // 1 — daily trend, current window only (the previous period is
     //     compared as a total, not plotted; two series on 28 RTL points
     //     is unreadable at panel width).
@@ -1157,7 +1154,7 @@ async function fetchGa4ReportUncached(
   const israel = { sessions: 0, engaged: 0, avgSeconds: 0, keyEvents: 0, convRate: 0 };
 
   try {
-    const [rCity, rDevice, rEvent, rPlacement, rTree] = await batchRun(subjectEmail, propertyId, [
+    const [rCity, rDevice, rEvent, rPlacement, rTree] = await batchRun(propertyId, [
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: "city" }, { name: "country" }],
@@ -1356,7 +1353,7 @@ async function fetchGa4ReportUncached(
   let returning: Ga4Returning | null = null;
   const intro: Ga4IntroRow[] = [];
   try {
-    const [rDemo, rReturn, rPlacementView, rAdView, rIntro] = await batchRun(subjectEmail, propertyId, [
+    const [rDemo, rReturn, rPlacementView, rAdView, rIntro] = await batchRun(propertyId, [
       // Age and gender CROSSED, not two marginals — a grouped bar chart
       // needs the cells. Verified to survive GA4's demographic
       // thresholding: 12 populated cells on a landing page with 798
@@ -1538,7 +1535,7 @@ async function fetchGa4ReportUncached(
 
   const pages: Ga4PageRow[] = [];
   if (!wholeSite && normed.length > 1) {
-    const [pageReport] = await batchRun(subjectEmail, propertyId, [
+    const [pageReport] = await batchRun(propertyId, [
       withFilter({
         dateRanges: [cur],
         dimensions: [{ name: mode }],
@@ -1666,13 +1663,12 @@ async function fetchGa4ReportUncached(
  * city" rather than the whole property's traffic from that city.
  */
 export async function fetchCityCampaigns(
-  subjectEmail: string,
   propertyId: string,
   paths: string[],
   city: string,
   win: { start: string; end: string },
 ): Promise<Ga4CampaignRow[]> {
-  const mode = await detectAttributionMode(subjectEmail, propertyId);
+  const mode = await detectAttributionMode(propertyId);
   const normed = paths.map(normPath).filter(Boolean);
   const wholeSite = normed.length === 1 && normed[0] === "/";
 
@@ -1682,7 +1678,7 @@ export async function fetchCityCampaigns(
   // Same exclusion as the main report — this drill-down carries key
   // events per campaign, and a city whose conversions are counted
   // differently from the map it opened from is worse than no drill-down.
-  const ghosts = await ghostKeyEvents(subjectEmail, propertyId).catch(() => []);
+  const ghosts = await ghostKeyEvents(propertyId).catch(() => []);
   const expressions: Record<string, unknown>[] = [cityFilter];
   if (ghosts.length) {
     expressions.push({
@@ -1692,7 +1688,7 @@ export async function fetchCityCampaigns(
     });
   }
   if (!wholeSite) {
-    const rawValues = await resolveRawPageValues(subjectEmail, propertyId, mode, paths);
+    const rawValues = await resolveRawPageValues(propertyId, mode, paths);
     if (rawValues.page.length === 0) return [];
     // Conversion pages included for the same reason as the main report:
     // this drill-down carries key events per campaign, and leaving them
@@ -1708,7 +1704,7 @@ export async function fetchCityCampaigns(
   const dimensionFilter: Record<string, unknown> =
     expressions.length === 1 ? cityFilter : { andGroup: { expressions } };
 
-  const [report] = await batchRun(subjectEmail, propertyId, [
+  const [report] = await batchRun(propertyId, [
     {
       dateRanges: [{ startDate: win.start, endDate: win.end }],
       dimensions: [{ name: "sessionCampaignName" }],
@@ -1781,7 +1777,6 @@ export async function fetchCityCampaigns(
  * re-fetching a past month hourly is pure waste.
  */
 export async function fetchGa4Report(
-  subjectEmail: string,
   propertyId: string,
   paths: string[],
   win: { start: string; end: string; prevStart: string; prevEnd: string },
@@ -1801,7 +1796,7 @@ export async function fetchGa4Report(
   //      fields. A v20 payload renders "—" in half the new columns.
   const key = `ga4Report:v21:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
-    () => fetchGa4ReportUncached(subjectEmail, propertyId, paths, win),
+    () => fetchGa4ReportUncached(propertyId, paths, win),
     [key],
     { revalidate: closed ? 86_400 : 1_800, tags: ["ga4Report"] },
   )();
