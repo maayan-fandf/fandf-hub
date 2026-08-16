@@ -122,6 +122,47 @@ gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
   --role="roles/iam.serviceAccountUser" \
   --project="$PROJECT_ID" >/dev/null
 
+# A build also RUNS AS a service account, and submitting one requires
+# actAs on that identity too — separate from the runtime SA above, and
+# easy to miss because a human with Owner has it implicitly. Without it
+# the build fails with "caller does not have permission to act as service
+# account projects/<p>/serviceAccounts/<numeric id>", naming an identity
+# by a number that appears nowhere else.
+#
+# Which account that is depends on the project's age and whether regional
+# builds use the legacy Cloud Build SA or the compute default, so every
+# plausible one that actually exists gets the binding. Granting
+# project-wide serviceAccountUser instead would let this SA impersonate
+# ANY identity in the project, which is a much bigger key than the job
+# needs.
+echo "→ resolving the Cloud Build service account"
+BUILD_SA="$(gcloud builds get-default-service-account \
+  --region="$REGION" --project="$PROJECT_ID" \
+  --format='value(serviceAccountEmail)' 2>/dev/null || true)"
+BUILD_SA="${BUILD_SA#serviceAccount:}"
+BUILD_SA="${BUILD_SA##*/}"
+
+granted_any=0
+for sa in \
+  "$BUILD_SA" \
+  "${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+do
+  [ -n "$sa" ] || continue
+  if gcloud iam service-accounts describe "$sa" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    uid="$(gcloud iam service-accounts describe "$sa" --project="$PROJECT_ID" --format='value(uniqueId)')"
+    gcloud iam service-accounts add-iam-policy-binding "$sa" \
+      --member="serviceAccount:${DEPLOY_SA}" \
+      --role="roles/iam.serviceAccountUser" \
+      --project="$PROJECT_ID" >/dev/null
+    echo "   actAs on $sa (uniqueId $uid)"
+    granted_any=1
+  fi
+done
+if [ "$granted_any" -eq 0 ]; then
+  echo "   ✗ no Cloud Build service account found — builds will fail on actAs" >&2
+fi
+
 # ── Let the repo impersonate the deploy SA ───────────────────────────
 # Scoped to this repository AND the main branch: a pull request from a
 # fork runs with a different ref and cannot deploy.
