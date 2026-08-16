@@ -93,11 +93,34 @@ echo "→ building $IMAGE_URI"
 )
 
 # ── 4. Deploy / update the Cloud Run job ─────────────────────────────
+# Deployed by DIGEST, never by the `:latest` tag.
+#
+# 2026-08-16: a build that demonstrably contained the fixed extractor
+# produced a job execution whose output matched the PREVIOUS extractor
+# byte for byte — `2,350,000 anchored=false`, the exact signature of the
+# code from before e853da6. The build context was verified clean (the
+# file is git-tracked, the tree was clean, HEAD carried the fix), so the
+# stale code entered somewhere between `docker push` and the container
+# that ran; the execution log's "Provisioned imported containers" is the
+# tell. A mutable tag gives that ambiguity room to exist. Resolving the
+# digest here removes it: whatever this deploy pins is exactly what the
+# build produced, and it is visible in `gcloud run jobs describe`.
+echo "→ resolving image digest"
+IMAGE_DIGEST="$(gcloud artifacts docker images describe "$IMAGE_URI" \
+  --project="$PROJECT_ID" \
+  --format='value(image_summary.digest)')"
+if [ -z "$IMAGE_DIGEST" ]; then
+  echo "✗ could not resolve a digest for $IMAGE_URI — refusing to deploy a mutable tag" >&2
+  exit 1
+fi
+IMAGE_PINNED="${REPO_PATH}/${JOB_NAME}@${IMAGE_DIGEST}"
+echo "  $IMAGE_PINNED"
+
 echo "→ deploying Cloud Run job $JOB_NAME"
 gcloud run jobs deploy "$JOB_NAME" \
   --project="$PROJECT_ID" \
   --region="$REGION" \
-  --image="$IMAGE_URI" \
+  --image="$IMAGE_PINNED" \
   --service-account="$RUNTIME_SA" \
   --max-retries=1 \
   --task-timeout=30m \

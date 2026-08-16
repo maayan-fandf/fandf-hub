@@ -27,6 +27,7 @@
 // side can show useful detail in the alert ("the website couldn't be
 // scraped — manually check it").
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { GoogleAuth } from "google-auth-library";
 import { google } from "googleapis";
 import puppeteer from "puppeteer";
@@ -241,6 +242,23 @@ for (const r of keys.data.values.slice(1)) {
   if (onlyProject && project !== onlyProject) continue;
   projects.push({ project, slug, landing, yad2 });
 }
+// Fingerprint of the extractor this container actually carries.
+//
+// Added 2026-08-16 after a build that provably contained a fixed
+// priceExtractor produced output matching the PREVIOUS version exactly,
+// and there was no way to tell from the outside which code had run — the
+// question could only be answered by inference from the numbers. Now the
+// answer is one line in Cloud Logging, comparable against
+// `sha256sum lib/priceExtractor.ts` on any machine.
+const extractorFingerprint = (() => {
+  try {
+    const src = readFileSync(new URL("../lib/priceExtractor.ts", import.meta.url));
+    return createHash("sha256").update(src).digest("hex").slice(0, 12);
+  } catch {
+    return "unreadable";
+  }
+})();
+console.log(`priceExtractor sha256:${extractorFingerprint}`);
 console.log(`Scraping ${projects.length} project(s) at ${new Date().toISOString()}`);
 
 // ── 2. Launch one browser, scrape all pages ─────────────────────────
