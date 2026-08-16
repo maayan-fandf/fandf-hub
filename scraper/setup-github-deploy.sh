@@ -143,12 +143,18 @@ BUILD_SA="${BUILD_SA#serviceAccount:}"
 BUILD_SA="${BUILD_SA##*/}"
 
 granted_any=0
+seen=""
 for sa in \
   "$BUILD_SA" \
   "${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
   "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 do
   [ -n "$sa" ] || continue
+  # get-default-service-account usually returns one of the two literals
+  # below, so without this the same binding is applied twice and printed
+  # twice, which reads like two different accounts were granted.
+  case " $seen " in *" $sa "*) continue ;; esac
+  seen="$seen $sa"
   if gcloud iam service-accounts describe "$sa" --project="$PROJECT_ID" >/dev/null 2>&1; then
     uid="$(gcloud iam service-accounts describe "$sa" --project="$PROJECT_ID" --format='value(uniqueId)')"
     gcloud iam service-accounts add-iam-policy-binding "$sa" \
