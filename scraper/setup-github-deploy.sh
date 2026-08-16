@@ -81,17 +81,37 @@ fi
 # existing Cloud Run job. Deliberately NOT run.admin or iam.admin — the
 # workflow cannot create service accounts, grant roles, or touch the
 # scheduler. That stays with scraper/deploy.sh, run by a human.
+#
+# serviceusage.serviceUsageConsumer is not optional and not obvious. Its
+# absence surfaces as "The user is forbidden from accessing the bucket
+# [PROJECT_cloudbuild]", which reads like a storage problem and is not —
+# `gcloud builds submit` needs serviceusage.services.use before it will
+# touch the staging bucket at all.
 echo "→ granting deploy roles"
 for role in \
   roles/cloudbuild.builds.editor \
   roles/artifactregistry.writer \
   roles/run.developer \
-  roles/storage.objectAdmin \
+  roles/serviceusage.serviceUsageConsumer \
   roles/logging.viewer
 do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${DEPLOY_SA}" --role="$role" \
     --condition=None >/dev/null
+  echo "   $role"
+done
+
+# Storage is granted on the build staging bucket alone rather than
+# project-wide: this SA has no business reading every bucket in the
+# project, and objectAdmin at project scope would give it exactly that.
+# legacyBucketWriter carries storage.buckets.get, which objectAdmin does
+# not and the upload needs.
+STAGING_BUCKET="gs://${PROJECT_ID}_cloudbuild"
+echo "→ granting storage on ${STAGING_BUCKET}"
+for role in roles/storage.objectAdmin roles/storage.legacyBucketWriter; do
+  gcloud storage buckets add-iam-policy-binding "$STAGING_BUCKET" \
+    --member="serviceAccount:${DEPLOY_SA}" --role="$role" \
+    --project="$PROJECT_ID" >/dev/null
   echo "   $role"
 done
 
