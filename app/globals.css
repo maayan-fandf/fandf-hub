@@ -7414,6 +7414,36 @@ html[data-theme="dark"] .crm-trend-hilite {
   border-top: 1px dashed var(--border-soft, var(--border));
   padding-top: 0.3rem;
 }
+/* "מתוכם עם התנגדות" under the status funnel. Same three-column grid as
+   .crm-matrix-row so its number lands directly under the stage totals,
+   but deliberately NOT a row: no bar, dimmed, behind a solid rule. An
+   objection is an attribute of a lead rather than a stage it reached, so
+   anything bar-shaped here would be read as a fifth funnel stage. */
+.crm-matrix-foot {
+  display: grid;
+  grid-template-columns: 140px 1fr 36px;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.82em;
+  color: var(--muted);
+}
+.crm-matrix-foot-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-matrix-foot-share {
+  font-size: 0.94em;
+  opacity: 0.85;
+}
+.crm-matrix-foot-total {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  color: var(--text, inherit);
+}
 /* Only the FIRST one carries the divider — the general sibling
    combinator matches every off-funnel row that follows another. */
 .crm-matrix-row.is-offfunnel ~ .crm-matrix-row.is-offfunnel {

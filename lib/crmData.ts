@@ -154,6 +154,21 @@ export type CrmFunnel = {
      *  objections matrix + pie. */
     objectionBySource: Record<string, Record<string, number>>;
   };
+  /**
+   * True when `objectionBySource` was NOT tallied off the same rows that
+   * produced `leadsBySource` — currently only the BMBY warehouse path,
+   * which grafts the Sheet's objection breakdown onto warehouse leads
+   * (see the transplant below). Both are scoped to the same window, and
+   * the graft only happens when the warehouse has at least as many leads
+   * as the Sheet, so the objection count can never exceed the lead count
+   * — but the two are different row sets, so "N of the M leads carry an
+   * objection" is not a statement the data supports there.
+   *
+   * The card uses this to decide whether it may show the objection tally
+   * as a share OF the leads or only as a bare count. Absent/false means
+   * one loop produced both and the subset relation is structural.
+   */
+  objectionsGrafted?: boolean;
   /** Daily time series for the trendline chart under the source pie.
    *  One entry per calendar day in the filtered cohort, with per-source
    *  counts of {leads, scheduled, held}. The trendline client component
@@ -3275,6 +3290,13 @@ export async function getCrmFunnelForProject(args: {
             // chip-filtered cross-tab still lines up for the common sources.)
             wh.sourceMatrices.objectionBySource =
               sheetFunnel.sourceMatrices.objectionBySource;
+            // Flagged because the objection tally now describes SHEET rows
+            // while every other number on the card describes WAREHOUSE
+            // rows. The counts stay comparable (the graft only runs when
+            // wh.leads >= sheetFunnel.leads) but they are not the same
+            // rows, so the card must not render this as "N of the M
+            // leads".
+            wh.objectionsGrafted = true;
           }
           funnel = wh;
         }

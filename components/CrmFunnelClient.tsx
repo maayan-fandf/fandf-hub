@@ -980,6 +980,46 @@ export default function CrmFunnelClient({
                   );
                 })}
               </ul>
+              {/* How many of those leads carry an objection.
+                  A footnote, NOT another row: an objection is an
+                  ATTRIBUTE of a lead, not a stage it moved to — every
+                  lead counted here is still sitting at one of the
+                  statuses above it, so rendering it as a fifth bar
+                  would read as a stage the funnel does not have.
+                  Counted off `objectionBySource`, which increments once
+                  per row with a non-empty התנגדויות cell inside the same
+                  loop that increments leadsBySource (lib/crmData.ts —
+                  the `leads++` and objection tallies share both
+                  `continue` guards), so under any chip selection this is
+                  a genuine subset of the לידים total. Except when the
+                  objection matrix was grafted from another source — then
+                  only the bare count is honest. */}
+              <div
+                className="crm-matrix-foot"
+                title={
+                  funnel.objectionsGrafted
+                    ? `${pieData.total} לידים עם התנגדות רשומה.\n` +
+                      `ההתנגדויות נספרות ממקור נתונים אחר מזה שמזין את שאר הכרטיס, ולכן לא ניתן להציג אותן כשיעור מתוך ${kpis.leads} הלידים`
+                    : `${pieData.total} מתוך ${kpis.leads} הלידים נושאים התנגדות רשומה (${pct(pieData.total, kpis.leads)}).\n` +
+                      `ההתנגדות היא הערך הנוכחי בכרטיס הליד ולא אירוע מתוארך — ייתכן שנרשמה אחרי התקופה המוצגת`
+                }
+              >
+                {/* "לידים עם התנגדות", not "מתוכם" — the stage totals
+                    above count rows carrying a status, while the
+                    denominator here is the לידים KPI, and the two differ
+                    when a row has a source but no status yet. Naming the
+                    population stops the reader anchoring on the top
+                    stage's number. */}
+                <span className="crm-matrix-foot-label">לידים עם התנגדות</span>
+                <span className="crm-matrix-foot-share">
+                  {funnel.objectionsGrafted
+                    ? "ממקור נתונים אחר"
+                    : pieData.total > 0
+                      ? `${pct(pieData.total, kpis.leads)} מהלידים`
+                      : "אין התנגדויות רשומות"}
+                </span>
+                <span className="crm-matrix-foot-total">{pieData.total}</span>
+              </div>
             </div>
           )}
 
