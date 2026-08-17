@@ -451,7 +451,27 @@ export default function CrmFunnelClient({
     const tail = sorted.slice(TOP_OBJECTIONS_IN_PIE).reduce((n, [, c]) => n + c, 0);
     const slices: { label: string; count: number; isOther?: boolean; color: string }[] =
       head.map(([label, count], i) => ({ label, count, color: OBJECTION_PALETTE[i % OBJECTION_PALETTE.length] }));
-    if (tail > 0) slices.push({ label: "אחר", count: tail, isOther: true, color: "#d1d5db" });
+    // NOT labelled "אחר". BMBY offers "אחר" as a real objection reps pick,
+    // so naming the rollup that too put two unrelated numbers on the same
+    // name — owner-reported 2026-08-17 on לוריא, where the legend showed
+    // `אחר 7` (the genuine reason) directly above `אחר 33` (18 rolled-up
+    // objections). Three separate things keyed off this label and all of
+    // them broke on the collision: `key={s.label}` duplicated, `flipId`
+    // collided so the FLIP animation swapped rows, and the hover lookup
+    // below (`slices.find(s => s.label === hoveredSlice)`) matched whichever
+    // came first — the rollup — then bailed on `isOther`, so the real
+    // "אחר" arc silently lost its source-breakdown popover.
+    //
+    // Deliberately NOT merged into a genuine "אחר" slice either: the totals
+    // would add up but mean less, blending one specific reason a rep chose
+    // with a bucket of unrelated ones.
+    if (tail > 0)
+      slices.push({
+        label: "שאר ההתנגדויות",
+        count: tail,
+        isOther: true,
+        color: "#d1d5db",
+      });
     return { slices, total: grandTotal };
   }, [selected, sm]);
 
@@ -1120,12 +1140,14 @@ export default function CrmFunnelClient({
                   <li className="crm-pie-legend-empty">אין התנגדויות בקבוצה הנבחרת.</li>
                 ) : (
                   pieData.slices.map((s) => {
-                    // For non-"אחר" slices, look up the per-objection
+                    // For real objection slices, look up the per-objection
                     // source breakdown so the hover popover can show
                     // which channels contributed to this objection.
-                    // "אחר" rolls multiple objections together so a
-                    // per-source breakdown isn't meaningful; skip the
-                    // popover there.
+                    // The rollup ("שאר ההתנגדויות") covers many objections
+                    // at once so a per-source breakdown isn't meaningful;
+                    // skip the popover there. Gated on `isOther`, never on
+                    // the label — the label is display text and was itself
+                    // the bug this flag had to work around.
                     const breakdown = s.isOther
                       ? null
                       : objectionSourceBreakdowns.get(s.label) || null;
@@ -1136,9 +1158,9 @@ export default function CrmFunnelClient({
                     // legend row 2026-05-12: bar width is proportional
                     // to the slice's count relative to the largest
                     // slice (max), so bigger objections render visibly
-                    // longer bars. "אחר" rolls multiple objections, so
-                    // it shows no bar (the source mix wouldn't be
-                    // meaningful for the rollup).
+                    // longer bars. The rollup covers multiple objections,
+                    // so it shows no bar (the source mix wouldn't be
+                    // meaningful for it).
                     // Scale the LARGEST slice to the track's full width
                     // (BAR_TRACK_PCT) and everything else linearly down,
                     // so a count of 5 renders a bar exactly 5× a count of
