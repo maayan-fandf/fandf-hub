@@ -1313,9 +1313,29 @@ function aggregateCreatives(
   // entirely — they have no numbers to be ranked on, and letting them compete
   // for sliceCap would drop a card that does have them. `noWindowData` tells
   // the card to show the creative and say so instead of printing zeros.
+  //
+  // TWO conditions, not one, and the second is easy to lose. `carded` only
+  // says "didn't deliver in the SELECTED window" — which is the normal reason
+  // a creative has no card (the inRange guard on the adAgg loop above is what
+  // enforces "no delivery in the timeframe → no card"). That alone used to be
+  // a safe proxy for "ancient" because the 60-day assets tab was the only
+  // source: anything missing from BOTH it and the in-window metrics really had
+  // run before the metrics tab reaches.
+  //
+  // Adding `facebook-ads-assets 365` (2026-08-17) broke that proxy. The long
+  // tab now supplies creatives that ran perfectly recently and merely sat out
+  // the month being viewed — e.g. קנקו's 2026-01-18* ads, which delivered
+  // Mar-May and stopped, appearing as five numberless cards in a June view
+  // where the correct behaviour is not to show them at all.
+  //
+  // `adSpanAll` is built over the UNCLIPPED metrics tab, so it answers the
+  // question the proxy was really asking: does this creative have numbers
+  // ANYWHERE? If it does, its absence here is a normal out-of-window absence
+  // and the inRange rule should stand.
   const carded = new Set(ads.map((a) => cardKey(a.campaign, a.ad)));
   for (const [k, { campaign, ad }] of Object.entries(raw.fbAssetsLongOnly)) {
     if (carded.has(k)) continue;
+    if (adSpanAll.has(k)) continue; // has metrics, just not in THIS window
     const assets = raw.fbAssets[k];
     if (!assets) continue;
     topAds.push({
