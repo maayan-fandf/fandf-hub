@@ -57,6 +57,18 @@ const ASSETS_TAB = "facebook-ads-assets 365";
 
 const TOP_ADS = 8;
 const TOP_ADS_HISTORICAL = 3;
+/**
+ * Cap on archive cards — creatives with no metrics row anywhere, appended
+ * after the slice with no numbers of their own.
+ *
+ * Needs a cap because widening the assets window 60d → 365d (2026-08-17)
+ * took the pool of "older than the metrics tab reaches" creatives from
+ * roughly zero to dozens: לוריא / Feb-2026 rendered 33 cards, 25 of them
+ * numberless 2025 creatives sitting on top of the 8 that actually ran that
+ * month. Ranked by the assets tab's own lifetime impressions so the survivors
+ * are the ones worth still looking at, not an arbitrary slice of the map.
+ */
+const TOP_ARCHIVE_ADS = 3;
 const WINNER_MIN_LEADS = 3;
 const TOP_KEYWORDS = 10;
 const TOP_ADSETS = 5;
@@ -191,6 +203,12 @@ type FbAssetRec = {
   body: string;
   title: string;
   url: string;
+  /** Lifetime impressions over the assets query's own window — the only
+   *  metric that query carries. NOT comparable to the per-window figures on
+   *  a card (those come from facebook-ads-metrics and respect the selected
+   *  range); used solely to rank archive creatives, which by definition have
+   *  no windowed numbers to rank on. */
+  impressions: number;
 };
 
 type ProjectCreativeRaw = {
@@ -401,6 +419,7 @@ async function fetchProjectCreativeRaw(
       "Ad preview URL: mobile feed",
       "Ad preview URL",
     ]);
+    const iImp = findCol(h, ["Impressions"]);
     if (iCamp < 0 || iAd < 0) return added;
     for (let r = 1; r < rows.length; r++) {
       const row = rows[r];
@@ -424,6 +443,7 @@ async function fetchProjectCreativeRaw(
         body: cell(iBody),
         title: cell(iTitle),
         url: cell(iUrl),
+        impressions: iImp >= 0 ? num(row[iImp]) : 0,
       };
       added.set(k, { campaign: camp, ad });
     }
@@ -1350,9 +1370,20 @@ function aggregateCreatives(
   // and the inRange rule should stand. This is now the ONLY thing keeping
   // year-old creatives out of every month view.
   const carded = new Set(ads.map((a) => cardKey(a.campaign, a.ad)));
-  for (const [k, { campaign, ad }] of Object.entries(raw.fbAssetsIndexed)) {
-    if (carded.has(k)) continue;
-    if (adSpanAll.has(k)) continue; // has metrics, just not in THIS window
+  // Ranked and capped, not just filtered. These carry no windowed numbers, so
+  // there is nothing downstream to order them by — without an explicit sort
+  // they arrive in Object.entries order, i.e. whatever the sheet happened to
+  // list first, and without the cap they bury the cards that do have numbers.
+  const archive = Object.entries(raw.fbAssetsIndexed)
+    .filter(
+      ([k]) => !carded.has(k) && !adSpanAll.has(k) && !!raw.fbAssets[k],
+    )
+    .sort(
+      ([a], [b]) =>
+        (raw.fbAssets[b]?.impressions ?? 0) - (raw.fbAssets[a]?.impressions ?? 0),
+    )
+    .slice(0, TOP_ARCHIVE_ADS);
+  for (const [k, { campaign, ad }] of archive) {
     const assets = raw.fbAssets[k];
     if (!assets) continue;
     topAds.push({
