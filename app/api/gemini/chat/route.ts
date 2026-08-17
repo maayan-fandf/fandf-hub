@@ -394,8 +394,14 @@ guess column positions — always read headers first.
    THE source for platform-specific (FB/Google) data. Tabs:
      • 'facebook-ads-metrics'      — per-day × per-ad FB performance
                                      (Date / Imp / Cost / Clicks / Leads).
-     • 'facebook-ads-assets links' — creative metadata per ad
-                                     (image URL, body, title, status).
+     • 'facebook-ads-assets 365'   — creative metadata per ad
+                                     (image URL, body, title, status),
+                                     365-day window, all 20 accounts.
+                                     NOTE 'facebook-ads-assets links' also
+                                     exists but its query was retired
+                                     2026-08-17 — it is FROZEN and its rows
+                                     are stale. Never read it; this tab is a
+                                     strict superset of what it held.
      • 'Facebook-adsets'           — per-day × adset (the SOURCE
                                      OF TRUTH for project totalCost +
                                      totalLeads on Facebook).

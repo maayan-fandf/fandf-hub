@@ -25,7 +25,7 @@ import type {
 /**
  * Server data layer for the native קריאייטיבים tab — reads the same
  * Supermetrics creative workbook the Apps Script CREATIVE_MAP reads
- * (SHEET_ID_CREATIVES: facebook-ads-metrics / facebook-ads-assets links /
+ * (SHEET_ID_CREATIVES: facebook-ads-metrics / facebook-ads-assets 365 /
  * Facebook-adsets / מילות חיפוש גוגל / גוגל) and reproduces
  * `aggregateCreativeForProject_` (Code.js:3713) byte-identically:
  * window filter, winner/fatigue/sort/cap rules, adsets-tab-as-SSOT for
@@ -38,10 +38,22 @@ import type {
 const CACHE_TAG = "reportCreatives";
 const TTL_SECONDS = 900; // 15 min (legacy CREATIVE_MAP caches 60)
 
-/** Optional companion to `facebook-ads-assets links`: same columns, 365-day
- *  window, scoped to whichever ad accounts have been added to it by hand.
- *  Absent by default — see the guarded read in fetchProjectCreativeRaw. */
-const ASSETS_LONG_TAB = "facebook-ads-assets 365";
+/**
+ * THE Meta creative-assets source: account / campaign / ad / status, the
+ * creative image + thumbnail URLs, ad copy and destination.
+ *
+ * Was a 365-day companion to `facebook-ads-assets links` (60-day window,
+ * all 20 accounts, ~29 min per refresh). On 2026-08-17 that tab was measured
+ * as a strict SUBSET of this one — 348 of 348 creatives present here, 754
+ * creatives present ONLY here — so its query was retired and this became the
+ * single source. Net effect on the workbook's shared refresh cycle: 77 → 48
+ * minutes, while gaining a full year of creative history for every account.
+ *
+ * `facebook-ads-assets links` still exists as a frozen tab. Do NOT start
+ * reading it again without re-registering its query: stale rows would win
+ * over fresh ones and never expire.
+ */
+const ASSETS_TAB = "facebook-ads-assets 365";
 
 const TOP_ADS = 8;
 const TOP_ADS_HISTORICAL = 3;
@@ -195,11 +207,11 @@ type ProjectCreativeRaw = {
   }[];
   /** (campaign|ad).lc → assets, first-row-wins, project-matched. */
   fbAssets: Record<string, FbAssetRec>;
-  /** (campaign|ad).lc → original names, for creatives ONLY the 365-day assets
-   *  tab could supply. Every one of these is outside the metrics window, so it
-   *  has no cost/impressions row anywhere — the card says so rather than
-   *  printing zeros. Empty unless the long tab exists. */
-  fbAssetsLongOnly: Record<string, { campaign: string; ad: string }>;
+  /** (campaign|ad).lc → original names, for every creative the assets tab
+   *  carries. The subset of these with no metrics row anywhere becomes the
+   *  אין נתונים בטווח archive cards downstream; the rest are matched onto
+   *  ads that already have numbers. Empty if the tab is missing. */
+  fbAssetsIndexed: Record<string, { campaign: string; ad: string }>;
   /** (campaign|ad).lc → Meta ad-preview links, ALL of them rather than
    *  first-row-wins: that tab carries one row per creative, so an ad name
    *  fronting several creatives yields several links and the card can offer
@@ -256,7 +268,7 @@ async function fetchProjectCreativeRaw(
   const out: ProjectCreativeRaw = {
     fbAds: [],
     fbAssets: {},
-    fbAssetsLongOnly: {},
+    fbAssetsIndexed: {},
     fbPreviews: {},
     fbAdSets: [],
     gKeywords: [],
@@ -271,22 +283,20 @@ async function fetchProjectCreativeRaw(
   const sheets = sheetsClient(subjectEmail);
   const ssId = envOrThrow("SHEET_ID_CREATIVES");
 
-  // Long-window creative assets: same shape as `facebook-ads-assets links` but
-  // 365 days over a single ad account (the shared 60-day query costs ~40min
-  // across 20 accounts; one account over a year is ~43 rows).
+  // Creative assets — 365-day window, all 20 ad accounts. See ASSETS_TAB.
   //
-  // Read OUTSIDE the batchGet on purpose: the tab is added by hand per account
-  // so it may not exist, and one bad range fails the WHOLE batch. A missing or
-  // renamed tab must degrade to "no archive creatives", never to "the
-  // קריאייטיבים tab is broken".
+  // Still read OUTSIDE the batchGet, and still `.catch(() => [])`, even now
+  // that it is the only assets source and is expected to exist. One bad range
+  // fails the WHOLE batchGet, so a renamed or deleted tab here has to degrade
+  // to "cards render with their numbers but no images" — never to "the
+  // קריאייטיבים tab is broken". That trade is more important now, not less:
+  // this used to be optional garnish and is now the whole creative surface.
   //
-  // Kicked off BEFORE awaiting the batch so it overlaps it — otherwise the 18
-  // projects that will never have this tab each pay a serial round-trip, and a
-  // 404 round-trip at that, on every cache miss.
-  const assetsLongP: Promise<unknown[][]> = sheets.spreadsheets.values
+  // Kicked off BEFORE the batch is awaited so the two round-trips overlap.
+  const assetsP: Promise<unknown[][]> = sheets.spreadsheets.values
     .get({
       spreadsheetId: ssId,
-      range: `'${ASSETS_LONG_TAB}'!A1:Z`,
+      range: `'${ASSETS_TAB}'!A1:Z`,
       valueRenderOption: "UNFORMATTED_VALUE",
       dateTimeRenderOption: "FORMATTED_STRING",
     })
@@ -297,7 +307,11 @@ async function fetchProjectCreativeRaw(
     spreadsheetId: ssId,
     ranges: [
       "'facebook-ads-metrics'!A1:N",
-      "'facebook-ads-assets links'!A1:Z",
+      // NB: `facebook-ads-assets links` is deliberately NOT read here any
+      // more — see the ASSETS_TAB block above. Its Supermetrics query was
+      // retired 2026-08-17 and the tab is frozen; reading it would serve
+      // whatever it happened to hold on that date, forever, and win over
+      // fresh data (this index ran first, first-wins).
       "'Facebook-adsets'!A1:N",
       "'מילות חיפוש גוגל'!A1:N",
       // NB the RSA-assets tab is literally named "גוגל " WITH a trailing
@@ -320,11 +334,11 @@ async function fetchProjectCreativeRaw(
     valueRenderOption: "UNFORMATTED_VALUE",
     dateTimeRenderOption: "FORMATTED_STRING",
   });
-  const [vMetrics, vAssets, vAdsets, vKw, vGAds, vDiscovery, vPreviews] = (
+  const [vMetrics, vAdsets, vKw, vGAds, vDiscovery, vPreviews] = (
     bg.data.valueRanges ?? []
   ).map((r) => (r?.values ?? []) as unknown[][]);
 
-  const vAssetsLong = await assetsLongP;
+  const vAssets = await assetsP;
 
   // כל מודעות פפיסבוק → (campaign|ad).lc → [preview URL, …].
   if (vPreviews.length > 1) {
@@ -416,10 +430,11 @@ async function fetchProjectCreativeRaw(
     return added;
   };
 
-  indexAssets(vAssets);
-  // Whatever only the long tab could supply — the creatives that aged out of
-  // the 60-day window. These become the אין נתונים בטווח cards downstream.
-  out.fbAssetsLongOnly = Object.fromEntries(indexAssets(vAssetsLong));
+  // Every creative the assets tab carries, keyed (campaign|ad).lc. Was two
+  // passes — 60-day tab then 365-day tab, first-wins — until the 60-day query
+  // was retired as a strict subset (see ASSETS_TAB). One pass now, so no
+  // precedence question is left to get wrong.
+  out.fbAssetsIndexed = Object.fromEntries(indexAssets(vAssets));
 
   // facebook-ads-metrics → per-day per-ad rows.
   if (vMetrics.length > 1) {
@@ -1322,18 +1337,20 @@ function aggregateCreatives(
   // source: anything missing from BOTH it and the in-window metrics really had
   // run before the metrics tab reaches.
   //
-  // Adding `facebook-ads-assets 365` (2026-08-17) broke that proxy. The long
-  // tab now supplies creatives that ran perfectly recently and merely sat out
-  // the month being viewed — e.g. קנקו's 2026-01-18* ads, which delivered
-  // Mar-May and stopped, appearing as five numberless cards in a June view
-  // where the correct behaviour is not to show them at all.
+  // Moving to the 365-day assets tab (2026-08-17) broke that proxy, and
+  // retiring the 60-day tab the same day removed it entirely — the assets
+  // index now spans a full year, so "not carded" says nothing about age. It
+  // showed up as קנקו's 2026-01-18* ads, which delivered Mar-May and stopped,
+  // appearing as five numberless cards in a June view where the correct
+  // behaviour is not to show them at all.
   //
   // `adSpanAll` is built over the UNCLIPPED metrics tab, so it answers the
   // question the proxy was really asking: does this creative have numbers
   // ANYWHERE? If it does, its absence here is a normal out-of-window absence
-  // and the inRange rule should stand.
+  // and the inRange rule should stand. This is now the ONLY thing keeping
+  // year-old creatives out of every month view.
   const carded = new Set(ads.map((a) => cardKey(a.campaign, a.ad)));
-  for (const [k, { campaign, ad }] of Object.entries(raw.fbAssetsLongOnly)) {
+  for (const [k, { campaign, ad }] of Object.entries(raw.fbAssetsIndexed)) {
     if (carded.has(k)) continue;
     if (adSpanAll.has(k)) continue; // has metrics, just not in THIS window
     const assets = raw.fbAssets[k];
