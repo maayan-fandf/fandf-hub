@@ -60,6 +60,16 @@ export default auth((req) => {
     // tokens or business data). Without this exemption Tampermonkey's
     // auto-update request gets a 302→/signin and silently fails.
     path.startsWith("/userscripts/") ||
+    // Login-free פריסה approval, reached from the emailed link. The
+    // page, its preview proxy, and its approve/request-changes action
+    // are all authenticated by the HMAC token in the URL (see
+    // lib/prisaApprovalTokens.ts) — which names both the single fileId
+    // it unlocks and the single recipient it attributes the decision
+    // to. Forcing a session here would reinstate exactly the identity
+    // wall that made the old Drive Approvals flow go uncompleted.
+    path.startsWith("/approve/") ||
+    path.startsWith("/api/prisot/preview/") ||
+    path === "/api/prisot/token-action" ||
     path === "/signin" ||
     path === "/unauthorized" ||
     path === "/favicon.ico";

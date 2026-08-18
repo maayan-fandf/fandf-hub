@@ -2,21 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { googleAccountSetupHebrew } from "@/lib/clientTemplates";
 
 /**
- * "📤 שלח לאישור" affordance shown on the LatestPrisotCard when the
- * latest פריסה has approvalState === "none". Click opens a small
- * dialog that lets the user pick from the company's client emails
- * (pre-populated from `suggestedClients`) and optionally add a
- * message, then POSTs to /api/drive/approvals/create.
+ * "📤 שלח לאישור" affordance on the LatestPrisotCard, shown when the
+ * latest פריסה isn't already approved. Opens a small dialog to pick
+ * recipients (pre-populated from `suggestedClients`) plus an optional
+ * message, then POSTs to /api/prisot/send-approval.
  *
- * On success, the API has already initiated the Drive Approvals
- * workflow — Drive sends each approver an email with the file
- * attached. The hub's badge eventually flips to "⏳ נשלח לאישור" on
- * the next page render (the Approvals API is read every load — see
- * fetchApprovalState in lib/driveFolders.ts). router.refresh()
- * after submit triggers the re-fetch immediately.
+ * That endpoint emails each recipient a signed, expiring link to
+ * /approve/<token> — a page that renders the plan and its
+ * אשר / בקש שינויים buttons with NO login required. On success the
+ * hub records the request, and the card's badge flips to
+ * "⏳ נשלח לאישור" on the next render (router.refresh() below).
+ *
+ * REPLACED the Drive Approvals API flow (2026-08-18). That version
+ * asked Drive to email each reviewer, which meant every recipient
+ * needed a Google identity — the dialog had grown a whole sub-UI for
+ * detecting accountless emails and coaching the user through creating
+ * one, and clients still didn't complete the approval. None of that is
+ * needed now: we send our own mail and own the approval surface, so an
+ * address without a Google account is an ordinary case.
  *
  * Suggested-clients source: project's Keys row col E ("Email Client")
  * — same list ensureProjectSharedFolder uses to grant Drive
@@ -26,11 +31,28 @@ import { googleAccountSetupHebrew } from "@/lib/clientTemplates";
 export default function SendForApprovalButton({
   fileId,
   fileName,
+  mimeType,
+  project,
+  company,
   suggestedClients,
+  resend = false,
 }: {
   fileId: string;
   fileName: string;
+  /** Drive mime type — recorded on the request so the public approve
+   *  page can pick a renderer (table / iframe / img / no-preview note)
+   *  without an extra Drive call. */
+  mimeType: string;
+  /** Project name — recorded on the request so a client's change-request
+   *  can be posted into the right discussion, and so the approve page's
+   *  "sign in instead" link resolves. */
+  project: string;
+  company: string;
   suggestedClients: string[];
+  /** True when an approval is already in flight — relabels the button so
+   *  it reads as "send again" rather than a duplicate first send. Sending
+   *  overwrites the open request and supersedes its links. */
+  resend?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -42,25 +64,6 @@ export default function SendForApprovalButton({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  // Per-email share failures returned by /api/drive/approvals/create
-  // when permissions.create couldn't grant the recipient access.
-  // The approval was created successfully (Drive sent its emails),
-  // but those recipients will hit "Request access" — the user needs
-  // to share manually or pick different reviewers next time.
-  const [shareFailures, setShareFailures] = useState<
-    { email: string; reason: string }[]
-  >([]);
-  // Approvers whose emails have no Google account (Drive Approvals
-  // requires Google identity per reviewer — visitor/PIN flow doesn't
-  // apply). When non-empty, the dialog highlights those chips and shows
-  // the actionable "create a Google account for your existing email"
-  // hint instead of the generic error string.
-  const [invalidEmails, setInvalidEmails] = useState<Set<string>>(new Set());
-  // After a "copy instructions" click, holds the email whose template
-  // is currently on the clipboard so the button can flip to "✓ הועתק"
-  // for ~2 sec. Single string (not a set) — copying for one recipient
-  // at a time matches the user's mental model and avoids ambiguous UI.
-  const [copiedFor, setCopiedFor] = useState<string>("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize selected when the dialog opens — pre-check every
@@ -72,37 +75,7 @@ export default function SendForApprovalButton({
     setMessage("");
     setError(null);
     setSuccess(false);
-    setShareFailures([]);
-    setInvalidEmails(new Set());
-    setCopiedFor("");
   }, [open, suggestedClients]);
-
-  // Render the Hebrew instruction template for the given email and put
-  // it on the clipboard. Falls back to a hidden textarea + execCommand
-  // when navigator.clipboard isn't available (older Safari, insecure
-  // contexts). Briefly marks the row so the user sees the action took.
-  async function copyInstructions(email: string) {
-    const tmpl = googleAccountSetupHebrew(email);
-    try {
-      await navigator.clipboard.writeText(tmpl.full);
-    } catch {
-      // Fallback for environments without async clipboard. Uses a
-      // throwaway textarea so we don't affect any visible element.
-      const ta = document.createElement("textarea");
-      ta.value = tmpl.full;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand("copy"); } finally { document.body.removeChild(ta); }
-    }
-    setCopiedFor(email);
-    // Reset after 2 seconds so the button is reusable + no stale
-    // "copied" state lingers if the user moves on.
-    setTimeout(() => {
-      setCopiedFor((prev) => (prev === email ? "" : prev));
-    }, 2000);
-  }
 
   // Esc + click-outside to close, but don't close while submitting
   // (a half-finished POST should resolve before unmount).
@@ -147,7 +120,6 @@ export default function SendForApprovalButton({
   async function onSubmit() {
     setSubmitting(true);
     setError(null);
-    setInvalidEmails(new Set());
     try {
       // Auto-promote any pending email in the "הוסף כתובת אימייל" input.
       // Common pattern is to type an address and click שלח without
@@ -159,9 +131,6 @@ export default function SendForApprovalButton({
       let finalSelected = selected;
       if (pending.includes("@") && !selected.has(pending)) {
         finalSelected = new Set(selected).add(pending);
-        // Reflect the promotion in component state so the user sees
-        // the chip materialize if a downstream error opens this dialog
-        // again (and so re-submits don't double-add).
         setSelected(finalSelected);
         setExtraEmail("");
       }
@@ -171,61 +140,45 @@ export default function SendForApprovalButton({
         setSubmitting(false);
         return;
       }
-      const res = await fetch("/api/drive/approvals/create", {
+      const res = await fetch("/api/prisot/send-approval", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fileId, approvers, message }),
+        body: JSON.stringify({
+          fileId,
+          fileName,
+          mimeType,
+          project,
+          company,
+          approvers,
+          message,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
-        status?: number;
-        shareFailures?: { email: string; reason: string }[];
-        invalidEmails?: string[];
       };
       if (!res.ok || !data.ok) {
-        // When the server identified specific emails as "no Google
-        // account", surface the actionable Hebrew message directly
-        // (no generic prefix) AND mark the chips so the user can see
-        // exactly which to fix or replace. Otherwise fall back to the
-        // status-based hints.
-        if (Array.isArray(data.invalidEmails) && data.invalidEmails.length > 0) {
-          setInvalidEmails(
-            new Set(data.invalidEmails.map((e) => e.toLowerCase().trim())),
-          );
-          setError(data.error || "");
-          setSubmitting(false);
-          return;
-        }
-        const status = data.status ?? res.status;
-        let hint = "";
-        if (status === 403) {
-          hint =
-            "ייתכן שתכונת האישורים אינה זמינה במנוי Workspace הנוכחי. ";
-        } else if (status === 400) {
-          hint = "נראה שלא ניתן לשתף את הקובץ עם אחד הנמענים. ";
-        }
-        setError(hint + (data.error || `שגיאה ${status}`));
+        setError(data.error || `שגיאה ${res.status}`);
         setSubmitting(false);
         return;
       }
       setSuccess(true);
-      setShareFailures(data.shareFailures ?? []);
       setSubmitting(false);
-      // Auto-close + refresh ONLY when every recipient was shared
-      // cleanly — when there are share failures, keep the dialog open
-      // so the user sees which recipients need manual handling.
-      if (!data.shareFailures || data.shareFailures.length === 0) {
-        setTimeout(() => {
-          setOpen(false);
-          router.refresh();
-        }, 1200);
-      }
+      // One message to the whole group — it either went out or it didn't,
+      // so there's no partial state to keep the dialog open for.
+      setTimeout(() => {
+        setOpen(false);
+        router.refresh();
+      }, 1200);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSubmitting(false);
     }
   }
+
+  const extras = [...selected].filter(
+    (e) => !suggestedClients.map((s) => s.toLowerCase().trim()).includes(e),
+  );
 
   return (
     <>
@@ -233,9 +186,13 @@ export default function SendForApprovalButton({
         type="button"
         className="prisot-send-approval-btn"
         onClick={() => setOpen(true)}
-        title="שלח את הפריסה לאישור הלקוח"
+        title={
+          resend
+            ? "שלח שוב לאישור — הקישורים שנשלחו קודם יפוגו"
+            : "שלח את הפריסה לאישור הלקוח"
+        }
       >
-        📤 שלח לאישור
+        {resend ? "🔁 שלח שוב" : "📤 שלח לאישור"}
       </button>
       {open && (
         <div className="quick-note-overlay" role="dialog" aria-modal="true">
@@ -271,51 +228,16 @@ export default function SendForApprovalButton({
                 <ul className="send-approval-list">
                   {suggestedClients.map((email) => {
                     const norm = email.toLowerCase().trim();
-                    const checked = selected.has(norm);
-                    const isInvalid = invalidEmails.has(norm);
-                    const wasCopied = copiedFor === norm;
                     return (
                       <li key={norm}>
-                        <label
-                          className={
-                            "send-approval-row" +
-                            (isInvalid ? " send-approval-row-invalid" : "")
-                          }
-                        >
+                        <label className="send-approval-row">
                           <input
                             type="checkbox"
-                            checked={checked}
+                            checked={selected.has(norm)}
                             onChange={() => toggleEmail(norm)}
                             disabled={submitting}
                           />
                           <span dir="ltr">{email}</span>
-                          {isInvalid ? (
-                            <>
-                              <span
-                                className="send-approval-invalid-badge"
-                                title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
-                              >
-                                ⚠ אין חשבון Google
-                              </span>
-                              <button
-                                type="button"
-                                className={
-                                  "send-approval-copy-btn" +
-                                  (wasCopied ? " is-copied" : "")
-                                }
-                                onClick={(e) => {
-                                  // Stop the click from also toggling
-                                  // the row's checkbox label.
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  copyInstructions(norm);
-                                }}
-                                title="העתק הוראות בעברית להעברה לנמען בצ׳אט / במייל"
-                              >
-                                {wasCopied ? "✓ הועתק" : "📋 העתק הוראות"}
-                              </button>
-                            </>
-                          ) : null}
                         </label>
                       </li>
                     );
@@ -326,71 +248,26 @@ export default function SendForApprovalButton({
             {/* Extras already-added (typed into the input below) —
                 render only when there are entries beyond the
                 suggested list, so we don't double-show. */}
-            {(() => {
-              const extras = [...selected].filter(
-                (e) =>
-                  !suggestedClients
-                    .map((s) => s.toLowerCase().trim())
-                    .includes(e),
-              );
-              if (extras.length === 0) return null;
-              return (
-                <div className="send-approval-section">
-                  <div className="send-approval-section-label">
-                    נמענים נוספים
-                  </div>
-                  <ul className="send-approval-list">
-                    {extras.map((email) => {
-                      const isInvalid = invalidEmails.has(email);
-                      const wasCopied = copiedFor === email;
-                      return (
-                        <li key={email}>
-                          <label
-                            className={
-                              "send-approval-row" +
-                              (isInvalid ? " send-approval-row-invalid" : "")
-                            }
-                          >
-                            <input
-                              type="checkbox"
-                              checked
-                              onChange={() => toggleEmail(email)}
-                              disabled={submitting}
-                            />
-                            <span dir="ltr">{email}</span>
-                            {isInvalid ? (
-                              <>
-                                <span
-                                  className="send-approval-invalid-badge"
-                                  title="אין חשבון Google משויך לכתובת הזו — ראה ההסבר למטה"
-                                >
-                                  ⚠ אין חשבון Google
-                                </span>
-                                <button
-                                  type="button"
-                                  className={
-                                    "send-approval-copy-btn" +
-                                    (wasCopied ? " is-copied" : "")
-                                  }
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    copyInstructions(email);
-                                  }}
-                                  title="העתק הוראות בעברית להעברה לנמען בצ׳אט / במייל"
-                                >
-                                  {wasCopied ? "✓ הועתק" : "📋 העתק הוראות"}
-                                </button>
-                              </>
-                            ) : null}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })()}
+            {extras.length > 0 && (
+              <div className="send-approval-section">
+                <div className="send-approval-section-label">נמענים נוספים</div>
+                <ul className="send-approval-list">
+                  {extras.map((email) => (
+                    <li key={email}>
+                      <label className="send-approval-row">
+                        <input
+                          type="checkbox"
+                          checked
+                          onChange={() => toggleEmail(email)}
+                          disabled={submitting}
+                        />
+                        <span dir="ltr">{email}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="send-approval-add">
               <input
                 type="email"
@@ -417,39 +294,22 @@ export default function SendForApprovalButton({
               </button>
             </div>
             <textarea
-              placeholder="הודעה (אופציונלי) — תופיע בבקשת האישור"
+              placeholder="הודעה (אופציונלי) — תופיע בגוף המייל"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               disabled={submitting}
               className="quick-note-body"
               rows={3}
             />
+            <p className="send-approval-hint">
+              יישלח מייל אחד לכל הנמענים יחד, עם קישור לאישור הפריסה — ללא
+              צורך בהתחברות או בחשבון Google. הקישור בתוקף לשבועיים.
+              {resend && " שליחה חוזרת מבטלת את הקישורים שנשלחו קודם."}
+            </p>
             {error && <div className="error send-approval-error">{error}</div>}
-            {success && shareFailures.length === 0 && (
+            {success && (
               <div className="send-approval-success">
-                ✓ נשלח. הנמענים יקבלו אימייל מ-Drive עם בקשת אישור
-                והרשאת צפייה בקובץ.
-              </div>
-            )}
-            {success && shareFailures.length > 0 && (
-              <div className="send-approval-warning">
-                <div>
-                  ⚠️ הבקשה נשלחה, אבל לא הצלחנו להעניק הרשאת צפייה
-                  לכל הנמענים. הם עלולים לראות "בקשת גישה" כשייכנסו
-                  לקובץ. שתף ידנית מתוך Drive או בחר נמענים אחרים:
-                </div>
-                <ul className="send-approval-fail-list">
-                  {shareFailures.map((f) => (
-                    <li key={f.email}>
-                      <b dir="ltr">{f.email}</b>
-                      {f.reason && (
-                        <span className="send-approval-fail-reason">
-                          {" "}— {f.reason}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                ✓ נשלח. הנמענים יקבלו מייל עם קישור לצפייה ואישור הפריסה.
               </div>
             )}
             <div className="send-approval-actions">

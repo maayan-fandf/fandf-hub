@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createMentionDirect } from "@/lib/commentsWriteDirect";
 import { upsertPrisotChangeRequest } from "@/lib/prisotChangeRequests";
+import { resolvePrisaApprovalRequest } from "@/lib/prisaApprovalTokens";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,6 +72,17 @@ export async function POST(req: Request) {
       projectName: project,
       requestedBy: email,
       note,
+    });
+    // 3) Close out the emailed approval request, if one is open. A client
+    //    who signs into the hub instead of using the link is answering
+    //    the same question — and leaving the request unresolved would
+    //    pin the card on "⏳ נשלח לאישור" until the 14-day expiry, which
+    //    is precisely the state the team can't re-send from. Best-effort:
+    //    the discussion post above is the load-bearing part.
+    await resolvePrisaApprovalRequest({
+      fileId,
+      resolution: "changes",
+      resolvedBy: email,
     });
     return NextResponse.json({ ok: true, comment_id: posted.comment_id });
   } catch (e) {

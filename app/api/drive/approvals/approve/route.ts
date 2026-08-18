@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { approvePrisaViaLock } from "@/lib/driveApprovals";
 import { clearPrisotChangeRequest } from "@/lib/prisotChangeRequests";
+import { resolvePrisaApprovalRequest } from "@/lib/prisaApprovalTokens";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,17 +12,19 @@ export const dynamic = "force-dynamic";
  * latest פריסה sheet read-only (contentRestrictions) as the "approved
  * version" — the same signal `fetchApprovalState` reads back as ✓ מאושר.
  *
- * Unlike /api/drive/approvals/create (SendForApprovalButton — kicks off a
- * Drive Approvals flow for internal users to REQUEST client sign-off),
- * this is the terminal APPROVE step a client clicks from the hub. External
- * clients can't cast an Approvals-API vote (DWD can't impersonate
- * non-@fandf.co.il identities), so the hub records the approval as a lock
- * on their behalf, attributed to their email in the lock reason.
+ * This is the SESSION-authed terminal APPROVE step, for a client who is
+ * signed into the hub and looking at the project page. Its twin is
+ * /api/prisot/token-action, which does the same thing for someone
+ * arriving on an emailed signed link with no session at all. Both call
+ * approvePrisaViaLock, so the two entry points are indistinguishable
+ * downstream — the only difference is where the approver's identity
+ * comes from (session here, token there).
  *
- * Session-auth only. The button renders only inside the prisot card on a
- * real-estate project page the caller can already see; the file id is an
- * un-guessable 32-char Drive id surfaced only there — same exposure model
- * as /api/drive/approvals/create.
+ * The request to approve is created by /api/prisot/send-approval.
+ *
+ * The button renders only inside the prisot card on a project page the
+ * caller can already see; the file id is an un-guessable 32-char Drive
+ * id surfaced only there.
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -57,5 +60,15 @@ export async function POST(req: Request) {
   // Approving supersedes any pending change-request — clear the chip so an
   // approved plan doesn't keep showing "🔄 התבקשו שינויים". Best-effort.
   await clearPrisotChangeRequest(fileId);
+  // Close out the emailed approval request too, if there is one. Without
+  // this, a client who ignored the email and approved from inside the hub
+  // would leave the request unresolved — harmless for the badge (the lock
+  // already reads as ✓ מאושר, which wins) but it would keep the emailed
+  // links live and misreport who resolved it.
+  await resolvePrisaApprovalRequest({
+    fileId,
+    resolution: "approved",
+    resolvedBy: email,
+  });
   return NextResponse.json(result);
 }

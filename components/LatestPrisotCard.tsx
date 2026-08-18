@@ -257,6 +257,23 @@ export default async function LatestPrisotCard({
                     ממתין מ{chipText}
                   </span>
                 )}
+                {/* Re-send while pending. "Waiting" used to be a one-way
+                    door: the send button rendered only for none/declined,
+                    so any request that got stuck — a bounced email, a
+                    client who answered in the hub instead of the link, a
+                    plan revised mid-flight — left the team with no way to
+                    send again until the 14-day expiry. Re-sending also
+                    supersedes the earlier links (see tokenMatchesRequest),
+                    which is exactly what you want after a revision. */}
+                <SendForApprovalButton
+                  fileId={latest.id}
+                  fileName={latest.name}
+                  mimeType={latest.mimeType}
+                  project={project}
+                  company={company}
+                  suggestedClients={clientEmails}
+                  resend
+                />
               </>
             );
           })()}
@@ -289,7 +306,11 @@ export default async function LatestPrisotCard({
                 <SendForApprovalButton
                   fileId={latest.id}
                   fileName={latest.name}
+                  mimeType={latest.mimeType}
+                  project={project}
+                  company={company}
                   suggestedClients={clientEmails}
+                  resend
                 />
               </>
             );
@@ -305,6 +326,9 @@ export default async function LatestPrisotCard({
               <SendForApprovalButton
                 fileId={latest.id}
                 fileName={latest.name}
+                mimeType={latest.mimeType}
+                project={project}
+                company={company}
                 suggestedClients={clientEmails}
               />
             </>

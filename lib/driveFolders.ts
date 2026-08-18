@@ -14,6 +14,10 @@
 import { cache } from "react";
 import type { drive_v3 } from "googleapis";
 import { driveClient, driveFolderOwner, sheetsClient } from "@/lib/sa";
+import {
+  getPrisaApprovalRequest,
+  isAwaitingApproval,
+} from "@/lib/prisaApprovalTokens";
 
 export type FolderRef = {
   id: string;
@@ -616,7 +620,28 @@ async function findLatestPrisotInner(
   else if (apiInfo.state === "pending") approvalState = "pending";
   else if (apiInfo.state === "declined") approvalState = "declined";
   else approvalState = "none";
-  const approvalReviewers = apiInfo.reviewers;
+  let approvalReviewers = apiInfo.reviewers;
+  // Hub-sent approval requests (the emailed signed-link flow that
+  // replaced Drive Approvals — lib/prisaApprovalTokens.ts) leave no
+  // trace in the Drive Approvals API, so "none" here can still mean
+  // "we emailed the client and are waiting". Layer our own record on
+  // top: an unresolved, unexpired request reads as pending, with the
+  // recipients standing in as NO_RESPONSE reviewers so the card's
+  // "ממטין מ<name>" chip works unchanged.
+  //
+  // Only consulted when the Drive signal is "none" — a real lock or a
+  // legacy in-flight Drive approval still wins, so nothing regresses
+  // for plans sent before the cutover.
+  if (approvalState === "none") {
+    const req = await getPrisaApprovalRequest(best.id);
+    if (req && isAwaitingApproval(req)) {
+      approvalState = "pending";
+      approvalReviewers = req.recipients.map((email) => ({
+        email,
+        response: "NO_RESPONSE",
+      }));
+    }
+  }
   // Diagnostic log when the badge resolves to "none" — captures the
   // file mimeType so we can tell from App Hosting logs whether the
   // issue is "this file type doesn't support approvals" (image,

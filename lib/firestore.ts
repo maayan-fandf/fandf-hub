@@ -95,6 +95,15 @@ export const FS_COLLECTIONS = {
    *  (ISO), note }. Drives the "🔄 התבקשו שינויים" chip on the פריסה
    *  card; cleared when the plan is (re-)approved. */
   prisotChangeRequests: "prisotChangeRequests",
+  /** Per-פריסה emailed approval requests — the hub's replacement for the
+   *  Drive Approvals API workflow (see lib/prisaApprovalTokens.ts). Doc
+   *  id = the Drive fileId, same convention as prisotChangeRequests.
+   *  Fields: { fileId, fileName, projectName, company, sentBy, sentAt,
+   *  recipients[], expiresAt, message, resolution?, resolvedBy?,
+   *  resolvedAt? }. An unresolved, unexpired doc is what drives the
+   *  "⏳ נשלח לאישור" badge — the Drive Approvals API no longer supplies
+   *  that state for newly-sent plans. */
+  prisotApprovalRequests: "prisotApprovalRequests",
 } as const;
 
 type SAKey = {

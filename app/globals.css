@@ -8594,12 +8594,179 @@ html[data-theme="dark"] .send-approval-warning {
   opacity: 0.75;
   font-size: 0.78rem;
 }
+.send-approval-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted, #64748b);
+}
 .send-approval-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.3rem;
 }
+
+/* ── /approve/<token> — the login-free client approval page ─────────
+   Rendered inside the normal root layout, so the topnav is suppressed
+   here: an external client landing from an email has no session and no
+   use for internal nav. `:has()` keeps this to one rule instead of
+   restructuring the app into route groups. */
+body:has(.prisa-approve-standalone) .topnav,
+body:has(.prisa-approve-standalone) .quick-task-fab,
+body:has(.prisa-approve-standalone) .gemini-fab,
+body:has(.prisa-approve-standalone) .agenda-panel-toggle,
+body:has(.prisa-approve-standalone) .agenda-panel {
+  display: none;
+}
+.prisa-approve-standalone {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+.prisa-approve-card {
+  background: var(--card, #fff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 14px;
+  padding: 1.75rem 1.5rem;
+  box-shadow: 0 4px 24px rgb(15 23 42 / 6%);
+}
+.prisa-approve-eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--muted, #64748b);
+  margin-bottom: 0.4rem;
+}
+.prisa-approve-head h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.5rem;
+}
+.prisa-approve-meta {
+  margin: 0 0 1.25rem;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--ink, #0f172a);
+}
+.prisa-approve-meta-dim {
+  color: var(--muted, #64748b);
+  font-size: 0.84rem;
+}
+.prisa-approve-message {
+  margin: 0 0 1.25rem;
+  padding: 0.7rem 1rem;
+  background: var(--chip-bg, #f1f5f9);
+  border-inline-start: 3px solid #4f46e5;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  font-size: 0.92rem;
+}
+.prisa-approve-preview {
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+.prisa-approve-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+.prisa-approve-pdf {
+  width: 100%;
+  height: min(70vh, 640px);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  display: block;
+}
+.prisa-approve-nopreview {
+  margin: 0;
+  padding: 1.1rem 1.2rem;
+  background: var(--chip-bg, #fef3c7);
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+.prisa-approve-actions {
+  border-top: 1px solid var(--line, #e2e8f0);
+  padding-top: 1.25rem;
+}
+.prisa-approve-btnrow {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.prisa-approve-btnrow-primary {
+  justify-content: flex-start;
+}
+.prisa-approve-yes {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.7rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.prisa-approve-yes:hover { background: #15803d; }
+.prisa-approve-yes:disabled { opacity: 0.6; cursor: default; }
+.prisa-approve-confirm-q {
+  display: block;
+  margin-bottom: 0.7rem;
+  font-weight: 500;
+}
+.prisa-approve-changes-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-weight: 500;
+}
+.prisa-approve-changes .quick-note-body {
+  width: 100%;
+  margin-bottom: 0.7rem;
+}
+.prisa-approve-who {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.prisa-approve-who-label { font-weight: 500; }
+.prisa-approve-who-select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line, #cbd5e1);
+  border-radius: 6px;
+  background: var(--card, #fff);
+  color: var(--ink, #0f172a);
+  font-size: 0.92rem;
+  max-width: 100%;
+}
+.prisa-approve-error { margin-top: 0.7rem; }
+.prisa-approve-signin-hint {
+  margin: 1.1rem 0 0;
+  font-size: 0.84rem;
+  color: var(--muted, #64748b);
+}
+.prisa-approve-result {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+.prisa-approve-result-icon {
+  font-size: 2.6rem;
+  line-height: 1;
+  margin-bottom: 0.7rem;
+}
+.prisa-approve-result h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.25rem;
+}
+.prisa-approve-result p {
+  margin: 0;
+  color: var(--muted, #64748b);
+  line-height: 1.65;
+}
+.prisa-approve-result-ok .prisa-approve-result-icon { color: #16a34a; }
 @media (max-width: 640px) {
   .prisot-data { max-height: 480px; }
   .prisot-data-table { font-size: 0.78rem; }
