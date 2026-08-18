@@ -8598,7 +8598,7 @@ html[data-theme="dark"] .send-approval-warning {
   margin: 0.5rem 0 0;
   font-size: 0.78rem;
   line-height: 1.5;
-  color: var(--muted, #64748b);
+  color: var(--muted);
 }
 .send-approval-actions {
   display: flex;
@@ -8619,22 +8619,61 @@ body:has(.prisa-approve-standalone) .agenda-panel-toggle,
 body:has(.prisa-approve-standalone) .agenda-panel {
   display: none;
 }
+/* PINNED LIGHT, deliberately.
+   This page is a document a client signs off, reached from an email —
+   not a screen in the F&F app. It has no business inheriting the theme
+   an internal user happens to have toggled, and the two things it
+   renders (a Sheets table carrying its own cell colours, and a plan
+   image) are light artwork either way.
+   The first version mixed the two worlds and looked broken in dark mode:
+   the card background was a hardcoded #fff (it referenced --card, which
+   this stylesheet never defines, so the fallback always won) while the
+   headings used --ink, which DOES flip — near-white text on white.
+   Redeclaring the real palette tokens here fixes it at the root for
+   every descendant, including PrisotDataTable, which styles itself from
+   --surface / --border / --ink and would otherwise go dark inside a
+   light card. */
 .prisa-approve-standalone {
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --surface-alt: #f1f5f9;
+  --surface-hi: #f3f4f6;
+  --border: #e2e8f0;
+  --border-soft: #eef2f7;
+  --text: #0f172a;
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --muted: #64748b;
+  color: var(--ink);
   max-width: 900px;
   margin: 0 auto;
   padding: 1.5rem 1rem 4rem;
 }
+/* The app shell paints a dark body + particle canvas behind this in dark
+   mode; a light card floating on that reads as a rendering bug. Give the
+   whole route a light ground and drop the decoration. */
+body:has(.prisa-approve-standalone) {
+  background: #f1f5f9;
+}
+body:has(.prisa-approve-standalone) .particles-bg,
+body:has(.prisa-approve-standalone) canvas[class*="particle"] {
+  display: none;
+}
 .prisa-approve-card {
-  background: var(--card, #fff);
-  border: 1px solid var(--line, #e2e8f0);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 1.75rem 1.5rem;
   box-shadow: 0 4px 24px rgb(15 23 42 / 6%);
 }
+.prisa-approve-standalone h1,
+.prisa-approve-standalone h2 {
+  color: var(--ink);
+}
 .prisa-approve-eyebrow {
   font-size: 0.78rem;
   letter-spacing: 0.06em;
-  color: var(--muted, #64748b);
+  color: var(--muted);
   margin-bottom: 0.4rem;
 }
 .prisa-approve-head h1 {
@@ -8645,16 +8684,16 @@ body:has(.prisa-approve-standalone) .agenda-panel {
   margin: 0 0 1.25rem;
   font-size: 0.92rem;
   line-height: 1.6;
-  color: var(--ink, #0f172a);
+  color: var(--ink);
 }
 .prisa-approve-meta-dim {
-  color: var(--muted, #64748b);
+  color: var(--muted);
   font-size: 0.84rem;
 }
 .prisa-approve-message {
   margin: 0 0 1.25rem;
   padding: 0.7rem 1rem;
-  background: var(--chip-bg, #f1f5f9);
+  background: var(--surface-alt);
   border-inline-start: 3px solid #4f46e5;
   border-radius: 6px;
   white-space: pre-wrap;
@@ -8673,21 +8712,21 @@ body:has(.prisa-approve-standalone) .agenda-panel {
 .prisa-approve-pdf {
   width: 100%;
   height: min(70vh, 640px);
-  border: 1px solid var(--line, #e2e8f0);
+  border: 1px solid var(--border);
   border-radius: 8px;
   display: block;
 }
 .prisa-approve-nopreview {
   margin: 0;
   padding: 1.1rem 1.2rem;
-  background: var(--chip-bg, #fef3c7);
+  background: #fef3c7;
   border: 1px solid #fcd34d;
   border-radius: 8px;
   line-height: 1.6;
   font-size: 0.92rem;
 }
 .prisa-approve-actions {
-  border-top: 1px solid var(--line, #e2e8f0);
+  border-top: 1px solid var(--border);
   padding-top: 1.25rem;
 }
 .prisa-approve-btnrow {
@@ -8735,10 +8774,10 @@ body:has(.prisa-approve-standalone) .agenda-panel {
 .prisa-approve-who-label { font-weight: 500; }
 .prisa-approve-who-select {
   padding: 0.4rem 0.6rem;
-  border: 1px solid var(--line, #cbd5e1);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card, #fff);
-  color: var(--ink, #0f172a);
+  background: var(--surface);
+  color: var(--ink);
   font-size: 0.92rem;
   max-width: 100%;
 }
@@ -8746,7 +8785,7 @@ body:has(.prisa-approve-standalone) .agenda-panel {
 .prisa-approve-signin-hint {
   margin: 1.1rem 0 0;
   font-size: 0.84rem;
-  color: var(--muted, #64748b);
+  color: var(--muted);
 }
 .prisa-approve-result {
   text-align: center;
@@ -8763,7 +8802,7 @@ body:has(.prisa-approve-standalone) .agenda-panel {
 }
 .prisa-approve-result p {
   margin: 0;
-  color: var(--muted, #64748b);
+  color: var(--muted);
   line-height: 1.65;
 }
 .prisa-approve-result-ok .prisa-approve-result-icon { color: #16a34a; }
@@ -15120,7 +15159,7 @@ html[data-theme="dark"] .tasks-priority-pill.p3 { background: rgba(255,255,255,.
 }
 .uhc-role {
   font-size: 12px;
-  color: var(--muted, #64748b);
+  color: var(--muted);
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
