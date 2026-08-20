@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 /**
  * "📤 שלח לאישור" affordance on the LatestPrisotCard, shown when the
  * latest פריסה isn't already approved. Opens a small dialog to pick
- * recipients (pre-populated from `suggestedClients`) plus an optional
- * message, then POSTs to /api/prisot/send-approval.
+ * recipients (listed from `suggestedClients`, none checked by default)
+ * plus an optional message, then POSTs to /api/prisot/send-approval.
  *
  * That endpoint emails each recipient a signed, expiring link to
  * /approve/<token> — a page that renders the plan and its
@@ -66,11 +66,14 @@ export default function SendForApprovalButton({
   const [success, setSuccess] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  // Initialize selected when the dialog opens — pre-check every
-  // suggested client. Reset transient state on each open.
+  // Open with NOTHING checked. The roster is a suggestion, not a default:
+  // pre-checking it meant the safe-looking action (just hit שלח) mailed the
+  // whole client list, and un-checking is the step people forget. Starting
+  // empty makes each recipient a deliberate choice, and the send button stays
+  // disabled until at least one is picked.
   useEffect(() => {
     if (!open) return;
-    setSelected(new Set(suggestedClients.map((e) => e.toLowerCase().trim())));
+    setSelected(new Set());
     setExtraEmail("");
     setMessage("");
     setError(null);
@@ -179,6 +182,14 @@ export default function SendForApprovalButton({
   const extras = [...selected].filter(
     (e) => !suggestedClients.map((s) => s.toLowerCase().trim()).includes(e),
   );
+
+  // A typed-but-not-yet-added address counts toward "has a recipient".
+  // onSubmit folds it into the set anyway (see the auto-promote there), and
+  // without this the send button would sit disabled while the user stares
+  // at the address they just typed — a dead end that only appeared once
+  // the roster stopped being pre-checked.
+  const pendingEmail = extraEmail.toLowerCase().trim().includes("@");
+  const hasRecipient = selected.size > 0 || pendingEmail;
 
   return (
     <>
@@ -325,7 +336,7 @@ export default function SendForApprovalButton({
                 type="button"
                 onClick={onSubmit}
                 className="btn-primary"
-                disabled={submitting || selected.size === 0 || success}
+                disabled={submitting || !hasRecipient || success}
               >
                 {submitting ? "שולח…" : "שלח לאישור"}
               </button>
