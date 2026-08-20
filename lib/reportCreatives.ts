@@ -1001,12 +1001,23 @@ function aggregateCreatives(
     const ctrEarly = eImp > 0 ? sum(early, "clicks") / eImp : 0;
     const ctrRecent = rImp > 0 ? sum(recent, "clicks") / rImp : 0;
     const ctrDropPct = ctrEarly > 0 ? (ctrEarly - ctrRecent) / ctrEarly : 0;
+    // "⏳ שקלו לרענן" is a call to action, and a paused ad has nothing to
+    // act on — you can't refresh a creative that isn't running. Every card
+    // in a wound-down campaign carried it, which is noise sitting exactly
+    // where a real signal would go. Gate it on the ad still running; the
+    // card falls back to the neutral "📅 N ימים" age chip.
+    //
+    // "⚠️ CTR יורד" is deliberately NOT gated: that one states what
+    // happened rather than asking for something, and on a paused ad it
+    // usually explains why it was paused.
+    const running =
+      String(assets?.status ?? "").toUpperCase().trim() === "ACTIVE";
     let fatigued = false;
     let fatigueReason: ReportFbAd["fatigueReason"] = "";
     if (ageDays >= 30 && ctrDropPct >= 0.25 && ctrEarly >= 0.003 && rImp >= 500) {
       fatigued = true;
       fatigueReason = "declining";
-    } else if (ageDays >= 45) {
+    } else if (ageDays >= 45 && running) {
       fatigued = true;
       fatigueReason = "long";
     }

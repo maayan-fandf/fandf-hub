@@ -374,7 +374,14 @@ export default function ReportCreativesTab({
                     {!a.fatigued && a.ageDays >= 14 && (
                       <div
                         className="rpt-cr-age"
-                        title={`מודעה פעילה ${a.ageDays} ימים`}
+                        // Paused ads reach this chip now that "שקלו לרענן"
+                        // is gated on still running, so the tooltip can't
+                        // keep claiming the ad is active.
+                        title={
+                          isActive
+                            ? `מודעה פעילה ${a.ageDays} ימים`
+                            : `המודעה רצה ${a.ageDays} ימים`
+                        }
                       >
                         📅 {a.ageDays} ימים
                       </div>
