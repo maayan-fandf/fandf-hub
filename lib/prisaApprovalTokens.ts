@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getDb, FS_COLLECTIONS } from "@/lib/firestore";
+import { getProjectClientEmails } from "@/lib/keys";
 
 /**
  * Signed, expiring, login-free approval links for the פריסה (media-plan)
@@ -212,19 +213,53 @@ export function verifyPrisaApprovalToken(token: string): VerifiedPrisaToken {
  * question at all.
  */
 export function resolveApprover(
-  req: PrisaApprovalRequest,
+  allowed: string[],
   claimed: string,
 ): { ok: true; email: string } | { ok: false; error: string } {
-  const recipients = (req.recipients || []).map((r) =>
-    String(r || "").toLowerCase().trim(),
-  );
-  if (recipients.length === 1) return { ok: true, email: recipients[0] };
+  const options = (allowed || [])
+    .map((r) => String(r || "").toLowerCase().trim())
+    .filter(Boolean);
+  if (options.length === 1) return { ok: true, email: options[0] };
   const want = String(claimed || "").toLowerCase().trim();
   if (!want) return { ok: false, error: "נא לבחור מי מאשר את הפריסה" };
-  if (!recipients.includes(want)) {
-    return { ok: false, error: "הכתובת שנבחרה אינה אחד הנמענים של בקשה זו" };
+  if (!options.includes(want)) {
+    return {
+      ok: false,
+      error: "הכתובת שנבחרה אינה מופיעה ברשימת הלקוחות של הפרויקט",
+    };
   }
   return { ok: true, email: want };
+}
+
+/**
+ * Who may be named as the approver — the addressees of the mail PLUS the
+ * project's client roster from Keys.
+ *
+ * Recipients alone were too narrow: approval mail gets forwarded (one
+ * live request's own note reads "יכולה להעביר את המייל לצרפתי"), so the
+ * person who actually signs off is routinely not on the To: line, and
+ * the picker made them sign under a colleague's name. Widening to the
+ * roster gives up nothing — anyone holding the link could already
+ * approve as any addressee, so this changes whose name gets recorded,
+ * not who can act.
+ *
+ * Derived server-side on BOTH sides (the page renders it, the action
+ * route re-derives it to validate) so a hand-crafted POST can't attribute
+ * a decision to someone outside the project. A Keys read failure degrades
+ * to recipients-only rather than emptying the list.
+ */
+export async function approverOptionsFor(
+  req: PrisaApprovalRequest,
+  subjectEmail: string,
+): Promise<string[]> {
+  const norm = (s: unknown) => String(s || "").toLowerCase().trim();
+  const recipients = (req.recipients || []).map(norm).filter(Boolean);
+  const roster = (
+    await getProjectClientEmails(req.projectName, subjectEmail)
+  ).map(norm);
+  return [...recipients, ...roster]
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
 }
 
 /* ──────────────────────── request record (Firestore) ─────────────── */

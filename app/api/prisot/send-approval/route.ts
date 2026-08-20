@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { getDriveFileMeta } from "@/lib/driveFolders";
 import { sendNotificationEmail } from "@/lib/notifications";
 import { buildPrisaApprovalEmail } from "@/lib/prisaApprovalEmail";
 import {
@@ -88,8 +89,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const fileName = String(body.fileName || "").trim() || "פריסה";
-  const mimeType = String(body.mimeType || "").trim();
+  // Name and type come from Drive, not from the client. The dialog gets
+  // its fileName from a server render that can be minutes old, so a plan
+  // renamed shortly before sending went out under the stale name — that
+  // is exactly how "Copy of 2026-07-28 essence" reached a client whose
+  // file had already been renamed to "2026-08-20 גן יבנה" a minute
+  // earlier. It also means the posted string, which any signed-in user
+  // controls, can no longer land verbatim in an outbound email subject.
+  // Posted values stay as the fallback so a Drive blip doesn't block a send.
+  const live = await getDriveFileMeta(email, fileId);
+  const fileName = live?.name || String(body.fileName || "").trim() || "פריסה";
+  const mimeType = live?.mimeType || String(body.mimeType || "").trim();
   const projectName = String(body.project || "").trim();
   const company = String(body.company || "").trim();
   const message = String(body.message || "").trim().slice(0, 2000);

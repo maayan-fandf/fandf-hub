@@ -5,6 +5,7 @@ import {
   upsertPrisotChangeRequest,
 } from "@/lib/prisotChangeRequests";
 import {
+  approverOptionsFor,
   getPrisaApprovalRequest,
   isAwaitingApproval,
   resolveApprover,
@@ -29,9 +30,11 @@ export const dynamic = "force-dynamic";
  *
  * The token is shared by everyone on the approval email, so it names no
  * person. Who to attribute the decision to comes from the request body
- * — and is therefore never trusted as sent: `resolveApprover` accepts it
- * only if it's one of the addresses the team actually mailed, and skips
- * the question entirely when there was just one recipient.
+ * — and is therefore never trusted as sent: the allowed set is re-derived
+ * server-side by `approverOptionsFor` (the addressees plus the project's
+ * Keys client roster, since approval mail gets forwarded), and
+ * `resolveApprover` accepts the claim only if it's in that set. The
+ * question is skipped entirely when the set has just one entry.
  *
  * Mirrors the session-authed pair (/api/drive/approvals/approve and
  * /api/projects/request-changes) so both entry points land in exactly
@@ -129,9 +132,12 @@ export async function POST(req: Request) {
     // expired) plan is accepted and recorded below.
   }
 
-  // Who this decision belongs to. Validated against the stored recipient
-  // list, so the browser can't invent an approver.
-  const who = resolveApprover(request, String(body.as || ""));
+  // Who this decision belongs to. The allowed set is re-derived here from
+  // the stored request + the project's Keys roster — never taken from the
+  // POST — so a hand-crafted body can't attribute an approval to someone
+  // outside the project.
+  const allowed = await approverOptionsFor(request, driveFolderOwner());
+  const who = resolveApprover(allowed, String(body.as || ""));
   if (!who.ok) {
     return NextResponse.json({ ok: false, error: who.error }, { status: 400 });
   }

@@ -16,22 +16,28 @@ import { useState } from "react";
 export default function PrisaTokenActions({
   token,
   projectHref,
-  recipients,
+  approvers,
 }: {
   token: string;
   /** Deep link into the hub for the "prefer to sign in?" escape hatch. */
   projectHref: string;
-  /** Everyone the approval email went to. The link is shared by all of
-   *  them, so with more than one we have to ask which is signing — with
-   *  exactly one there's nothing to ask and the question is skipped. */
-  recipients: string[];
+  /** Everyone who may be named as the approver: the addressees of the
+   *  email PLUS the project's client roster. Approval mail gets
+   *  forwarded — one live request's own note reads
+   *  "יכולה להעביר את המייל לצרפתי" — so the person who actually signs
+   *  off is often not an addressee, and offering only the To: line made
+   *  them sign under someone else's name. The server re-derives this
+   *  same list from Keys and rejects anything outside it, so the choice
+   *  here is a label, not a grant. One entry means there is nothing to
+   *  ask and the question is skipped. */
+  approvers: string[];
 }) {
   const [mode, setMode] = useState<"idle" | "confirm" | "changes">("idle");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<"approved" | "changes" | null>(null);
-  const mustPick = recipients.length > 1;
+  const mustPick = approvers.length > 1;
   const [who, setWho] = useState("");
 
   async function post(action: "approve" | "changes") {
@@ -112,7 +118,7 @@ export default function PrisaTokenActions({
         dir="ltr"
       >
         <option value="">— בחרו —</option>
-        {recipients.map((r) => (
+        {approvers.map((r) => (
           <option key={r} value={r}>
             {r}
           </option>

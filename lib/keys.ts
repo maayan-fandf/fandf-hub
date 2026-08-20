@@ -254,3 +254,56 @@ export async function findCompanyByClientEmail(
   }
   return "";
 }
+
+/**
+ * Every client email on a project's Keys row (col E "Email Client").
+ *
+ * Used by the login-free פריסה approval page to populate its
+ * "מי מאשר?" picker. The request doc only records who the mail was
+ * ADDRESSED to, but approvals get forwarded — the internal note on one
+ * live request literally reads "יכולה להעביר את המייל לצרפתי" — so
+ * whoever actually signs off is often not an addressee, and the picker
+ * had no way to name them. Offering the whole project roster lets the
+ * decision be attributed to the person who really made it.
+ *
+ * Read under the SA like every other Keys consumer, so it works with no
+ * session (the approve page is public). Returns [] on any failure or
+ * when the project isn't in Keys — callers fall back to the recipient
+ * list alone rather than losing the picker entirely.
+ */
+export async function getProjectClientEmails(
+  projectName: string,
+  subjectEmail: string,
+): Promise<string[]> {
+  const target = String(projectName || "")
+    .replace(KEYS_HEADER_NORMALIZE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!target) return [];
+  try {
+    const { headers, rows } = await readKeysCached(subjectEmail);
+    const iProj = headers.findIndex((h) => /פרוי?יקט/.test(h));
+    const iEmailClient = headers.findIndex((h) => /email\s*client/i.test(h));
+    if (iProj < 0 || iEmailClient < 0) return [];
+    for (const row of rows) {
+      const name = String(row[iProj] ?? "")
+        .replace(KEYS_HEADER_NORMALIZE, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (name !== target) continue;
+      return String(row[iEmailClient] ?? "")
+        .split(",")
+        .map((s) => s.trim().replace(/^["']|["']$/g, "").toLowerCase())
+        .filter((s) => s.includes("@"))
+        .filter((s, i, arr) => arr.indexOf(s) === i);
+    }
+    return [];
+  } catch (e) {
+    console.warn(
+      `[getProjectClientEmails] failed for "${projectName}": ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    return [];
+  }
+}

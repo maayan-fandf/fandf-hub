@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
-import { readPrisotData, type PrisotData } from "@/lib/driveFolders";
+import {
+  getDriveFileMeta,
+  readPrisotData,
+  type PrisotData,
+} from "@/lib/driveFolders";
 import { driveFolderOwner } from "@/lib/sa";
 import { projectHref } from "@/lib/projectHref";
 import PrisotDataTable from "@/components/PrisotDataTable";
 import PrisaTokenActions from "@/components/PrisaTokenActions";
 import {
+  approverOptionsFor,
   getPrisaApprovalRequest,
   isAwaitingApproval,
   verifyPrisaApprovalToken,
@@ -141,9 +146,18 @@ export default async function ApprovePage({
   // readPrisotData (server-side, no client credentials involved);
   // images / PDFs stream from the token-scoped proxy. Both read under
   // the SA, so the visitor needs no Drive access of their own.
-  const data = await readPrisotData(driveFolderOwner(), verified.fileId).catch(
-    () => null,
-  );
+  //
+  // The name and mime come from Drive rather than from the request doc,
+  // which only holds what they were when the mail went out — a file
+  // renamed after sending would otherwise keep showing its old name to
+  // the client. Stored values remain the fallback.
+  const [data, live, approvers] = await Promise.all([
+    readPrisotData(driveFolderOwner(), verified.fileId).catch(() => null),
+    getDriveFileMeta(driveFolderOwner(), verified.fileId),
+    approverOptionsFor(request, driveFolderOwner()),
+  ]);
+  const fileName = live?.name || request.fileName;
+  const mimeType = live?.mimeType || request.mimeType || "";
   const previewSrc = `/api/prisot/preview/${encodeURIComponent(token)}`;
 
   return (
@@ -151,7 +165,7 @@ export default async function ApprovePage({
       <header className="prisa-approve-head">
         <div className="prisa-approve-eyebrow">F&amp;F · פרסום ושיווק</div>
         <h1>📐 פריסה שיווקית לאישורכם</h1>
-        <Meta request={request} />
+        <Meta request={request} fileName={fileName} />
       </header>
 
       {request.message && (
@@ -161,8 +175,8 @@ export default async function ApprovePage({
       <div className="prisa-approve-preview">
         <Preview
           data={data}
-          mimeType={request.mimeType || ""}
-          fileName={request.fileName}
+          mimeType={mimeType}
+          fileName={fileName}
           src={previewSrc}
         />
       </div>
@@ -170,7 +184,7 @@ export default async function ApprovePage({
       <PrisaTokenActions
         token={token}
         projectHref={href}
-        recipients={request.recipients || []}
+        approvers={approvers}
       />
     </Shell>
   );
@@ -253,13 +267,20 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Meta({ request }: { request: PrisaApprovalRequest }) {
+function Meta({
+  request,
+  fileName,
+}: {
+  request: PrisaApprovalRequest;
+  /** Live Drive name, falling back to the one snapshotted on the request. */
+  fileName: string;
+}) {
   const sender = request.sentBy.split("@")[0] || "הצוות";
   return (
     <p className="prisa-approve-meta">
       {request.projectName && <b>{request.projectName}</b>}
       {request.projectName && " · "}
-      {request.fileName}
+      {fileName}
       <br />
       <span className="prisa-approve-meta-dim">
         נשלח על ידי {sender} · בתוקף עד {formatDateHe(request.expiresAt)}

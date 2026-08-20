@@ -1269,3 +1269,43 @@ export async function getFolderRef(
     viewUrl: res.data.webViewLink || driveFolderUrl(folderId),
   };
 }
+
+/**
+ * Current Drive name + mimeType for a file, or null if the lookup fails.
+ *
+ * The פריסה approval flow snapshots `fileName` onto the request doc when
+ * the mail goes out, so a rename in Drive afterwards left the public
+ * approve page showing a stale name ("Copy of 2026-07-28 essence" long
+ * after the file had been renamed). The page reads through this instead
+ * and falls back to the stored value, so a Drive hiccup degrades to the
+ * old behaviour rather than to a blank heading.
+ *
+ * mimeType comes along because it costs nothing on the same call and the
+ * approve page picks its renderer from it — a plan replaced in place by a
+ * different format would otherwise render with the original's renderer.
+ */
+export async function getDriveFileMeta(
+  subjectEmail: string,
+  fileId: string,
+): Promise<{ name: string; mimeType: string } | null> {
+  if (!fileId) return null;
+  try {
+    const drive = driveClient(driveFolderOwner() || subjectEmail);
+    const res = await drive.files.get({
+      fileId,
+      fields: "name, mimeType",
+      supportsAllDrives: true,
+    });
+    return {
+      name: res.data.name || "",
+      mimeType: res.data.mimeType || "",
+    };
+  } catch (e) {
+    console.warn(
+      `[getDriveFileMeta] failed for fileId=${fileId}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    return null;
+  }
+}
