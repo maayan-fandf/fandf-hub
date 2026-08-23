@@ -2,6 +2,11 @@ import {
   getProjectPriceCheck,
   type ProjectPriceSurface,
 } from "@/lib/appsScript";
+import {
+  getArtworkPriceFlag,
+  type ArtworkPriceFlag,
+} from "@/lib/creativePriceTags";
+import { driveFolderOwner } from "@/lib/sa";
 import PlatformIcon from "@/components/PlatformIcon";
 
 /**
@@ -38,6 +43,13 @@ export default async function ProjectPriceCheckSection({
   const clientMode = !!isClientUser;
   const data = await getProjectPriceCheck(projectName).catch(() => null);
   if (!data || !data.ok) return null;
+
+  // Warehouse creative tags — internal only, and only fetched when we are
+  // going to render them. Returns null on any failure, so the card simply
+  // loses the chip rather than the section failing.
+  const artwork = clientMode
+    ? null
+    : await getArtworkPriceFlag(driveFolderOwner(), projectName);
 
   // Self-hide when every surface is dark — no landing scrape AND no ad
   // copy on either platform. (`hasInput` is true for any surface where
@@ -124,6 +136,7 @@ export default async function ProjectPriceCheckSection({
             isOutlier={!clientMode && isOutlier(s)}
             isMin={!clientMode && s.price != null && s.price === minPrice && cmp?.mismatched}
             isMax={!clientMode && s.price != null && s.price === maxPrice && cmp?.mismatched}
+            artwork={artwork}
           />
         ))}
       </div>
@@ -139,11 +152,15 @@ function PriceCheckCard({
   isMin,
   isMax,
   clientMode = false,
+  artwork = null,
 }: {
   surface: ProjectPriceSurface;
   isOutlier: boolean;
   isMin: boolean | undefined;
   isMax: boolean | undefined;
+  /** Creative-tag flag for the FB card; null when unknown. See
+   *  ArtworkPriceChip for why it is a warning and not a price. */
+  artwork?: ArtworkPriceFlag | null;
   /** Client viewer — hides the ad-status chip and the FB/Google Ads
    *  deep-links (internal ad-ops surfaces the client can't use). */
   clientMode?: boolean;
@@ -222,6 +239,9 @@ function PriceCheckCard({
       {emptyState && (
         <div className="price-check-card-empty-state">{emptyState}</div>
       )}
+      {!clientMode && surface.name === "facebook" && artwork && (
+        <ArtworkPriceChip flag={artwork} />
+      )}
       <InventoryRows surface={surface} />
       {surface.url &&
         !(
@@ -237,6 +257,42 @@ function PriceCheckCard({
             {LINK_LABEL[surface.name]} ↗
           </a>
         )}
+    </div>
+  );
+}
+
+/**
+ * "the artwork itself shows a price" chip — FB card, internal only.
+ *
+ * Every surface on this card is read from TEXT, so a price that lives only
+ * in the creative image is invisible to the comparison. That is the case
+ * most likely to go stale unnoticed: the landing page gets updated and the
+ * artwork keeps running with the old number.
+ *
+ * This is NOT a fifth price. The warehouse tagger records a boolean — it
+ * knows a price is shown, not which one — so the chip can only tell you to
+ * go look. It states its own coverage for that reason: the tagger has seen
+ * a fraction of live creatives, and a bare "no price found" from a sample
+ * that small would be a claim we cannot support. Silent when nothing was
+ * flagged, so it only ever appears as a prompt to act.
+ */
+function ArtworkPriceChip({ flag }: { flag: ArtworkPriceFlag }) {
+  if (flag.withPrice <= 0) return null;
+  const partial = flag.tagged < flag.adsChecked;
+  return (
+    <div
+      className="price-check-card-empty-state price-check-card-artwork"
+      title={
+        `${flag.withPrice} מתוך ${flag.tagged} מודעות שנבדקו מציגות מחיר על התמונה עצמה. ` +
+        `המחיר הזה לא נכלל בהשוואה כאן — הוא לא מופיע בטקסט המודעה — ` +
+        `לכן כדאי לוודא מולו ידנית שהוא עדיין תואם לדף הנחיתה.` +
+        (partial
+          ? ` (נבדקו ${flag.tagged} מתוך ${flag.adsChecked} המודעות הפעילות; לשאר אין עדיין תיוג.)`
+          : "")
+      }
+    >
+      🖼️ מחיר מוטבע על הקריאייטיב ({flag.withPrice})
+      {partial && ` · נבדקו ${flag.tagged}/${flag.adsChecked}`}
     </div>
   );
 }
