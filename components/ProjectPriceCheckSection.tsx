@@ -61,9 +61,17 @@ export default async function ProjectPriceCheckSection({
   // (see lib/fbPriceFromWarehouse.ts), which is why this card reads
   // "אין קמפיינים פעילים ב-FB" on projects whose ad copy plainly carries a
   // price. When that path is repaired it wins again and this goes quiet.
+  // Only when the report saw NO ad copy at all — not merely when it found
+  // no price. Those are very different answers. "no-price" means it read
+  // the live ads and they genuinely do not advertise one, which is
+  // authoritative and must not be overridden: אנדה's four active ads carry
+  // no price, and this fallback happily published ₪2,420,000 read off an ad
+  // that had been paused since June. Recent spend is a loose stand-in for
+  // ACTIVE (the warehouse has no status column yet), so it must never get a
+  // vote where the report has a real one.
   const fbSurface = data.surfaces.find((s) => s.name === "facebook");
   const warehouseFb =
-    fbSurface && fbSurface.price == null
+    fbSurface && fbSurface.price == null && fbSurface.status === "no-input"
       ? await getWarehouseFbPrice(driveFolderOwner(), projectName)
       : null;
   const surfaces: ProjectPriceSurface[] =
