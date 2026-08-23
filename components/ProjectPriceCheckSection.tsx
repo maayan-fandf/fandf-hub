@@ -6,6 +6,11 @@ import {
   getArtworkPriceFlag,
   type ArtworkPriceFlag,
 } from "@/lib/creativePriceTags";
+import {
+  getWarehouseFbPrice,
+  type WarehouseFbPrice,
+} from "@/lib/fbPriceFromWarehouse";
+import { comparePrices } from "@/lib/priceExtractor";
 import { driveFolderOwner } from "@/lib/sa";
 import PlatformIcon from "@/components/PlatformIcon";
 
@@ -51,10 +56,35 @@ export default async function ProjectPriceCheckSection({
     ? null
     : await getArtworkPriceFlag(driveFolderOwner(), projectName);
 
+  // FB price from the warehouse — used ONLY when Apps Script produced
+  // none. Its FB branch has been dead since the assets tab was renamed
+  // (see lib/fbPriceFromWarehouse.ts), which is why this card reads
+  // "אין קמפיינים פעילים ב-FB" on projects whose ad copy plainly carries a
+  // price. When that path is repaired it wins again and this goes quiet.
+  const fbSurface = data.surfaces.find((s) => s.name === "facebook");
+  const warehouseFb =
+    fbSurface && fbSurface.price == null
+      ? await getWarehouseFbPrice(driveFolderOwner(), projectName)
+      : null;
+  const surfaces: ProjectPriceSurface[] =
+    warehouseFb?.price != null
+      ? data.surfaces.map((s) =>
+          s.name === "facebook"
+            ? {
+                ...s,
+                price: warehouseFb.price,
+                status: "ok",
+                hasInput: true,
+                inventory: warehouseFb.inventory,
+              }
+            : s,
+        )
+      : data.surfaces;
+
   // Self-hide when every surface is dark — no landing scrape AND no ad
   // copy on either platform. (`hasInput` is true for any surface where
   // SOME source content existed, even if no price could be extracted.)
-  const anyInput = data.surfaces.some((s) => s.hasInput);
+  const anyInput = surfaces.some((s) => s.hasInput);
   if (!anyInput) return null;
 
   // The mismatch status pill shown next to the section title. Four states:
@@ -65,8 +95,30 @@ export default async function ProjectPriceCheckSection({
   // Room-aware path skips the "min/max" outlier highlighting on the
   // cards because the headline-min/max axis isn't what's mismatched
   // there — the room-level inventory rows tell that story instead.
-  const detectedCount = data.surfaces.filter((s) => s.price != null).length;
+  const prices = surfaces
+    .map((s) => s.price)
+    .filter((p): p is number => p != null);
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = prices.length ? Math.max(...prices) : null;
+  const detectedCount = surfaces.filter((s) => s.price != null).length;
   const cmp = data.comparison;
+
+  // Apps Script compared the surfaces it could see. If we injected an FB
+  // price it never saw, its verdict is stale in the one direction that
+  // matters: it can still say "כל המקורות זהים" while the price we just
+  // put on the card disagrees with the landing page. Re-run the canonical
+  // comparator over the surfaces as rendered, and let a local mismatch
+  // override an Apps Script all-clear. A mismatch Apps Script already
+  // found wins, because its per-room verdict is richer than this one.
+  const localCmp =
+    warehouseFb?.price != null
+      ? comparePrices(surfaces.map((s) => ({ name: s.name, price: s.price })))
+      : null;
+  const localDriftPct =
+    prices.length >= 2
+      ? ((Math.max(...prices) - Math.min(...prices)) / Math.min(...prices)) * 100
+      : 0;
+
   const statusPill =
     cmp && cmp.mismatched
       ? {
@@ -75,11 +127,16 @@ export default async function ProjectPriceCheckSection({
             ? `פערים בדירת ${cmp.mismatchRoom} · ${cmp.driftPct.toFixed(1)}%`
             : `פערים זוהו · ${cmp.driftPct.toFixed(1)}%`,
         }
-      : cmp
-        ? { tone: "ok" as const, text: "כל המקורות זהים" }
-        : detectedCount >= 1
-          ? { tone: "muted" as const, text: "מקור יחיד" }
-          : null;
+      : localCmp?.mismatched
+        ? {
+            tone: "warn" as const,
+            text: `פערים זוהו · ${localDriftPct.toFixed(1)}%`,
+          }
+        : cmp || localCmp
+          ? { tone: "ok" as const, text: "כל המקורות זהים" }
+          : detectedCount >= 1
+            ? { tone: "muted" as const, text: "מקור יחיד" }
+            : null;
 
   // Min/max outlier highlighting on the cards — only meaningful in the
   // legacy headline-fallback path (where the mismatch IS about the
@@ -87,12 +144,8 @@ export default async function ProjectPriceCheckSection({
   // beneath each card already show the comparison; tinting headline
   // surfaces with min/max badges would be misleading because the
   // headlines may differ legitimately (different products per surface).
-  const prices = data.surfaces
-    .map((s) => s.price)
-    .filter((p): p is number => p != null);
-  const minPrice = prices.length ? Math.min(...prices) : null;
-  const maxPrice = prices.length ? Math.max(...prices) : null;
-  const isHeadlineMismatch = !!cmp && cmp.mismatched && !cmp.mismatchRoom;
+  const isHeadlineMismatch =
+    (!!cmp && cmp.mismatched && !cmp.mismatchRoom) || !!localCmp?.mismatched;
   const isOutlier = (s: ProjectPriceSurface) =>
     isHeadlineMismatch &&
     s.price != null &&
@@ -128,15 +181,16 @@ export default async function ProjectPriceCheckSection({
       </p>
 
       <div className="price-check-grid">
-        {data.surfaces.map((s) => (
+        {surfaces.map((s) => (
           <PriceCheckCard
             key={s.name}
             surface={s}
             clientMode={clientMode}
             isOutlier={!clientMode && isOutlier(s)}
-            isMin={!clientMode && s.price != null && s.price === minPrice && cmp?.mismatched}
-            isMax={!clientMode && s.price != null && s.price === maxPrice && cmp?.mismatched}
+            isMin={!clientMode && s.price != null && s.price === minPrice && isHeadlineMismatch}
+            isMax={!clientMode && s.price != null && s.price === maxPrice && isHeadlineMismatch}
             artwork={artwork}
+            warehouseFb={s.name === "facebook" ? warehouseFb : null}
           />
         ))}
       </div>
@@ -153,6 +207,7 @@ function PriceCheckCard({
   isMax,
   clientMode = false,
   artwork = null,
+  warehouseFb = null,
 }: {
   surface: ProjectPriceSurface;
   isOutlier: boolean;
@@ -161,6 +216,10 @@ function PriceCheckCard({
   /** Creative-tag flag for the FB card; null when unknown. See
    *  ArtworkPriceChip for why it is a warning and not a price. */
   artwork?: ArtworkPriceFlag | null;
+  /** Set on the FB card when the price shown came from the warehouse
+   *  rather than the usual Apps Script path — the card says so, because a
+   *  number with no provenance is one nobody can check. */
+  warehouseFb?: WarehouseFbPrice | null;
   /** Client viewer — hides the ad-status chip and the FB/Google Ads
    *  deep-links (internal ad-ops surfaces the client can't use). */
   clientMode?: boolean;
@@ -238,6 +297,20 @@ function PriceCheckCard({
       </div>
       {emptyState && (
         <div className="price-check-card-empty-state">{emptyState}</div>
+      )}
+      {!clientMode && warehouseFb?.price != null && (
+        <div
+          className="price-check-card-empty-state price-check-card-src"
+          title={
+            `נקרא מטקסט המודעות במאגר (Supabase), לא מהדוח — נתיב הפייסבוק בדוח לא מחזיר כרגע טקסט מודעות כלל. ` +
+            `נבדקו ${warehouseFb.adsWithText} מודעות עם טקסט מתוך ${warehouseFb.adsChecked} שרצו ב-10 הימים האחרונים.`
+          }
+        >
+          ↩ מטקסט המודעות במאגר ·{" "}
+          {warehouseFb.adsWithText === 1
+            ? "מודעה אחת"
+            : `${warehouseFb.adsWithText} מודעות`}
+        </div>
       )}
       {!clientMode && surface.name === "facebook" && artwork && (
         <ArtworkPriceChip flag={artwork} />

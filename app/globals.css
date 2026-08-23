@@ -29375,3 +29375,12 @@ html[data-theme="dark"] {
 .rpt-cr-dgpaused > .rpt-cr-dgads {
   padding: 0 0.6rem 0.6rem;
 }
+
+/* Provenance line on a price the hub read from the warehouse rather than
+   from the report — quiet, but present, so an odd number can be traced. */
+.price-check-card-src {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  opacity: 0.8;
+  cursor: help;
+}
