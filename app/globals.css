@@ -26783,6 +26783,14 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   color: var(--brand);
   text-decoration: none;
 }
+/* Card footer — links row plus the hover trend that sits above it. Exists so
+   the trend can anchor to the TOP of the links row (bottom:100% below) instead
+   of a fixed offset from the card edge, which broke the moment the row wrapped
+   to two lines and buried דף נחיתה / תצוגת מודעה under the panel. */
+.rpt-cr-foot {
+  position: relative;
+  margin-top: auto;
+}
 /* Hover trendline popover */
 .rpt-cr-trend {
   display: none;
@@ -26796,6 +26804,13 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   border-radius: 8px;
   padding: 0.4rem 0.5rem;
   pointer-events: none;
+}
+/* Inside the card, clear the links row whatever height it wrapped to. The
+   bare `bottom: 2.2rem` above still applies to the ad-set strip, which has no
+   links row under it. */
+.rpt-cr-foot .rpt-cr-trend {
+  bottom: 100%;
+  margin-bottom: 0.3rem;
 }
 .rpt-cr-card:hover .rpt-cr-trend,
 .rpt-cr-adset:hover .rpt-cr-trend {

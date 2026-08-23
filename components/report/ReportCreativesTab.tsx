@@ -450,30 +450,38 @@ export default function ReportCreativesTab({
                       </>
                     )}
                   </div>
-                  <div className="rpt-cr-links">
-                    {landing && (
-                      <a href={landing} target="_blank" rel="noopener noreferrer">
-                        🔗 דף נחיתה
-                      </a>
-                    )}
-                    {a.url && (
-                      <a href={a.url} target="_blank" rel="noopener noreferrer">
-                        👁️ תצוגת מודעה
-                      </a>
-                    )}
-                    {/* In the links row rather than the card body: it is one of
-                        the card's three ways out, so it belongs with the other
-                        two instead of as a stray pill above them.
+                  {/* Wrapper exists purely to give AdTrend something to sit on
+                      top of. The trend overlay used to hang off the CARD at a
+                      fixed `bottom`, which assumed the links row was one line —
+                      the moment it wrapped (דף נחיתה + תצוגת מודעה, then
+                      היסטוריה) the panel covered the first line. Anchored to
+                      this wrapper it clears the row at any height. */}
+                  <div className="rpt-cr-foot">
+                    <div className="rpt-cr-links">
+                      {landing && (
+                        <a href={landing} target="_blank" rel="noopener noreferrer">
+                          🔗 דף נחיתה
+                        </a>
+                      )}
+                      {a.url && (
+                        <a href={a.url} target="_blank" rel="noopener noreferrer">
+                          👁️ תצוגת מודעה
+                        </a>
+                      )}
+                      {/* In the links row rather than the card body: it is one
+                          of the card's three ways out, so it belongs with the
+                          other two instead of as a stray pill above them.
 
-                        Still deliberately OUTSIDE CrmRow — that returns null
-                        when the in-window CRM figures are all zero, i.e.
-                        exactly the paused/old cards whose history is most
-                        worth reading. */}
-                    {a.history && (
-                      <AdHistoryPopover ad={a.ad} history={a.history} />
-                    )}
+                          Still deliberately OUTSIDE CrmRow — that returns null
+                          when the in-window CRM figures are all zero, i.e.
+                          exactly the paused/old cards whose history is most
+                          worth reading. */}
+                      {a.history && (
+                        <AdHistoryPopover ad={a.ad} history={a.history} />
+                      )}
+                    </div>
+                    <AdTrend title={a.ad} daily={a.daily} window={data.window} />
                   </div>
-                  <AdTrend title={a.ad} daily={a.daily} window={data.window} />
                 </div>
               );
             })}
