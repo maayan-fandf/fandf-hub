@@ -1,6 +1,10 @@
 import { cache } from "react";
 import { buildMatchMap, getProjectSlug, matchSlug } from "@/lib/campaignMatch";
-import { supabaseConfigured, supabaseRows } from "@/lib/supabase";
+import {
+  supabaseConfigured,
+  supabaseRows,
+  supabaseRowsAll,
+} from "@/lib/supabase";
 
 /**
  * "Is this project running artwork with a price burned into it?"
@@ -23,9 +27,11 @@ import { supabaseConfigured, supabaseRows } from "@/lib/supabase";
  *
  * Deliberately conservative about what it claims:
  *  - `tagged` vs `adsChecked` is reported so the UI can say how much of the
- *    project it actually looked at. Coverage is currently ~21% of live ads
- *    warehouse-wide, and a flag that silently covers a fifth of creatives
- *    would otherwise read as "nothing wrong here".
+ *    project it actually looked at. Tag coverage is good where the tagger
+ *    can reach — 345 of the 347 creative groups that spent in the last 90
+ *    days are tagged — but 268 of 1,606 spending ads have no creative row
+ *    at all, so they never reach it. A flag that silently skipped those
+ *    would read as "nothing wrong here".
  *  - null (not zero) when Supabase is unreachable or the project has no
  *    campaign pattern, so the caller renders nothing rather than an
  *    all-clear it did not earn.
@@ -49,7 +55,8 @@ export type ArtworkPriceFlag = {
 };
 
 type InsightRow = { ad_id: string; campaign_name: string };
-type TagRow = { ad_id: string; price_on_image: boolean | null };
+type TagRow = { creative_group: string | null; price_on_image: boolean | null };
+type CreativeRow = { ad_id: string; creative_group: string | null };
 
 function isoDaysAgo(n: number): string {
   return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -88,20 +95,47 @@ export const getArtworkPriceFlag = cache(
       if (!adIds.size) return null;
 
       const ids = [...adIds].slice(0, MAX_ADS);
-      const tags = await supabaseRows<TagRow>(
-        `meta_creative_tags?select=ad_id,price_on_image` +
-          `&ad_id=in.(${ids.join(",")})`,
-      );
 
-      // One ad can carry several tag rows (the tagger keys on creative
-      // group, and variants share ids) — collapse to one verdict per ad,
-      // true wins, so a single confirmed sighting isn't diluted by a
-      // sibling row the model read as false.
-      const verdict = new Map<string, boolean>();
+      // The tagger works at CREATIVE-GROUP grain, not ad grain — one tag
+      // covers every ad running the same creative. Joining tags on ad_id
+      // therefore counts only the handful of ads that happen to own a tag
+      // row and reports the rest as untagged: קנקו measured 4 of 30 that
+      // way when the real answer is 30 of 30. Map ad → creative_group
+      // first, then look the tag up by group.
+      const creatives = await supabaseRows<CreativeRow>(
+        `meta_ad_creatives?select=ad_id,creative_group&ad_id=in.(${ids.join(",")})`,
+      );
+      const groupOf = new Map<string, string>();
+      for (const c of creatives) {
+        if (c.ad_id && c.creative_group) {
+          groupOf.set(String(c.ad_id), String(c.creative_group));
+        }
+      }
+      if (!groupOf.size) return null;
+
+      // Fetched whole rather than filtered by group: creative_group is
+      // `campaign_id::ad_name`, and ad names carry Hebrew, commas and
+      // quotes that would have to be escaped into a PostgREST `in.(…)`
+      // list. The table is ~1.1k rows, so pulling it and joining in memory
+      // is both cheaper to reason about and immune to that escaping.
+      const tags = await supabaseRowsAll<TagRow>(
+        `meta_creative_tags?select=creative_group,price_on_image`,
+        { maxRows: 20000 },
+      );
+      const byGroup = new Map<string, boolean>();
       for (const t of tags) {
-        if (t.price_on_image == null) continue;
-        const id = String(t.ad_id);
-        verdict.set(id, (verdict.get(id) || false) || !!t.price_on_image);
+        if (t.price_on_image == null || !t.creative_group) continue;
+        const g = String(t.creative_group);
+        // True wins: a single confirmed sighting shouldn't be diluted by a
+        // sibling row the model read as false.
+        byGroup.set(g, (byGroup.get(g) || false) || !!t.price_on_image);
+      }
+
+      const verdict = new Map<string, boolean>();
+      for (const adId of adIds) {
+        const g = groupOf.get(adId);
+        if (!g || !byGroup.has(g)) continue;
+        verdict.set(adId, !!byGroup.get(g));
       }
 
       return {
