@@ -2,6 +2,7 @@ import {
   getProjectPriceCheck,
   type ProjectPriceSurface,
 } from "@/lib/appsScript";
+import { getArtworkPrice, type ArtworkPrice } from "@/lib/artworkPrice";
 import {
   getArtworkPriceFlag,
   type ArtworkPriceFlag,
@@ -56,34 +57,42 @@ export default async function ProjectPriceCheckSection({
     ? null
     : await getArtworkPriceFlag(driveFolderOwner(), projectName);
 
-  // FB price from the warehouse — used ONLY when Apps Script produced
-  // none. Its FB branch has been dead since the assets tab was renamed
-  // (see lib/fbPriceFromWarehouse.ts), which is why this card reads
-  // "אין קמפיינים פעילים ב-FB" on projects whose ad copy plainly carries a
-  // price. When that path is repaired it wins again and this goes quiet.
-  // Only when the report saw NO ad copy at all — not merely when it found
-  // no price. Those are very different answers. "no-price" means it read
-  // the live ads and they genuinely do not advertise one, which is
-  // authoritative and must not be overridden: אנדה's four active ads carry
-  // no price, and this fallback happily published ₪2,420,000 read off an ad
-  // that had been paused since June. Recent spend is a loose stand-in for
-  // ACTIVE (the warehouse has no status column yet), so it must never get a
-  // vote where the report has a real one.
+  // FB ad-copy price from the warehouse, used only when the report saw NO
+  // ad copy at all — not merely when it found no price. Those are very
+  // different answers. "no-price" means it read the live ads and they
+  // genuinely do not advertise one, which is authoritative: אנדה's four
+  // active ads carry no price, and an earlier version of this happily
+  // published ₪2,420,000 read off an ad paused since June.
   const fbSurface = data.surfaces.find((s) => s.name === "facebook");
   const warehouseFb =
     fbSurface && fbSurface.price == null && fbSurface.status === "no-input"
       ? await getWarehouseFbPrice(driveFolderOwner(), projectName)
       : null;
+
+  // Last resort: the price printed on the creative. Only when NO text
+  // source produced one — this is additional information rather than a
+  // competing reading, so it fills a gap and never argues with a text
+  // price. אנדה is the case it exists for: its live ad carries no price in
+  // its copy, so every text surface correctly says "לא זוהה מחיר" while the
+  // artwork plainly reads "החל מ-3,250,000 ₪ בלבד".
+  const fbTextPrice = fbSurface?.price ?? warehouseFb?.price ?? null;
+  const artworkPrice =
+    !clientMode && fbSurface && fbTextPrice == null
+      ? await getArtworkPrice(driveFolderOwner(), projectName)
+      : null;
+  const injectedFbPrice = warehouseFb?.price ?? artworkPrice?.value ?? null;
   const surfaces: ProjectPriceSurface[] =
-    warehouseFb?.price != null
+    injectedFbPrice != null
       ? data.surfaces.map((s) =>
           s.name === "facebook"
             ? {
                 ...s,
-                price: warehouseFb.price,
+                price: injectedFbPrice,
                 status: "ok",
                 hasInput: true,
-                inventory: warehouseFb.inventory,
+                // Only the text reader produces a per-room inventory; the
+                // artwork gives a single headline figure.
+                inventory: warehouseFb?.inventory ?? s.inventory,
               }
             : s,
         )
@@ -119,7 +128,7 @@ export default async function ProjectPriceCheckSection({
   // override an Apps Script all-clear. A mismatch Apps Script already
   // found wins, because its per-room verdict is richer than this one.
   const localCmp =
-    warehouseFb?.price != null
+    injectedFbPrice != null
       ? comparePrices(surfaces.map((s) => ({ name: s.name, price: s.price })))
       : null;
   const localDriftPct =
@@ -199,6 +208,7 @@ export default async function ProjectPriceCheckSection({
             isMax={!clientMode && s.price != null && s.price === maxPrice && isHeadlineMismatch}
             artwork={artwork}
             warehouseFb={s.name === "facebook" ? warehouseFb : null}
+            artworkPrice={s.name === "facebook" ? artworkPrice : null}
           />
         ))}
       </div>
@@ -216,6 +226,7 @@ function PriceCheckCard({
   clientMode = false,
   artwork = null,
   warehouseFb = null,
+  artworkPrice = null,
 }: {
   surface: ProjectPriceSurface;
   isOutlier: boolean;
@@ -228,6 +239,9 @@ function PriceCheckCard({
    *  rather than the usual Apps Script path — the card says so, because a
    *  number with no provenance is one nobody can check. */
   warehouseFb?: WarehouseFbPrice | null;
+  /** Set on the FB card when the price shown was read off the creative
+   *  rather than from any text. */
+  artworkPrice?: ArtworkPrice | null;
   /** Client viewer — hides the ad-status chip and the FB/Google Ads
    *  deep-links (internal ad-ops surfaces the client can't use). */
   clientMode?: boolean;
@@ -318,6 +332,24 @@ function PriceCheckCard({
           {warehouseFb.adsWithText === 1
             ? "מודעה אחת"
             : `${warehouseFb.adsWithText} מודעות`}
+        </div>
+      )}
+      {!clientMode && artworkPrice && (
+        <div
+          className="price-check-card-empty-state price-check-card-src"
+          title={
+            `נקרא מהקריאייטיב עצמו, לא מטקסט המודעה — אף מודעה פעילה לא מציינת מחיר בטקסט. ` +
+            (artworkPrice.raw ? `הזיהוי: "${artworkPrice.raw}". ` : "") +
+            (artworkPrice.basis === "spend"
+              ? "המודעות הפעילות זוהו לפי הוצאה אחרונה ולא לפי סטטוס, אז ייתכן שנכללת מודעה שהושהתה לאחרונה. "
+              : "") +
+            (artworkPrice.pending
+              ? "חלק מהקריאייטיבים עדיין ממתינים לקריאה, ייתכן שקיים מחיר נמוך יותר."
+              : "")
+          }
+        >
+          🖼️ נקרא מהקריאייטיב
+          {artworkPrice.pending && " · קריאה חלקית"}
         </div>
       )}
       {!clientMode && surface.name === "facebook" && artwork && (
