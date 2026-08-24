@@ -29288,6 +29288,45 @@ html[data-theme="dark"] {
   white-space: nowrap;
 }
 
+/* Retired copy — text assets unlinked from the ad that still report numbers.
+   Same fold as .rpt-cr-dgpaused, one level in: dimmed rather than hidden, so
+   the spend stays readable without reading as live copy. */
+.rpt-cr-dgretired {
+  margin-top: 0.5rem;
+  border-top: 1px dashed var(--border-soft);
+}
+.rpt-cr-dgretired > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.4rem 0 0.1rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.rpt-cr-dgretired > summary::-webkit-details-marker {
+  display: none;
+}
+.rpt-cr-dgretired > summary::before {
+  content: "▸";
+}
+.rpt-cr-dgretired[open] > summary::before {
+  content: "▾";
+}
+.rpt-cr-dgretired-hint {
+  margin-inline-start: auto;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.rpt-cr-dgretired[open] .rpt-cr-dgretired-hint {
+  visibility: hidden;
+}
+.rpt-cr-dgretired > .rpt-cr-dgcopy {
+  margin-top: 0.35rem;
+  opacity: 0.62;
+}
+
 /* Ad status pill + merged ad-group list on a Demand Gen card. */
 .rpt-cr-dgad.is-off {
   opacity: 0.66;

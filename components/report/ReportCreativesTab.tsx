@@ -763,6 +763,32 @@ function DgAdCard({
               </ul>
             )}
 
+            {/* Copy that ran and was then unlinked. Folded away by default so
+                the open card is exactly what Google Ads shows — the numbers are
+                real spend, but reading them as live copy is how the card ended
+                up claiming 7 headlines on a 3-headline ad. See copyRetired. */}
+            {ad.copyRetired.length > 0 && (
+              <details className="rpt-cr-dgretired">
+                <summary>
+                  🗄️ {ad.copyRetired.length} טקסטים היסטוריים
+                  <span className="rpt-cr-dgretired-hint">
+                    כבר לא במודעה · לחצו להצגה
+                  </span>
+                </summary>
+                <ul className="rpt-cr-dgcopy">
+                  {ad.copyRetired.map((c, i) => (
+                    <li key={`${c.fieldType}-${i}`}>
+                      <span className="rpt-cr-dgcopy-kind">{c.fieldType}</span>
+                      <span className="rpt-cr-dgcopy-text">{c.text}</span>
+                      <span className="rpt-cr-dgcopy-nums">
+                        {fmtInt(c.impressions)} חשיפות · {fmtInt(c.clicks)} קליקים
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+
             {(ad.images[0]?.cta || ad.images[0]?.finalUrl) && (
               <div className="rpt-cr-gmeta">
                 {ad.images[0]?.cta && (

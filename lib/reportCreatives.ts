@@ -17,6 +17,7 @@ import type {
   ReportFbAd,
   ReportFbAdSet,
   ReportGoogleAd,
+  ReportGoogleCopy,
   ReportGoogleDgAd,
   ReportKeyword,
   ReportWindow,
@@ -1144,7 +1145,10 @@ function aggregateCreatives(
   }
 
   // Pass 1 — collect each ad's own assets, keyed by ad id.
-  type DgDraft = ReportGoogleDgAd & { adGroup: string };
+  // `copy` is still one unsplit list here — live and retired text alike. The
+  // split into copy/copyRetired happens once, after the merge, so a text that
+  // is live on any of the merged ads lands on the live side.
+  type DgDraft = Omit<ReportGoogleDgAd, "copyRetired"> & { adGroup: string };
   const dgAdAgg = new Map<string, DgDraft>();
   for (const a of raw.gAssets) {
     const adKeyG = a.adId || `${a.campaign}|${a.adGroup}`;
@@ -1269,13 +1273,42 @@ function aggregateCreatives(
       }
     }
     for (const c of ad.copy) {
-      if (!addTo(cur.copy.find((x) => x.fieldType === c.fieldType && x.text === c.text), c)) {
-        cur.copy.push(c);
+      const dst = cur.copy.find((x) => x.fieldType === c.fieldType && x.text === c.text);
+      // Live beats retired. The same text can be a removed link on one of the
+      // merged ads and still attached on another, and blank performance is the
+      // ONLY thing marking it removed (see the copy split below) — so a
+      // first-wins merge could file live copy under "historical".
+      if (dst && !dst.performance.trim() && c.performance.trim()) {
+        dst.performance = c.performance;
       }
+      if (!addTo(dst, c)) cur.copy.push(c);
     }
   }
 
   const COPY_ORDER = ["Headline", "Long headline", "Description", "Business name"];
+  const copyRank = (ft: string) => {
+    const i = COPY_ORDER.indexOf(ft);
+    return i < 0 ? 99 : i;
+  };
+  const byKindThenReach = (x: ReportGoogleCopy, y: ReportGoogleCopy) =>
+    copyRank(x.fieldType) - copyRank(y.fieldType) || y.impressions - x.impressions;
+  /**
+   * Blank `performance` = the asset's LINK to this ad was removed; the row only
+   * survives because it still had impressions inside the query's rolling 60-day
+   * window. Google rates every attached asset, even a brand new one ("Pending
+   * information"), so the absence of a rating is what a removed link looks
+   * like — the tab carries no asset-status column to ask directly.
+   *
+   * Validated against the Google Ads UI on fandf_afridar_anda_discovery: the
+   * ad's 7 reported headlines and 5 descriptions split 3+4 rated / 4+1 blank,
+   * and the rated set is EXACTLY the copy the ad actually carries. Tab-wide,
+   * this pulled all 12 over-cap Demand Gen ads (>5 headlines, impossible for
+   * the format) back under the limit and touched no others.
+   *
+   * If Supermetrics ever gains the asset-link status field on this query, use
+   * it instead and delete this inference.
+   */
+  const isRetired = (c: ReportGoogleCopy) => !c.performance.trim();
   const dgAds: ReportGoogleDgAd[] = [...merged.values()]
     .map((ad) => ({
       campaign: ad.campaign,
@@ -1285,12 +1318,8 @@ function aggregateCreatives(
       adIds: ad.adIds,
       topAssetCost: ad.topAssetCost,
       images: ad.images.sort((x, y) => y.cost - x.cost),
-      copy: ad.copy.sort(
-        (x, y) =>
-          (COPY_ORDER.indexOf(x.fieldType) < 0 ? 99 : COPY_ORDER.indexOf(x.fieldType)) -
-            (COPY_ORDER.indexOf(y.fieldType) < 0 ? 99 : COPY_ORDER.indexOf(y.fieldType)) ||
-          y.impressions - x.impressions,
-      ),
+      copy: ad.copy.filter((c) => !isRetired(c)).sort(byKindThenReach),
+      copyRetired: ad.copy.filter(isRetired).sort(byKindThenReach),
     }))
     // Keep only ads that actually have a creative to show. AdGroupAdAssetView
     // returns assets for EVERY Google ad type and search RSAs are the bulk of

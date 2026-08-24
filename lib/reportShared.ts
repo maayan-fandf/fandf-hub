@@ -1159,7 +1159,29 @@ export type ReportGoogleDgAd = {
   adGroups: string[];
   adIds: string[];
   images: ReportGoogleAsset[];
+  /** Text assets STILL attached to the ad — what Google Ads shows when you open
+   *  it. See `copyRetired` for the ones that only look attached. */
   copy: ReportGoogleCopy[];
+  /**
+   * Text assets whose LINK to the ad was removed, still reported because they
+   * had impressions inside the query's rolling 60-day window.
+   *
+   * Kept apart rather than dropped: these are real impressions on copy that
+   * really served, so the numbers are worth keeping — but listing them beside
+   * the live copy made the card disagree with the Google Ads UI. anda/discovery
+   * rendered 7 headlines and 5 descriptions against an ad carrying 3 and 4. The
+   * five extras were an older payment-terms line (20/80, since replaced by
+   * 15/85), three other retired headlines, and a description differing from the
+   * live one by one definite article (רובע השקמים → רובע שקמים).
+   *
+   * Google marks them by omission: a removed link comes back with an EMPTY
+   * `performance`, a live one always carries a rating (usually the placeholder
+   * "Pending information"). Measured across the whole discovery tab, 12 of 93
+   * Demand Gen ads reported more than 5 headlines — impossible, the format caps
+   * at 5 — and splitting on blank performance brought every one of them back
+   * under the cap without moving a single genuinely live asset.
+   */
+  copyRetired: ReportGoogleCopy[];
   /** Largest single-asset cost in the ad. Used only to order the ads — a
    *  lower bound on the ad's spend, never displayed as its total. */
   topAssetCost: number;
@@ -1207,6 +1229,8 @@ export type ReportGoogleAsset = {
 export type ReportGoogleCopy = {
   fieldType: string;
   text: string;
+  /** Google's rating — mostly the placeholder "Pending information". EMPTY
+   *  means the asset's link to the ad was removed; see `copyRetired`. */
   performance: string;
   impressions: number;
   clicks: number;
