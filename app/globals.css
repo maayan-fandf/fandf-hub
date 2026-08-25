@@ -25382,25 +25382,17 @@ button.budget-need:focus-visible {
   /* Top padding clears the floating section-head pill (absolute, top 0.5rem). */
   padding: 2.4rem 1rem 1.1rem;
 }
-.rpt-toggle {
-  display: inline-flex;
-  gap: 2px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  padding: 2px;
-}
-.rpt-toggle-btn {
+/* Sole survivor of the retired חדש/קלאסי switch (deprecated 2026-08-25):
+   the one-way link OUT of ?report=classic. Styled as the old toggle's
+   active pill so the way back reads as the live destination. */
+.rpt-legacy-back {
   padding: 0.15rem 0.55rem;
   border-radius: 6px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--ink-soft);
-  text-decoration: none;
-}
-.rpt-toggle-btn.is-active {
   background: var(--brand);
   color: #fff;
+  text-decoration: none;
 }
 .rpt-empty {
   padding: 1.2rem;
@@ -26176,11 +26168,58 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Wraps since the meeting-basis switch joined the channel filter here —
+     on a narrow panel the two would otherwise squeeze the filter button. */
+  flex-wrap: wrap;
   margin: 0.2rem 0 0.5rem;
 }
 .rpt-ch-tablecontrols-lbl {
   color: var(--ink-soft);
   font-size: 0.82rem;
+}
+/* ─── תיאומים/ביצועים counting-basis switch (snapshot vs meeting date) ───
+   Segmented control; inherits the look the retired חדש/קלאסי toggle used,
+   which is the hub's established idiom for "two views of one thing". */
+.rpt-ch-basis {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-inline-end: 0.4rem;
+}
+.rpt-ch-basis-group {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 2px;
+}
+.rpt-ch-basis-btn {
+  padding: 0.15rem 0.6rem;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.rpt-ch-basis-btn:hover {
+  color: var(--ink);
+}
+.rpt-ch-basis-btn.is-active {
+  background: var(--brand);
+  color: #fff;
+}
+/* Caveat line — only rendered on the dated basis, and only when there is
+   something to caveat (unresolved outcomes / off-table channels). */
+.rpt-ch-basis-note {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 .rpt-ch-filter-backdrop {
   position: fixed;
@@ -27920,6 +27959,17 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-scatter-box-sched .rpt-scatter-h4-tag {
   color: #ec4899;
 }
+/* ביצועים scatter — same accent as the ביצועים column in OutcomeBars, so
+   the two surfaces name the stage in one color. */
+.rpt-scatter-box-held {
+  border-top: 3px solid #f5576c;
+}
+.rpt-scatter-box-held::after {
+  background: #f5576c;
+}
+.rpt-scatter-box-held .rpt-scatter-h4-tag {
+  color: #f5576c;
+}
 /* Efficiency gradient wash — top-left (cheap+high) green → bottom-right (dear+low) red */
 .rpt-scatter-zone {
   position: relative;
@@ -27982,72 +28032,9 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   color: var(--text-soft);
   font-weight: 500;
 }
-/* budget-vs-cost fill bars */
-.rpt-budbar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.rpt-budbar-row {
-  display: grid;
-  /* Wide enough that common channel names ("google-seach") clear the
-     icon + gap and don't clip to "…gle-seach". */
-  grid-template-columns: minmax(6em, 10.5em) 1fr auto;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.78rem;
-}
-.rpt-budbar-label {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-}
-.rpt-budbar-icon {
-  flex: none;
-}
-.rpt-budbar-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-soft);
-}
-.rpt-budbar-slot {
-  min-width: 0;
-}
-.rpt-budbar-track {
-  display: block;
-  height: 18px;
-  background: var(--surface-alt);
-  border-radius: 5px;
-  overflow: hidden;
-}
-.rpt-budbar-track.is-over {
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, #ef4444 18%, var(--surface-alt)),
-    color-mix(in srgb, #ef4444 18%, var(--surface-alt)) 5px,
-    var(--surface-alt) 5px,
-    var(--surface-alt) 10px
-  );
-}
-.rpt-budbar-fill {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  background: #14b8a6;
-  border-radius: 5px;
-  padding-inline-start: 0.4rem;
-  color: #fff;
-  font-size: 0.68rem;
-  font-weight: 700;
-  min-width: 1.8rem;
-}
-.rpt-budbar-num {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* The .rpt-budbar-* fill-bar rules lived here until 2026-08-25. Their card
+   ("תקציב מול עלות לפי ערוץ") was merged into OutcomeBars as a stacked
+   money column, so the whole block went with it. */
 /* outcome grouped bars */
 .rpt-outbar {
   display: flex;
@@ -28595,7 +28582,7 @@ html[data-theme="dark"] .prl-bdg.is-accent {
     max-width: calc(100vw - 1.8rem);
   }
 
-  /* Report toolbar (חדש/קלאסי + תצוגת לקוח) — let it wrap rather than clip */
+  /* Report toolbar (תצוגת לקוח + period chip) — let it wrap rather than clip */
   .rpt-railbar {
     flex-wrap: wrap;
   }

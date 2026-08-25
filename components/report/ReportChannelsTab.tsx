@@ -563,8 +563,39 @@ export default function ReportChannelsTab({
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const today = useMemo(ilToday, []);
+  /**
+   * Which basis the תיאומים / ביצועים columns count on.
+   *
+   * "snapshot" — leads CREATED in the window that are scheduled/held now.
+   *   The historical behaviour, and still the default: it is what every
+   *   other surface in the hub reports, so flipping the default would make
+   *   one project show two different numbers depending on the screen.
+   * "dated" — meetings that actually took place in the window.
+   *
+   * Substituted into the rows here rather than branched on at each cell,
+   * so sorting, the totals line, the alert strip and the charts all follow
+   * the switch for free and cannot disagree with the table above them.
+   * Both numbers ship in the same payload, so flipping costs no fetch.
+   */
+  const [basis, setBasis] = useState<"snapshot" | "dated">("snapshot");
+  const datedSource = data.datedSource;
+  const canDate = !!datedSource;
+  const dated = canDate && basis === "dated";
 
-  const channels = data.channels;
+  const channels = useMemo(() => {
+    if (!dated) return data.channels;
+    return data.channels.map((c) => {
+      const scheduled = c.datedScheduled ?? 0;
+      const meetings = c.datedMeetings ?? 0;
+      return {
+        ...c,
+        scheduled,
+        meetings,
+        costPerScheduled: scheduled > 0 ? c.spend / scheduled : 0,
+        costPerMeeting: meetings > 0 ? c.spend / meetings : 0,
+      };
+    });
+  }, [data.channels, dated]);
   // Does this project break google into a discovery row? If so, a
   // non-discovery google row is the search-only side of the split; if
   // not, a lone "google" row still represents all-google. Computed from
@@ -589,11 +620,16 @@ export default function ReportChannelsTab({
     [sorted, selected],
   );
 
+  // Custom ranges have no channel rows: ALL CLIENTS is the only source that
+  // carries the per-channel funnel, and its finest grain is one calendar
+  // month (rowType "חודשי"). This used to send people to the classic view,
+  // which was deprecated 2026-08-25 — so it now says what to pick instead
+  // rather than pointing at a door that no longer opens.
   if (data.mode === "range") {
     return (
       <div className="rpt-empty">
-        פירוט ערוצים בטווח מותאם עדיין לא זמין בדוח החדש — השתמשו בתצוגה
-        הקלאסית לטווחים חופשיים.
+        פירוט ערוצים בטווח מותאם עדיין לא זמין — בחרו חודש שלם או את התקופה
+        המלאה כדי לראות את הפילוח לפי ערוץ.
       </div>
     );
   }
@@ -824,8 +860,59 @@ export default function ReportChannelsTab({
         />
       )}
 
-      {channels.length > 1 && (
+      {(channels.length > 1 || canDate) && (
         <div className="rpt-ch-tablecontrols">
+          {canDate && (
+            <span className="rpt-ch-basis">
+              <span className="rpt-ch-tablecontrols-lbl">ספירת פגישות:</span>
+              <span
+                className="rpt-ch-basis-group"
+                role="group"
+                aria-label="בסיס ספירת התיאומים והביצועים"
+              >
+                <button
+                  type="button"
+                  className={
+                    "rpt-ch-basis-btn" + (!dated ? " is-active" : "")
+                  }
+                  onClick={() => setBasis("snapshot")}
+                  aria-pressed={!dated}
+                  title="לפי מועד כניסת הליד — נספרים לידים שנוצרו בתקופה ושהפגישה שלהם התקיימה (המספר ממשיך לגדול גם אחרי סוף התקופה)"
+                >
+                  לפי כניסת ליד
+                </button>
+                <button
+                  type="button"
+                  className={"rpt-ch-basis-btn" + (dated ? " is-active" : "")}
+                  onClick={() => setBasis("dated")}
+                  aria-pressed={dated}
+                  title="לפי מועד הפגישה — נספרות פגישות שהתקיימו בפועל בתוך התקופה (מספר יציב שלא משתנה בדיעבד)"
+                >
+                  לפי מועד הפגישה
+                </button>
+              </span>
+              {dated && datedSource && (
+                <span className="rpt-ch-basis-note">
+                  {datedSource.heldConfidence === "partial"
+                    ? "חלק מהפגישות ללא סטטוס סופי — הביצועים הם רצפה, לא ספירה מלאה."
+                    : null}
+                  {/* Hebrew takes the singular for exactly one, so "1 ביצועים"
+                      is wrong; spell the count out in that case. */}
+                  {datedSource.unmatchedMeetings > 0 ? (
+                    <>
+                      {" "}
+                      {datedSource.unmatchedMeetings === 1
+                        ? "ביצוע אחד בתקופה שייך"
+                        : `${fmtInt(datedSource.unmatchedMeetings)} ביצועים בתקופה שייכים`}{" "}
+                      לערוצים שאינם בטבלה.
+                    </>
+                  ) : null}
+                </span>
+              )}
+            </span>
+          )}
+          {channels.length > 1 && (
+          <>
           <span className="rpt-ch-tablecontrols-lbl">סינון לפי ערוץ:</span>
           <div className="rpt-mt-filter">
             <button
@@ -881,6 +968,8 @@ export default function ReportChannelsTab({
               </>
             )}
           </div>
+          </>
+          )}
         </div>
       )}
 

@@ -25,6 +25,7 @@ import {
   detectAnomalies,
   type AdPlatform,
   type DailyPoint,
+  type DatedSourceInfo,
   type MonthlyRow,
   type PlatCampaign,
   type ProjectReportData,
@@ -32,6 +33,10 @@ import {
   type ReportPlat,
   type ReportWindow,
 } from "@/lib/reportShared";
+import {
+  getDatedChannelMeetings,
+  datedChannelKey,
+} from "@/lib/datedChannelMeetings";
 
 /**
  * Server data layer for the NATIVE project report (phase 1) — reads the
@@ -597,6 +602,50 @@ export const getProjectReportData = cache(
       );
     }
 
+    // Dated meetings — the alternative basis for the scheduled/held
+    // columns (counted by when the meeting HAPPENED, not by when the lead
+    // was created). Attached onto the same rows so the table's toggle is
+    // pure client state and flipping it costs no round-trip. Best-effort:
+    // a null result just means the toggle doesn't appear.
+    let datedSource: DatedSourceInfo | null = null;
+    if (reportChannels.length && window.startIso && window.endIso) {
+      const dated = await getDatedChannelMeetings({
+        project: projectName,
+        company,
+        from: window.startIso,
+        to: window.endIso,
+      }).catch(() => null);
+      if (dated) {
+        const claimed = new Set<string>();
+        reportChannels = reportChannels.map((c) => {
+          const key = datedChannelKey(c.channel);
+          const hit = key ? dated.byChannel[key] : undefined;
+          if (key && hit) claimed.add(key);
+          return {
+            ...c,
+            datedScheduled: hit?.scheduled ?? 0,
+            datedMeetings: hit?.held ?? 0,
+          };
+        });
+        // Everything the table has no row for: unattributed leads plus
+        // whole channels the CRM knows and ALL CLIENTS doesn't.
+        let uScheduled = dated.unattributed.scheduled;
+        let uMeetings = dated.unattributed.held;
+        for (const [key, v] of Object.entries(dated.byChannel)) {
+          if (claimed.has(key)) continue;
+          uScheduled += v.scheduled;
+          uMeetings += v.held;
+        }
+        datedSource = {
+          platform: dated.platform,
+          heldConfidence: dated.heldConfidence,
+          unresolved: dated.unresolved,
+          unmatchedScheduled: uScheduled,
+          unmatchedMeetings: uMeetings,
+        };
+      }
+    }
+
     const totals = mode === "range" ? null : sumChannelTotals(channels);
     const [landingUrl, monthly, monthlyRaw, creatives] = await Promise.all([
       landingP,
@@ -668,6 +717,7 @@ export const getProjectReportData = cache(
       daily: dailySeries(rows),
       dailyGoogleByKind: googleDailyByKind(rows.google),
       channels: reportChannels,
+      datedSource,
       creatives,
       company,
       landingUrl,

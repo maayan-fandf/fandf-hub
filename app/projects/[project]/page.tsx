@@ -474,6 +474,12 @@ export default async function ProjectOverviewPage({
   // F&F domain, which is exactly why the classic path had to proxy through
   // /api/dashboard for them. `?report=classic` remains the instant per-URL
   // fallback if a client hits trouble.
+  //
+  // DEPRECATED (2026-08-25, owner request): the חדש/קלאסי switch is gone from
+  // the toolbar. `?report=classic` is still honoured — old bookmarks keep
+  // working and it stays the break-glass fallback — but nothing links INTO it
+  // any more. The classic view only offers a link back OUT (newReportHref),
+  // so the one-way door leads to the native report and never back.
   const useNativeReport = sp.report !== "classic";
   // Client-stripped render of the native report: real client-tier users always
   // get it; internal users can PREVIEW it with ?clientView=1 (to review the
@@ -487,7 +493,10 @@ export default async function ProjectOverviewPage({
   const canEditReportBudget = useNativeReport
     ? await canSeeCampaigns(userEmail).catch(() => false)
     : false;
-  const reportToggleHref = (native: boolean): string => {
+  // The way OUT of the deprecated classic view: this URL minus `report`.
+  // There is deliberately no matching "into classic" href — see the
+  // DEPRECATED note on useNativeReport above.
+  const newReportHref = (): string => {
     const qs = new URLSearchParams();
     const keep = [
       "resolved",
@@ -503,9 +512,6 @@ export default async function ProjectOverviewPage({
       const v = sp[k];
       if (typeof v === "string" && v) qs.set(k, v);
     }
-    // Native is the default now, so the "חדש" target carries no param and the
-    // "קלאסי" target opts out with ?report=classic.
-    if (!native) qs.set("report", "classic");
     const s = qs.toString();
     return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
   };
@@ -943,21 +949,6 @@ export default async function ProjectOverviewPage({
         <>
           {isInternalUser && (
             <div className="rpt-railbar">
-              <span className="rpt-toggle" role="group" aria-label="גרסת דוח">
-                <Link
-                  className="rpt-toggle-btn is-active"
-                  href={reportToggleHref(true)}
-                  title="הדוח החדש — נבנה בתוך ההאב (בטא)"
-                >
-                  ✨ חדש
-                </Link>
-                <Link
-                  className="rpt-toggle-btn"
-                  href={reportToggleHref(false)}
-                >
-                  קלאסי
-                </Link>
-              </span>
               {/* Preview-as-client toggle (internal only): strips the report to
                   what a client would see, to review before the real cutover. */}
               {reportClientView ? (
@@ -1084,27 +1075,16 @@ export default async function ProjectOverviewPage({
           <div className="section-head" title="📊 מטריקות">
             <h2 aria-label="מטריקות">📊</h2>
             <div className="section-head-actions">
-              {isInternalUser && (
-                <span className="rpt-toggle" role="group" aria-label="גרסת דוח">
-                  <Link
-                    className={
-                      "rpt-toggle-btn" + (useNativeReport ? " is-active" : "")
-                    }
-                    href={reportToggleHref(true)}
-                    title="הדוח החדש — נבנה בתוך ההאב (בטא)"
-                  >
-                    ✨ חדש
-                  </Link>
-                  <Link
-                    className={
-                      "rpt-toggle-btn" + (!useNativeReport ? " is-active" : "")
-                    }
-                    href={reportToggleHref(false)}
-                  >
-                    קלאסי
-                  </Link>
-                </span>
-              )}
+              {/* One-way door out of the deprecated classic view. No link back
+                  in — reaching here at all takes a hand-edited ?report=classic
+                  or an old bookmark. */}
+              <Link
+                className="rpt-legacy-back"
+                href={newReportHref()}
+                title="התצוגה הקלאסית הוצאה משימוש — חזרה לדוח החדש"
+              >
+                ✨ חזרה לדוח החדש
+              </Link>
               <a
                 className="section-link section-link-icon"
                 href={dashboardOpenUrl}

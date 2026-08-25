@@ -99,6 +99,27 @@ export type ReportSubCampaign = {
   meetings: number;
 };
 
+/**
+ * Where a project's dated meeting counts came from, and how far they can
+ * be trusted. Rendered as the caption under the ערוצים table's
+ * dated/snapshot toggle so the reader can see what they switched to.
+ */
+export type DatedSourceInfo = {
+  platform: "bmby" | "sehel" | "salesforce";
+  /** "authoritative" ⇒ the source records a per-MEETING outcome.
+   *  "partial" ⇒ some meetings have no resolved outcome, so the held
+   *  figure is a floor rather than a count (Sehel). */
+  heldConfidence: "authoritative" | "partial";
+  /** Meetings in the window still awaiting an outcome. */
+  unresolved: number;
+  /** Dated meetings that matched NO channel row in the table — either the
+   *  lead carried no source, or its channel has no spend row (BMBY's
+   *  "other"/minisite, say). Surfaced because the dated column's total
+   *  would otherwise look inexplicably short against the funnel. */
+  unmatchedScheduled: number;
+  unmatchedMeetings: number;
+};
+
 /** One row of the ערוצים tab — an ALL CLIENTS channel row enriched with
  *  platform attribution + pacing inputs (legacy `p.channels[i]`). */
 export type ReportChannel = {
@@ -116,6 +137,18 @@ export type ReportChannel = {
   pixelLeads?: number;
   scheduled: number;
   meetings: number;
+  /**
+   * The SAME two stages counted by when the meeting actually HAPPENED,
+   * rather than by when the lead was created (which is what `scheduled`
+   * and `meetings` above are). Sourced per CRM platform — see
+   * lib/datedChannelMeetings.ts for why the two differ and by how much.
+   *
+   * undefined ⇒ no dated source for this project's CRM, and the ערוצים
+   * table hides its dated/snapshot toggle rather than offering a switch
+   * that would silently show zeros.
+   */
+  datedScheduled?: number;
+  datedMeetings?: number;
   /** Sheet קצב יומי — the required daily budget ((G−H)/days-left). */
   dailyRate: number;
   startIso: string;
@@ -162,6 +195,10 @@ export type ProjectReportData = {
   /** ALL CLIENTS channel rows enriched for the ערוצים tab (empty in
    *  range mode — the legacy pro-rating path isn't ported yet). */
   channels: ReportChannel[];
+  /** Provenance for the channels' `datedScheduled`/`datedMeetings`, and
+   *  the switch that decides whether the ערוצים table offers its
+   *  dated/snapshot toggle at all. Null ⇒ no dated source. */
+  datedSource: DatedSourceInfo | null;
   /** קריאייטיבים tab data (null when the creative sheet has nothing
    *  for the project or the fetch failed — the tab shows an empty note). */
   creatives: ReportCreatives | null;
