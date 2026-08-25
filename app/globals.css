@@ -26183,7 +26183,6 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-ch-basis {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 0.4rem;
   margin-inline-end: 0.4rem;
 }
@@ -26214,9 +26213,12 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   color: #fff;
 }
 /* Caveat line — only rendered on the dated basis, and only when there is
-   something to caveat (unresolved outcomes / off-table channels). */
+   something to caveat (unresolved outcomes / off-table channels).
+   Its own block BELOW the controls row, never a flex item inside it: as a
+   full-width flex item it re-flowed the row and bumped the channel filter
+   onto a second line, so the filter jumped on every toggle click. */
 .rpt-ch-basis-note {
-  flex-basis: 100%;
+  margin: -0.25rem 0 0.5rem;
   color: var(--muted);
   font-size: 0.74rem;
   line-height: 1.35;

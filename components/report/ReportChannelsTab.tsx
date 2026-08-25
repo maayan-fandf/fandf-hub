@@ -582,6 +582,35 @@ export default function ReportChannelsTab({
   const canDate = !!datedSource;
   const dated = canDate && basis === "dated";
 
+  /**
+   * Caveats for the dated basis, as one string — "" when there is nothing
+   * to say, so the line can be skipped entirely rather than rendered
+   * empty. It lives BELOW the controls row, not inside it: as a flex item
+   * on its own line it re-flowed the row and pushed the channel filter to
+   * a second line, so the filter appeared to jump every time the toggle
+   * was clicked — including on projects with no caveat at all, where the
+   * element was empty but still occupied a row.
+   */
+  const basisNote = useMemo(() => {
+    if (!dated || !datedSource) return "";
+    const parts: string[] = [];
+    if (datedSource.heldConfidence === "partial") {
+      parts.push(
+        "חלק מהפגישות ללא סטטוס סופי — הביצועים הם רצפה, לא ספירה מלאה.",
+      );
+    }
+    const n = datedSource.unmatchedMeetings;
+    if (n > 0) {
+      // Hebrew takes the singular at exactly one, so "1 ביצועים" is wrong.
+      parts.push(
+        n === 1
+          ? "ביצוע אחד בתקופה שייך לערוצים שאינם בטבלה."
+          : `${fmtInt(n)} ביצועים בתקופה שייכים לערוצים שאינם בטבלה.`,
+      );
+    }
+    return parts.join(" ");
+  }, [dated, datedSource]);
+
   const channels = useMemo(() => {
     if (!dated) return data.channels;
     return data.channels.map((c) => {
@@ -891,24 +920,6 @@ export default function ReportChannelsTab({
                   לפי מועד הפגישה
                 </button>
               </span>
-              {dated && datedSource && (
-                <span className="rpt-ch-basis-note">
-                  {datedSource.heldConfidence === "partial"
-                    ? "חלק מהפגישות ללא סטטוס סופי — הביצועים הם רצפה, לא ספירה מלאה."
-                    : null}
-                  {/* Hebrew takes the singular for exactly one, so "1 ביצועים"
-                      is wrong; spell the count out in that case. */}
-                  {datedSource.unmatchedMeetings > 0 ? (
-                    <>
-                      {" "}
-                      {datedSource.unmatchedMeetings === 1
-                        ? "ביצוע אחד בתקופה שייך"
-                        : `${fmtInt(datedSource.unmatchedMeetings)} ביצועים בתקופה שייכים`}{" "}
-                      לערוצים שאינם בטבלה.
-                    </>
-                  ) : null}
-                </span>
-              )}
             </span>
           )}
           {channels.length > 1 && (
@@ -972,6 +983,8 @@ export default function ReportChannelsTab({
           )}
         </div>
       )}
+
+      {basisNote && <p className="rpt-ch-basis-note">{basisNote}</p>}
 
       <div className="rpt-ch-table-wrap">
         <table className="rpt-ch-table">
