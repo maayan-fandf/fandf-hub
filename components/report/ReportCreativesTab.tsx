@@ -34,16 +34,33 @@ function FbAdImage({ ad }: { ad: ReportFbAd }) {
   const [dead, setDead] = useState(!primary);
   if (dead) return <div className="rpt-cr-noimg">📷 אין תצוגה</div>;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={ad.ad}
-      loading="lazy"
-      onError={() => {
-        if (fallback && src !== fallback) setSrc(fallback);
-        else setDead(true);
-      }}
-    />
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={ad.ad}
+        loading="lazy"
+        onError={() => {
+          if (fallback && src !== fallback) setSrc(fallback);
+          else setDead(true);
+        }}
+      />
+      {/* Provenance, only on the fallback path. The warehouse holds a creative
+          long after it stops running, so the image can be older than the
+          numbers beside it — say so rather than let it pass as live. */}
+      {ad.imageFromWarehouse && (
+        <span
+          className="rpt-cr-whimg"
+          title={
+            "התמונה נטענה ממאגר הנתונים (Supabase) ולא מגיליון הקריאייטיבים — " +
+            "הגיליון ריק כרגע." +
+            (ad.imageLastSeen ? ` הופעה אחרונה של הקריאייטיב: ${ad.imageLastSeen}.` : "")
+          }
+        >
+          🗄️
+        </span>
+      )}
+    </>
   );
 }
 

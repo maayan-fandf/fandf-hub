@@ -169,6 +169,11 @@ export default async function NativeProjectRail({
             ...a,
             history: null,
             previews: undefined,
+            // The 🗄️ warehouse-fallback marker is ad-ops plumbing — it tells
+            // us a Supermetrics tab is down. A client should just see the
+            // creative; the image is the same either way.
+            imageFromWarehouse: undefined,
+            imageLastSeen: undefined,
           })),
         },
       },

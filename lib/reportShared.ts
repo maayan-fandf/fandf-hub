@@ -1042,6 +1042,15 @@ export type ReportFbAd = {
    *  of a stats grid. Appended after the top-N slice, so it can never displace
    *  a card that does carry numbers. */
   noWindowData?: boolean;
+  /** The creative shown on this card came from the Supabase warehouse rather
+   *  than the `facebook-ads-assets 365` tab — the fallback in
+   *  lib/warehouseCreatives.ts. Undefined on the normal path. Worth telling
+   *  the reader: the warehouse keeps a creative long after it stops running,
+   *  so a fallback image can be older than the card's numbers. */
+  imageFromWarehouse?: boolean;
+  /** Warehouse `last_seen` for that creative — the last date Meta reported
+   *  delivery. Only set alongside `imageFromWarehouse`; "" when unknown. */
+  imageLastSeen?: string;
   /** Meta ad-preview links from `כל מודעות פפיסבוק`, one per creative behind
    *  this ad name (six Digitel ad names carry 2–3). Reaches back 365 days,
    *  where the assets tab only reaches 60 — so most cards that render

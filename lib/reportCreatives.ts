@@ -4,6 +4,7 @@ import { sheetsClient } from "@/lib/sa";
 import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
 import { readKeysCached } from "@/lib/keys";
 import { normAdName } from "@/lib/fbCreatives";
+import { getWarehouseCreatives } from "@/lib/warehouseCreatives";
 import {
   getProjectMeetingsLiveWindows,
   monthWindow,
@@ -210,6 +211,13 @@ type FbAssetRec = {
    *  range); used solely to rank archive creatives, which by definition have
    *  no windowed numbers to rank on. */
   impressions: number;
+  /** This creative came from the Supabase warehouse, not the assets tab —
+   *  set by fillAssetsFromWarehouse. Surfaced on the card so a fallback
+   *  image is never mistaken for a live one. */
+  fromWarehouse?: boolean;
+  /** Warehouse `last_seen` — the last date Meta reported delivery for this
+   *  creative. Only set alongside `fromWarehouse`. */
+  lastSeen?: string;
 };
 
 type ProjectCreativeRaw = {
@@ -655,7 +663,70 @@ async function fetchProjectCreativeRaw(
     }
   }
 
+  await fillAssetsFromWarehouse(out);
+
   return out;
+}
+
+/**
+ * Backfill creative assets the assets tab didn't supply, from the Supabase
+ * warehouse (see lib/warehouseCreatives.ts for the outage that prompted it).
+ *
+ * Runs off `out.fbAds` — the metrics tab rows, already project-matched — so
+ * it asks the warehouse only about campaigns this project actually ran, and
+ * needs no slug matching of its own. Deliberately does NOT touch
+ * `out.fbAssetsIndexed`: that map decides which ARCHIVE cards exist (creatives
+ * with no metrics row at all), and letting the warehouse add entries there
+ * would change which cards appear, not just what they show. This restores
+ * imagery on cards that already exist; nothing more.
+ *
+ * Field-by-field, not row-by-row: a sheet row that carries copy but no image
+ * (Supermetrics returns those) keeps its copy and gains the image.
+ */
+async function fillAssetsFromWarehouse(out: ProjectCreativeRaw): Promise<void> {
+  if (!out.fbAds.length) return;
+  const needed = new Set<string>();
+  for (const a of out.fbAds) {
+    const rec = out.fbAssets[cardKey(a.campaign, a.ad)];
+    // Only ask if something is actually missing — a healthy tab short-
+    // circuits here and the warehouse is never queried.
+    if (!rec || (!rec.image && !rec.thumb)) needed.add(a.campaign);
+  }
+  if (!needed.size) return;
+
+  const wh = await getWarehouseCreatives([...needed]);
+  if (!Object.keys(wh).length) return;
+
+  for (const a of out.fbAds) {
+    const k = cardKey(a.campaign, a.ad);
+    const w = wh[k];
+    if (!w) continue;
+    const rec = out.fbAssets[k];
+    if (!rec) {
+      out.fbAssets[k] = {
+        account: a.account,
+        status: "",
+        image: w.image,
+        thumb: w.thumb,
+        destUrl: w.destUrl,
+        body: w.body,
+        title: w.title,
+        url: "",
+        impressions: 0,
+        fromWarehouse: true,
+        lastSeen: w.lastSeen,
+      };
+      continue;
+    }
+    if (rec.image || rec.thumb) continue; // sheet already had a creative
+    rec.image = w.image;
+    rec.thumb = w.thumb;
+    rec.fromWarehouse = true;
+    rec.lastSeen = w.lastSeen;
+    if (!rec.body) rec.body = w.body;
+    if (!rec.title) rec.title = w.title;
+    if (!rec.destUrl) rec.destUrl = w.destUrl;
+  }
 }
 
 const fetchProjectCreativeRawCrossRequest = unstable_cache(
@@ -1039,6 +1110,8 @@ function aggregateCreatives(
       // stay the real fbcdn thumbnail for the onError fallback).
       thumb: assets?.thumb ?? "",
       image: assets?.image ?? "",
+      imageFromWarehouse: assets?.fromWarehouse || undefined,
+      imageLastSeen: assets?.fromWarehouse ? assets.lastSeen || "" : undefined,
       // Omitted rather than [] when there's nothing — an empty array per ad
       // is dead weight in the flight payload, and the card tests truthiness.
       previews: raw.fbPreviews[k]?.length ? raw.fbPreviews[k] : undefined,
