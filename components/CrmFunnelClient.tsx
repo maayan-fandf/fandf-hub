@@ -291,12 +291,17 @@ export default function CrmFunnelClient({
     };
     const leadsBreakdown = breakdown(sm.leadsBySource);
     const contactedBreakdown = breakdown(sm.contactedBySource);
+    const attemptedBreakdown = breakdown(sm.attemptedMeetingsBySource || {});
     const scheduledBreakdown = breakdown(sm.scheduledMeetingsBySource);
     const meetingsBreakdown = breakdown(sm.meetingsBySource);
     const contractsBreakdown = breakdown(sm.contractsBySource || {});
     const sumOf = (rows: { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
     const leads = sumOf(leadsBreakdown);
     const contacted = sumOf(contactedBreakdown);
+    // ניסיון תיאום פגישה — cumulative, so it's a SUPERSET of scheduled.
+    // Salesforce only; elsewhere the map is absent and this stays 0, which
+    // the render site reads as "no tile" rather than as a real zero.
+    const attempted = sumOf(attemptedBreakdown);
     const scheduled = sumOf(scheduledBreakdown);
     // Cancelled subset of scheduled (BMBY only) → lets the תואמה tile show
     // תואמו (non-cancelled) + בוטלו. Chip-filtered like the rest.
@@ -306,6 +311,7 @@ export default function CrmFunnelClient({
     return {
       leads,
       contacted,
+      attemptedMeetings: attempted,
       scheduledMeetings: scheduled,
       canceledMeetings: canceled,
       meetings,
@@ -314,6 +320,7 @@ export default function CrmFunnelClient({
       breakdowns: {
         leads: leadsBreakdown,
         contacted: contactedBreakdown,
+        attemptedMeetings: attemptedBreakdown,
         scheduledMeetings: scheduledBreakdown,
         meetings: meetingsBreakdown,
         contracts: contractsBreakdown,
@@ -801,6 +808,28 @@ export default function CrmFunnelClient({
           sub={pct(kpis.contacted, kpis.leads)}
           breakdown={kpis.breakdowns.contacted}
           palette={palette} />
+        {/* ניסיון תיאום פגישה — the stage between "someone worked the lead"
+            and "a meeting exists". Without it Essence read 91 → 2 with a
+            89-lead cliff and nothing to name it; 19 of those were actively
+            being chased. Gated on the FIELD, not the value: it's a funnel
+            stage, so a real 0 is worth showing (like תואמה/פגישות), but
+            BMBY and Sehel have no equivalent status and render no tile. */}
+        {funnel.attemptedMeetings != null && (
+          <KpiTile label="ניסיון תיאום פגישה"
+            value={<CountUp value={kpis.attemptedMeetings} format={fmtInt} />}
+            sub={pct(kpis.attemptedMeetings, kpis.leads)}
+            note={
+              // The count is cumulative (see SALESFORCE_ATTEMPTED_STATUSES),
+              // so it exceeds what the status pivot shows for the label
+              // itself. Spell the split out rather than leave the reader to
+              // reconcile 21 here against 19 in the CRM.
+              kpis.scheduledMeetings > 0
+                ? `בשלב זה ${fmtInt(kpis.attemptedMeetings - kpis.scheduledMeetings)} · המשיכו ${fmtInt(kpis.scheduledMeetings)}`
+                : undefined
+            }
+            breakdown={kpis.breakdowns.attemptedMeetings}
+            palette={palette} />
+        )}
         <KpiTile label="תואמה פגישה"
           value={<CountUp value={kpis.scheduledMeetings} format={fmtInt} />}
           sub={pct(kpis.scheduledMeetings, kpis.leads)}

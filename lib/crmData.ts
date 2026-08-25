@@ -70,6 +70,15 @@ export type CrmFunnel = {
   crmAccount: string;
   leads: number;
   contacted: number;
+  /** "ניסיון תיאום פגישה" — leads a salesperson actively tried to book.
+   *  CUMULATIVE: the status itself plus every stage past it, so
+   *  `attemptedMeetings >= scheduledMeetings >= meetings` always holds.
+   *  Counting the raw status alone would report fewer attempts than
+   *  bookings, since a lead now reading "פגישה התקיימה" no longer reads
+   *  "ניסיון תיאום פגישה" — the status column is a snapshot, not a log.
+   *  Salesforce only (the status belongs to that CRM's vocabulary);
+   *  absent elsewhere, and the card renders no tile when it is. */
+  attemptedMeetings?: number;
   /** "תואמה פגישה" — leads where a meeting was scheduled at any point
    *  in the lifecycle, including upcoming meetings AND cancellations
    *  ("פגישה בוטלה" still counts as scheduled per Maayan's definition).
@@ -136,6 +145,9 @@ export type CrmFunnel = {
     leadsBySource: Record<string, number>;
     /** source → contacted count. Subset of leadsBySource. */
     contactedBySource: Record<string, number>;
+    /** source → attemptedMeetings (ניסיון תיאום פגישה, cumulative) count.
+     *  SUPERSET of scheduledMeetingsBySource. Salesforce only. */
+    attemptedMeetingsBySource?: Record<string, number>;
     /** source → scheduledMeetings (תואמה פגישה) count. */
     scheduledMeetingsBySource: Record<string, number>;
     /** source → cancelled-meeting (בוטלו) count. Subset of
@@ -894,6 +906,26 @@ const SALESFORCE_SCHEDULED_STATUSES = new Set<string>([
   "נסגר בהפסד",
   ...SALESFORCE_CANCELED_STATUSES,
   ...SALESFORCE_HELD_STATUSES,
+]);
+
+/**
+ * "ניסיון תיאום פגישה" and everything downstream of it — the stage where
+ * a salesperson has started chasing a booking, whether or not one landed.
+ *
+ * Built as a SUPERSET of SCHEDULED rather than as the bare status, because
+ * מצב ליד is a snapshot: a lead that got as far as "פגישה התקיימה" no
+ * longer reads "ניסיון תיאום פגישה" anywhere. Counting the raw status
+ * would then report fewer attempts than bookings and invert the funnel.
+ * Deriving it from SCHEDULED (rather than by index into
+ * SALESFORCE_LINEAR_STATUSES) also keeps the off-funnel-but-scheduled
+ * statuses — סגור / נסגר בהפסד, which only occur post-opportunity — on the
+ * right side of the inequality.
+ *
+ * Essence 08/2026: 19 sitting at the status + 2 further along = 21.
+ */
+const SALESFORCE_ATTEMPTED_STATUSES = new Set<string>([
+  "ניסיון תיאום פגישה",
+  ...SALESFORCE_SCHEDULED_STATUSES,
 ]);
 
 const SALESFORCE_LINEAR_STATUSES = [
@@ -2750,6 +2782,7 @@ async function computeSalesforceFunnel(
   // "בית צורי 22,24") are handled by crmAccountCandidates — match ANY.
   const targets = crmAccountCandidates(crmAccount).map(norm);
   let leads = 0;
+  let attemptedMeetings = 0; // ניסיון תיאום פגישה — cumulative, ⊇ scheduled
   let scheduledMeetings = 0; // תואמה פגישה (נקבעה או בוטלה פגישה)
   let canceledMeetings = 0;  // בוטלו — the cancelled subset of scheduled
   let meetings = 0;          // פגישות (התבצעה פגישה — held)
@@ -2760,6 +2793,7 @@ async function computeSalesforceFunnel(
   const bySource = new Map<string, number>();
   const leadsBySource = new Map<string, number>();
   const contactedBySource = new Map<string, number>();
+  const attemptedMeetingsBySource = new Map<string, number>();
   const scheduledMeetingsBySource = new Map<string, number>();
   const canceledMeetingsBySource = new Map<string, number>();
   const meetingsBySource = new Map<string, number>();
@@ -2814,6 +2848,7 @@ async function computeSalesforceFunnel(
     const st = String(arr[iStatus] ?? "").trim();
     // Funnel buckets per Maayan's status matrix (see the block above
     // SALESFORCE_STATUS_FUNNEL_ORDER). scheduledMeetings ⊇ meetings.
+    const isAttemptedMeeting = SALESFORCE_ATTEMPTED_STATUSES.has(st);
     const isScheduledMeeting = SALESFORCE_SCHEDULED_STATUSES.has(st);
     const isCanceledMeeting = SALESFORCE_CANCELED_STATUSES.has(st);
     const isHeldMeeting = SALESFORCE_HELD_STATUSES.has(st);
@@ -2824,6 +2859,7 @@ async function computeSalesforceFunnel(
     // converted lead reads "טופס הרשמה" in the unresolved מצב ליד column.
     const isConverted =
       iHomer >= 0 ? isTruthyFlag(arr[iHomer]) : st === "טופס הרשמה";
+    if (isAttemptedMeeting) attemptedMeetings++;
     if (isScheduledMeeting) scheduledMeetings++;
     if (isCanceledMeeting) canceledMeetings++;
     if (isHeldMeeting) meetings++;
@@ -2853,6 +2889,7 @@ async function computeSalesforceFunnel(
       bySource.set(src, (bySource.get(src) || 0) + 1);
       leadsBySource.set(src, (leadsBySource.get(src) || 0) + 1);
       if (isContacted) contactedBySource.set(src, (contactedBySource.get(src) || 0) + 1);
+      if (isAttemptedMeeting) attemptedMeetingsBySource.set(src, (attemptedMeetingsBySource.get(src) || 0) + 1);
       if (isScheduledMeeting) scheduledMeetingsBySource.set(src, (scheduledMeetingsBySource.get(src) || 0) + 1);
       if (isCanceledMeeting) canceledMeetingsBySource.set(src, (canceledMeetingsBySource.get(src) || 0) + 1);
       if (isHeldMeeting) meetingsBySource.set(src, (meetingsBySource.get(src) || 0) + 1);
@@ -2921,6 +2958,7 @@ async function computeSalesforceFunnel(
     fbBreakdown,
     leads,
     contacted,
+    attemptedMeetings,
     scheduledMeetings,
     canceledMeetings: hasMeetingStatuses ? canceledMeetings : undefined,
     meetings,
@@ -2935,6 +2973,7 @@ async function computeSalesforceFunnel(
       funnelOrder: SALESFORCE_STATUS_FUNNEL_ORDER,
       offFunnel: SALESFORCE_OFF_FUNNEL_STATUSES,
       leadsBySource, contactedBySource,
+      attemptedMeetingsBySource,
       scheduledMeetingsBySource,
       canceledMeetingsBySource: hasMeetingStatuses ? canceledMeetingsBySource : undefined,
       meetingsBySource,
@@ -2969,6 +3008,8 @@ function buildSourceMatrices(args: {
   offFunnel: readonly string[];
   leadsBySource: Map<string, number>;
   contactedBySource: Map<string, number>;
+  /** Optional — Salesforce only; the cumulative "tried to book" superset. */
+  attemptedMeetingsBySource?: Map<string, number>;
   scheduledMeetingsBySource: Map<string, number>;
   /** Optional — BMBY only; the cancelled subset of scheduled. */
   canceledMeetingsBySource?: Map<string, number>;
@@ -3004,6 +3045,9 @@ function buildSourceMatrices(args: {
     offFunnelStatuses: [...ordered, ...tail].filter((s) => off.has(s)),
     leadsBySource: toRec(args.leadsBySource),
     contactedBySource: toRec(args.contactedBySource),
+    attemptedMeetingsBySource: args.attemptedMeetingsBySource
+      ? toRec(args.attemptedMeetingsBySource)
+      : undefined,
     scheduledMeetingsBySource: toRec(args.scheduledMeetingsBySource),
     canceledMeetingsBySource: args.canceledMeetingsBySource
       ? toRec(args.canceledMeetingsBySource)
