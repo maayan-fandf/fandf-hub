@@ -28,12 +28,19 @@ import {
   type DatedSourceInfo,
   type MonthlyRow,
   type PlatCampaign,
+  monthSegments,
   type ProjectReportData,
+  type RangeBasis,
   type ReportChannel,
   type ReportPlat,
+  type ReportSubCampaign,
   type ReportWindow,
 } from "@/lib/reportShared";
-import { getDatedChannelMeetings } from "@/lib/datedChannelMeetings";
+import {
+  buildAttributor,
+  getDatedChannelMeetings,
+} from "@/lib/datedChannelMeetings";
+import { getCrmFunnelForProject } from "@/lib/crmData";
 
 /**
  * Server data layer for the NATIVE project report (phase 1) — reads the
@@ -474,6 +481,419 @@ function buildReportChannels(
   });
 }
 
+/* ─── Free-range channel rows ─────────────────────────────────────── */
+
+/** Platforms with a real daily-spend feed (the GADS2/FB/Taboola2/OB2
+ *  tabs). A channel row on one of these gets its spend SUMMED from the
+ *  daily rows over the exact range instead of a pro-rated share of a
+ *  monthly figure — the owner's spec, 2026-08-25: "for google facebook
+ *  taboola outbrain you do have a daily spend. so use this. and for other
+ *  media channel, assess by number of days relative to the spend found on
+ *  all clients." */
+const DAILY_SPEND_PLATS = new Set<string>(REPORT_PLATS);
+
+/** A row under construction while the range's months are folded together. */
+type RangeAccum = {
+  channel: string;
+  budget: number;
+  spend: number;
+  /** Pro-rated ALL CLIENTS spend per "YYYY-MM" of the range. Kept split
+   *  because the daily feed is trusted or rejected one MONTH at a time —
+   *  see the coverage test in buildRangeReportChannels. */
+  spendByMonth: Map<string, number>;
+  leads: number;
+  pixelLeads: number | undefined;
+  scheduled: number;
+  meetings: number;
+  startIso: string;
+  endIso: string;
+  subs: Map<string, ReportSubCampaign>;
+};
+
+/**
+ * Build the ערוצים rows for a FREE date range.
+ *
+ * ALL CLIENTS' finest grain is one calendar month, so a range that starts
+ * mid-month cannot be read off it directly. Three sources are combined,
+ * each used for what it alone can answer:
+ *
+ *  1. SPEND, programmatic — summed from the platform daily feed over the
+ *     exact range, matched to the row by its own סוג-קמפיין tokens (the
+ *     same matcher the קצב יומי cell and the trend popover already use, so
+ *     a row's spend covers exactly the campaigns its other cells describe).
+ *     Real money, no estimation — where the feed can see it. It is trusted
+ *     one MONTH at a time, because it cannot always: לוריא's July generic
+ *     spend lives on `Tzarfati_jerusalem_generic_2024-10-09_GS`, a campaign
+ *     whose name carries no `luria` slug and whose cost ALL CLIENTS splits
+ *     50/50 with another project. Name-matching finds nothing there, and a
+ *     row-level sum would have quietly reported ₪4,451 for a channel that
+ *     spent ₪13,020. So a month the feed shows NOTHING for, while ALL
+ *     CLIENTS says the row spent, falls back to (2). A month the feed shows
+ *     anything for is believed in full — the test is coverage, not
+ *     magnitude, so a campaign that genuinely ramped late still reports its
+ *     real, small number instead of being second-guessed.
+ *
+ *  2. SPEND, everything else (yad2 / כתבה / מדלן / phone …) — pro-rated
+ *     from ALL CLIENTS. Each row is spread evenly across its OWN
+ *     [התחלה, min(סיום, today)] span and the range takes the overlapping
+ *     fraction, so a channel that only started on the 13th is not charged
+ *     for the whole month and days that have not happened yet contribute
+ *     nothing. For the in-flight month the חודשי row is a stub (לוריא
+ *     2026-08 carries 3 rows and no leads at all while the `current` rows
+ *     carry 11), so `current` is used there instead.
+ *
+ *  3. OUTCOMES — the CRM funnel windowed on the range. Pro-rating these
+ *     would assume leads arrive uniformly inside a month, which they do
+ *     not, and would print fractions of a lead. The CRM is the only source
+ *     that can answer "leads created between the 4th and the 19th", and
+ *     ALL CLIENTS' monthly lead counts are themselves derived from it, so
+ *     this is the faithful generalisation of what the other modes show
+ *     rather than a different measure.
+ *
+ * Row-grain attribution for (3) reuses buildAttributor: matching on the
+ * canonical channel alone would hand Google-search-brand, -generic and
+ * -competitors the same bucket and triple-count it.
+ */
+async function buildRangeReportChannels(args: {
+  subjectEmail: string;
+  project: string;
+  company: string;
+  window: ReportWindow;
+  platformRows: ProjectPlatformRows;
+  today: string;
+}): Promise<{ channels: ReportChannel[]; basis: RangeBasis | null }> {
+  const { subjectEmail, project, company, window, platformRows, today } = args;
+  const segs = monthSegments(window.startIso, window.endIso);
+  if (!segs.length) return { channels: [], basis: null };
+
+  // The `current` rows describe the flight window as a whole, so their
+  // spend has to be spread over the days that have actually elapsed.
+  const currentRows = await getAllClientsCurrentForProject({
+    subjectEmail,
+    project,
+  }).catch(() => [] as AllClientsRow[]);
+  let flightStart = "";
+  let flightEnd = "";
+  for (const r of currentRows) {
+    if (r.startIso && (!flightStart || r.startIso < flightStart))
+      flightStart = r.startIso;
+    if (r.endIso && r.endIso > flightEnd) flightEnd = r.endIso;
+  }
+  const flightElapsedEnd = flightEnd && flightEnd > today ? today : flightEnd;
+  const flightDays =
+    flightStart && flightElapsedEnd && flightElapsedEnd >= flightStart
+      ? daysBetween(flightStart, flightElapsedEnd) + 1
+      : 0;
+
+  const acc = new Map<string, RangeAccum>();
+  /**
+   * Merge key for folding the same channel across months.
+   *
+   * Punctuation is stripped because ALL CLIENTS spells a channel however
+   * it was typed that month: לוריא's DV360 row is `dv_360` in חודשי and
+   * `dv360` in current, and keying on the literal string split one channel
+   * into two rows of the same table. Only separators go — the key still
+   * distinguishes google-search-brand from google-search-generic, and
+   * facebook from Facebook-leadgen, which are genuinely different rows.
+   */
+  const mergeKey = (name: string) =>
+    name.toLowerCase().replace(/[\s_-]+/g, "").trim();
+  const add = (r: AllClientsRow, factor: number, month: string) => {
+    if (!(factor > 0)) return;
+    const key = mergeKey(r.channel);
+    if (!key) return;
+    let a = acc.get(key);
+    if (!a) {
+      a = {
+        channel: r.channel.trim(),
+        budget: 0,
+        spend: 0,
+        spendByMonth: new Map(),
+        leads: 0,
+        pixelLeads: undefined,
+        scheduled: 0,
+        meetings: 0,
+        startIso: "",
+        endIso: "",
+        subs: new Map(),
+      };
+      acc.set(key, a);
+    }
+    a.budget += r.budget * factor;
+    a.spend += r.spend * factor;
+    a.spendByMonth.set(month, (a.spendByMonth.get(month) ?? 0) + r.spend * factor);
+    a.leads += r.leads * factor;
+    a.scheduled += r.scheduled * factor;
+    a.meetings += r.meetings * factor;
+    // Same blank-vs-measured rule as everywhere else: only a real reading
+    // contributes, so a project with no pixel column stays undefined.
+    if (r.pixelLeads != null)
+      a.pixelLeads = (a.pixelLeads ?? 0) + r.pixelLeads * factor;
+    if (r.startIso && (!a.startIso || r.startIso < a.startIso))
+      a.startIso = r.startIso;
+    if (r.endIso && r.endIso > a.endIso) a.endIso = r.endIso;
+    for (const s of r.subCampaigns ?? []) {
+      const nk = s.name.toLowerCase().trim();
+      if (!nk) continue;
+      const prev = a.subs.get(nk);
+      if (prev) {
+        prev.spend += s.spend * factor;
+        prev.budget += s.budget * factor;
+        prev.leads += s.leads * factor;
+        prev.scheduled += s.scheduled * factor;
+        prev.meetings += s.meetings * factor;
+      } else {
+        a.subs.set(nk, {
+          name: s.name,
+          spend: s.spend * factor,
+          budget: s.budget * factor,
+          leads: s.leads * factor,
+          scheduled: s.scheduled * factor,
+          meetings: s.meetings * factor,
+        });
+      }
+    }
+  };
+
+  /**
+   * What fraction of ONE row's spend belongs to this segment.
+   *
+   * A row's עלות covers the row's own [התחלה, סיום] span, not necessarily
+   * the calendar month, so the row — not the month — is the denominator.
+   * That is what keeps לוריא's dv360 (a flight that starts on the 13th)
+   * from being charged as though it ran all month. `today` caps the span:
+   * a flight still running has only spent over the days that have elapsed,
+   * and a range reaching into the future must not invent the rest.
+   * Falls back to the segment's own bounds when the row carries no dates.
+   */
+  const factorFor = (r: AllClientsRow, seg: (typeof segs)[number]): number => {
+    const rowStart = r.startIso || seg.startIso;
+    const rowEnd = r.endIso || seg.endIso;
+    const effEnd = rowEnd > today ? today : rowEnd;
+    if (!rowStart || !effEnd || effEnd < rowStart) return 0;
+    const denom = daysBetween(rowStart, effEnd) + 1;
+    if (denom <= 0) return 0;
+    const oStart = seg.startIso > rowStart ? seg.startIso : rowStart;
+    const oEnd = seg.endIso < effEnd ? seg.endIso : effEnd;
+    if (oEnd < oStart) return 0;
+    return (daysBetween(oStart, oEnd) + 1) / denom;
+  };
+
+  for (const seg of segs) {
+    // A closed month is finalised in חודשי; the in-progress one is not (its
+    // חודשי row is a plan stub), so the live flight rows win there. Either
+    // source falls back to the other when it has nothing for the segment,
+    // so a mid-flight start doesn't silently drop the days before it.
+    const monthClosed = seg.month < today.slice(0, 7);
+    const monthly = await getAllClientsMonthlyForProject({
+      subjectEmail,
+      project,
+      yearMonth: seg.month,
+    }).catch(() => [] as AllClientsRow[]);
+    const preferCurrent = !monthClosed && currentRows.length > 0;
+    const primary = preferCurrent ? currentRows : monthly;
+    const backup = preferCurrent ? monthly : currentRows;
+    let used = false;
+    for (const r of primary) {
+      const f = factorFor(r, seg);
+      if (f > 0) {
+        add(r, f, seg.month);
+        used = true;
+      }
+    }
+    if (!used) {
+      for (const r of backup) add(r, factorFor(r, seg), seg.month);
+    }
+  }
+  if (!acc.size) return { channels: [], basis: null };
+
+  // ── (1) real spend for the platforms that have a daily feed ──────────
+  const inWindow = (d: string) =>
+    !!d && d >= window.startIso && d <= window.endIso;
+  const winRows = {} as ProjectPlatformRows;
+  for (const p of REPORT_PLATS) winRows[p] = platformRows[p].filter((r) => inWindow(r.date));
+
+  const rows = [...acc.values()];
+  const platOf = new Map<string, string>();
+  const platCount = new Map<string, number>();
+  for (const a of rows) {
+    const p = classifyChannel(a.channel);
+    platOf.set(a.channel, p);
+    platCount.set(p, (platCount.get(p) ?? 0) + 1);
+  }
+
+  const realSpend: string[] = [];
+  const prorated: string[] = [];
+  const rangeDays = Math.max(1, daysBetween(window.startIso, window.endIso) + 1);
+  const built = rows.map((a) => {
+    const platform = platOf.get(a.channel) ?? "other";
+    const subs = [...a.subs.values()];
+    let spend = a.spend;
+    let daily: DailyPoint[] | undefined;
+    if (DAILY_SPEND_PLATS.has(platform)) {
+      const platRows = winRows[platform as ReportPlat];
+      const series = channelDailySeries(platRows, campaignTokenSets(subs));
+      if (series) {
+        daily = series;
+      } else if (platCount.get(platform) === 1 && platRows.length) {
+        // No סוג tokens to match on, but this row is its platform's only
+        // one — the whole platform's spend in the range IS this row's.
+        const byDate = new Map<string, DailyPoint>();
+        for (const r of platRows) {
+          const p = byDate.get(r.date) ?? {
+            date: r.date,
+            cost: 0,
+            leads: 0,
+            impressions: 0,
+            clicks: 0,
+          };
+          p.cost += r.cost;
+          p.leads += r.leads;
+          p.impressions += r.imp;
+          p.clicks += r.clk;
+          byDate.set(r.date, p);
+        }
+        daily = [...byDate.keys()].sort().map((k) => byDate.get(k)!);
+      }
+    }
+    if (daily) {
+      // Trust the feed one month at a time. A month it shows nothing for,
+      // while ALL CLIENTS says this row spent, is a month whose campaigns
+      // the feed cannot attribute to this project (a shared campaign name
+      // with no slug in it) — not a month with no spend.
+      const feedByMonth = new Map<string, number>();
+      for (const p of daily) {
+        const mo = p.date.slice(0, 7);
+        feedByMonth.set(mo, (feedByMonth.get(mo) ?? 0) + p.cost);
+      }
+      let total = 0;
+      let anyFeed = false;
+      let anyFallback = false;
+      for (const seg of segs) {
+        const fromFeed = feedByMonth.get(seg.month) ?? 0;
+        const fromSheet = a.spendByMonth.get(seg.month) ?? 0;
+        if (fromFeed > 0) {
+          total += fromFeed;
+          anyFeed = true;
+        } else {
+          total += fromSheet;
+          if (fromSheet > 0) anyFallback = true;
+        }
+      }
+      spend = total;
+      // A row counts as measured only when NOTHING in it was estimated —
+      // the note exists to say which numbers can be checked against a
+      // platform, and a mixed row cannot be.
+      if (anyFeed && !anyFallback) {
+        realSpend.push(a.channel);
+      } else {
+        prorated.push(a.channel);
+        // Drop the per-row trend series too — it covers only the months the
+        // feed could attribute, so on a mixed row it totals ₪4,451 against a
+        // cell reading ₪13,021. `spendEstimated` then stops the client
+        // substituting the whole-platform series, which overstates the same
+        // row at ₪17,562: with a partly-estimated cost there is no daily
+        // series that reconciles, so the row shows no trend at all.
+        daily = undefined;
+      }
+    } else {
+      prorated.push(a.channel);
+    }
+    const estimated = !daily;
+    return { a, platform, subs, spend, daily, estimated };
+  });
+
+  // ── (3) outcomes from the CRM, windowed on the exact range ───────────
+  const labels = built.map((b) => b.a.channel);
+  const funnel = await getCrmFunnelForProject({
+    company,
+    project,
+    projectWindow: { from: window.startIso, to: window.endIso },
+  }).catch(() => null);
+
+  let outcomes: RangeBasis["outcomes"] = "prorated";
+  let unattributedLeads = 0;
+  let ambiguousLeads = 0;
+  let totalCrmLeads = 0;
+  const crm = new Map<string, { leads: number; scheduled: number; meetings: number }>();
+  if (funnel) {
+    const attribute = buildAttributor(labels);
+    const sm = funnel.sourceMatrices;
+    let attributed = 0;
+    for (const src of sm.allSources) {
+      const leads = sm.leadsBySource[src] || 0;
+      totalCrmLeads += leads;
+      const { channel, ambiguous } = attribute(src);
+      if (!channel) {
+        if (ambiguous) ambiguousLeads += leads;
+        else unattributedLeads += leads;
+        continue;
+      }
+      attributed += leads;
+      const cur = crm.get(channel) ?? { leads: 0, scheduled: 0, meetings: 0 };
+      cur.leads += leads;
+      cur.scheduled += sm.scheduledMeetingsBySource[src] || 0;
+      cur.meetings += sm.meetingsBySource[src] || 0;
+      crm.set(channel, cur);
+    }
+    // Only switch the columns over when the attribution actually covers
+    // the cohort. A project whose CRM source names have drifted away from
+    // its ALL CLIENTS channel labels would otherwise render a table of
+    // zeros next to real spend, which reads as "this channel produced
+    // nothing" rather than "we could not match the names".
+    if (totalCrmLeads > 0 && attributed * 2 >= totalCrmLeads) outcomes = "crm";
+  }
+
+  const channels: ReportChannel[] = built.map(({ a, platform, subs, spend, daily, estimated }) => {
+    const hit = outcomes === "crm" ? crm.get(a.channel) : undefined;
+    const leads = outcomes === "crm" ? (hit?.leads ?? 0) : Math.round(a.leads);
+    const scheduled =
+      outcomes === "crm" ? (hit?.scheduled ?? 0) : Math.round(a.scheduled);
+    const meetings =
+      outcomes === "crm" ? (hit?.meetings ?? 0) : Math.round(a.meetings);
+    return {
+      channel: a.channel,
+      platform,
+      budget: a.budget,
+      spend,
+      leads,
+      pixelLeads: a.pixelLeads == null ? undefined : Math.round(a.pixelLeads),
+      spendEstimated: estimated,
+      scheduled,
+      meetings,
+      // Observed rate over the selected days — not the sheet's קצב יומי,
+      // which is a required-rate-to-finish figure that means nothing for
+      // an arbitrary window. The column is hidden in range mode anyway.
+      dailyRate: spend / rangeDays,
+      startIso: a.startIso,
+      endIso: a.endIso,
+      costPerLead: leads > 0 ? spend / leads : 0,
+      costPerScheduled: scheduled > 0 ? spend / scheduled : 0,
+      costPerMeeting: meetings > 0 ? spend / meetings : 0,
+      subCampaigns: subs,
+      // Flight-window concepts — a free range has no configured budget to
+      // pace against, and a platform 7-day average is not about this window.
+      configuredDaily: null,
+      campaignStatus: "none",
+      avg7d: null,
+      daily,
+    };
+  });
+  channels.sort((x, y) => y.spend - x.spend);
+
+  return {
+    channels,
+    basis: {
+      realSpend,
+      prorated,
+      outcomes,
+      unattributedLeads: outcomes === "crm" ? unattributedLeads : 0,
+      ambiguousLeads: outcomes === "crm" ? ambiguousLeads : 0,
+      totalCrmLeads: outcomes === "crm" ? totalCrmLeads : 0,
+    },
+  };
+}
+
 function sumChannelTotals(channels: AllClientsRow[]) {
   const t = { budget: 0, spend: 0, leads: 0, relevant: 0, scheduled: 0, meetings: 0, sales: 0 };
   for (const c of channels) {
@@ -570,10 +990,25 @@ export const getProjectReportData = cache(
     // ערוצים tab rows: live mode gets the full pacing enrichment
     // (configured budgets + status dots + 7d averages); month mode shows
     // plain values with the legacy dailyRate = spend/daysInMonth (the
-    // תקציב + קצב יומי columns are hidden there anyway); range mode
-    // isn't ported yet (legacy pro-rates חודשי rows).
+    // תקציב + קצב יומי columns are hidden there anyway); range mode folds
+    // the months the range spans together — see buildRangeReportChannels.
     let reportChannels: ReportChannel[] = [];
-    if (mode !== "range" && channels.length) {
+    let rangeBasis: RangeBasis | null = null;
+    if (mode === "range" && window.startIso && window.endIso) {
+      const built = await buildRangeReportChannels({
+        subjectEmail,
+        project: projectName,
+        company,
+        window,
+        platformRows: rows,
+        today: todayIso(),
+      }).catch(() => ({ channels: [], basis: null }) as {
+        channels: ReportChannel[];
+        basis: RangeBasis | null;
+      });
+      reportChannels = built.channels;
+      rangeBasis = built.basis;
+    } else if (mode !== "range" && channels.length) {
       let campaigns: CampaignBudgetItem[] = [];
       let avg7dByPlat: Record<string, number> | undefined;
       if (mode === "live") {
@@ -709,6 +1144,7 @@ export const getProjectReportData = cache(
       dailyGoogleByKind: googleDailyByKind(rows.google),
       channels: reportChannels,
       datedSource,
+      rangeBasis,
       creatives,
       company,
       landingUrl,

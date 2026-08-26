@@ -158,6 +158,13 @@ export type ReportChannel = {
    */
   datedScheduled?: number;
   datedMeetings?: number;
+  /** Range mode only: this row's עלות is wholly or partly a pro-rated
+   *  share of a monthly figure rather than summed daily spend. Set by
+   *  buildRangeReportChannels; it both drives the tab's disclosure note and
+   *  suppresses the per-row trend popover, because no daily series exists
+   *  that adds up to an estimated number — showing one would put a total
+   *  in the popover that contradicts the cell beside it. */
+  spendEstimated?: boolean;
   /** Sheet קצב יומי — the required daily budget ((G−H)/days-left). */
   dailyRate: number;
   startIso: string;
@@ -186,6 +193,32 @@ export type ReportChannel = {
   daily?: DailyPoint[];
 };
 
+/**
+ * How the ערוצים table's free-range rows were assembled, so the tab can
+ * say it rather than presenting estimates as measurements.
+ *
+ * A free range crosses two different kinds of source: money that is
+ * recorded per day (and so can be summed exactly) and money that is
+ * recorded per month (and so can only be apportioned). The reader is
+ * entitled to know which cells are which.
+ */
+export type RangeBasis = {
+  /** Channels whose spend is REAL platform spend summed over the range. */
+  realSpend: string[];
+  /** Channels whose spend was pro-rated out of ALL CLIENTS monthly rows. */
+  prorated: string[];
+  /** Where the לידים / תיאומים / ביצועים columns came from. */
+  outcomes: "crm" | "prorated";
+  /** CRM leads in the window that no table row could claim, and those the
+   *  CRM knows about but cannot split between rows sharing a canonical
+   *  channel. Both are zero on the "prorated" path. */
+  unattributedLeads: number;
+  ambiguousLeads: number;
+  /** Total leads the CRM counted in the window (the denominator for the
+   *  two above). */
+  totalCrmLeads: number;
+};
+
 export type ProjectReportData = {
   project: string;
   slug: string;
@@ -201,13 +234,18 @@ export type ProjectReportData = {
    *  distinct series for google-search vs google-discovery — `daily.google`
    *  is the combined platform series that made both rows look identical. */
   dailyGoogleByKind?: { search: DailyPoint[]; discovery: DailyPoint[] };
-  /** ALL CLIENTS channel rows enriched for the ערוצים tab (empty in
-   *  range mode — the legacy pro-rating path isn't ported yet). */
+  /** ALL CLIENTS channel rows enriched for the ערוצים tab. In range mode
+   *  these are folded across the months the range spans — see
+   *  reportData's buildRangeReportChannels and `rangeBasis` below. */
   channels: ReportChannel[];
   /** Provenance for the channels' `datedScheduled`/`datedMeetings`, and
    *  the switch that decides whether the ערוצים table offers its
    *  dated/snapshot toggle at all. Null ⇒ no dated source. */
   datedSource: DatedSourceInfo | null;
+  /** How the free-range channel rows were derived. Null outside range
+   *  mode, where every number comes from one ALL CLIENTS row and there is
+   *  nothing to disclose. */
+  rangeBasis: RangeBasis | null;
   /** קריאייטיבים tab data (null when the creative sheet has nothing
    *  for the project or the fetch failed — the tab shows an empty note). */
   creatives: ReportCreatives | null;
@@ -1639,3 +1677,64 @@ export const fmtDateHe = (iso: string): string => {
   const p = iso.split("-");
   return `${p[2]}/${p[1]}/${p[0]}`;
 };
+
+/* ─── Month segmentation (free-range pro-rating) ──────────────────── */
+
+export type MonthSegment = {
+  /** "YYYY-MM" of the calendar month this segment belongs to. */
+  month: string;
+  /** First day of the month that is inside the range (ISO). */
+  startIso: string;
+  /** Last day of the month that is inside the range (ISO). */
+  endIso: string;
+  /** How many of the month's days fall inside the range. */
+  daysInRange: number;
+  /** How many days the whole calendar month has. */
+  daysInMonth: number;
+};
+
+/**
+ * Split an inclusive ISO range into per-calendar-month segments.
+ *
+ * The basis for pro-rating anything ALL CLIENTS records per month onto a
+ * free date range: its finest grain is one calendar month (rowType
+ * "חודשי"), so a range that starts mid-July has to take July's numbers
+ * × daysInRange/daysInMonth. Returns [] on a malformed or inverted range.
+ *
+ * Lives here rather than in reportData because CrmFunnelCard pro-rates the
+ * same way for the funnel's channel costs, and two copies of this arithmetic
+ * would eventually disagree about a month boundary.
+ */
+export function monthSegments(from: string, to: string): MonthSegment[] {
+  const out: MonthSegment[] = [];
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return out;
+  let y = start.getUTCFullYear();
+  let m = start.getUTCMonth(); // 0-based
+  for (;;) {
+    const monthStart = new Date(Date.UTC(y, m, 1));
+    const monthEnd = new Date(Date.UTC(y, m + 1, 0)); // last day of month
+    const daysInMonth = monthEnd.getUTCDate();
+    const segStart = monthStart > start ? monthStart : start;
+    const segEnd = monthEnd < end ? monthEnd : end;
+    const daysInRange =
+      Math.round((segEnd.getTime() - segStart.getTime()) / 86400000) + 1;
+    if (daysInRange > 0) {
+      out.push({
+        month: `${y}-${String(m + 1).padStart(2, "0")}`,
+        startIso: segStart.toISOString().slice(0, 10),
+        endIso: segEnd.toISOString().slice(0, 10),
+        daysInRange,
+        daysInMonth,
+      });
+    }
+    if (y === end.getUTCFullYear() && m === end.getUTCMonth()) break;
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+  }
+  return out;
+}

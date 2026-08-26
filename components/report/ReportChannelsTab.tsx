@@ -32,15 +32,18 @@ import {
 
 /**
  * ערוצים tab — the native rebuild of the legacy 📋 פירוט ערוצים table
- * (Index.html:5770): 12 sortable columns (תקציב + קצב יומי hidden in
- * month mode), cost-per heat coloring, conversion-rate tones, totals
+ * (Index.html:5770): 12 sortable columns (תקציב + קצב יומי live-mode only),
+ * cost-per heat coloring, conversion-rate tones, totals
  * row, the pacing cell with the 12% configured-vs-required rule
  * (⬇/⬆/🔍 + ✓טיפלתי snooze sharing the iframe/budget-desk dismissal
  * keys), campaign live/paused dots, flight chips + mini-gantt, and the
  * pickAlerts strip, and the לידים cell's CRM-vs-pixel tooltip + ⚠️.
+ * Free ranges render too (2026-08-26) — the rows are folded across the
+ * months the range spans by reportData's buildRangeReportChannels, and
+ * `rangeNote` below discloses which cells are summed and which pro-rated.
  * Not yet ported: spend-divergence ⚠️ (its pixelCostFullRange came from a
  * GADS+FB aggregation the native pipeline doesn't carry), CPL-trend ▲▼,
- * end-date-mismatch ⚠️, per-campaign tooltip detail, free-range mode.
+ * end-date-mismatch ⚠️, per-campaign tooltip detail.
  */
 
 export type PacingDismissal = {
@@ -573,7 +576,16 @@ export default function ReportChannelsTab({
   canEditBudget?: boolean;
   adLinks?: ReportAdLinks | null;
 }) {
-  const isMonth = data.mode === "month";
+  /**
+   * Flight-window chrome: the תקציב + קצב יומי columns, the pacing cell and
+   * the irregular-dates warning. All four are statements about an approved
+   * MONTHLY budget being burned down over a known flight window, so they
+   * mean nothing for a completed month and nothing for a free range — a
+   * range has no budget of its own to pace against, and its rows carry ALL
+   * CLIENTS flight dates that will never equal the window the user picked.
+   * Live mode only, therefore.
+   */
+  const flightCols = data.mode === "live";
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const [localDismiss, setLocalDismiss] = useState<Record<string, "on" | "off">>(
     {},
@@ -641,6 +653,45 @@ export default function ReportChannelsTab({
     return parts.join(" ");
   }, [dated, datedSource]);
 
+  /**
+   * What a free range's numbers actually are, said out loud.
+   *
+   * Range rows mix two kinds of money: platforms with a daily feed are
+   * summed exactly over the chosen days, everything else is a share of a
+   * monthly figure. Presenting both as one column without saying so would
+   * let a pro-rated יד2 estimate be read as a measurement — and it is the
+   * one number here nobody can check against a platform. Same for the
+   * funnel columns, which come from the CRM windowed on the range rather
+   * than from ALL CLIENTS.
+   */
+  const rangeNote = useMemo(() => {
+    const rb = data.rangeBasis;
+    if (data.mode !== "range" || !rb) return "";
+    const parts: string[] = [];
+    if (rb.prorated.length) {
+      parts.push(
+        `עלות ${rb.realSpend.length ? "עבור " + rb.prorated.join(", ") : ""} מחושבת יחסית למספר הימים בטווח מתוך העלות החודשית ב-ALL CLIENTS — הערכה, לא מדידה.`,
+      );
+    }
+    if (rb.realSpend.length) {
+      parts.push(
+        `עלות עבור ${rb.realSpend.join(", ")} נסכמת מהוצאה יומית אמיתית בטווח.`,
+      );
+    }
+    parts.push(
+      rb.outcomes === "crm"
+        ? "לידים, תיאומים וביצועים נספרים מה-CRM לפי תאריכי הטווח."
+        : "לידים, תיאומים וביצועים מחושבים יחסית למספר הימים — לא ניתן היה לשייך את מקורות ה-CRM לשורות הטבלה.",
+    );
+    const un = rb.unattributedLeads + rb.ambiguousLeads;
+    if (un > 0 && rb.totalCrmLeads > 0) {
+      parts.push(
+        `${fmtInt(un)} מתוך ${fmtInt(rb.totalCrmLeads)} לידים ב-CRM לא שויכו לאף שורה.`,
+      );
+    }
+    return parts.join(" ");
+  }, [data.mode, data.rangeBasis]);
+
   const channels = useMemo(() => {
     if (!dated) return data.channels;
     return data.channels.map((c) => {
@@ -679,26 +730,13 @@ export default function ReportChannelsTab({
     [sorted, selected],
   );
 
-  // Custom ranges have no channel rows: ALL CLIENTS is the only source that
-  // carries the per-channel funnel, and its finest grain is one calendar
-  // month (rowType "חודשי"). This used to send people to the classic view,
-  // which was deprecated 2026-08-25 — so it now says what to pick instead
-  // rather than pointing at a door that no longer opens.
-  if (data.mode === "range") {
-    return (
-      <div className="rpt-empty">
-        פירוט ערוצים בטווח מותאם עדיין לא זמין — בחרו חודש שלם או את התקופה
-        המלאה כדי לראות את הפילוח לפי ערוץ.
-      </div>
-    );
-  }
   if (!channels.length) {
     return <div className="rpt-empty">אין שורות ערוצים לפרויקט בתקופה הזו.</div>;
   }
 
   const alerts = pickChannelAlerts(channels, chLabel);
   const datesIrregular =
-    !isMonth &&
+    flightCols &&
     !!data.window.startIso &&
     !!data.window.endIso &&
     channels.some(
@@ -1014,6 +1052,7 @@ export default function ReportChannelsTab({
         </div>
       )}
 
+      {rangeNote && <p className="rpt-ch-basis-note">📅 {rangeNote}</p>}
       {basisNote && <p className="rpt-ch-basis-note">{basisNote}</p>}
 
       <div className="rpt-ch-table-wrap">
@@ -1021,7 +1060,7 @@ export default function ReportChannelsTab({
           <thead>
             <tr>
               <Th k="channel" label="ערוץ" />
-              {!isMonth && <Th k="budget" label="תקציב" />}
+              {flightCols && <Th k="budget" label="תקציב" />}
               <Th k="spend" label="עלות" />
               <Th k="leads" label="לידים" />
               <Th k="cpl" label="עלות לליד" />
@@ -1031,7 +1070,7 @@ export default function ReportChannelsTab({
               <Th k="r2" label="המרה לביצוע" />
               <Th k="meetings" label="ביצועים" />
               <Th k="cpm" label="עלות לביצוע" />
-              {!isMonth && <Th k="daily" label="קצב יומי" />}
+              {flightCols && <Th k="daily" label="קצב יומי" />}
             </tr>
           </thead>
           <tbody>
@@ -1067,7 +1106,13 @@ export default function ReportChannelsTab({
                     : (data.daily?.facebook ?? []);
               const trendDaily =
                 (c.platform === "google" || c.platform === "facebook") &&
-                c.spend > 0
+                c.spend > 0 &&
+                // No trend at all when the cost is partly estimated (free
+                // ranges, where the daily feed cannot see some of a row's
+                // months). Its own matched series would total less than the
+                // cell and the platform fallback above totals more — with
+                // nothing that reconciles, the honest popover is none.
+                !c.spendEstimated
                   ? windowDaily(
                       trendSource,
                       data.window.startIso,
@@ -1080,9 +1125,9 @@ export default function ReportChannelsTab({
                 c.endIso &&
                 (c.startIso !== data.window.startIso ||
                   c.endIso !== data.window.endIso);
-              const pacing = isMonth
-                ? null
-                : computeChannelPacing(c);
+              const pacing = flightCols
+                ? computeChannelPacing(c)
+                : null;
               const gapStillOff =
                 pacing?.action === "lower" || pacing?.action === "raise";
               const paceKey = pacingChannelKey(data.slug, c.channel);
@@ -1142,7 +1187,7 @@ export default function ReportChannelsTab({
                       <ChannelTrendPop channel={c.channel} series={trendDaily} />
                     )}
                   </td>
-                  {!isMonth && (
+                  {flightCols && (
                     <td
                       className="rpt-budcell rpt-money-cell"
                       style={spanBar(c.budget, c.spend, 0, 0.5, pacing?.cls ?? "")}
@@ -1162,9 +1207,9 @@ export default function ReportChannelsTab({
                   <td
                     className="rpt-money-cell"
                     style={
-                      isMonth
-                        ? undefined
-                        : spanBar(c.budget, c.spend, 0.5, 1, pacing?.cls ?? "")
+                      flightCols
+                        ? spanBar(c.budget, c.spend, 0.5, 1, pacing?.cls ?? "")
+                        : undefined
                     }
                   >
                     {fmtILS(c.spend)}
@@ -1192,7 +1237,7 @@ export default function ReportChannelsTab({
                   <td style={costHeatStyle("costPerMeeting", c.costPerMeeting)}>
                     {c.costPerMeeting > 0 ? fmtILS(c.costPerMeeting) : "—"}
                   </td>
-                  {!isMonth && (
+                  {flightCols && (
                     <td
                       className={
                         "rpt-pace" +
@@ -1286,7 +1331,7 @@ export default function ReportChannelsTab({
               <td>
                 <b>סה״כ</b>
               </td>
-              {!isMonth && (
+              {flightCols && (
                 <td>
                   <b>{fmtILS(totals.budget)}</b>
                 </td>
@@ -1314,7 +1359,7 @@ export default function ReportChannelsTab({
               <td style={costHeatStyle("costPerMeeting", tCpm)}>
                 <b>{tCpm > 0 ? fmtILS(tCpm) : "—"}</b>
               </td>
-              {!isMonth && (
+              {flightCols && (
                 <td>
                   <b>{totals.daily ? fmtILS(totals.daily) : "—"}</b>
                 </td>

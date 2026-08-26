@@ -9,6 +9,7 @@ import {
 } from "@/lib/allClients";
 import { getProjectSlug } from "@/lib/campaignMatch";
 import { getSpendInRange } from "@/lib/platformDailySpend";
+import { monthSegments } from "@/lib/reportShared";
 import { driveFolderOwner } from "@/lib/sa";
 import CrmFunnelClient from "./CrmFunnelClient";
 
@@ -35,36 +36,6 @@ const PROGRAMMATIC_CHANNELS = new Set([
  * tab has zero matches — caller wraps in <Suspense fallback={null}> so
  * projects without CRM data silently collapse.
  */
-/** Split an inclusive ISO range [from,to] into per-calendar-month segments,
- *  each carrying how many of its days fall inside the range and how many days
- *  the whole month has — the basis for pro-rating fixed monthly cost. */
-function monthSegments(
-  from: string,
-  to: string,
-): { month: string; daysInRange: number; daysInMonth: number }[] {
-  const out: { month: string; daysInRange: number; daysInMonth: number }[] = [];
-  const start = new Date(`${from}T00:00:00Z`);
-  const end = new Date(`${to}T00:00:00Z`);
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return out;
-  let y = start.getUTCFullYear();
-  let m = start.getUTCMonth(); // 0-based
-  while (true) {
-    const monthStart = new Date(Date.UTC(y, m, 1));
-    const monthEnd = new Date(Date.UTC(y, m + 1, 0)); // last day of month
-    const daysInMonth = monthEnd.getUTCDate();
-    const segStart = monthStart > start ? monthStart : start;
-    const segEnd = monthEnd < end ? monthEnd : end;
-    const daysInRange =
-      Math.round((segEnd.getTime() - segStart.getTime()) / 86400000) + 1;
-    const month = `${y}-${String(m + 1).padStart(2, "0")}`;
-    if (daysInRange > 0) out.push({ month, daysInRange, daysInMonth });
-    if (y === end.getUTCFullYear() && m === end.getUTCMonth()) break;
-    m += 1;
-    if (m > 11) { m = 0; y += 1; }
-  }
-  return out;
-}
-
 export default async function CrmFunnelCard({
   company,
   project,
