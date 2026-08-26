@@ -64,8 +64,13 @@ export type AllClientsRow = {
   /** Pixel-recorded lead events (`לידים פיקסל`) over the same window —
    *  the platform-side counterpart to `leads` (CRM). Internal diagnostic:
    *  a pixel well under CRM means broken tracking, well over means dupes
-   *  or a hard CRM filter. 0 when the column is absent, and also for
-   *  channels that simply have no pixel (yad2, שילוט, phone…). */
+   *  or a hard CRM filter.
+   *
+   *  `undefined` ⇒ no measurement: the cell is BLANK (channels with no
+   *  pixel at all — yad2, שילוט, phone…) or the column is absent. A
+   *  numeric `0` is a real measurement and means the opposite — a pixel
+   *  is expected here and fired nothing — so the two must not collapse.
+   *  `num()` maps blank to 0, hence the separate `numOrBlank` below. */
   pixelLeads?: number;
   /** Relevant leads (`לידים רלוונטים`) — the qualified subset that
    *  feeds the funnel-flow's leads→relevant conversion. 0/absent when the
@@ -183,6 +188,14 @@ async function readAllClientsRows(
     return Number.isFinite(s) ? Number(s) : 0;
   };
 
+  /** Like `num`, but a blank cell stays `undefined` instead of becoming 0.
+   *  Only the pixel column needs this — see AllClientsRow.pixelLeads. */
+  const numOrBlank = (v: unknown): number | undefined => {
+    if (v === "" || v == null) return undefined;
+    const n = num(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
   // Forward-fill channel within (project, row-type) groups — same as
   // the dashboard. Operates on a clone so the cached raw rows stay
   // pristine for other callers.
@@ -209,7 +222,7 @@ async function readAllClientsRows(
     spend: num(row[iSpend]),
     budget: num(row[iBudget]),
     leads: num(row[iLeads]),
-    pixelLeads: iPixelLeads >= 0 ? num(row[iPixelLeads]) : 0,
+    pixelLeads: iPixelLeads >= 0 ? numOrBlank(row[iPixelLeads]) : undefined,
     relevant: iRelevant >= 0 ? num(row[iRelevant]) : 0,
     scheduled: num(row[iScheduled]),
     meetings: num(row[iMeetings]),
@@ -288,7 +301,12 @@ function consolidateForProject(
       existing.spend += r.spend;
       existing.budget += r.budget;
       existing.leads += r.leads;
-      existing.pixelLeads = (existing.pixelLeads ?? 0) + (r.pixelLeads ?? 0);
+      // Sum only measured values, and stay `undefined` when NEITHER side
+      // measured — `?? 0` on both sides would manufacture a "measured 0"
+      // out of two blanks and put a bogus פיקסל: 0 in the tooltip.
+      if (r.pixelLeads != null) {
+        existing.pixelLeads = (existing.pixelLeads ?? 0) + r.pixelLeads;
+      }
       existing.scheduled += r.scheduled;
       existing.meetings += r.meetings;
       existing.dailyRate += r.dailyRate;

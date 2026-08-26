@@ -70,15 +70,24 @@ function ChLabel({ name }: { name: string }) {
 /**
  * CRM-vs-pixel gap tooltip for the לידים cell — the port of the legacy
  * `leadsCellTooltip` (Index.html:6243). Surfaces the pixel number on EVERY
- * row with pixel data, not just the diverging ones, so the gap is readable
- * at a glance. Channels with no pixel tracking (yad2, שילוט, phone…) read 0
- * and get no tooltip rather than a misleading "פיקסל: 0". Internal-only by
- * construction: `pixelLeads` is stripped from the client payload.
+ * row that HAS a pixel measurement, not just the diverging ones, so the gap
+ * is readable at a glance.
+ *
+ * "Has a measurement" is `pixelLeads != null`, not `> 0`: channels with no
+ * pixel at all (yad2, שילוט, phone…) leave לידים פיקסל BLANK and arrive here
+ * as undefined, while a channel that is pixel-tracked and fired nothing
+ * arrives as a real 0 — google-search-brand and google-discovery on לוריא,
+ * 4 and 3 CRM leads against 0 events. That zero is the single most useful
+ * thing this tooltip can say, so it gets its own line rather than being
+ * suppressed alongside the untracked channels.
+ *
+ * Internal-only by construction: `pixelLeads` is stripped from the client
+ * payload (NativeProjectRail), so a client render lands on the undefined
+ * branch for every row.
  */
 function leadsTooltip(c: ReportChannel): string | undefined {
   const pix = c.pixelLeads;
   if (pix == null || !Number.isFinite(pix) || pix < 0) return undefined;
-  if (pix === 0 && c.leads > 0) return undefined;
   let gap = "";
   if (c.leads > 0) {
     const diff = pix - c.leads;
@@ -86,17 +95,30 @@ function leadsTooltip(c: ReportChannel): string | undefined {
     const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
     gap = `\nפער: ${sign}${Math.abs(pct)}%  (${diff >= 0 ? "+" : ""}${diff})`;
   }
-  return `CRM: ${fmtInt(c.leads)} לידים\nפיקסל: ${fmtInt(pix)} אירועים${gap}`;
+  const zero =
+    pix === 0 && c.leads > 0
+      ? "\n⚠️ הפיקסל לא רשם אף אירוע בערוץ שאמור להיות מתויג — בדוק התקנה."
+      : "";
+  return (
+    `CRM: ${fmtInt(c.leads)} לידים\n` +
+    `פיקסל: ${fmtInt(pix)} אירועים${gap}${zero}`
+  );
 }
 
 /**
  * ⚠️ beside the לידים number when the pixel/CRM ratio is off — the port of
  * the legacy `leadsDivergenceIndicator` (Index.html:6294), same gates and
  * thresholds: ≥5 CRM leads (below that a single missed event tips the ratio
- * on noise), non-zero pixel (a blank-pixel row isn't a malfunction), then
- * ratio <0.7 or >1.8. Portfolio norm is ~1.14 — the pixel should read a bit
- * ABOVE CRM, so under 0.7 is the real red flag. Returns the tooltip text,
- * or undefined when there's nothing to flag.
+ * on noise), non-zero pixel, then ratio <0.7 or >1.8. Portfolio norm is
+ * ~1.14 — the pixel should read a bit ABOVE CRM, so under 0.7 is the real
+ * red flag. Returns the tooltip text, or undefined when there's nothing
+ * to flag.
+ *
+ * `pix <= 0` is excluded on purpose and the reason differs by case now that
+ * blank and 0 are distinguishable: a BLANK (undefined) channel has no pixel
+ * to malfunction, while a measured 0 is reported by leadsTooltip's own
+ * warning line instead — this ⚠️ stays reserved for ratio anomalies, where
+ * a ratio needs two real numbers to be meaningful.
  */
 function leadsDivergence(c: ReportChannel): string | undefined {
   const pix = c.pixelLeads;

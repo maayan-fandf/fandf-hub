@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { getLiveAdIds } from "@/lib/metaLiveAds";
-import { supabaseConfigured, supabaseRows, supabaseRowsAll } from "@/lib/supabase";
+import { readCreativeTags } from "@/lib/creativePriceTags";
+import { supabaseConfigured, supabaseRows } from "@/lib/supabase";
 
 /**
  * The advertised price read off the CREATIVE ITSELF.
@@ -38,15 +39,25 @@ import { supabaseConfigured, supabaseRows, supabaseRowsAll } from "@/lib/supabas
  *    the backfill does not masquerade as an answer.
  */
 
-/** Ceiling on the `creative_group=in.(…)` filter — unused, see the note in
- *  the tag fetch below about why tags are pulled whole. */
-const MAX_TAG_ROWS = 20000;
-
 export type ArtworkPrice = {
-  /** Lowest artwork price across the project's live creatives, in NIS. */
+  /** Lowest artwork price across the project's live creatives, in NIS.
+   *  Lowest because this feeds a "החל מ-" headline when nothing else on
+   *  the card produced one. */
   value: number;
   /** The literal string the tagger matched, for display / audit. */
   raw: string;
+  /** EVERY distinct price found on the live creatives, highest first —
+   *  one entry per value, carrying the first raw string that produced it.
+   *
+   *  A single "lowest" is the right answer for a headline but the wrong
+   *  one for a comparison: creatives carry payment terms and deposits
+   *  alongside unit prices (marom-rishon's live artwork reads
+   *  "משלמים 1,000,000₪ רק ב-2030"), and collapsing to the minimum would
+   *  present one of those as THE artwork price next to a real one. In
+   *  practice the live filter leaves one value on almost every project —
+   *  the noise tends to sit on paused ads — so listing them costs nothing
+   *  and never invents a pick. */
+  all: { value: number; raw: string }[];
   /** How many live ads' creatives carried a readable price. */
   ads: number;
   /** True when some live creatives are still awaiting the vision pass, so
@@ -57,14 +68,6 @@ export type ArtworkPrice = {
 };
 
 type CreativeRow = { ad_id: string; creative_group: string | null };
-type TagRow = {
-  creative_group: string | null;
-  price_on_image: boolean | null;
-  price_on_image_value: number | string | null;
-  price_on_image_raw: string | null;
-  price_value_checked_at: string | null;
-};
-
 export const getArtworkPrice = cache(
   async (
     subjectEmail: string,
@@ -88,21 +91,17 @@ export const getArtworkPrice = cache(
       }
       if (!groups.size) return null;
 
-      // Pulled whole rather than filtered by group: creative_group is
-      // `campaign_id::ad_name`, and ad names carry Hebrew, commas and
-      // quotes that would need escaping into a PostgREST in.(…) list. The
-      // table is ~1.1k rows, so joining in memory is cheaper to reason
-      // about and immune to that escaping.
-      const tags = await supabaseRowsAll<TagRow>(
-        `meta_creative_tags?select=creative_group,price_on_image,` +
-          `price_on_image_value,price_on_image_raw,price_value_checked_at`,
-        { maxRows: MAX_TAG_ROWS },
-      );
+      // Shared with getArtworkPriceFlag — see readCreativeTags for why the
+      // table is pulled whole and why the two read it together.
+      const tags = await readCreativeTags();
 
       let best: { value: number; raw: string } | null = null;
       let ads = 0;
       let pending = false;
       const seenGroup = new Set<string>();
+      /** value → first raw string seen for it. Keyed by value so two
+       *  creatives advertising the same number collapse to one entry. */
+      const allByValue = new Map<number, string>();
 
       for (const t of tags) {
         const g = String(t.creative_group || "");
@@ -122,13 +121,18 @@ export const getArtworkPrice = cache(
         for (const [adId, grp] of groupOf) {
           if (grp === g && live.adIds.has(adId)) ads++;
         }
+        const raw = String(t.price_on_image_raw || "");
+        if (!allByValue.has(value)) allByValue.set(value, raw);
         if (!best || value < best.value) {
-          best = { value, raw: String(t.price_on_image_raw || "") };
+          best = { value, raw };
         }
       }
 
       if (!best) return null;
-      return { value: best.value, raw: best.raw, ads, pending, basis: live.basis };
+      const all = [...allByValue.entries()]
+        .map(([value, raw]) => ({ value, raw }))
+        .sort((a, b) => b.value - a.value);
+      return { value: best.value, raw: best.raw, all, ads, pending, basis: live.basis };
     } catch (e) {
       console.warn(
         `[getArtworkPrice] failed for "${projectName}": ${

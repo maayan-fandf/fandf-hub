@@ -138,9 +138,11 @@ export type ReportChannel = {
   leads: number;
   /** ALL CLIENTS `לידים פיקסל` — the platform/pixel-recorded event count
    *  for the same window, the internal cross-check against CRM `leads`.
-   *  Feeds the לידים cell's tooltip + divergence ⚠️. undefined ⇒ no pixel
-   *  data to show: either the column is missing or this is a client render
-   *  (NativeProjectRail strips it from the payload). */
+   *  Feeds the לידים cell's tooltip + divergence ⚠️. undefined ⇒ nothing
+   *  was measured: the cell is blank (no pixel on this channel), the column
+   *  is missing, or this is a client render (NativeProjectRail strips it
+   *  from the payload). A numeric 0 is the opposite — a tracked channel
+   *  that fired no events — and must survive to the tooltip. */
   pixelLeads?: number;
   scheduled: number;
   meetings: number;

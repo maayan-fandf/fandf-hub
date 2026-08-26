@@ -69,18 +69,29 @@ export default async function ProjectPriceCheckSection({
       ? await getWarehouseFbPrice(driveFolderOwner(), projectName)
       : null;
 
-  // Last resort: the price printed on the creative. Only when NO text
-  // source produced one — this is additional information rather than a
-  // competing reading, so it fills a gap and never argues with a text
-  // price. אנדה is the case it exists for: its live ad carries no price in
-  // its copy, so every text surface correctly says "לא זוהה מחיר" while the
-  // artwork plainly reads "החל מ-3,250,000 ₪ בלבד".
+  // The price printed on the creative. Read for every internal render, not
+  // only when the text sources came up empty: the artwork is the surface
+  // most likely to go stale unnoticed, and a text price that DISAGREES with
+  // the running artwork is the case worth catching — suppressing the read
+  // whenever text succeeded meant it could only ever be seen on projects
+  // whose ads carry no copy price at all.
   const fbTextPrice = fbSurface?.price ?? warehouseFb?.price ?? null;
   const artworkPrice =
-    !clientMode && fbSurface && fbTextPrice == null
+    !clientMode && fbSurface
       ? await getArtworkPrice(driveFolderOwner(), projectName)
       : null;
-  const injectedFbPrice = warehouseFb?.price ?? artworkPrice?.value ?? null;
+
+  // What it is ALLOWED to do is unchanged. It becomes the card's published
+  // FB price only when NO text source produced one — additional
+  // information rather than a competing reading, so it fills a gap and
+  // never argues with a text price. אנדה is the case that exists for: its
+  // live ad carries no price in its copy, so every text surface correctly
+  // says "לא זוהה מחיר" while the artwork plainly reads
+  // "החל מ-3,250,000 ₪ בלבד". Everywhere else it is shown beside the price,
+  // by ArtworkPriceChip, and compared rather than substituted.
+  const artworkIsSource = fbTextPrice == null && artworkPrice != null;
+  const injectedFbPrice =
+    warehouseFb?.price ?? (artworkIsSource ? artworkPrice.value : null);
   const surfaces: ProjectPriceSurface[] =
     injectedFbPrice != null
       ? data.surfaces.map((s) =>
@@ -209,6 +220,7 @@ export default async function ProjectPriceCheckSection({
             artwork={artwork}
             warehouseFb={s.name === "facebook" ? warehouseFb : null}
             artworkPrice={s.name === "facebook" ? artworkPrice : null}
+            artworkIsSource={s.name === "facebook" && artworkIsSource}
           />
         ))}
       </div>
@@ -227,6 +239,7 @@ function PriceCheckCard({
   artwork = null,
   warehouseFb = null,
   artworkPrice = null,
+  artworkIsSource = false,
 }: {
   surface: ProjectPriceSurface;
   isOutlier: boolean;
@@ -239,9 +252,15 @@ function PriceCheckCard({
    *  rather than the usual Apps Script path — the card says so, because a
    *  number with no provenance is one nobody can check. */
   warehouseFb?: WarehouseFbPrice | null;
-  /** Set on the FB card when the price shown was read off the creative
-   *  rather than from any text. */
+  /** The price(s) burned into the FB card's live creatives. Present on any
+   *  internal render that found one — it is shown next to the card price
+   *  for comparison, and only BECOMES the card price when
+   *  `artworkIsSource`. */
   artworkPrice?: ArtworkPrice | null;
+  /** True when the number on the card came off the creative because no
+   *  text source produced one — switches the chip from "compare these" to
+   *  the provenance note. */
+  artworkIsSource?: boolean;
   /** Client viewer — hides the ad-status chip and the FB/Google Ads
    *  deep-links (internal ad-ops surfaces the client can't use). */
   clientMode?: boolean;
@@ -334,7 +353,7 @@ function PriceCheckCard({
             : `${warehouseFb.adsWithText} מודעות`}
         </div>
       )}
-      {!clientMode && artworkPrice && (
+      {!clientMode && artworkIsSource && artworkPrice && (
         <div
           className="price-check-card-empty-state price-check-card-src"
           title={
@@ -352,8 +371,12 @@ function PriceCheckCard({
           {artworkPrice.pending && " · קריאה חלקית"}
         </div>
       )}
-      {!clientMode && surface.name === "facebook" && artwork && (
-        <ArtworkPriceChip flag={artwork} />
+      {!clientMode && surface.name === "facebook" && (artwork || artworkPrice) && (
+        <ArtworkPriceChip
+          flag={artwork}
+          price={artworkIsSource ? null : artworkPrice}
+          cardPrice={surface.price ?? null}
+        />
       )}
       <InventoryRows surface={surface} />
       {surface.url &&
@@ -374,38 +397,118 @@ function PriceCheckCard({
   );
 }
 
+/** How far the artwork price may sit from the card price before the chip
+ *  calls it a mismatch. Same 1% the section's own comparator uses
+ *  (comparePrices), so the two can't disagree about what "זהה" means. */
+const ARTWORK_TOLERANCE_PCT = 1;
+
 /**
- * "the artwork itself shows a price" chip — FB card, internal only.
+ * "what the artwork itself says" chip — FB card, internal only.
  *
  * Every surface on this card is read from TEXT, so a price that lives only
  * in the creative image is invisible to the comparison. That is the case
  * most likely to go stale unnoticed: the landing page gets updated and the
  * artwork keeps running with the old number.
  *
- * This is NOT a fifth price. The warehouse tagger records a boolean — it
- * knows a price is shown, not which one — so the chip can only tell you to
- * go look. It states its own coverage for that reason: the tagger has seen
- * a fraction of live creatives, and a bare "no price found" from a sample
- * that small would be a claim we cannot support. Silent when nothing was
- * flagged, so it only ever appears as a prompt to act.
+ * Two shapes, because two different things can be known:
+ *
+ *  - `price` present — the tagger read the NUMBER off the live creatives
+ *    (`price_on_image_value`, shipped 2026-08-24). The chip prints it and
+ *    says whether it matches the card's own price. Every distinct value is
+ *    listed rather than reduced to one: creatives carry deposits and
+ *    payment terms next to unit prices, and picking for the reader would
+ *    silently promote one of those to "the artwork price".
+ *
+ *  - `price` absent, `flag.withPrice > 0` — the tagger's boolean pass knows
+ *    a price is SHOWN but no value was readable. The chip can only tell you
+ *    to go look, which is what it did before values existed.
+ *
+ * It states its own coverage in both shapes: the tagger has seen a fraction
+ * of live creatives, and a bare verdict from a sample that small would be a
+ * claim we cannot support. Silent when there is nothing to say.
  */
-function ArtworkPriceChip({ flag }: { flag: ArtworkPriceFlag }) {
-  if (flag.withPrice <= 0) return null;
-  const partial = flag.tagged < flag.adsChecked;
+function ArtworkPriceChip({
+  flag,
+  price,
+  cardPrice,
+}: {
+  flag: ArtworkPriceFlag | null;
+  price: ArtworkPrice | null;
+  cardPrice: number | null;
+}) {
+  const values = price?.all ?? [];
+  if (!values.length && !(flag && flag.withPrice > 0)) return null;
+  const partial = !!flag && flag.tagged < flag.adsChecked;
+  const coverage = partial
+    ? ` (נבדקו ${flag.tagged} מתוך ${flag.adsChecked} המודעות הפעילות; לשאר אין עדיין תיוג.)`
+    : "";
+
+  // Nothing readable — the pre-value behaviour, unchanged.
+  if (!values.length) {
+    return (
+      <div
+        className="price-check-card-empty-state price-check-card-artwork"
+        title={
+          `${flag!.withPrice} מתוך ${flag!.tagged} מודעות שנבדקו מציגות מחיר על התמונה עצמה, ` +
+          `אבל לא ניתן היה לקרוא את המספר עצמו. ` +
+          `לכן כדאי לוודא ידנית שהוא עדיין תואם לדף הנחיתה.` +
+          coverage
+        }
+      >
+        🖼️ מחיר מוטבע על הקריאייטיב ({flag!.withPrice})
+        {partial && ` · נבדקו ${flag!.tagged}/${flag!.adsChecked}`}
+      </div>
+    );
+  }
+
+  // A value matches the card when it lands inside the same tolerance the
+  // section compares surfaces with. Any of them matching is enough — the
+  // others are the deposits and payment terms sharing the creative.
+  const near = (v: number) =>
+    cardPrice != null &&
+    cardPrice > 0 &&
+    (Math.abs(v - cardPrice) / Math.min(v, cardPrice)) * 100 <=
+      ARTWORK_TOLERANCE_PCT;
+  const agrees = cardPrice != null && values.some((x) => near(x.value));
+  const verdict = cardPrice == null ? "none" : agrees ? "ok" : "gap";
+
   return (
     <div
-      className="price-check-card-empty-state price-check-card-artwork"
+      className={
+        "price-check-card-empty-state price-check-card-artwork" +
+        (verdict === "gap" ? " price-check-card-artwork-gap" : "")
+      }
       title={
-        `${flag.withPrice} מתוך ${flag.tagged} מודעות שנבדקו מציגות מחיר על התמונה עצמה. ` +
-        `המחיר הזה לא נכלל בהשוואה כאן — הוא לא מופיע בטקסט המודעה — ` +
-        `לכן כדאי לוודא מולו ידנית שהוא עדיין תואם לדף הנחיתה.` +
-        (partial
-          ? ` (נבדקו ${flag.tagged} מתוך ${flag.adsChecked} המודעות הפעילות; לשאר אין עדיין תיוג.)`
-          : "")
+        `נקרא מהקריאייטיב של המודעות ה${price!.basis === "spend" ? "פעילות (לפי הוצאה אחרונה)" : "פעילות"}:\n` +
+        values.map((x) => `• ${fmtIls(x.value)} — "${x.raw}"`).join("\n") +
+        (verdict === "gap"
+          ? `\n\nאף אחד מהמספרים האלה לא תואם את ${fmtIls(cardPrice!)} שמפורסם בטקסט. ` +
+            `או שאחד מהשניים לא עודכן, או שהמספר על הקריאייטיב הוא תנאי תשלום ולא מחיר דירה — הניסוח למעלה יגיד מה מהם.`
+          : verdict === "ok"
+            ? `\n\nתואם למחיר שמפורסם בטקסט.`
+            : `\n\nאין מחיר בטקסט המודעות להשוות אליו.`) +
+        (price!.pending
+          ? `\nחלק מהקריאייטיבים הפעילים עדיין ממתינים לקריאה, ייתכן שקיים מחיר נוסף.`
+          : "") +
+        coverage
       }
     >
-      🖼️ מחיר מוטבע על הקריאייטיב ({flag.withPrice})
-      {partial && ` · נבדקו ${flag.tagged}/${flag.adsChecked}`}
+      {/* Capped at 3 so a project running many distinct creatives can't
+          stretch the card — the tooltip always lists all of them. Live
+          filtering leaves one value on every project measured so far, so
+          this is insurance, not the normal path. */}
+      🖼️ על הקריאייטיב:{" "}
+      {values
+        .slice(0, 3)
+        .map((x) => fmtIls(x.value))
+        .join(" · ")}
+      {values.length > 3 && ` +${values.length - 3}`}
+      {/* "שונה מהטקסט" and not "לא תואם": all we know is that no artwork
+          number equals the text price. Which of the two is wrong — or
+          whether the artwork number is a payment term rather than a price
+          at all — is in the raw string, one hover away. */}
+      {verdict === "gap" && " ⚠ שונה מהטקסט"}
+      {verdict === "ok" && " ✓ תואם"}
     </div>
   );
 }

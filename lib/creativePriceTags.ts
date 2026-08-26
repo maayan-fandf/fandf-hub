@@ -55,8 +55,38 @@ export type ArtworkPriceFlag = {
 };
 
 type InsightRow = { ad_id: string; campaign_name: string };
-type TagRow = { creative_group: string | null; price_on_image: boolean | null };
 type CreativeRow = { ad_id: string; creative_group: string | null };
+
+export type CreativeTagRow = {
+  creative_group: string | null;
+  price_on_image: boolean | null;
+  price_on_image_value: number | string | null;
+  price_on_image_raw: string | null;
+  price_value_checked_at: string | null;
+};
+
+/**
+ * The whole `meta_creative_tags` table, read once per request.
+ *
+ * Fetched whole rather than filtered by group because creative_group is
+ * `campaign_id::ad_name`, and ad names carry Hebrew, commas and quotes that
+ * would have to be escaped into a PostgREST `in.(…)` list. The table is
+ * ~1.1k rows, so pulling it and joining in memory is both cheaper to reason
+ * about and immune to that escaping.
+ *
+ * Shared with lib/artworkPrice.ts, and selecting the union of both callers'
+ * columns, so the price card reads it ONCE per render instead of once per
+ * consumer — the two used to issue near-identical full-table reads that
+ * differed only in their select list, which `cache()` cannot dedupe.
+ */
+export const readCreativeTags = cache(
+  async (): Promise<CreativeTagRow[]> =>
+    supabaseRowsAll<CreativeTagRow>(
+      `meta_creative_tags?select=creative_group,price_on_image,` +
+        `price_on_image_value,price_on_image_raw,price_value_checked_at`,
+      { maxRows: 20000 },
+    ),
+);
 
 function isoDaysAgo(n: number): string {
   return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -113,15 +143,7 @@ export const getArtworkPriceFlag = cache(
       }
       if (!groupOf.size) return null;
 
-      // Fetched whole rather than filtered by group: creative_group is
-      // `campaign_id::ad_name`, and ad names carry Hebrew, commas and
-      // quotes that would have to be escaped into a PostgREST `in.(…)`
-      // list. The table is ~1.1k rows, so pulling it and joining in memory
-      // is both cheaper to reason about and immune to that escaping.
-      const tags = await supabaseRowsAll<TagRow>(
-        `meta_creative_tags?select=creative_group,price_on_image`,
-        { maxRows: 20000 },
-      );
+      const tags = await readCreativeTags();
       const byGroup = new Map<string, boolean>();
       for (const t of tags) {
         if (t.price_on_image == null || !t.creative_group) continue;

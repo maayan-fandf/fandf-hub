@@ -9814,6 +9814,14 @@ html[data-theme="dark"] .price-check-card-badge-min {
   border: 1px solid color-mix(in srgb, #f59e0b 34%, transparent);
   cursor: help;
 }
+/* The artwork price disagrees with the price advertised in text — the
+   stale-creative case this chip exists to catch, so it reads red rather
+   than sharing the amber "go look at this" tone. */
+.price-check-card-artwork-gap {
+  color: #b91c1c;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  border-color: color-mix(in srgb, #ef4444 40%, transparent);
+}
 .price-check-card-link {
   margin-top: auto;
   font-size: 0.78rem;
