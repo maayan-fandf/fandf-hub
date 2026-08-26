@@ -6,6 +6,7 @@ import { CrmSourceFilterContext } from "./CrmSourceFilterContext";
 import type { CrmFunnel } from "@/lib/crmData";
 import { channelIcon } from "@/lib/channelIcon";
 import ChannelIcon from "@/components/ChannelIcon";
+import PlatformIcon from "@/components/PlatformIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
 import CountUp from "./anim/CountUp";
@@ -697,7 +698,6 @@ export default function CrmFunnelClient({
                     <li className="crm-source-search-empty">אין התאמות.</li>
                   ) : (
                     searchListSources.map((source) => {
-                      const icon = channelIcon(source);
                       const total = sm.leadsBySource[source] || 0;
                       const isChecked = selected.has(source);
                       return (
@@ -735,7 +735,9 @@ export default function CrmFunnelClient({
                               style={{ background: palette.get(source) }}
                               aria-hidden="true"
                             />
-                            {icon ? <span aria-hidden="true">{icon}</span> : null}
+                            <span className="crm-source-search-row-icon" aria-hidden="true">
+                              <ChannelIcon name={source} />
+                            </span>
                             <span className="crm-source-search-row-name">{source}</span>
                             <span className="crm-source-search-row-count">{total}</span>
                           </button>
@@ -750,7 +752,6 @@ export default function CrmFunnelClient({
           <span className="crm-source-chips-sep" aria-hidden="true">·</span>
           {sm.allSources.map((source) => {
             const isActive = selected.has(source);
-            const icon = channelIcon(source);
             const total = sm.leadsBySource[source] || 0;
             // Inline media cost (anda model) — only for sources that map
             // 1:1 to a single paid channel; composites/non-paid are bare.
@@ -1253,7 +1254,9 @@ export default function CrmFunnelClient({
       {funnel.fbBreakdown ? (
         <details className="crm-fb-breakdown" dir="rtl">
           <summary className="crm-fb-head">
-            <span className="crm-fb-icon" aria-hidden>📘</span>
+            <span className="crm-fb-icon" aria-hidden>
+              <PlatformIcon platform="facebook" size="1em" />
+            </span>
             פילוח פייסבוק — {fmtInt(funnel.fbBreakdown.totalLeads)} לידים
             <span className="crm-fb-headsub">לפי תגיות UTM (Meta — פייסבוק/אינסטגרם)</span>
           </summary>
@@ -1871,7 +1874,6 @@ function ChannelMiniPieContent({
         <ul className="crm-channel-tooltip-legend">
           {data.map((s) => {
             if (s.count === 0) return null;
-            const icon = channelIcon(s.source);
             const pctText = ((s.count / total) * 100).toFixed(1);
             return (
               <li key={s.source}>
@@ -1879,7 +1881,9 @@ function ChannelMiniPieContent({
                   className="crm-channel-tooltip-dot"
                   style={{ background: palette.get(s.source) || "#cbd5e1" }}
                 />
-                {icon ? <span className="crm-channel-tooltip-icon" aria-hidden>{icon}</span> : null}
+                <span className="crm-channel-tooltip-icon" aria-hidden>
+                  <ChannelIcon name={s.source} />
+                </span>
                 <span className="crm-channel-tooltip-name" title={s.source}>{s.source}</span>
                 <span className="crm-channel-tooltip-count">
                   {s.count} ({pctText}%)

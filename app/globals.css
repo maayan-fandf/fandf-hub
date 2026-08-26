@@ -6928,6 +6928,11 @@ html[data-theme="dark"] .crm-channel-tooltip-pie {
   flex: 0 0 auto;
 }
 .crm-channel-tooltip-icon {
+  /* Holds a ChannelIcon: brand logo for google/facebook/instagram/tiktok/
+     taboola/outbrain/yad2, emoji for כתבה, טלפוניה and the rest that have
+     no brand to show. inline-flex so the SVG centres against the text. */
+  display: inline-flex;
+  align-items: center;
   font-size: 1em;
   line-height: 1;
   flex: 0 0 auto;
@@ -7747,11 +7752,17 @@ html[data-theme="dark"] .crm-source-search-row:hover {
      keeps the dot crisp without hiding its color. */
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
-.crm-source-chip-icon {
-  /* Channel emoji — mirrors the shared-legend dot below the status/
-     objections grid so the same source reads the same way in both
-     places. Small bump in font-size so the glyph matches the chip
-     label height visually. */
+.crm-source-chip-icon,
+.crm-source-search-row-icon,
+.crm-fb-icon {
+  /* Channel mark — the real brand logo where the source resolves to a
+     platform we buy on, the emoji stand-in otherwise (ChannelIcon picks).
+     Mirrors the shared-legend dot below the status/objections grid so the
+     same source reads the same way in both places. inline-flex keeps an
+     SVG on the text baseline; a bare emoji sat fine without it. */
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
   font-size: 1em;
   line-height: 1;
 }

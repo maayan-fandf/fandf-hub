@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { channelIcon } from "@/lib/channelIcon";
+import ChannelIcon from "@/components/ChannelIcon";
 import {
   convTone,
   costPerTone,
@@ -55,7 +56,12 @@ function FunnelPie({
   const arcs: { d: string; fill: string; tip: string }[] = [];
   const legend: {
     fill: string;
+    /** Emoji-prefixed string. Still needed for the `title` attribute and the
+     *  SVG <title> tip, neither of which can hold an element — the visible
+     *  legend renders <ChannelIcon> instead, so a channel with a real brand
+     *  shows its logo rather than the emoji stand-in. */
     label: string;
+    channel: string;
     count: number;
     pct: string;
     conv: string | null;
@@ -89,7 +95,7 @@ function FunnelPie({
         tip,
       });
     }
-    legend.push({ fill, label, count: r.count, pct, conv });
+    legend.push({ fill, label, channel: r.channel, count: r.count, pct, conv });
   });
   if (!arcs.length) return null;
 
@@ -111,7 +117,7 @@ function FunnelPie({
             <li key={i}>
               <span className="rpt-ff-pop-dot" style={{ background: l.fill }} />
               <span className="rpt-ff-pop-ch" title={l.label}>
-                {l.label}
+                <ChannelIcon name={l.channel} fallback="●" /> {l.channel}
               </span>
               <span className="rpt-ff-pop-count">
                 {fmtInt(l.count)} ({l.pct}%)

@@ -1221,7 +1221,9 @@ function aggregateCreatives(
   // `copy` is still one unsplit list here — live and retired text alike. The
   // split into copy/copyRetired happens once, after the merge, so a text that
   // is live on any of the merged ads lands on the live side.
-  type DgDraft = Omit<ReportGoogleDgAd, "copyRetired"> & { adGroup: string };
+  type DgDraft = Omit<ReportGoogleDgAd, "copyRetired" | "imagesRetired"> & {
+    adGroup: string;
+  };
   const dgAdAgg = new Map<string, DgDraft>();
   for (const a of raw.gAssets) {
     const adKeyG = a.adId || `${a.campaign}|${a.adGroup}`;
@@ -1381,7 +1383,7 @@ function aggregateCreatives(
    * If Supermetrics ever gains the asset-link status field on this query, use
    * it instead and delete this inference.
    */
-  const isRetired = (c: ReportGoogleCopy) => !c.performance.trim();
+  const isRetired = (c: { performance: string }) => !c.performance.trim();
   const dgAds: ReportGoogleDgAd[] = [...merged.values()]
     .map((ad) => ({
       campaign: ad.campaign,
@@ -1390,7 +1392,8 @@ function aggregateCreatives(
       adGroups: ad.adGroups,
       adIds: ad.adIds,
       topAssetCost: ad.topAssetCost,
-      images: ad.images.sort((x, y) => y.cost - x.cost),
+      images: ad.images.filter((im) => !isRetired(im)).sort((x, y) => y.cost - x.cost),
+      imagesRetired: ad.images.filter(isRetired).sort((x, y) => y.cost - x.cost),
       copy: ad.copy.filter((c) => !isRetired(c)).sort(byKindThenReach),
       copyRetired: ad.copy.filter(isRetired).sort(byKindThenReach),
     }))
@@ -1407,7 +1410,11 @@ function aggregateCreatives(
     // with the naming convention on 244 and is RIGHT on the 3 it differs on —
     // fandf_afridar_ahuzat-afridar_discover is spelled without the "y", so a
     // name test drops three genuine Demand Gen ads carrying marketing images.
-    .filter((ad) => ad.images.length > 0)
+    // Retired media counts for the media test: the question here is "is this
+    // a Demand Gen ad rather than a search RSA", and an ad whose creatives
+    // were all swapped out is still a Demand Gen ad. No ad in the tab is in
+    // that state today, but dropping one silently would be the wrong failure.
+    .filter((ad) => ad.images.length + ad.imagesRetired.length > 0)
     // Live creatives first, then by the ad's biggest single asset — a lower
     // bound on its spend. Summing its assets would overstate it (median 1.8x),
     // so that total is never computed.

@@ -806,6 +806,51 @@ function DgAdCard({
               </details>
             )}
 
+            {/* Creatives that ran and were then unlinked. Folded away for the
+                same reason as the copy above: the 🟢 פעילה pill is the AD's
+                status, so anything sitting open under it reads as currently
+                running. Shbn-holon showed four swapped-out images beside the
+                five live ones. The spend is real, so it stays reachable. */}
+            {ad.imagesRetired.length > 0 && (
+              <details className="rpt-cr-dgretired">
+                <summary>
+                  🗄️ {ad.imagesRetired.length === 1
+                    ? "קריאייטיב היסטורי אחד"
+                    : `${ad.imagesRetired.length} קריאייטיבים היסטוריים`}
+                  <span className="rpt-cr-dgretired-hint">
+                    כבר לא במודעה · לחצו להצגה
+                  </span>
+                </summary>
+                <div className="rpt-cr-dgimgs themed-scrollbar">
+                  {ad.imagesRetired.map((im, i) => (
+                    <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
+                      {im.imageUrl ? (
+                        <DgAssetImage
+                          src={im.imageUrl}
+                          alt={im.name || im.fieldType}
+                        />
+                      ) : (
+                        <a
+                          className="rpt-cr-dgvid"
+                          href={im.videoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          ▶ וידאו
+                        </a>
+                      )}
+                      <figcaption title={im.name || im.fieldType}>
+                        <span className="rpt-cr-dgimg-kind">{im.fieldType}</span>
+                        <span className="rpt-cr-dgimg-nums">
+                          {fmtILS(im.cost)} · {fmtInt(im.clicks)} קליקים
+                        </span>
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </details>
+            )}
+
             {(ad.images[0]?.cta || ad.images[0]?.finalUrl) && (
               <div className="rpt-cr-gmeta">
                 {ad.images[0]?.cta && (

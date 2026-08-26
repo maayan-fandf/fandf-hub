@@ -1251,7 +1251,22 @@ export type ReportGoogleDgAd = {
    *  same 25 images four times. */
   adGroups: string[];
   adIds: string[];
+  /** Media assets STILL attached to the ad. See `imagesRetired`. */
   images: ReportGoogleAsset[];
+  /**
+   * Media whose LINK to the ad was removed, still reported because it had
+   * impressions inside the query's rolling 60-day window — the same thing
+   * `copyRetired` is for, and marked the same way (empty `performance`).
+   *
+   * Split out 2026-08-26 after Shbn-holon's Demand Gen card showed four
+   * swapped-out creatives (the 10542-* set: ₪615, ₪463, ₪189, ₪22) beside
+   * the five that are actually running (10623-*), all under one 🟢 פעילה
+   * pill. The pill was right — the AD is enabled — but a reader takes a
+   * live-looking card to mean every creative on it is live, and these had
+   * been replaced. 39 of 1,079 media rows tab-wide carry a blank rating;
+   * they touch 7 of 95 ads and empty none of them.
+   */
+  imagesRetired: ReportGoogleAsset[];
   /** Text assets STILL attached to the ad — what Google Ads shows when you open
    *  it. See `copyRetired` for the ones that only look attached. */
   copy: ReportGoogleCopy[];
