@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import ReportMediaSection, {
   PlatformKpiBand,
 } from "@/components/report/ReportMediaSection";
@@ -273,8 +273,16 @@ function CrmRow({
 export default function ReportCreativesTab({
   data,
   showPreviews = false,
+  fbNode = null,
 }: {
   data: ProjectReportData;
+  /** The Facebook/Meta UTM breakdown ("פילוח פייסבוק"). Rendered HERE, at
+   *  the end of the Facebook run and before the Google bands, rather than
+   *  appended after the whole tab — where it sat below the Google keyword
+   *  table, three Google blocks away from the Facebook data it breaks down.
+   *  Passed in rather than built here because it is a server component
+   *  (CrmFunnelCard) and this tab is a client one. */
+  fbNode?: ReactNode;
   /** Render the Meta ad-preview links on each card.
    *
    *  OFF by default, and deliberately opt-in per project rather than "show
@@ -298,6 +306,10 @@ export default function ReportCreativesTab({
           אין נתוני קריאייטיבים לפרויקט בתקופה הזו (חשבון הפרסום אינו ברשימת
           ה-Supermetrics, או שאין פעילות בטווח).
         </div>
+        {/* Still shown when there are no creatives: the UTM breakdown comes
+            from the CRM warehouse, not the ad-assets feed, so it can be the
+            only Facebook detail a project has. */}
+        {fbNode}
       </div>
     );
   }
@@ -556,6 +568,8 @@ export default function ReportCreativesTab({
           </div>
         </>
       )}
+
+      {fbNode}
 
       {/* Google funnel summary — same band, scoped to Google (המרות /
           קליק→המרה / חשיפה→המרה), heading the Google Ads detail. */}

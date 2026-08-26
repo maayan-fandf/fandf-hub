@@ -308,8 +308,14 @@ export default async function NativeProjectRail({
           {/* Ad-preview links only where the creative can't be rendered —
               see the prop's doc block. On a normal project the card already
               shows the image, so they'd be clutter. */}
-          <ReportCreativesTab data={data} showPreviews={mediaLed} />
-          {campaignsFbNode}
+          {/* פילוח פייסבוק goes INTO the tab rather than after it — appended
+              here it rendered below the Google keyword table, three Google
+              blocks away from the Facebook numbers it breaks down. */}
+          <ReportCreativesTab
+            data={data}
+            showPreviews={mediaLed}
+            fbNode={campaignsFbNode}
+          />
         </>
       ),
     });

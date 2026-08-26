@@ -1343,9 +1343,17 @@ function aggregateCreatives(
     };
     for (const im of ad.images) {
       const key = im.imageUrl || im.videoUrl;
-      if (!addTo(cur.images.find((x) => (x.imageUrl || x.videoUrl) === key), im)) {
-        cur.images.push(im);
+      const dst = cur.images.find((x) => (x.imageUrl || x.videoUrl) === key);
+      // Live beats retired — the same rule the copy merge below has needed
+      // since the anda fix, and images need it too now that blank
+      // performance files them under "historical". The same creative can be
+      // an unlinked asset on one of the merged ads and still attached on
+      // another; a first-wins merge would keep whichever ad happened to be
+      // read first and could bury a running creative.
+      if (dst && !dst.performance.trim() && im.performance.trim()) {
+        dst.performance = im.performance;
       }
+      if (!addTo(dst, im)) cur.images.push(im);
     }
     for (const c of ad.copy) {
       const dst = cur.copy.find((x) => x.fieldType === c.fieldType && x.text === c.text);
