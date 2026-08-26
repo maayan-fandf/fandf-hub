@@ -56,13 +56,20 @@ export type DatedCounts = { scheduled: number; held: number };
 
 export type DatedChannelMeetings = {
   platform: CrmPlatform;
-  /** canonical channel key → counts of meetings whose EVENT DATE is in
-   *  the window. Key with `datedChannelKey` on the other side too. */
+  /** Keyed by the TABLE channel name passed in, verbatim — not by a
+   *  canonical key — so the caller can look a row up by its own label and
+   *  no two rows can ever be handed the same bucket. */
   byChannel: Record<string, DatedCounts>;
-  /** Meetings in the window whose lead carried no usable source. Surfaced
-   *  rather than silently dropped: if this is large, the per-channel split
-   *  is understating everything and the reader should know. */
+  /** Meetings in the window whose lead carried no usable source, or whose
+   *  source names a channel the table has no row for. Surfaced rather than
+   *  silently dropped: if this is large, the per-channel split is
+   *  understating everything and the reader should know. */
   unattributed: DatedCounts;
+  /** Meetings whose source canonicalizes to a channel the table splits
+   *  into several rows (plain "google-search" where the table separates
+   *  brand / generic / competitors). The CRM genuinely cannot say which
+   *  row they belong to, so they are counted here instead of guessed. */
+  ambiguous: DatedCounts;
   /**
    * How much the held figure can be trusted.
    *   "authoritative" — the source records a per-MEETING outcome (BMBY's
@@ -94,7 +101,12 @@ const NON_PAID: [RegExp, string][] = [
   // every developer referral as a phone enquiry. The reverse can't happen
   // — "פניה טלפונית" has no leading ה — so referral-first is safe.
   [/חבר\s?מביא\s?חבר|referral|הפניה|המלצה/, "referral"],
-  [/phone|טלפו|פניה|פנייה|call/, "phone"],
+  // "כוכבית" is in here because a *5999-style vanity number IS a phone
+  // channel, and lib/channelIcon.ts already classifies it that way (it
+  // draws 📞). Without it a project whose row is "5999 כוכבית" never met
+  // its own leads, which arrive logged as "כוכבית 5999 <project>" or
+  // plain "טלפון" — 11 of 53 meetings on פסגת זאב.
+  [/phone|טלפו|פניה|פנייה|call|כוכבית/, "phone"],
   [/משרד\s?מכירות|sales\s?office|walk[\s_-]?in/, "sales-office"],
   [/minisite|מיני-?סייט/, "minisite"],
   [/website|אתר|צור\s?קשר/, "website"],
@@ -136,6 +148,51 @@ function tally(
   const row = (into[key] ??= emptyCounts());
   row.scheduled++;
   if (held) row.held++;
+}
+
+export type Attribution = { channel: string | null; ambiguous: boolean };
+
+/**
+ * Decide which TABLE row a meeting's lead source belongs to.
+ *
+ * Keying on the canonical channel alone was wrong, and visibly so: a
+ * project with Google-search-brand, Google-search-competitors and
+ * google-search-generic as three separate spend rows collapses all three
+ * to "google-search", so each row was handed the SAME bucket and the
+ * column triple-counted. The giveaway on screen was a row reading 0 leads
+ * and 2 meetings.
+ *
+ * So match on the RAW source first — BMBY's first_lid_source carries
+ * "google-search-brand" verbatim, and Sehel/Salesforce were already
+ * passing raw strings — and fall back to the canonical bucket only when
+ * exactly ONE table row owns it. When several rows share a canonical key
+ * and the raw source doesn't pick between them (a lead logged as plain
+ * "google-search" on a project that splits Google three ways), the honest
+ * answer is that the CRM cannot attribute it: report it as ambiguous
+ * rather than guessing or, worse, counting it three times.
+ */
+export function buildAttributor(
+  tableChannels: readonly string[],
+): (source: string) => Attribution {
+  const byRaw = new Map<string, string>();
+  const byCanon = new Map<string, string[]>();
+  for (const ch of tableChannels) {
+    const r = norm(ch);
+    if (r && !byRaw.has(r)) byRaw.set(r, ch);
+    const c = datedChannelKey(ch);
+    if (c) byCanon.set(c, [...(byCanon.get(c) ?? []), ch]);
+  }
+  return (source: string): Attribution => {
+    const r = norm(source);
+    if (!r) return { channel: null, ambiguous: false };
+    const exact = byRaw.get(r);
+    if (exact) return { channel: exact, ambiguous: false };
+    const c = datedChannelKey(source);
+    const cands = c ? byCanon.get(c) : undefined;
+    if (!cands?.length) return { channel: null, ambiguous: false };
+    if (cands.length === 1) return { channel: cands[0], ambiguous: false };
+    return { channel: null, ambiguous: true };
+  };
 }
 
 /** Keys' `CRM` cell can hold several comma-joined accounts — but a comma
@@ -190,6 +247,7 @@ async function resolveCrm(
  */
 type BmbyRow = {
   first_lid_channel: string | null;
+  first_lid_source: string | null;
   appointment_outcome: string | null;
 };
 
@@ -197,32 +255,43 @@ async function bmbyDated(
   account: string,
   from: string,
   to: string,
+  attribute: (source: string) => Attribution,
 ): Promise<DatedChannelMeetings | null> {
   const rows = await supabaseRows<BmbyRow>(
-    `v_bmby_journey_meetings?select=first_lid_channel,appointment_outcome` +
+    `v_bmby_journey_meetings?select=first_lid_channel,first_lid_source,appointment_outcome` +
       `&project_he=eq.${encodeURIComponent(account)}` +
       `&meeting_date=gte.${from}&meeting_date=lte.${to}&limit=20000`,
   );
   if (!rows.length) return null;
   const byChannel: Record<string, DatedCounts> = {};
   const unattributed = emptyCounts();
+  const ambiguous = emptyCounts();
   let unresolved = 0;
   for (const r of rows) {
     const outcome = norm(r.appointment_outcome);
     const held = outcome === "held";
     if (!outcome || outcome === "in_process") unresolved++;
-    const key = datedChannelKey(r.first_lid_channel ?? "");
-    if (!key) {
-      unattributed.scheduled++;
-      if (held) unattributed.held++;
-      continue;
+    // first_lid_source is the campaign-level string the table's rows are
+    // actually named after ("google-search-brand", "Article2");
+    // first_lid_channel is its coarse bucket ("gs"). Prefer the fine one
+    // and fall back only when it's missing.
+    const src =
+      String(r.first_lid_source ?? "").trim() ||
+      String(r.first_lid_channel ?? "");
+    const hit = attribute(src);
+    if (hit.channel) {
+      tally(byChannel, hit.channel, held);
+    } else {
+      const bucket = hit.ambiguous ? ambiguous : unattributed;
+      bucket.scheduled++;
+      if (held) bucket.held++;
     }
-    tally(byChannel, key, held);
   }
   return {
     platform: "bmby",
     byChannel,
     unattributed,
+    ambiguous,
     heldConfidence: "authoritative",
     unresolved,
   };
@@ -257,6 +326,7 @@ async function sehelDated(
   account: string,
   from: string,
   to: string,
+  attribute: (source: string) => Attribution,
 ): Promise<DatedChannelMeetings | null> {
   // starts_at is a timestamptz — bound with a half-open day range rather
   // than lte on a bare date, which would drop everything after midnight
@@ -289,23 +359,26 @@ async function sehelDated(
 
   const byChannel: Record<string, DatedCounts> = {};
   const unattributed = emptyCounts();
+  const ambiguous = emptyCounts();
   let unresolved = 0;
   for (const m of meetings) {
     const status = String(m.status_label ?? "").trim();
     const held = status === SEHEL_HELD;
     if (!status || status === SEHEL_UNKNOWN) unresolved++;
-    const key = datedChannelKey(sourceByUuid.get(String(m.client_uuid)) ?? "");
-    if (!key) {
-      unattributed.scheduled++;
-      if (held) unattributed.held++;
-      continue;
+    const hit = attribute(sourceByUuid.get(String(m.client_uuid)) ?? "");
+    if (hit.channel) {
+      tally(byChannel, hit.channel, held);
+    } else {
+      const bucket = hit.ambiguous ? ambiguous : unattributed;
+      bucket.scheduled++;
+      if (held) bucket.held++;
     }
-    tally(byChannel, key, held);
   }
   return {
     platform: "sehel",
     byChannel,
     unattributed,
+    ambiguous,
     heldConfidence: "partial",
     unresolved,
   };
@@ -356,6 +429,7 @@ async function salesforceDated(
   account: string,
   from: string,
   to: string,
+  attribute: (source: string) => Attribution,
 ): Promise<DatedChannelMeetings | null> {
   const rows = await readSfMeetings();
   if (!rows.length) return null;
@@ -364,6 +438,7 @@ async function salesforceDated(
 
   const byChannel: Record<string, DatedCounts> = {};
   const unattributed = emptyCounts();
+  const ambiguous = emptyCounts();
   let unresolved = 0;
   let matched = 0;
   for (const r of rows) {
@@ -381,19 +456,21 @@ async function salesforceDated(
     const status = String(r[15] ?? "").trim();
     const held = status === SF_HELD;
     if (!status || status === SF_PENDING) unresolved++;
-    const key = datedChannelKey(String(r[16] ?? ""));
-    if (!key) {
-      unattributed.scheduled++;
-      if (held) unattributed.held++;
-      continue;
+    const hit = attribute(String(r[16] ?? ""));
+    if (hit.channel) {
+      tally(byChannel, hit.channel, held);
+    } else {
+      const bucket = hit.ambiguous ? ambiguous : unattributed;
+      bucket.scheduled++;
+      if (held) bucket.held++;
     }
-    tally(byChannel, key, held);
   }
   if (!matched) return null;
   return {
     platform: "salesforce",
     byChannel,
     unattributed,
+    ambiguous,
     heldConfidence: "authoritative",
     unresolved,
   };
@@ -404,20 +481,22 @@ async function computeUncached(
   company: string,
   from: string,
   to: string,
+  channels: readonly string[],
 ): Promise<DatedChannelMeetings | null> {
-  if (!project || !from || !to || from > to) return null;
+  if (!project || !from || !to || from > to || !channels.length) return null;
   try {
     const crm = await resolveCrm(project, company);
     if (!crm) return null;
+    const attribute = buildAttributor(channels);
     if (crm.platform === "salesforce") {
-      return await salesforceDated(crm.account, from, to);
+      return await salesforceDated(crm.account, from, to, attribute);
     }
     // Both warehouse platforms need a key; without one the toggle simply
     // doesn't offer itself rather than reporting zeros.
     if (!supabaseConfigured()) return null;
     return crm.platform === "bmby"
-      ? await bmbyDated(crm.account, from, to)
-      : await sehelDated(crm.account, from, to);
+      ? await bmbyDated(crm.account, from, to, attribute)
+      : await sehelDated(crm.account, from, to, attribute);
   } catch (e) {
     console.warn(
       `[datedChannelMeetings] ${project}: ${e instanceof Error ? e.message : String(e)}`,
@@ -433,12 +512,31 @@ const computeCrossRequest = unstable_cache(
 );
 
 /**
- * Per-channel meetings dated by when they HAPPENED, over [from, to]
- * inclusive. Null when the project has no CRM mapping, the platform's
- * source is unreachable, or nothing matched — all of which mean "offer
- * the snapshot only", never "show zeros".
+ * Meetings dated by when they HAPPENED, over [from, to] inclusive, keyed
+ * by the caller's own channel names.
+ *
+ * `channels` is the ערוצים table's row labels. It is an INPUT, not a
+ * convenience: attribution has to know how finely this project splits its
+ * spend before it can decide whether a lead logged as "google-search"
+ * identifies a row or is ambiguous between three of them.
+ *
+ * Null when the project has no CRM mapping, the platform's source is
+ * unreachable, or nothing matched — all of which mean "offer the snapshot
+ * only", never "show zeros".
  */
 export const getDatedChannelMeetings = cache(
-  (args: { project: string; company: string; from: string; to: string }) =>
-    computeCrossRequest(args.project, args.company, args.from, args.to),
+  (args: {
+    project: string;
+    company: string;
+    from: string;
+    to: string;
+    channels: readonly string[];
+  }) =>
+    computeCrossRequest(
+      args.project,
+      args.company,
+      args.from,
+      args.to,
+      args.channels,
+    ),
 );

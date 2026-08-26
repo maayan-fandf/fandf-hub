@@ -599,13 +599,21 @@ export default function ReportChannelsTab({
         "חלק מהפגישות ללא סטטוס סופי — הביצועים הם רצפה, לא ספירה מלאה.",
       );
     }
+    // Hebrew takes the singular at exactly one, so "1 ביצועים" is wrong.
     const n = datedSource.unmatchedMeetings;
     if (n > 0) {
-      // Hebrew takes the singular at exactly one, so "1 ביצועים" is wrong.
       parts.push(
         n === 1
           ? "ביצוע אחד בתקופה שייך לערוצים שאינם בטבלה."
           : `${fmtInt(n)} ביצועים בתקופה שייכים לערוצים שאינם בטבלה.`,
+      );
+    }
+    const a = datedSource.ambiguousMeetings;
+    if (a > 0) {
+      parts.push(
+        a === 1
+          ? "ביצוע אחד נרשם במקור כללי שאינו מבחין בין שורות הטבלה, ולכן לא שויך לאף שורה."
+          : `${fmtInt(a)} ביצועים נרשמו במקור כללי שאינו מבחין בין שורות הטבלה, ולכן לא שויכו לאף שורה.`,
       );
     }
     return parts.join(" ");

@@ -33,10 +33,7 @@ import {
   type ReportPlat,
   type ReportWindow,
 } from "@/lib/reportShared";
-import {
-  getDatedChannelMeetings,
-  datedChannelKey,
-} from "@/lib/datedChannelMeetings";
+import { getDatedChannelMeetings } from "@/lib/datedChannelMeetings";
 
 /**
  * Server data layer for the NATIVE project report (phase 1) — reads the
@@ -614,34 +611,28 @@ export const getProjectReportData = cache(
         company,
         from: window.startIso,
         to: window.endIso,
+        channels: reportChannels.map((c) => c.channel),
       }).catch(() => null);
       if (dated) {
-        const claimed = new Set<string>();
+        // Keyed by this project's own channel labels, so a row reads its
+        // own bucket and two rows can never share one. Anything the
+        // attributor couldn't place is already in unattributed/ambiguous.
         reportChannels = reportChannels.map((c) => {
-          const key = datedChannelKey(c.channel);
-          const hit = key ? dated.byChannel[key] : undefined;
-          if (key && hit) claimed.add(key);
+          const hit = dated.byChannel[c.channel];
           return {
             ...c,
             datedScheduled: hit?.scheduled ?? 0,
             datedMeetings: hit?.held ?? 0,
           };
         });
-        // Everything the table has no row for: unattributed leads plus
-        // whole channels the CRM knows and ALL CLIENTS doesn't.
-        let uScheduled = dated.unattributed.scheduled;
-        let uMeetings = dated.unattributed.held;
-        for (const [key, v] of Object.entries(dated.byChannel)) {
-          if (claimed.has(key)) continue;
-          uScheduled += v.scheduled;
-          uMeetings += v.held;
-        }
         datedSource = {
           platform: dated.platform,
           heldConfidence: dated.heldConfidence,
           unresolved: dated.unresolved,
-          unmatchedScheduled: uScheduled,
-          unmatchedMeetings: uMeetings,
+          unmatchedScheduled: dated.unattributed.scheduled,
+          unmatchedMeetings: dated.unattributed.held,
+          ambiguousScheduled: dated.ambiguous.scheduled,
+          ambiguousMeetings: dated.ambiguous.held,
         };
       }
     }

@@ -75,11 +75,14 @@ export default async function NativeProjectRail({
   pricesNode?: ReactNode;
   /** דף נחיתה insights (Clarity) — folded under סקירת פעילות when present. */
   clarityNode?: ReactNode;
-  /** Live GA4 traffic on the landing page — sits above clarityNode in the
-   *  same section. Client-visible, unlike clarityNode. */
+  /** Live GA4 traffic on the landing page ("עכשיו"). Leads the אנליטיקס
+   *  section, above ga4ReportNode — moved there from סקירת פעילות on
+   *  2026-08-26 (owner request) so all the Google Analytics data on the
+   *  page lives under the Google Analytics heading. Client-visible,
+   *  unlike clarityNode. */
   ga4Node?: ReactNode;
-  /** Period-scoped GA4 — gets its OWN rail section (אנליטיקס) between
-   *  קמפיינים and מגמות, rather than folding under סקירת פעילות. */
+  /** Period-scoped GA4 — the body of the אנליטיקס rail section, which
+   *  sits between קמפיינים and מגמות. */
   ga4ReportNode?: ReactNode;
   /** ביצועי מדיה — the non-real-estate reach/installs card. Mutually
    *  exclusive with the CRM nodes in practice: a project either has a
@@ -264,15 +267,16 @@ export default async function NativeProjectRail({
           <>
             <ReportHeader data={data} />
             <ReportOverviewTab data={data} />
-            {/* Landing-page screenshots sit directly above the GA4 live
-                traffic section: the picture of the page and that page's
-                visitor numbers belong together. Rendered here rather
-                than inside Ga4LiveSection so they still show on projects
-                whose GA property can't be resolved. */}
+            {/* Landing-page screenshots. These used to sit directly above
+                the GA4 live-traffic card so the picture of the page and
+                that page's visitor numbers read together; the live card
+                moved to אנליטיקס on 2026-08-26, so the pairing is now
+                across sections. Kept here rather than inside Ga4LiveSection
+                so they still show on projects whose GA property can't be
+                resolved. */}
             {data.landingUrl && (
               <LandingPreview url={data.landingUrl} project={data.project} />
             )}
-            {ga4Node}
             {clarityNode}
           </>
         ),
@@ -314,7 +318,11 @@ export default async function NativeProjectRail({
     // heading. Pushed outside the !mediaLed guard below because it does
     // not depend on platform data at all — it reads GA directly — but it
     // is still only ever non-null for real-estate projects (page.tsx).
-    if (ga4ReportNode) {
+    // Either node alone is enough to earn the section. Guarding on
+    // ga4ReportNode only would have made the live card vanish outright on
+    // a project that has realtime traffic but no period report, which is
+    // worse than the section it used to live in being the wrong one.
+    if (ga4ReportNode || ga4Node) {
       sections.push({
         id: "analytics",
         group: "perf",
@@ -323,7 +331,14 @@ export default async function NativeProjectRail({
         // entirely Google Analytics data, and 📊 was already doing
         // generic duty elsewhere in the rail.
         icon: <GoogleAnalyticsMark size={15} />,
-        content: ga4ReportNode,
+        // Live first, then the period report: "who is on the page right
+        // now" is the lead-in to "who came over the period".
+        content: (
+          <>
+            {ga4Node}
+            {ga4ReportNode}
+          </>
+        ),
       });
     }
     if (!mediaLed) {

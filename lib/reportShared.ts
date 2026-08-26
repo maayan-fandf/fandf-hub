@@ -118,6 +118,13 @@ export type DatedSourceInfo = {
    *  would otherwise look inexplicably short against the funnel. */
   unmatchedScheduled: number;
   unmatchedMeetings: number;
+  /** Dated meetings whose source names a channel this project splits into
+   *  several rows — a lead logged as plain "google-search" where the table
+   *  separates brand / generic / competitors. The CRM cannot say which row
+   *  earned it, so it is reported here rather than assigned to one row or
+   *  (as an earlier version did) to all of them. */
+  ambiguousScheduled: number;
+  ambiguousMeetings: number;
 };
 
 /** One row of the ערוצים tab — an ALL CLIENTS channel row enriched with
