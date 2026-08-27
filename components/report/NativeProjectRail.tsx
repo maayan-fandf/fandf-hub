@@ -188,10 +188,21 @@ export default async function NativeProjectRail({
   const mediaLed = Boolean(mediaNode);
 
   // Ad-preview links exist to stand in for a creative that can't be rendered.
-  // Everywhere else the card already shows the image, so they're clutter — and
-  // shipping 1–6 signed Meta URLs per card to a viewer who will never see a
-  // link for them is pure payload. Drop them the same way `history` and the
-  // client-view strip above do: out of the PAYLOAD, not just the render.
+  // On a media-workbook project that is most cards, so it keeps the full list
+  // and renders the row of them under each card.
+  //
+  // Everywhere else this used to drop them ENTIRELY, on the reasoning that the
+  // card already shows its image. That stopped being true when the
+  // `facebook-ads-assets 365` tab went empty: the warehouse fallback supplies
+  // a signed fbcdn URL for video creatives, it 403s once the signature
+  // expires, and the card falls to "📷 אין תצוגה" — precisely when a preview
+  // link is the only route left to the creative. Stripping it here meant
+  // FbAdImage's empty state could never offer one (אחוזת אפרידר, 3 of 4
+  // cards).
+  //
+  // So keep ONE. The empty state only ever uses previews[0], and a single URL
+  // per card is the payload the original note was guarding against — it
+  // objected to 1–6 of them, not to one.
   if (!mediaLed && data?.creatives) {
     data = {
       ...data,
@@ -201,7 +212,11 @@ export default async function NativeProjectRail({
           ...data.creatives.fb,
           topAds: data.creatives.fb.topAds.map((a) => ({
             ...a,
-            previews: undefined,
+            // undefined (not []) when there is none, and still undefined for a
+            // client viewer — the strip above already cleared it, and a Meta
+            // preview link resolves to an error page without a Business
+            // Manager session.
+            previews: a.previews?.length ? a.previews.slice(0, 1) : undefined,
           })),
         },
       },
