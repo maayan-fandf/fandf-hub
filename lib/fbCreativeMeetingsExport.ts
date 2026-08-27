@@ -13,6 +13,7 @@
 import { supabaseRowsAll, supabaseConfigured } from "./supabase";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { normAdName } from "./fbCreatives";
+import { getGoogleCampaignNames } from "./googleCampaignNames";
 import { getSalesforceCreativeMeetings } from "./crmData";
 
 const SHEET_ID_CREATIVES =
@@ -20,6 +21,10 @@ const SHEET_ID_CREATIVES =
 const TAB = "fb-creative-meetings";
 const AUD_TAB = "fb-audience-meetings";
 const KW_TAB = "google-keyword-meetings";
+/** Google meetings per CAMPAIGN. Sibling of KW_TAB — the keyword drill has
+ *  existed for a while, but the Google Ads cards are grouped by campaign and
+ *  had no meeting join at all. */
+const GC_TAB = "google-campaign-meetings";
 
 // Strip invisible bidi/zero-width marks (Meta injects U+200E etc. into the
 // UTM values) before collapsing whitespace — same rationale as normAdName.
@@ -53,7 +58,15 @@ type MeetingRow = {
 export type CreativeMeeting = { campaign: string; ad: string; leads: number; scheduled: number; held: number };
 export type AudienceMeeting = { audience: string; leads: number; scheduled: number; held: number };
 export type KeywordMeeting = { keyword: string; leads: number; scheduled: number; held: number };
-export type ProjectMeetings = { creative: CreativeMeeting[]; audience: AudienceMeeting[]; keyword: KeywordMeeting[] };
+/** Keyed by campaign NAME, already resolved from the numeric utm_campaign —
+ *  see lib/googleCampaignNames. */
+export type CampaignMeeting = { campaign: string; leads: number; scheduled: number; held: number };
+export type ProjectMeetings = {
+  creative: CreativeMeeting[];
+  audience: AudienceMeeting[];
+  keyword: KeywordMeeting[];
+  campaign: CampaignMeeting[];
+};
 
 /** An arbitrary [from, toExcl) slice of the project's history, tagged with a
  *  caller-chosen key. `key` is opaque here: the report uses the bare month for
@@ -85,7 +98,7 @@ export function monthWindow(mon: string): { from: string; toExcl: string } {
  */
 type Attr = {
   fb: Map<string, { camp: string; ad: string; aud: string }>;
-  gs: Map<string, { kw: string }>;
+  gs: Map<string, { kw: string; camp: string }>;
 };
 
 /** client → its ORIGINATING lead's group keys — FIRST-TOUCH: a client is
@@ -93,9 +106,9 @@ type Attr = {
  *  lead across ALL channels (by lead_id) is that channel, matching BMBY's
  *  single-source model. So a yad2-first client who also clicked an fb ad
  *  doesn't inflate fb's meetings. Month-independent → built once, reused. */
-function buildAttr(allLeads: LeadRow[]): Attr {
+function buildAttr(allLeads: LeadRow[], gCampNames: Record<string, string>): Attr {
   const fb = new Map<string, { camp: string; ad: string; aud: string }>();
-  const gs = new Map<string, { kw: string }>();
+  const gs = new Map<string, { kw: string; camp: string }>();
   const seen = new Set<string>();
   for (const l of allLeads) {
     const c = String(l.client_id ?? "");
@@ -105,10 +118,28 @@ function buildAttr(allLeads: LeadRow[]): Attr {
     if (ch === "fb") {
       fb.set(c, { camp: clean(l.utm_campaign), ad: normAdName(l.utm_content), aud: clean(l.utm_term) });
     } else if (ch === "gs") {
-      gs.set(c, { kw: clean(l.utm_term) });
+      gs.set(c, { kw: clean(l.utm_term), camp: gCampName(l.utm_campaign, gCampNames) });
     }
   }
   return { fb, gs };
+}
+
+/**
+ * A Google lead's campaign NAME from its utm_campaign.
+ *
+ * Google tags the numeric campaign ID, so unlike every other dimension here
+ * the raw value is exactly what `numericId` filters out — it has to be
+ * translated, not rejected. "" when the id is unknown to the lookup or when
+ * the tag never expanded (`{campaigned}`, a typo'd ValueTrack placeholder
+ * that a chunk of the portfolio carries); the caller drops those rather than
+ * bucketing them somewhere plausible.
+ */
+function gCampName(raw: unknown, names: Record<string, string>): string {
+  const v = clean(raw);
+  if (!v || v.startsWith("{")) return "";
+  if (names[v]) return names[v];
+  // Already a name on the accounts that tag one directly.
+  return numericId(v) ? "" : v;
 }
 
 const numericId = (s: string) => /^\d{8,}$/.test(s);
@@ -133,6 +164,7 @@ function aggregateMeetings(
   jm: MeetingRow[],
   from: string,
   toExcl: string,
+  gCampNames: Record<string, string>,
 ): ProjectMeetings {
   // Per-client tallies of meeting events dated IN the month. held = BMBY-
   // confirmed only (no past-due in_process — owner decision 2026-07-09; see
@@ -153,6 +185,7 @@ function aggregateMeetings(
   const byKey = new Map<string, Rec>();
   const byAud = new Map<string, Rec>();
   const byKw = new Map<string, Rec>();
+  const byGCamp = new Map<string, Rec>();
   const ensure = (map: Map<string, Rec>, key: string, extra: Record<string, string>): Rec => {
     let rec = map.get(key);
     if (!rec) { rec = { extra, clients: new Set(), sched: 0, held: 0 }; map.set(key, rec); }
@@ -171,6 +204,8 @@ function aggregateMeetings(
     } else if (ch === "gs") {
       const kw = clean(l.utm_term);
       if (kw && !numericId(kw)) ensure(byKw, kw, { kw }).clients.add(c);
+      const gc = gCampName(l.utm_campaign, gCampNames);
+      if (gc) ensure(byGCamp, gc, { gc }).clients.add(c);
     }
   }
   // Meetings — each client's in-month event tallies, credited once per
@@ -190,11 +225,16 @@ function aggregateMeetings(
       const r = ensure(byKw, g.kw, { kw: g.kw });
       r.sched += ev.total; r.held += ev.done;
     }
+    if (g && g.camp) {
+      const r = ensure(byGCamp, g.camp, { gc: g.camp });
+      r.sched += ev.total; r.held += ev.done;
+    }
   }
   return {
     creative: [...byKey.values()].map((r) => ({ campaign: r.extra.camp, ad: r.extra.ad, leads: r.clients.size, scheduled: r.sched, held: r.held })),
     audience: [...byAud.values()].map((r) => ({ audience: r.extra.aud, leads: r.clients.size, scheduled: r.sched, held: r.held })),
     keyword: [...byKw.values()].map((r) => ({ keyword: r.extra.kw, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+    campaign: [...byGCamp.values()].map((r) => ({ campaign: r.extra.gc, leads: r.clients.size, scheduled: r.sched, held: r.held })),
   };
 }
 
@@ -222,14 +262,19 @@ export async function computeProjectMeetings(
   from: string,
   toExcl: string,
 ): Promise<ProjectMeetings> {
-  const [allLeads, jm] = await Promise.all([fetchAllLeads(projectId), fetchMeetings(projectName)]);
-  if (!allLeads.length) return { creative: [], audience: [], keyword: [] };
-  const attr = buildAttr(allLeads);
+  const [allLeads, jm, gCampNames] = await Promise.all([
+    fetchAllLeads(projectId),
+    fetchMeetings(projectName),
+    getGoogleCampaignNames().catch(() => ({}) as Record<string, string>),
+  ]);
+  if (!allLeads.length)
+    return { creative: [], audience: [], keyword: [], campaign: [] };
+  const attr = buildAttr(allLeads, gCampNames);
   const monthLeads = allLeads.filter((l) => {
     const d = ilDay(l.lead_created_at);
     return d >= from && d < toExcl;
   });
-  return aggregateMeetings(monthLeads, attr, jm, from, toExcl);
+  return aggregateMeetings(monthLeads, attr, jm, from, toExcl, gCampNames);
 }
 
 /* ── Sehel warehouse variant ──────────────────────────────────────────
@@ -277,7 +322,8 @@ async function computeSehelMeetingsWindows(
   crmName: string,
   wins: MeetingsWindow[],
 ): Promise<Array<{ key: string } & ProjectMeetings>> {
-  const empty = () => wins.map((w) => ({ key: w.key, creative: [], audience: [], keyword: [] }));
+  const empty = () =>
+    wins.map((w) => ({ key: w.key, creative: [], audience: [], keyword: [], campaign: [] }));
   const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
   const cands = [crmName, ...crmName.split(",").map((s) => s.trim())].filter(
     (v, i, a) => v && a.indexOf(v) === i,
@@ -391,6 +437,13 @@ async function computeSehelMeetingsWindows(
       creative: [...byKey.values()].map((r) => ({ campaign: r.extra.camp, ad: r.extra.ad, leads: r.clients.size, scheduled: r.sched, held: r.held })),
       audience: [...byAud.values()].map((r) => ({ audience: r.extra.aud, leads: r.clients.size, scheduled: r.sched, held: r.held })),
       keyword: [...byKw.values()].map((r) => ({ keyword: r.extra.kw, leads: r.clients.size, scheduled: r.sched, held: r.held })),
+      // Google campaign meetings are BMBY-only. The bridge is the numeric
+      // utm_campaign → name lookup, and only BMBY's leads carry an id worth
+      // resolving in volume; Sehel's Google UTM coverage is a rounding error
+      // (69 tagged google leads portfolio-wide) and Salesforce's capture
+      // sheet tags the campaign NAME on a different dimension. Empty rather
+      // than half-populated, so a blank column reads as "not available here".
+      campaign: [],
     };
   });
 }
@@ -407,8 +460,16 @@ export async function getProjectMeetingsLive(
 ): Promise<{ month: string; project: string; projectId: number | null } & ProjectMeetings> {
   const mon = month || currentMonthIL();
   const { project, projectId, results } = await getProjectMeetingsLiveMulti(projectName, [mon]);
-  const r = results[0] || { month: mon, creative: [], audience: [], keyword: [] };
-  return { month: r.month, project, projectId, creative: r.creative, audience: r.audience, keyword: r.keyword };
+  const r = results[0] || { month: mon, creative: [], audience: [], keyword: [], campaign: [] };
+  return {
+    month: r.month,
+    project,
+    projectId,
+    creative: r.creative,
+    audience: r.audience,
+    keyword: r.keyword,
+    campaign: r.campaign ?? [],
+  };
 }
 
 /**
@@ -486,37 +547,61 @@ export async function getProjectMeetingsLiveWindows(
     // fallback: a project in NEITHER warehouse. Same claim-only-if-it-attributed
     // rule, so a genuine no-match still renders the cards with no CRM row.
     try {
-      const results = await getSalesforceCreativeMeetings(projectName, wins);
-      if (results.some((r) => r.creative.length || r.audience.length || r.keyword.length))
-        return { project: projectName, projectId: null, results };
+      const sf = await getSalesforceCreativeMeetings(projectName, wins);
+      if (sf.some((r) => r.creative.length || r.audience.length || r.keyword.length))
+        // See the note in the Sehel branch: no Google campaign dimension here.
+        return {
+          project: projectName,
+          projectId: null,
+          results: sf.map((r) => ({ ...r, campaign: [] })),
+        };
     } catch {
       /* fall through to empty */
     }
     return {
       project: projectName,
       projectId: null,
-      results: wins.map((w) => ({ key: w.key, creative: [], audience: [], keyword: [] })),
+      results: wins.map((w) => ({
+        key: w.key,
+        creative: [],
+        audience: [],
+        keyword: [],
+        campaign: [],
+      })),
     };
   }
   const projectId = found[0].project_id;
   const projName = found[0].project_name;
   // Lead history + meeting history are both month-independent — fetch once,
   // slice per month in memory.
-  const [allLeads, jm] = await Promise.all([fetchAllLeads(projectId), fetchMeetings(projName)]);
-  const attr = buildAttr(allLeads);
+  const [allLeads, jm, gCampNames] = await Promise.all([
+    fetchAllLeads(projectId),
+    fetchMeetings(projName),
+    getGoogleCampaignNames().catch(() => ({}) as Record<string, string>),
+  ]);
+  const attr = buildAttr(allLeads, gCampNames);
   const results = wins.map((w) => {
     const winLeads = allLeads.filter((l) => {
       const d = ilDay(l.lead_created_at);
       return d >= w.from && d < w.toExcl;
     });
-    return { key: w.key, ...aggregateMeetings(winLeads, attr, jm, w.from, w.toExcl) };
+    return {
+      key: w.key,
+      ...aggregateMeetings(winLeads, attr, jm, w.from, w.toExcl, gCampNames),
+    };
   });
   return { project: projName, projectId, results };
 }
 
 export async function exportFbCreativeMeetings(
   month?: string,
-): Promise<{ month: string; creativeRows: number; audienceRows: number; keywordRows: number }> {
+): Promise<{
+  month: string;
+  creativeRows: number;
+  audienceRows: number;
+  keywordRows: number;
+  campaignRows: number;
+}> {
   if (!supabaseConfigured()) throw new Error("Supabase not configured");
   const mon = month || currentMonthIL();
   const from = `${mon}-01`;
@@ -531,12 +616,14 @@ export async function exportFbCreativeMeetings(
   const creativeRows: (string | number)[][] = []; // project, campaign, ad, leads, sched, held
   const audRows: (string | number)[][] = []; // project, audience, leads, sched, held
   const kwRows: (string | number)[][] = []; // project, keyword, leads, sched, held
+  const gcRows: (string | number)[][] = []; // project, campaign, leads, sched, held
 
   for (const p of projects) {
     const m = await computeProjectMeetings(p.project_name, p.project_id, from, toExcl);
     for (const r of m.creative) creativeRows.push([p.project_name, r.campaign, r.ad, r.leads, r.scheduled, r.held]);
     for (const r of m.audience) audRows.push([p.project_name, r.audience, r.leads, r.scheduled, r.held]);
     for (const r of m.keyword) kwRows.push([p.project_name, r.keyword, r.leads, r.scheduled, r.held]);
+    for (const r of m.campaign) gcRows.push([p.project_name, r.campaign, r.leads, r.scheduled, r.held]);
   }
 
   // ── write both tabs ──
@@ -598,6 +685,13 @@ export async function exportFbCreativeMeetings(
   await writeTab(TAB, ["project", "campaign", "ad_name", "leads", "scheduled", "held", "month", "updated_at"], creativeRows);
   await writeTab(AUD_TAB, ["project", "audience", "leads", "scheduled", "held", "month", "updated_at"], audRows);
   await writeTab(KW_TAB, ["project", "keyword", "leads", "scheduled", "held", "month", "updated_at"], kwRows);
+  await writeTab(GC_TAB, ["project", "campaign", "leads", "scheduled", "held", "month", "updated_at"], gcRows);
 
-  return { month: mon, creativeRows: creativeRows.length, audienceRows: audRows.length, keywordRows: kwRows.length };
+  return {
+    month: mon,
+    creativeRows: creativeRows.length,
+    audienceRows: audRows.length,
+    keywordRows: kwRows.length,
+    campaignRows: gcRows.length,
+  };
 }

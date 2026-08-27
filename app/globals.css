@@ -29712,3 +29712,18 @@ html[data-theme="dark"] {
   .sc-touch { grid-template-columns: 1.2rem 4rem 1fr; }
   .sc-touch-type, .sc-touch-agent { display: none; }
 }
+
+/* CRM outcomes on a Google Ads campaign card. Same funnel palette the
+   creative table uses — pink for תיאומים, red for ביצועים — so the reader
+   carries one colour vocabulary across Facebook, Google and the keyword
+   table. Absent (not zero) when the campaign has no CRM join at all. */
+.rpt-cr-gcamp-crm {
+  display: inline-flex;
+  gap: 0.5rem;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+  white-space: nowrap;
+}
+.rpt-cr-gcamp-sched { color: #ec4899; }
+.rpt-cr-gcamp-held { color: #f5576c; }

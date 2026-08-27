@@ -981,6 +981,25 @@ function GoogleAdsBlock({
                 <span className="rpt-cr-gcamp-meta">
                   {list.length} מודעות · {fmtInt(totalImp)} חשיפות
                 </span>
+                {/* CRM outcomes for the campaign, the same pair the Facebook
+                    cards and the keyword table below already carry. Every ad
+                    in the group shares one campaign, so the first row's join
+                    IS the group's — summing them would multiply it by the ad
+                    count. Omitted entirely when no CRM row matched, so a
+                    blank never reads as a measured zero. */}
+                {list[0]?.hasCrm && (
+                  <span
+                    className="rpt-cr-gcamp-crm"
+                    title="תיאומים וביצועים של הלידים שהקמפיין הזה הביא, לפי אירועי פגישה בתקופה — אותה הגדרה כמו במודעות פייסבוק"
+                  >
+                    <span className="rpt-cr-gcamp-sched">
+                      {fmtInt(list[0].scheduled)} תיאומים
+                    </span>
+                    <span className="rpt-cr-gcamp-held">
+                      {fmtInt(list[0].held)} ביצועים
+                    </span>
+                  </span>
+                )}
               </div>
               {list.map((a, i) => (
                 <div key={i} className="rpt-cr-gad">

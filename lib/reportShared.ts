@@ -1202,6 +1202,22 @@ export type ReportGoogleAd = {
   finalUrl: string;
   headlines: string[];
   descriptions: string[];
+  /**
+   * CRM outcomes for the leads this CAMPAIGN produced — the same
+   * event-in-window definition the Facebook cards and the keyword table
+   * already use.
+   *
+   * BMBY only, and 0 rather than undefined when unavailable: Google tags
+   * the numeric campaign ID in utm_campaign, so the join runs through the
+   * קמפיין ID גוגל id→name lookup, and a campaign whose leads all carry an
+   * unexpanded {campaigned} placeholder resolves to nothing. `hasCrm` says
+   * which case a zero is.
+   */
+  scheduled: number;
+  held: number;
+  /** False when no CRM row was found at all — the card then omits the
+   *  columns instead of printing two zeros that look like a result. */
+  hasCrm: boolean;
 };
 
 export type ReportKeyword = {

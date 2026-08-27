@@ -266,7 +266,9 @@ type ProjectCreativeRaw = {
     conversions: number;
   }[];
   /** גוגל RSA assets (no date dimension — live snapshot). */
-  gAds: ReportGoogleAd[];
+  /** As parsed from the גוגל tab — the CRM columns are joined on later, in
+   *  aggregateCreatives, so the raw shape deliberately lacks them. */
+  gAds: Omit<ReportGoogleAd, "scheduled" | "held" | "hasCrm">[];
   /** `discovery` tab — Demand Gen assets, one row per (ad, asset). No date
    *  dimension either: the query is a rolling 60-day snapshot. */
   gAssets: {
@@ -772,10 +774,17 @@ type MeetLookups = {
   creative: Map<string, MeetVal>;
   audience: Map<string, MeetVal>;
   keyword: Map<string, MeetVal>;
+  /** Google meetings per campaign NAME. BMBY only — see ReportGoogleAd. */
+  campaign: Map<string, MeetVal>;
 };
 
 function emptyLookups(): MeetLookups {
-  return { creative: new Map(), audience: new Map(), keyword: new Map() };
+  return {
+    creative: new Map(),
+    audience: new Map(),
+    keyword: new Map(),
+    campaign: new Map(),
+  };
 }
 
 /** Keyed by the caller's BUCKET KEY, not by month — the report passes bare
@@ -806,6 +815,16 @@ function buildMeetLookups(
         leads: k.leads || 0,
         scheduled: k.scheduled || 0,
         held: k.held || 0,
+      });
+    }
+    // Keyed on the campaign NAME — the export already resolved it out of
+    // the numeric utm_campaign, so this matches the גוגל tab's own campaign
+    // column with no further translation here.
+    for (const c of r.campaign ?? []) {
+      out.campaign.set(`${r.key}|${projLc}|${clean(c.campaign).toLowerCase()}`, {
+        leads: c.leads || 0,
+        scheduled: c.scheduled || 0,
+        held: c.held || 0,
       });
     }
   }
@@ -1615,6 +1634,25 @@ function aggregateCreatives(
     }
   }
 
+  // Google Ads cards are grouped by campaign, and that was the one dimension
+  // with no CRM join: the keyword table beneath them already showed
+  // תיאומים/ביצועים while the campaign above it showed none. Same
+  // sumOverMonths the keywords use, keyed on the campaign name the export
+  // already resolved out of the numeric utm_campaign.
+  const gAdsWithCrm = raw.gAds.map((a) => {
+    const mtg = sumOverMonths(
+      meet.campaign,
+      months,
+      `${projLc}|${clean(a.campaign).toLowerCase()}`,
+    );
+    return {
+      ...a,
+      scheduled: mtg?.scheduled ?? 0,
+      held: mtg?.held ?? 0,
+      hasCrm: !!mtg,
+    };
+  });
+
   return {
     fb: {
       cost: totalCost,
@@ -1628,7 +1666,7 @@ function aggregateCreatives(
       clicks: googleClicks,
       conversions: googleConversions,
       topKeywords,
-      ads: raw.gAds,
+      ads: gAdsWithCrm,
       dgAds,
     },
   };
