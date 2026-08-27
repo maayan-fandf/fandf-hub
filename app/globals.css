@@ -29543,3 +29543,172 @@ html[data-theme="dark"] {
   opacity: 0.8;
   cursor: help;
 }
+
+/* ─── Signed-clients dossier (מכירות drill) ──────────────────────────
+   Opened from the מכירות bar in the conversion funnel. Internal only —
+   it is the one place in the hub that shows a customer's name and phone,
+   so the endpoint gates on an @fandf.co.il session and the bar does not
+   offer the door in client view. */
+.rpt-cf-fill.is-drill {
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+.rpt-cf-fill.is-drill:hover,
+.rpt-cf-fill.is-drill:focus-visible {
+  filter: brightness(1.25);
+}
+.rpt-cf-drill {
+  margin-inline-start: 0.35rem;
+  font-size: 0.72em;
+  opacity: 0.85;
+}
+.sc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  background: color-mix(in srgb, #0b1020 55%, transparent);
+  backdrop-filter: blur(2px);
+}
+.sc-panel {
+  width: min(920px, 100%);
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
+  padding: 1rem 1.1rem 1.2rem;
+}
+.sc-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.sc-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  flex: 1 1 auto;
+}
+.sc-close {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.9rem;
+}
+.sc-close:hover { background: var(--surface-alt); }
+.sc-note {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  padding: 0.7rem 0.2rem;
+}
+.sc-note-inline { padding: 0.35rem 0; }
+/* The provenance line. Two different sources count the same thing, so the
+   disagreement is stated rather than reconciled. */
+.sc-basis {
+  margin: 0 0 0.7rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.sc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.sc-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-alt);
+}
+.sc-item.is-open { background: var(--surface); }
+.sc-item-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.sc-item-head:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.sc-name { font-weight: 700; white-space: nowrap; }
+.sc-chips { display: flex; gap: 0.25rem; flex-wrap: wrap; flex: 1 1 auto; }
+.sc-chip {
+  font-size: 0.72rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.sc-chip-agent { background: color-mix(in srgb, #6366f1 14%, transparent); }
+.sc-counts {
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sc-caret { color: var(--ink-soft); font-size: 0.75rem; }
+.sc-body { padding: 0.2rem 0.7rem 0.75rem; }
+.sc-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.4rem 0.9rem;
+  margin: 0 0 0.7rem;
+}
+.sc-facts > div { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.sc-fact-wide { grid-column: 1 / -1; }
+.sc-facts dt { font-size: 0.7rem; color: var(--ink-soft); }
+.sc-facts dd { margin: 0; font-size: 0.82rem; word-break: break-word; }
+.sc-notes { font-size: 0.75rem; color: var(--ink-soft); }
+.sc-journey-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.sc-journey-n { font-weight: 400; font-size: 0.72rem; color: var(--ink-soft); }
+.sc-journey {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+  /* The journey can run to dozens of touches; keep the dossier scannable
+     and let the timeline scroll inside it. */
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.sc-touch {
+  display: grid;
+  grid-template-columns: 1.2rem 4.2rem 5.2rem 1fr auto;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.16rem 0.3rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+.sc-touch:nth-child(odd) { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+/* A meeting is the spine of the journey — the rest is the approach to it. */
+.sc-touch.is-meeting {
+  background: color-mix(in srgb, #f5576c 10%, transparent);
+  font-weight: 600;
+}
+.sc-touch-date { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.sc-touch-type { color: var(--ink-soft); }
+.sc-touch-content { min-width: 0; word-break: break-word; }
+.sc-touch-agent { color: var(--ink-soft); font-size: 0.7rem; white-space: nowrap; }
+@media (max-width: 640px) {
+  .sc-touch { grid-template-columns: 1.2rem 4rem 1fr; }
+  .sc-touch-type, .sc-touch-agent { display: none; }
+}

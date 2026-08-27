@@ -281,7 +281,7 @@ export default async function NativeProjectRail({
         content: (
           <>
             <ReportHeader data={data} />
-            <ReportOverviewTab data={data} />
+            <ReportOverviewTab data={data} clientView={clientView} />
             {/* Landing-page screenshots. These used to sit directly above
                 the GA4 live-traffic card so the picture of the page and
                 that page's visitor numbers read together; the live card

@@ -16,7 +16,15 @@ import {
 
 const MODE_LABELS = { live: "טווח הקמפיין", month: "חודש", range: "טווח מותאם" };
 
-export default function ReportOverviewTab({ data }: { data: ProjectReportData }) {
+export default function ReportOverviewTab({
+  data,
+  clientView = false,
+}: {
+  data: ProjectReportData;
+  /** Passed through to the funnel, which hides the signed-clients drill —
+   *  those carry customer names and phones. */
+  clientView?: boolean;
+}) {
   // The CRM funnel flow (ביצועים נוכחיים) is CRM data, so it shows even
   // when there are no paid-platform impressions/clicks.
   const funnelFlow = data.totals ? <ReportFunnelFlow data={data} /> : null;
@@ -37,7 +45,7 @@ export default function ReportOverviewTab({ data }: { data: ProjectReportData })
         )}
       </div>
 
-      <ReportConversionFunnel data={data} />
+      <ReportConversionFunnel data={data} clientView={clientView} />
     </div>
   );
 }

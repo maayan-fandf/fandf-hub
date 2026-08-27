@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import SignedClientsPanel from "@/components/report/SignedClientsPanel";
 import {
   sumAdPlatform,
   fmtInt,
@@ -31,9 +33,15 @@ function convColor(r: number): string {
 
 export default function ReportConversionFunnel({
   data,
+  clientView = false,
 }: {
   data: ProjectReportData;
+  /** Hides the drill into the signed clients. Their names and phones are
+   *  staff-only — the endpoint refuses a client session independently, this
+   *  just stops offering a door that would not open. */
+  clientView?: boolean;
 }) {
+  const [showSigned, setShowSigned] = useState(false);
   const t = data.totals;
   if (!t) return null;
   const sm = sumAdPlatform(data.adPlatform);
@@ -70,16 +78,42 @@ export default function ReportConversionFunnel({
           const prev = i > 0 ? rows[i - 1] : null;
           const conv = prev && prev.value > 0 ? r.value / prev.value : null;
           const w = Math.max(2, (scaleOf(r.value) / maxScaled) * 100);
-          return (
+            // Only מכירות drills. It is the one stage whose members the CRM
+            // can name — the rest are platform aggregates with no client
+            // behind them.
+            const drills = r.key === "sales" && !clientView && r.value > 0;
+            return (
             <div key={r.key} className="rpt-cf-row">
               <div className="rpt-cf-label">{r.label}</div>
               <div className="rpt-cf-track">
                 <div
-                  className="rpt-cf-fill"
+                  className={"rpt-cf-fill" + (drills ? " is-drill" : "")}
                   style={{ width: `${w}%`, background: r.color }}
-                  title={`${r.label}: ${fmtInt(r.value)}${conv !== null ? ` · המרה מ־${prev!.label}: ${fmtPct2(conv)}` : ""}`}
+                  role={drills ? "button" : undefined}
+                  tabIndex={drills ? 0 : undefined}
+                  onClick={drills ? () => setShowSigned(true) : undefined}
+                  onKeyDown={
+                    drills
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setShowSigned(true);
+                          }
+                        }
+                      : undefined
+                  }
+                  title={
+                    drills
+                      ? `${r.label}: ${fmtInt(r.value)} — לחצו לפתיחת תיקי הלקוחות שחתמו`
+                      : `${r.label}: ${fmtInt(r.value)}${conv !== null ? ` · המרה מ־${prev!.label}: ${fmtPct2(conv)}` : ""}`
+                  }
                 >
                   <span className="rpt-cf-val">{fmtInt(r.value)}</span>
+                  {drills && (
+                    <span className="rpt-cf-drill" aria-hidden>
+                      🔍
+                    </span>
+                  )}
                 </div>
                 {conv !== null && (
                   <span
@@ -96,6 +130,16 @@ export default function ReportConversionFunnel({
         })}
       </div>
       {useLog && <div className="rpt-cf-note">סקאלה לוגריתמית (חשיפות מעל 10K)</div>}
+      {showSigned && (
+        <SignedClientsPanel
+          project={data.project}
+          company={data.company}
+          from={data.window.startIso}
+          to={data.window.endIso}
+          barValue={t.sales}
+          onClose={() => setShowSigned(false)}
+        />
+      )}
     </section>
   );
 }

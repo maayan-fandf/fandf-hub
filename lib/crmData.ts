@@ -461,7 +461,7 @@ function isTruthyFlag(v: unknown): boolean {
  * up each account; single-account projects yield just [raw], identical
  * to before.
  */
-function crmAccountCandidates(raw: string): string[] {
+export function crmAccountCandidates(raw: string): string[] {
   const full = String(raw ?? "").trim();
   const out: string[] = [];
   const seen = new Set<string>();
