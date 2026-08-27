@@ -199,6 +199,11 @@ function windowBuckets(
 type FbAssetRec = {
   account: string;
   status: string;
+  /** The status came from meta_ad_status.effective_status rather than the
+   *  assets tab. Surfaced on the card because it is a STRICTER reading than
+   *  the sheet ever gave: the sheet reports the ad's own status, this one
+   *  also folds in a paused campaign or ad set. */
+  statusFromWarehouse?: boolean;
   image: string;
   thumb: string;
   destUrl: string;
@@ -689,8 +694,11 @@ async function fillAssetsFromWarehouse(out: ProjectCreativeRaw): Promise<void> {
   for (const a of out.fbAds) {
     const rec = out.fbAssets[cardKey(a.campaign, a.ad)];
     // Only ask if something is actually missing — a healthy tab short-
-    // circuits here and the warehouse is never queried.
-    if (!rec || (!rec.image && !rec.thumb)) needed.add(a.campaign);
+    // circuits here and the warehouse is never queried. Status counts as
+    // missing on its own: the assets tab went empty on 2026-08-17 and took
+    // the status pill with it, and a card can equally lose the status while
+    // keeping its picture, since they come from different columns.
+    if (!rec || (!rec.image && !rec.thumb) || !rec.status) needed.add(a.campaign);
   }
   if (!needed.size) return;
 
@@ -702,10 +710,12 @@ async function fillAssetsFromWarehouse(out: ProjectCreativeRaw): Promise<void> {
     const w = wh[k];
     if (!w) continue;
     const rec = out.fbAssets[k];
+    const hasArt = !!(w.image || w.thumb);
     if (!rec) {
       out.fbAssets[k] = {
         account: a.account,
-        status: "",
+        status: w.status,
+        statusFromWarehouse: !!w.status,
         image: w.image,
         thumb: w.thumb,
         destUrl: w.destUrl,
@@ -713,12 +723,23 @@ async function fillAssetsFromWarehouse(out: ProjectCreativeRaw): Promise<void> {
         title: w.title,
         url: "",
         impressions: 0,
-        fromWarehouse: true,
-        lastSeen: w.lastSeen,
+        // Only claim warehouse ARTWORK when there is some — a row that
+        // carried nothing but a status would otherwise wear the 🗄️ badge
+        // over a card with no picture at all.
+        fromWarehouse: hasArt,
+        lastSeen: hasArt ? w.lastSeen : "",
       };
       continue;
     }
+    // Status and artwork are filled independently: the sheet can supply one
+    // without the other, and PRECEDENCE is per field — sheet wins wherever
+    // it has data.
+    if (!rec.status && w.status) {
+      rec.status = w.status;
+      rec.statusFromWarehouse = true;
+    }
     if (rec.image || rec.thumb) continue; // sheet already had a creative
+    if (!hasArt) continue;
     rec.image = w.image;
     rec.thumb = w.thumb;
     rec.fromWarehouse = true;
@@ -1099,6 +1120,7 @@ function aggregateCreatives(
     const mtg = sumOverMonths(meet.creative, months, adKey(a.campaign, a.ad));
     return {
       account: a.account || assets?.account || "",
+      statusFromWarehouse: assets?.statusFromWarehouse ?? false,
       campaign: a.campaign,
       ad: a.ad,
       status: assets?.status ?? "",

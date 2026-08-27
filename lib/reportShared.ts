@@ -1132,6 +1132,11 @@ export type ReportFbAd = {
    *  the reader: the warehouse keeps a creative long after it stops running,
    *  so a fallback image can be older than the card's numbers. */
   imageFromWarehouse?: boolean;
+  /** The status pill was read from the Supabase warehouse
+   *  (meta_ad_status.effective_status) because the assets tab had none.
+   *  A stricter reading than the sheet gives — it accounts for a paused
+   *  parent campaign or ad set — so the pill says where it came from. */
+  statusFromWarehouse?: boolean;
   /** Warehouse `last_seen` for that creative — the last date Meta reported
    *  delivery. Only set alongside `imageFromWarehouse`; "" when unknown. */
   imageLastSeen?: string;

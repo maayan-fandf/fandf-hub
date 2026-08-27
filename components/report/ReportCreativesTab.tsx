@@ -381,7 +381,12 @@ export default function ReportCreativesTab({
                     {status.label && (
                       <span
                         className={`rpt-cr-status is-${status.cls}`}
-                        title={a.status}
+                        title={
+                          a.statusFromWarehouse
+                            ? `${a.status} — נקרא ממאגר הנתונים (Supabase), לא מגיליון הקריאייטיבים. ` +
+                              `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
+                            : a.status
+                        }
                       >
                         {status.label}
                       </span>

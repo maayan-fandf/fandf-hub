@@ -43,6 +43,10 @@ const MAX_CAMPAIGNS = 12;
  *  row per creative per sync), so this clears a normal project comfortably. */
 const MAX_CREATIVE_ROWS = 4000;
 
+/** Ad ids per `meta_ad_status` request. Numeric ids, ~19 chars each, so this
+ *  keeps the URL well inside any proxy's limit. */
+const STATUS_CHUNK = 150;
+
 export type WarehouseCreative = {
   image: string;
   thumb: string;
@@ -53,11 +57,28 @@ export type WarehouseCreative = {
    *  say how current the fallback is — the warehouse can hold a creative long
    *  after it stopped running. */
   lastSeen: string;
+  /**
+   * `meta_ad_status.effective_status` — ACTIVE / PAUSED / ADSET_PAUSED /
+   * CAMPAIGN_PAUSED / DISAPPROVED / WITH_ISSUES. "" when the warehouse has no
+   * status row for the ad.
+   *
+   * EFFECTIVE, not the ad's own `status`, because only it accounts for a paused
+   * parent: measured 2026-08-27 over the whole table, 10,881 ads report their
+   * own status as ACTIVE while just 510 are effectively running — the other
+   * 10,371 sit under a paused campaign or ad set, or were disapproved. An
+   * ad-level read would call all of them live.
+   *
+   * fbStatusInfo already speaks exactly this vocabulary, so it renders as
+   * ⏸ קהל מושהה / ⏸ קמפיין מושהה rather than collapsing to "paused".
+   */
+  status: string;
 };
 
 type IdRow = { campaign_id: string | null };
+type StatusRow = { ad_id: string | null; effective_status: string | null };
 type CreativeRow = {
   campaign_id: string | null;
+  ad_id: string | null;
   ad_name: string | null;
   image_url: string | null;
   thumbnail_url: string | null;
@@ -126,7 +147,7 @@ export const getWarehouseCreatives = cache(
       if (!nameById.size) return out;
 
       const rows = await supabaseRows<CreativeRow>(
-        `meta_ad_creatives?select=campaign_id,ad_name,image_url,thumbnail_url,` +
+        `meta_ad_creatives?select=campaign_id,ad_id,ad_name,image_url,thumbnail_url,` +
           `body,title,link_url,last_seen,synced_at` +
           `&campaign_id=in.(${[...nameById.keys()].join(",")})` +
           // Newest sync first, so the first row seen for a key is the most
@@ -135,14 +156,41 @@ export const getWarehouseCreatives = cache(
           `&order=synced_at.desc&limit=${MAX_CREATIVE_ROWS}`,
       );
 
+      // Effective status per ad_id. Ad ids are numeric, so they go into the
+      // `in.(…)` list unescaped — unlike the campaign names above. Chunked
+      // to keep the URL under any proxy's length limit.
+      const adIds = [
+        ...new Set(rows.map((r) => String(r.ad_id ?? "")).filter(Boolean)),
+      ];
+      const statusById = new Map<string, string>();
+      for (let i = 0; i < adIds.length; i += STATUS_CHUNK) {
+        const chunk = adIds.slice(i, i + STATUS_CHUNK);
+        const st = await supabaseRows<StatusRow>(
+          `meta_ad_status?select=ad_id,effective_status&ad_id=in.(${chunk.join(",")})`,
+        ).catch(() => [] as StatusRow[]);
+        for (const s of st) {
+          const v = String(s.effective_status ?? "").trim();
+          if (s.ad_id && v) statusById.set(String(s.ad_id), v);
+        }
+      }
+
+      // Status is collected for EVERY creative row, not just the ones
+      // carrying imagery: the assets tab can fail in either direction, and a
+      // card that has its picture from the sheet but lost its status pill is
+      // exactly the state this fell into. Kept in its own map so an
+      // image-less row can never shadow an older row that has one — the
+      // imagery below is still strictly first-(newest-)wins.
+      const statusByKey = new Map<string, string>();
       for (const r of rows) {
         const campaign = nameById.get(String(r.campaign_id ?? ""));
         const ad = String(r.ad_name ?? "");
         if (!campaign || !ad) continue;
+        const k = cardKey(campaign, ad);
+        const eff = statusById.get(String(r.ad_id ?? ""));
+        if (eff && !statusByKey.has(k)) statusByKey.set(k, eff);
         const image = String(r.image_url ?? "").trim();
         const thumb = String(r.thumbnail_url ?? "").trim();
         if (!image && !thumb) continue;
-        const k = cardKey(campaign, ad);
         if (out[k]) continue; // first (newest synced) wins
         out[k] = {
           image,
@@ -151,7 +199,21 @@ export const getWarehouseCreatives = cache(
           title: String(r.title ?? "").trim(),
           destUrl: String(r.link_url ?? "").trim(),
           lastSeen: String(r.last_seen ?? "").slice(0, 10),
+          status: "",
         };
+      }
+      for (const [k, status] of statusByKey) {
+        if (out[k]) out[k].status = status;
+        else
+          out[k] = {
+            image: "",
+            thumb: "",
+            body: "",
+            title: "",
+            destUrl: "",
+            lastSeen: "",
+            status,
+          };
       }
       return out;
     } catch (e) {
