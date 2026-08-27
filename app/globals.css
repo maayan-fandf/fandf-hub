@@ -6675,6 +6675,47 @@ summary.crm-fb-head::before {
 .crm-fb-table th.m-leads, .crm-fb-table td.m-leads { color: #6366f1; }
 .crm-fb-table th.m-sched, .crm-fb-table td.m-sched { color: #ec4899; }
 .crm-fb-table th.m-held, .crm-fb-table td.m-held { color: #f5576c; }
+/* Objection column — deliberately NOT on the funnel palette. Leads /
+   scheduled / held are stages of the same progression; an objection is a
+   reason, not a stage, so it reads as muted body text rather than as a
+   fourth metric competing with the three. */
+.crm-fb-table th.m-obj,
+.crm-fb-table td.m-obj {
+  color: var(--ink-soft);
+  text-align: start;
+  max-width: 11rem;
+}
+.crm-fb-obj {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.22rem;
+  margin-inline-start: 0.35rem;
+  padding: 0.02rem 0.3rem;
+  border-radius: 999px;
+  font-size: 0.78em;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  cursor: help;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 10rem;
+}
+/* In the creative table the column header already names it, so the chip
+   drops its own decoration and sits flush in the cell. */
+.crm-fb-obj.is-bare {
+  margin-inline-start: 0;
+  padding-inline: 0;
+  background: transparent;
+}
+.crm-fb-obj-n {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.crm-fb-obj-more {
+  opacity: 0.55;
+  font-size: 0.9em;
+}
 .crm-fb-rowlabel {
   position: relative;
   z-index: 1;

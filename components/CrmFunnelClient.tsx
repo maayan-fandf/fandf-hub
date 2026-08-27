@@ -1284,13 +1284,19 @@ export default function CrmFunnelClient({
                     <div
                       key={r.label}
                       className="crm-fb-row"
-                      title={`${r.label}: ${r.leads} לידים · ${r.scheduled} תואמו · ${r.held} פגישות`}
+                      title={
+                        `${r.label}: ${r.leads} לידים · ${r.scheduled} תואמו · ${r.held} פגישות` +
+                        objectionTitle(r.objections)
+                      }
                     >
                       <div
                         className="crm-fb-bar"
                         style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
                       />
-                      <span className="crm-fb-rowlabel">{r.label}</span>
+                      <span className="crm-fb-rowlabel">
+                        {r.label}
+                        <ObjectionChip list={r.objections} />
+                      </span>
                       <span className="crm-fb-rowmetrics">
                         <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
                         <span className="crm-fb-rowsub" title="תואמו">
@@ -1321,6 +1327,12 @@ export default function CrmFunnelClient({
                     <th className="m-leads" title="עלות לליד">CPL</th>
                     <th className="m-sched" title="עלות לתיאום פגישה">CPS</th>
                     <th className="m-held" title="עלות לפגישה שהתקיימה">CPM</th>
+                    <th
+                      className="m-obj"
+                      title="ההתנגדות השכיחה ביותר בקרב הלידים שהמודעה הזו הביאה. ריק = לא נרשמה התנגדות על אף אחד מהם — לא בהכרח שלא היו."
+                    >
+                      התנגדות
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1333,6 +1345,13 @@ export default function CrmFunnelClient({
                       <td className="m-leads">{c.cpl ? `₪${fmtInt(c.cpl)}` : "—"}</td>
                       <td className="m-sched">{c.cps ? `₪${fmtInt(c.cps)}` : "—"}</td>
                       <td className="m-held">{c.cpm ? `₪${fmtInt(c.cpm)}` : "—"}</td>
+                      <td className="m-obj">
+                        {c.objections?.length ? (
+                          <ObjectionChip list={c.objections} bare />
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1894,6 +1913,56 @@ function ChannelMiniPieContent({
         </ul>
       </div>
     </>
+  );
+}
+
+/** The objections behind a UTM row, for a `title` attribute. Empty string
+ *  when none were recorded, so callers can concatenate it unconditionally. */
+function objectionTitle(list?: { label: string; n: number }[]): string {
+  if (!list?.length) return "";
+  return (
+    `\nהתנגדויות שנרשמו: ` +
+    list.map((o) => `${o.label} (${o.n})`).join(" · ")
+  );
+}
+
+/**
+ * "which ad/adset/placement produced which objection" — the top objection
+ * recorded against the leads THIS row brought in.
+ *
+ * Silent when the row recorded none, and deliberately so: the objection
+ * column is filled by the sales desk on roughly 39% of BMBY leads and 2.8%
+ * of Sehel's, so a "0 התנגדויות" label would read as a finding when it is
+ * really an absence of data. The header tooltip says as much for the reader
+ * who wonders why a row is blank.
+ */
+function ObjectionChip({
+  list,
+  bare = false,
+}: {
+  list?: { label: string; n: number }[];
+  /** Table cell: no 💬, no leading gap — the column header already says
+   *  what this is. */
+  bare?: boolean;
+}) {
+  if (!list?.length) return null;
+  const top = list[0];
+  const rest = list.slice(1);
+  return (
+    <span
+      className={"crm-fb-obj" + (bare ? " is-bare" : "")}
+      title={
+        `ההתנגדות השכיחה בקרב הלידים של השורה הזו.` +
+        objectionTitle(list) +
+        (rest.length ? "" : "") +
+        `\nריק אצל שורות אחרות = לא נרשמה התנגדות, לא שלא היו.`
+      }
+    >
+      {bare ? "" : "💬 "}
+      {top.label}
+      <span className="crm-fb-obj-n">{top.n}</span>
+      {rest.length > 0 && <span className="crm-fb-obj-more">+{rest.length}</span>}
+    </span>
   );
 }
 

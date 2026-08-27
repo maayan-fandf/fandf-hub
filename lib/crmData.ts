@@ -62,6 +62,29 @@ const CRM_SHEET_ID =
 
 export type CrmPlatform = "bmby" | "sehel" | "salesforce";
 
+/**
+ * One row of a UTM breakdown — a placement, an audience, a creative or a
+ * keyword — with the funnel counts its leads produced.
+ *
+ * `objections` answers "which ad/adset/placement produced which objection":
+ * the leads counted in THIS row, tallied by the objection their CRM record
+ * carries, biggest first. Empty when none of the row's leads has one — which
+ * is common, so the UI must treat absence as "not recorded" rather than
+ * "no objections".
+ *
+ * Only the row's own LEADS are tallied, never the meetings credited to it:
+ * a meeting is credited to the group of its client's first-touch lead, which
+ * may sit outside the window, and counting an objection twice through both
+ * paths would inflate rows that convert well.
+ */
+export type UtmRow = {
+  label: string;
+  leads: number;
+  scheduled: number;
+  held: number;
+  objections?: { label: string; n: number }[];
+};
+
 export type CrmFunnel = {
   platform: CrmPlatform;
   /** Keys.CRM value used as the join key (the canonical account name
@@ -275,26 +298,22 @@ export type CrmFunnel = {
    *  warehouse). Per-segment CPL is a later slice (needs the meta_* join). */
   fbBreakdown?: {
     totalLeads: number;
-    byPlacement: { label: string; leads: number; scheduled: number; held: number }[];
-    byAudience: { label: string; leads: number; scheduled: number; held: number }[];
+    byPlacement: UtmRow[];
+    byAudience: UtmRow[];
     /** Per creative (= ad name / utm_content). leads/scheduled/held from the
      *  warehouse; spend + cpl/cps/cpm joined from the dashboard's
      *  facebook-ads-metrics Sheet (cost ÷ leads / scheduled / held). spend=0
      *  when no matching ad-spend row (cost metrics then 0). */
-    byCreative: {
-      label: string;
-      leads: number;
-      scheduled: number;
-      held: number;
+    byCreative: (UtmRow & {
       spend: number;
       cpl: number;
       cps: number;
       cpm: number;
-    }[];
+    })[];
     /** Per Google keyword (utm_term on google-source leads) — leads/scheduled/
      *  held only (no spend join). Set by the Sehel warehouse funnel; absent on
      *  BMBY (whose keyword drill lives only in the classic report). */
-    byKeyword?: { label: string; leads: number; scheduled: number; held: number }[];
+    byKeyword?: UtmRow[];
   };
   /** Speed-to-lead (warehouse BMBY funnels only): response time from lead
    *  arrival to the first desk touch, per media channel, from
@@ -1749,9 +1768,87 @@ async function computeBmbyFunnelFromWarehouse(
   return funnel;
 }
 
+/** How many objections a UTM row lists. Three names the pattern without
+ *  turning a table cell into a paragraph; the rest stay in the tooltip. */
+const TOP_OBJECTIONS = 3;
+
+/**
+ * Add one lead's objection to a row's tally.
+ *
+ * The column is free text written by the sales desk, one value per lead
+ * ("מחיר", "אין מענה", "תקציב נמוך"). Blank on most leads — roughly 39% of
+ * BMBY rows carry one — so the caller must read an empty tally as "not
+ * recorded", never as "nobody objected". Separators are tolerated because
+ * some desks type two reasons into the one field.
+ */
+function tallyObjection(into: Map<string, number>, raw: unknown): void {
+  const v = String(raw ?? "").trim();
+  if (!v || v === "[]" || v === "{}") return;
+  for (const part of v.split(/\s*[,;|]\s*/)) {
+    const t = trimQuoting(decodeEntities(part)).replace(/\s+/g, " ").trim();
+    if (t) into.set(t, (into.get(t) ?? 0) + 1);
+  }
+}
+
+/**
+ * Strip the brackets and quotes a JSON-ish value arrives wrapped in, without
+ * eating punctuation that belongs to the text.
+ *
+ * A trailing apostrophe is only quoting when there is a matching one at the
+ * front: in Hebrew it is the abbreviation mark, and a blanket trim turned
+ * "מספר טל'" (phone number) into "מספר טל".
+ */
+function trimQuoting(s: string): string {
+  let v = s.replace(/^[[\s]+|[\]\s]+$/g, "");
+  for (const q of ['"', "'"]) {
+    if (v.length > 1 && v.startsWith(q) && v.endsWith(q)) {
+      v = v.slice(1, -1);
+    }
+  }
+  // A leading quote with no partner is stray delimiter; a trailing one is not.
+  return v.replace(/^["']+/, "").trim();
+}
+
+/**
+ * Undo the HTML escaping BMBY applies to its objection text.
+ *
+ * The column arrives pre-escaped — "מספר טל&#039;" rather than "מספר טל'" —
+ * and React escapes on output, so the entity would render literally on the
+ * card. Decoded here rather than in the component so the two tallies of the
+ * same objection ("מספר טל'" typed by one desk, "מספר טל&#039;" by another)
+ * merge into one row instead of splitting the count.
+ */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#0?39;?|&apos;?/g, "'")
+    .replace(/&quot;?/g, '"')
+    .replace(/&#0?34;?/g, '"')
+    .replace(/&lt;?/g, "<")
+    .replace(/&gt;?/g, ">")
+    .replace(/&nbsp;?/g, " ")
+    // &amp; last — decoding it first would turn "&amp;#039;" into an
+    // apostrophe on a second pass rather than the literal "&#039;".
+    .replace(/&amp;?/g, "&");
+}
+
+/** The row's objections, biggest first, capped. Undefined (not []) when the
+ *  row recorded none, so the UI can distinguish "none recorded" from a row
+ *  the builder never looked at. */
+function topObjections(
+  m: Map<string, number>,
+): { label: string; n: number }[] | undefined {
+  if (!m.size) return undefined;
+  return [...m.entries()]
+    .map(([label, n]) => ({ label, n }))
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+    .slice(0, TOP_OBJECTIONS);
+}
+
 type FbLead = {
   client_id: string | null;
   channel_key: string | null;
+  /** Already in the warehouse lead select — see the bmby_leads_daily query. */
+  objections?: string | null;
   utm_medium: string | null;
   utm_term: string | null;
   utm_content: string | null;
@@ -1816,17 +1913,22 @@ async function buildFbBreakdown(
     winEvByClient.set(c, rec);
   }
 
-  type Acc = { leads: number; sched: number; held: number };
+  type Acc = { leads: number; sched: number; held: number; obj: Map<string, number> };
   const accumulate = (getLabel: (l: FbLead) => string): Map<string, Acc> => {
     const m = new Map<string, Acc>();
     const ensure = (k: string): Acc => {
       let r = m.get(k);
-      if (!r) { r = { leads: 0, sched: 0, held: 0 }; m.set(k, r); }
+      if (!r) { r = { leads: 0, sched: 0, held: 0, obj: new Map() }; m.set(k, r); }
       return r;
     };
     for (const l of fb) {
       const v = getLabel(l);
-      if (v) ensure(v).leads++;
+      if (!v) continue;
+      const r = ensure(v);
+      r.leads++;
+      // Objections come off the LEAD only — never the meeting credit below,
+      // whose originating lead can sit outside the window.
+      tallyObjection(r.obj, l.objections);
     }
     // Meetings: each client's in-window event tally credited once, to the
     // group of their first-touch fb lead (one group per dimension — sums
@@ -1844,15 +1946,20 @@ async function buildFbBreakdown(
   };
   // Rank by leads + scheduled so a creative that produced meetings but no NEW
   // leads this window (an older ad) still surfaces, not only lead-heavy ones.
-  const toRows = (m: Map<string, Acc>) => {
-    const sorted = [...m.entries()]
-      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.sched, held: r.held }))
+  const toRows = (m: Map<string, Acc>): UtmRow[] => {
+    const sorted: UtmRow[] = [...m.entries()]
+      .map(([label, r]) => ({
+        label, leads: r.leads, scheduled: r.sched, held: r.held,
+        objections: topObjections(r.obj),
+      }))
       .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
     const head = sorted.slice(0, TOP);
     const rest = sorted.slice(TOP).reduce(
       (s, r) => ({ leads: s.leads + r.leads, scheduled: s.scheduled + r.scheduled, held: s.held + r.held }),
       { leads: 0, scheduled: 0, held: 0 },
     );
+    // The "אחר" bucket deliberately carries NO objection list: it merges
+    // unrelated placements/creatives, so an objection on it names nothing.
     if (rest.leads > 0 || rest.scheduled > 0) head.push({ label: "אחר", ...rest });
     return head;
   };
@@ -1889,6 +1996,7 @@ async function buildFbBreakdown(
       const spend = spendByAd.get(label)?.cost ?? 0;
       return {
         label, leads, scheduled, held, spend,
+        objections: topObjections(r.obj),
         cpl: leads ? spend / leads : 0,
         cps: scheduled ? spend / scheduled : 0,
         cpm: held ? spend / held : 0,
@@ -2186,6 +2294,9 @@ type SehelUtm = {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
+  /** Selected by the lead query alongside the UTMs; optional here because
+   *  the meeting-credit map is keyed on the narrower shape. */
+  objections?: string | null;
 };
 type SehelWhLead = SehelUtm & {
   client_uuid: string | null;
@@ -2402,7 +2513,7 @@ async function buildSehelBreakdown(
     if (Number(m.status_id) === 10) rec.done++;
     evByClient.set(c, rec);
   }
-  type Acc = { leads: number; sched: number; held: number };
+  type Acc = { leads: number; sched: number; held: number; obj: Map<string, number> };
   // Group a channel's leads by a UTM label, then credit each meeting-client's
   // events to the group of their first-touch lead (same channel only).
   const build = (
@@ -2413,10 +2524,17 @@ async function buildSehelBreakdown(
     const m = new Map<string, Acc>();
     const ensure = (k: string): Acc => {
       let r = m.get(k);
-      if (!r) { r = { leads: 0, sched: 0, held: 0 }; m.set(k, r); }
+      if (!r) { r = { leads: 0, sched: 0, held: 0, obj: new Map() }; m.set(k, r); }
       return r;
     };
-    for (const l of leadSet) { const v = getLabel(l); if (v) ensure(v).leads++; }
+    for (const l of leadSet) {
+      const v = getLabel(l);
+      if (!v) continue;
+      const r = ensure(v);
+      r.leads++;
+      // Lead-side only, same as BMBY — see UtmRow.objections.
+      tallyObjection(r.obj, l.objections);
+    }
     for (const [c, ev] of evByClient) {
       const u = utmByClient.get(c);
       if (!u || !channelMatch(u.utm_source)) continue;
@@ -2428,9 +2546,12 @@ async function buildSehelBreakdown(
     }
     return m;
   };
-  const toRows = (m: Map<string, Acc>) => {
-    const sorted = [...m.entries()]
-      .map(([label, r]) => ({ label, leads: r.leads, scheduled: r.sched, held: r.held }))
+  const toRows = (m: Map<string, Acc>): UtmRow[] => {
+    const sorted: UtmRow[] = [...m.entries()]
+      .map(([label, r]) => ({
+        label, leads: r.leads, scheduled: r.sched, held: r.held,
+        objections: topObjections(r.obj),
+      }))
       .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
     const head = sorted.slice(0, TOP);
     const rest = sorted.slice(TOP).reduce(
@@ -2512,7 +2633,7 @@ async function buildSehelBreakdown(
  * matched a UTM row by phone.
  * Same keys + output shape as BMBY/Sehel, so the existing פילוח פייסבוק panel
  * and the Google-keyword block render unchanged. */
-type SfUtmLead = { utm: SfUtm; scheduled: boolean; held: boolean };
+type SfUtmLead = { utm: SfUtm; scheduled: boolean; held: boolean; objection: string };
 
 const isSfFbSource = (s: unknown): boolean => {
   const v = String(s ?? "").toLowerCase().trim();
@@ -2537,17 +2658,20 @@ async function buildSalesforceBreakdown(
   const TOP = 8;
   const cl = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim();
 
-  type Rec = { leads: number; scheduled: number; held: number };
+  type Rec = { leads: number; scheduled: number; held: number; obj: Map<string, number> };
   const group = (set: SfUtmLead[], label: (l: SfUtmLead) => string): Map<string, Rec> => {
     const m = new Map<string, Rec>();
     for (const l of set) {
       const k = label(l);
       if (!k) continue;
       let r = m.get(k);
-      if (!r) { r = { leads: 0, scheduled: 0, held: 0 }; m.set(k, r); }
+      if (!r) { r = { leads: 0, scheduled: 0, held: 0, obj: new Map() }; m.set(k, r); }
       r.leads++;
       if (l.scheduled) r.scheduled++;
       if (l.held) r.held++;
+      // Salesforce reads its objection off the same row as the UTM join,
+      // so unlike BMBY/Sehel there is no second lookup.
+      tallyObjection(r.obj, l.objection);
     }
     return m;
   };
@@ -2878,6 +3002,7 @@ async function computeSalesforceFunnel(
           utm: u,
           scheduled: isScheduledMeeting,
           held: isHeldMeeting,
+          objection: String(arr[iObjection] ?? "").trim(),
         });
       }
     }
