@@ -64,7 +64,10 @@ function FbAdImage({
     const preview = showPreviews ? "" : (ad.previews?.[0] ?? "");
     return (
       <div className="rpt-cr-noimg">
-        <span>📷 אין תצוגה</span>
+        <span className="rpt-cr-noimg-icon" aria-hidden>
+          🖼
+        </span>
+        <span className="rpt-cr-noimg-label">אין תצוגה</span>
         {preview ? (
           <a
             className="rpt-cr-noimg-link"

@@ -26693,8 +26693,12 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 }
 /* Media is absolutely positioned: the landing-page <a> wrapper has no
    intrinsic size, so a percentage-height <img> inside it would resolve
-   against an indefinite height and blow the aspect-ratio box open. */
-.rpt-cr-thumb a,
+   against an indefinite height and blow the aspect-ratio box open.
+   DIRECT child only. As a descendant selector this also caught every link
+   INSIDE the thumb — the preview chips needed an explicit reset below to
+   escape it, and the empty state's "פתח קריאייטיב" link, which has a pill
+   radius, rendered as a full-size circle over the card. */
+.rpt-cr-thumb > a,
 .rpt-cr-thumb img,
 .rpt-cr-noimg {
   position: absolute;
@@ -26713,14 +26717,38 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-cr-card.is-paused:hover .rpt-cr-thumb img {
   filter: none;
 }
+/* Empty state for a creative that cannot be rendered.
+   Deliberately NOT a skeleton shimmer: a shimmer promises the content is on
+   its way, and this one is not — the warehouse's signed fbcdn URL has
+   expired and will expire again after the next sync. An animation would
+   both lie about the state and pull the eye to the one part of the card
+   with nothing to say. A quiet hatch reads as "intentionally blank"
+   rather than "broken", and lets the numbers below stay the focus. */
 .rpt-cr-noimg {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.4rem;
   align-items: center;
   justify-content: center;
-  color: var(--muted);
-  font-size: 0.85rem;
+  padding: 0.5rem;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 7px,
+      color-mix(in srgb, var(--ink) 4%, transparent) 7px 14px
+    ),
+    var(--surface-alt);
+}
+.rpt-cr-noimg-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  opacity: 0.32;
+}
+.rpt-cr-noimg-label {
+  opacity: 0.75;
 }
 /* The way out of a dead card. Stacked under the "אין תצוגה" line rather than
    replacing it: the empty state still has to say the image is missing, and
@@ -26804,6 +26832,8 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 /* `.rpt-cr-thumb a` above makes every anchor in the thumb an absolute,
    full-bleed overlay (that rule exists for the landing-page wrapper). These
    anchors have to opt back out of it or they'd cover the creative. */
+/* The position/size reset here is now redundant — the rule above no longer
+   reaches this deep — but kept as belt-and-braces. */
 .rpt-cr-thumb .rpt-cr-preview {
   position: static;
   inset: auto;
