@@ -27,13 +27,59 @@ import {
 /** image → thumb → placeholder chain. fbcdn URLs are signed and expire,
  *  and cdninstagram frequently 403s on hotlink — the onError fallback is
  *  load-bearing (legacy v562/v563). */
-function FbAdImage({ ad }: { ad: ReportFbAd }) {
+function FbAdImage({
+  ad,
+  landing = "",
+  showPreviews = false,
+}: {
+  ad: ReportFbAd;
+  /** Landing page. Wraps the IMAGE only — a dead card offers a link to the
+   *  creative instead, and an anchor inside an anchor is invalid HTML that
+   *  swallows the inner one. */
+  landing?: string;
+  /** The card already renders its own preview links below, so the dead-state
+   *  link would be a duplicate. */
+  showPreviews?: boolean;
+}) {
   const primary = ad.image || ad.thumb;
   const fallback = ad.thumb && ad.thumb !== primary ? ad.thumb : "";
   const [src, setSrc] = useState(primary);
   const [dead, setDead] = useState(!primary);
-  if (dead) return <div className="rpt-cr-noimg">📷 אין תצוגה</div>;
-  return (
+  if (dead) {
+    // A dead image is not a dead ad, and on VIDEO creatives it is the normal
+    // case rather than a fault. Meta hands the warehouse two URL forms: the
+    // stable "facebook.com/ads/image/?d=…" and the signed
+    // "scontent-*.fbcdn.net/…" whose signature expires within days. Image
+    // creatives get the stable one and keep rendering; a video creative's
+    // image_url IS the signed thumbnail, so BOTH it and the thumbnail
+    // fallback are the same expiring URL and both come back 403 — measured on
+    // אחוזת אפרידר, where the one card that renders is the only `image` row and
+    // the three blanks are all `video`.
+    //
+    // Nothing here can re-sign that URL. What we can do is stop the card
+    // being a dead end: the 365-day previews tab still has a working link for
+    // these ads (27 rows for those three), and this is exactly the case
+    // AdPreviewLinks' own doc reserves them for — "where the creative CAN'T
+    // be shown".
+    const preview = showPreviews ? "" : (ad.previews?.[0] ?? "");
+    return (
+      <div className="rpt-cr-noimg">
+        <span>📷 אין תצוגה</span>
+        {preview ? (
+          <a
+            className="rpt-cr-noimg-link"
+            href={preview}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="התמונה שבמאגר היא כתובת חתומה של פייסבוק שכבר פגה — נפוץ בקריאייטיב וידאו. הקישור הזה פותח את המודעה עצמה (דורש חיבור ל-Business Manager)."
+          >
+            🖼 פתח קריאייטיב
+          </a>
+        ) : null}
+      </div>
+    );
+  }
+  const body = (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -61,6 +107,13 @@ function FbAdImage({ ad }: { ad: ReportFbAd }) {
         </span>
       )}
     </>
+  );
+  return landing ? (
+    <a href={landing} target="_blank" rel="noopener noreferrer">
+      {body}
+    </a>
+  ) : (
+    body
   );
 }
 
@@ -371,13 +424,11 @@ export default function ReportCreativesTab({
                     </div>
                   )}
                   <div className="rpt-cr-thumb">
-                    {landing ? (
-                      <a href={landing} target="_blank" rel="noopener noreferrer">
-                        <FbAdImage ad={a} />
-                      </a>
-                    ) : (
-                      <FbAdImage ad={a} />
-                    )}
+                    <FbAdImage
+                      ad={a}
+                      landing={landing}
+                      showPreviews={showPreviews}
+                    />
                     {status.label && (
                       <span
                         className={`rpt-cr-status is-${status.cls}`}

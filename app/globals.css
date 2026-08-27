@@ -6503,6 +6503,16 @@ html[data-theme="dark"] .quick-note-saved {
 .crm-view-campaigns .crm-fb-breakdown {
   margin-top: 0;
 }
+/* …except the Google keyword drill. It shares the crm-fb-breakdown class (so
+   the rule above would let it through), but in the קמפיינים tab it sits a few
+   blocks above "🔍 מילות חיפוש מובילות — Google", which reports the same
+   keywords with MORE: חשיפות / קליקים / המרות alongside the same תיאומים and
+   ביצועים. Two Google keyword tables in one tab, the upper one strictly
+   poorer. Hidden here only — the full-view card on the project page still
+   shows it, and there it has no neighbour to duplicate. */
+.crm-view-campaigns .crm-kw-breakdown {
+  display: none;
+}
 .crm-view-funnel .crm-fb-breakdown {
   display: none;
 }
@@ -26705,10 +26715,28 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 }
 .rpt-cr-noimg {
   display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
   align-items: center;
   justify-content: center;
   color: var(--muted);
   font-size: 0.85rem;
+}
+/* The way out of a dead card. Stacked under the "אין תצוגה" line rather than
+   replacing it: the empty state still has to say the image is missing, and
+   the link is the answer to "so how do I see it". */
+.rpt-cr-noimg-link {
+  font-size: 0.78rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  color: var(--accent, #4338ca);
+  background: color-mix(in srgb, var(--accent, #4338ca) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #4338ca) 26%, transparent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.rpt-cr-noimg-link:hover {
+  background: color-mix(in srgb, var(--accent, #4338ca) 18%, transparent);
 }
 /* Warehouse-fallback marker. Bottom-inline-START on purpose: .rpt-cr-status
    already owns bottom-inline-end, and the fatigue badge the top corners. */
