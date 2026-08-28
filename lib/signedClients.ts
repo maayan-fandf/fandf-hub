@@ -59,13 +59,25 @@ const SIGNED_STATUS = new Set(["חוזה", "ברכישה"]);
 const SIGNED_PIPELINE = new Set(["חוזה", "הסכם ראשוני"]);
 const OPPORTUNITY_PIPELINE = new Set(["הזדמנות מכירה"]);
 
-/** "signed" | "opportunity" | "" (not a sale row at all). */
-function saleStageOf(status: unknown, pipeline: unknown): "" | "signed" | "opportunity" {
+/**
+ * Which bucket a row falls in, AND the value that put it there.
+ *
+ * The label has to be the matching value, not whichever column happened to
+ * be non-empty: a client marked client_status="חוזה" can carry
+ * pipeline="לא רלוונטי" at the same time, and taking the pipeline blindly
+ * printed "לא רלוונטי" as the sale stage on a signed client (seen on
+ * אורנבך). Return "" for both when the row is not a sale at all.
+ */
+function saleStageOf(
+  status: unknown,
+  pipeline: unknown,
+): { stage: "" | "signed" | "opportunity"; label: string } {
   const st = clean(status);
   const pl = clean(pipeline);
-  if (SIGNED_STATUS.has(st) || SIGNED_PIPELINE.has(pl)) return "signed";
-  if (OPPORTUNITY_PIPELINE.has(pl)) return "opportunity";
-  return "";
+  if (SIGNED_STATUS.has(st)) return { stage: "signed", label: st };
+  if (SIGNED_PIPELINE.has(pl)) return { stage: "signed", label: pl };
+  if (OPPORTUNITY_PIPELINE.has(pl)) return { stage: "opportunity", label: pl };
+  return { stage: "", label: "" };
 }
 
 export type JourneyTouch = {
@@ -109,6 +121,16 @@ export type SignedClient = {
   /** Empty when the detailed lead page was never synced — see the module
    *  doc. The panel must not read that as "no contact". */
   journey: JourneyTouch[];
+  /** True when `salesperson` is a GUESS rather than a recorded owner. Sehel
+   *  has no owner field, so it reports whoever logged the most touches — and
+   *  that same field carries system actors ("מערכת שכל"). The dossier labels
+   *  the two differently rather than passing an inference off as a record. */
+  salespersonInferred?: boolean;
+  /** Commitment vs the stage before one — see saleStageOf / SEHEL_SIGNED. */
+  saleStage: "signed" | "opportunity";
+  /** The CRM's own wording for that stage ("חוזה" / "הסכם ראשוני" / "עסקה"),
+   *  kept verbatim so a tenant's vocabulary survives to the screen. */
+  saleLabel: string;
 };
 
 export type SignedClientsResult = {
@@ -204,15 +226,18 @@ export const getSignedClients = cache(
       );
       // One entry per client — a client can hold several lead rows, and a
       // SIGNED row outranks an opportunity one for the same person.
-      const byClient = new Map<string, { row: DailyRow; stage: "signed" | "opportunity" }>();
+      const byClient = new Map<
+        string,
+        { row: DailyRow; stage: "signed" | "opportunity"; label: string }
+      >();
       for (const r of daily) {
         const id = clean(r.client_id);
         if (!id) continue;
-        const stage = saleStageOf(r.client_status, r.pipeline);
+        const { stage, label } = saleStageOf(r.client_status, r.pipeline);
         if (!stage) continue;
         const prev = byClient.get(id);
         if (prev && !(prev.stage === "opportunity" && stage === "signed")) continue;
-        byClient.set(id, { row: r, stage });
+        byClient.set(id, { row: r, stage, label });
       }
       const signedCount = [...byClient.values()].filter((v) => v.stage === "signed").length;
       const oppCount = byClient.size - signedCount;
@@ -296,10 +321,10 @@ export const getSignedClients = cache(
           objections: clean(d.objections),
           journey,
           saleStage: hit.stage,
-          // The tenant's own wording, not our bucket name — פסגת זאב says
-          // "הסכם ראשוני" where רעננה קנקו says "חוזה", and flattening that
-          // would hide which commitment was actually recorded.
-          saleLabel: clean(d.pipeline) || clean(d.client_status),
+          // The value that MATCHED, not whichever column was non-empty —
+          // see saleStageOf. The tenant's own wording is kept as-is: פסגת
+          // זאב says "הסכם ראשוני" where רעננה קנקו says "חוזה".
+          saleLabel: hit.label,
         };
       });
 
@@ -312,6 +337,209 @@ export const getSignedClients = cache(
     } catch (e) {
       console.warn(
         `[getSignedClients] failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
+  },
+);
+
+/* ─── Sehel ─────────────────────────────────────────────────────────── */
+
+/**
+ * Sehel's own vocabulary for the same question.
+ *
+ * "עסקה" (deal, 435 rows) is the sale. "הרשמה" (registration, 61) is
+ * grouped with it because a registration form plus deposit IS a commitment
+ * in this market — and because the Salesforce path in crmData already
+ * counts its "טופס הרשמה" as a contract, so splitting them here would make
+ * two CRMs disagree about the same act. "מו״מ" (negotiation, 1) is the
+ * stage before, and lands with the opportunities.
+ */
+const SEHEL_SIGNED = new Set(["עסקה", "הרשמה"]);
+const SEHEL_OPPORTUNITY = new Set(["מו״מ", 'מו"מ']);
+
+/** Sehel writes its stage with a leading pipe ("| נוצר קשר ראשוני"). */
+const sehelStage = (v: unknown) => clean(v).replace(/^\|\s*/, "");
+
+/**
+ * Sehel's touch `content` is the whole row re-rendered, not the note:
+ * "17:0401.06.26מערכת דיוורהוזרם אישור דיוור באופן ידני." is time + date +
+ * event type + source + the actual text, concatenated with no separators.
+ * The timeline already has its own date and type columns, so left as-is
+ * every row opens with a wall of duplicated metadata before the sentence
+ * that matters. Strip the timestamp, then a leading copy of the type and a
+ * trailing copy of the agent — both are rendered separately.
+ */
+function cleanSehelContent(raw: unknown, type: string, agent: string): string {
+  let v = clean(raw).replace(
+    /^\d{1,2}:\d{2}\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*/,
+    "",
+  );
+  if (type && v.startsWith(type)) v = v.slice(type.length).trim();
+  if (agent && v.endsWith(agent)) v = v.slice(0, -agent.length).trim();
+  return v;
+}
+
+type SehelLeadRow = {
+  client_uuid: string | null;
+  project_name: string | null;
+  name: string | null;
+  phone: string | null;
+  stage: string | null;
+  media_source_raw: string | null;
+  objections: string | null;
+  needs_rooms: string | null;
+  registered_at: string | null;
+};
+
+type SehelTouchRow = {
+  client_uuid: string | null;
+  event_at: string | null;
+  event_type: string | null;
+  agent: string | null;
+  content: string | null;
+  is_meeting: boolean | null;
+};
+
+/**
+ * The Sehel equivalent of getSignedClients, returning the SAME shape so the
+ * panel and the חוזים section stay one component.
+ *
+ * This platform was excluded at first on the belief that only BMBY carries a
+ * journey. That was wrong: `sehel_touches` holds 127,765 rows — more than
+ * BMBY's — with event type, agent and the desk's free text. What Sehel does
+ * NOT have is BMBY's separate lead-detail table, so deal type and the
+ * pre-counted touch/meeting totals are unavailable; both are derived from
+ * the journey itself instead, and `rooms` comes from `needs_rooms`.
+ *
+ * Journey coverage is thinner here — 82 of 497 sale clients (16%) versus
+ * BMBY's ~32% — so the "not synced" wording the panel already carries does
+ * more work on this platform, not less.
+ */
+export const getSignedClientsSehel = cache(
+  async (args: {
+    crmAccounts: readonly string[];
+  }): Promise<SignedClientsResult | null> => {
+    const accounts = args.crmAccounts.map(clean).filter(Boolean);
+    if (!supabaseConfigured() || !accounts.length) return null;
+    try {
+      const or = accounts
+        .map((a) => `project_name.ilike.${encodeURIComponent(a)}*`)
+        .join(",");
+      const rows = await supabaseRowsAll<SehelLeadRow>(
+        `sehel_leads_daily?or=(${or})` +
+          `&select=client_uuid,project_name,name,phone,stage,media_source_raw,` +
+          `objections,needs_rooms,registered_at&order=registered_at.desc`,
+        { maxRows: 20000 },
+      );
+      const byClient = new Map<
+        string,
+        { row: SehelLeadRow; stage: "signed" | "opportunity"; label: string }
+      >();
+      for (const r of rows) {
+        const id = clean(r.client_uuid);
+        if (!id) continue;
+        const label = sehelStage(r.stage);
+        const stage = SEHEL_SIGNED.has(label)
+          ? ("signed" as const)
+          : SEHEL_OPPORTUNITY.has(label)
+            ? ("opportunity" as const)
+            : null;
+        if (!stage) continue;
+        const prev = byClient.get(id);
+        if (prev && !(prev.stage === "opportunity" && stage === "signed")) continue;
+        byClient.set(id, { row: r, stage, label });
+      }
+      const signedCount = [...byClient.values()].filter(
+        (v) => v.stage === "signed",
+      ).length;
+      const oppCount = byClient.size - signedCount;
+      if (!byClient.size)
+        return { clients: [], total: 0, opportunities: 0, withJourney: 0 };
+      const ids = [...byClient.entries()]
+        .sort((a, b) => (a[1].stage === b[1].stage ? 0 : a[1].stage === "signed" ? -1 : 1))
+        .map(([id]) => id)
+        .slice(0, MAX_CLIENTS);
+
+      const touches = new Map<string, JourneyTouch[]>();
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const tr = await supabaseRowsAll<SehelTouchRow>(
+          `sehel_touches?client_uuid=in.(${inList(chunk)})` +
+            `&select=client_uuid,event_at,event_type,agent,content,is_meeting` +
+            `&order=event_at.asc`,
+          { maxRows: MAX_TOUCHES * chunk.length },
+        ).catch(() => [] as SehelTouchRow[]);
+        for (const r of tr) {
+          const id = clean(r.client_uuid);
+          if (!id) continue;
+          const list = touches.get(id) ?? [];
+          if (list.length >= MAX_TOUCHES) continue;
+          const type = clean(r.event_type) || "—";
+          const agent = clean(r.agent);
+          list.push({
+            date: clean(r.event_at).slice(0, 10),
+            type,
+            agent,
+            content: cleanSehelContent(r.content, type, agent),
+            isMeeting: !!r.is_meeting,
+          });
+          touches.set(id, list);
+        }
+      }
+
+      const clients: SignedClient[] = ids.map((id) => {
+        const hit = byClient.get(id)!;
+        const d = hit.row;
+        const journey = touches.get(id) ?? [];
+        // No lead-detail table here, so these come off the journey rather
+        // than a pre-counted column.
+        const meetings = journey.filter((t) => t.isMeeting).length;
+        const agents = journey.map((t) => t.agent).filter(Boolean);
+        return {
+          clientId: id,
+          name: clean(d.name),
+          phone: clean(d.phone),
+          status: hit.label,
+          stage: hit.label,
+          // Sehel has no owner field. The busiest agent on the journey is the
+          // closest stand-in, but it is NOT the same claim as BMBY's
+          // `salesperson` — the same field carries system actors here
+          // ("מערכת שכל"), so the dossier labels it as the most active agent
+          // rather than asserting who owns the client.
+          salesperson:
+            agents.length > 0
+              ? [...agents.reduce((m, a) => m.set(a, (m.get(a) ?? 0) + 1), new Map<string, number>())]
+                  .sort((a, b) => b[1] - a[1])[0][0]
+              : "",
+          source: clean(d.media_source_raw),
+          mediaSource: clean(d.media_source_raw),
+          dealType: "",
+          rooms: clean(d.needs_rooms),
+          notes: "",
+          leadCreated: clean(d.registered_at).slice(0, 10),
+          firstTouch: journey[0]?.date ?? "",
+          lastTouch: journey[journey.length - 1]?.date ?? "",
+          touchesCount: journey.length,
+          meetingsCount: meetings,
+          leadsCount: 0,
+          objections: clean(d.objections),
+          journey,
+          salespersonInferred: true,
+          saleStage: hit.stage,
+          saleLabel: hit.label,
+        };
+      });
+
+      return {
+        clients,
+        total: signedCount,
+        opportunities: oppCount,
+        withJourney: clients.filter((c) => c.journey.length > 0).length,
+      };
+    } catch (e) {
+      console.warn(
+        `[getSignedClientsSehel] failed: ${e instanceof Error ? e.message : String(e)}`,
       );
       return null;
     }

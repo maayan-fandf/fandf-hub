@@ -292,10 +292,10 @@ function MetricCard({
       </div>
       {projected !== null && (
         <div className="rpt-mt-proj" title="צפי לסוף החודש">
-          → ~{fmt(Math.round(projected))} צפי (חודש זה)
+          ← ~{fmt(Math.round(projected))} צפי (חודש זה)
         </div>
       )}
-      {gateFailed && <div className="rpt-mt-proj">→ נתונים חלקיים</div>}
+      {gateFailed && <div className="rpt-mt-proj">← נתונים חלקיים</div>}
       {prim.isCurrentPartial && (
         <div className="rpt-mt-actual" title={`בפועל מתחילת החודש (${prim.dayOfMonth}/${prim.daysInMonth} ימים)`}>
           בפועל: {fmt(Math.round(prim.liveSoFar(metric.key)))}

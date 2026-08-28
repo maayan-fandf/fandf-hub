@@ -226,7 +226,7 @@ function ChannelTrendPop({
   return (
     <div className="rpt-chtrend-pop" aria-hidden="true">
       <div className="rpt-chtrend-head">
-        {channel} · {ddmm(series[0].date)} →{" "}
+        {channel} · {ddmm(series[0].date)} ←{" "}
         {ddmm(series[series.length - 1].date)}
       </div>
       <div className="rpt-chtrend-row">

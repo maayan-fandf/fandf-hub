@@ -177,7 +177,7 @@ function PlatCard({ plat, totals }: { plat: ReportPlat; totals: PlatTotals }) {
             <span className="rpt-stat-v">{fmtInt(leads)}</span>
           </div>
           <div className="rpt-stat">
-            <span className="rpt-stat-l">קליק→ליד</span>
+            <span className="rpt-stat-l">קליק←ליד</span>
             <span className="rpt-stat-v">{fmtPct2(c2l)}</span>
           </div>
           {cpl > 0 && (
@@ -312,13 +312,13 @@ export function PlatformKpiBand({
           />
         )}
         <KpiCard
-          label={isGoogle ? "קליק → המרה" : "קליק → ליד"}
+          label={isGoogle ? "קליק ← המרה" : "קליק ← ליד"}
           value={fmtPct2(c2l)}
           tone={kpiAlert("clickToLead", c2l, ctx)}
           delta={null}
         />
         <KpiCard
-          label={isGoogle ? "חשיפה → המרה" : "חשיפה → ליד"}
+          label={isGoogle ? "חשיפה ← המרה" : "חשיפה ← ליד"}
           value={fmtPct2(i2l)}
           tone={kpiAlert("impToLead", i2l, ctx)}
           delta={null}
@@ -442,14 +442,14 @@ export default function ReportMediaSection({
           />
         )}
         <KpiCard
-          label="קליק → ליד"
+          label="קליק ← ליד"
           value={fmtPct2(clickToLead)}
           tone={kpiAlert("clickToLead", clickToLead, ctx)}
           delta={null}
           title="לידים משויכי-מודעות בלבד (FB + המרות Google + Taboola/Outbrain) חלקי קליקים"
         />
         <KpiCard
-          label="חשיפה → ליד"
+          label="חשיפה ← ליד"
           value={fmtPct2(impToLead)}
           tone={kpiAlert("impToLead", impToLead, ctx)}
           delta={null}
@@ -469,7 +469,7 @@ export default function ReportMediaSection({
                 </span>
               </span>
               <span>
-                CVR קליק→ליד (אתר) <b>{fmtPct2(dx.cvrNow)}</b>{" "}
+                CVR קליק←ליד (אתר) <b>{fmtPct2(dx.cvrNow)}</b>{" "}
                 <span className={`rpt-dx-${dx.cvrState}`}>
                   {dx.cvrState === "down" ? "▼" : dx.cvrState === "up" ? "▲" : "•"}{" "}
                   {(dx.cvrDelta >= 0 ? "+" : "") + (dx.cvrDelta * 100).toFixed(0)}%

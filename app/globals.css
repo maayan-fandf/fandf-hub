@@ -29849,3 +29849,93 @@ html[data-theme="dark"] {
   font-size: 0.64rem;
   opacity: 0.72;
 }
+
+/* ─── Client dossier (shared by the מכירות drill and the חוזים table) ── */
+.cd-wrap { display: grid; gap: 0.6rem; padding: 0.2rem 0.1rem 0.4rem; }
+.cd-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.4rem 0.9rem;
+  margin: 0;
+}
+.cd-facts > div { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.cd-fact-wide { grid-column: 1 / -1; }
+.cd-facts dt { font-size: 0.7rem; color: var(--ink-soft); }
+.cd-facts dd { margin: 0; font-size: 0.82rem; word-break: break-word; }
+.cd-days { color: var(--ink-soft); font-size: 0.76rem; }
+.cd-notes { font-size: 0.75rem; color: var(--ink-soft); }
+.cd-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.cd-sub-note { font-weight: 400; font-size: 0.7rem; color: var(--ink-soft); }
+.cd-sub-journey { margin-top: 0.2rem; }
+.cd-channels { display: grid; gap: 0.3rem; }
+.cd-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.cd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid transparent;
+  cursor: help;
+  white-space: nowrap;
+}
+/* The attributed channel is the one the CRM credited; the rest are context.
+   Marked rather than filtered — both readings are true and they answer
+   different questions. */
+.cd-chip.is-attributed {
+  background: color-mix(in srgb, #6366f1 14%, transparent);
+  border-color: color-mix(in srgb, #6366f1 34%, transparent);
+  font-weight: 600;
+}
+.cd-chip-star { color: #6366f1; font-size: 0.7em; }
+.cd-empty { font-size: 0.78rem; color: var(--ink-soft); }
+.cd-journey { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+.cd-touch {
+  display: grid;
+  grid-template-columns: 1.2rem 4.2rem 6.5rem 1fr auto;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.22rem 0.3rem;
+  border-radius: 6px;
+  font-size: 0.76rem;
+}
+.cd-touch:nth-child(odd) { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+/* A meeting is the spine of the journey; a media arrival is where a channel
+   actually delivered someone. Both are marked, differently. */
+.cd-touch.is-meeting { background: color-mix(in srgb, #f5576c 10%, transparent); font-weight: 600; }
+.cd-touch.is-media { background: color-mix(in srgb, #6366f1 10%, transparent); }
+.cd-touch-date { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cd-touch-type { color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cd-touch-type.is-untyped { opacity: 0.45; }
+/* Desks paste whole scripts into a touch. Three lines by default keeps the
+   shape of the journey readable; the rest is one click away. */
+.cd-touch-content {
+  min-width: 0;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cd-touch-content[role="button"] { cursor: pointer; }
+.cd-touch-content.is-open { -webkit-line-clamp: unset; overflow: visible; }
+.cd-touch-agent { color: var(--ink-soft); font-size: 0.7rem; white-space: nowrap; }
+@media (max-width: 640px) {
+  .cd-touch { grid-template-columns: 1.2rem 4rem 1fr; }
+  .cd-touch-type, .cd-touch-agent { display: none; }
+}
+/* Rows in the חוזים table open the file. */
+.ct-table tr.is-clickable { cursor: pointer; }
+.ct-table tr.is-clickable:hover td {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.sc-head .ct-stage { margin-inline-start: 0.45rem; }

@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import ChannelIcon from "@/components/ChannelIcon";
+import ClientDossier, {
+  type DossierClient,
+} from "@/components/report/ClientDossier";
 
 /**
  * חוזים — what the project's sales are made of.
@@ -18,22 +22,9 @@ import ChannelIcon from "@/components/ChannelIcon";
  * commitments and the opportunities sit beside it as their own number.
  */
 
-type Client = {
-  clientId: string;
-  name: string;
-  salesperson: string;
-  source: string;
-  mediaSource: string;
-  rooms: string;
-  dealType: string;
-  leadCreated: string;
-  firstTouch: string;
-  lastTouch: string;
-  touchesCount: number;
-  meetingsCount: number;
-  saleStage: "signed" | "opportunity";
-  saleLabel: string;
-};
+// The table shows a subset, but a row opens the FULL file — so it carries
+// the whole record rather than a projection of it.
+type Client = DossierClient;
 
 type Payload = {
   ok: boolean;
@@ -85,6 +76,17 @@ export default function ContractsSection({
 }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<Payload | null>(null);
+  const [openClient, setOpenClient] = useState<Client | null>(null);
+
+  // Escape closes the file, matching the מכירות drill's own panel.
+  useEffect(() => {
+    if (!openClient) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenClient(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openClient]);
 
   useEffect(() => {
     let alive = true;
@@ -156,11 +158,11 @@ export default function ContractsSection({
   if (state === "loading") return <div className="rpt-empty">טוען חוזים…</div>;
   if (state === "error")
     return <div className="rpt-empty">לא הצלחתי לטעון את נתוני החוזים.</div>;
-  if (data?.reason === "not-bmby")
+  if (data?.reason === "unsupported-platform")
     return (
       <div className="rpt-empty">
-        ניתוח החוזים נשען על שדות המכירה של BMBY. הפרויקט הזה על{" "}
-        {data.platform?.toUpperCase()}, ושם הם לא קיימים באותה צורה.
+        ניתוח החוזים נשען על שדה שלב המכירה ועל מסע הלקוח. ב-
+        {data.platform?.toUpperCase()} אין להם מקבילה, ולכן הסקשן לא נפתח כאן.
       </div>
     );
   if (data?.reason === "no-crm")
@@ -273,9 +275,7 @@ export default function ContractsSection({
 
       <div className="ct-col-title ct-list-title">
         כל הלקוחות
-        <span className="ct-col-legend">
-          לפרטים מלאים ומסע הלקוח — לחצו על מכירות במשפך שבסקירת פעילות
-        </span>
+        <span className="ct-col-legend">לחצו על שורה לפתיחת תיק הלקוח</span>
       </div>
       <div className="ct-table-wrap">
         <table className="ct-table">
@@ -297,7 +297,20 @@ export default function ContractsSection({
               return (
                 <tr
                   key={c.clientId}
-                  className={c.saleStage === "opportunity" ? "is-opp" : ""}
+                  className={
+                    "is-clickable" +
+                    (c.saleStage === "opportunity" ? " is-opp" : "")
+                  }
+                  role="button"
+                  tabIndex={0}
+                  title="פתיחת תיק הלקוח — כל המסע מהמגע הראשון ועד הסגירה"
+                  onClick={() => setOpenClient(c)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenClient(c);
+                    }
+                  }}
                 >
                   <td>{c.name || "—"}</td>
                   <td>
@@ -332,6 +345,56 @@ export default function ContractsSection({
           </tbody>
         </table>
       </div>
+
+      {/* The same file the מכירות drill opens, in the same component — a
+          client must not read differently depending on which door was used.
+          Portalled so the rail's own scroll container cannot clip it. */}
+      {openClient &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="sc-overlay"
+            onClick={() => setOpenClient(null)}
+            role="presentation"
+          >
+            <div
+              className="sc-panel"
+              dir="rtl"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`תיק לקוח — ${openClient.name}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sc-head">
+                <h3>
+                  🖤 {openClient.name || "תיק לקוח"}
+                  {openClient.saleLabel && (
+                    <span
+                      className={
+                        "ct-stage" +
+                        (openClient.saleStage === "signed"
+                          ? " is-signed"
+                          : " is-opp")
+                      }
+                    >
+                      {openClient.saleLabel}
+                    </span>
+                  )}
+                </h3>
+                <button
+                  type="button"
+                  className="sc-close"
+                  onClick={() => setOpenClient(null)}
+                  aria-label="סגירה"
+                >
+                  ✕
+                </button>
+              </div>
+              <ClientDossier client={openClient} />
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

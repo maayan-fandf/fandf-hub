@@ -3,7 +3,7 @@ import { currentUserEmail } from "@/lib/appsScript";
 import { crmAccountCandidates } from "@/lib/crmData";
 import { readKeysCached } from "@/lib/keys";
 import { driveFolderOwner } from "@/lib/sa";
-import { getSignedClients } from "@/lib/signedClients";
+import { getSignedClients, getSignedClientsSehel } from "@/lib/signedClients";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +27,10 @@ export const dynamic = "force-dynamic";
  * months. from/to are still accepted and validated for call-site symmetry
  * with the other CRM endpoints, and ignored.
  *
- * BMBY only for now: the journey (`bmby_touches`) has no Sehel or Salesforce
- * equivalent, and a dossier with no journey is most of the point missing.
- * Returns ok:true with an empty list rather than an error for those, so the
- * panel can say why.
+ * BMBY and Sehel. Each writes the sale in its own field and vocabulary, so
+ * each has its own reader; both return the same shape. Salesforce is out —
+ * no journey table and no comparable stage field — and returns ok:true with
+ * an empty list rather than an error, so the panel can say why.
  */
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -103,20 +103,30 @@ export async function GET(req: Request) {
     if (!crmAccount) {
       return NextResponse.json({ ok: true, total: 0, withJourney: 0, clients: [], reason: "no-crm" });
     }
-    if (platform && platform !== "bmby") {
+    // Salesforce alone is out: its CRM tab has no journey table and no stage
+    // field of this shape. Sehel was excluded at first on the belief that
+    // only BMBY carries a journey — wrong, sehel_touches holds 127,765 rows,
+    // more than BMBY's — so it gets its own reader instead.
+    if (platform && platform !== "bmby" && platform !== "sehel") {
       return NextResponse.json({
         ok: true,
         total: 0,
+        opportunities: 0,
         withJourney: 0,
         clients: [],
-        reason: "not-bmby",
+        reason: "unsupported-platform",
         platform,
       });
     }
 
-    const res = await getSignedClients({
-      crmAccounts: crmAccountCandidates(crmAccount),
-    });
+    const res =
+      platform === "sehel"
+        ? await getSignedClientsSehel({
+            crmAccounts: crmAccountCandidates(crmAccount),
+          })
+        : await getSignedClients({
+            crmAccounts: crmAccountCandidates(crmAccount),
+          });
     if (!res) {
       return NextResponse.json({ ok: true, total: 0, withJourney: 0, clients: [], reason: "unavailable" });
     }

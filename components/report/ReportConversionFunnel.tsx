@@ -71,7 +71,7 @@ export default function ReportConversionFunnel({
   return (
     <section className="rpt-conv-funnel">
       <div className="rpt-cf-title">
-        📊 משפך המרה{hasSm ? " — מלא (חשיפות → מכירות)" : ""}
+        📊 משפך המרה{hasSm ? " — מלא (חשיפות ← מכירות)" : ""}
       </div>
       <div className="rpt-cf-bars">
         {rows.map((r, i) => {

@@ -243,7 +243,7 @@ function AdTrend({
   return (
     <div className="rpt-cr-trend" aria-hidden>
       <div className="rpt-cr-trend-head">
-        {title} · {fmtDateHe(from).slice(0, 5)} → {fmtDateHe(to).slice(0, 5)}
+        {title} · {fmtDateHe(from).slice(0, 5)} ← {fmtDateHe(to).slice(0, 5)}
       </div>
       <div className="rpt-cr-trend-row">
         <span style={{ color: "#14b8a6" }}>{fmtILS(totalCost)}</span>

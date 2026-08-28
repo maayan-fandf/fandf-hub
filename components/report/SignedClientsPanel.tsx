@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import ClientDossier, {
+  type DossierClient,
+} from "@/components/report/ClientDossier";
 
 /**
  * The dossier behind the מכירות bar: who signed, what they were buying,
@@ -13,35 +16,7 @@ import { createPortal } from "react-dom";
  * URL by hand gets the same 403 as a stranger.
  */
 
-type Touch = {
-  date: string;
-  type: string;
-  agent: string;
-  content: string;
-  isMeeting: boolean;
-};
-
-type Client = {
-  clientId: string;
-  name: string;
-  phone: string;
-  status: string;
-  stage: string;
-  salesperson: string;
-  source: string;
-  mediaSource: string;
-  dealType: string;
-  rooms: string;
-  notes: string;
-  leadCreated: string;
-  firstTouch: string;
-  lastTouch: string;
-  touchesCount: number;
-  meetingsCount: number;
-  leadsCount: number;
-  objections: string;
-  journey: Touch[];
-};
+type Client = DossierClient;
 
 type Payload = {
   ok: boolean;
@@ -52,23 +27,6 @@ type Payload = {
   platform?: string;
   error?: string;
 };
-
-/** Journey icons by BMBY event type. Same vocabulary the touches table
- *  carries: Task / SMS / LID / Appointment / Comment / Phone / Unknown. */
-const TOUCH_ICON: Record<string, string> = {
-  Task: "✅",
-  SMS: "💬",
-  LID: "🎯",
-  Appointment: "📅",
-  Comment: "📝",
-  Phone: "📞",
-};
-
-function fmtDate(iso: string): string {
-  if (!iso || iso.length < 10) return iso || "—";
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return `${d}/${m}/${y.slice(2)}`;
-}
 
 export default function SignedClientsPanel({
   project,
@@ -152,10 +110,10 @@ export default function SignedClientsPanel({
           </div>
         )}
 
-        {state === "ready" && data?.reason === "not-bmby" && (
+        {state === "ready" && data?.reason === "unsupported-platform" && (
           <div className="sc-note">
-            הפרויקט הזה על {data.platform?.toUpperCase()}. מסע הלקוח קיים רק
-            ב-BMBY, ובלעדיו התיק היה כמעט ריק — לכן הוא לא נפתח כאן.
+            ב-{data.platform?.toUpperCase()} אין שדה שלב מכירה ומסע לקוח בצורה
+            הזו, ולכן התיק לא נפתח כאן.
           </div>
         )}
         {state === "ready" && data?.reason === "no-crm" && (
@@ -217,72 +175,7 @@ export default function SignedClientsPanel({
 
                     {isOpen && (
                       <div className="sc-body">
-                        <dl className="sc-facts">
-                          <div>
-                            <dt>שלב</dt>
-                            <dd>{c.stage || c.status || "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>טלפון</dt>
-                            <dd>{c.phone || "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>מקור הגעה</dt>
-                            <dd>{c.source || c.mediaSource || "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>ליד נכנס</dt>
-                            <dd>{c.leadCreated ? fmtDate(c.leadCreated) : "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>מגע ראשון → אחרון</dt>
-                            <dd>
-                              {c.firstTouch ? fmtDate(c.firstTouch) : "—"} →{" "}
-                              {c.lastTouch ? fmtDate(c.lastTouch) : "—"}
-                            </dd>
-                          </div>
-                          {c.objections && (
-                            <div>
-                              <dt>התנגדות</dt>
-                              <dd>{c.objections}</dd>
-                            </div>
-                          )}
-                          {c.notes && (
-                            <div className="sc-fact-wide">
-                              <dt>הערות</dt>
-                              <dd className="sc-notes">{c.notes}</dd>
-                            </div>
-                          )}
-                        </dl>
-
-                        <div className="sc-journey-title">
-                          מסע לקוח
-                          {c.journey.length > 0 && (
-                            <span className="sc-journey-n">{c.journey.length} אירועים</span>
-                          )}
-                        </div>
-                        {c.journey.length === 0 ? (
-                          <div className="sc-note sc-note-inline">
-                            אין מסע מסונכרן ללקוח הזה — לא אומר שלא היו מגעים.
-                          </div>
-                        ) : (
-                          <ol className="sc-journey">
-                            {c.journey.map((t, i) => (
-                              <li
-                                key={`${t.date}-${i}`}
-                                className={"sc-touch" + (t.isMeeting ? " is-meeting" : "")}
-                              >
-                                <span className="sc-touch-icon" aria-hidden>
-                                  {TOUCH_ICON[t.type] || "•"}
-                                </span>
-                                <span className="sc-touch-date">{fmtDate(t.date)}</span>
-                                <span className="sc-touch-type">{t.type}</span>
-                                <span className="sc-touch-content">{t.content || "—"}</span>
-                                {t.agent && <span className="sc-touch-agent">{t.agent}</span>}
-                              </li>
-                            ))}
-                          </ol>
-                        )}
+                        <ClientDossier client={c} />
                       </div>
                     )}
                   </li>
