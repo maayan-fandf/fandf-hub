@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ChannelIcon from "@/components/ChannelIcon";
 import { channelIcon } from "@/lib/channelIcon";
+import type { UtmTag } from "@/lib/utmTags";
 
 /**
  * One client's file: who they are, which media brought them, and the whole
@@ -41,6 +42,8 @@ export type DossierClient = {
   leadsCount: number;
   objections: string;
   journey: DossierTouch[];
+  /** One array per distinct tag set — see lib/utmTags. */
+  utms?: UtmTag[][];
   salespersonInferred?: boolean;
   saleStage?: "signed" | "opportunity";
   saleLabel?: string;
@@ -114,6 +117,19 @@ function isMediaTouch(t: DossierTouch): boolean {
   return t.type === "LID" || /ליד|פניה|פנייה/.test(t.type);
 }
 
+/** Hover text for one tag: always the full value (the chip clamps at 22ch),
+ *  the parameter it came from, and — when the tag is broken — what went
+ *  wrong, since a reader cannot tell a truncated value from a short one. */
+function utmTitle(t: UtmTag): string {
+  const why =
+    t.brokenKind === "truncated"
+      ? "הערך הגיע חתוך — הדף שלח רק את תחילתו"
+      : t.brokenKind === "placeholder"
+        ? "התגית נשלחה בלי שהערך הוחלף — זה לא שם אמיתי"
+        : "";
+  return [`${t.label}: ${t.value}`, t.param, why].filter(Boolean).join("\n");
+}
+
 export default function ClientDossier({ client }: { client: DossierClient }) {
   const c = client;
   // Which long touches the reader has opened. Desks paste whole marketing
@@ -129,6 +145,7 @@ export default function ClientDossier({ client }: { client: DossierClient }) {
       return next;
     });
   const channels = contributingChannels(c);
+  const utmSets = c.utms ?? [];
   const days =
     c.leadCreated && c.lastTouch
       ? Math.round(
@@ -220,6 +237,45 @@ export default function ClientDossier({ client }: { client: DossierClient }) {
           </div>
         </div>
       )}
+
+      <div className="cd-utms">
+        <div className="cd-sub">
+          תגיות UTM
+          <span className="cd-sub-note">
+            {utmSets.length > 1
+              ? "הליד נכנס דרך יותר מקישור אחד — כל שורה היא כניסה נפרדת"
+              : "מה שהקישור שהביא את הליד נשא"}
+          </span>
+        </div>
+        {utmSets.length === 0 ? (
+          <div className="cd-empty cd-empty-utm">
+            הליד הגיע בלי תגיות UTM — אי אפשר לדעת ממנו איזו מודעה או מילת
+            מפתח הביאה אותו.
+          </div>
+        ) : (
+          utmSets.map((set, si) => (
+            <div className="cd-utm-set" key={si}>
+              {set.map((t) => (
+                <span
+                  key={t.param + t.value}
+                  className={
+                    "cd-utm" + (t.broken ? " is-broken" : "")
+                  }
+                  title={utmTitle(t)}
+                >
+                  <span className="cd-utm-k">{t.label}</span>
+                  <span className="cd-utm-v">{t.value}</span>
+                  {t.broken && (
+                    <span className="cd-utm-warn" aria-hidden>
+                      ⚠
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
 
       <div className="cd-sub cd-sub-journey">
         מסע לקוח

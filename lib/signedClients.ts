@@ -1,5 +1,13 @@
 import { cache } from "react";
 import { supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
+import { getGoogleCampaignNames } from "@/lib/googleCampaignNames";
+import {
+  describeUtms,
+  hasRealUtms,
+  utmKey,
+  type UtmSourceRow,
+  type UtmTag,
+} from "@/lib/utmTags";
 
 /**
  * "Who actually signed?" — the clients behind a project's מכירות number,
@@ -38,6 +46,35 @@ const MAX_TOUCHES = 400;
 
 /** Signed clients per account. Far above any real project's lifetime count. */
 const MAX_CLIENTS = 200;
+
+/** Distinct tag sets for one client — labelling logic lives in lib/utmTags.
+ *
+ *  Deduped because a client who re-entered five times off the same ad has
+ *  five identical rows, and a list repeating one ad five times reads as five
+ *  ads. Capped at three: past that it is a tagging problem, not a journey,
+ *  and the dossier is not where that gets diagnosed.
+ *
+ *  Sets carrying nothing but a platform are dropped ONLY when a richer set
+ *  exists — otherwise "פלטפורמה: Google" alone is still the honest answer. */
+function utmSets(
+  rows: UtmSourceRow[] | undefined,
+  campaignNames: Record<string, string>,
+): UtmTag[][] {
+  if (!rows?.length) return [];
+  const seen = new Set<string>();
+  const all: { tags: UtmTag[]; real: boolean }[] = [];
+  for (const r of rows) {
+    const k = utmKey(r);
+    // All-empty key — every column was blank.
+    if (!k.split("|").some(Boolean)) continue;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const tags = describeUtms(r, campaignNames);
+    if (tags.length) all.push({ tags, real: hasRealUtms(r) });
+  }
+  const real = all.filter((a) => a.real);
+  return (real.length ? real : all).slice(0, 3).map((a) => a.tags);
+}
 
 /**
  * What counts as a sale, and where it is written.
@@ -126,6 +163,10 @@ export type SignedClient = {
    *  that same field carries system actors ("מערכת שכל"). The dossier labels
    *  the two differently rather than passing an inference off as a record. */
   salespersonInferred?: boolean;
+  /** The UTMs that brought this client, labelled per platform — see
+   *  lib/utmTags. One array per DISTINCT tag set: a client who came back
+   *  through a second ad has two. Empty when the lead was never tagged. */
+  utms: UtmTag[][];
   /** Commitment vs the stage before one — see saleStageOf / SEHEL_SIGNED. */
   saleStage: "signed" | "opportunity";
   /** The CRM's own wording for that stage ("חוזה" / "הסכם ראשוני" / "עסקה"),
@@ -255,9 +296,15 @@ export const getSignedClients = cache(
       // renders from the daily row above.
       const leads = new Map<string, LeadRow>();
       const touches = new Map<string, JourneyTouch[]>();
+      // UTMs are NOT on bmby_leads — that table has only the landing URL in
+      // `notes`, and for many clients no row at all (checked: client
+      // 1133957434 has UTMs in the view and nothing in bmby_leads). The
+      // bucketed view is the only per-client source, and it filters on
+      // client_id alone, without the date window the aggregates use.
+      const utms = new Map<string, UtmSourceRow[]>();
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100);
-        const [lr, tr] = await Promise.all([
+        const [lr, tr, ur] = await Promise.all([
           supabaseRowsAll<LeadRow>(
             `bmby_leads?client_id=in.(${inList(chunk)})` +
               `&select=client_id,name,phone_normalized,current_status,stage_name,` +
@@ -271,6 +318,14 @@ export const getSignedClients = cache(
               `&order=event_date.asc`,
             { maxRows: MAX_TOUCHES * chunk.length },
           ).catch(() => [] as TouchRow[]),
+          supabaseRowsAll<UtmSourceRow & { client_id: string | null }>(
+            `v_bmby_leads_bucketed?client_id=in.(${inList(chunk)})` +
+              `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
+              // Earliest first: a client with several leads shows the tags of
+              // the one that FIRST brought them, not the latest re-entry.
+              `&order=lead_created_at.asc`,
+            { maxRows: 500 },
+          ).catch(() => [] as (UtmSourceRow & { client_id: string | null })[]),
         ]);
         for (const r of lr) {
           const id = clean(r.client_id);
@@ -292,8 +347,18 @@ export const getSignedClients = cache(
           });
           touches.set(id, list);
         }
+        for (const r of ur) {
+          const id = clean(r.client_id);
+          if (!id) continue;
+          const list = utms.get(id) ?? [];
+          list.push(r);
+          utms.set(id, list);
+        }
       }
 
+      const campaignNames = await getGoogleCampaignNames().catch(
+        () => ({}) as Record<string, string>,
+      );
       const clients: SignedClient[] = ids.map((id) => {
         const hit = byClient.get(id)!;
         const d = hit.row;
@@ -320,6 +385,7 @@ export const getSignedClients = cache(
           leadCreated: clean(d.lead_created_at).slice(0, 10),
           objections: clean(d.objections),
           journey,
+          utms: utmSets(utms.get(id), campaignNames),
           saleStage: hit.stage,
           // The value that MATCHED, not whichever column was non-empty —
           // see saleStageOf. The tenant's own wording is kept as-is: פסגת
@@ -380,7 +446,7 @@ function cleanSehelContent(raw: unknown, type: string, agent: string): string {
   return v;
 }
 
-type SehelLeadRow = {
+type SehelLeadRow = UtmSourceRow & {
   client_uuid: string | null;
   project_name: string | null;
   name: string | null;
@@ -429,6 +495,7 @@ export const getSignedClientsSehel = cache(
       const rows = await supabaseRowsAll<SehelLeadRow>(
         `sehel_leads_daily?or=(${or})` +
           `&select=client_uuid,project_name,name,phone,stage,media_source_raw,` +
+          `utm_source,utm_medium,utm_campaign,utm_content,utm_term,` +
           `objections,needs_rooms,registered_at&order=registered_at.desc`,
         { maxRows: 20000 },
       );
@@ -436,9 +503,15 @@ export const getSignedClientsSehel = cache(
         string,
         { row: SehelLeadRow; stage: "signed" | "opportunity"; label: string }
       >();
+      const utmRows = new Map<string, UtmSourceRow[]>();
       for (const r of rows) {
         const id = clean(r.client_uuid);
         if (!id) continue;
+        // Before the stage filter — an untagged sale row and a tagged
+        // non-sale row can belong to the same client.
+        const ul = utmRows.get(id) ?? [];
+        ul.push(r);
+        utmRows.set(id, ul);
         const label = sehelStage(r.stage);
         const stage = SEHEL_SIGNED.has(label)
           ? ("signed" as const)
@@ -488,6 +561,9 @@ export const getSignedClientsSehel = cache(
         }
       }
 
+      const campaignNames = await getGoogleCampaignNames().catch(
+        () => ({}) as Record<string, string>,
+      );
       const clients: SignedClient[] = ids.map((id) => {
         const hit = byClient.get(id)!;
         const d = hit.row;
@@ -526,6 +602,7 @@ export const getSignedClientsSehel = cache(
           objections: clean(d.objections),
           journey,
           salespersonInferred: true,
+          utms: utmSets(utmRows.get(id), campaignNames),
           saleStage: hit.stage,
           saleLabel: hit.label,
         };
