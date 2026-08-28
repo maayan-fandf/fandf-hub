@@ -17,6 +17,7 @@ import ReportChannelsTab, {
 } from "@/components/report/ReportChannelsTab";
 import ReportCreativesTab from "@/components/report/ReportCreativesTab";
 import ReportTrendsTab from "@/components/report/ReportTrendsTab";
+import ContractsSection from "@/components/report/ContractsSection";
 
 /**
  * Server assembler for the native project page's vertical-nav rail. Fetches
@@ -416,6 +417,27 @@ export default async function NativeProjectRail({
       label: "התנגדויות ומסע",
       icon: "💬",
       content: objNode,
+    });
+  }
+  // חוזים — what the sales are made of: which channels close, who closes
+  // them, how long it takes. Internal only, and not merely by CSS: the
+  // section fetches customer records from an endpoint that refuses a client
+  // session, so for a client it would render an error rather than a report.
+  // Needs the report window, hence the data guard.
+  if (!clientView && data) {
+    sections.push({
+      id: "contracts",
+      group: "leads",
+      label: "חוזים",
+      icon: "📜",
+      content: (
+        <ContractsSection
+          project={data.project}
+          company={data.company}
+          from={data.window.startIso}
+          to={data.window.endIso}
+        />
+      ),
     });
   }
   if (prisotNode) {

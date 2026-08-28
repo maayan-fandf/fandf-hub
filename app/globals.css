@@ -29727,3 +29727,125 @@ html[data-theme="dark"] {
 }
 .rpt-cr-gcamp-sched { color: #ec4899; }
 .rpt-cr-gcamp-held { color: #f5576c; }
+
+/* ─── חוזים section ─────────────────────────────────────────────────
+   What the project's sales are made of. Internal only — it reads the same
+   customer records the dossier panel opens, from an endpoint that refuses
+   a client session. */
+.ct-wrap { display: grid; gap: 0.8rem; }
+.ct-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+.ct-tile {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  padding: 0.5rem 0.6rem;
+  text-align: center;
+}
+/* The opportunity count is deliberately quieter than the signed one: it is
+   context for the headline, not a second headline. */
+.ct-tile-soft { opacity: 0.78; }
+.ct-tile-v { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ct-tile-l { font-size: 0.7rem; color: var(--ink-soft); margin-top: 0.1rem; }
+.ct-note { margin: 0; font-size: 0.74rem; line-height: 1.6; color: var(--ink-soft); }
+.ct-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.8rem;
+}
+.ct-col {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-alt);
+}
+.ct-col-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.ct-col-legend { font-size: 0.68rem; font-weight: 400; color: var(--ink-soft); }
+.ct-list-title { margin-top: 0.2rem; }
+.ct-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  cursor: help;
+}
+.ct-row-plain { cursor: default; }
+.ct-bar {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, #6366f1 16%, transparent);
+  z-index: 0;
+}
+.ct-row-label {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ct-row-nums {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.ct-row-opp { color: var(--ink-soft); }
+.ct-empty { font-size: 0.76rem; color: var(--ink-soft); padding: 0.2rem 0.35rem; }
+.ct-table-wrap { overflow-x: auto; }
+.ct-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.ct-table th {
+  text-align: start;
+  font-weight: 600;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ct-table td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.ct-table .ct-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-src { display: flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+/* An opportunity is not a sale — it sits in the same table so the pipeline
+   is visible, but reads as secondary. */
+.ct-table tr.is-opp td { opacity: 0.66; }
+.ct-stage {
+  font-size: 0.7rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ct-stage.is-signed { background: color-mix(in srgb, #2bb673 16%, transparent); color: #1a7f4f; }
+.ct-stage.is-opp { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-soft); }
+/* Sample size beside a median. Small and dimmed — it qualifies the number
+   above it rather than competing with it. */
+.ct-tile-n {
+  display: block;
+  font-size: 0.64rem;
+  opacity: 0.72;
+}

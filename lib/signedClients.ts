@@ -39,7 +39,34 @@ const MAX_TOUCHES = 400;
 /** Signed clients per account. Far above any real project's lifetime count. */
 const MAX_CLIENTS = 200;
 
-const CONTRACT_STATUS = "חוזה";
+/**
+ * What counts as a sale, and where it is written.
+ *
+ * BMBY tenants do not agree on the field. Measured across the warehouse
+ * (2026-01 onward): 190 rows mark it as client_status "חוזה" and 84 as
+ * "ברכישה", while a separate 85 sit in the `pipeline` column as "חוזה" and
+ * 50 as "הסכם ראשוני". Checking only client_status — which this did — made
+ * whole projects come back empty: צרפתי's דרימס ארנונה ירושלים has 2,181
+ * leads and not one "חוזה" status, but 8 in a sale pipeline; פסגת זאב,
+ * אורנבך and באר יעקב מערב are the same shape.
+ *
+ * SIGNED vs OPPORTUNITY is kept apart rather than merged. "הסכם ראשוני" is
+ * a commitment; "הזדמנות מכירה" is the stage before one. Counting the
+ * second as a sale would inflate לוריא from 4 to 8, so the panel shows both
+ * and labels which is which.
+ */
+const SIGNED_STATUS = new Set(["חוזה", "ברכישה"]);
+const SIGNED_PIPELINE = new Set(["חוזה", "הסכם ראשוני"]);
+const OPPORTUNITY_PIPELINE = new Set(["הזדמנות מכירה"]);
+
+/** "signed" | "opportunity" | "" (not a sale row at all). */
+function saleStageOf(status: unknown, pipeline: unknown): "" | "signed" | "opportunity" {
+  const st = clean(status);
+  const pl = clean(pipeline);
+  if (SIGNED_STATUS.has(st) || SIGNED_PIPELINE.has(pl)) return "signed";
+  if (OPPORTUNITY_PIPELINE.has(pl)) return "opportunity";
+  return "";
+}
 
 export type JourneyTouch = {
   /** YYYY-MM-DD. */
@@ -86,8 +113,11 @@ export type SignedClient = {
 
 export type SignedClientsResult = {
   clients: SignedClient[];
-  /** How many signed clients the CRM found, before any cap. */
+  /** How many SIGNED clients the CRM found, before any cap. */
   total: number;
+  /** …and how many are only at the opportunity stage. Counted apart so the
+   *  headline number stays "sales" rather than "sales plus maybes". */
+  opportunities: number;
   /** …of which have a synced journey. Rendered as coverage, so a thin
    *  result reads as a sync gap rather than an inactive desk. */
   withJourney: number;
@@ -98,6 +128,7 @@ type DailyRow = {
   client_name: string | null;
   phone: string | null;
   client_status: string | null;
+  pipeline: string | null;
   media_source_clean: string | null;
   salesperson: string | null;
   agent: string | null;
@@ -158,23 +189,40 @@ export const getSignedClients = cache(
       const or = accounts
         .map((a) => `project_name.ilike.${encodeURIComponent(a)}*`)
         .join(",");
+      // Filtered in memory rather than server-side: the sale can sit in
+      // EITHER client_status or pipeline (see saleStageOf), and expressing
+      // "account matches AND (any of five values across two columns)" as
+      // nested PostgREST and=(or(...),or(...)) is exactly the kind of query
+      // that silently matches nothing. The account filter already bounds
+      // this to one project's leads — a few thousand rows at most.
       const daily = await supabaseRowsAll<DailyRow>(
         `bmby_leads_daily?or=(${or})` +
-          `&client_status=eq.${encodeURIComponent(CONTRACT_STATUS)}` +
-          `&select=client_id,client_name,phone,client_status,media_source_clean,` +
-          `salesperson,agent,objections,lead_created_at&order=lead_created_at.desc`,
-        { maxRows: 5000 },
+          `&select=client_id,client_name,phone,client_status,pipeline,` +
+          `media_source_clean,salesperson,agent,objections,lead_created_at` +
+          `&order=lead_created_at.desc`,
+        { maxRows: 20000 },
       );
-      // One entry per client — a client can hold several lead rows.
-      const byClient = new Map<string, DailyRow>();
+      // One entry per client — a client can hold several lead rows, and a
+      // SIGNED row outranks an opportunity one for the same person.
+      const byClient = new Map<string, { row: DailyRow; stage: "signed" | "opportunity" }>();
       for (const r of daily) {
         const id = clean(r.client_id);
-        if (!id || byClient.has(id)) continue;
-        byClient.set(id, r);
+        if (!id) continue;
+        const stage = saleStageOf(r.client_status, r.pipeline);
+        if (!stage) continue;
+        const prev = byClient.get(id);
+        if (prev && !(prev.stage === "opportunity" && stage === "signed")) continue;
+        byClient.set(id, { row: r, stage });
       }
-      const total = byClient.size;
-      if (!total) return { clients: [], total: 0, withJourney: 0 };
-      const ids = [...byClient.keys()].slice(0, MAX_CLIENTS);
+      const signedCount = [...byClient.values()].filter((v) => v.stage === "signed").length;
+      const oppCount = byClient.size - signedCount;
+      if (!byClient.size)
+        return { clients: [], total: 0, opportunities: 0, withJourney: 0 };
+      // Signed first, so the cap never trims a sale in favour of a maybe.
+      const ids = [...byClient.entries()]
+        .sort((a, b) => (a[1].stage === b[1].stage ? 0 : a[1].stage === "signed" ? -1 : 1))
+        .map(([id]) => id)
+        .slice(0, MAX_CLIENTS);
 
       // The richer record + the journey. Both are keyed on the same
       // client_id (verified: identical format across all four bmby tables),
@@ -222,7 +270,8 @@ export const getSignedClients = cache(
       }
 
       const clients: SignedClient[] = ids.map((id) => {
-        const d = byClient.get(id)!;
+        const hit = byClient.get(id)!;
+        const d = hit.row;
         const l = leads.get(id);
         const journey = touches.get(id) ?? [];
         return {
@@ -246,12 +295,18 @@ export const getSignedClients = cache(
           leadCreated: clean(d.lead_created_at).slice(0, 10),
           objections: clean(d.objections),
           journey,
+          saleStage: hit.stage,
+          // The tenant's own wording, not our bucket name — פסגת זאב says
+          // "הסכם ראשוני" where רעננה קנקו says "חוזה", and flattening that
+          // would hide which commitment was actually recorded.
+          saleLabel: clean(d.pipeline) || clean(d.client_status),
         };
       });
 
       return {
         clients,
-        total,
+        total: signedCount,
+        opportunities: oppCount,
         withJourney: clients.filter((c) => c.journey.length > 0).length,
       };
     } catch (e) {
