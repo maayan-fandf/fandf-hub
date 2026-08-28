@@ -107,7 +107,18 @@ export async function GET(req: Request) {
     // field of this shape. Sehel was excluded at first on the belief that
     // only BMBY carries a journey — wrong, sehel_touches holds 127,765 rows,
     // more than BMBY's — so it gets its own reader instead.
-    if (platform && platform !== "bmby" && platform !== "sehel") {
+    // The cell can name MORE THAN ONE platform: חמסה/רייסדור reads
+    // "bmby, sehel" because that project's clients live in both. An equality
+    // check rejected the whole string and the section came back empty on a
+    // project that has data in two places — so the cell is parsed, not
+    // compared.
+    const platforms = platform
+      .split(/[,;/|]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const wantsBmby = platforms.length === 0 || platforms.includes("bmby");
+    const wantsSehel = platforms.includes("sehel");
+    if (!wantsBmby && !wantsSehel) {
       return NextResponse.json({
         ok: true,
         total: 0,
@@ -119,14 +130,27 @@ export async function GET(req: Request) {
       });
     }
 
-    const res =
-      platform === "sehel"
-        ? await getSignedClientsSehel({
-            crmAccounts: crmAccountCandidates(crmAccount),
-          })
-        : await getSignedClients({
-            crmAccounts: crmAccountCandidates(crmAccount),
-          });
+    const accounts = crmAccountCandidates(crmAccount);
+    const parts = (
+      await Promise.all([
+        wantsBmby ? getSignedClients({ crmAccounts: accounts }) : null,
+        wantsSehel ? getSignedClientsSehel({ crmAccounts: accounts }) : null,
+      ])
+    ).filter((x): x is NonNullable<typeof x> => !!x);
+    // Signed first within each reader already; concatenating keeps BMBY's
+    // ahead of Sehel's rather than interleaving two ID formats. The counts
+    // add because the two CRMs hold DIFFERENT clients — a project on both
+    // splits its customers between them, it does not duplicate them.
+    const res = parts.length
+      ? parts.length === 1
+        ? parts[0]
+        : {
+            clients: parts.flatMap((p) => p.clients),
+            total: parts.reduce((n, p) => n + p.total, 0),
+            opportunities: parts.reduce((n, p) => n + p.opportunities, 0),
+            withJourney: parts.reduce((n, p) => n + p.withJourney, 0),
+          }
+      : null;
     if (!res) {
       return NextResponse.json({ ok: true, total: 0, withJourney: 0, clients: [], reason: "unavailable" });
     }
