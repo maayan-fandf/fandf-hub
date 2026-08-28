@@ -127,7 +127,30 @@ export type JourneyTouch = {
   /** Free text the desk typed ("אין מענה"), or the subject line. */
   content: string;
   isMeeting: boolean;
+  /** 1-based position among this journey's LEAD ARRIVALS, set only on
+   *  those touches. Entry 2 onward is a re-entry: the client came back
+   *  through the media a second time rather than being worked continuously.
+   *  Counted off the journey itself, so it is exactly what the timeline
+   *  shows — see BucketedRow for why the warehouse's own is_return_lead is
+   *  not used here. */
+  entryNo?: number;
 };
+
+/** A journey row that is a MEDIA ARRIVAL rather than desk activity: BMBY
+ *  writes "LID", Sehel writes a Hebrew lead event. */
+function isLeadArrival(t: JourneyTouch): boolean {
+  return t.type === "LID" || /ליד|פניה|פנייה/.test(t.type);
+}
+
+/** Number the lead arrivals in place, oldest first. Mutates and returns the
+ *  same array — the journey is already sorted ascending by both readers. */
+function numberLeadEntries(journey: JourneyTouch[]): JourneyTouch[] {
+  let n = 0;
+  for (const t of journey) {
+    if (isLeadArrival(t)) t.entryNo = ++n;
+  }
+  return journey;
+}
 
 export type SignedClient = {
   clientId: string;
@@ -197,6 +220,23 @@ type DailyRow = {
   agent: string | null;
   objections: string | null;
   lead_created_at: string | null;
+};
+
+/** The bucketed view, read per client for the UTMs — the only per-client
+ *  source for them, since bmby_leads has no utm columns at all.
+ *
+ *  Its `is_return_lead` is deliberately NOT read here, though it looks like
+ *  the obvious way to mark a returning lead. The view starts at 2024-01-01
+ *  while bmby_touches reaches back to 2019-03-08, so for any client whose
+ *  first arrival predates 2024 the view's earliest row is already a
+ *  re-entry and is flagged as one: 54 of רובע איילון's 62 signed clients
+ *  come back true, several with a 2020 first entry visible in the timeline.
+ *  Marking those "known before the journey" would contradict the journey
+ *  printed directly above it. Entry numbering answers the question from the
+ *  touches themselves; the flag's honest home is the funnel's
+ *  לידים חוזרים split, which already uses it. */
+type BucketedRow = UtmSourceRow & {
+  client_id: string | null;
 };
 
 type LeadRow = {
@@ -301,7 +341,7 @@ export const getSignedClients = cache(
       // 1133957434 has UTMs in the view and nothing in bmby_leads). The
       // bucketed view is the only per-client source, and it filters on
       // client_id alone, without the date window the aggregates use.
-      const utms = new Map<string, UtmSourceRow[]>();
+      const utms = new Map<string, BucketedRow[]>();
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100);
         const [lr, tr, ur] = await Promise.all([
@@ -318,14 +358,14 @@ export const getSignedClients = cache(
               `&order=event_date.asc`,
             { maxRows: MAX_TOUCHES * chunk.length },
           ).catch(() => [] as TouchRow[]),
-          supabaseRowsAll<UtmSourceRow & { client_id: string | null }>(
+          supabaseRowsAll<BucketedRow>(
             `v_bmby_leads_bucketed?client_id=in.(${inList(chunk)})` +
               `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
               // Earliest first: a client with several leads shows the tags of
               // the one that FIRST brought them, not the latest re-entry.
               `&order=lead_created_at.asc`,
             { maxRows: 500 },
-          ).catch(() => [] as (UtmSourceRow & { client_id: string | null })[]),
+          ).catch(() => [] as BucketedRow[]),
         ]);
         for (const r of lr) {
           const id = clean(r.client_id);
@@ -384,7 +424,7 @@ export const getSignedClients = cache(
           leadsCount: Number(l?.lids_count ?? 0) || 0,
           leadCreated: clean(d.lead_created_at).slice(0, 10),
           objections: clean(d.objections),
-          journey,
+          journey: numberLeadEntries(journey),
           utms: utmSets(utms.get(id), campaignNames),
           saleStage: hit.stage,
           // The value that MATCHED, not whichever column was non-empty —
@@ -600,7 +640,7 @@ export const getSignedClientsSehel = cache(
           meetingsCount: meetings,
           leadsCount: 0,
           objections: clean(d.objections),
-          journey,
+          journey: numberLeadEntries(journey),
           salespersonInferred: true,
           utms: utmSets(utmRows.get(id), campaignNames),
           saleStage: hit.stage,

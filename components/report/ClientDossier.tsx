@@ -20,6 +20,9 @@ export type DossierTouch = {
   agent: string;
   content: string;
   isMeeting: boolean;
+  /** 1-based position among this journey's lead arrivals — see
+   *  numberLeadEntries in lib/signedClients. 2+ is a re-entry. */
+  entryNo?: number;
 };
 
 export type DossierClient = {
@@ -114,6 +117,7 @@ function contributingChannels(c: DossierClient): {
  *  a BMBY "LID" or a Sehel lead event. These are the rungs the channel strip
  *  above is built from, so they are marked in the timeline too. */
 function isMediaTouch(t: DossierTouch): boolean {
+  if (t.entryNo) return true;
   return t.type === "LID" || /ליד|פניה|פנייה/.test(t.type);
 }
 
@@ -146,6 +150,10 @@ export default function ClientDossier({ client }: { client: DossierClient }) {
     });
   const channels = contributingChannels(c);
   const utmSets = c.utms ?? [];
+  const entries = c.journey.reduce(
+    (m, t) => (t.entryNo && t.entryNo > m ? t.entryNo : m),
+    0,
+  );
   const days =
     c.leadCreated && c.lastTouch
       ? Math.round(
@@ -282,6 +290,7 @@ export default function ClientDossier({ client }: { client: DossierClient }) {
         {c.journey.length > 0 && (
           <span className="cd-sub-note">
             {c.journey.length} אירועים · {c.meetingsCount || 0} פגישות
+            {entries > 1 && ` · ${entries} כניסות כליד`}
           </span>
         )}
       </div>
@@ -304,6 +313,20 @@ export default function ClientDossier({ client }: { client: DossierClient }) {
                 {touchIcon(t)}
               </span>
               <span className="cd-touch-date">{fmtDate(t.date)}</span>
+              {t.entryNo && (
+                <span
+                  className={
+                    "cd-entry" + (t.entryNo > 1 ? " is-return" : "")
+                  }
+                  title={
+                    t.entryNo > 1
+                      ? `כניסה ${t.entryNo} — הלקוח חזר דרך המדיה בפעם נוספת`
+                      : "הכניסה הראשונה שמופיעה במסע"
+                  }
+                >
+                  {t.entryNo > 1 ? `ליד חוזר · ${t.entryNo}` : "ליד ראשון"}
+                </span>
+              )}
               {/* "Unknown" is BMBY's own label for an untyped touch. Shown,
                   because hiding it would leave an unexplained gap in the
                   timeline, but dimmed — it carries no information. */}

@@ -30003,3 +30003,41 @@ html[data-theme="dark"] {
 }
 .cd-utm-warn { color: #b45309; font-size: 0.85em; }
 .cd-empty-utm { margin-top: 0.3rem; }
+
+/* ── Lead entries in the journey ──────────────────────────────────────────
+   A client who came back through the media has more than one arrival, and
+   in a 19-row timeline the repeat is invisible without a marker. The badge
+   names the entry number so "came back twice" is countable, not inferred
+   from spotting two 🎯 icons.
+
+   The first entry is deliberately quiet — it is the baseline, not news. */
+.cd-entry {
+  flex: none;
+  font-size: 0.63rem;
+  font-weight: 600;
+  padding: 0.05rem 0.32rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: help;
+  background: color-mix(in srgb, #6366f1 16%, transparent);
+  color: color-mix(in srgb, #4338ca 92%, var(--ink));
+}
+/* A return is the finding — amber separates it from the indigo the media
+   rows already use, so it reads as "look here" rather than "more of the
+   same channel". */
+.cd-entry.is-return {
+  background: color-mix(in srgb, #f59e0b 20%, transparent);
+  color: color-mix(in srgb, #92400e 92%, var(--ink));
+}
+.cd-touch.is-media:has(.cd-entry.is-return) {
+  background: color-mix(in srgb, #f59e0b 9%, transparent);
+}
+.cd-known-before {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  border-inline-start: 2px solid color-mix(in srgb, #f59e0b 45%, transparent);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 0.35rem;
+}
