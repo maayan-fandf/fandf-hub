@@ -139,6 +139,7 @@ export async function POST(req: Request) {
   const { subject, plainBody, htmlBody } = buildPrisaApprovalEmail({
     fileName,
     projectName,
+    company,
     senderEmail: email,
     message,
     approveUrl: `${base}/approve/${token}`,

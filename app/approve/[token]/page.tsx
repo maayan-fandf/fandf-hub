@@ -5,7 +5,7 @@ import {
   type PrisotData,
 } from "@/lib/driveFolders";
 import { driveFolderOwner } from "@/lib/sa";
-import { GENERAL_PROJECT_NAME, projectHref } from "@/lib/projectHref";
+import { projectHref, projectLabel } from "@/lib/projectHref";
 import PrisotDataTable from "@/components/PrisotDataTable";
 import PrisaTokenActions from "@/components/PrisaTokenActions";
 import {
@@ -279,13 +279,7 @@ function Meta({
   fileName: string;
 }) {
   const sender = request.sentBy.split("@")[0] || "הצוות";
-  // "כללי" is one project per company, so on its own it names nothing the
-  // recipient can recognise — every company has one. Everywhere else the
-  // project name is unique and the company would just be noise.
-  const label =
-    request.projectName === GENERAL_PROJECT_NAME && request.company
-      ? `${request.projectName} · ${request.company}`
-      : request.projectName;
+  const label = projectLabel(request.projectName, request.company);
   return (
     <p className="prisa-approve-meta">
       {label && <b>{label}</b>}

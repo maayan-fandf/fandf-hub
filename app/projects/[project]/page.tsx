@@ -320,6 +320,18 @@ export default async function ProjectOverviewPage({
   // Drive they can't open). Staff still get the project root.
   let clientSharedFolderUrl: string | null = null;
   const projectClientEmails = projectMeta?.roster?.clientEmails ?? [];
+  // The F&F side of the roster that a client already deals with: the
+  // Keys "Client-facing" column plus the two managers whose names are
+  // on every call. Offered — never pre-selected — as recipients when a
+  // פריסה goes out for approval, since the team is routinely copied and
+  // was being typed in by hand. Names here, not emails (Keys stores
+  // People chips); LatestPrisotCard resolves them against the people
+  // directory it already has.
+  const projectTeamNames = [
+    ...(projectMeta?.roster?.clientFacing ?? []),
+    projectMeta?.roster?.mediaManager ?? "",
+    projectMeta?.roster?.projectManagerFull ?? "",
+  ].filter(Boolean);
   if (projectMeta && companyForDashboard) {
     try {
       const { ensureProjectSharedFolder } = await import(
@@ -796,6 +808,7 @@ export default async function ProjectOverviewPage({
         company={companyForDashboard}
         project={projectName}
         clientEmails={projectClientEmails}
+        teamNames={projectTeamNames}
         people={peopleData?.ok ? peopleData.people : []}
         isClientUser={isClientUser}
       />

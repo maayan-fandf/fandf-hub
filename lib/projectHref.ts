@@ -25,6 +25,21 @@
  */
 export const GENERAL_PROJECT_NAME = "כללי";
 
+/**
+ * How to NAME a project to someone reading it cold — an approval email,
+ * the login-free approve page, anywhere the reader has no other context.
+ *
+ * Same collision rule as the href below, for the same reason: every
+ * company has a כללי, so on its own it identifies nothing. Everywhere
+ * else the project name is unique and the company beside it is noise.
+ */
+export function projectLabel(projectName: string, company: string): string {
+  if (projectName === GENERAL_PROJECT_NAME && company) {
+    return `${projectName} · ${company}`;
+  }
+  return projectName;
+}
+
 export function projectHref(
   projectName: string,
   company: string,

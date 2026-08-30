@@ -11,7 +11,7 @@ import RequestChangesButton from "./RequestChangesButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
 import { getPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 import { ensurePrisaClientAccess } from "@/lib/driveClientAccess";
-import { personDisplayName } from "@/lib/personDisplay";
+import { displayNameOf, personDisplayName } from "@/lib/personDisplay";
 import type { TasksPerson } from "@/lib/appsScript";
 
 /**
@@ -36,6 +36,7 @@ export default async function LatestPrisotCard({
   company,
   project,
   clientEmails = [],
+  teamNames = [],
   people = [],
   isClientUser = false,
 }: {
@@ -47,6 +48,11 @@ export default async function LatestPrisotCard({
    *  no active approval. Empty array → button still renders but the
    *  user has to type the approver email manually. */
   clientEmails?: string[];
+  /** F&F names from the project's Keys row (col K "Client-facing" plus
+   *  the campaign + account managers) — offered as extra recipients in
+   *  the send-for-approval dialog. Names, not emails: Keys holds People
+   *  chips, and `people` below is what turns them into addresses. */
+  teamNames?: string[];
   /** People roster — used to resolve reviewer email addresses on the
    *  approval chip ("✓ אושר ע״י <Hebrew name>"). Falls back to email
    *  local-part when the person isn't in the roster (typical for
@@ -92,6 +98,8 @@ export default async function LatestPrisotCard({
       clientEmails,
     ).catch(() => {});
   }
+
+  const teamRecipients = resolveTeamRecipients(teamNames, people, clientEmails);
 
   const isImage = latest.mimeType.startsWith("image/");
   const isSheet =
@@ -272,6 +280,7 @@ export default async function LatestPrisotCard({
                   project={project}
                   company={company}
                   suggestedClients={clientEmails}
+                  suggestedTeam={teamRecipients}
                   resend
                 />
               </>
@@ -310,6 +319,7 @@ export default async function LatestPrisotCard({
                   project={project}
                   company={company}
                   suggestedClients={clientEmails}
+                  suggestedTeam={teamRecipients}
                   resend
                 />
               </>
@@ -330,6 +340,7 @@ export default async function LatestPrisotCard({
                 project={project}
                 company={company}
                 suggestedClients={clientEmails}
+                  suggestedTeam={teamRecipients}
               />
             </>
           )}
@@ -479,4 +490,44 @@ function formatRelativeHe(iso: string): string {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
+/**
+ * Keys roster names → mailable recipients, using the people directory the
+ * card already holds. Names that nobody in the directory answers to are
+ * dropped rather than guessed at — a wrong address on an approval mail is
+ * worse than a missing checkbox — and anyone already on the client list is
+ * skipped so the same person can't appear in both groups. A cell that
+ * already holds an address (col J mixes the two) passes through as-is.
+ */
+function resolveTeamRecipients(
+  names: readonly string[],
+  people: TasksPerson[],
+  clientEmails: readonly string[],
+): { email: string; label: string }[] {
+  const taken = new Set(
+    clientEmails.map((e) => String(e).toLowerCase().trim()).filter(Boolean),
+  );
+  const byName = new Map<string, TasksPerson>();
+  for (const p of people) {
+    for (const n of [p.name, p.he_name]) {
+      const k = String(n ?? "").toLowerCase().trim();
+      if (k && !byName.has(k)) byName.set(k, p);
+    }
+  }
+  const out: { email: string; label: string }[] = [];
+  for (const raw of names) {
+    const token = String(raw ?? "").trim();
+    if (!token) continue;
+    const person = token.includes("@")
+      ? people.find((p) => p.email.toLowerCase() === token.toLowerCase())
+      : byName.get(token.toLowerCase());
+    const email = (person?.email || (token.includes("@") ? token : ""))
+      .toLowerCase()
+      .trim();
+    if (!email || taken.has(email)) continue;
+    taken.add(email);
+    out.push({ email, label: person ? displayNameOf(person) : email });
+  }
+  return out;
 }

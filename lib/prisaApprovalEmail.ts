@@ -15,6 +15,8 @@
  * maayan reported 2026-05-12).
  */
 
+import { projectLabel } from "@/lib/projectHref";
+
 function esc(s: string): string {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -27,6 +29,9 @@ export function buildPrisaApprovalEmail(opts: {
   /** Drive file name of the plan. */
   fileName: string;
   projectName: string;
+  /** Owning company. Only reaches the reader for a כללי project, where
+   *  the project name alone identifies nothing — see projectLabel. */
+  company?: string;
   /** Internal sender — used for the "X שלח/ה לך" line. */
   senderEmail: string;
   /** Free-text the sender typed into the dialog. Optional. */
@@ -37,7 +42,7 @@ export function buildPrisaApprovalEmail(opts: {
   expiresAt: string;
 }): { subject: string; plainBody: string; htmlBody: string } {
   const sender = opts.senderEmail.split("@")[0] || "הצוות";
-  const project = opts.projectName || "";
+  const project = projectLabel(opts.projectName || "", opts.company || "");
   const subject = `📐 פריסה שיווקית לאישורכם — ${project || opts.fileName}`;
   const expiry = formatDateHe(opts.expiresAt);
   const note = (opts.message || "").trim();

@@ -35,6 +35,7 @@ export default function SendForApprovalButton({
   project,
   company,
   suggestedClients,
+  suggestedTeam = [],
   resend = false,
 }: {
   fileId: string;
@@ -49,6 +50,11 @@ export default function SendForApprovalButton({
   project: string;
   company: string;
   suggestedClients: string[];
+  /** F&F people the client already deals with — Keys col K plus the two
+   *  managers, resolved to addresses by LatestPrisotCard. Listed under
+   *  the clients, unchecked like them, because copying the team is
+   *  common but never the default. */
+  suggestedTeam?: { email: string; label: string }[];
   /** True when an approval is already in flight — relabels the button so
    *  it reads as "send again" rather than a duplicate first send. Sending
    *  overwrites the open request and supersedes its links. */
@@ -179,9 +185,14 @@ export default function SendForApprovalButton({
     }
   }
 
-  const extras = [...selected].filter(
-    (e) => !suggestedClients.map((s) => s.toLowerCase().trim()).includes(e),
-  );
+  // Anything the user typed in — i.e. selected addresses that neither
+  // list already renders a row for. Without the team here too, checking
+  // a teammate would draw them a second time under "נמענים נוספים".
+  const listed = new Set([
+    ...suggestedClients.map((s) => s.toLowerCase().trim()),
+    ...suggestedTeam.map((t) => t.email.toLowerCase().trim()),
+  ]);
+  const extras = [...selected].filter((e) => !listed.has(e));
 
   // A typed-but-not-yet-added address counts toward "has a recipient".
   // onSubmit folds it into the set anyway (see the auto-promote there), and
@@ -253,6 +264,33 @@ export default function SendForApprovalButton({
                       </li>
                     );
                   })}
+                </ul>
+              </div>
+            )}
+            {/* F&F side, under the clients: the people already on the
+                account. Same unchecked-by-default rule — the team is
+                copied often enough to be worth one click, not often
+                enough to be the default. */}
+            {suggestedTeam.length > 0 && (
+              <div className="send-approval-section">
+                <div className="send-approval-section-label">צוות F&amp;F</div>
+                <ul className="send-approval-list">
+                  {suggestedTeam.map((person) => (
+                    <li key={person.email}>
+                      <label className="send-approval-row">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(person.email)}
+                          onChange={() => toggleEmail(person.email)}
+                          disabled={submitting}
+                        />
+                        <span>{person.label}</span>
+                        <span className="send-approval-row-email" dir="ltr">
+                          {person.email}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
