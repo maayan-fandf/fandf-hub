@@ -23,14 +23,24 @@
  * when this helper is imported by a client component (TasksQueue
  * hit this on the 2026-05-01 build).
  */
-const GENERAL_PROJECT_NAME = "כללי";
+export const GENERAL_PROJECT_NAME = "כללי";
 
-export function projectHref(projectName: string, company: string): string {
+export function projectHref(
+  projectName: string,
+  company: string,
+  /** Rail section to open on arrival (`?section=`), e.g. "prisot" from
+   *  the emailed פריסה approval page — landing on the plans instead of
+   *  the report's default section. Omitted for a plain project link. */
+  section?: string,
+): string {
   const path = `/projects/${encodeURIComponent(projectName)}`;
-  if (!company) return path;
+  const qs: string[] = [];
   // Only append `?company=...` when the name is ambiguous. כללי is the
   // only collision in practice today; other projects are unique by
   // name and adding the param everywhere would just clutter URLs.
-  if (projectName !== GENERAL_PROJECT_NAME) return path;
-  return `${path}?company=${encodeURIComponent(company)}`;
+  if (company && projectName === GENERAL_PROJECT_NAME) {
+    qs.push(`company=${encodeURIComponent(company)}`);
+  }
+  if (section) qs.push(`section=${encodeURIComponent(section)}`);
+  return qs.length ? `${path}?${qs.join("&")}` : path;
 }

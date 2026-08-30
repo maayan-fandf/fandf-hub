@@ -5,7 +5,7 @@ import {
   type PrisotData,
 } from "@/lib/driveFolders";
 import { driveFolderOwner } from "@/lib/sa";
-import { projectHref } from "@/lib/projectHref";
+import { GENERAL_PROJECT_NAME, projectHref } from "@/lib/projectHref";
 import PrisotDataTable from "@/components/PrisotDataTable";
 import PrisaTokenActions from "@/components/PrisaTokenActions";
 import {
@@ -99,7 +99,10 @@ export default async function ApprovePage({
     );
   }
 
-  const href = projectHref(request.projectName, request.company);
+  // Straight to the פריסות section: this page IS a plan, so the visitor
+  // who signs in is coming to look at plans, not at the report's default
+  // section.
+  const href = projectHref(request.projectName, request.company, "prisot");
 
   if (request.resolution === "approved") {
     return (
@@ -256,7 +259,7 @@ function Preview({
 async function hrefForFile(fileId: string): Promise<string | undefined> {
   const req = await getPrisaApprovalRequest(fileId);
   if (!req?.projectName) return undefined;
-  return projectHref(req.projectName, req.company);
+  return projectHref(req.projectName, req.company, "prisot");
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -276,10 +279,17 @@ function Meta({
   fileName: string;
 }) {
   const sender = request.sentBy.split("@")[0] || "הצוות";
+  // "כללי" is one project per company, so on its own it names nothing the
+  // recipient can recognise — every company has one. Everywhere else the
+  // project name is unique and the company would just be noise.
+  const label =
+    request.projectName === GENERAL_PROJECT_NAME && request.company
+      ? `${request.projectName} · ${request.company}`
+      : request.projectName;
   return (
     <p className="prisa-approve-meta">
-      {request.projectName && <b>{request.projectName}</b>}
-      {request.projectName && " · "}
+      {label && <b>{label}</b>}
+      {label && " · "}
       {fileName}
       <br />
       <span className="prisa-approve-meta-dim">
