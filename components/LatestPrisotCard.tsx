@@ -12,6 +12,7 @@ import GoogleDriveIcon from "./GoogleDriveIcon";
 import { getPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 import { ensurePrisaClientAccess } from "@/lib/driveClientAccess";
 import { displayNameOf, personDisplayName } from "@/lib/personDisplay";
+import { projectHref } from "@/lib/projectHref";
 import type { TasksPerson } from "@/lib/appsScript";
 
 /**
@@ -340,7 +341,10 @@ export default async function LatestPrisotCard({
                 project={project}
                 company={company}
                 suggestedClients={clientEmails}
-                  suggestedTeam={teamRecipients}
+                suggestedTeam={teamRecipients}
+                // After a change request this IS a re-send — the label says
+                // so, and the dialog warns that the earlier links expire.
+                resend={!!changeRequest}
               />
             </>
           )}
@@ -406,6 +410,40 @@ export default async function LatestPrisotCard({
           </a>
         </div>
       </div>
+      {/* WHAT was asked for, not just that something was. The note is
+          already stored with the request and posted into the project's
+          discussion, but the header chip only carried the date — so the one
+          thing you need in order to act on it was a hover away at best.
+          Shown to the client too: it is their own words, and seeing them
+          recorded is how they know the request landed. */}
+      {changeRequest && latest.approvalState !== "approved" && (
+        <div className="prisot-change-note">
+          <div className="prisot-change-note-head">
+            🔄 שינויים שהתבקשו
+            <span className="prisot-change-note-by">
+              {personDisplayName(changeRequest.requestedBy, people) ||
+                changeRequest.requestedBy}{" "}
+              · {formatRelativeHe(changeRequest.requestedAt)}
+            </span>
+            {!clientMode && (
+              <Link
+                className="prisot-change-note-link"
+                href={projectHref(project, company, "tasks")}
+                title="הבקשה נשלחה גם לדיון של הפרויקט"
+              >
+                לדיון ↗
+              </Link>
+            )}
+          </div>
+          {changeRequest.note ? (
+            <p className="prisot-change-note-body">{changeRequest.note}</p>
+          ) : (
+            <p className="prisot-change-note-body prisot-change-note-empty">
+              הבקשה נרשמה בלי טקסט — כדאי לבדוק בדיון של הפרויקט.
+            </p>
+          )}
+        </div>
+      )}
       {(() => {
         const cardInner = (
           <>
