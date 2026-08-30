@@ -209,14 +209,55 @@ const ROOMS_RANGE_RE = /(\d+)\s*[-–—־]\s*(\d+)\s*חד['׳ר]?/g;
  *  spans the whole pattern and shouldn't be interpreted as a single
  *  "5 חד'" tag for any specific price. Yad2 marketing headlines
  *  routinely use this: "דירות 3,4,5 חד' ופנטהאוזים החל מ-2,420,000"
- *  where ₪2.42M is the 3-room (not 5-room) starting price. */
-const ROOMS_LIST_RE = /(\d+(?:\s*[,،]\s*\d+){1,})\s*חד['׳ר]?/g;
+ *  where ₪2.42M is the 3-room (not 5-room) starting price.
+ *
+ *  The separator accepts the Hebrew conjunction as well as the comma,
+ *  because copywriters write the last item as prose: נופרים פסגת זאב
+ *  advertises "מגוון דירות 4,3, ו-5 חד' … החל מ – 2,450,000". With a
+ *  comma-only separator that list didn't match, no exclusion span was
+ *  recorded, and ROOMS_SINGLE_RE tagged the headline "5 חד׳" — so the
+ *  project's 3-room starting price was compared against Yad2's real
+ *  5-room price and reported a 30.6% gap that does not exist.
+ *  (Maayan, 2026-08-30.) At least one comma or vav is required between
+ *  numbers; two bare integers ("116 5 חד׳") are not a list. */
+const ROOMS_LIST_RE =
+  /(\d+(?:\s*(?:[,،]\s*(?:ו\s*[-–—־]?\s*)?|ו\s*[-–—־]?\s*)\d+){1,})\s*חד['׳ר]?/g;
 const ROOMS_SINGLE_RE = /(?<!\d)(\d+)\s*חד['׳ר]?/g;
+/**
+ * Card-layout room tag — the bullet form Yad2 renders AFTER the price.
+ *
+ * Yad2's sponsored units section ships in TWO layouts and switches
+ * between them from load to load (both observed on נופרים פסגת זאב,
+ * 2026-08-30, same URL, minutes apart):
+ *
+ *   table → "דירה חדרים: 3 שטח: קומה: החל מ- 2,450,000 ₪ דירה חדרים: 4 …"
+ *   card  → "כל הדירות 3 חד' 4 חד' 5 חד'   דירה החל מ- 2,450,000 ₪
+ *            דירה • 3 חד' מרפסת שמש • ממ״ד • חניה   דירה החל מ- 2,770,000 …"
+ *
+ * A back-window-only reader is right on the first and off by one on the
+ * second: ₪2,450,000 takes "5 חד׳" off the LAST filter chip above it,
+ * ₪2,770,000 takes the "3 חד׳" that belongs to the card before it, and
+ * so on down the table. That rotation is what makes a nightly scrape a
+ * coin flip — and a rotated Yad2 row is a per-room comparison against
+ * the wrong room on every other surface.
+ *
+ * So: when a bullet-delimited room tag sits within
+ * ROOMS_FORWARD_WINDOW chars after the price, it labels THIS price.
+ * The bullet is what keeps the two layouts apart — the table form
+ * writes "חדרים: N" and never "• N חד׳", so this pass cannot fire on
+ * the layout the back window already reads correctly.
+ */
+const ROOMS_CARD_RE = /[•·]\s*(\d+)\s*חד['׳ר]?/;
+const ROOMS_FORWARD_WINDOW = 30;
 const PENTHOUSE_KW_RE = /(?:פנטהאוז|דופלקס|גג\s*דירה|מיני\s*פנט|גג\b)/;
 
 function findRoomLabel(
   text: string,
   priceIdx: number,
+  /** Char offset just past the price's digits — the start of the
+   *  forward window. Defaults to `priceIdx` for callers that only
+   *  want the back-window behaviour. */
+  priceEndIdx: number = priceIdx,
 ): {
   rooms: number | null;
   roomsLabel: string;
@@ -267,7 +308,11 @@ function findRoomLabel(
       if (m.index >= bestIdx) {
         bestIdx = m.index;
         rooms = null;
-        label = `${m[1].replace(/\s*,\s*/g, ",")} חד׳`;
+        // Normalised to the sorted set of room counts rather than the
+        // literal, so "4,3, ו-5" and "3,4,5" read — and compare — as
+        // the same typology list instead of two different labels.
+        const nums = (m[1].match(/\d+/g) ?? []).map(Number);
+        label = `${[...new Set(nums)].sort((a, b) => a - b).join(",")} חד׳`;
         bestSource = "list";
       }
     }
@@ -302,6 +347,23 @@ function findRoomLabel(
       bestIdx = m.index;
       rooms = Number(m[1]);
       label = `${m[1]} חד׳`;
+      bestSource = "single";
+    }
+  }
+
+  // Forward pass — the card layout's "• N חד׳" tag, which follows its
+  // price instead of preceding it. It beats anything the back window
+  // found, because on that layout the back window can only be reading
+  // the previous card or the filter chips. The table form is left
+  // alone: it is the layout where the label genuinely comes first, and
+  // it never carries the bullet.
+  if (bestSource !== "table") {
+    const fwd = ROOMS_CARD_RE.exec(
+      text.slice(priceEndIdx, priceEndIdx + ROOMS_FORWARD_WINDOW),
+    );
+    if (fwd) {
+      rooms = Number(fwd[1]);
+      label = `${fwd[1]} חד׳`;
       bestSource = "single";
     }
   }
@@ -412,7 +474,11 @@ export function extractPrices(text: string): DetectedPrice[] {
       const wide = text.slice(Math.max(0, m.index - ANTI_ANCHOR_WINDOW), m.index);
       if (ANTI_ANCHOR_RE.test(wide)) anchored = false;
     }
-    const { rooms, roomsLabel, source } = findRoomLabel(text, m.index);
+    const { rooms, roomsLabel, source } = findRoomLabel(
+      text,
+      m.index,
+      re.lastIndex,
+    );
     const existingIdx = byValue.get(value);
     if (existingIdx !== undefined) {
       // Same value seen earlier. If THIS occurrence is anchored and
