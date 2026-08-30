@@ -138,6 +138,18 @@ export type JourneyTouch = {
    *  shows — see BucketedRow for why the warehouse's own is_return_lead is
    *  not used here. */
   entryNo?: number;
+  /** The channel THIS arrival came through ("facebook", "google-seach",
+   *  "yad2", "מיניסייט…"). Both CRMs record it on the arrival row itself —
+   *  BMBY in the touch's `subject`, Sehel in its `source` — so it needs no
+   *  join and is present on essentially every lead event. Only set on lead
+   *  arrivals. See attachEntrySources. */
+  entrySource?: string;
+  /** …and the tags that arrival carried, when they can be tied to it. Sehel
+   *  writes them onto the touch; BMBY keeps them on the lead row and has to
+   *  be matched back (see attachEntryUtms), so this is present less often
+   *  than entrySource. Absent means "not known for this entry", never "no
+   *  tags" — the client-level list above still stands. */
+  entryUtms?: UtmTag[];
 };
 
 /** A journey row that is a MEDIA ARRIVAL rather than desk activity: BMBY
@@ -152,6 +164,76 @@ function numberLeadEntries(journey: JourneyTouch[]): JourneyTouch[] {
   let n = 0;
   for (const t of journey) {
     if (isLeadArrival(t)) t.entryNo = ++n;
+  }
+  return journey;
+}
+
+/**
+ * Tie each BMBY lead arrival to the lead ROW that created it, so the entry
+ * can show the tags that arrival carried rather than the client's whole
+ * pile of them.
+ *
+ * There is no key to join on. `bmby_touches.lead_id` is a hash
+ * ("0a8cf93c30bd65f2") while the lead row's is the numeric BMBY id
+ * (33715441) — different identifiers for the same lead, and nothing in the
+ * warehouse bridges them. What DOES line up is the day and the channel: the
+ * touch's `subject` is the source verbatim ("facebook", "google-seach",
+ * "yad2", "מיניסייט באר יעקב מערב") and matches the row's
+ * `media_source_clean`, and the arrival is recorded on the day the lead was
+ * created. So: same day AND same source is the match; same day with only
+ * one candidate is accepted too; anything else is left unmatched.
+ *
+ * Measured over three accounts (2026-08-30): באר יעקב מערב 81.8% of lead
+ * arrivals matched, יהוד 315 85.4%, רובע איילון 60.6%. The bulk of the miss
+ * is arrivals with no lead row on that day at all — bmby_leads_daily does
+ * not reach as far back as bmby_touches — so an unmatched entry keeps its
+ * source (which comes off the touch) and simply shows no tags. Guessing at
+ * a neighbouring row would put the wrong ad against a real sale.
+ */
+function attachSehelEntry(
+  journey: JourneyTouch[],
+  rows: SehelTouchRow[] | undefined,
+  campaignNames: Record<string, string>,
+): JourneyTouch[] {
+  if (!rows?.length) return journey;
+  for (let i = 0; i < journey.length; i++) {
+    const t = journey[i];
+    const r = rows[i];
+    if (!t.entryNo || !r) continue;
+    const source = clean(r.source);
+    if (source) t.entrySource = source;
+    if (!hasRealUtms(r)) continue;
+    const tags = describeUtms(r, campaignNames);
+    if (tags.length) t.entryUtms = tags;
+  }
+  return journey;
+}
+
+function attachEntryUtms(
+  journey: JourneyTouch[],
+  rows: BucketedRow[] | undefined,
+  campaignNames: Record<string, string>,
+): JourneyTouch[] {
+  if (!rows?.length) return journey;
+  const norm = (v: unknown) => clean(v).toLowerCase();
+  for (const t of journey) {
+    if (!t.entryNo) continue;
+    const sameDay = rows.filter(
+      (r) => clean(r.lead_created_at).slice(0, 10) === t.date,
+    );
+    if (!sameDay.length) continue;
+    const bySource = sameDay.filter(
+      (r) => norm(r.media_source_clean) === norm(t.entrySource),
+    );
+    const hit =
+      bySource.length === 1
+        ? bySource[0]
+        : sameDay.length === 1
+          ? sameDay[0]
+          : null;
+    if (!hit || !hasRealUtms(hit)) continue;
+    const tags = describeUtms(hit, campaignNames);
+    if (tags.length) t.entryUtms = tags;
   }
   return journey;
 }
@@ -241,6 +323,10 @@ type DailyRow = {
  *  לידים חוזרים split, which already uses it. */
 type BucketedRow = UtmSourceRow & {
   client_id: string | null;
+  /** Both only for tying a row back to ONE arrival in the journey — see
+   *  attachEntryUtms. Neither is displayed from here. */
+  lead_created_at: string | null;
+  media_source_clean: string | null;
 };
 
 type LeadRow = {
@@ -366,7 +452,8 @@ export const getSignedClients = cache(
           ).catch(() => [] as TouchRow[]),
           supabaseRowsAll<BucketedRow>(
             `v_bmby_leads_bucketed?client_id=in.(${inList(chunk)})` +
-              `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
+              `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign,` +
+              `lead_created_at,media_source_clean` +
               // Earliest first: a client with several leads shows the tags of
               // the one that FIRST brought them, not the latest re-entry.
               `&order=lead_created_at.asc`,
@@ -382,14 +469,20 @@ export const getSignedClients = cache(
           if (!id) continue;
           const list = touches.get(id) ?? [];
           if (list.length >= MAX_TOUCHES) continue;
+          const type = clean(r.type) || "—";
           list.push({
             date: clean(r.event_date).slice(0, 10),
-            type: clean(r.type) || "—",
+            type,
             agent: clean(r.user_name),
             // `content` is the desk's free text; `subject` fills in for the
             // event types that carry a subject line instead.
             content: clean(r.content) || clean(r.subject),
             isMeeting: !!r.is_meeting,
+            // On a LID the subject is not a subject line — it is the channel
+            // the lead arrived through. `content` wins above and is almost
+            // always the status word ("To Contact"), so read separately the
+            // source was being dropped on exactly the rows that carry it.
+            ...(type === "LID" ? { entrySource: clean(r.subject) } : {}),
           });
           touches.set(id, list);
         }
@@ -430,7 +523,11 @@ export const getSignedClients = cache(
           leadsCount: Number(l?.lids_count ?? 0) || 0,
           leadCreated: clean(d.lead_created_at).slice(0, 10),
           objections: clean(d.objections),
-          journey: numberLeadEntries(journey),
+          journey: attachEntryUtms(
+            numberLeadEntries(journey),
+            utms.get(id),
+            campaignNames,
+          ),
           utms: utmSets(utms.get(id), campaignNames),
           saleStage: hit.stage,
           // The value that MATCHED, not whichever column was non-empty —
@@ -504,13 +601,19 @@ type SehelLeadRow = UtmSourceRow & {
   registered_at: string | null;
 };
 
-type SehelTouchRow = {
+type SehelTouchRow = UtmSourceRow & {
   client_uuid: string | null;
   event_at: string | null;
   event_type: string | null;
   agent: string | null;
   content: string | null;
   is_meeting: boolean | null;
+  /** Sehel carries the arrival's channel and tags on the TOUCH, so this
+   *  side needs no matching back to a lead row. `source` is populated on
+   *  all 12,489 lead events; the utm_* columns on ~6% of them (measured
+   *  2026-08-30), which is why an entry can show a source and no tags. */
+  source: string | null;
+  is_lead_event: boolean | null;
 };
 
 /**
@@ -580,11 +683,14 @@ export const getSignedClientsSehel = cache(
         .slice(0, MAX_CLIENTS);
 
       const touches = new Map<string, JourneyTouch[]>();
+      // Raw rows, index-aligned with each client's journey above.
+      const touchRows = new Map<string, SehelTouchRow[]>();
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100);
         const tr = await supabaseRowsAll<SehelTouchRow>(
           `sehel_touches?client_uuid=in.(${inList(chunk)})` +
-            `&select=client_uuid,event_at,event_type,agent,content,is_meeting` +
+            `&select=client_uuid,event_at,event_type,agent,content,is_meeting,` +
+            `source,is_lead_event,utm_source,utm_medium,utm_campaign,utm_content,utm_term` +
             `&order=event_at.asc`,
           { maxRows: MAX_TOUCHES * chunk.length },
         ).catch(() => [] as SehelTouchRow[]);
@@ -602,6 +708,11 @@ export const getSignedClientsSehel = cache(
             content: cleanSehelContent(r.content, type, agent),
             isMeeting: !!r.is_meeting,
           });
+          // Kept index-aligned with the journey so the arrival's own tags can
+          // be attached once campaign names resolve — see attachSehelEntryUtms.
+          const raw = touchRows.get(id) ?? [];
+          raw.push(r);
+          touchRows.set(id, raw);
           touches.set(id, list);
         }
       }
@@ -645,7 +756,11 @@ export const getSignedClientsSehel = cache(
           meetingsCount: meetings,
           leadsCount: 0,
           objections: clean(d.objections),
-          journey: numberLeadEntries(journey),
+          journey: attachSehelEntry(
+            numberLeadEntries(journey),
+            touchRows.get(id),
+            campaignNames,
+          ),
           salespersonInferred: true,
           utms: utmSets(utmRows.get(id), campaignNames),
           saleStage: hit.stage,

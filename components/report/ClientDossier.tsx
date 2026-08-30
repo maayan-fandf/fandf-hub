@@ -23,6 +23,11 @@ export type DossierTouch = {
   /** 1-based position among this journey's lead arrivals — see
    *  numberLeadEntries in lib/signedClients. 2+ is a re-entry. */
   entryNo?: number;
+  /** The channel this particular arrival came through, and the tags it
+   *  carried. Only on lead arrivals, and the tags only when the CRM ties
+   *  them to THIS entry rather than to the client as a whole. */
+  entrySource?: string;
+  entryUtms?: UtmTag[];
 };
 
 export type DossierClient = {
@@ -363,6 +368,39 @@ export default function ClientDossier({ client }: { client: DossierClient }) {
                 {t.content || "—"}
               </span>
               {t.agent && <span className="cd-touch-agent">{t.agent}</span>}
+              {/* What THIS arrival came through. The tag block at the top of
+                  the file lists every set the client ever arrived with, in no
+                  particular order — on a client who entered more than once
+                  that pile can't say which entry was which. This can. Its own
+                  row under the touch, so the timeline's columns don't move. */}
+              {t.entryNo && (t.entrySource || t.entryUtms?.length) && (
+                <span className="cd-entry-meta">
+                  {t.entrySource && (
+                    <span
+                      className="cd-entry-src"
+                      title="הערוץ שדרכו נכנסה הפנייה הזו"
+                    >
+                      <ChannelIcon name={t.entrySource} fallback="●" />{" "}
+                      {t.entrySource}
+                    </span>
+                  )}
+                  {t.entryUtms?.map((tag) => (
+                    <span
+                      key={tag.param + tag.value}
+                      className={"cd-utm" + (tag.broken ? " is-broken" : "")}
+                      title={utmTitle(tag)}
+                    >
+                      <span className="cd-utm-k">{tag.label}</span>
+                      <span className="cd-utm-v">{tag.value}</span>
+                      {tag.broken && (
+                        <span className="cd-utm-warn" aria-hidden>
+                          ⚠
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </span>
+              )}
             </li>
           ))}
         </ol>

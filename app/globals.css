@@ -30053,3 +30053,26 @@ html[data-theme="dark"] {
   direction: ltr;
   unicode-bidi: isolate;
 }
+
+/* The per-arrival channel + tags, on their own full-width row under the
+   touch so the timeline's columns stay where they were. Indented past the
+   icon+date columns so it reads as belonging to the row above it. */
+.cd-entry-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-block-start: 0.18rem;
+  padding-inline-start: 1.6rem;
+}
+.cd-entry-src {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: help;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink-soft);
+}
