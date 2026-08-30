@@ -94,6 +94,15 @@ export type PrisaApprovalRequest = {
   resolution?: "approved" | "changes";
   resolvedBy?: string;
   resolvedAt?: string;
+  /** The Gmail conversation this plan's approval mail lives in, so a
+   *  re-send after a revision continues it instead of opening a second
+   *  thread the client has to reconcile with the first. Carried forward
+   *  across re-sends by the send route; `emailSentBy` is the mailbox the
+   *  thread belongs to, and threading is only attempted when the same
+   *  person sends again — Gmail rejects a threadId from another mailbox. */
+  emailThreadId?: string;
+  emailMessageId?: string;
+  emailSentBy?: string;
 };
 
 /* ─────────────────────────── token codec ─────────────────────────── */
@@ -356,6 +365,41 @@ export async function putPrisaApprovalRequest(
     // set WITHOUT merge — a re-send must not inherit the previous
     // resolution/resolvedBy fields.
     .set({ ...req, fileId: id });
+}
+
+/**
+ * Record the Gmail thread a request's mail landed in, after the send.
+ *
+ * Separate from putPrisaApprovalRequest because the doc is written BEFORE
+ * the mail goes out (so a fast click can't beat it) and the thread only
+ * exists afterwards. Merges rather than replaces, and never throws: a
+ * plan whose thread wasn't recorded simply starts a new conversation on
+ * the next send, which is what happened before this existed.
+ */
+export async function attachPrisaApprovalThread(
+  fileId: string,
+  mail: { threadId: string; messageId: string; sentBy: string },
+): Promise<void> {
+  const id = String(fileId || "").trim();
+  if (!id || !mail.threadId) return;
+  try {
+    await getDb()
+      .collection(FS_COLLECTIONS.prisotApprovalRequests)
+      .doc(id)
+      .set(
+        {
+          emailThreadId: mail.threadId,
+          emailMessageId: mail.messageId,
+          emailSentBy: mail.sentBy.toLowerCase().trim(),
+        },
+        { merge: true },
+      );
+  } catch (e) {
+    console.log(
+      "[prisaApprovalTokens] thread write failed:",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
 }
 
 /**

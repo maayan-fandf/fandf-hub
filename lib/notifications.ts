@@ -786,13 +786,31 @@ export function buildNotificationEmail(opts: {
 
 /* ─── MIME email send (mirrors the helper in tasksWriteDirect) ──── */
 
+export type SentMail = {
+  /** Gmail thread the message landed in — pass it back as `threadId` to
+   *  put a follow-up in the same conversation. */
+  threadId: string;
+  /** RFC `Message-Id` of what was just sent. Becomes the next message's
+   *  `In-Reply-To`, which is what makes OTHER mail clients thread it —
+   *  `threadId` alone only groups it in the sender's own Gmail. */
+  messageId: string;
+};
+
 export async function sendNotificationEmail(opts: {
   fromEmail: string;
   toEmail: string;
   subject: string;
   plainBody: string;
   htmlBody?: string;
-}): Promise<void> {
+  /** Continue an existing conversation instead of starting one. Both are
+   *  needed for the recipient to see a thread rather than a second mail,
+   *  and BOTH have to come from this same mailbox — Gmail rejects a
+   *  threadId it does not own, so the caller must only pass one it
+   *  recorded for this sender. See the retry in sendNotificationEmail's
+   *  caller for what happens when it is stale. */
+  threadId?: string;
+  inReplyTo?: string;
+}): Promise<SentMail> {
   const gmail = gmailClient(opts.fromEmail);
   const headers = [
     `From: ${opts.fromEmail}`,
@@ -800,6 +818,10 @@ export async function sendNotificationEmail(opts: {
     `Subject: =?UTF-8?B?${Buffer.from(opts.subject, "utf-8").toString("base64")}?=`,
     "MIME-Version: 1.0",
   ];
+  if (opts.inReplyTo) {
+    headers.push(`In-Reply-To: ${opts.inReplyTo}`);
+    headers.push(`References: ${opts.inReplyTo}`);
+  }
   let mime: string;
   if (opts.htmlBody) {
     const boundary = `=_N_${Date.now().toString(36)}_${Math.random()
@@ -835,10 +857,32 @@ export async function sendNotificationEmail(opts: {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-  await gmail.users.messages.send({
+  const sent = await gmail.users.messages.send({
     userId: "me",
-    requestBody: { raw },
+    requestBody: { raw, ...(opts.threadId ? { threadId: opts.threadId } : {}) },
   });
+  const id = String(sent.data.id ?? "");
+  let messageId = "";
+  // The send response carries ids but no headers, and the Message-Id is
+  // assigned by Gmail — so it has to be read back. Best-effort: a threadId
+  // alone still groups the conversation in the sender's mailbox.
+  if (id) {
+    try {
+      const meta = await gmail.users.messages.get({
+        userId: "me",
+        id,
+        format: "metadata",
+        metadataHeaders: ["Message-Id"],
+      });
+      messageId =
+        meta.data.payload?.headers?.find(
+          (h) => String(h.name ?? "").toLowerCase() === "message-id",
+        )?.value ?? "";
+    } catch {
+      // Leave it empty — the next send just starts fresh threading.
+    }
+  }
+  return { threadId: String(sent.data.threadId ?? ""), messageId };
 }
 
 export function columnLetter(n: number): string {

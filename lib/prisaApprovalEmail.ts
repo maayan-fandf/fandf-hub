@@ -36,6 +36,12 @@ export function buildPrisaApprovalEmail(opts: {
   senderEmail: string;
   /** Free-text the sender typed into the dialog. Optional. */
   message?: string;
+  /** The changes this recipient asked for last time, quoted back. Present
+   *  only on a re-send that answers an open change request — it is what
+   *  turns "here is a plan" into "here is the plan you asked us to fix",
+   *  and it is the client's own words, so they can check the revision
+   *  against them without digging up the earlier mail. */
+  changeNote?: { text: string; requestedAt: string };
   /** The signed, login-free approve link for THIS recipient. */
   approveUrl: string;
   /** ISO — rendered as a soft deadline so the link doesn't silently die. */
@@ -47,10 +53,25 @@ export function buildPrisaApprovalEmail(opts: {
   const expiry = formatDateHe(opts.expiresAt);
   const note = (opts.message || "").trim();
 
+  const change = (opts.changeNote?.text || "").trim();
+  const changedOn = opts.changeNote ? formatDateHe(opts.changeNote.requestedAt) : "";
+  // A revision announces itself. Without this the second mail is
+  // word-for-word the first, and the recipient has to remember whether
+  // anything happened in between.
+  const lead = change
+    ? `${sender} עדכן/ה את הפריסה השיווקית${project ? ` של ${project}` : ""} לפי הבקשה שלכם, והיא שוב לאישורכם.`
+    : `${sender} שלח/ה לכם את הפריסה השיווקית${project ? ` של ${project}` : ""} לאישור.`;
+
   const plainBody = [
-    `${sender} שלח/ה לכם את הפריסה השיווקית${project ? ` של ${project}` : ""} לאישור.`,
+    lead,
     "",
     `קובץ: ${opts.fileName}`,
+    change
+      ? `\nהשינויים שביקשתם${changedOn ? ` ב-${changedOn}` : ""}:\n${change
+          .split("\n")
+          .map((l) => `> ${l}`)
+          .join("\n")}\n`
+      : "",
     note ? `\nהערה מהצוות:\n${note}\n` : "",
     "לצפייה ולאישור בלחיצה אחת (ללא צורך בהתחברות):",
     opts.approveUrl,
@@ -64,13 +85,27 @@ export function buildPrisaApprovalEmail(opts: {
 
   const blocks: string[] = [];
   blocks.push(
-    `<p style="margin:0 0 12px;font-size:15px">${esc(sender)} שלח/ה לכם את הפריסה השיווקית${
-      project ? ` של <b>${esc(project)}</b>` : ""
-    } לאישור.</p>`,
+    change
+      ? `<p style="margin:0 0 12px;font-size:15px">${esc(sender)} עדכן/ה את הפריסה השיווקית${
+          project ? ` של <b>${esc(project)}</b>` : ""
+        } לפי הבקשה שלכם, והיא שוב לאישורכם.</p>`
+      : `<p style="margin:0 0 12px;font-size:15px">${esc(sender)} שלח/ה לכם את הפריסה השיווקית${
+          project ? ` של <b>${esc(project)}</b>` : ""
+        } לאישור.</p>`,
   );
   blocks.push(
     `<p style="margin:0 0 16px;color:#475569">📄 ${esc(opts.fileName)}</p>`,
   );
+  if (change) {
+    blocks.push(
+      `<div style="margin:0 0 18px;padding:10px 14px;background:#fffbeb;border-right:3px solid #f59e0b;border-radius:4px">` +
+        `<div style="font-size:13px;font-weight:600;color:#92400e;margin-bottom:4px">🔄 השינויים שביקשתם${
+          changedOn ? ` · ${esc(changedOn)}` : ""
+        }</div>` +
+        `<div style="white-space:pre-wrap;color:#475569">${esc(change)}</div>` +
+        `</div>`,
+    );
+  }
   if (note) {
     blocks.push(
       `<div style="margin:0 0 18px;padding:10px 14px;background:#f1f5f9;border-right:3px solid #4f46e5;border-radius:4px;white-space:pre-wrap">${esc(

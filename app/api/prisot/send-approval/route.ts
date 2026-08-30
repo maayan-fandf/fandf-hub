@@ -5,10 +5,13 @@ import { sendNotificationEmail } from "@/lib/notifications";
 import { buildPrisaApprovalEmail } from "@/lib/prisaApprovalEmail";
 import {
   APPROVAL_LINK_TTL_MS,
+  attachPrisaApprovalThread,
   deletePrisaApprovalRequest,
+  getPrisaApprovalRequest,
   putPrisaApprovalRequest,
   signPrisaApprovalToken,
 } from "@/lib/prisaApprovalTokens";
+import { getPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,6 +108,16 @@ export async function POST(req: Request) {
   const message = String(body.message || "").trim().slice(0, 2000);
   const expiresAt = new Date(Date.now() + APPROVAL_LINK_TTL_MS).toISOString();
 
+  // What came before this send: the conversation the last mail landed in,
+  // and any change request still open against the plan. Both are read
+  // before the doc is replaced — putPrisaApprovalRequest writes without
+  // merge, so the thread would be lost otherwise. Neither is worth failing
+  // the send over.
+  const [prev, change] = await Promise.all([
+    getPrisaApprovalRequest(fileId).catch(() => null),
+    getPrisotChangeRequest(fileId).catch(() => null),
+  ]);
+
   // Record FIRST. The doc is what flips the card to "⏳ נשלח לאישור" and
   // what the public page checks before honouring a token — if we emailed
   // first and the write then failed, recipients would hold links that
@@ -121,6 +134,14 @@ export async function POST(req: Request) {
       recipients,
       expiresAt,
       message,
+      // Carried forward so the revision continues the same conversation.
+      ...(prev?.emailThreadId
+        ? {
+            emailThreadId: prev.emailThreadId,
+            emailMessageId: prev.emailMessageId,
+            emailSentBy: prev.emailSentBy,
+          }
+        : {}),
     });
   } catch (e) {
     return NextResponse.json(
@@ -144,19 +165,63 @@ export async function POST(req: Request) {
     message,
     approveUrl: `${base}/approve/${token}`,
     expiresAt,
+    ...(change?.note
+      ? {
+          changeNote: {
+            text: change.note,
+            requestedAt: change.requestedAt,
+          },
+        }
+      : {}),
   });
 
+  // Continue the original conversation when this is the same sender —
+  // Gmail refuses a threadId belonging to another mailbox, so a colleague
+  // re-sending starts a fresh thread rather than erroring.
+  const canThread =
+    !!prev?.emailThreadId &&
+    (prev.emailSentBy ?? "").toLowerCase() === email.toLowerCase();
+  const mail = {
+    fromEmail: email,
+    // Comma-joined address list — one message, every recipient on the
+    // To: line and visible to each other, so a reply-all reaches the
+    // whole group. Not Bcc: these people are meant to see that their
+    // colleagues were asked too.
+    toEmail: recipients.join(", "),
+    subject,
+    plainBody,
+    htmlBody,
+  };
   try {
-    await sendNotificationEmail({
-      fromEmail: email,
-      // Comma-joined address list — one message, every recipient on the
-      // To: line and visible to each other, so a reply-all reaches the
-      // whole group. Not Bcc: these people are meant to see that their
-      // colleagues were asked too.
-      toEmail: recipients.join(", "),
-      subject,
-      plainBody,
-      htmlBody,
+    let sent;
+    try {
+      sent = await sendNotificationEmail(
+        canThread
+          ? {
+              ...mail,
+              threadId: prev!.emailThreadId,
+              inReplyTo: prev!.emailMessageId || undefined,
+            }
+          : mail,
+      );
+    } catch (threadErr) {
+      // A thread can go stale — deleted, or moved out of this mailbox. The
+      // mail matters more than the threading, so fall back to a fresh one
+      // rather than failing the send.
+      if (!canThread) throw threadErr;
+      console.warn(
+        `[send-approval] threaded send failed for fileId=${fileId}, retrying unthreaded: ${
+          threadErr instanceof Error ? threadErr.message : String(threadErr)
+        }`,
+      );
+      sent = await sendNotificationEmail(mail);
+    }
+    // Keep the ORIGINAL thread, advance the message id so the next
+    // re-send replies to what was actually sent last.
+    await attachPrisaApprovalThread(fileId, {
+      threadId: prev?.emailThreadId || sent.threadId,
+      messageId: sent.messageId,
+      sentBy: email,
     });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
