@@ -30,16 +30,12 @@ import {
 function FbAdImage({
   ad,
   landing = "",
-  showPreviews = false,
 }: {
   ad: ReportFbAd;
   /** Landing page. Wraps the IMAGE only — a dead card offers a link to the
    *  creative instead, and an anchor inside an anchor is invalid HTML that
    *  swallows the inner one. */
   landing?: string;
-  /** The card already renders its own preview links below, so the dead-state
-   *  link would be a duplicate. */
-  showPreviews?: boolean;
 }) {
   const primary = ad.image || ad.thumb;
   const fallback = ad.thumb && ad.thumb !== primary ? ad.thumb : "";
@@ -56,29 +52,17 @@ function FbAdImage({
     // אחוזת אפרידר, where the one card that renders is the only `image` row and
     // the three blanks are all `video`.
     //
-    // Nothing here can re-sign that URL. What we can do is stop the card
-    // being a dead end: the 365-day previews tab still has a working link for
-    // these ads (27 rows for those three), and this is exactly the case
-    // AdPreviewLinks' own doc reserves them for — "where the creative CAN'T
-    // be shown".
-    const preview = showPreviews ? "" : (ad.previews?.[0] ?? "");
+    // Nothing here can re-sign that URL, and this state no longer carries a
+    // link of its own. It used to, because the links row below had none to
+    // give — `url` comes from the assets tab, which is empty. That row now
+    // falls back to the same preview URL on every card, so repeating it here
+    // would put one link twice on the card that can least afford clutter.
     return (
       <div className="rpt-cr-noimg">
         <span className="rpt-cr-noimg-icon" aria-hidden>
           🖼
         </span>
         <span className="rpt-cr-noimg-label">אין תצוגה</span>
-        {preview ? (
-          <a
-            className="rpt-cr-noimg-link"
-            href={preview}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="התמונה שבמאגר היא כתובת חתומה של פייסבוק שכבר פגה — נפוץ בקריאייטיב וידאו. הקישור הזה פותח את המודעה עצמה (דורש חיבור ל-Business Manager)."
-          >
-            🖼 פתח קריאייטיב
-          </a>
-        ) : null}
       </div>
     );
   }
@@ -427,11 +411,7 @@ export default function ReportCreativesTab({
                     </div>
                   )}
                   <div className="rpt-cr-thumb">
-                    <FbAdImage
-                      ad={a}
-                      landing={landing}
-                      showPreviews={showPreviews}
-                    />
+                    <FbAdImage ad={a} landing={landing} />
                     {status.label && (
                       <span
                         className={`rpt-cr-status is-${status.cls}`}
@@ -445,7 +425,12 @@ export default function ReportCreativesTab({
                         {status.label}
                       </span>
                     )}
-                    {showPreviews && <AdPreviewLinks previews={a.previews} />}
+                    {/* Only the EXTRA versions: the first preview is now the
+                        links row's תצוגת מודעה, so listing it here again
+                        would put the same URL on the card twice. */}
+                    {showPreviews && (a.previews?.length ?? 0) > 1 && (
+                      <AdPreviewLinks previews={a.previews} />
+                    )}
                   </div>
                   <div className="rpt-cr-body">
                     <div className="rpt-cr-name" title={a.ad}>
@@ -551,8 +536,25 @@ export default function ReportCreativesTab({
                           🔗 דף נחיתה
                         </a>
                       )}
-                      {a.url && (
-                        <a href={a.url} target="_blank" rel="noopener noreferrer">
+                      {/* `url` is the assets tab's "Link to promoted post",
+                          and that tab has been empty since its Supermetrics
+                          query broke — so this link, which was on every card,
+                          silently disappeared from all of them. The preview
+                          tab (`כל מודעות פפיסבוק`, 8,524 live URLs) carries a
+                          working preview for the same ad, so it stands in.
+                          Second-choice on purpose: the promoted post is the
+                          real thing, the preview is a rendering of it. */}
+                      {(a.url || a.previews?.[0]) && (
+                        <a
+                          href={a.url || a.previews![0]}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={
+                            a.url
+                              ? "פתח את הפוסט המקודם בפייסבוק"
+                              : "פתח תצוגה מקדימה של המודעה (דורש חיבור ל-Business Manager)"
+                          }
+                        >
                           👁️ תצוגת מודעה
                         </a>
                       )}
