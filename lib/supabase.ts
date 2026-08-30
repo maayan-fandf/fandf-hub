@@ -172,3 +172,34 @@ export async function supabaseRowsAll<T = Record<string, unknown>>(
   }
   return out;
 }
+
+/**
+ * One `or=(…)` disjunct per value, prefix-matching `column`.
+ *
+ * PostgREST splits an `or=(…)` list on commas and reads bare values as
+ * syntax, so any value carrying a comma has to be double-quoted — and a
+ * value carrying a double quote has to escape it, or its own quote ends
+ * the quoted token and the rest of the string parses as more conditions.
+ *
+ * Both shapes are real, and both live in the Keys CRM column:
+ *   אחוזת אפרידר → "אפרידר דיור מוגן,אחוזת אפרידר דיור מוגן"   (comma)
+ *   חמסה         → "…, רייסדור בני ע\"ש"                       (quote)
+ * crmAccountCandidates hands the WHOLE cell back as a candidate
+ * alongside the split parts, so the comma reaches the filter even when
+ * the caller thinks it is passing one account at a time. Unquoted, the
+ * request 400s; the reader catches, returns null, and the surface shows
+ * an empty state over a project that has data — which is exactly how
+ * this was found (חוזים on אחוזת אפרידר, 2026-08-30).
+ */
+export function orPrefixFilter(
+  column: string,
+  values: readonly string[],
+  op: "like" | "ilike" = "ilike",
+): string {
+  return values
+    .map((v) => {
+      const quoted = `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}*"`;
+      return `${column}.${op}.${encodeURIComponent(quoted)}`;
+    })
+    .join(",");
+}

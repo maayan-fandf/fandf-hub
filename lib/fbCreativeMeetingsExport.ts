@@ -10,7 +10,11 @@
  * (/api/cron/fb-creative-meetings). The standalone dev runner
  * scripts/export-fb-creative-meetings.mjs mirrors this logic for manual runs.
  */
-import { supabaseRowsAll, supabaseConfigured } from "./supabase";
+import {
+  supabaseRowsAll,
+  supabaseConfigured,
+  orPrefixFilter,
+} from "./supabase";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { normAdName } from "./fbCreatives";
 import { getGoogleCampaignNames } from "./googleCampaignNames";
@@ -329,9 +333,7 @@ async function computeSehelMeetingsWindows(
     (v, i, a) => v && a.indexOf(v) === i,
   );
   if (!cands.length) return empty();
-  const orLike = cands
-    .map((c) => `project_name.like.${encodeURIComponent(`"${c}*"`)}`)
-    .join(",");
+  const orLike = orPrefixFilter("project_name", cands, "like");
   const targets = cands.map(norm);
   const matches = (p: string | null): boolean => {
     const n = norm(p);

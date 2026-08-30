@@ -40,6 +40,7 @@ import {
   supabaseCrmProjectAllowed,
   supabaseConfigured,
   supabaseRowsAll,
+  orPrefixFilter,
 } from "./supabase";
 import { fbAdSpendByCreative, normAdName } from "./fbCreatives";
 import {
@@ -2366,9 +2367,7 @@ async function computeSehelFunnelFromWarehouse(
   // then refine on a word boundary in memory (same rule as the Sheet path).
   const cands = crmAccountCandidates(crmAccount);
   if (!cands.length) return null;
-  const orLike = cands
-    .map((c) => `project_name.like.${encodeURIComponent(`"${c}*"`)}`)
-    .join(",");
+  const orLike = orPrefixFilter("project_name", cands, "like");
   const targets = cands.map(norm);
   const matchesProject = (p: string | null): boolean => {
     const n = norm(p);

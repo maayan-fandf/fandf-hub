@@ -1,5 +1,9 @@
 import { cache } from "react";
-import { supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
+import {
+  orPrefixFilter,
+  supabaseConfigured,
+  supabaseRowsAll,
+} from "@/lib/supabase";
 import { getGoogleCampaignNames } from "@/lib/googleCampaignNames";
 import {
   describeUtms,
@@ -289,9 +293,11 @@ export const getSignedClients = cache(
       // against a bar reading 1. So this returns everyone currently at
       // חוזה for the account, newest lead first, and the panel says that is
       // what it is rather than implying a period.
-      const or = accounts
-        .map((a) => `project_name.ilike.${encodeURIComponent(a)}*`)
-        .join(",");
+      // Quoted + escaped — see orPrefixFilter. Built by hand here until
+      // 2026-08-30, when אחוזת אפרידר's two-account Keys cell made the
+      // request 400: the reader returned null and חוזים read "אין
+      // לקוחות בשלב מכירה" over a project with 26 signed clients.
+      const or = orPrefixFilter("project_name", accounts);
       // Filtered in memory rather than server-side: the sale can sit in
       // EITHER client_status or pipeline (see saleStageOf), and expressing
       // "account matches AND (any of five values across two columns)" as
@@ -529,9 +535,8 @@ export const getSignedClientsSehel = cache(
     const accounts = args.crmAccounts.map(clean).filter(Boolean);
     if (!supabaseConfigured() || !accounts.length) return null;
     try {
-      const or = accounts
-        .map((a) => `project_name.ilike.${encodeURIComponent(a)}*`)
-        .join(",");
+      // Same filter builder as the BMBY reader above.
+      const or = orPrefixFilter("project_name", accounts);
       const rows = await supabaseRowsAll<SehelLeadRow>(
         `sehel_leads_daily?or=(${or})` +
           `&select=client_uuid,project_name,name,phone,stage,media_source_raw,` +
