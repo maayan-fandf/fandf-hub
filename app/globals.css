@@ -30041,3 +30041,24 @@ html[data-theme="dark"] {
   color: var(--ink);
 }
 .prisot-change-note-empty { color: var(--ink-soft); font-style: italic; }
+/* The team's answer, nested inside the same amber block as the request
+   it answers. Kept in the block (rather than given its own card) so the
+   two read as one exchange; the divider + indent carry the change of
+   speaker, and the head takes the accent instead of the request's
+   amber so "theirs" and "ours" are distinguishable at a glance. */
+.prisot-change-reply {
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  padding-inline-start: 0.6rem;
+  border-top: 1px solid color-mix(in srgb, #f59e0b 28%, transparent);
+  border-inline-start: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.prisot-change-reply-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--accent) 80%, var(--ink));
+}

@@ -11,7 +11,14 @@ import {
   putPrisaApprovalRequest,
   signPrisaApprovalToken,
 } from "@/lib/prisaApprovalTokens";
-import { getPrisotChangeRequest } from "@/lib/prisotChangeRequests";
+import {
+  attachPrisotChangeResponse,
+  getPrisotChangeRequest,
+} from "@/lib/prisotChangeRequests";
+import {
+  createMentionDirect,
+  postReplyDirect,
+} from "@/lib/commentsWriteDirect";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -223,6 +230,39 @@ export async function POST(req: Request) {
       messageId: sent.messageId,
       sentBy: email,
     });
+    // Put the covering note where the client already is. The email
+    // threads onto the original conversation (above); this does the
+    // same for the hub's own discussion, so the request and its answer
+    // sit together instead of the answer living only in an inbox.
+    // Only on a RE-send — a first send has no request to answer.
+    if (change && message) {
+      try {
+        if (change.commentId) {
+          await postReplyDirect(email, change.commentId, message);
+        } else {
+          // Older request, or one whose discussion post failed: there is
+          // no thread to reply into, so open one rather than lose the
+          // answer entirely.
+          await createMentionDirect(email, {
+            project: change.projectName || projectName,
+            body: `📐 נשלחה פריסה מתוקנת:\n${message}`,
+            assignees: [],
+            scope: "shared",
+          });
+        }
+      } catch (e) {
+        console.warn(
+          `[send-approval] could not post the covering note to the discussion for fileId=${fileId}: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+      await attachPrisotChangeResponse({
+        fileId,
+        response: message,
+        respondedBy: email,
+      });
+    }
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.warn(

@@ -72,6 +72,9 @@ export async function POST(req: Request) {
       projectName: project,
       requestedBy: email,
       note,
+      // The thread the answer will reply into when the corrected plan
+      // is re-sent. Known here because the post ran first.
+      commentId: posted.comment_id,
     });
     // 3) Close out the emailed approval request, if one is open. A client
     //    who signs into the hub instead of using the link is answering

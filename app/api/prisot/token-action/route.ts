@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { approvePrisaViaLock } from "@/lib/driveApprovals";
 import {
+  attachPrisotChangeThread,
   clearPrisotChangeRequest,
   upsertPrisotChangeRequest,
 } from "@/lib/prisotChangeRequests";
@@ -243,13 +244,17 @@ export async function POST(req: Request) {
   // client's message — fall back to emailing whoever sent the request.
   let posted = false;
   try {
-    await createMentionDirect(email, {
+    const res = await createMentionDirect(email, {
       project: request.projectName,
       body: `📐 בקשת שינויים לפריסה:\n${note}`,
       assignees: [],
       scope: "shared",
     });
     posted = true;
+    // Remember the thread so the answer, when the corrected plan goes
+    // back out, lands as a reply here rather than as a second thread
+    // the client has to connect to their own words.
+    await attachPrisotChangeThread(fileId, res.comment_id);
   } catch (e) {
     console.warn(
       `[token-action] discussion post failed for ${email} on ${request.projectName}: ${

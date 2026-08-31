@@ -442,6 +442,30 @@ export default async function LatestPrisotCard({
               הבקשה נרשמה בלי טקסט — כדאי לבדוק בדיון של הפרויקט.
             </p>
           )}
+          {/* The answer, when the corrected plan has already gone back
+              out. Same block, indented under the request, because the
+              two are one exchange: reading the request without the
+              reply is how "התבקשו שינויים" kept looking unanswered
+              after it had been handled. Shown to the client too — it is
+              addressed to them, and it is the same text they received
+              in the email. */}
+          {changeRequest.response && (
+            <div className="prisot-change-reply">
+              <div className="prisot-change-reply-head">
+                ↩️ נשלחה פריסה מתוקנת
+                <span className="prisot-change-note-by">
+                  {personDisplayName(changeRequest.respondedBy || "", people) ||
+                    changeRequest.respondedBy}
+                  {changeRequest.respondedAt
+                    ? ` · ${formatRelativeHe(changeRequest.respondedAt)}`
+                    : ""}
+                </span>
+              </div>
+              <p className="prisot-change-note-body">
+                {changeRequest.response}
+              </p>
+            </div>
+          )}
         </div>
       )}
       {(() => {
