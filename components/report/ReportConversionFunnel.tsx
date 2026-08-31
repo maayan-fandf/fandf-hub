@@ -33,13 +33,8 @@ function convColor(r: number): string {
 
 export default function ReportConversionFunnel({
   data,
-  clientView = false,
 }: {
   data: ProjectReportData;
-  /** Hides the drill into the signed clients. Their names and phones are
-   *  staff-only — the endpoint refuses a client session independently, this
-   *  just stops offering a door that would not open. */
-  clientView?: boolean;
 }) {
   const [showSigned, setShowSigned] = useState(false);
   const t = data.totals;
@@ -80,8 +75,13 @@ export default function ReportConversionFunnel({
           const w = Math.max(2, (scaleOf(r.value) / maxScaled) * 100);
             // Only מכירות drills. It is the one stage whose members the CRM
             // can name — the rest are platform aggregates with no client
-            // behind them.
-            const drills = r.key === "sales" && !clientView && r.value > 0;
+            // behind them. Open to clients too since 2026-08-31, alongside
+            // חוזים and for the same reason: it reads the same
+            // /api/crm/signed, which now authorises a client for the
+            // projects they are listed on. Leaving this internal-only made
+            // the bar the one number on a client's report that looked
+            // clickable and wasn't.
+            const drills = r.key === "sales" && r.value > 0;
             return (
             <div key={r.key} className="rpt-cf-row">
               <div className="rpt-cf-label">{r.label}</div>

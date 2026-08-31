@@ -25476,9 +25476,12 @@ button.budget-need:focus-visible {
   background: color-mix(in srgb, var(--brand) 78%, #7c3aed);
   border-color: transparent;
 }
-/* While previewing the client view, mark the whole report so it's obvious
-   the owner is looking at the stripped experience, not the full one. */
-.rpt-clientview .prl {
+/* While PREVIEWING the client view, mark the whole report so it's obvious
+   the owner is looking at the stripped experience, not the full one.
+   Scoped to .rpt-clientpreview, not .rpt-clientview: the latter is also
+   set for real clients, who got this dashed box around their report with
+   nothing to explain it and no other view to contrast it against. */
+.rpt-clientpreview .prl {
   outline: 2px dashed color-mix(in srgb, var(--brand) 45%, transparent);
   outline-offset: 4px;
   border-radius: 14px;

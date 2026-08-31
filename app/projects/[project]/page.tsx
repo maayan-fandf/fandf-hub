@@ -500,6 +500,13 @@ export default async function ProjectOverviewPage({
   // the clientView prop into NativeProjectRail (force-disables edit controls).
   const reportClientView =
     isClientUser || (isInternalUser && sp.clientView === "1");
+  // The PREVIEW specifically — an internal user looking at the stripped
+  // report on purpose. Distinct from reportClientView, which is also true
+  // for a real client. The dashed outline that marks "this is the client
+  // view" only means something to someone who has another view to return
+  // to; on a real client's screen it was an unexplained box around the
+  // page (flagged 2026-08-31).
+  const reportClientPreview = isInternalUser && sp.clientView === "1";
   // Media/felix gate for the native report's inline budget edit +
   // pacing copy-and-open controls (same gate as the budget desk).
   const canEditReportBudget = useNativeReport
@@ -842,7 +849,9 @@ export default async function ProjectOverviewPage({
   return (
     <main
       className={
-        "container project-main" + (reportClientView ? " rpt-clientview" : "")
+        "container project-main" +
+        (reportClientView ? " rpt-clientview" : "") +
+        (reportClientPreview ? " rpt-clientpreview" : "")
       }
     >
       {/* Header + the client approve-prompt share ONE sticky wrapper so both

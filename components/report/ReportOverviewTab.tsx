@@ -45,7 +45,7 @@ export default function ReportOverviewTab({
         )}
       </div>
 
-      <ReportConversionFunnel data={data} clientView={clientView} />
+      <ReportConversionFunnel data={data} />
     </div>
   );
 }
