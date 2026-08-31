@@ -14,12 +14,17 @@ export const dynamic = "force-dynamic";
  *   GET /api/crm/signed?project=&company=&from=YYYY-MM-DD&to=YYYY-MM-DD
  *     → { ok, total, withJourney, clients: [...] }
  *
- * INTERNAL ONLY, and that is the reason this is an endpoint rather than a
- * field on the report payload. It is the one surface in the hub that returns
- * a lead's name and phone; putting that on the page would place customer PII
- * in the RSC flight payload — and in view-source — for every viewer on every
- * load, including client users who can open the same project. Here it is
- * gated on an @fandf.co.il session and only travels when someone clicks.
+ * ON DEMAND, and that is the reason this is an endpoint rather than a field
+ * on the report payload. It is the one surface in the hub that returns a
+ * lead's name and phone; putting that on the page would place customer PII
+ * in the RSC flight payload — and in view-source — for every viewer on
+ * every load. Here it travels only when someone opens the section.
+ *
+ * WHO MAY READ IT: staff on any project, and a client on the projects they
+ * are listed on (Keys col E). Clients were excluded outright until
+ * 2026-08-31; the owner opened חוזים to them on the grounds that these are
+ * the buyers of their own project. The per-project check is what keeps that
+ * from becoming "any client can read any developer's buyer list".
  *
  * NOT windowed. `client_status` is a snapshot with no signing date in the
  * warehouse, so a date filter would only ask "which leads created in this
@@ -49,12 +54,6 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
-  // Customer PII — staff only. A client user reaching this URL directly gets
-  // the same answer as an anonymous one.
-  if (!email.endsWith("@fandf.co.il")) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-  }
-
   let project = "";
   let company = "";
   let from = "";
@@ -73,6 +72,25 @@ export async function GET(req: Request) {
       { ok: false, error: "project, from and to (YYYY-MM-DD) are required" },
       { status: 400 },
     );
+  }
+
+  // Who may read THIS project's customers. Staff keep the domain blanket
+  // they have everywhere else. A client is allowed too (owner decision
+  // 2026-08-31 — these are the buyers of their own project), but only for
+  // the projects they are actually listed on: without the per-project
+  // check, dropping the domain gate would have let any signed-in client
+  // read any other developer's buyer names and phones by editing the
+  // ?project= parameter. getAccessScope is the same primitive the rest of
+  // the app gates on, and it matches a client through Keys col E.
+  if (!email.endsWith("@fandf.co.il")) {
+    const { getAccessScope } = await import("@/lib/tasksDirect");
+    const scope = await getAccessScope(email).catch(() => null);
+    if (!scope || (!scope.isAdmin && !scope.accessibleProjects.has(project))) {
+      return NextResponse.json(
+        { ok: false, error: "Forbidden" },
+        { status: 403 },
+      );
+    }
   }
 
   try {

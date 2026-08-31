@@ -420,11 +420,13 @@ export default async function NativeProjectRail({
     });
   }
   // חוזים — what the sales are made of: which channels close, who closes
-  // them, how long it takes. Internal only, and not merely by CSS: the
-  // section fetches customer records from an endpoint that refuses a client
-  // session, so for a client it would render an error rather than a report.
-  // Needs the report window, hence the data guard.
-  if (!clientView && data) {
+  // them, how long it takes. Shown to clients too since 2026-08-31 (owner
+  // decision): these are the buyers of their own project. The endpoint
+  // behind it still authorises per project, so a client opening this on a
+  // project they are not listed on gets a 403 and the section's own empty
+  // state rather than someone else's customers. Needs the report window,
+  // hence the data guard.
+  if (data) {
     sections.push({
       id: "contracts",
       group: "leads",
