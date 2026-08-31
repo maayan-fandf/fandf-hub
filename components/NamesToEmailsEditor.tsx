@@ -20,9 +20,21 @@ type DraftRow = {
   draftName: string;
   draftEmail: string;
   draftRole: string;
+  /** `he name` — the name the hub actually SHOWS for this person
+   *  (personDisplayName prefers it over the English full name). Blank
+   *  here is why a card renders in Latin among Hebrew ones. */
+  draftHeName: string;
   isEditing: boolean;
   isBusy: boolean;
   error: string | null;
+  /** Cell values as they were when editing began — restored on "ביטול".
+   *  Only set while `isEditing`. */
+  snapshot?: {
+    name: string;
+    email: string;
+    role: string;
+    heName: string;
+  };
 };
 
 function makeKey() {
@@ -36,6 +48,7 @@ function rowsFromInitial(initial: NameEmailRow[]): DraftRow[] {
     draftName: r.full_name,
     draftEmail: r.email,
     draftRole: r.role ?? "",
+    draftHeName: r.he_name ?? "",
     isEditing: false,
     isBusy: false,
     error: null,
@@ -64,28 +77,51 @@ export default function NamesToEmailsEditor({ initial }: Props) {
   }
 
   function beginEdit(uiKey: string) {
-    update(uiKey, { isEditing: true, error: null });
+    // Snapshot every editable cell as it stands now — in read mode the
+    // draft* values ARE the persisted values, so this is what "cancel"
+    // must restore. Without it, cancelling left the edited text on
+    // screen (it only looked reverted after a refresh), which with a
+    // Hebrew-name column means a name the sheet never got.
+    setRows((rs) =>
+      rs.map((r) =>
+        r.uiKey === uiKey
+          ? {
+              ...r,
+              isEditing: true,
+              error: null,
+              snapshot: {
+                name: r.draftName,
+                email: r.draftEmail,
+                role: r.draftRole,
+                heName: r.draftHeName,
+              },
+            }
+          : r,
+      ),
+    );
   }
 
   function cancelEdit(uiKey: string) {
     setRows((rs) =>
-      rs.map((r) => {
-        if (r.uiKey !== uiKey) return r;
-        // Rollback draft values to what the server last knew.
-        if (!r.canonicalName && !r.draftEmail) {
+      rs
+        .map((r) => {
+          if (r.uiKey !== uiKey) return r;
           // Brand-new row with nothing entered — remove it.
-          return null as unknown as DraftRow;
-        }
-        return {
-          ...r,
-          isEditing: false,
-          draftName: r.canonicalName,
-          draftEmail: r.canonicalName ? r.draftEmail : "",
-          error: null,
-        };
-      }),
+          if (!r.canonicalName && !r.draftEmail) return null;
+          const s = r.snapshot;
+          return {
+            ...r,
+            isEditing: false,
+            draftName: s ? s.name : r.canonicalName,
+            draftEmail: s ? s.email : r.draftEmail,
+            draftRole: s ? s.role : r.draftRole,
+            draftHeName: s ? s.heName : r.draftHeName,
+            snapshot: undefined,
+            error: null,
+          };
+        })
+        .filter((r): r is DraftRow => r !== null),
     );
-    setRows((rs) => rs.filter(Boolean));
   }
 
   function addRow() {
@@ -97,6 +133,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
         draftName: "",
         draftEmail: "",
         draftRole: "",
+        draftHeName: "",
         isEditing: true,
         isBusy: false,
         error: null,
@@ -140,6 +177,11 @@ export default function NamesToEmailsEditor({ initial }: Props) {
             fullName: newName,
             email: newEmail,
             role: row.draftRole.trim(),
+            // Always sent — including as "" — so emptying the field in
+            // the UI actually clears the cell instead of silently
+            // keeping the old value. (Role can't do this; it only
+            // writes when non-empty.)
+            heName: row.draftHeName.trim(),
           }),
         });
         if (!upsertRes.ok) {
@@ -179,9 +221,11 @@ export default function NamesToEmailsEditor({ initial }: Props) {
           draftName: newName,
           draftEmail: newEmail,
           draftRole: row.draftRole.trim(),
+          draftHeName: row.draftHeName.trim(),
           isEditing: false,
           isBusy: false,
           error: null,
+          snapshot: undefined,
         });
         router.refresh();
       } catch (err) {
@@ -265,6 +309,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
         <thead>
           <tr>
             <th>שם מלא</th>
+            <th>שם בעברית</th>
             <th>אימייל</th>
             <th>תפקיד</th>
             <th>ברירת מחדל בתצוגה</th>
@@ -274,7 +319,7 @@ export default function NamesToEmailsEditor({ initial }: Props) {
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={5} className="empty-small">
+              <td colSpan={6} className="empty-small">
                 הרשימה ריקה. לחץ על &quot;הוסף שורה&quot;.
               </td>
             </tr>
@@ -300,6 +345,39 @@ export default function NamesToEmailsEditor({ initial }: Props) {
                   />
                 ) : (
                   <span dir="auto">{r.canonicalName}</span>
+                )}
+              </td>
+              <td>
+                {r.isEditing ? (
+                  <input
+                    type="text"
+                    className="admin-input"
+                    value={r.draftHeName}
+                    dir="rtl"
+                    lang="he"
+                    placeholder="מעין"
+                    onChange={(e) =>
+                      update(r.uiKey, { draftHeName: e.target.value })
+                    }
+                    disabled={r.isBusy}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        save(r);
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelEdit(r.uiKey);
+                      }
+                    }}
+                  />
+                ) : r.draftHeName ? (
+                  <span dir="rtl">{r.draftHeName}</span>
+                ) : (
+                  // Not decoration: an empty cell here is exactly why that
+                  // person's card renders in Latin everywhere in the hub.
+                  <span className="admin-missing-he" title="ללא שם בעברית — הכרטיס יוצג באנגלית">
+                    חסר
+                  </span>
                 )}
               </td>
               <td>

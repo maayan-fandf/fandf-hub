@@ -8,7 +8,7 @@ import {
 /**
  * Admin CRUD for the `names to emails` sheet.
  *   GET    → list rows
- *   POST   → upsert (body: { fullName, email })
+ *   POST   → upsert (body: { fullName, email, role?, heName? })
  *   DELETE → remove  (body: { fullName })
  *
  * Auth is enforced by the Apps Script side (_requireHubAdmin_). Non-admins
@@ -26,13 +26,18 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { fullName?: string; email?: string; role?: string };
+  let body: {
+    fullName?: string;
+    email?: string;
+    role?: string;
+    heName?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { fullName, email, role } = body;
+  const { fullName, email, role, heName } = body;
   if (!fullName || !email) {
     return NextResponse.json(
       { error: "fullName and email required" },
@@ -40,7 +45,15 @@ export async function POST(req: NextRequest) {
     );
   }
   try {
-    const result = await adminUpsertNameToEmail({ fullName, email, role });
+    // `heName` stays tri-state on the way through: absent means "don't
+    // touch the cell", `""` means "clear it". Normalising to "" here
+    // would make every legacy caller wipe the Hebrew name.
+    const result = await adminUpsertNameToEmail({
+      fullName,
+      email,
+      role,
+      ...(heName === undefined ? {} : { heName: String(heName) }),
+    });
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

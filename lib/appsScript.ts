@@ -731,7 +731,16 @@ export function searchContent(q: string, limit = 30): Promise<SearchResponse> {
 
 /* ─── Admin: names to emails ──────────────────────────────────────── */
 
-export type NameEmailRow = { full_name: string; email: string; role?: string };
+export type NameEmailRow = {
+  full_name: string;
+  email: string;
+  role?: string;
+  /** `he name` column — the display name every hub surface actually
+   *  renders (see lib/personDisplay.ts). Empty when unset; a person with
+   *  no Hebrew name falls back to the English `full_name`, which is why
+   *  one blank cell makes a single card read in Latin among Hebrew ones. */
+  he_name?: string;
+};
 export type NamesToEmailsList = { rows: NameEmailRow[] };
 
 export function adminListNamesToEmails(): Promise<NamesToEmailsList> {
@@ -745,17 +754,28 @@ export type UpsertNameToEmailResult = {
   full_name: string;
   email: string;
   role?: string;
+  he_name?: string;
 };
 
 export function adminUpsertNameToEmail(args: {
   fullName: string;
   email: string;
   role?: string;
+  /** Tri-state, unlike `role`: omit to leave the Hebrew name untouched,
+   *  pass a string to set it, pass `""` to clear it. postApi strips empty
+   *  values from the query string, so the clear case travels as the
+   *  separate `heNameClear` flag the Apps Script handler looks for. */
+  heName?: string;
 }): Promise<UpsertNameToEmailResult> {
   return postApi<UpsertNameToEmailResult>("adminUpsertNameToEmail", {
     fullName: args.fullName,
     email: args.email,
     role: args.role ?? "",
+    ...(args.heName === undefined
+      ? {}
+      : args.heName === ""
+        ? { heNameClear: "1" }
+        : { heName: args.heName }),
   });
 }
 

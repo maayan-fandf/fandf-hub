@@ -42,7 +42,9 @@ export default async function NamesToEmailsPage() {
           <div className="subtitle">
             <Link href="/admin">→ ניהול</Link> · מיפוי שם מלא לאימייל. זהו המקור
             לתיוגים (dropdown) ולהרשאות הצוות (מיפוי שמות בעמודות C, D, J, K
-            של Keys).
+            של Keys). <strong>השם בעברית</strong> הוא מה שההאב מציג בפועל בכל
+            מקום — בכרטיס הצוות, בבוחר העובדים ובשורות המשימות; מי שאין לו כזה
+            מוצג באנגלית.
           </div>
         </div>
       </header>

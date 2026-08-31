@@ -10787,6 +10787,26 @@ html[data-theme="dark"] .price-check-card-outlier.price-check-card-min {
   border: 1px solid var(--border);
 }
 
+/* Missing Hebrew name on /admin/names-to-emails. Deliberately louder
+   than the plain "—" the role column uses: a blank here isn't cosmetic,
+   it's why that person's card renders in Latin on /team, in the
+   assignee pickers and on every task row. Amber = "fix me", not an
+   error — the row still works. */
+.admin-missing-he {
+  display: inline-block;
+  padding: 0.15em 0.7em;
+  border-radius: 999px;
+  font-size: 0.82em;
+  font-weight: 600;
+  background: var(--amber-soft);
+  color: #92400e;
+  border: 1px solid var(--amber);
+}
+html[data-theme="dark"] .admin-missing-he {
+  background: color-mix(in srgb, var(--amber) 18%, transparent);
+  color: var(--amber);
+}
+
 .admin-input {
   width: 100%;
   padding: 0.4rem 0.55rem;
