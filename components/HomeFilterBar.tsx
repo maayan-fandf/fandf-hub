@@ -12,14 +12,16 @@ const HIDE_ENDED_KEY = "hub_hide_ended";
 // transient renders can't write spurious "0" entries.
 const SHOW_MINE_KEY = "hub_show_mine_v3";
 
-// Filter bar for the home page — two controls:
-//   1. הצג / הסתר שהושלמו — one toggle that hides everything that
-//      isn't a live campaign: projects past their end-date AND
-//      projects with no current-month spend. Default: hide (show
-//      only live). Earlier this was two separate pills (ended +
-//      inactive); merged per Maayan 2026-05-16 — the distinction
-//      was noise, "is this campaign live right now" is the only
-//      question the home grid needs to answer.
+// Filter bar for the home page — two segmented toggles, both naming the
+// state they are IN rather than the action they perform:
+//   1. פעילים / כל הפרויקטים — hides everything that isn't a live
+//      campaign: projects past their end-date AND projects with no
+//      current-month spend. Default: פעילים. Earlier this was two
+//      separate pills (ended + inactive); merged per Maayan 2026-05-16 —
+//      the distinction was noise, "is this campaign live right now" is
+//      the only question the home grid needs to answer. It was also a
+//      single action-labelled button ("הצג הכל") until 2026-08-30, which
+//      read backwards beside its state-labelled neighbour.
 //   2. רק שלי / הכל — narrows the grid to projects where the user is
 //      on the roster (same "involved at" semantic as /tasks).
 //      Default: רק שלי (narrowed).
@@ -77,11 +79,10 @@ export default function HomeFilterBar() {
   // Each handler writes ONLY when moving to the non-default state and
   // CLEARS the key when moving back to default. That way no stale
   // value can persist past a deliberate user action.
-  function toggleHideEnded() {
-    const next = !hideEnded;
-    setHideEnded(next);
+  function setLiveOnly(active: boolean) {
+    setHideEnded(active);
     try {
-      if (next) localStorage.removeItem(HIDE_ENDED_KEY);
+      if (active) localStorage.removeItem(HIDE_ENDED_KEY);
       else localStorage.setItem(HIDE_ENDED_KEY, "0");
     } catch {
       /* ignore */
@@ -100,21 +101,39 @@ export default function HomeFilterBar() {
 
   return (
     <div className="home-filter-bar">
-      <button
-        type="button"
-        className={`home-filter-pill home-filter-pill--button${hideEnded ? " is-active" : ""}`}
-        onClick={toggleHideEnded}
-        title={
-          hideEnded
-            ? "מציג רק קמפיינים פעילים. לחיצה תציג גם פרויקטים שהסתיימו או ללא הוצאה החודש."
-            : "מציג הכל. לחיצה תסתיר פרויקטים שהסתיימו או ללא הוצאה החודש."
-        }
+      {/* Segmented, like the scope control beside it. It used to be one
+          button whose label named the ACTION ("הצג הכל") while its
+          neighbour named the STATE ("רק שלי") — two controls side by
+          side, read in opposite directions, so "הצג הכל" scanned as if
+          everything were already showing when it meant the opposite. */}
+      <div
+        className="tasks-scope-toggle"
+        role="tablist"
+        aria-label="אילו פרויקטים להציג"
       >
-        <span className="home-filter-pill-icon" aria-hidden>
-          🟢
-        </span>
-        <span>{hideEnded ? "הצג הכל" : "רק קמפיינים פעילים"}</span>
-      </button>
+        <button
+          type="button"
+          className={`tasks-scope-toggle-btn${hideEnded ? " is-active" : ""}`}
+          onClick={() => setLiveOnly(true)}
+          aria-selected={hideEnded}
+          role="tab"
+          title="רק קמפיינים שרצים עכשיו — בלי פרויקטים שהסתיימו או בלי הוצאה החודש"
+        >
+          <span aria-hidden>🟢</span>
+          פעילים
+        </button>
+        <button
+          type="button"
+          className={`tasks-scope-toggle-btn${!hideEnded ? " is-active" : ""}`}
+          onClick={() => setLiveOnly(false)}
+          aria-selected={!hideEnded}
+          role="tab"
+          title="גם פרויקטים שהסתיימו וגם כאלה ללא הוצאה החודש"
+        >
+          <span aria-hidden>🗂️</span>
+          כל הפרויקטים
+        </button>
+      </div>
       {/* Segmented "scope" control — visual twin of the /tasks page's
           TasksScopeToggle so the gesture feels the same across surfaces.
           Buttons (not Links) because the toggle is client-only state:

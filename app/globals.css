@@ -1221,9 +1221,9 @@ a:hover {
   color: var(--md-sys-color-error);
 }
 
-/* Home-page filter bar: person dropdown + hide-ended toggle. Both are pills
-   sharing the same base style (.home-filter-pill) so they sit side-by-side
-   coherently with the rest of the UI's pill/badge vocabulary. */
+/* Home-page filter bar. Holds the two segmented toggles — פעילים /
+   כל הפרויקטים and רק שלי / הכל — which both style themselves as
+   .tasks-scope-toggle, the same control the /tasks page uses. */
 .home-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1231,89 +1231,6 @@ a:hover {
   gap: 0.55rem;
 }
 
-/* M3 filter chip — shared base for select + button variants.
-   Resting:  surface-container-low + outline-variant border
-   Hover:    8% on-surface state-layer mixed into the base
-   Selected: secondary-container fill, on-secondary-container text,
-             borderless (M3 filter-chip spec). */
-.home-filter-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  height: 2.2rem;
-  padding: 0 0.9rem;
-  border-radius: var(--md-sys-shape-corner-full);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-large-size);
-  font-weight: var(--md-sys-typescale-label-large-weight);
-  letter-spacing: var(--md-sys-typescale-label-large-tracking);
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background-color var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
-    border-color    var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard),
-    color           var(--md-sys-motion-duration-short3) var(--md-sys-motion-easing-standard);
-  box-sizing: border-box;
-}
-
-.home-filter-pill:hover,
-.home-filter-pill:focus-within {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-low));
-  color: var(--md-sys-color-on-surface);
-}
-
-.home-filter-pill-icon {
-  font-size: 0.95rem;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-/* Select variant — the pill wraps a bare <select> so the chrome stays ours. */
-.home-filter-pill--select {
-  padding-inline-end: 0.65rem;  /* small breathing room for the native arrow */
-}
-
-.home-filter-select {
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: none;
-  padding: 0;
-  margin: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  max-width: 240px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  /* Custom caret drawn as a CSS arrow so it matches the pill's accent color. */
-  padding-inline-start: 1.2rem;
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
-                    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 0.65rem) 50%, calc(100% - 0.35rem) 50%;
-  background-size: 0.3rem 0.3rem, 0.3rem 0.3rem;
-  background-repeat: no-repeat;
-}
-.home-filter-select:focus {
-  outline: none;
-}
-
-/* Button variant — toggle state for the hide-ended pill. */
-.home-filter-pill--button {
-  cursor: pointer;
-}
-
-.home-filter-pill--button.is-active {
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-  border-color: transparent;
-}
-.home-filter-pill--button.is-active:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-secondary-container) 8%, var(--md-sys-color-secondary-container));
-}
 
 /* Unified "show only live campaigns" filter.
 
@@ -11140,18 +11057,9 @@ html[data-theme="dark"] .price-check-card-outlier.price-check-card-min {
     font-size: 1.15em;
   }
 
-  /* Filter bar stacks on phones so pills wrap cleanly. */
+  /* Filter bar stacks on phones so the two toggles wrap cleanly. */
   .home-filter-bar {
     width: 100%;
-  }
-  .home-filter-pill--select {
-    flex: 1;
-    min-width: 0;
-  }
-  .home-filter-select {
-    max-width: none;
-    flex: 1;
-    min-width: 0;
   }
 
   /* Stats tiles and project cards should stack cleanly on mobile. */
