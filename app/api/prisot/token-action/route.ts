@@ -14,8 +14,46 @@ import {
   verifyPrisaApprovalToken,
 } from "@/lib/prisaApprovalTokens";
 import { createMentionDirect } from "@/lib/commentsWriteDirect";
-import { sendNotificationEmail } from "@/lib/notifications";
+import { notifyOnce } from "@/lib/notifications";
+import { projectHref } from "@/lib/projectHref";
 import { driveFolderOwner } from "@/lib/sa";
+
+/**
+ * Tell the person who sent the plan what the client decided.
+ *
+ * Writes the bell row and (per their email pref) sends the mail. Until
+ * this existed, a decision made on the public link left exactly one
+ * trace — the chip on LatestPrisotCard, which renders on the project
+ * page and nowhere else. A client asking to change a budget therefore
+ * reached nobody until someone opened that project by chance; three
+ * such requests sat unseen over 30–31 August.
+ *
+ * `emailFrom` is the operating identity, not the actor: the actor is a
+ * client on a gmail.com address, and Gmail can only send as a domain
+ * user. Best-effort by design — notifyOnce swallows its own failures,
+ * and a notification is never worth failing a client's approval over.
+ */
+async function notifySender(
+  request: { sentBy?: string; projectName?: string; company?: string; fileName?: string },
+  kind: "prisa_changes" | "prisa_approved",
+  actorEmail: string,
+  note: string,
+): Promise<void> {
+  const to = String(request.sentBy || "").trim();
+  if (!to) return;
+  const project = String(request.projectName || "");
+  const base = (process.env.AUTH_URL || "").replace(/\/+$/, "");
+  await notifyOnce({
+    kind,
+    forEmail: to,
+    actorEmail,
+    emailFrom: driveFolderOwner() || to,
+    project,
+    title: String(request.fileName || ""),
+    body: note,
+    link: `${base}${projectHref(project, String(request.company || ""), "prisot")}`,
+  });
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -170,6 +208,7 @@ export async function POST(req: Request) {
       resolution: "approved",
       resolvedBy: email,
     });
+    await notifySender(request, "prisa_approved", email, "הפריסה אושרה — אפשר לצאת לדרך.");
     return NextResponse.json({ ok: true, approvedTime: result.approvedTime });
   }
 
@@ -218,32 +257,18 @@ export async function POST(req: Request) {
       } — falling back to email`,
     );
   }
-  if (!posted && request.sentBy) {
-    try {
-      await sendNotificationEmail({
-        fromEmail: driveFolderOwner() || request.sentBy,
-        toEmail: request.sentBy,
-        subject: `✏️ ${email} ביקש/ה שינויים בפריסה — ${
-          request.projectName || request.fileName
-        }`,
-        plainBody: [
-          `${email} ביקש/ה שינויים בפריסה שנשלחה לאישור.`,
-          "",
-          `פרויקט: ${request.projectName}`,
-          `קובץ: ${request.fileName}`,
-          "",
-          "ההערה:",
-          note,
-        ].join("\n"),
-      });
-    } catch (e) {
-      console.warn(
-        `[token-action] fallback email to ${request.sentBy} failed: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      );
-    }
-  }
+  // Tell the sender, always — not only when the discussion post failed.
+  // This used to be a fallback email guarded by `!posted`, which meant
+  // the SUCCESSFUL path notified nobody: the note landed in the project
+  // timeline and sat there. When the post did fail there is no timeline
+  // copy at all, so the notification says so and carries the note as the
+  // only record.
+  await notifySender(
+    request,
+    "prisa_changes",
+    email,
+    posted ? note : `${note}\n\n(ההערה לא נרשמה בדיון הפרויקט — זהו העותק היחיד שלה.)`,
+  );
 
   return NextResponse.json({ ok: true, posted });
 }

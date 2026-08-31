@@ -27,6 +27,11 @@ const KIND_LABELS: Record<string, { emoji: string; label: string }> = {
   comment_reply: { emoji: "💬", label: "תגובה חדשה" },
   mention: { emoji: "🏷️", label: "תויגת" },
   chat_mention: { emoji: "💬", label: "תויגת ב-Chat" },
+  // Client decisions on an emailed פריסה approval link. Same reason
+  // task_unblocked has an entry: without one the chip renders the raw
+  // kind string.
+  prisa_changes: { emoji: "📐", label: "התבקשו שינויים בפריסה" },
+  prisa_approved: { emoji: "✅", label: "הפריסה אושרה" },
 };
 
 export default async function NotificationsPage({

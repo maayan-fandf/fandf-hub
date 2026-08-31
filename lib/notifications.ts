@@ -39,7 +39,15 @@ export type NotificationKind =
   | "task_unblocked"
   | "comment_reply"
   | "mention"
-  | "chat_mention";
+  | "chat_mention"
+  // A client acted on an emailed פריסה approval link (/approve/<token>).
+  // Added 2026-08-31: until then the ONLY trace of either outcome was
+  // the chip on LatestPrisotCard, which renders on one page — so a
+  // client asking for a budget change reached nobody unless someone
+  // happened to open that project. The actor is outside the domain, so
+  // these are the first kinds that need `emailFrom`.
+  | "prisa_changes"
+  | "prisa_approved";
 
 export const TAB = "Notifications";
 const HEADERS = [
@@ -155,6 +163,15 @@ export async function notifyOnce(opts: {
   emailPlain?: string;
   /** HTML body for the email. Optional — falls back to plain. */
   emailHtml?: string;
+  /** Mailbox the email is SENT FROM. Defaults to `actorEmail`.
+   *  Override when the actor is outside the Workspace domain — Gmail's
+   *  domain-wide delegation can only impersonate @fandf.co.il, so an
+   *  external actor (a client on a public /approve link) makes the send
+   *  throw `unauthorized_client`. That failure is swallowed as
+   *  non-fatal below, which would leave the bell row written and the
+   *  email quietly missing — the exact half-delivery this option
+   *  exists to prevent. Pass the operating identity instead. */
+  emailFrom?: string;
   /** Epoch ms. When set and in the future, the EMAIL is held: this
    *  call only writes the in-hub bell row (with an `emailed_at` defer
    *  sentinel) and does NOT send now. `flushDeferredNotificationEmails`
@@ -200,11 +217,12 @@ export async function notifyOnce(opts: {
         },
       );
 
-      if (shouldSendEmail && actorEmail) {
+      const sendFrom = (opts.emailFrom || actorEmail).toLowerCase().trim();
+      if (shouldSendEmail && sendFrom) {
         try {
           const mail = buildNotificationEmail(opts);
           await sendNotificationEmail({
-            fromEmail: actorEmail,
+            fromEmail: sendFrom,
             toEmail: forEmail,
             ...mail,
           });
@@ -650,6 +668,10 @@ function defaultEmailSubject(opts: {
       return `🏷️ תויגת בתגובה — ${tail}`;
     case "chat_mention":
       return `💬 תויגת ב-Chat — ${tail}`;
+    case "prisa_changes":
+      return `📐 התבקשו שינויים בפריסה — ${tail}`;
+    case "prisa_approved":
+      return `✅ הפריסה אושרה — ${tail}`;
   }
 }
 
@@ -683,6 +705,13 @@ function defaultEmailIntro(opts: {
       return `${esc(actor)} תייג/ה אותך בתגובה.`;
     case "chat_mention":
       return `${esc(actor)} תייג/ה אותך בהודעת Chat.`;
+    // The actor is the CLIENT here, not a colleague — the local-part of
+    // a gmail address is a poor name, so both of these lead with the
+    // full address the approval page recorded.
+    case "prisa_changes":
+      return `${esc(opts.actorEmail)} ביקש/ה שינויים בפריסה ששלחת לאישור.`;
+    case "prisa_approved":
+      return `${esc(opts.actorEmail)} אישר/ה את הפריסה ששלחת.`;
   }
 }
 
@@ -697,6 +726,9 @@ function defaultCtaLabel(kind: NotificationKind): string {
       return "פתח את הדיון";
     case "chat_mention":
       return "פתח את ה-Chat";
+    case "prisa_changes":
+    case "prisa_approved":
+      return "פתח את הפריסה";
     default:
       return "פתח את המשימה";
   }
