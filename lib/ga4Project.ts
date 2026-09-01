@@ -32,6 +32,14 @@
  *   - ONLY when that is ambiguous or missing, the Admin API, which costs
  *     one stream-list call per visible property and is therefore cached
  *     hard and consulted rarely.
+ *   - LAST, the Data API's hostName dimension — which property actually
+ *     RECEIVES this host. Added 2026-09-01 after the two above left seven
+ *     projects blank: quirk 2 above (a bare `/`) makes the path useless,
+ *     and `defaultUri` turned out to be maintained on almost nothing —
+ *     it covered 63 hosts, none of them a landing host in use. Traffic
+ *     resolved all seven to exactly one property each. See
+ *     `loadTrafficHostMap` for why host is a safe discriminator where
+ *     path is not.
  *
  * When neither resolves, we return null and the section hides. A wrong
  * property would show a client another developer's traffic, so silence
@@ -50,7 +58,7 @@ export type Ga4Target = {
   /** Normalized paths on that property belonging to this project. */
   paths: string[];
   /** How the property was identified — shown in the UI's source line. */
-  via: "sheet" | "stream";
+  via: "sheet" | "stream" | "traffic";
 };
 
 /** Split the Keys landing cell into a host + its normalized paths. */
@@ -226,6 +234,138 @@ async function loadHostMap(): Promise<Map<string, PropRef>> {
   }
 }
 
+// ── Strategy 3: hostName traffic, via the Analytics DATA API ────────────
+
+let trafficMapCache: { expiresAt: number; byHost: Map<string, PropRef> } | null =
+  null;
+let trafficMapInFlight: Promise<Map<string, PropRef>> | null = null;
+const DATA_API = "https://analyticsdata.googleapis.com/v1beta";
+
+/**
+ * host → property, built from the hostName dimension of each property's
+ * ACTUAL traffic.
+ *
+ * This is the discriminator the other two strategies were missing. The
+ * GA4 tab records "Landing page", which is a PATH — so a project whose
+ * landing URL is a bare origin (rimon.matzlawi.co.il/) maps to "/", the
+ * one path every site on earth shares, and a project on a shared landing
+ * host maps to a path several properties may report. Strategy 2 knew
+ * about hosts but read them from each stream's `defaultUri`, a config
+ * field nobody maintains: it covered 63 hosts and not one of the landing
+ * hosts actually in use.
+ *
+ * Measured 2026-09-01 over all 68 visible properties: every unresolved
+ * host maps to EXACTLY ONE property, including the two that defeated
+ * every heuristic tried on the path data —
+ *
+ *   lp.g-dlevy.co.il  → 380361496 g-dlevy          44,221 sessions
+ *   landing.shbn.co.il→ 533952214 2026.shbn.co.il  38,805 sessions
+ *
+ * A host is client-identifying in a way a path is not, which is what
+ * makes this safe where a traffic tiebreak on `/projects` was not. The
+ * dominance guard below is defensive only — no host measured has more
+ * than one receiver — and covers a site dual-tagged mid-migration, where
+ * both properties belong to the same client anyway.
+ *
+ * One runReport per property, so it is built only when strategies 1 and
+ * 2 have both failed, and cached for 12h like the others.
+ */
+const TRAFFIC_DOMINANCE = 0.8;
+
+async function loadTrafficHostMap(): Promise<Map<string, PropRef>> {
+  const now = Date.now();
+  if (trafficMapCache && trafficMapCache.expiresAt > now)
+    return trafficMapCache.byHost;
+  if (trafficMapInFlight) return trafficMapInFlight;
+
+  trafficMapInFlight = (async () => {
+    const byHost = new Map<string, PropRef>();
+    try {
+      const token = await analyticsAccessToken();
+      const hdr = {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      };
+      const sres = await fetch(`${ADMIN_API}/accountSummaries?pageSize=200`, {
+        headers: hdr,
+        cache: "no-store",
+      });
+      if (!sres.ok) return byHost;
+      const sjson = (await sres.json()) as {
+        accountSummaries?: {
+          propertySummaries?: { property?: string; displayName?: string }[];
+        }[];
+      };
+      const props: PropRef[] = [];
+      for (const a of sjson.accountSummaries ?? []) {
+        for (const p of a.propertySummaries ?? []) {
+          const id = (p.property ?? "").split("/").pop() ?? "";
+          if (id) props.push({ id, name: p.displayName ?? id });
+        }
+      }
+      // host → every property reporting it, with session volume.
+      const claims = new Map<string, { prop: PropRef; sessions: number }[]>();
+      await Promise.all(
+        props.map(async (p) => {
+          try {
+            const r = await fetch(`${DATA_API}/properties/${p.id}:runReport`, {
+              method: "POST",
+              headers: hdr,
+              cache: "no-store",
+              body: JSON.stringify({
+                dateRanges: [{ startDate: "90daysAgo", endDate: "yesterday" }],
+                dimensions: [{ name: "hostName" }],
+                metrics: [{ name: "sessions" }],
+                limit: 200,
+              }),
+            });
+            if (!r.ok) return;
+            const j = (await r.json()) as {
+              rows?: {
+                dimensionValues?: { value?: string }[];
+                metricValues?: { value?: string }[];
+              }[];
+            };
+            for (const row of j.rows ?? []) {
+              const h = String(row.dimensionValues?.[0]?.value ?? "")
+                .toLowerCase()
+                .replace(/^www\./, "");
+              if (!h) continue;
+              const sessions = Number(row.metricValues?.[0]?.value ?? 0);
+              const list = claims.get(h) ?? [];
+              list.push({ prop: p, sessions });
+              claims.set(h, list);
+            }
+          } catch {
+            /* one property failing must not sink the map */
+          }
+        }),
+      );
+      for (const [host, list] of claims) {
+        list.sort((a, b) => b.sessions - a.sessions);
+        const total = list.reduce((a, x) => a + x.sessions, 0);
+        if (total <= 0) continue;
+        // Sole receiver, or one that dominates a dual-tagged site.
+        if (list.length === 1 || list[0].sessions / total >= TRAFFIC_DOMINANCE) {
+          byHost.set(host, list[0].prop);
+        }
+      }
+      if (byHost.size > 0) {
+        trafficMapCache = { expiresAt: Date.now() + HOST_TTL_MS, byHost };
+      }
+    } catch {
+      // Data API unreachable — empty map, caller gives up as before.
+    }
+    return byHost;
+  })();
+
+  try {
+    return await trafficMapInFlight;
+  } finally {
+    trafficMapInFlight = null;
+  }
+}
+
 /**
  * Project → GA4 target, or null when it cannot be resolved with
  * certainty. Wrapped in React `cache()` for per-request dedup, matching
@@ -269,6 +409,22 @@ export const resolveGa4Target = cache(
         host,
         paths,
         via: "stream",
+      };
+    }
+
+    // Strategy 3 — which property actually RECEIVES this host. Last
+    // because it is the most expensive (one report per property), but it
+    // is also the most authoritative: a bare-origin landing URL has no
+    // usable path, and a shared landing host has no usable stream URI.
+    const byTraffic = await loadTrafficHostMap();
+    const viaTraffic = byTraffic.get(host);
+    if (viaTraffic) {
+      return {
+        propertyId: viaTraffic.id,
+        propertyName: viaTraffic.name,
+        host,
+        paths,
+        via: "traffic",
       };
     }
     return null;
