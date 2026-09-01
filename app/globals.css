@@ -25401,6 +25401,16 @@ button.budget-need:focus-visible {
 .rpt-empty-sm {
   padding: 0.6rem;
 }
+/* The internal-only reason under an empty section — quieter and narrower
+   than the statement above it, so the diagnostic reads as a footnote
+   rather than as the message itself. */
+.rpt-empty-why {
+  margin: 0.5rem auto 0;
+  max-width: 46ch;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  opacity: 0.72;
+}
 
 .rpt-shell {
   display: flex;

@@ -29,6 +29,43 @@ import {
  * is either exact or explicitly labelled, and why conversions are absent
  * entirely — see the header comment in lib/ga4Report.ts.
  */
+/**
+ * What the אנליטיקס section shows when it has nothing to show.
+ *
+ * It used to render `null` here, but the rail decides whether to offer
+ * the section from the NODE (a <Suspense> element, always truthy), not
+ * from its eventual output — so a project that cannot resolve a GA4
+ * property still got a nav entry, and clicking it produced a blank
+ * page indistinguishable from one that never finished loading. Saying
+ * so costs one line and removes the whole class of "is it stuck?".
+ *
+ * The reason is internal-only, matching `isInternal` elsewhere in this
+ * file: a client gets the fact, not our plumbing.
+ */
+function Ga4Gap({
+  isInternal,
+  project,
+  fetched = false,
+}: {
+  isInternal: boolean;
+  project: string;
+  /** true = the property resolved but GA returned nothing for the window. */
+  fetched?: boolean;
+}) {
+  return (
+    <div className="rpt-empty">
+      אין נתוני אנליטיקס להצגה.
+      {isInternal && (
+        <div className="rpt-empty-why">
+          {fetched
+            ? `GA4 לא החזירה נתונים לחלון המבוקש עבור ${project}.`
+            : `לא נמצא נכס GA4 שמתאים לדף הנחיתה של ${project} — לא דרך לשונית GA4 בגיליון הקריאייטיב (מיפוי לפי נתיב) ולא דרך זרם הווב של הנכס (מיפוי לפי דומיין).`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function Ga4ReportSection({
   subjectEmail,
   project,
@@ -46,7 +83,7 @@ export default async function Ga4ReportSection({
   isInternal?: boolean;
 }) {
   const target = await resolveGa4Target(subjectEmail, project).catch(() => null);
-  if (!target) return null;
+  if (!target) return <Ga4Gap isInternal={isInternal} project={project} />;
 
   // Default to the campaign's own flight dates rather than a trailing 28
   // days, so this section and the report header beside it describe the
@@ -62,7 +99,8 @@ export default async function Ga4ReportSection({
     target.paths,
     win,
   ).catch(() => null);
-  if (!data) return null;
+  if (!data)
+    return <Ga4Gap isInternal={isInternal} project={project} fetched />;
 
   return (
     <section className="project-section project-section-ga4rep">
