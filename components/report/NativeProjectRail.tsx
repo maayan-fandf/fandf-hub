@@ -426,7 +426,14 @@ export default async function NativeProjectRail({
   // project they are not listed on gets a 403 and the section's own empty
   // state rather than someone else's customers. Needs the report window,
   // hence the data guard.
-  if (data) {
+  //
+  // Not on a media-workbook project: עיריית תל אביב has no buyers, no CRM
+  // account, and nothing for this section to be about. It was offering the
+  // nav entry anyway and landing on "לא הצלחתי לטעון את נתוני החוזים" —
+  // /api/crm/signed 400s there, so the reader got a failure where the
+  // honest answer is that the section does not apply. Same reason
+  // סקירת פעילות and מגמות are !mediaLed above.
+  if (data && !mediaLed) {
     sections.push({
       id: "contracts",
       group: "leads",

@@ -15,6 +15,7 @@ import { getBudgetMaster } from "@/lib/budgetMaster";
 import { getCampaignBudgets, type CampaignBudgetItem } from "@/lib/platformDailyBudget";
 import { getDailySpend7d } from "@/lib/platformDailySpend";
 import { getProjectCreatives } from "@/lib/reportCreatives";
+import { getMediaFlightSpan } from "@/lib/mediaCampaigns";
 import {
   REPORT_PLATS,
   emptyAdPlatform,
@@ -958,6 +959,17 @@ export const getProjectReportData = cache(
         if (c.endIso && c.endIso > end) end = c.endIso;
       }
       window = { startIso: start, endIso: end };
+      // A media-workbook project (דיגיתל שלי) has NO rows in ALL CLIENTS —
+      // it reports from its own sheet — so the envelope above is two empty
+      // strings, and inRange() downstream then applies no bound at all.
+      // The section became an all-time view of every ad ever run, with
+      // lifetime totals above it, and no picker to narrow it (the picker
+      // is real-estate-only). Fall back to the workbook's own flight span
+      // so the report describes the same period its calendar draws.
+      if (!start && !end) {
+        const span = await getMediaFlightSpan(projectName).catch(() => null);
+        if (span) window = span;
+      }
     }
 
     // Creatives fetch runs concurrently with the platform-daily read —

@@ -379,3 +379,35 @@ export function cpm(cost: number, impressions: number): number | null {
   const r = ratio(cost, impressions);
   return r === null ? null : r * 1000;
 }
+
+/**
+ * Earliest flight start / latest flight end across the workbook, or null
+ * when the project has no workbook or no dated flights.
+ *
+ * This is the report window for a media-workbook project. Those projects
+ * have no rows in ALL CLIENTS at all — they report from this sheet
+ * instead — so the "live" flight envelope reportData derives from that
+ * tab comes out as two empty strings, and `inRange` in reportCreatives
+ * then applies no bound whatsoever (both its guards short-circuit on the
+ * empty string). That silently made קמפיינים an all-time view: ads from
+ * 2025-08 ranked beside ads from 2026-05 under lifetime totals.
+ *
+ * Same dates the flight calendar is drawn from, so the section and the
+ * calendar above it describe the same span.
+ */
+export const getMediaFlightSpan = cache(
+  async (
+    project: string,
+  ): Promise<{ startIso: string; endIso: string } | null> => {
+    if (!hasMediaWorkbook(project)) return null;
+    const wb = await getMediaWorkbook(project).catch(() => null);
+    if (!wb) return null;
+    let startIso = "";
+    let endIso = "";
+    for (const c of wb.campaigns) {
+      if (c.from && (!startIso || c.from < startIso)) startIso = c.from;
+      if (c.to && c.to > endIso) endIso = c.to;
+    }
+    return startIso && endIso ? { startIso, endIso } : null;
+  },
+);

@@ -899,7 +899,15 @@ export default async function ProjectOverviewPage({
               — letting them rewind to a past month is a legitimate
               read use case, and the picker's UI doesn't expose any
               internal-only data. */}
-          {dashboardEmbedUrl && isRealEstateProject && (
+          {/* Media-workbook projects get it too since 2026-09-01: they had
+              no period control at all, and with no ALL CLIENTS rows behind
+              them their report window resolved to nothing, so קמפיינים was
+              an all-time list. The window now defaults to the workbook's
+              flight span (see getMediaFlightSpan); this is what lets a
+              reader narrow it. Note ביצועי מדיה does NOT follow the picker —
+              it reads the workbook whole, on purpose: that card is the
+              account over time, not the selected period. */}
+          {dashboardEmbedUrl && (isRealEstateProject || hasMedia) && (
             <Suspense fallback={null}>
               <DashboardMonthOverrideSlot current={monthOverride} />
             </Suspense>
