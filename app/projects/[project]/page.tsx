@@ -837,7 +837,11 @@ export default async function ProjectOverviewPage({
   const hasMedia = !isRealEstateProject && hasMediaWorkbook(projectName);
   const mediaNode = hasMedia ? (
     <Suspense fallback={null}>
-      <MediaCampaignsCard project={projectName} view="actuals" />
+      <MediaCampaignsCard
+        project={projectName}
+        view="actuals"
+        clientView={reportClientView}
+      />
     </Suspense>
   ) : null;
   const mediaPlanNode = hasMedia ? (

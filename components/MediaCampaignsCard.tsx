@@ -173,7 +173,75 @@ function totalOf(
   return campaigns.reduce((a, c) => a + pick(c), 0);
 }
 
+/**
+ * The four efficiency metrics, identical in every table on this card.
+ *
+ * They used to be picked per table — קמפיינים carried CPM+CTR, the
+ * channel drill-ins CPM+CPC, the rollup CPM+CPC — so two tables stacked
+ * on the same screen couldn't be read across: the CTR of a campaign had
+ * no counterpart in its own channel breakdown. Keeping the header and
+ * the cells as one pair is what stops that drifting apart again.
+ *
+ * Order is counts → rate → costs: CTR reads off the two count columns
+ * immediately before it, then the three costs by widening unit (per
+ * mille impressions, per click, per install). Every one of them is null
+ * on a zero denominator, which `ratio` already returns, so a campaign
+ * with no installs shows "—" rather than a fake ₪0.
+ */
+function MetricHeads() {
+  return (
+    <>
+      <th>CTR</th>
+      <th>CPM</th>
+      <th>CPC</th>
+      <th>CPI</th>
+    </>
+  );
+}
+
+function MetricCells({
+  cost,
+  impressions,
+  clicks,
+  installs,
+}: {
+  cost: number;
+  impressions: number;
+  clicks: number;
+  installs: number;
+}) {
+  return (
+    <>
+      <td>{fmtPct(ratio(clicks, impressions), 2)}</td>
+      <td>{fmt2(cpm(cost, impressions))}</td>
+      <td>{fmt2(ratio(cost, clicks))}</td>
+      <td>{fmt2(ratio(cost, installs))}</td>
+    </>
+  );
+}
+
 function ChannelTable({ rows }: { rows: MediaChannelRow[] }) {
+  // Totals for the drill-in. Budget is summed only over rows that report
+  // one: a channel with a null budget is unreported, not zero, and
+  // folding it in as zero would understate the denominator utilisation
+  // is measured against.
+  const t = rows.reduce(
+    (a, r) => ({
+      budget: r.budget === null ? a.budget : (a.budget ?? 0) + r.budget,
+      cost: a.cost + (r.cost ?? 0),
+      impressions: a.impressions + (r.impressions ?? 0),
+      clicks: a.clicks + (r.clicks ?? 0),
+      installs: a.installs + (r.installs ?? 0),
+    }),
+    {
+      budget: null as number | null,
+      cost: 0,
+      impressions: 0,
+      clicks: 0,
+      installs: 0,
+    },
+  );
+
   return (
     <table className="media-table media-table-sub">
       <thead>
@@ -187,8 +255,7 @@ function ChannelTable({ rows }: { rows: MediaChannelRow[] }) {
           <th>חשיפות</th>
           <th>הקלקות</th>
           <th>התקנות</th>
-          <th>CPM</th>
-          <th>CPC</th>
+          <MetricHeads />
         </tr>
       </thead>
       <tbody>
@@ -207,11 +274,39 @@ function ChannelTable({ rows }: { rows: MediaChannelRow[] }) {
               <td>{r.impressions === null ? "—" : fmtInt(r.impressions)}</td>
               <td>{r.clicks === null ? "—" : fmtInt(r.clicks)}</td>
               <td>{r.installs ? fmtInt(r.installs) : "—"}</td>
-              <td>{fmt2(cpm(cost, r.impressions ?? 0))}</td>
-              <td>{fmt2(ratio(cost, r.clicks ?? 0))}</td>
+              <MetricCells
+                cost={cost}
+                impressions={r.impressions ?? 0}
+                clicks={r.clicks ?? 0}
+                installs={r.installs ?? 0}
+              />
             </tr>
           );
         })}
+        {/* Only worth a footer when there is something to add up — on a
+            single-channel flight it would just repeat the row above, and
+            the flight's spend is already on the <summary> line. */}
+        {rows.length > 1 && (
+          <tr className="media-total-row">
+            <td>סה״כ</td>
+            <td />
+            <td />
+            <td>{t.budget === null ? "—" : fmtILS(t.budget)}</td>
+            <td>{fmtILS(t.cost)}</td>
+            <td>
+              <PaceBar pace={t.budget ? ratio(t.cost, t.budget) : null} />
+            </td>
+            <td>{fmtInt(t.impressions)}</td>
+            <td>{fmtInt(t.clicks)}</td>
+            <td>{t.installs ? fmtInt(t.installs) : "—"}</td>
+            <MetricCells
+              cost={t.cost}
+              impressions={t.impressions}
+              clicks={t.clicks}
+              installs={t.installs}
+            />
+          </tr>
+        )}
       </tbody>
     </table>
   );
@@ -220,9 +315,15 @@ function ChannelTable({ rows }: { rows: MediaChannelRow[] }) {
 export default async function MediaCampaignsCard({
   project,
   view = "actuals",
+  clientView = false,
 }: {
   project: string;
   view?: "actuals" | "plan";
+  /** Hides the data-quality strip. Those flags are notes to ourselves
+   *  about the workbook — an unreported DV360 cost, an impossible CPM —
+   *  and read to a client as "your report is wrong" without telling them
+   *  anything they can act on. The numbers themselves stay identical. */
+  clientView?: boolean;
 }) {
   const wb = await getMediaWorkbook(project).catch(() => null);
   if (!wb) return null;
@@ -321,6 +422,13 @@ export default async function MediaCampaignsCard({
   const channelRows = [...byChannel.entries()].sort(
     (a, b) => b[1].spend - a[1].spend,
   );
+  const channelSpend = channelRows.reduce((a, [, v]) => a + v.spend, 0);
+  const channelImpressions = channelRows.reduce(
+    (a, [, v]) => a + v.impressions,
+    0,
+  );
+  const channelClicks = channelRows.reduce((a, [, v]) => a + v.clicks, 0);
+  const channelInstalls = channelRows.reduce((a, [, v]) => a + v.installs, 0);
 
   // Data-quality strip. Both checks describe the SOURCE, not the media:
   // an allocation with no spend is an import gap (DV360 actuals never
@@ -391,7 +499,7 @@ export default async function MediaCampaignsCard({
         </div>
       </div>
 
-      {(unfunded.length > 0 || suspectCpm.length > 0) && (
+      {!clientView && (unfunded.length > 0 || suspectCpm.length > 0) && (
         <div className="media-flags">
           {unfunded.length > 0 && (
             <div className="media-flag">
@@ -426,8 +534,7 @@ export default async function MediaCampaignsCard({
             <th>חשיפות</th>
             <th>הקלקות</th>
             <th>התקנות</th>
-            <th>CPM</th>
-            <th>CTR</th>
+            <MetricHeads />
           </tr>
         </thead>
         <tbody>
@@ -446,8 +553,12 @@ export default async function MediaCampaignsCard({
                 <td>{fmtInt(c.impressions)}</td>
                 <td>{fmtInt(c.clicks)}</td>
                 <td>{c.installs ? fmtInt(c.installs) : "—"}</td>
-                <td>{fmt2(cpm(c.spent, c.impressions))}</td>
-                <td>{fmtPct(ratio(c.clicks, c.impressions), 2)}</td>
+                <MetricCells
+                  cost={c.spent}
+                  impressions={c.impressions}
+                  clicks={c.clicks}
+                  installs={c.installs}
+                />
               </tr>
             </Fragment>
           ))}
@@ -462,8 +573,12 @@ export default async function MediaCampaignsCard({
             <td>{fmtInt(impressions)}</td>
             <td>{fmtInt(clicks)}</td>
             <td>{fmtInt(installs)}</td>
-            <td>{fmt2(cpm(spent, impressions))}</td>
-            <td>{fmtPct(ratio(clicks, impressions), 2)}</td>
+            <MetricCells
+              cost={spent}
+              impressions={impressions}
+              clicks={clicks}
+              installs={installs}
+            />
           </tr>
         </tbody>
       </table>
@@ -504,8 +619,7 @@ export default async function MediaCampaignsCard({
             <th>חשיפות</th>
             <th>הקלקות</th>
             <th>התקנות</th>
-            <th>CPM</th>
-            <th>CPC</th>
+            <MetricHeads />
           </tr>
         </thead>
         <tbody>
@@ -517,10 +631,32 @@ export default async function MediaCampaignsCard({
               <td>{fmtInt(v.impressions)}</td>
               <td>{fmtInt(v.clicks)}</td>
               <td>{v.installs ? fmtInt(v.installs) : "—"}</td>
-              <td>{fmt2(cpm(v.spend, v.impressions))}</td>
-              <td>{fmt2(ratio(v.spend, v.clicks))}</td>
+              <MetricCells
+                cost={v.spend}
+                impressions={v.impressions}
+                clicks={v.clicks}
+                installs={v.installs}
+              />
             </tr>
           ))}
+          {/* The rollup's own footer. Its counts come from the channel
+              rows, so they can legitimately fall short of the campaign
+              totals above when a flight reports at campaign level only —
+              that gap is the point, not a bug to paper over. */}
+          <tr className="media-total-row">
+            <td>סה״כ</td>
+            <td>{fmtILS(channelSpend)}</td>
+            <td>{fmtPct(ratio(channelSpend, spent), 0)}</td>
+            <td>{fmtInt(channelImpressions)}</td>
+            <td>{fmtInt(channelClicks)}</td>
+            <td>{channelInstalls ? fmtInt(channelInstalls) : "—"}</td>
+            <MetricCells
+              cost={channelSpend}
+              impressions={channelImpressions}
+              clicks={channelClicks}
+              installs={channelInstalls}
+            />
+          </tr>
         </tbody>
       </table>
       </div>
