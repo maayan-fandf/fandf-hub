@@ -1,7 +1,7 @@
 import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
 import PlatformIcon from "@/components/PlatformIcon";
 import ChannelIcon from "@/components/ChannelIcon";
-import { resolveGa4Target } from "@/lib/ga4Project";
+import { resolveGa4Target, describeGa4Miss } from "@/lib/ga4Project";
 import { getProjectFlightWindow } from "@/lib/allClients";
 import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
@@ -42,26 +42,45 @@ import {
  * The reason is internal-only, matching `isInternal` elsewhere in this
  * file: a client gets the fact, not our plumbing.
  */
-function Ga4Gap({
+async function Ga4Gap({
   isInternal,
+  subjectEmail,
   project,
   fetched = false,
 }: {
   isInternal: boolean;
+  subjectEmail: string;
   project: string;
   /** true = the property resolved but GA returned nothing for the window. */
   fetched?: boolean;
 }) {
+  let why = "";
+  if (isInternal && fetched) {
+    why = `GA4 לא החזירה נתונים לחלון המבוקש עבור ${project}.`;
+  } else if (isInternal) {
+    // Only for internal viewers on an already-failed section, so the extra
+    // pass costs nothing on the normal path.
+    const miss = await describeGa4Miss(subjectEmail, project).catch(() => null);
+    if (miss?.kind === "ambiguous") {
+      why =
+        `נתיב דף הנחיתה ${miss.path} משויך ל-${miss.candidates.length} נכסי GA4: ` +
+        miss.candidates.map((c) => `${c.name} (${c.id})`).join(" · ") +
+        `. המערכת לא בוחרת ביניהם בכוונה — ניחוש שגוי היה מציג לפרויקט הזה את התנועה של לקוח אחר. ` +
+        `צריך לארכב את הנכס המיותר, או לתת לפרויקט נתיב נחיתה ייחודי ב-Keys.`;
+    } else if (miss?.kind === "unmapped") {
+      why =
+        `הנתיב ${miss.paths.join(", ")} לא מופיע בלשונית GA4 בגיליון הקריאייטיב, ` +
+        `ואין נכס עם זרם ווב על ${miss.host}.`;
+    } else if (miss?.kind === "no-landing") {
+      why = `אין ל-${project} כתובת דף נחיתה תקינה ב-Keys.`;
+    } else {
+      why = `לא נמצא נכס GA4 שמתאים לדף הנחיתה של ${project}.`;
+    }
+  }
   return (
     <div className="rpt-empty">
       אין נתוני אנליטיקס להצגה.
-      {isInternal && (
-        <div className="rpt-empty-why">
-          {fetched
-            ? `GA4 לא החזירה נתונים לחלון המבוקש עבור ${project}.`
-            : `לא נמצא נכס GA4 שמתאים לדף הנחיתה של ${project} — לא דרך לשונית GA4 בגיליון הקריאייטיב (מיפוי לפי נתיב) ולא דרך זרם הווב של הנכס (מיפוי לפי דומיין).`}
-        </div>
-      )}
+      {why && <div className="rpt-empty-why">{why}</div>}
     </div>
   );
 }
@@ -83,7 +102,9 @@ export default async function Ga4ReportSection({
   isInternal?: boolean;
 }) {
   const target = await resolveGa4Target(subjectEmail, project).catch(() => null);
-  if (!target) return <Ga4Gap isInternal={isInternal} project={project} />;
+  if (!target) return (
+      <Ga4Gap isInternal={isInternal} subjectEmail={subjectEmail} project={project} />
+    );
 
   // Default to the campaign's own flight dates rather than a trailing 28
   // days, so this section and the report header beside it describe the
@@ -100,7 +121,9 @@ export default async function Ga4ReportSection({
     win,
   ).catch(() => null);
   if (!data)
-    return <Ga4Gap isInternal={isInternal} project={project} fetched />;
+    return (
+      <Ga4Gap isInternal={isInternal} subjectEmail={subjectEmail} project={project} fetched />
+    );
 
   return (
     <section className="project-section project-section-ga4rep">

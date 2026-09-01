@@ -274,3 +274,49 @@ export const resolveGa4Target = cache(
     return null;
   },
 );
+
+/**
+ * Why resolveGa4Target gave up — internal diagnostic only, never on the
+ * resolution path.
+ *
+ * The section used to say "no property matched", which is true but not
+ * actionable: the fix differs completely depending on whether the path is
+ * absent from the GA4 tab or contested by several properties. Naming the
+ * contenders turns it into something fixable from the page.
+ *
+ * Deliberately does NOT pick a winner. Two automatic rules were measured
+ * against the seven contested projects (2026-09-01) and each one
+ * mis-assigns a different client's property:
+ *
+ *   - most traffic on the path → gives ארצי (landing.shbn.co.il) the
+ *     g-dlevy property, because g-dlevy.co.il outweighs 2026.shbn.co.il
+ *     on a path as generic as /projects.
+ *   - property name contains the landing host's domain → gives מארק שאגל
+ *     the g-dlevy.co.il corporate property (2 users) over the g-dlevy
+ *     landing property (4,174), whose name omits the TLD.
+ *
+ * Guessing wrong here shows one client another client's traffic, so the
+ * conservative bail stays and the ambiguity is reported instead.
+ */
+export async function describeGa4Miss(
+  subjectEmail: string,
+  project: string,
+): Promise<
+  | { kind: "no-landing" }
+  | { kind: "unmapped"; host: string; paths: string[] }
+  | { kind: "ambiguous"; path: string; candidates: PropRef[] }
+> {
+  const raw = await getProjectLandingUrl(subjectEmail, project).catch(() => "");
+  if (!raw) return { kind: "no-landing" };
+  const { host, paths } = parseLandingCell(raw);
+  if (!host || paths.length === 0) return { kind: "no-landing" };
+
+  const byPath = await loadSheetMap(subjectEmail).catch(
+    () => new Map<string, PropRef[]>(),
+  );
+  for (const p of paths) {
+    const hits = byPath.get(p) ?? [];
+    if (hits.length > 1) return { kind: "ambiguous", path: p, candidates: hits };
+  }
+  return { kind: "unmapped", host, paths };
+}
