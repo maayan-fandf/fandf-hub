@@ -14,6 +14,17 @@ export async function POST(req: NextRequest) {
   }
   try {
     const result = await dismissMorningSignal({ signalKey, snoozeUntil, reason });
+    // Drop the precomputed portfolio feed so the dismissed signal stops
+    // showing on the next render. This route busts nothing today, which
+    // was survivable while the feed lapsed on a 5-minute TTL; the
+    // snapshot lives for hours, so without this a dismissal would appear
+    // to do nothing until the next cron run.
+    try {
+      const { invalidateMorningSnapshot } = await import("@/lib/morningSnapshot");
+      await invalidateMorningSnapshot();
+    } catch {
+      /* best-effort — the dismissal itself already succeeded */
+    }
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

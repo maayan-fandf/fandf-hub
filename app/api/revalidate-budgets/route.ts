@@ -34,7 +34,7 @@ async function handle(req: Request, bodyToken?: unknown) {
   if (!isAuthorized(req, bodyToken)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  bustBudgetCaches();
+  await bustBudgetCaches();
   return NextResponse.json({ ok: true, revalidated: true });
 }
 

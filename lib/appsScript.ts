@@ -37,6 +37,15 @@ const API_ATTEMPT_TIMEOUT_MS = 45_000;
  *  instead of hanging the render to the platform limit. */
 const ACTION_TIMEOUT_MS: Record<string, number> = {
   morningFeed: 170_000,
+  /** The SAME Apps Script action, fetched by the cron rather than by a
+   *  render. 170s is a budget chosen for a user who is waiting; nobody
+   *  waits on the snapshot refresh, so this ceiling only has to stay
+   *  under Cloud Run's 300s request limit and still fail a genuinely
+   *  hung call. Load-bearing: the median is ~124s but the tail crosses
+   *  170s — the very first smoke-test of the cron route aborted at
+   *  exactly 170s — so reusing the render budget here would make the
+   *  refresh fail precisely on the runs that matter most. */
+  morningFeedSnapshot: 280_000,
 };
 
 /**
@@ -155,6 +164,10 @@ async function callApiAs<T>(
   user: string,
   action: string,
   params: Record<string, string> = {},
+  /** Key into ACTION_TIMEOUT_MS, for when the same action needs a
+   *  different budget depending on whether anyone is waiting on it.
+   *  Defaults to the action name. */
+  timeoutLabel?: string,
 ): Promise<T> {
   const base = assertEnv("APPS_SCRIPT_API_URL");
   const token = assertEnv("APPS_SCRIPT_API_TOKEN");
@@ -171,7 +184,7 @@ async function callApiAs<T>(
   // Apps Script exec URLs 302-redirect to googleusercontent.com — fetch
   // follows by default. Retry + per-attempt timeout + HTML detection live
   // in apiFetchJson (the caller `callApi`/`unstable_cache` owns caching).
-  return apiFetchJson<T>(url.toString(), { method: "GET" }, action);
+  return apiFetchJson<T>(url.toString(), { method: "GET" }, timeoutLabel || action);
 }
 
 async function callApi<T>(
@@ -1018,6 +1031,46 @@ function isInternalForMorningFeed(email: string): boolean {
   return email.toLowerCase().trim().endsWith(MORNING_INTERNAL_DOMAIN);
 }
 
+/**
+ * Fetch the portfolio feed LIVE, bypassing both caches, and store it.
+ *
+ * Only the cron calls this. It is deliberately not wrapped in
+ * `unstable_cache`: the whole point is to pay the 124s somewhere no
+ * user is waiting, and a cached wrapper would defeat that.
+ *
+ * Filled as `driveFolderOwner()` — the same fixed identity the shared
+ * scope=all cache entry already uses, re-tested for the internal domain
+ * for the same reason it is there: an off-domain owner would make every
+ * fill Apps Script's refusal envelope.
+ */
+export async function refreshMorningSnapshot(): Promise<{
+  ok: boolean;
+  tookSeconds: number;
+  projects: number;
+}> {
+  const { driveFolderOwner } = await import("@/lib/sa");
+  const subject = driveFolderOwner();
+  if (!isInternalForMorningFeed(subject)) {
+    throw new Error(
+      `DRIVE_FOLDER_OWNER (${subject || "unset"}) is not on ${MORNING_INTERNAL_DOMAIN} — Apps Script would refuse the feed`,
+    );
+  }
+  const startedAt = Date.now();
+  const feed = await callApiAs<MorningFeed>(
+    subject,
+    "morningFeed",
+    { scope: "all" },
+    "morningFeedSnapshot",
+  );
+  const tookSeconds = (Date.now() - startedAt) / 1000;
+  const { writeMorningSnapshot } = await import("@/lib/morningSnapshot");
+  await writeMorningSnapshot(feed, tookSeconds);
+  console.log(
+    `[morningSnapshot] refreshed in ${tookSeconds.toFixed(1)}s — ${feed.projects.length} projects (ceiling ${ACTION_TIMEOUT_MS.morningFeedSnapshot / 1000}s)`,
+  );
+  return { ok: true, tookSeconds, projects: feed.projects.length };
+}
+
 export async function getMorningFeed(
   opts: {
     scope?: "mine" | "all";
@@ -1070,6 +1123,30 @@ export async function getMorningFeed(
   // the badges for all staff at once. Re-test it and fall back to
   // per-email keying rather than trust the env.
   const useShared = shared && isInternalForMorningFeed(sharedSubject);
+
+  // ── Precomputed snapshot, for exactly the shared portfolio case ────
+  // This is the change that stops anyone waiting on the 124s call: the
+  // cron fills a Firestore doc and this reads it. Gated on `useShared`
+  // rather than on the scope string, so it inherits every access rule
+  // argued for above — a client asking for scope=all does not reach
+  // this branch any more than they reach the shared cache entry.
+  //
+  // Purely additive: a missing, stale, or unreachable snapshot returns
+  // null and we fall through to the live path below, which behaves
+  // exactly as it does today. So this is safe to deploy before the
+  // scheduler job exists, and degrades to today's behaviour if that job
+  // ever stops.
+  if (useShared) {
+    const { readMorningSnapshot } = await import("@/lib/morningSnapshot");
+    const snap = await readMorningSnapshot();
+    if (snap) {
+      // Same envelope fix as the shared-cache path below, for the same
+      // reason — see the comment there.
+      return snap.feed.email !== email
+        ? { ...snap.feed, email }
+        : snap.feed;
+    }
+  }
 
   const cacheKey = JSON.stringify({
     email: useShared ? sharedSubject : email,

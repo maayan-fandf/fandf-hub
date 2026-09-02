@@ -209,7 +209,7 @@ export async function POST(req: Request) {
               })),
             },
           });
-          bustBudgetCaches();
+          await bustBudgetCaches();
           return NextResponse.json({
             ok: true,
             tab: slug,
@@ -320,7 +320,7 @@ export async function POST(req: Request) {
       requestBody: { values: [[value]] },
     });
 
-    bustBudgetCaches();
+    await bustBudgetCaches();
     return NextResponse.json({ ok: true, tab, row, value, channel: actualChannel });
   } catch (e) {
     return NextResponse.json(

@@ -71,6 +71,9 @@ export async function POST(req: NextRequest) {
   // changed, not on a timer.
   try {
     revalidateTag("morning-feed");
+    // Firestore doc, not a Next tag — the line above does not reach it.
+    const { invalidateMorningSnapshot } = await import("@/lib/morningSnapshot");
+    await invalidateMorningSnapshot();
   } catch {
     /* revalidateTag is best-effort; cache will lapse within 60s anyway */
   }
