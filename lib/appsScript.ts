@@ -1168,6 +1168,35 @@ export async function getMorningFeed(
   return useShared && feed.email !== email ? { ...feed, email } : feed;
 }
 
+/**
+ * The precomputed portfolio feed (lib/morningSnapshot.ts) as a plain
+ * feed, or null when there is nothing safe to serve: the caller is not
+ * internal (the snapshot is scope=all, gated exactly as getMorningFeed
+ * gates its shared entry), or no fresh snapshot exists.
+ *
+ * For callers that only need to LOOK UP one project — the project page's
+ * alerts row — and must never wait on the live call to do it: one
+ * Firestore doc read instead of a per-user scope=mine fill that measures
+ * 118s cold and aborts at 170s. A null return means "decide for yourself
+ * whether the live path is worth its cost"; it never means "no alerts".
+ *
+ * Reads the snapshot rather than going through getMorningFeed's shared
+ * scope=all entry on purpose: that entry, on a miss, IS the 132s live
+ * call, and the point here is letting a caller tell a bounded read from
+ * an unbounded one.
+ */
+export async function getMorningFeedSnapshot(): Promise<MorningFeed | null> {
+  const email = await currentUserEmail();
+  if (!isInternalForMorningFeed(email)) return null;
+  const { readMorningSnapshot } = await import("@/lib/morningSnapshot");
+  const snap = await readMorningSnapshot();
+  if (!snap) return null;
+  // Same envelope fix as getMorningFeed's shared paths, for the same
+  // reason: the snapshot was filled as driveFolderOwner(), and no consumer
+  // should be able to observe that.
+  return snap.feed.email !== email ? { ...snap.feed, email } : snap.feed;
+}
+
 export type DismissResult = {
   ok: boolean;
   signal_key: string;

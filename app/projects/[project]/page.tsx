@@ -14,6 +14,7 @@ import {
   getMyMentions,
   getMyProjects,
   getMorningFeed,
+  getMorningFeedSnapshot,
   tasksList,
   tasksPeopleList,
   type CommentItem,
@@ -1209,6 +1210,18 @@ async function findProjectInMorningFeed(
   const pick = (feed: MorningFeed | null) =>
     feed?.projects?.find((p) => p.name === projectName) ?? null;
   try {
+    // The precomputed portfolio feed first (lib/morningSnapshot.ts). It
+    // covers the whole roster, so when it is there the answer is final:
+    // a project it doesn't list has no dashboard signals, and going live
+    // to confirm that would cost the 118s-170s Apps Script call this row
+    // used to sit on. That wait is what made a 2026-09-02 load of
+    // /projects/לוריא run 404s (two morningFeed calls at the 170s
+    // ceiling) — long enough for React's dev-only async debug walk to
+    // overflow the stack mid-render; see instrumentation.ts.
+    const snapshot = await getMorningFeedSnapshot();
+    if (snapshot) return pick(snapshot);
+    // No fresh snapshot (cron not running, or a non-internal caller):
+    // the live path, exactly as before.
     const mine = pick(await getMorningFeed({ scope: "mine" }));
     if (mine) return mine;
     return pick(await getMorningFeed({ project: projectName }));
