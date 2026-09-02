@@ -42,6 +42,14 @@ export default auth((req) => {
     // into the creative Sheet for the report. Same X-Cron-Token shared secret;
     // server-to-server, must skip the NextAuth redirect.
     path === "/api/cron/fb-creative-meetings" ||
+    // Cloud Scheduler cron — refreshes the precomputed portfolio morning
+    // feed (lib/morningSnapshot.ts). Same X-Cron-Token shared secret;
+    // server-to-server, must skip the NextAuth redirect. Caught by
+    // curling prod after deploy: this route returned 302 while its
+    // siblings returned 401, which as the comment above says surfaces on
+    // the Scheduler side as a 400 INVALID_ARGUMENT — the job would have
+    // looked configured and never once run.
+    path === "/api/cron/morning-snapshot" ||
     // One-off batch space re-provisioner (delete+recreate-as-threaded
     // migration). Same X-Cron-Token shared secret; server-to-server,
     // must skip the NextAuth redirect.
