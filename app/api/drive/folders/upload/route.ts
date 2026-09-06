@@ -10,8 +10,14 @@ export const dynamic = "force-dynamic";
 // reaching this handler. Most task attachments are well under 25MB
 // (PSDs, MP4 cuts, briefs); above that the user can use Drive's own
 // upload via the Picker which streams through Google's CDN.
+//
+// 30MB, not the 50MB this used to claim. Cloud Run refuses a request
+// body over 32 MiB before our code runs at all — measured on prod
+// 2026-09-06, a 33MB upload comes back as Cloud Run's own HTML 500
+// page — so the old ceiling promised 18MB that could never arrive and
+// turned into an unexplained failure instead of a clear message.
 export const maxDuration = 60;
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 30 * 1024 * 1024;
 
 /**
  * POST /api/drive/folders/upload
@@ -31,12 +37,43 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Size first, and from the header — a body that is too big has to be
+  // rejected with a sentence the uploader can act on, BEFORE formData()
+  // gets to fail on it for a reason that reads like a bug in the file.
+  // Sapir hit exactly that on 2026-09-06: a render over the middleware
+  // clone limit came back as "Invalid multipart body", which says nothing
+  // about size and sent everyone looking at the JPEG.
+  const declared = Number(req.headers.get("content-length") || 0);
+  if (declared > MAX_BYTES) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `הקובץ גדול מדי (${Math.round(declared / 1024 / 1024)}MB, מקסימום ${Math.floor(MAX_BYTES / 1024 / 1024)}MB). העלה/י אותו ישירות ל-Drive דרך התיקייה של הפרויקט.`,
+      },
+      { status: 413 },
+    );
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
-  } catch {
+  } catch (e) {
+    // Never swallow the cause. Undici's parse errors name the actual
+    // problem ("expected boundary after body" = the body arrived
+    // truncated), and without it a size/transport failure is
+    // indistinguishable from a corrupt file.
+    const cause =
+      e instanceof Error
+        ? String((e.cause as Error | undefined)?.message ?? e.message)
+        : String(e);
+    console.warn(
+      `[drive/upload] formData() failed (content-length=${declared}): ${cause}`,
+    );
     return NextResponse.json(
-      { ok: false, error: "Invalid multipart body" },
+      {
+        ok: false,
+        error: `לא הצלחתי לקרוא את הקובץ מהבקשה (${cause}). אם הקובץ גדול, נסה/י להעלות אותו ישירות ל-Drive.`,
+      },
       { status: 400 },
     );
   }

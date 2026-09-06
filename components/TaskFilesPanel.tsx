@@ -42,6 +42,11 @@ import { CSS } from "@dnd-kit/utilities";
 import GoogleDriveIcon from "./GoogleDriveIcon";
 import CopyLocalPathButton from "./CopyLocalPathButton";
 
+/** Keep in step with MAX_BYTES in app/api/drive/folders/upload/route.ts.
+ *  The real ceiling is Cloud Run's 32 MiB request limit, so this is a
+ *  fact about the platform rather than a policy we can raise here. */
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+
 type DriveFile = {
   id: string;
   name: string;
@@ -228,7 +233,25 @@ export default function TaskFilesPanel({
 
   async function handleFiles(filesToUpload: FileList | File[]) {
     if (!folderId) return;
-    const list = Array.from(filesToUpload);
+    const all = Array.from(filesToUpload);
+    if (all.length === 0) return;
+    // Say "too big" here rather than after the bytes have been pushed
+    // across the wire. Mirrors MAX_BYTES in the route, which is itself
+    // bounded by Cloud Run's 32 MiB request ceiling — a bigger file
+    // cannot be made to work by retrying, so the message names the way
+    // out (Drive directly) instead of just refusing.
+    const tooBig = all.filter((f) => f.size > MAX_UPLOAD_BYTES);
+    const list = all.filter((f) => f.size <= MAX_UPLOAD_BYTES);
+    if (tooBig.length > 0) {
+      setErr(
+        tooBig
+          .map(
+            (f) =>
+              `${f.name}: ${Math.round(f.size / 1024 / 1024)}MB — גדול מהמקסימום (${MAX_UPLOAD_BYTES / 1024 / 1024}MB). העלה/י אותו ישירות ל-Drive דרך התיקייה של הפרויקט.`,
+          )
+          .join(" · "),
+      );
+    }
     if (list.length === 0) return;
     setUploadingNames((cur) => [...cur, ...list.map((f) => f.name)]);
     try {

@@ -99,5 +99,25 @@ export const config = {
   // image/bundle. The auth handler decides what's public vs protected.
   // `icon.png` is the Next.js app-router favicon convention — served as /icon.png
   // from app/icon.png; must be public so browsers can fetch it pre-login.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png).*)"],
+  //
+  // The four file-upload routes are excluded for a different reason, and it is
+  // a correctness one rather than a performance one. When middleware runs on a
+  // request that carries a body, Next CLONES that body so it can be replayed to
+  // the route handler (next-server.js → `requestData.body.cloneBodyStream()`),
+  // and the clone is capped by `experimental.middlewareClientMaxBodySize` —
+  // which defaults to 10 MB. Past the cap the body is silently TRUNCATED, so
+  // the closing multipart boundary never arrives and `req.formData()` throws
+  // `expected boundary after body`. The user sees "Invalid multipart body" on
+  // any file over 10 MB, while the routes' own limits (25–50 MB) say the file
+  // is fine. Measured on prod 2026-09-06: 9 MB parsed, 10 MB failed, exactly.
+  //
+  // Excluding them is safe because every one of these routes calls `auth()`
+  // itself and answers an unauthenticated caller with a 401 JSON body — which
+  // is what an API client wants anyway, where the middleware would have sent a
+  // 302 to /signin and handed `fetch` an HTML page. It also avoids buffering
+  // every upload twice (once for the clone, once in the handler) on a 2 GiB
+  // container running 40 concurrent requests.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|api/drive/folders/upload|api/worktasks/upload|api/comments/upload|api/chat/upload).*)",
+  ],
 };
