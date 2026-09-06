@@ -1426,8 +1426,8 @@ export default function CrmFunnelClient({
               title="חציון זמן התגובה ושיעור המענה המהיר, לכל חלון התאריכים (לא מסונן לפי הצ׳יפים)"
             >
               {" "}· חציון {fmtDur(funnel.speedToLead.overall.medianSec)} ·{" "}
-              {pct(funnel.speedToLead.overall.under300, funnel.speedToLead.overall.n)} תוך 5 דק׳ ·{" "}
-              {pct(funnel.speedToLead.overall.under60, funnel.speedToLead.overall.n)} תוך דקה
+              {pct(funnel.speedToLead.overall.under3600, funnel.speedToLead.overall.n)} תוך שעה ·{" "}
+              {pct(funnel.speedToLead.overall.under300, funnel.speedToLead.overall.n)} תוך 5 דק׳
             </span>
           </summary>
           <div className="crm-cost-scroll">
@@ -1437,8 +1437,8 @@ export default function CrmFunnelClient({
                   <th>ערוץ</th>
                   <th>לידים</th>
                   <th>חציון מענה</th>
-                  <th>תוך דקה</th>
                   <th>תוך 5 דק׳</th>
+                  <th>תוך שעה</th>
                 </tr>
               </thead>
               <tbody>
@@ -1457,8 +1457,8 @@ export default function CrmFunnelClient({
                       <td style={{ color: speedTone(s.medianSec), fontWeight: 600 }}>
                         {fmtDur(s.medianSec)}
                       </td>
-                      <td>{pct(s.under60, s.n)}</td>
                       <td>{pct(s.under300, s.n)}</td>
+                      <td>{pct(s.under3600, s.n)}</td>
                     </tr>
                   ))}
               </tbody>
@@ -1981,7 +1981,11 @@ function fmtDur(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "—";
   if (sec < 60) return `${Math.round(sec)} שנ׳`;
   if (sec < 3600) return `${Math.round(sec / 60)} דק׳`;
-  return `${(sec / 3600).toFixed(1)} שע׳`;
+  // Days past two, because the number is no longer clamped to 24h and
+  // "51.4 שע׳" is a figure the reader has to divide before it means
+  // anything.
+  if (sec < 172800) return `${(sec / 3600).toFixed(1)} שע׳`;
+  return `${(sec / 86400).toFixed(1)} ימים`;
 }
 /** Median-response color: ≤5min green, ≤1h amber, else red. */
 function speedTone(sec: number): string {

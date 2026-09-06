@@ -317,20 +317,41 @@ export type CrmFunnel = {
     byKeyword?: UtmRow[];
   };
   /** Speed-to-lead (warehouse BMBY funnels only): response time from lead
-   *  arrival to the first desk touch, per media channel, from
-   *  `v_bmby_leads_bucketed.response_seconds` (pre-computed upstream,
-   *  clamped ~24h, ~100% populated). Median + count + the sub-60s / sub-5min
-   *  shares — median + shares are used (not the mean) because the tail is
-   *  long and clamped. Whole-window (NOT chip-filtered, like the held
-   *  strip). Absent on Sheet/Sehel/Salesforce funnels — they carry no
+   *  arrival to the first desk touch, per media channel, measured as
+   *  `handled_at − lead_created_at`.
+   *
+   *  NOT `v_bmby_leads_bucketed.response_seconds`, which this used to read
+   *  and which cannot express the answer: it is time-of-day arithmetic
+   *  upstream, so it wraps every 24h. The highest value in the entire
+   *  44k-row view is 86,396 seconds — four seconds short of a day — while
+   *  36% of real waits are longer than one. Every lead answered the next
+   *  morning came back as a fast reply. Measured across the twelve busiest
+   *  projects on 2026-09-06: the median it reported ran 2.5–4x below the
+   *  real one (דרימס ארנונה 3.2h vs 18.3h, נתיבות 7.1h vs 21.9h), and 1,245
+   *  of 9,750 rows differed from the true wait by an exact multiple of 24h,
+   *  which is the wrap itself and not a second opinion about the event.
+   *
+   *  Rows with no `handled_at` are skipped rather than counted as zero — a
+   *  lead nobody has answered has no wait yet. That is the second reason
+   *  the old column had to go and not merely a consequence of dropping it:
+   *  `response_seconds` was populated on 100% of rows, including the 1,575
+   *  leads that carry no `handled_at` at all, and for those it reports a
+   *  median of ONE SECOND with 39% at exactly zero. Every lead the desk
+   *  never answered was counted as answered instantly. Both faults push the
+   *  same way, which is why the figure on screen was so flattering.
+   *
+   *  The switch therefore measures 43,502 leads where the old one claimed
+   *  45,077 — 3.5% fewer, all of them leads with nothing to measure. The
+   *  median is kept
+   *  (not the mean) because the tail is genuinely long now that it is
+   *  allowed to be, and a handful of rows with broken upstream timestamps
+   *  would otherwise move it. Whole-window (NOT chip-filtered, like the
+   *  held strip). Absent on Sheet/Sehel/Salesforce funnels — they carry no
    *  per-lead response timing. `bySource` keys are normSource'd, so they
    *  share the section's source→color palette. */
   speedToLead?: {
-    overall: { medianSec: number; n: number; under60: number; under300: number };
-    bySource: Record<
-      string,
-      { medianSec: number; n: number; under60: number; under300: number }
-    >;
+    overall: SpeedStat;
+    bySource: Record<string, SpeedStat>;
   };
   /** Returning vs new leads (warehouse BMBY only): `is_return_lead` from the
    *  view — a lead already known to BMBY (a prior inquiry, often on another
@@ -501,20 +522,42 @@ function medianOf(a: number[]): number {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 }
 
-/** Per-channel speed-to-lead from the warehouse leads' `response_seconds`
- *  (seconds from lead arrival to first desk touch). Keyed by normSource so
- *  it lines up with the funnel's source palette. null/negative are dropped;
- *  zeros kept (instant/manual entries are legitimate). Returns undefined
- *  when nothing usable — caller leaves `speedToLead` unset so the panel
- *  hides. */
+/** One channel's response-time summary. Shares/counts rather than a mean:
+ *  the tail is long and a few broken upstream timestamps sit in it. */
+type SpeedStat = {
+  medianSec: number;
+  n: number;
+  under60: number;
+  under300: number;
+  under3600: number;
+};
+
+/** Per-channel speed-to-lead: seconds from the lead arriving to the first
+ *  desk touch, measured off the two timestamps rather than the wrapped
+ *  `response_seconds` column (see the CrmFunnel field doc for the
+ *  measurements that retired it). Keyed by normSource so it lines up with
+ *  the funnel's source palette. A lead with no `handled_at` is skipped —
+ *  it has not been answered, which is not the same as a zero wait — as is
+ *  a negative gap, which can only be a bad upstream timestamp. Zeros are
+ *  kept: an instant or manual entry legitimately has none. Returns
+ *  undefined when nothing usable, and the caller then leaves `speedToLead`
+ *  unset so the panel hides rather than showing an empty table. */
 function computeSpeedToLead(
-  leads: { media_source_clean: string | null; response_seconds: number | null }[],
+  leads: {
+    media_source_clean: string | null;
+    lead_created_at: string | null;
+    handled_at: string | null;
+  }[],
 ): CrmFunnel["speedToLead"] {
   const bySrc = new Map<string, number[]>();
   const all: number[] = [];
   for (const l of leads) {
-    const rs = l.response_seconds;
-    if (rs == null || !Number.isFinite(rs) || rs < 0) continue;
+    if (!l.lead_created_at || !l.handled_at) continue;
+    const created = Date.parse(l.lead_created_at);
+    const handled = Date.parse(l.handled_at);
+    if (!Number.isFinite(created) || !Number.isFinite(handled)) continue;
+    const rs = (handled - created) / 1000;
+    if (!Number.isFinite(rs) || rs < 0) continue;
     const src = normSource(l.media_source_clean);
     if (!src) continue;
     let arr = bySrc.get(src);
@@ -528,6 +571,11 @@ function computeSpeedToLead(
     n: a.length,
     under60: a.filter((x) => x < 60).length,
     under300: a.filter((x) => x < 300).length,
+    // The hour bucket exists because the minute buckets stopped being
+    // informative once the number was allowed past 24h: on לוריא they read
+    // 0.3% and 2.8%, which tells a reader nothing about whether the desk is
+    // answering at all. 13% within the hour does.
+    under3600: a.filter((x) => x < 3600).length,
   });
   const bySource: NonNullable<CrmFunnel["speedToLead"]>["bySource"] = {};
   for (const [src, a] of bySrc) bySource[src] = stat(a);
@@ -1534,7 +1582,10 @@ async function computeBmbyFunnelFromWarehouse(
     lead_created_at: string | null;
     handled_at: string | null;
     is_handled: boolean | null;
-    response_seconds: number | null;
+    // response_seconds is deliberately NOT selected: it wraps at 24h and
+    // is unusable (see the speedToLead field doc). Leaving it in the row
+    // would put a plausible-looking answer within reach of the next person
+    // to need a response time.
     is_return_lead: boolean | null;
     media_source_clean: string | null;
     objections: string | null;
@@ -1553,7 +1604,7 @@ async function computeBmbyFunnelFromWarehouse(
     // מיה's July-1 00:00-03:00 leads landed in June). %2B = url-encoded +.
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
       `&lead_created_at=gte.${from}T00:00:00%2B03:00&lead_created_at=lt.${toExcl}T00:00:00%2B03:00` +
-      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,response_seconds,is_return_lead,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
+      `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,is_return_lead,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
       `&order=lead_id.asc`,
