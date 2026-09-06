@@ -1,4 +1,4 @@
-import { resolveGa4Target } from "@/lib/ga4Project";
+import { resolveGa4Target, ga4WebUrl } from "@/lib/ga4Project";
 import { fetchLive, fetchWindows } from "@/lib/ga4";
 import Ga4LiveClient from "@/components/Ga4LiveClient";
 
@@ -54,7 +54,7 @@ export default async function Ga4LiveSection({
         <h2>📈 תנועה בדף הנחיתה — עכשיו</h2>
         <a
           className="section-link"
-          href={`https://analytics.google.com/analytics/web/#/p${target.propertyId}/realtime/overview`}
+          href={ga4WebUrl(target, subjectEmail)}
           target="_blank"
           rel="noreferrer"
         >

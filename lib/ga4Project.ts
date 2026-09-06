@@ -54,12 +54,52 @@ import { normPath } from "@/lib/ga4";
 export type Ga4Target = {
   propertyId: string;
   propertyName: string;
+  /**
+   * The GA ACCOUNT the property lives under, for deep links. Null when
+   * the lookup failed — never a reason to drop the target, only to fall
+   * back to the property-only link form. See ga4WebUrl.
+   */
+  accountId: string | null;
   host: string;
   /** Normalized paths on that property belonging to this project. */
   paths: string[];
   /** How the property was identified — shown in the UI's source line. */
   via: "sheet" | "stream" | "traffic";
 };
+
+/**
+ * Deep link into the GA4 web UI that survives a multi-account Google
+ * session — the two things a bare `#/p<property>/…` link gets wrong.
+ *
+ * `authuser` picks WHICH signed-in Google account opens the link. Without
+ * it Chrome uses whichever account is active, and if that one has no GA
+ * access the user lands on "Missing permissions" — the symptom Maayan
+ * reported on 2026-09-06, after which she was pasting a hand-built URL.
+ * Google accepts an email address here, not only the 0/1/2 index, and the
+ * email is the robust form: an index means "the Nth account you happened
+ * to sign into this browser with" and differs per person and per day.
+ * Verified against the live GA UI: with the viewer's own address it lands
+ * on the property; with a deliberately wrong `authuser` GA answers
+ * "Missing permissions", which proves the parameter is honoured rather
+ * than ignored.
+ *
+ * The `a<account>p<property>` scope is the second half. GA resolves a
+ * bare property id against the ACTIVE account, so the same wrong-account
+ * session that `authuser` fixes also makes the id unresolvable; naming
+ * the account removes the guess.
+ */
+export function ga4WebUrl(
+  target: Pick<Ga4Target, "propertyId" | "accountId">,
+  viewerEmail: string,
+  view = "realtime/overview",
+): string {
+  const scope = target.accountId
+    ? `a${target.accountId}p${target.propertyId}`
+    : `p${target.propertyId}`;
+  const email = (viewerEmail || "").trim();
+  const auth = email ? `?authuser=${encodeURIComponent(email)}` : "";
+  return `https://analytics.google.com/analytics/web/${auth}#/${scope}/${view}`;
+}
 
 /** Split the Keys landing cell into a host + its normalized paths. */
 export function parseLandingCell(raw: string): { host: string; paths: string[] } {
@@ -366,6 +406,67 @@ async function loadTrafficHostMap(): Promise<Map<string, PropRef>> {
   }
 }
 
+// ── Account ids, for deep links ─────────────────────────────────────────
+
+let acctMapCache: { expiresAt: number; byProp: Map<string, string> } | null =
+  null;
+let acctMapInFlight: Promise<Map<string, string>> | null = null;
+
+/**
+ * property id → account id, from the one `accountSummaries` call that
+ * already carries both. Needed by ga4WebUrl and by nothing else.
+ *
+ * A separate map rather than a field on PropRef because strategy 1
+ * resolves properties from the Supermetrics GA4 tab, which has no
+ * account column — and that strategy covers most projects, so the id has
+ * to be obtainable without it.
+ *
+ * Never throws and never blocks a resolve: a failure here costs the
+ * account half of a link, not the section. Cached 12h like the host map;
+ * accounts move between properties roughly never.
+ */
+async function loadAccountMap(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (acctMapCache && acctMapCache.expiresAt > now) return acctMapCache.byProp;
+  if (acctMapInFlight) return acctMapInFlight;
+
+  acctMapInFlight = (async () => {
+    const byProp = new Map<string, string>();
+    try {
+      const token = await analyticsAccessToken();
+      const res = await fetch(`${ADMIN_API}/accountSummaries?pageSize=200`, {
+        headers: { authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!res.ok) return byProp;
+      const json = (await res.json()) as {
+        accountSummaries?: {
+          account?: string;
+          propertySummaries?: { property?: string }[];
+        }[];
+      };
+      for (const a of json.accountSummaries ?? []) {
+        const acct = (a.account ?? "").split("/").pop() ?? "";
+        if (!acct) continue;
+        for (const p of a.propertySummaries ?? []) {
+          const pid = (p.property ?? "").split("/").pop() ?? "";
+          if (pid) byProp.set(pid, acct);
+        }
+      }
+      acctMapCache = { expiresAt: Date.now() + HOST_TTL_MS, byProp };
+    } catch {
+      // Leave it empty — ga4WebUrl falls back to the property-only form.
+    }
+    return byProp;
+  })();
+
+  try {
+    return await acctMapInFlight;
+  } finally {
+    acctMapInFlight = null;
+  }
+}
+
 /**
  * Project → GA4 target, or null when it cannot be resolved with
  * certainty. Wrapped in React `cache()` for per-request dedup, matching
@@ -378,6 +479,19 @@ export const resolveGa4Target = cache(
     const { host, paths } = parseLandingCell(raw);
     if (!host || paths.length === 0) return null;
 
+    /** Same shape from all three strategies, with the account id attached. */
+    const found = async (
+      ref: PropRef,
+      via: Ga4Target["via"],
+    ): Promise<Ga4Target> => ({
+      propertyId: ref.id,
+      propertyName: ref.name,
+      accountId: (await loadAccountMap()).get(ref.id) ?? null,
+      host,
+      paths,
+      via,
+    });
+
     // Strategy 1 — unambiguous path match in the Supermetrics GA4 tab.
     const byPath = await loadSheetMap(subjectEmail);
     const candidates = new Map<string, PropRef>();
@@ -389,28 +503,13 @@ export const resolveGa4Target = cache(
     }
     // Exactly one property across every path this project owns.
     if (candidates.size === 1 && !sawAmbiguous) {
-      const only = [...candidates.values()][0];
-      return {
-        propertyId: only.id,
-        propertyName: only.name,
-        host,
-        paths,
-        via: "sheet",
-      };
+      return found([...candidates.values()][0], "sheet");
     }
 
     // Strategy 2 — authoritative host→stream mapping.
     const byHost = await loadHostMap();
     const viaHost = byHost.get(host);
-    if (viaHost) {
-      return {
-        propertyId: viaHost.id,
-        propertyName: viaHost.name,
-        host,
-        paths,
-        via: "stream",
-      };
-    }
+    if (viaHost) return found(viaHost, "stream");
 
     // Strategy 3 — which property actually RECEIVES this host. Last
     // because it is the most expensive (one report per property), but it
@@ -418,15 +517,7 @@ export const resolveGa4Target = cache(
     // usable path, and a shared landing host has no usable stream URI.
     const byTraffic = await loadTrafficHostMap();
     const viaTraffic = byTraffic.get(host);
-    if (viaTraffic) {
-      return {
-        propertyId: viaTraffic.id,
-        propertyName: viaTraffic.name,
-        host,
-        paths,
-        via: "traffic",
-      };
-    }
+    if (viaTraffic) return found(viaTraffic, "traffic");
     return null;
   },
 );
