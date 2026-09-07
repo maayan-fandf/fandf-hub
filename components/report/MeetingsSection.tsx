@@ -132,9 +132,8 @@ export default function MeetingsSection({
   if (data?.reason === "unsupported-platform")
     return (
       <div className="rpt-empty">
-        הפגישות נקראות ממסע הלקוח של BMBY. ב-{data.platform?.toUpperCase()} אין
-        טבלה מקבילה שמחזיקה תוצאת פגישה יחד עם רישום המגעים, ולכן הסקשן לא
-        נפתח כאן.
+        הפגישות נקראות מ-BMBY ומ-Sehel. ב-{data.platform?.toUpperCase()} אין
+        טבלת פגישות כלל — ה-CRM שלו הוא טאב בגיליון — ולכן הסקשן לא נפתח כאן.
       </div>
     );
   if (data?.reason === "no-crm")
@@ -146,6 +145,7 @@ export default function MeetingsSection({
       </div>
     );
 
+  const anyKind = meetings.some((m) => m.kind);
   const maxSrc = Math.max(...bySource.map((s) => s.n), 1);
   const maxObj = Math.max(...byObjection.map((s) => s.n), 1);
   const repeat = meetings.filter((m) => m.seq > 1).length;
@@ -240,7 +240,10 @@ export default function MeetingsSection({
               <th>לקוח</th>
               <th>מקור</th>
               <th>איש מכירות</th>
-              <th>מס׳</th>
+              {/* Sehel names the kind of meeting (פרזנטציה, חתימת הסכם);
+                  BMBY only numbers them. One column, whichever the row
+                  has — a project on both CRMs shows each row's own. */}
+              <th>{anyKind ? "סוג" : "מס׳"}</th>
               <th>ימים מהליד</th>
               <th>סיכום</th>
             </tr>
@@ -253,7 +256,12 @@ export default function MeetingsSection({
               const text = m.note || m.subject;
               return (
                 <tr key={key}>
-                  <td className="ct-num" title={`תואמה ב-${fmtDay(m.bookedDate)}`}>
+                  {/* Sehel records one timestamp — when the meeting is —
+                      so there is no booked date to name on those rows. */}
+                  <td
+                    className="ct-num"
+                    title={m.bookedDate ? `תואמה ב-${fmtDay(m.bookedDate)}` : undefined}
+                  >
                     {fmtDay(m.date)}
                   </td>
                   <td>
@@ -286,7 +294,18 @@ export default function MeetingsSection({
                       </span>
                     )}
                   </td>
-                  <td className="ct-num">{m.seq > 1 ? `#${m.seq}` : "1"}</td>
+                  <td className="ct-num" title={m.seq > 1 ? `פגישה מספר ${m.seq}` : undefined}>
+                    {m.kind ? (
+                      <>
+                        {m.kind}
+                        {m.seq > 1 && <span className="mt-more">#{m.seq}</span>}
+                      </>
+                    ) : m.seq > 1 ? (
+                      `#${m.seq}`
+                    ) : (
+                      "1"
+                    )}
+                  </td>
                   <td className="ct-num">
                     {m.leadAgeDays == null ? "—" : m.leadAgeDays}
                   </td>

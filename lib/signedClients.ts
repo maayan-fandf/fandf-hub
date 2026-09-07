@@ -590,7 +590,7 @@ const sehelStage = (v: unknown) => clean(v).replace(/^\|\s*/, "");
  * that matters. Strip the timestamp, then a leading copy of the type and a
  * trailing copy of the agent — both are rendered separately.
  */
-function cleanSehelContent(raw: unknown, type: string, agent: string): string {
+export function cleanSehelContent(raw: unknown, type: string, agent: string): string {
   let v = clean(raw).replace(
     /^\d{1,2}:\d{2}\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*/,
     "",

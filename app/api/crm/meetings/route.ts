@@ -3,7 +3,7 @@ import { currentUserEmail } from "@/lib/appsScript";
 import { crmAccountCandidates } from "@/lib/crmData";
 import { readKeysCached } from "@/lib/keys";
 import { driveFolderOwner } from "@/lib/sa";
-import { getHeldMeetings } from "@/lib/heldMeetings";
+import { getHeldMeetings, getHeldMeetingsSehel } from "@/lib/heldMeetings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,15 +107,19 @@ export async function GET(req: Request) {
       });
     }
 
-    // BMBY only. Sehel and Salesforce have no per-meeting outcome joined to
-    // a touch trail, so there is nothing to open behind a row — the panel
-    // says so rather than rendering an empty table that reads as "no
-    // meetings were held".
+    // BMBY and Sehel, each with its own reader and the same result shape.
+    // The cell can name BOTH — חמסה/רייסדור reads "bmby, sehel" because its
+    // clients live in two systems — so it is parsed, not compared, exactly
+    // as /api/crm/signed does. Salesforce is the one platform out: its CRM
+    // is a Sheet tab with no meeting table, so the panel says why rather
+    // than rendering an empty list that reads as "no meetings were held".
     const platforms = platform
       .split(/[,;/|]/)
       .map((s) => s.trim())
       .filter(Boolean);
-    if (platforms.length > 0 && !platforms.includes("bmby")) {
+    const wantsBmby = platforms.length === 0 || platforms.includes("bmby");
+    const wantsSehel = platforms.includes("sehel");
+    if (!wantsBmby && !wantsSehel) {
       return NextResponse.json({
         ok: true,
         total: 0,
@@ -128,11 +132,32 @@ export async function GET(req: Request) {
       });
     }
 
-    const res = await getHeldMeetings({
-      crmAccounts: crmAccountCandidates(crmAccount),
-      from,
-      to,
-    });
+    const accounts = crmAccountCandidates(crmAccount);
+    const parts = (
+      await Promise.all([
+        wantsBmby ? getHeldMeetings({ crmAccounts: accounts, from, to }) : null,
+        wantsSehel
+          ? getHeldMeetingsSehel({ crmAccounts: accounts, from, to })
+          : null,
+      ])
+    ).filter((x): x is NonNullable<typeof x> => !!x);
+    // The counts ADD: a project on both CRMs splits its meetings between
+    // them, it does not record each one twice. Sorted newest-first across
+    // the merge so the table reads as one diary rather than two appended
+    // lists — the one thing concatenation alone would get wrong.
+    const res = parts.length
+      ? parts.length === 1
+        ? parts[0]
+        : {
+            meetings: parts
+              .flatMap((p) => p.meetings)
+              .sort((a, b) => b.date.localeCompare(a.date)),
+            clients: parts.flatMap((p) => p.clients),
+            total: parts.reduce((n, p) => n + p.total, 0),
+            clientsMet: parts.reduce((n, p) => n + p.clientsMet, 0),
+            withNotes: parts.reduce((n, p) => n + p.withNotes, 0),
+          }
+      : null;
     if (!res) {
       return NextResponse.json({
         ok: true,
