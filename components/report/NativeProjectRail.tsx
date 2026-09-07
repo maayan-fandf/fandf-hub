@@ -19,6 +19,7 @@ import ReportCreativesTab from "@/components/report/ReportCreativesTab";
 import ReportTrendsTab from "@/components/report/ReportTrendsTab";
 import ContractsSection from "@/components/report/ContractsSection";
 import MeetingsSection from "@/components/report/MeetingsSection";
+import DigitalAssetsSection from "@/components/report/DigitalAssetsSection";
 
 /**
  * Server assembler for the native project page's vertical-nav rail. Fetches
@@ -464,6 +465,27 @@ export default async function NativeProjectRail({
           company={data.company}
           from={data.window.startIso}
           to={data.window.endIso}
+        />
+      ),
+    });
+  }
+  // נכסים דיגיטליים — under תכנון rather than ביצועים on purpose: these
+  // are the things that run all month regardless of what the campaigns
+  // are doing, and the question they answer ("is what we published still
+  // right") is a planning question, not a performance one.
+  if (data) {
+    sections.push({
+      id: "assets",
+      group: "plan",
+      label: "נכסים דיגיטליים",
+      icon: "🌐",
+      content: (
+        <DigitalAssetsSection
+          project={data.project}
+          channels={data.channels.map((c) => ({
+            channel: c.channel,
+            leads: c.leads,
+          }))}
         />
       ),
     });

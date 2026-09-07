@@ -138,6 +138,21 @@ const iYad2Lookup = (() => {
   }
   return -1;
 })();
+// Article (כתבה) source — the same two-step shape as Yad2, and for the
+// same reason. The articles are bought monthly from i11news and the URL
+// changes when a new one runs, so Keys holds a LOOKUP ("בנפיט", added
+// 2026-09-07) rather than a URL: the project's name as it appears in the
+// media-performance workbook's `benefit` tab, which is where the current
+// link lives. When the article is replaced there, this picks it up with
+// no edit to Keys and no deploy.
+const iArticleLookup = (() => {
+  const lc = kHdr.map((h) => h.toLowerCase());
+  for (const c of ["בנפיט", "benefit", "articlelookup", "article lookup"]) {
+    const i = lc.indexOf(c);
+    if (i >= 0) return i;
+  }
+  return -1;
+})();
 // Yad2 affiliate sheet — provided by Yad2's account-management team.
 // One row per project across all F&F clients; col C is the project's
 // name (the `yad2lookup` field in Keys matches against this), col D
@@ -208,9 +223,64 @@ const yad2LookupMap = await (async () => {
     return null;
   }
 })();
+// Article affiliate equivalent — the `benefit` tab of the media-performance
+// workbook. Col C is the project name Keys' "בנפיט" matches against, and
+// the "לינק לכתבה" column holds this month's article.
+//
+// Read from `benefit` rather than from the i11news workbook it mirrors,
+// even though that is the origin: i11news opens a NEW TAB PER MONTH
+// ("יולי 2026", "אוגוסט 2026", "ספטמבר 26"), and a reader pinned to a tab
+// name silently returns nothing the month it changes. `benefit` is one
+// stable tab that IMPORTRANGEs the current month.
+const ARTICLE_SHEET_ID = "15GKqEy8OelYtGuuiHYkSAR2xNNL4icwo-Wgiq1suW0Y";
+const ARTICLE_TAB = "benefit";
+const articleLookupMap = await (async () => {
+  if (iArticleLookup < 0) return null;
+  try {
+    const r = await sh.spreadsheets.values.get({
+      spreadsheetId: ARTICLE_SHEET_ID,
+      range: `${ARTICLE_TAB}!A:M`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const rows = r.data.values || [];
+    const hdr = (rows[0] || []).map((h) =>
+      String(h ?? "").replace(HEADER_NORMALIZE, "").replace(/\s+/g, " ").trim(),
+    );
+    const iName = hdr.findIndex((h) => /^פרוי?יקט$/.test(h));
+    const iLink = hdr.findIndex((h) => /לינק לכתבה/.test(h));
+    if (iName < 0 || iLink < 0) {
+      console.log(
+        `benefit tab: header mismatch (name=${iName} link=${iLink}) — no article lookup`,
+      );
+      return null;
+    }
+    const map = new Map();
+    let noLink = 0;
+    for (const row of rows.slice(1)) {
+      const name = String(row[iName] ?? "").trim();
+      if (!name) continue;
+      const url = String(row[iLink] ?? "").trim();
+      if (!/^https?:\/\//i.test(url)) {
+        noLink++;
+        continue;
+      }
+      if (!map.has(name)) map.set(name, url);
+    }
+    console.log(
+      `benefit tab: ${map.size} article URLs loaded (${noLink} rows with no link this month)`,
+    );
+    return map;
+  } catch (e) {
+    console.log(
+      `benefit tab read failed: ${String(e.message || e).slice(0, 200)} — no article lookup`,
+    );
+    return null;
+  }
+})();
 console.log(
   `Landing col: ${iLanding} ("${iLanding >= 0 ? kHdr[iLanding] : "(missing)"}")  ` +
-    `Yad2 mode: ${iYad2Lookup >= 0 ? `lookup col ${iYad2Lookup} ("${kHdr[iYad2Lookup]}")` : `direct col ${iYad2Direct} ("${iYad2Direct >= 0 ? kHdr[iYad2Direct] : "(missing)"}")`}`,
+    `Yad2 mode: ${iYad2Lookup >= 0 ? `lookup col ${iYad2Lookup} ("${kHdr[iYad2Lookup]}")` : `direct col ${iYad2Direct} ("${iYad2Direct >= 0 ? kHdr[iYad2Direct] : "(missing)"}")`}  ` +
+    `Article: ${iArticleLookup >= 0 ? `lookup col ${iArticleLookup} ("${kHdr[iArticleLookup]}")` : "(no column)"}`,
 );
 
 const projects = [];
@@ -234,13 +304,24 @@ for (const r of keys.data.values.slice(1)) {
   if (!yad2 && iYad2Direct >= 0) {
     yad2 = String(r[iYad2Direct] ?? "").trim();
   }
+  // Article URL — Keys "בנפיט" → benefit tab col C → "לינק לכתבה".
+  // Empty when the project has no lookup value, or has one whose row
+  // carries no link this month. Both are ordinary states, not errors:
+  // of 22 projects with a lookup on 2026-09-07, 22 matched a row and 16
+  // had a live article.
+  let article = "";
+  if (iArticleLookup >= 0 && articleLookupMap) {
+    const lookupName = String(r[iArticleLookup] ?? "").trim();
+    if (lookupName) article = articleLookupMap.get(lookupName) || "";
+  }
   const type = iType >= 0 ? String(r[iType] ?? "").trim().toLowerCase() : "";
-  // Skip a row only when both surfaces are missing — having just a Yad2
-  // URL (no landing) is a legit case for some projects.
-  if (!project || (!landing && !yad2)) continue;
+  // Skip a row only when every surface is missing — having just a Yad2
+  // URL (no landing) is a legit case for some projects, and so is having
+  // only an article.
+  if (!project || (!landing && !yad2 && !article)) continue;
   if (type && !type.includes("real")) continue;
   if (onlyProject && project !== onlyProject) continue;
-  projects.push({ project, slug, landing, yad2 });
+  projects.push({ project, slug, landing, yad2, article });
 }
 // Fingerprint of the extractor this container actually carries.
 //
@@ -430,6 +511,13 @@ for (const p of projects) {
   const yad2 = p.yad2
     ? await scrapeOne(p.yad2, "yad2")
     : { headline: "", all: "", status: "skipped", notes: "", pageType: "" };
+  // The article is the third surface, and the one most likely to
+  // disagree: it is written once when the campaign launches and nobody
+  // revisits it, while the landing page gets edited. That is exactly the
+  // drift the price-mismatch alert exists to catch.
+  const article = p.article
+    ? await scrapeOne(p.article, "article")
+    : { headline: "", all: "", allJson: "[]", status: "skipped", notes: "", pageType: "" };
 
   const row = {
     slug: p.slug,
@@ -448,9 +536,16 @@ for (const p of projects) {
     yad2_all_prices: yad2.all,
     yad2_all_prices_json: yad2.allJson,
     yad2_page_type: yad2.pageType,
+    article_url: article.usedUrl || p.article || "",
+    article_headline_price: article.headline,
+    article_all_prices: article.all,
+    article_all_prices_json: article.allJson,
     scraped_at_iso: new Date().toISOString(),
-    status: landing.status === "ok" || yad2.status === "ok" ? "ok" : landing.status,
-    notes: [landing.notes, yad2.notes].filter(Boolean).join(" | "),
+    status:
+      landing.status === "ok" || yad2.status === "ok" || article.status === "ok"
+        ? "ok"
+        : landing.status,
+    notes: [landing.notes, yad2.notes, article.notes].filter(Boolean).join(" | "),
   };
   const ms = Date.now() - startedAt;
   const fmtPrice = (v) => (v ? "₪" + Number(v).toLocaleString("he-IL") : "—");
@@ -458,6 +553,7 @@ for (const p of projects) {
     `  ${row.status.padEnd(12)} ${p.project.padEnd(28)} ` +
       `web=${fmtPrice(row.headline_price).padEnd(11)} ` +
       `yad2=${fmtPrice(row.yad2_headline_price).padEnd(11)} ` +
+      `article=${fmtPrice(row.article_headline_price).padEnd(11)} ` +
       `(${ms}ms)`,
   );
   rows.push(row);
@@ -508,6 +604,14 @@ const header = [
   // URL configured for this project. See classifyYad2Page() in
   // lib/priceExtractor.ts.
   "yad2_page_type",
+  // The כתבה surface, added 2026-09-07. Appended AFTER the existing
+  // Yad2 block and BEFORE the trailing three so every reader that
+  // resolves columns by header name keeps working; Apps Script's
+  // _loadLandingPricesMap_ and the hub both index by name, not position.
+  "article_url",
+  "article_headline_price",
+  "article_all_prices",
+  "article_all_prices_json",
   "scraped_at_iso",
   "status",
   "notes",

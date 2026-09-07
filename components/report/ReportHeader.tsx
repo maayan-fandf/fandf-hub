@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AssetThumb from "@/components/report/AssetThumb";
 import {
   deltaInfo,
   fmtILS,
@@ -68,24 +69,15 @@ export function LandingPreview({ url, project }: { url: string; project: string 
 }
 
 function LandingCard({ url, project }: { url: string; project: string }) {
-  const thumio = `https://image.thum.io/get/width/900/crop/600/noanimate/wait/4/${encodeURI(url)}`;
-  const microlink = `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=false&embed=screenshot.url`;
-  const [src, setSrc] = useState(thumio);
-  const [dead, setDead] = useState(false);
+  // Shared with the נכסים דיגיטליים cards. This used to hold its own
+  // thum.io-first chain, and thum.io's free tier now answers with a
+  // 600×200 "Image not authorized" image — a valid image, so onError
+  // never fired and every project header was rendering that notice
+  // instead of the page. See AssetThumb for the measurements.
   return (
     <div className="rpt-landing">
       <a href={url} target="_blank" rel="noopener noreferrer" title={url}>
-        {dead ? (
-          <div className="rpt-landing-fallback">🌐 {url}</div>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            loading="eager"
-            alt={`דף נחיתה — ${project}`}
-            onError={() => (src === thumio ? setSrc(microlink) : setDead(true))}
-          />
-        )}
+        <AssetThumb url={url} alt={`דף נחיתה — ${project}`} className="rpt-landing-img" />
         <div className="rpt-landing-caption">🌐 {url} — לחץ לפתיחה</div>
       </a>
     </div>

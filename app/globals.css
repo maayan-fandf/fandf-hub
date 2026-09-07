@@ -30148,3 +30148,125 @@ html[data-theme="dark"] {
   font-size: 0.78rem;
   color: var(--muted);
 }
+
+/* ── נכסים דיגיטליים (DigitalAssetsSection) ───────────────────────────── */
+.da-wrap { display: grid; gap: 0.8rem; }
+.da-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+.da-when { color: var(--muted); }
+.da-verdict {
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+.da-verdict.is-ok {
+  background: color-mix(in srgb, #22c55e 16%, var(--surface));
+  color: #16794f;
+}
+.da-verdict.is-bad {
+  background: color-mix(in srgb, #f59e0b 20%, var(--surface));
+  color: #92600e;
+}
+.da-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.6rem;
+}
+.da-card {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  padding: 0.6rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.da-card:hover {
+  border-color: var(--brand);
+  background: var(--surface-hi);
+}
+.da-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.da-label { flex: 1 1 auto; min-width: 0; }
+.da-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+  cursor: help;
+}
+.da-price {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.15rem;
+}
+.da-meta { font-size: 0.72rem; color: var(--ink-soft); }
+.da-url {
+  margin-top: 0.3rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  direction: ltr;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.da-note {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.da-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 7px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  margin-bottom: 0.45rem;
+}
+.da-thumb-dead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  color: var(--muted);
+}
+/* The landing preview's image is now <AssetThumb className="rpt-landing-img">
+   rather than a bare <img>, so the old `.rpt-landing a img` rule needs a
+   class of its own. Same box, plus the dead-state placeholder. */
+.rpt-landing-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.rpt-landing-img-dead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 2;
+  font-size: 2rem;
+  color: var(--muted);
+  background: var(--surface-alt);
+}
