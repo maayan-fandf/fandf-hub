@@ -30820,6 +30820,10 @@ html[data-theme="dark"] {
    same week the נייר palette was completed, and the whole lesson of that
    work was that a literal is a colour no skin can reach. */
 .lj-wrap { margin-bottom: 1.1rem; }
+/* Inside a crm-block collapsible the panel is the card body, not a card of
+   its own — its border and ground would draw a second frame a few pixels
+   inside the first. */
+.crm-block > .lj { border: none; background: transparent; padding: 0.5rem 0 0; }
 .lj-title {
   display: flex;
   align-items: baseline;

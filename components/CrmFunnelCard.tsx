@@ -12,6 +12,7 @@ import { getSpendInRange } from "@/lib/platformDailySpend";
 import { monthSegments } from "@/lib/reportShared";
 import { driveFolderOwner } from "@/lib/sa";
 import CrmFunnelClient from "./CrmFunnelClient";
+import { getLeadJourney } from "@/lib/leadJourney";
 
 /** Canonical channels that have real daily spend in the GADS2/FB daily file
  *  (programmatic) — their free-range cost is summed actual spend, not the
@@ -158,7 +159,22 @@ export default async function CrmFunnelCard({
     spendByChannel,
   }).catch(() => null);
   if (!funnel || funnel.leads === 0) return null;
-  return <CrmFunnelClient funnel={funnel} view={view} />;
+
+  // מקור מול טריגר rides along, for the views that render it — the read is
+  // a warehouse round trip and three of the four slices would throw it
+  // away. Windowed on the range the FUNNEL resolved (funnel.windowFrom /
+  // windowTo) rather than on this component's inputs: the priority between
+  // dateRange, monthFilter and projectWindow lives in one place, and two
+  // blocks in one card must not end up describing two different months.  const journey =
+    view === "analysis" || view === "full"
+      ? await getLeadJourney({
+          project,
+          company,
+          from: funnel.windowFrom,
+          to: funnel.windowTo,
+        }).catch(() => null)
+      : null;
+  return <CrmFunnelClient funnel={funnel} journey={journey} view={view} />;
 }
 
 // Re-export so callers (alerts, etc.) keep importing from one place.

@@ -1,6 +1,8 @@
 "use client";
 
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import LeadJourneyPanel from "@/components/report/LeadJourneyPanel";
+import type { LeadJourney } from "@/lib/leadJourney";
 import { createPortal } from "react-dom";
 import { CrmSourceFilterContext } from "./CrmSourceFilterContext";
 import type { CrmFunnel } from "@/lib/crmData";
@@ -121,9 +123,15 @@ const BAR_TRACK_PCT = 40;
 
 export default function CrmFunnelClient({
   funnel,
+  journey = null,
   view = "full",
 }: {
   funnel: CrmFunnel;
+  /** מקור מול טריגר, read server-side in CrmFunnelCard. A plain object, so
+   *  it travels as a prop the way the funnel does rather than making this
+   *  client component fetch its own. Null for a project with no BMBY
+   *  journey data, and the block is simply not rendered. */
+  journey?: LeadJourney | null;
   /** Which slice of the card to show. "full" (default) = everything;
    *  "funnel" = KPIs / cost / status / trendline / sellers (the CRM rail
    *  section); "analysis" = objection distribution + journey collapsibles
@@ -1565,6 +1573,26 @@ export default function CrmFunnelClient({
               </tbody>
             </table>
           </div>
+        </details>
+      )}
+
+      {/* מקור מול טריגר — directly under לידים חוזרים מול חדשים, and
+          collapsed like it, because it is the same event seen from the
+          other side. Measured on נתיבות: 96.6% of leads that change channel
+          are returning leads, but only 56.6% of returning leads change
+          channel. Adjacent so the reader meets them together; separate
+          because the denominators differ (leads that booked vs every lead)
+          and one chart would have to pick one and misstate the other. */}
+      {journey && (
+        <details className="crm-block crm-collapsible">
+          <summary className="crm-block-title">
+            מקור מול טריגר
+            <span className="crm-speed-overall">
+              {" "}· {fmtInt(journey.moved)} מתוך {fmtInt(journey.total)} לידים
+              החליפו ערוץ בין הפנייה לסגירה
+            </span>
+          </summary>
+          <LeadJourneyPanel data={journey} />
         </details>
       )}
 

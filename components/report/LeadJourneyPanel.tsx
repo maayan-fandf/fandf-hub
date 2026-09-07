@@ -38,17 +38,21 @@ const leads = (n: number) => (n === 1 ? "ליד אחד" : `${n} לידים`);
  *  channel is always the first hue — stable within a project, which is
  *  what matters when someone compares two screenshots of it. */
 const HUES = [
+  // Ordered so ADJACENT ranks are far apart in hue. Sorted by name it put
+  // --teal at rank 2 and --green at rank 4, and on a project whose top
+  // channels landed there the two columns read as two greens with a label
+  // to tell them apart.
   "--blue",
   "--orange",
-  "--teal",
   "--violet",
-  "--green",
+  "--teal",
   "--amber",
+  "--indigo",
+  "--green",
   "--pink",
   "--cyan",
-  "--lime",
-  "--indigo",
   "--rose",
+  "--lime",
   "--purple",
 ];
 

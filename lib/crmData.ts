@@ -247,6 +247,13 @@ export type CrmFunnel = {
    *  date range (dd/MM/yyyy–dd/MM/yyyy) rather than a single month.
    *  Empty in month / no-filter mode. */
   windowLabel: string;
+  /** The resolved window as plain ISO dates, whichever branch set it —
+   *  month, explicit range, or the current-month default. Exposed because
+   *  callers that read a SECOND source for the same card (מקור מול טריגר)
+   *  must window it identically; re-deriving the priority order at the call
+   *  site is how two blocks in one card end up describing two months. */
+  windowFrom: string;
+  windowTo: string;
   /** Data-freshness note: the latest in-window CRM-record date (YYYY-MM-DD)
    *  when the data ends ≥ a few days before the window's *expected* end
    *  (= min(window end, today) — future days can't carry data yet). Empty
@@ -1140,6 +1147,18 @@ function lastDayOfMonthIso(month: string): string {
  * requested and what the source actually covers (a pipeline-lag tell, most
  * relevant for the sheet-fed CRMs). Pure; today is Asia/Jerusalem.
  */
+/** The active window as plain ISO dates. One helper for all three funnel
+ *  builders so bmby / sehel / salesforce cannot disagree about what "this
+ *  window" means, and so a second reader on the same card (מקור מול טריגר)
+ *  can be handed the same two dates instead of re-deriving the priority
+ *  order at the call site. */
+function windowIso(window: DateWindow | null): { from: string; to: string } {
+  if (!window) return { from: "", to: "" };
+  return window.kind === "month"
+    ? { from: `${window.month}-01`, to: lastDayOfMonthIso(window.month) }
+    : { from: window.from, to: window.to };
+}
+
 const FRESHNESS_LAG_DAYS = 3;
 function dataFreshnessLag(window: DateWindow | null, dataTo: string): string {
   if (!window || !dataTo) return "";
@@ -1514,6 +1533,8 @@ function aggregateBmbyFunnel(
     },
     monthFilter: window?.kind === "month" ? window.month : "",
     windowLabel: window?.kind === "range" ? window.label : "",
+    windowFrom: windowIso(window).from,
+    windowTo: windowIso(window).to,
   };
 }
 
@@ -2335,6 +2356,8 @@ function aggregateSehelFunnel(
     },
     monthFilter: window?.kind === "month" ? window.month : "",
     windowLabel: window?.kind === "range" ? window.label : "",
+    windowFrom: windowIso(window).from,
+    windowTo: windowIso(window).to,
   };
 }
 
@@ -3166,6 +3189,8 @@ async function computeSalesforceFunnel(
     },
     monthFilter: window?.kind === "month" ? window.month : "",
     windowLabel: window?.kind === "range" ? window.label : "",
+    windowFrom: windowIso(window).from,
+    windowTo: windowIso(window).to,
   };
 }
 
