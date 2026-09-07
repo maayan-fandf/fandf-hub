@@ -203,3 +203,44 @@ export function orPrefixFilter(
     })
     .join(",");
 }
+
+/**
+ * Same `or=(…)` shape and the same quoting, but matching the WHOLE value.
+ *
+ * Use this wherever the column holds the account name itself. A prefix
+ * match there is not a looser version of the right answer, it is a
+ * different and occasionally wrong one: one account whose name begins
+ * with another's silently returns both. That is not hypothetical — of the
+ * 31 BMBY accounts in the warehouse exactly one such pair exists,
+ * "באר יעקב" (אנדה, אפרידר) and "באר יעקב מערב" (מיה באר יעקב, גיא
+ * ודורון), and it put one client's signed customers, their phone numbers
+ * and their salespeople on another client's page (reported 2026-09-07).
+ *
+ * Prefix matching stays correct for Sehel and must not be "fixed" there:
+ * its `project_name` really is "<project> <salesperson>" — 102 distinct
+ * values, 83 of them a suffixed form of another — and "אפרידר דיור מוגן"
+ * has no exact row at all, only seven salesperson variants. Exact
+ * matching would empty those projects. See the callers in crmData /
+ * fbCreativeMeetingsExport.
+ *
+ * It buys BMBY nothing: 29 of its 30 Keys cells match a warehouse name
+ * exactly (including the one above), and the 30th ("נתניה", ימים הצעירה)
+ * has no warehouse account at all, so no wildcard would find it either.
+ *
+ * `eq` is case-SENSITIVE where the prefix filter defaulted to `ilike`.
+ * Checked: all 29 resolvable cells match case-exactly today. It is also
+ * the right way to fail — a casing drift in Keys empties one section,
+ * which somebody reports, while a name collision hands one client another
+ * client's customers and nothing looks wrong at all.
+ */
+export function orExactFilter(
+  column: string,
+  values: readonly string[],
+): string {
+  return values
+    .map((v) => {
+      const quoted = `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+      return `${column}.eq.${encodeURIComponent(quoted)}`;
+    })
+    .join(",");
+}

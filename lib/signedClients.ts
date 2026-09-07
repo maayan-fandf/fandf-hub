@@ -1,5 +1,6 @@
 import { cache } from "react";
 import {
+  orExactFilter,
   orPrefixFilter,
   supabaseConfigured,
   supabaseRowsAll,
@@ -379,11 +380,21 @@ export const getSignedClients = cache(
       // against a bar reading 1. So this returns everyone currently at
       // חוזה for the account, newest lead first, and the panel says that is
       // what it is rather than implying a period.
-      // Quoted + escaped — see orPrefixFilter. Built by hand here until
-      // 2026-08-30, when אחוזת אפרידר's two-account Keys cell made the
-      // request 400: the reader returned null and חוזים read "אין
+      // EXACT, not prefix. `bmby_leads_daily.project_name` holds the
+      // account name itself, so a prefix match here returns every account
+      // whose name merely begins with this one — and one such pair exists:
+      // אנדה's "באר יעקב" also pulled "באר יעקב מערב", which belongs to
+      // מיה באר יעקב. That put גיא ודורון's signed customers, their phone
+      // numbers and their salespeople on אפרידר's project page (reported
+      // 2026-09-07, visible as "מיניסייט באר יעקב מערב" in אנדה's
+      // מקורות שסוגרים). Every other BMBY account matches exactly, so the
+      // wildcard was buying nothing and costing that.
+      //
+      // Quoting is still required and unchanged — see orExactFilter. It was
+      // added on 2026-08-30, when אחוזת אפרידר's two-account Keys cell made
+      // the request 400: the reader returned null and חוזים read "אין
       // לקוחות בשלב מכירה" over a project with 26 signed clients.
-      const or = orPrefixFilter("project_name", accounts);
+      const or = orExactFilter("project_name", accounts);
       // Filtered in memory rather than server-side: the sale can sit in
       // EITHER client_status or pipeline (see saleStageOf), and expressing
       // "account matches AND (any of five values across two columns)" as
