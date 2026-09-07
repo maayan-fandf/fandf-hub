@@ -43,49 +43,76 @@ export function channelPlatform(name: string): string {
   return "";
 }
 
-const RULES: { test: RegExp; icon: string; platform?: string }[] = [
-  { test: /(?:^|[-_\s])(?:google|גוגל)[\s\-_].*(?:discover|דיסקובר|דיסקאברי)/, icon: "🌐", platform: "google" },
-  { test: /(?:^|[-_\s])(?:google|גוגל).*(?:search|חיפוש|seach)/, icon: "🔍", platform: "google" },
-  { test: /(?:^|[-_\s])(?:google|גוגל|goolge|pmax|dv360|gs)(?:$|[-_\s])/, icon: "🔍", platform: "google" },
-  { test: /(?:^|[-_\s])(?:google|גוגל)/, icon: "🔍", platform: "google" },
-  { test: /(?:^|[-_\s])(?:facebook|פייסבוק|fb|meta|מטא)(?:$|[-_\s])/, icon: "📘", platform: "facebook" },
-  { test: /(?:^|[-_\s])(?:instagram|אינסטגרם|ig)(?:$|[-_\s])/, icon: "📸", platform: "instagram" },
-  { test: /(?:^|[-_\s])(?:tiktok|טיקטוק)/, icon: "🎵", platform: "tiktok" },
-  { test: /(?:^|[-_\s])(?:youtube|יוטיוב|yt)(?:$|[-_\s])/, icon: "▶️" },
-  { test: /(?:^|[-_\s])(?:linkedin|לינקדאין)/, icon: "💼" },
-  { test: /(?:^|[-_\s])(?:twitter)(?:$|[-_\s])|^x$/, icon: "🐦" },
-  { test: /(?:^|[-_\s])(?:yad\s?2|יד\s?2)(?:$|[-_\s])/, icon: "🏠", platform: "yad2" },
-  { test: /(?:^|[-_\s])(?:madlan|מדלן)(?:$|[-_\s])|(?:^|[-_\s])nadlan(?:\.|[-_\s])|(?:^|[-_\s])(?:נדלן)(?:$|[-_\s])/, icon: "🏘️" },
-  { test: /(?:^|[-_\s])(?:onmap|אונמפ)(?:$|[-_\s])/, icon: "🗺️" },
-  { test: /(?:^|[-_\s])(?:outbrain|אאוטבריין)/, icon: "📰", platform: "outbrain" },
-  { test: /(?:^|[-_\s])(?:taboola|טאבולה)/, icon: "📰", platform: "taboola" },
+/**
+ * The channel BUCKET a free-form string belongs to — the third projection
+ * of the same rule list, alongside the emoji and the brand key.
+ *
+ * The vocabulary is BMBY's: the warehouse resolves its own touch chain into
+ * `first_lid_channel` / `last_lid_channel` with values like `fb`, `gs`,
+ * `discovery`, `article`, `phone`, `minisite`. Sehel has no such view — its
+ * touches carry the salesperson's raw string ("פייסבוק - ויזלמרקטינג",
+ * "Article-march", "facebook-leadgen", "אתר קאזר"), 60 distinct values of
+ * them — so מקור מול טריגר has to bucket them here to compare the two
+ * columns at all. Sharing this list rather than writing a second one is the
+ * point: a string that shows Facebook's logo in the ערוצים table cannot
+ * quietly land in a different bucket on the journey card.
+ *
+ * Returns "other" when nothing matches, which is the honest bucket for a
+ * developer's own name or a one-off campaign code — 11 of Sehel's 60
+ * values, and 1.1% of its lead events.
+ */
+export function channelSlug(name: string): string {
+  const n = String(name || "").toLowerCase().trim();
+  if (!n || n === "—") return "other";
+  for (const r of RULES) {
+    if (r.test.test(n)) return r.slug ?? "other";
+  }
+  return "other";
+}
+
+const RULES: { test: RegExp; icon: string; platform?: string; slug?: string }[] = [
+  { test: /(?:^|[-_\s])(?:google|גוגל)[\s\-_].*(?:discover|דיסקובר|דיסקאברי)/, icon: "🌐", platform: "google", slug: "discovery" },
+  { test: /(?:^|[-_\s])(?:google|גוגל).*(?:search|חיפוש|seach)/, icon: "🔍", platform: "google", slug: "gs" },
+  { test: /(?:^|[-_\s])(?:google|גוגל|goolge|pmax|dv360|gs)(?:$|[-_\s])/, icon: "🔍", platform: "google", slug: "gs" },
+  { test: /(?:^|[-_\s])(?:google|גוגל)/, icon: "🔍", platform: "google", slug: "gs" },
+  { test: /(?:^|[-_\s])(?:facebook|פייסבוק|fb|meta|מטא)(?:$|[-_\s])/, icon: "📘", platform: "facebook", slug: "fb" },
+  { test: /(?:^|[-_\s])(?:instagram|אינסטגרם|ig)(?:$|[-_\s])/, icon: "📸", platform: "instagram", slug: "social" },
+  { test: /(?:^|[-_\s])(?:tiktok|טיקטוק)/, icon: "🎵", platform: "tiktok", slug: "social" },
+  { test: /(?:^|[-_\s])(?:youtube|יוטיוב|yt)(?:$|[-_\s])/, icon: "▶️", slug: "social" },
+  { test: /(?:^|[-_\s])(?:linkedin|לינקדאין)/, icon: "💼", slug: "social" },
+  { test: /(?:^|[-_\s])(?:twitter)(?:$|[-_\s])|^x$/, icon: "🐦", slug: "social" },
+  { test: /(?:^|[-_\s])(?:yad\s?2|יד\s?2)(?:$|[-_\s])/, icon: "🏠", platform: "yad2", slug: "yad2" },
+  { test: /(?:^|[-_\s])(?:madlan|מדלן)(?:$|[-_\s])|(?:^|[-_\s])nadlan(?:\.|[-_\s])|(?:^|[-_\s])(?:נדלן)(?:$|[-_\s])/, icon: "🏘️", slug: "madlan" },
+  { test: /(?:^|[-_\s])(?:onmap|אונמפ)(?:$|[-_\s])/, icon: "🗺️", slug: "other" },
+  { test: /(?:^|[-_\s])(?:outbrain|אאוטבריין)/, icon: "📰", platform: "outbrain", slug: "outbrain" },
+  { test: /(?:^|[-_\s])(?:taboola|טאבולה)/, icon: "📰", platform: "taboola", slug: "taboola" },
   /* i11 NEWS publishes every כתבה in this portfolio — the Keys "בנפיט"
      lookup points at i11.co.il for all of them — so it gets its own mark
      while the rest of the press list keeps the generic 📰. Listed BEFORE
      the general rule, which also matches `i11` via its `i1[123]` branch. */
-  { test: /(?:^|[-_\s])i11(?:$|[-_\s.])|i11\.co\.il/, icon: "📰", platform: "i11" },
-  { test: /(?:^|[-_\s])(?:ynet|walla|mako|calcalist|globes|גלובס|haaretz|הארץ|jerusalempost|ashdodnet|n1[123]|i1[123])/, icon: "📰" },
-  { test: /(?:^|[-_\s])(?:כתבה|article)/, icon: "📄", platform: "i11" },
+  { test: /(?:^|[-_\s])i11(?:$|[-_\s.])|i11\.co\.il/, icon: "📰", platform: "i11", slug: "article" },
+  { test: /(?:^|[-_\s])(?:ynet|walla|mako|calcalist|globes|גלובס|haaretz|הארץ|jerusalempost|ashdodnet|n1[123]|i1[123])/, icon: "📰", slug: "article" },
+  { test: /(?:^|[-_\s])(?:כתבה|article)/, icon: "📄", platform: "i11", slug: "article" },
   /* F&F name their Google Demand Gen campaigns `…-discovery` with no
      `google` token, so this rule carries the platform key too. */
-  { test: /(?:^|[-_\s])dis?c?over/, icon: "🧭", platform: "google" },
-  { test: /(?:^|[-_\s])(?:פניה|פנייה|טלפו[נן]|כוכבית|phone|call)|(?:^|[-_\s])פ\.\s?(?:טלפ|פניה)/, icon: "📞" },
-  { test: /(?:^|[-_\s])(?:שילוט|שלטי|חוצות|billboard)/, icon: "🪧" },
-  { test: /(?:^|[-_\s])(?:דיוור|mail)/, icon: "✉️" },
-  { test: /(?:^|[-_\s])(?:whatsapp|וואטסאפ|ווטסאפ)/, icon: "💬" },
-  { test: /(?:^|[-_\s])sms(?:$|[-_\s])/, icon: "💬" },
-  { test: /minisite|מיני-?סייט/, icon: "🪟" },
-  { test: /(?:^|[-_\s])(?:site|website|אתר|אינטרנט)(?:$|[-_\s])/, icon: "🌐" },
-  { test: /(?:^|[-_\s])seo(?:$|[-_\s])/, icon: "🔎" },
-  { test: /(?:^|[-_\s])(?:רדיו|radio)/, icon: "📻" },
-  { test: /(?:^|[-_\s])(?:טלוויזיה|tv)(?:$|[-_\s])/, icon: "📺" },
-  { test: /(?:^|[-_\s])(?:landing|lp)(?:$|[-_\s])|(?:דף|עמוד)\s?נחיתה/, icon: "🎯" },
-  { test: /(?:^|[-_\s])(?:ה?קהילה|community)/, icon: "👥" },
-  { test: /(?:^|[-_\s])(?:influenc|משפיע)/, icon: "⭐" },
-  { test: /nextchat|chatbot|(?:^|[-_\s])(?:chat|bot)(?:$|[-_\s])|צ'?אטבוט|בוט/, icon: "🤖" },
-  { test: /(?:^|[-_\s])(?:isracard|ישראכרט|ישראקרט)/, icon: "💳" },
-  { test: /(?:^|[-_\s])(?:waze|וייז)/, icon: "🚗" },
-  { test: /(?:^|[-_\s])(?:משרד\s?מכירות|sales\s?office)/, icon: "🏢" },
-  { test: /(?:^|[-_\s])(?:קשר\s?אישי|personal\s?contact)/, icon: "🤝" },
-  { test: /(?:^|[-_\s])teads(?:$|[-_\s])/, icon: "🎬" },
+  { test: /(?:^|[-_\s])dis?c?over/, icon: "🧭", platform: "google", slug: "discovery" },
+  { test: /(?:^|[-_\s])(?:פניה|פנייה|טלפו[נן]|כוכבית|phone|call)|(?:^|[-_\s])פ\.\s?(?:טלפ|פניה)/, icon: "📞", slug: "phone" },
+  { test: /(?:^|[-_\s])(?:שילוט|שלטי|חוצות|billboard)/, icon: "🪧", slug: "billboard" },
+  { test: /(?:^|[-_\s])(?:דיוור|mail)/, icon: "✉️", slug: "mail" },
+  { test: /(?:^|[-_\s])(?:whatsapp|וואטסאפ|ווטסאפ)/, icon: "💬", slug: "whatsapp" },
+  { test: /(?:^|[-_\s])sms(?:$|[-_\s])/, icon: "💬", slug: "whatsapp" },
+  { test: /minisite|מיני-?סייט/, icon: "🪟", slug: "minisite" },
+  { test: /(?:^|[-_\s])(?:site|website|אתר|אינטרנט)(?:$|[-_\s])/, icon: "🌐", slug: "site" },
+  { test: /(?:^|[-_\s])seo(?:$|[-_\s])/, icon: "🔎", slug: "site" },
+  { test: /(?:^|[-_\s])(?:רדיו|radio)/, icon: "📻", slug: "radio" },
+  { test: /(?:^|[-_\s])(?:טלוויזיה|tv)(?:$|[-_\s])/, icon: "📺", slug: "tv" },
+  { test: /(?:^|[-_\s])(?:landing|lp)(?:$|[-_\s])|(?:דף|עמוד)\s?נחיתה/, icon: "🎯", slug: "site" },
+  { test: /(?:^|[-_\s])(?:ה?קהילה|community)/, icon: "👥", slug: "referral" },
+  { test: /(?:^|[-_\s])(?:influenc|משפיע)/, icon: "⭐", slug: "referral" },
+  { test: /nextchat|chatbot|(?:^|[-_\s])(?:chat|bot)(?:$|[-_\s])|צ'?אטבוט|בוט/, icon: "🤖", slug: "other" },
+  { test: /(?:^|[-_\s])(?:isracard|ישראכרט|ישראקרט)/, icon: "💳", slug: "other" },
+  { test: /(?:^|[-_\s])(?:waze|וייז)/, icon: "🚗", slug: "other" },
+  { test: /(?:^|[-_\s])(?:משרד\s?מכירות|sales\s?office)/, icon: "🏢", slug: "walk_in" },
+  { test: /(?:^|[-_\s])(?:קשר\s?אישי|personal\s?contact)/, icon: "🤝", slug: "referral" },
+  { test: /(?:^|[-_\s])teads(?:$|[-_\s])/, icon: "🎬", slug: "other" },
 ];

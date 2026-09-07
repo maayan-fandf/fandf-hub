@@ -3,6 +3,7 @@ import { crmAccountCandidates } from "@/lib/crmData";
 import { readKeysCached } from "@/lib/keys";
 import { driveFolderOwner } from "@/lib/sa";
 import { orExactFilter, supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
+import { channelSlug } from "@/lib/channelIcon";
 
 /**
  * מקור מול טריגר — where a coordination was OPENED against where it was
@@ -33,11 +34,19 @@ import { orExactFilter, supabaseConfigured, supabaseRowsAll } from "@/lib/supaba
  * the window and held after it still belongs to the window's work, and
  * פגישות שהתקיימו is the section that asks the other question.
  *
- * BMBY only. `v_bmby_journey_meetings` resolves the touch chain into
- * `first_lid_channel` / `last_lid_channel` — both 100% populated — and
- * Sehel has no equivalent pair. A Sehel-only project gets null and the
- * section says which system it is missing rather than rendering an empty
- * card that reads as "no leads moved".
+ * BMBY AND SEHEL, each read by its own half and merged. BMBY comes ready:
+ * `v_bmby_journey_meetings` resolves the touch chain into
+ * `first_lid_channel` / `last_lid_channel`, both 100% populated. Sehel has
+ * no such view, so sehelJourney() resolves the chain here out of the raw
+ * touches — see its doc for the three ways that differs and for the
+ * coverage the card has to admit to.
+ *
+ * SALESFORCE CANNOT BE ADDED, and not for want of writing it: its CRM is a
+ * Sheet tab (`Salesforce!A:T`) with fifteen columns and exactly one
+ * `מקור ליד` per lead. There is no touch history anywhere in it, so first
+ * and last are the same value by construction and the card would draw a
+ * perfect diagonal and say nothing. Its five projects get null, which the
+ * section renders as absence rather than as "nothing moved".
  */
 
 /** Coverage measured 2026-09-07 across the whole view: 17 distinct slugs,
@@ -61,6 +70,15 @@ const CHANNEL_LABELS: Record<string, string> = {
   walk_in: "הגיע למשרד",
   social: "סושיאל",
   manual: "נפתח ידני",
+  // Buckets channelSlug() can produce that BMBY has no native slug for —
+  // Sehel genuinely sells off billboards (1,504 lead events, its third
+  // channel) and its own sites, and folding those into "אחר" would hide
+  // the very thing the column is for.
+  billboard: "שילוט",
+  site: "אתר החברה",
+  whatsapp: "וואטסאפ",
+  mail: "דיוור",
+  tv: "טלוויזיה",
   other: "אחר",
 };
 
@@ -80,6 +98,11 @@ const CHANNEL_ICON_KEY: Record<string, string> = {
   taboola: "taboola",
   phone: "פניה טלפונית",
   social: "instagram",
+  billboard: "שילוט",
+  site: "אתר החברה",
+  whatsapp: "whatsapp",
+  mail: "דיוור",
+  radio: "רדיו",
 };
 
 export type JourneyChannel = {
@@ -124,6 +147,14 @@ export type LeadJourney = {
    * seen from two sides, and neither contains the other.
    */
   returningAmongMoved: number | null;
+  /** Sehel only: meetings whose client has NO lead touch recorded, so no
+   *  first/last pair could be resolved. Not "people who never changed
+   *  channel" — people we cannot see, and the card says so rather than
+   *  quietly counting them as stayers. 0 on a BMBY project, where the
+   *  warehouse view resolves every row. */
+  unresolved: number;
+  /** Which CRMs the card is built from. A project on both reads both. */
+  platforms: ("bmby" | "sehel")[];
 };
 
 type Row = {
@@ -192,18 +223,21 @@ function describe(slug: string): JourneyChannel {
 }
 
 /**
- * Resolve a project to its BMBY account names. Same (project, company)
- * disambiguation every other CRM surface uses — a project name shared by
- * two companies must not hand back the other one's leads.
+ * Resolve a project to its CRM account names, per platform. Same
+ * (project, company) disambiguation every other CRM surface uses — a
+ * project name shared by two companies must not hand back the other one's
+ * leads.
  *
- * Returns null when the project has no CRM cell, and `[]` when it has one
- * that names no BMBY platform; the caller renders those two differently
- * because they are different facts.
+ * The cell can name BOTH: חמסה/רייסדור reads "bmby, sehel" because its
+ * clients live in two systems. So it is parsed rather than compared, and
+ * a project on both gets both halves read and merged.
+ *
+ * Returns null when the project has no CRM cell at all.
  */
-async function bmbyAccountsFor(
+async function accountsFor(
   project: string,
   company: string,
-): Promise<{ accounts: string[]; platform: string } | null> {
+): Promise<{ bmby: string[]; sehel: string[]; platform: string } | null> {
   const { headers, rows } = await readKeysCached(driveFolderOwner());
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
@@ -226,9 +260,149 @@ async function bmbyAccountsFor(
     // codebase reads it — the column was added after BMBY already was
     // the only CRM.
     const wantsBmby = named.length === 0 || named.includes("bmby");
-    return { accounts: wantsBmby ? crmAccountCandidates(crmAccount) : [], platform };
+    const wantsSehel = named.includes("sehel");
+    const cands = crmAccountCandidates(crmAccount);
+    return {
+      bmby: wantsBmby ? cands : [],
+      sehel: wantsSehel ? cands : [],
+      platform,
+    };
   }
   return null;
+}
+
+/**
+ * The Sehel half.
+ *
+ * Sehel has no `v_bmby_journey_meetings` equivalent — nobody resolved its
+ * touch chain upstream — so this does it here, from the raw table the
+ * BMBY view was itself built from. `sehel_touches` carries `is_lead_event`,
+ * `source` and `event_at` on 12,985 lead events at 100% coverage, which is
+ * everything the resolution needs: order a client's lead events by time,
+ * take the first source and the last.
+ *
+ * THREE THINGS THAT DIFFER FROM BMBY, all of them consequences of the data:
+ *
+ *  - The unit is the CLIENT, not the lead. `sehel_touches` has no lead id;
+ *    a person is a `client_uuid` and their inquiries are events under it.
+ *    So a Sehel column counts people who booked, and a BMBY column counts
+ *    leads. They are close enough to merge on a project that runs both
+ *    (a lead is a person's inquiry) and the label says "לידים" for both,
+ *    but the difference is real and this is where it is written down.
+ *
+ *  - The source is the salesperson's free text — 60 distinct strings for
+ *    what is really a dozen channels — so it goes through channelSlug()
+ *    (lib/channelIcon.ts), the same rule list the ערוצים table buckets
+ *    with. 98.9% of lead events land in a named channel; the rest are a
+ *    developer's own name or a campaign code and become "אחר".
+ *
+ *  - Coverage is partial and the card must say so. Measured across the
+ *    whole table: 1,247 meetings sit on 1,000 clients, but only 595 of
+ *    those clients have any lead touch recorded at all. The other 405 are
+ *    not "people who never changed channel" — they are people we cannot
+ *    see, and counting them as the former would understate the movement
+ *    this card exists to show. They are returned as `unresolved`.
+ */
+async function sehelJourney(
+  accounts: string[],
+  from: string,
+  to: string,
+): Promise<{ cells: Map<string, number>; unresolved: number } | null> {
+  if (!accounts.length) return null;
+  // EXACT, matching lib/heldMeetings.ts: `sehel_meetings.project_name`
+  // holds a handful of distinct values, none extending another, so a
+  // prefix match would buy nothing and open the door that once put one
+  // developer's customers on another's page.
+  const meetings = await supabaseRowsAll<{ client_uuid: string | null }>(
+    `sehel_meetings?or=(${orExactFilter("project_name", accounts)})` +
+      `&starts_at=gte.${from}T00:00:00&starts_at=lt.${to}T23:59:59` +
+      `&select=client_uuid`,
+    { maxRows: 20000 },
+  );
+  const clients = [...new Set(meetings.map((m) => clean(m.client_uuid)).filter(Boolean))];
+  if (!clients.length) return null;
+
+  const first = new Map<string, { at: string; src: string }>();
+  const last = new Map<string, { at: string; src: string }>();
+  for (let i = 0; i < clients.length; i += ID_BATCH) {
+    const chunk = clients.slice(i, i + ID_BATCH);
+    const rows = await supabaseRowsAll<{
+      client_uuid: string | null;
+      event_at: string | null;
+      source: string | null;
+    }>(
+      `sehel_touches?client_uuid=in.(${chunk.map((c) => `"${c.replace(/"/g, "")}"`).join(",")})` +
+        `&is_lead_event=is.true&select=client_uuid,event_at,source`,
+      { maxRows: 40000 },
+    );
+    // Min/max by timestamp rather than trusting the order the rows arrive
+    // in: `order=` on a batched read orders each batch, not the whole set,
+    // and this only needs the two ends.
+    for (const r of rows) {
+      const c = clean(r.client_uuid);
+      const at = clean(r.event_at);
+      const src = clean(r.source);
+      if (!c || !at || !src) continue;
+      const f = first.get(c);
+      if (!f || at < f.at) first.set(c, { at, src });
+      const l = last.get(c);
+      if (!l || at > l.at) last.set(c, { at, src });
+    }
+  }
+
+  const cells = new Map<string, number>();
+  let unresolved = 0;
+  for (const c of clients) {
+    const f = first.get(c);
+    const l = last.get(c);
+    if (!f || !l) {
+      unresolved++;
+      continue;
+    }
+    const key = `${channelSlug(f.src)}${KEY_SEP}${channelSlug(l.src)}`;
+    cells.set(key, (cells.get(key) ?? 0) + 1);
+  }
+  if (!cells.size) return null;
+  return { cells, unresolved };
+}
+
+
+/**
+ * The BMBY half. Reads the view that already resolved the chain.
+ *
+ * Counts DISTINCT leads, not meeting rows: a lead with three coordinations
+ * in the window is one person who changed channel once, and counting the
+ * row would let the busiest leads set the shape of the card.
+ */
+async function bmbyJourney(
+  accounts: string[],
+  from: string,
+  to: string,
+): Promise<{ cells: Map<string, number>; movedClients: Set<string> } | null> {
+  if (!accounts.length) return null;
+  const rows = await supabaseRowsAll<Row>(
+    `v_bmby_journey_meetings?or=(${orExactFilter("project_he", accounts)})` +
+      `&meeting_date=gte.${from}&meeting_date=lte.${to}` +
+      `&select=lead_id,client_id,first_lid_channel,last_lid_channel`,
+    { maxRows: 20000 },
+  );
+  if (!rows.length) return null;
+  const seen = new Set<string>();
+  const cells = new Map<string, number>();
+  const movedClients = new Set<string>();
+  for (const r of rows) {
+    const id = clean(r.lead_id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const f = clean(r.first_lid_channel) || "other";
+    const l = clean(r.last_lid_channel) || "other";
+    const key = `${f}${KEY_SEP}${l}`;
+    cells.set(key, (cells.get(key) ?? 0) + 1);
+    const cid = clean(r.client_id);
+    if (cid && f !== l) movedClients.add(cid);
+  }
+  if (!cells.size) return null;
+  return { cells, movedClients };
 }
 
 export const getLeadJourney = cache(
@@ -239,38 +413,24 @@ export const getLeadJourney = cache(
     to: string;
   }): Promise<LeadJourney | null> => {
     const project = clean(args.project);
-    if (!supabaseConfigured() || !project) return null;
+    if (!supabaseConfigured() || !project || !args.from || !args.to) return null;
     try {
-      const resolved = await bmbyAccountsFor(project, clean(args.company));
-      if (!resolved || !resolved.accounts.length) return null;
+      const acct = await accountsFor(project, clean(args.company));
+      if (!acct) return null;
 
-      const rows = await supabaseRowsAll<Row>(
-        `v_bmby_journey_meetings?or=(${orExactFilter("project_he", resolved.accounts)})` +
-          `&meeting_date=gte.${args.from}&meeting_date=lte.${args.to}` +
-          `&select=lead_id,client_id,first_lid_channel,last_lid_channel`,
-        { maxRows: 20000 },
-      );
-      if (!rows.length) return null;
+      // Both halves in parallel, and a project on both gets both. The
+      // counts ADD: חמסה splits its clients between two systems, it does
+      // not record each one twice.
+      const [bmby, sehel] = await Promise.all([
+        bmbyJourney(acct.bmby, args.from, args.to).catch(() => null),
+        sehelJourney(acct.sehel, args.from, args.to).catch(() => null),
+      ]);
+      if (!bmby && !sehel) return null;
 
-      // Count DISTINCT leads, not meeting rows. A lead with three
-      // coordinations in the window is one person who changed channel
-      // once, and counting the row would let the busiest leads set the
-      // shape of the card.
-      const seen = new Set<string>();
       const cells = new Map<string, number>();
-      /** The people behind the leads that changed channel, for the
-       *  returning cross-tab below. */
-      const movedClients = new Set<string>();
-      for (const r of rows) {
-        const id = clean(r.lead_id);
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        const from = clean(r.first_lid_channel) || "other";
-        const to = clean(r.last_lid_channel) || "other";
-        const key = `${from}${KEY_SEP}${to}`;
-        cells.set(key, (cells.get(key) ?? 0) + 1);
-        const cid = clean(r.client_id);
-        if (cid && from !== to) movedClients.add(cid);
+      for (const part of [bmby?.cells, sehel?.cells]) {
+        if (!part) continue;
+        for (const [k, n] of part) cells.set(k, (cells.get(k) ?? 0) + n);
       }
       if (!cells.size) return null;
 
@@ -311,13 +471,19 @@ export const getLeadJourney = cache(
         }
       }
 
-      // Only worth asking when something moved, and cheap when it is: one
-      // batched read keyed on the clients already in hand.
-      const returners = moved
-        ? await returningClients([...movedClients])
-        : new Set<string>();
+      // The returning cross-tab is BMBY-only: `is_return_lead` lives in
+      // v_bmby_leads_bucketed and Sehel's tables carry no equivalent. On a
+      // project that runs BOTH it is therefore left NULL rather than
+      // reported — a count covering half the card, printed as if it
+      // covered all of it, is the kind of number this whole card exists to
+      // argue against.
+      const bmbyOnly = !!bmby && !sehel;
+      const returners =
+        bmbyOnly && moved && bmby.movedClients.size
+          ? await returningClients([...bmby.movedClients])
+          : null;
       const returningAmongMoved = returners
-        ? [...movedClients].filter((c) => returners.has(c)).length
+        ? [...bmby!.movedClients].filter((c) => returners.has(c)).length
         : null;
 
       return {
@@ -330,6 +496,10 @@ export const getLeadJourney = cache(
         hot,
         hotDelta,
         returningAmongMoved,
+        unresolved: sehel?.unresolved ?? 0,
+        platforms: [bmby ? "bmby" : "", sehel ? "sehel" : ""].filter(
+          Boolean,
+        ) as ("bmby" | "sehel")[],
       };
     } catch (e) {
       console.warn(

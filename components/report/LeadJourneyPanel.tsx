@@ -213,6 +213,19 @@ export default function LeadJourneyPanel({ data }: { data: LeadJourney }) {
               of returning leads change channel — and the honest thing is to
               say so on the card rather than leave the reader to work it out
               from two blocks that never mention each other. */}
+          {/* Sehel's coverage, stated rather than hidden. Its touches carry
+              the chain for 60% of the clients who booked; the rest have no
+              lead event recorded at all. Counting them as "did not change
+              channel" would understate exactly what this card measures, so
+              they are excluded from the columns and named here instead. */}
+          {data.unresolved > 0 ? (
+            <>
+              {" "}
+              {data.unresolved === 1
+                ? "עוד פגישה אחת לא נכללת — ללקוח שמאחוריה אין מגע ליד מתועד בשכל, אז אי אפשר לדעת מאיפה הוא הגיע. הוא לא נספר כ״לא החליף״."
+                : `עוד ${data.unresolved} פגישות לא נכללות — ללקוחות שמאחוריהן אין מגע ליד מתועד בשכל, אז אי אפשר לדעת מאיפה הם הגיעו. הם לא נספרים כ״לא החליפו״.`}
+            </>
+          ) : null}
           {data.returningAmongMoved != null && data.moved > 0 ? (
             <>
               {" "}
@@ -235,8 +248,9 @@ export default function LeadJourneyPanel({ data }: { data: LeadJourney }) {
         <p className="lj-verdict">
           {name(data.hot)} סוגר {data.hotDelta === 1 ? "ליד אחד" : `${data.hotDelta} לידים`}{" "}
           יותר משהוא פותח.{" "}
-          {data.hotDelta === 1 ? "הוא נפתח" : "הם נפתחו"} במקום אחר — בדוח שמייחס
-          לפי המגע האחרון, הקרדיט עליהם נרשם כאן.
+          {data.hotDelta === 1
+            ? "הוא נפתח במקום אחר — בדוח שמייחס לפי המגע האחרון, הקרדיט עליו נרשם כאן."
+            : "הם נפתחו במקום אחר — בדוח שמייחס לפי המגע האחרון, הקרדיט עליהם נרשם כאן."}
         </p>
       ) : null}
     </div>
