@@ -469,10 +469,24 @@ export default async function NativeProjectRail({
       ),
     });
   }
+  if (prisotNode) {
+    sections.push({
+      id: "prisot",
+      group: "plan",
+      label: "פריסות",
+      icon: "🗂️",
+      content: prisotNode,
+    });
+  }
   // נכסים דיגיטליים — under תכנון rather than ביצועים on purpose: these
   // are the things that run all month regardless of what the campaigns
   // are doing, and the question they answer ("is what we published still
   // right") is a planning question, not a performance one.
+  //
+  // Immediately above מחירים בפרסום, and the adjacency is the point: both
+  // answer "does the price we are showing still match", one per asset and
+  // one per ad surface. Reading them apart makes them look like two
+  // unrelated checks.
   if (data) {
     sections.push({
       id: "assets",
@@ -488,15 +502,6 @@ export default async function NativeProjectRail({
           }))}
         />
       ),
-    });
-  }
-  if (prisotNode) {
-    sections.push({
-      id: "prisot",
-      group: "plan",
-      label: "פריסות",
-      icon: "🗂️",
-      content: prisotNode,
     });
   }
   if (pricesNode) {
