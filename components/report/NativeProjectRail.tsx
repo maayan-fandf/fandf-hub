@@ -18,6 +18,7 @@ import ReportChannelsTab, {
 import ReportCreativesTab from "@/components/report/ReportCreativesTab";
 import ReportTrendsTab from "@/components/report/ReportTrendsTab";
 import ContractsSection from "@/components/report/ContractsSection";
+import MeetingsSection from "@/components/report/MeetingsSection";
 
 /**
  * Server assembler for the native project page's vertical-nav rail. Fetches
@@ -434,6 +435,24 @@ export default async function NativeProjectRail({
   // honest answer is that the section does not apply. Same reason
   // סקירת פעילות and מגמות are !mediaLed above.
   if (data && !mediaLed) {
+    // Meetings sit before חוזים: they are the wider population and the
+    // earlier step. Same window as the rest of the report, and the same
+    // gate — both surfaces open the same customers, so a difference
+    // between them would be a way around whichever is stricter.
+    sections.push({
+      id: "meetings",
+      group: "leads",
+      label: "פגישות שהתקיימו",
+      icon: "🤝",
+      content: (
+        <MeetingsSection
+          project={data.project}
+          company={data.company}
+          from={data.window.startIso}
+          to={data.window.endIso}
+        />
+      ),
+    });
     sections.push({
       id: "contracts",
       group: "leads",

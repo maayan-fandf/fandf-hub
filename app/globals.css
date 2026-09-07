@@ -30075,3 +30075,76 @@ html[data-theme="dark"] {
   font-weight: 600;
   color: color-mix(in srgb, var(--accent) 80%, var(--ink));
 }
+
+/* ── פגישות שהתקיימו (MeetingsSection) ─────────────────────────────────
+   Rides on the .ct-* vocabulary from חוזים so the two sections read as one
+   family; only what the meetings table needs on top lives here. */
+.ct-bar.is-obj {
+  background: color-mix(in srgb, #f97316 18%, transparent);
+}
+.mt-table td {
+  vertical-align: top;
+}
+.mt-client {
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  text-align: start;
+}
+.mt-client:hover {
+  text-decoration: underline;
+}
+.mt-client:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+.mt-moved {
+  margin-inline-start: 0.3rem;
+  font-size: 0.7rem;
+  color: #b45309;
+  white-space: nowrap;
+}
+.mt-more {
+  margin-inline-start: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  cursor: help;
+}
+.mt-note-cell {
+  max-width: 30ch;
+}
+/* Collapsed to one line by default — a table of 30 five-line notes is a
+   wall nobody reads. Clicking opens the one being asked about. */
+.mt-note {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0;
+  cursor: pointer;
+  text-align: start;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mt-note.is-open {
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: pre-line;
+  color: var(--ink);
+}
+.mt-note:hover {
+  color: var(--ink);
+}
+.mt-nonote {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
