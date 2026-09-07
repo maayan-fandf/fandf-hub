@@ -1,78 +1,143 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-type Theme = "auto" | "light" | "dark";
-
-const ICONS: Record<Theme, string> = {
-  auto: "🖥️",
-  light: "☀️",
-  dark: "🌙",
-};
-
-const LABELS: Record<Theme, string> = {
-  auto: "אוטומטי",
-  light: "בהיר",
-  dark: "כהה",
-};
-
-const STORAGE_KEY = "hub-theme";
-
-/** Resolve chosen theme to "light" | "dark" and apply to <html>. */
-function applyTheme(theme: Theme) {
-  let effective: "light" | "dark";
-  if (theme === "dark") effective = "dark";
-  else if (theme === "light") effective = "light";
-  else {
-    effective = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-  }
-  document.documentElement.dataset.theme = effective;
-}
+import { useEffect, useRef, useState } from "react";
 
 /**
- * Three-state theme toggle — auto → light → dark → auto. Persisted to
- * localStorage under "hub-theme". The blocking <script> injected in
- * layout.tsx handles the pre-hydration paint; this component handles
- * user toggling + reactive system-preference changes while in auto.
+ * תצוגה — the look picker.
+ *
+ * TWO independent axes, which is why this stopped being a three-state
+ * cycle. `mode` is light/dark/auto and has always existed. `skin` is the
+ * palette: the hub's own M3 violet, or "נייר" — the bone-and-terracotta
+ * editorial palette from MOAD's design system (design/moad-base.css),
+ * which the owner asked for on 2026-09-07 as a cleaner, more print-like
+ * alternative.
+ *
+ * Cycling through five combinations with one button would mean pressing
+ * it four times to get back, so the control is a small menu instead. The
+ * two axes stay separate in storage: someone on the paper skin who
+ * switches to dark keeps the paper skin.
  */
+
+type Mode = "auto" | "light" | "dark";
+type Skin = "hub" | "paper";
+
+const MODE_KEY = "hub-theme";
+const SKIN_KEY = "hub-skin";
+
+const OPTIONS: { mode: Mode; skin: Skin; label: string; hint: string }[] = [
+  { mode: "auto", skin: "hub", label: "אוטומטי", hint: "לפי הגדרת המערכת" },
+  { mode: "light", skin: "hub", label: "בהיר", hint: "" },
+  { mode: "dark", skin: "hub", label: "כהה", hint: "" },
+  { mode: "light", skin: "paper", label: "נייר · בהיר", hint: "פלטה עיתונאית" },
+  { mode: "dark", skin: "paper", label: "נייר · כהה", hint: "פלטה עיתונאית" },
+];
+
+/** Resolve and paint. Kept in step with THEME_INIT_SCRIPT in layout.tsx —
+ *  that one runs before hydration, this one on every change. */
+function apply(mode: Mode, skin: Skin) {
+  const effective =
+    mode === "dark"
+      ? "dark"
+      : mode === "light"
+        ? "light"
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+  document.documentElement.dataset.theme = effective;
+  // Absent rather than "hub" for the default, so every existing rule that
+  // matches on :root keeps applying with no skin selector at all.
+  if (skin === "paper") document.documentElement.dataset.skin = "paper";
+  else delete document.documentElement.dataset.skin;
+}
+
 export default function ThemeToggle() {
-  // Start in "auto" for SSR so server+client agree on markup. We read the
-  // real stored value in useEffect and re-render the icon.
-  const [theme, setTheme] = useState<Theme>("auto");
+  // "auto"/"hub" for SSR so server and client agree; the stored values
+  // arrive in the effect below.
+  const [mode, setMode] = useState<Mode>("auto");
+  const [skin, setSkin] = useState<Skin>("hub");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const stored = (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "auto";
-    setTheme(stored);
+    const m = (localStorage.getItem(MODE_KEY) as Mode | null) ?? "auto";
+    const s = (localStorage.getItem(SKIN_KEY) as Skin | null) ?? "hub";
+    setMode(m);
+    setSkin(s);
 
-    // If we're in auto, follow system changes live.
+    // Follow the system while in auto.
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => {
-      const current = (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "auto";
-      if (current === "auto") applyTheme("auto");
+    const onSystem = () => {
+      const cur = (localStorage.getItem(MODE_KEY) as Mode | null) ?? "auto";
+      if (cur === "auto") {
+        apply("auto", (localStorage.getItem(SKIN_KEY) as Skin | null) ?? "hub");
+      }
     };
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    mq.addEventListener("change", onSystem);
+    return () => mq.removeEventListener("change", onSystem);
   }, []);
 
-  function cycle() {
-    const order: Theme[] = ["auto", "light", "dark"];
-    const next = order[(order.indexOf(theme) + 1) % order.length];
-    setTheme(next);
-    localStorage.setItem(STORAGE_KEY, next);
-    applyTheme(next);
-  }
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const choose = (o: (typeof OPTIONS)[number]) => {
+    setMode(o.mode);
+    setSkin(o.skin);
+    localStorage.setItem(MODE_KEY, o.mode);
+    localStorage.setItem(SKIN_KEY, o.skin);
+    apply(o.mode, o.skin);
+    setOpen(false);
+  };
+
+  const current =
+    OPTIONS.find((o) => o.mode === mode && o.skin === skin) ?? OPTIONS[0];
 
   return (
-    <button
-      type="button"
-      className="theme-toggle"
-      onClick={cycle}
-      title={`תצוגה: ${LABELS[theme]} · לחץ להחלפה`}
-      aria-label={`תצוגה: ${LABELS[theme]}`}
-    >
-      <span aria-hidden>{ICONS[theme]}</span>
-    </button>
+    <div className="theme-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="theme-toggle"
+        onClick={() => setOpen((v) => !v)}
+        title={`תצוגה: ${current.label}`}
+        aria-label={`תצוגה: ${current.label}`}
+        aria-expanded={open}
+      >
+        <span aria-hidden>◑</span>
+      </button>
+      {open && (
+        <div className="theme-menu" role="menu" aria-label="תצוגה">
+          <div className="theme-menu-title">תצוגה</div>
+          {OPTIONS.map((o) => {
+            const on = o.mode === current.mode && o.skin === current.skin;
+            return (
+              <button
+                key={`${o.skin}-${o.mode}`}
+                type="button"
+                role="menuitemradio"
+                aria-checked={on}
+                className={"theme-menu-item" + (on ? " is-on" : "")}
+                onClick={() => choose(o)}
+              >
+                <span className={`theme-swatch is-${o.skin}-${o.mode}`} aria-hidden />
+                <span className="theme-menu-label">{o.label}</span>
+                {o.hint && <span className="theme-menu-hint">{o.hint}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

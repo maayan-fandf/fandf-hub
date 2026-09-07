@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Rubik } from "next/font/google";
+import { Rubik, Noto_Emoji } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -19,6 +19,28 @@ const rubik = Rubik({
   weight: ["400", "500", "700"],
   display: "swap",
   variable: "--font-rubik",
+});
+
+/**
+ * Noto Emoji — Google's MONOCHROME emoji face, used only by the נייר skin
+ * (see globals.css). Self-hosted through next/font like Rubik rather than
+ * a hand-written @font-face: a pinned gstatic URL is a URL that expires,
+ * and the first attempt at this shipped one that already 404'd.
+ *
+ * `font-variant-emoji: text` is the property that ought to do this job
+ * and is declared alongside it, but on Windows it renders pixel-identical
+ * with and without — the system emoji font has no text-presentation glyph
+ * to switch to. This does.
+ *
+ * The face has no Hebrew or Latin coverage, so listing it after Rubik in
+ * the stack separates the two by itself: letters resolve to Rubik, emoji
+ * codepoints fall through to this.
+ */
+const notoEmoji = Noto_Emoji({
+  subsets: ["emoji"],
+  weight: ["400"],
+  display: "swap",
+  variable: "--font-emoji-mono",
 });
 import { signOutAction } from "@/lib/signOutAction";
 import CommandPalette from "@/components/CommandPalette";
@@ -61,16 +83,25 @@ import { getProjectNavData } from "@/lib/projectEnded";
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
 // the page renders in light first then flips.
+// Two attributes now, not one: `data-theme` (light/dark) and `data-skin`
+// (the palette). Both have to land before the first paint or the flash is
+// worse than it was — a bone ground repainting to violet is a lot more
+// visible than light repainting to dark. Kept in step with apply() in
+// components/ThemeToggle.tsx.
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
-    var k = 'hub-theme';
-    var t = localStorage.getItem(k) || 'auto';
+    var t = localStorage.getItem('hub-theme') || 'auto';
     var effective;
     if (t === 'dark') effective = 'dark';
     else if (t === 'light') effective = 'light';
     else effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.dataset.theme = effective;
+    // Absent for the default skin, so every rule written against plain
+    // :root keeps applying with no skin selector at all.
+    if (localStorage.getItem('hub-skin') === 'paper') {
+      document.documentElement.dataset.skin = 'paper';
+    }
   } catch (e) {}
 })();
 `;
@@ -201,7 +232,7 @@ export default async function RootLayout({
       // [data-ended] so the attributes are inert there.
       data-hide-ended="1"
       data-show-mine="1"
-      className={rubik.variable}
+      className={`${rubik.variable} ${notoEmoji.variable}`}
     >
       <head>
         <script

@@ -30270,3 +30270,227 @@ html[data-theme="dark"] {
   color: var(--muted);
   background: var(--surface-alt);
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   עור "נייר" — the editorial palette, in both modes
+   ══════════════════════════════════════════════════════════════════════
+
+   A second skin alongside the hub's own M3 violet, picked from the תצוגה
+   menu. The values are MOAD's, taken from its own stylesheets rather than
+   sampled off a screenshot: the light ground is design/moad-base.css
+   (bone / terracotta / slate / sage), the dark one is the inversion in
+   src/app/deck.css. Both are reproduced here as token overrides, so every
+   existing rule in this file follows without being touched — the hub's
+   --brand / --ink / --surface names already alias onto the M3 vars below.
+
+   Two axes, not five themes: `data-skin` and `data-theme` are set
+   independently, so switching to dark keeps whichever skin is on. The
+   default skin sets NO attribute at all, which is what keeps every
+   pre-existing :root rule applying unchanged. */
+
+:root[data-skin="paper"] {
+  --bg: #f7efe3;
+  --md-sys-color-surface: #f1e7d8;
+  --md-sys-color-surface-container-low: #ece1d0;
+  --md-sys-color-surface-container: #eae0ce;
+  --md-sys-color-surface-container-high: #e0d4bd;
+  --md-sys-color-outline-variant: #d8ccb6;
+  --md-sys-color-on-surface: #2b3a38;
+  --md-sys-color-on-surface-variant: #5a6b67;
+  --md-sys-color-primary: #c4562f;
+  /* The violet aliases are the one thing that does NOT follow from the M3
+     vars — they point at --indigo directly. Terracotta is this palette's
+     accent, and leaving them would put a violet focus ring on a bone
+     card. */
+  --accent: #c4562f;
+  --accent-soft: #f2d5c8;
+  --violet: #7a3b47;
+  --violet-soft: #f0dcdf;
+  --indigo: #7a96ac;
+  --indigo-soft: #dfe7ed;
+}
+
+/* Dark wins on specificity (0,3,0 against the light block's 0,2,0) and on
+   order, so the pair reads top-to-bottom as "paper, and darker if asked". */
+:root[data-skin="paper"][data-theme="dark"] {
+  --bg: #141c1b;
+  --md-sys-color-surface: #1c2624;
+  --md-sys-color-surface-container-low: #1a2321;
+  --md-sys-color-surface-container: #232e2b;
+  --md-sys-color-surface-container-high: #2b3733;
+  --md-sys-color-outline-variant: #33413d;
+  --md-sys-color-on-surface: #e9e0d2;
+  --md-sys-color-on-surface-variant: #a2b0a9;
+  --md-sys-color-primary: #d96b41;
+  --accent: #d96b41;
+  --accent-soft: #7a3a22;
+  --violet: #b05c70;
+  --violet-soft: #3d2830;
+  --indigo: #7f9bb2;
+  --indigo-soft: #2b3742;
+}
+
+/* Emoji in monochrome — the other half of what makes MOAD read as print
+   rather than as a web app.
+ 
+   `font-variant-emoji: text` asks the browser for the text-presentation
+   glyph, which is the correct mechanism and needs no webfont; it is
+   Chrome 131+ / Safari 17.4+, so on an older browser emoji simply stay
+   colourful and nothing else changes. The grayscale filter underneath it
+   covers the dedicated icon slots, where an emoji is decoration rather
+   than content, and is what actually does the work today. Both are scoped
+   to the skin: the default look keeps its colour. */
+:root[data-skin="paper"] {
+  font-variant-emoji: text;
+}
+:root[data-skin="paper"] .emoji,
+:root[data-skin="paper"] .prl-nav-icon,
+:root[data-skin="paper"] .prl-triage-chip > span[aria-hidden],
+:root[data-skin="paper"] .da-card-head > span[aria-hidden],
+:root[data-skin="paper"] .ct-src > span[aria-hidden],
+:root[data-skin="paper"] .ct-row-label > span[aria-hidden],
+:root[data-skin="paper"] .rpt-forecast-pill,
+:root[data-skin="paper"] .mk-heat-cell {
+  filter: grayscale(1);
+}
+
+/* ── the תצוגה menu ── */
+.theme-wrap { position: relative; display: inline-flex; }
+.theme-menu {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 0.35rem);
+  inset-inline-end: 0;
+  min-width: 190px;
+  padding: 0.4rem;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22);
+  display: grid;
+  gap: 0.1rem;
+}
+.theme-menu-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 0.15rem 0.45rem 0.3rem;
+}
+.theme-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: start;
+  padding: 0.32rem 0.45rem;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.theme-menu-item:hover { background: var(--surface-alt); }
+.theme-menu-item.is-on { background: var(--surface-hi); font-weight: 600; }
+.theme-menu-label { flex: 1 1 auto; }
+.theme-menu-hint { font-size: 0.68rem; color: var(--muted); }
+/* Each swatch is the actual pair of colours that option paints with, so
+   the menu shows the choice rather than describing it. */
+.theme-swatch {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+}
+.theme-swatch.is-hub-auto { background: linear-gradient(135deg, #f7f5ff 50%, #0a0a18 50%); }
+.theme-swatch.is-hub-light { background: linear-gradient(135deg, #f7f5ff 50%, #6366f1 50%); }
+.theme-swatch.is-hub-dark { background: linear-gradient(135deg, #0a0a18 50%, #8b5cf6 50%); }
+.theme-swatch.is-paper-light { background: linear-gradient(135deg, #f7efe3 50%, #c4562f 50%); }
+.theme-swatch.is-paper-dark { background: linear-gradient(135deg, #141c1b 50%, #d96b41 50%); }
+
+/* The rest of the palette under נייר.
+ 
+   The token overrides above change the ground, the ink and the accent,
+   but the hub also hashes each COMPANY to one of sixteen hues and paints
+   its row with the matching *-soft tint. Left alone those stay candy
+   pastels — lavender, mint, peach — and a bone page with candy rows is
+   the thing that reads as unprofessional, not the ground.
+ 
+   So the same sixteen names are remapped onto MOAD's channel palette,
+   which was chosen to be far apart in hue while staying muted. Every
+   company keeps its own distinct colour; none of them shouts. */
+:root[data-skin="paper"] {
+  --violet: #7a3b47;   --violet-soft: #ece1e3;
+  --purple: #8a5566;   --purple-soft: #eee0e4;
+  --pink:   #b05c70;   --pink-soft:   #f3e1e4;
+  --rose:   #c06a6a;   --rose-soft:   #f4e0dd;
+  --red:    #c4562f;   --red-soft:    #f4ddd2;
+  --orange: #d96b41;   --orange-soft: #f8e5d6;
+  --amber:  #e8a33d;   --amber-soft:  #f8ecd6;
+  --yellow: #d9a441;   --yellow-soft: #f5eed8;
+  --lime:   #93a38c;   --lime-soft:   #e9ede2;
+  --green:  #6f8f74;   --green-soft:  #e1ebe2;
+  --emerald:#4e7a63;
+  --teal:   #3d6b6b;   --teal-soft:   #ddeae7;
+  --cyan:   #4e9b92;   --cyan-soft:   #dfeceA;
+  --sky:    #7f9bb2;   --sky-soft:    #e2e9ee;
+  --blue:   #6b8aa6;   --blue-soft:   #e3e9ee;
+  --indigo: #7a96ac;   --indigo-soft: #e4e9ee;
+  /* Status keeps its meaning — these are the only three that must stay
+     readable as good / attention / bad rather than as a company hue. */
+  --overdue: #c4562f;      --overdue-soft: #f4ddd2;
+  --due-today: #e8a33d;    --due-today-soft: #f8ecd6;
+  --done: #4e7a63;         --done-soft: #dfeae1;
+}
+:root[data-skin="paper"][data-theme="dark"] {
+  --violet: #b05c70;   --violet-soft: #3a2830;
+  --purple: #a4697c;   --purple-soft: #382832;
+  --pink:   #c07186;   --pink-soft:   #3d2a31;
+  --rose:   #cc7f7f;   --rose-soft:   #3d2b29;
+  --red:    #d96b41;   --red-soft:    #3f2820;
+  --orange: #e07f52;   --orange-soft: #422c1f;
+  --amber:  #e8a33d;   --amber-soft:  #402f1a;
+  --yellow: #dcae5a;   --yellow-soft: #3c331d;
+  --lime:   #93a38c;   --lime-soft:   #2b332a;
+  --green:  #7ba384;   --green-soft:  #26332a;
+  --emerald:#5e9a7c;
+  --teal:   #4e9b92;   --teal-soft:   #21332f;
+  --cyan:   #5fb0a6;   --cyan-soft:   #223531;
+  --sky:    #7f9bb2;   --sky-soft:    #263039;
+  --blue:   #7593ad;   --blue-soft:   #253039;
+  --indigo: #8aa6bb;   --indigo-soft: #27313a;
+  --overdue: #d96b41;      --overdue-soft: #3f2820;
+  --due-today: #e8a33d;    --due-today-soft: #402f1a;
+  --done: #5e9a7c;         --done-soft: #23332b;
+}
+
+/* Monochrome emoji under נייר.
+ 
+   `font-variant-emoji: text` is the property for this and it is declared
+   on :root above, but on Windows it does nothing: measured in Chromium
+   148, the same emoji renders pixel-identical with and without it,
+   because the system emoji font ships no text-presentation glyph for the
+   browser to switch to. The declaration stays for the platforms where it
+   does work; this is what actually does the job here.
+ 
+   Noto Emoji is Google's MONOCHROME emoji face. Listing it in the stack
+   after the text font resolves emoji codepoints to black glyphs while
+   Hebrew and Latin keep coming from Rubik — the font has no coverage for
+   those, so fallback order does the separation on its own with nothing to
+   scope by element.
+ 
+   The @font-face below is unconditional but costs nothing on the default
+   skin: a browser downloads a webfont only when rendered text actually
+   resolves to it, and nothing outside this skin names it. */
+/* The face itself is loaded by next/font in app/layout.tsx, which
+   self-hosts it and exposes --font-emoji-mono. */
+:root[data-skin="paper"] body,
+:root[data-skin="paper"] button,
+:root[data-skin="paper"] input,
+:root[data-skin="paper"] select,
+:root[data-skin="paper"] textarea,
+:root[data-skin="paper"] table {
+  font-family: var(--md-sys-typescale-plain-font), var(--font-emoji-mono), sans-serif;
+}

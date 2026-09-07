@@ -131,7 +131,70 @@ const PAIRS: Pair[] = [
       bg: "radial-gradient(ellipse 80% 60% at 50% 30%, rgba(59,130,246,.10), transparent 70%), linear-gradient(180deg, #f0f9ff 0%, #dbeafe 50%, #eff6ff 100%)",
     },
   },
+  // ── The two paper pairs ──────────────────────────────────────────────
+  //
+  // These belong to the "נייר" skin and are not part of the free
+  // rotation — see pairsForSkin(). Colours are MOAD's own (bone ground,
+  // terracotta and teal accents), taken from its stylesheets rather than
+  // sampled off a screenshot.
+  //
+  // Deliberately the quietest configs here: a third of aurora's particle
+  // count, no link lines, and a ground gradient that barely moves off
+  // flat. The point of this skin is that it reads like print, and a
+  // constellation drifting behind a bone page undoes that on its own.
+  {
+    name: "paper",
+    dark: {
+      count: 26, area: 1400,
+      colors: ["#4e9b92", "#93a38c", "#e9e0d2"],
+      opacity: 0.3, opacityMin: 0.08, size: 1.8, link: false,
+      speed: 0.25, direction: "none", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 25%, rgba(78,155,146,.07), transparent 70%), linear-gradient(180deg, #141c1b 0%, #1a2422 55%, #141c1b 100%)",
+    },
+    light: {
+      count: 24, area: 1500,
+      colors: ["#c4562f", "#e3a492", "#8b9c86"],
+      opacity: 0.26, opacityMin: 0.07, size: 2, link: false,
+      speed: 0.25, direction: "none", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 60% at 50% 25%, rgba(196,86,47,.05), transparent 70%), linear-gradient(180deg, #f7efe3 0%, #f1e7d8 55%, #f7efe3 100%)",
+    },
+  },
+  {
+    name: "paper-teal",
+    dark: {
+      count: 26, area: 1400,
+      colors: ["#e8a33d", "#93a38c", "#a2b0a9"],
+      opacity: 0.28, opacityMin: 0.07, size: 1.8, link: false,
+      speed: 0.22, direction: "none", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 55% at 50% 30%, rgba(232,163,61,.06), transparent 70%), linear-gradient(180deg, #121917 0%, #19231f 55%, #121917 100%)",
+    },
+    light: {
+      count: 24, area: 1500,
+      colors: ["#3d6b6b", "#8b9c86", "#b9cfcb"],
+      opacity: 0.24, opacityMin: 0.07, size: 2, link: false,
+      speed: 0.22, direction: "none", mode: "bubble",
+      bg: "radial-gradient(ellipse 80% 55% at 50% 30%, rgba(61,107,107,.06), transparent 70%), linear-gradient(180deg, #f4efe6 0%, #e9ede8 55%, #f4efe6 100%)",
+    },
+  },
 ];
+
+/** Which pairs the current skin may show.
+ *
+ *  The backdrop and the palette have to agree — a bone page with the
+ *  cosmos nebula behind it is two different products on one screen — so
+ *  the paper skin rotates only through the paper pairs and the default
+ *  skin only through the original four. Names rather than indices so
+ *  inserting a pair later cannot silently re-partition the list. */
+const PAPER_PAIRS = new Set(["paper", "paper-teal"]);
+function pairsForSkin(): number[] {
+  const paper =
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.skin === "paper";
+  const idx = PAIRS.map((_, i) => i).filter(
+    (i) => PAPER_PAIRS.has(PAIRS[i].name) === paper,
+  );
+  return idx.length ? idx : [0];
+}
 
 const PAIR_KEY = "hub-particles-pair";
 const CONTAINER_ID = "particles-bg";
@@ -285,14 +348,25 @@ function currentMode(): "dark" | "light" {
   return t === "dark" ? "dark" : "light";
 }
 
+/** The stored index, snapped into the pairs the current skin allows.
+ *  One key across both skins on purpose: switching to נייר and back
+ *  should land where the rotation was, not reset it. */
 function readPairIdx(): number {
+  const allowed = pairsForSkin();
   try {
     const v = parseInt(localStorage.getItem(PAIR_KEY) || "0", 10);
-    if (!Number.isFinite(v) || v < 0) return 0;
-    return v % PAIRS.length;
+    if (Number.isFinite(v) && allowed.includes(v)) return v;
   } catch {
-    return 0;
+    /* localStorage can throw in private mode */
   }
+  return allowed[0];
+}
+
+/** Next pair WITHIN the current skin's set. */
+function nextPairIdx(cur: number): number {
+  const allowed = pairsForSkin();
+  const at = allowed.indexOf(cur);
+  return allowed[(at + 1 + allowed.length) % allowed.length];
 }
 
 function writePairIdx(idx: number) {
@@ -334,13 +408,24 @@ export default function ParticlesBackground() {
 
       const obs = new MutationObserver((records) => {
         for (const r of records) {
-          if (r.type === "attributes" && r.attributeName === "data-theme") {
+          if (r.type !== "attributes") continue;
+          // A skin change repaints without advancing: the reader picked a
+          // palette, not a new scene, and rotating underneath them would
+          // make the same menu entry look different every time.
+          if (r.attributeName === "data-skin") {
+            pairIdxRef.current = readPairIdx();
+            writePairIdx(pairIdxRef.current);
+            lastModeRef.current = currentMode();
+            renderCurrent();
+            continue;
+          }
+          if (r.attributeName === "data-theme") {
             const next = currentMode();
             const prev = lastModeRef.current;
             if (next === prev) continue;
             // light → dark: advance pair before rendering the new dark side.
             if (prev === "light" && next === "dark") {
-              pairIdxRef.current = (pairIdxRef.current + 1) % PAIRS.length;
+              pairIdxRef.current = nextPairIdx(pairIdxRef.current);
               writePairIdx(pairIdxRef.current);
             }
             lastModeRef.current = next;
@@ -348,7 +433,10 @@ export default function ParticlesBackground() {
           }
         }
       });
-      obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+      obs.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme", "data-skin"],
+      });
 
       // Stash on the closure so cleanup can disconnect.
       cleanupRef.current = () => {
