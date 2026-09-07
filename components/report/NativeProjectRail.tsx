@@ -19,6 +19,7 @@ import ReportCreativesTab from "@/components/report/ReportCreativesTab";
 import ReportTrendsTab from "@/components/report/ReportTrendsTab";
 import ContractsSection from "@/components/report/ContractsSection";
 import MeetingsSection from "@/components/report/MeetingsSection";
+import LeadJourneySection from "@/components/report/LeadJourneySection";
 import DigitalAssetsSection from "@/components/report/DigitalAssetsSection";
 
 /**
@@ -418,7 +419,29 @@ export default async function NativeProjectRail({
       group: "leads",
       label: "התנגדויות ומסע",
       icon: "💬",
-      content: objNode,
+      // The section has carried the objections since it was built and
+      // nothing at all for the "מסע" half of its own name. מקור מול טריגר
+      // is that half, and it goes ABOVE the objections because it frames
+      // them: the leads whose objections these are did not all arrive
+      // where the report says they did.
+      //
+      // Windowed from `data.window` and not from the page's optional
+      // ?from/?to — those are set only when someone picks a custom range,
+      // so building it there gave a section that appeared for one reader
+      // and not the next. This is the same window פגישות שהתקיימו uses.
+      content: (
+        <>
+          {data ? (
+            <LeadJourneySection
+              project={data.project}
+              company={data.company}
+              from={data.window.startIso}
+              to={data.window.endIso}
+            />
+          ) : null}
+          {objNode}
+        </>
+      ),
     });
   }
   // חוזים — what the sales are made of: which channels close, who closes
