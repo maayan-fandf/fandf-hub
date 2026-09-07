@@ -202,6 +202,23 @@ export default function LeadJourneyPanel({ data }: { data: LeadJourney }) {
           בשני הטורים,{" "}
           {data.moved === 1 ? "אחד מהם החליף" : `${data.moved} מהם החליפו`} ערוץ
           בדרך.
+          {/* The obvious question about this card is whether it is just
+              "לידים חוזרים מול חדשים" wearing a different chart. Measured on
+              נתיבות over 2026 it is not, but the two are tightly related —
+              97% of channel changes are someone coming back, while only 57%
+              of returning leads change channel — and the honest thing is to
+              say so on the card rather than leave the reader to work it out
+              from two blocks that never mention each other. */}
+          {data.returningAmongMoved != null && data.moved > 0 ? (
+            <>
+              {" "}
+              {data.returningAmongMoved === data.moved
+                ? "כולם לידים חוזרים — אנשים שכבר פנו פעם וחזרו דרך ערוץ אחר."
+                : data.returningAmongMoved === 0
+                  ? "אף אחד מהם אינו ליד חוזר — כולם החליפו ערוץ בתוך פנייה אחת."
+                  : `${data.returningAmongMoved} מתוכם לידים חוזרים — אנשים שכבר פנו פעם וחזרו דרך ערוץ אחר; ${data.moved - data.returningAmongMoved} החליפו ערוץ בתוך פנייה אחת.`}
+            </>
+          ) : null}
         </p>
       )}
 
