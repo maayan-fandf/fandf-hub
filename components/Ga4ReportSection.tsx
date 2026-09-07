@@ -1,6 +1,7 @@
 import GoogleAnalyticsMark from "@/components/GoogleAnalyticsMark";
 import PlatformIcon from "@/components/PlatformIcon";
 import ChannelIcon from "@/components/ChannelIcon";
+import Ga4TrendChart from "@/components/Ga4TrendChart";
 import { resolveGa4Target, describeGa4Miss } from "@/lib/ga4Project";
 import { getProjectFlightWindow } from "@/lib/allClients";
 import { lookupCity } from "@/lib/israelMap";
@@ -12,7 +13,6 @@ import {
   fetchGa4Report,
   reportWindow,
   type Ga4ReportData,
-  type Ga4Point,
 } from "@/lib/ga4Report";
 
 /**
@@ -172,7 +172,7 @@ export default async function Ga4ReportSection({
         <Conversions c={data.conversions} sessions={data.totals.sessions} />
       )}
 
-      {data.trend.length > 1 && <TrendChart points={data.trend} />}
+      {data.trend.length > 1 && <Ga4TrendChart points={data.trend} />}
 
       {/* ONE channel table, not two. The source table and the campaign
           table were the same numbers at two depths — the tree now carries
@@ -301,75 +301,6 @@ export default async function Ga4ReportSection({
         </div>
       </div>
     </section>
-  );
-}
-
-/* ── Trend ────────────────────────────────────────────────────────── */
-
-/**
- * Daily sessions as an inline SVG area chart.
- *
- * Deliberately not a bar chart: 28 bars at panel width in RTL reads as
- * noise. Deliberately not plotting the previous period as a second
- * series either — it doubles the ink for a comparison the KPI deltas
- * already carry precisely.
- */
-function TrendChart({ points }: { points: Ga4Point[] }) {
-  const W = 800;
-  const H = 150;
-  const PAD = 6;
-  const maxSessions = Math.max(...points.map((p) => p.sessions), 1);
-  const maxKe = Math.max(...points.map((p) => p.keyEvents), 1);
-  const hasKe = points.some((p) => p.keyEvents > 0);
-  const step = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
-  const x = (i: number) => PAD + i * step;
-  const y = (v: number, max: number) =>
-    H - PAD - (v / max) * (H - PAD * 2);
-
-  const path = (pick: (p: Ga4Point) => number, max: number) =>
-    points
-      .map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(pick(p), max).toFixed(1)}`)
-      .join(" ");
-
-  const line = path((p) => p.sessions, maxSessions);
-  const area = `${line} L${x(points.length - 1).toFixed(1)},${H - PAD} L${x(0).toFixed(1)},${H - PAD} Z`;
-  // Key events are one to two orders of magnitude smaller than sessions,
-  // so they get their own scale — on a shared axis the line would sit
-  // flat on the floor and read as zero. That means the two lines show
-  // SHAPE against each other, never magnitude, which the legend says.
-  const keLine = hasKe ? path((p) => p.keyEvents, maxKe) : "";
-  const peak = points.reduce((a, b) => (b.sessions > a.sessions ? b : a), points[0]);
-
-  return (
-    <div className="ga4w-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="כניסות ואירועי מפתח יומיים">
-        <path className="ga4w-chart-area" d={area} />
-        <path className="ga4w-chart-line" d={line} />
-        {hasKe && <path className="ga4w-chart-ke" d={keLine} />}
-      </svg>
-      <div className="ga4w-chart-axis">
-        <span>{fmtDate(points[0].date)}</span>
-        <span className="ga4w-chart-peak">
-          שיא: {fmtInt(peak.sessions)} ב-{fmtDate(peak.date)}
-        </span>
-        <span>{fmtDate(points[points.length - 1].date)}</span>
-      </div>
-      {hasKe && (
-        <div className="ga4w-chart-legend">
-          <span className="ga4w-leg">
-            <span className="ga4w-leg-swatch is-sessions" aria-hidden="true" />
-            כניסות
-          </span>
-          <span className="ga4w-leg">
-            <span className="ga4w-leg-swatch is-ke" aria-hidden="true" />
-            אירועי מפתח (שיא {fmtInt(maxKe)})
-          </span>
-          <span className="ga4w-leg-note">
-            הקווים בקנה מידה נפרד — משווים מגמה, לא גודל
-          </span>
-        </div>
-      )}
-    </div>
   );
 }
 

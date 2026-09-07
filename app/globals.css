@@ -9192,6 +9192,70 @@ html[data-theme="dark"] .ga4w-chart-ke { stroke: #fbbf24; }
 html[data-theme="dark"] .ga4w-leg-swatch.is-sessions { border-top-color: #a5b4fc; }
 html[data-theme="dark"] .ga4w-leg-swatch.is-ke { border-top-color: #fbbf24; }
 .ga4w-leg-note { opacity: 0.8; }
+.ga4w-leg-axis { opacity: 0.65; }
+
+/* Axes + hover readout ------------------------------------------------
+   The plot wrapper is the pointer target and the tooltip's positioning
+   context; the SVG inside it stays a plain scaled drawing. */
+.ga4w-chart-plot { position: relative; touch-action: pan-y; }
+.ga4w-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.45;
+  vector-effect: non-scaling-stroke;
+}
+.ga4w-grid-base { opacity: 0.9; }
+/* Ticks are painted in their series' colour: two scales on one grid are
+   only readable if each number says which line it belongs to. */
+.ga4w-tick { font-size: 9px; font-family: inherit; }
+.ga4w-tick.is-sessions { fill: #6366f1; }
+.ga4w-tick.is-ke { fill: #f59e0b; }
+html[data-theme="dark"] .ga4w-tick.is-sessions { fill: #a5b4fc; }
+html[data-theme="dark"] .ga4w-tick.is-ke { fill: #fbbf24; }
+.ga4w-hover-guide {
+  stroke: var(--ink);
+  stroke-width: 1;
+  opacity: 0.35;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.ga4w-hover-dot { stroke: var(--surface); stroke-width: 1.5; }
+.ga4w-hover-dot.is-sessions { fill: #6366f1; }
+.ga4w-hover-dot.is-ke { fill: #f59e0b; }
+html[data-theme="dark"] .ga4w-hover-dot.is-sessions { fill: #a5b4fc; }
+html[data-theme="dark"] .ga4w-hover-dot.is-ke { fill: #fbbf24; }
+.ga4w-tip {
+  position: absolute;
+  top: 0.2rem;
+  transform: translateX(0.5rem);
+  direction: rtl;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.13);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.7rem;
+  color: var(--ink);
+  white-space: nowrap;
+  z-index: 2;
+}
+/* Past ~62% of the width the tooltip would run off the panel, so it
+   hangs on the other side of the guide instead. */
+.ga4w-tip.is-flip { transform: translateX(calc(-100% - 0.5rem)); }
+.ga4w-tip-date { font-weight: 700; margin-bottom: 0.2rem; }
+.ga4w-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+.ga4w-tip-row b {
+  margin-inline-start: auto;
+  padding-inline-start: 0.8rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Range picker */
 .ga4w-head-right {
