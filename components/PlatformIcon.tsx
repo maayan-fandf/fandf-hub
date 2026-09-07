@@ -26,6 +26,7 @@ export type PlatformKey =
   | "tiktok"
   | "taboola"
   | "outbrain"
+  | "i11"
   | "other"
   | string;
 
@@ -138,6 +139,33 @@ export default function PlatformIcon({
       </>,
       "0 0 24 24",
       "יד2",
+    );
+  }
+
+  if (p === "i11") {
+    // i11 NEWS — the outlet every כתבה in the portfolio is published on.
+    // Their wordmark is "i11NEWS", where the only part that survives at
+    // 14px is the green tile carrying the white "i"; the rest is plain
+    // white type on transparent, which disappears on a light surface.
+    // So this is the tile, same reasoning as the Yad2 monogram above.
+    // Green sampled from the logo file itself (#29A142).
+    return svg(
+      <>
+        <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#29A142" />
+        <text
+          x="12"
+          y="17.6"
+          textAnchor="middle"
+          fontSize="15.5"
+          fontWeight="800"
+          fill="#fff"
+          fontFamily="Arial, Helvetica, sans-serif"
+        >
+          i
+        </text>
+      </>,
+      "0 0 24 24",
+      "i11 NEWS",
     );
   }
 

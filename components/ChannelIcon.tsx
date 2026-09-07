@@ -10,9 +10,10 @@ import { channelIcon, channelPlatform } from "@/lib/channelIcon";
  * the SAME rule list in lib/channelIcon.ts, so a channel can never be
  * Facebook to one and something else to the other.
  *
- * The emoji fallback is deliberate rather than a gap: כתבה, שילוט, פניה
+ * The emoji fallback is deliberate rather than a gap: שילוט, פניה
  * טלפונית, קשר אישי, וייז and the rest have no brand mark, and inventing
- * one would be worse than 📄. This keeps the visual language the CRM
+ * one would be worse than an emoji. (כתבה left this list once i11 NEWS
+ * was named as the outlet behind all of them.) This keeps the visual language the CRM
  * card inherited from the dashboard while upgrading the handful of rows
  * that represent actual ad platforms.
  */

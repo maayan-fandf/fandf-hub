@@ -1,5 +1,6 @@
 import { getDigitalAssets, type AssetKind } from "@/lib/digitalAssets";
 import AssetThumb from "@/components/report/AssetThumb";
+import PlatformIcon from "@/components/PlatformIcon";
 
 /**
  * נכסים דיגיטליים — what is running for this project outside the paid
@@ -125,7 +126,13 @@ export default async function DigitalAssetsSection({
             >
               <AssetThumb url={a.url} alt={`${a.label} — ${project}`} />
               <div className="da-card-head">
-                <span aria-hidden>{ICON[a.kind]}</span>
+                {a.kind === "article" ? (
+                  <PlatformIcon platform="i11" size="1em" />
+                ) : a.kind === "yad2" ? (
+                  <PlatformIcon platform="yad2" size="1em" />
+                ) : (
+                  <span aria-hidden>{ICON[a.kind]}</span>
+                )}
                 <span className="da-label">{a.label}</span>
                 {a.kind === "yad2" && a.pageType === "organic" && (
                   <span

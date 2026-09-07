@@ -23,9 +23,12 @@ export function channelIcon(name: string): string {
  *
  * Runs the SAME rule list as `channelIcon` so the two can never disagree
  * about what a string is — a channel that resolves to 📘 here resolves
- * to Facebook, always. Channels with no brand (כתבה, שילוט, פניה
- * טלפונית, קשר אישי…) return "" and keep their emoji, which is the
- * right answer: there is no Article Inc. logo to show.
+ * to Facebook, always. Channels with no brand (שילוט, פניה טלפונית, קשר
+ * אישי…) return "" and keep their emoji.
+ *
+ * כתבה used to be in that list on the grounds that there is no Article
+ * Inc. logo to show. There is: every article the agency buys runs on i11
+ * NEWS, so the row now wears the outlet's mark like any other platform.
  *
  * Consumed by components/ChannelIcon.tsx. `channelIcon` itself is left
  * alone because several call sites interpolate it into a `title=`
@@ -56,8 +59,13 @@ const RULES: { test: RegExp; icon: string; platform?: string }[] = [
   { test: /(?:^|[-_\s])(?:onmap|אונמפ)(?:$|[-_\s])/, icon: "🗺️" },
   { test: /(?:^|[-_\s])(?:outbrain|אאוטבריין)/, icon: "📰", platform: "outbrain" },
   { test: /(?:^|[-_\s])(?:taboola|טאבולה)/, icon: "📰", platform: "taboola" },
+  /* i11 NEWS publishes every כתבה in this portfolio — the Keys "בנפיט"
+     lookup points at i11.co.il for all of them — so it gets its own mark
+     while the rest of the press list keeps the generic 📰. Listed BEFORE
+     the general rule, which also matches `i11` via its `i1[123]` branch. */
+  { test: /(?:^|[-_\s])i11(?:$|[-_\s.])|i11\.co\.il/, icon: "📰", platform: "i11" },
   { test: /(?:^|[-_\s])(?:ynet|walla|mako|calcalist|globes|גלובס|haaretz|הארץ|jerusalempost|ashdodnet|n1[123]|i1[123])/, icon: "📰" },
-  { test: /(?:^|[-_\s])(?:כתבה|article)/, icon: "📄" },
+  { test: /(?:^|[-_\s])(?:כתבה|article)/, icon: "📄", platform: "i11" },
   /* F&F name their Google Demand Gen campaigns `…-discovery` with no
      `google` token, so this rule carries the platform key too. */
   { test: /(?:^|[-_\s])dis?c?over/, icon: "🧭", platform: "google" },
