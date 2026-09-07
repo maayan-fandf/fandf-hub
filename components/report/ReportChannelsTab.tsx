@@ -265,6 +265,15 @@ function ilToday(): string {
   );
 }
 
+/** Days from `today` to `endIso`, inclusive of both. 0 once the flight is
+ *  over, which callers read as "no runway to spread money across". */
+function daysLeftOf(endIso: string, today: string): number {
+  const end = Date.parse(endIso);
+  const now = Date.parse(today);
+  if (!Number.isFinite(end) || !Number.isFinite(now)) return 0;
+  return Math.max(0, Math.round((end - now) / 86400000) + 1);
+}
+
 function ilDayOf(ts: string): string {
   const ms = Date.parse(ts);
   if (Number.isNaN(ms)) return "";
@@ -349,11 +358,20 @@ function ConvCell({ r }: { r: number | null }) {
  *  (Index.html:9386); the suggestion engine lives on the budget desk. */
 function BudgetStrip({
   s,
+  shift = 0,
 }: {
   s: NonNullable<ProjectReportData["budgetSummary"]>;
+  /** Net change from budget cells edited since this page was rendered.
+   *  Applied as a shift rather than a re-sum on purpose: `s.allocated` is
+   *  the sheet's total across EVERY channel, while the table may be
+   *  filtered to a few — re-summing the visible rows would quietly answer
+   *  a different question. A shift stays correct whatever is on screen. */
+  shift?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const driftAbs = Math.abs(s.delta);
+  const allocated = s.allocated + shift;
+  const delta = s.delta + shift;
+  const driftAbs = Math.abs(delta);
   const tone = !s.e3 ? "unknown" : driftAbs < 100 ? "ok" : "drift";
   const stateLabel =
     tone === "ok" ? "מסונכרן" : tone === "unknown" ? "אין יעד" : `פער ${fmtILS(driftAbs)}`;
@@ -378,12 +396,12 @@ function BudgetStrip({
           </div>
           <div className="rpt-bstrip-cell">
             <div className="rpt-bstrip-lbl">חולק</div>
-            <div className="rpt-bstrip-val">{fmtILS(s.allocated)}</div>
+            <div className="rpt-bstrip-val">{fmtILS(allocated)}</div>
           </div>
           <div className={`rpt-bstrip-cell rpt-bstrip-delta is-${tone}`}>
             <div className="rpt-bstrip-lbl">פער</div>
             <div className="rpt-bstrip-val">
-              {s.delta > 0 ? "+" : s.delta < 0 ? "−" : ""}
+              {delta > 0 ? "+" : delta < 0 ? "−" : ""}
               {fmtILS(driftAbs)}
             </div>
           </div>
@@ -411,11 +429,16 @@ function BudgetCell({
   channel,
   budget,
   distribute,
+  onSaved,
 }: {
   tabSlug: string;
   channel: string;
   budget: number;
   distribute: boolean;
+  /** Fired only after the write lands, so the rest of the table can move
+   *  with the number. Not on keystroke and not optimistically: a rejected
+   *  write must not leave חולק / פער claiming money the sheet never took. */
+  onSaved?: (channel: string, next: number) => void;
 }) {
   const [value, setValue] = useState(budget);
   const [editing, setEditing] = useState(false);
@@ -448,6 +471,7 @@ function BudgetCell({
       if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
       setValue(next);
       setDraft(String(next));
+      onSaved?.(channel, next);
       setState("saved");
       setTimeout(() => setState("idle"), 1500);
     } catch (e) {
@@ -596,6 +620,11 @@ export default function ReportChannelsTab({
   // the four charts stay on the full channel set.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  /** channel → budget saved to the sheet during this page's life. Lives
+   *  here rather than inside BudgetCell because the strip and the row's
+   *  קצב יומי read it too. Cleared by any real page load, when the server
+   *  brings the sheet's own numbers back. */
+  const [budgetEdits, setBudgetEdits] = useState<Record<string, number>>({});
   const today = useMemo(ilToday, []);
   /**
    * Which basis the תיאומים / ביצועים columns count on.
@@ -692,7 +721,7 @@ export default function ReportChannelsTab({
     return parts.join(" ");
   }, [data.mode, data.rangeBasis]);
 
-  const channels = useMemo(() => {
+  const datedChannels = useMemo(() => {
     if (!dated) return data.channels;
     return data.channels.map((c) => {
       const scheduled = c.datedScheduled ?? 0;
@@ -706,6 +735,57 @@ export default function ReportChannelsTab({
       };
     });
   }, [data.channels, dated]);
+
+  /**
+   * Budget cells write to the sheet, and the numbers DERIVED from a budget
+   * have to move with them — otherwise an edit looks like it did nothing
+   * and the reader is left comparing a new תקציב against an old קצב יומי
+   * and an old חולק. Everything downstream (sort, filter, the totals row,
+   * the utilization bars) reads this list, so it all follows for free.
+   *
+   * קצב יומי is applied as a SHIFT on the sheet's own rate rather than
+   * recomputed as (budget − spend) ÷ days:
+   *
+   *     old = (B − H) / D        new = (B′ − H) / D = old + (B′ − B) / D
+   *
+   * The spend term cancels, which matters because the sheet's H is not
+   * always the עלות shown beside it — on a platform-fed row the hub shows
+   * the platform's measured spend while the sheet keeps its own. Deriving
+   * the rate from scratch would silently import that difference into a
+   * number the sheet owns; shifting it changes only what we actually know
+   * changed.
+   *
+   * D is the row's own remaining flight, not the project's: channels end on
+   * different dates, and the strip's ימים שנותרו is a project-level figure.
+   * A row whose flight is already over keeps its rate — there are no days
+   * left to spread new money over, and dividing by zero to invent one would
+   * be worse than leaving it alone until the sheet recomputes.
+   */
+  const channels = useMemo(() => {
+    if (!Object.keys(budgetEdits).length) return datedChannels;
+    return datedChannels.map((c) => {
+      const next = budgetEdits[c.channel];
+      if (next == null || next === c.budget) return c;
+      const daysLeft = daysLeftOf(c.endIso, today);
+      return {
+        ...c,
+        budget: next,
+        dailyRate:
+          daysLeft > 0 ? c.dailyRate + (next - c.budget) / daysLeft : c.dailyRate,
+      };
+    });
+  }, [datedChannels, budgetEdits, today]);
+
+  /** Net change against the SERVER's budgets — never against the edited
+   *  list, which would compound on a second edit of the same channel. */
+  const budgetShift = useMemo(() => {
+    let sum = 0;
+    for (const c of data.channels) {
+      const next = budgetEdits[c.channel];
+      if (next != null) sum += next - c.budget;
+    }
+    return sum;
+  }, [data.channels, budgetEdits]);
   // Does this project break google into a discovery row? If so, a
   // non-discovery google row is the search-only side of the split; if
   // not, a lone "google" row still represents all-google. Computed from
@@ -930,7 +1010,9 @@ export default function ReportChannelsTab({
         </div>
       )}
 
-      {data.budgetSummary && <BudgetStrip s={data.budgetSummary} />}
+      {data.budgetSummary && (
+        <BudgetStrip s={data.budgetSummary} shift={budgetShift} />
+      )}
 
       {diagCards.length > 0 && (
         <div className="rpt-paid-diag">
@@ -1198,6 +1280,9 @@ export default function ReportChannelsTab({
                           channel={c.channel}
                           budget={c.budget}
                           distribute={subs.length > 1}
+                          onSaved={(ch, next) =>
+                            setBudgetEdits((m) => ({ ...m, [ch]: next }))
+                          }
                         />
                       ) : (
                         fmtILS(c.budget)
