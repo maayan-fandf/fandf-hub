@@ -2,6 +2,7 @@ import { cache } from "react";
 import { getLiveAdIds } from "@/lib/metaLiveAds";
 import { readCreativeTags } from "@/lib/creativePriceTags";
 import { supabaseConfigured, supabaseRows } from "@/lib/supabase";
+import { extractPrices, isNonPriceContext } from "@/lib/priceExtractor";
 
 /**
  * The advertised price read off the CREATIVE ITSELF.
@@ -67,6 +68,38 @@ export type ArtworkPrice = {
   basis: "status" | "spend";
 };
 
+/**
+ * Second opinion on one creative's stored price, judged against the raw
+ * string the vision pass matched.
+ *
+ * Only overrides on POSITIVE evidence, in one of two directions:
+ *
+ *   - the raw carries an anchored price ("החל מ-3,290,000 ₪ | 1,000,000 ₪")
+ *     → that price wins, whatever the tagger picked;
+ *   - the tagger's number is introduced as financing ("הלוואת יזם 500,000")
+ *     → there is no artwork price here at all.
+ *
+ * Otherwise the stored value stands. That restraint is the point: these
+ * raws are short OCR fragments and many carry no currency mark at all
+ * ("2,350,000 | 2,530,000-2,700,000"), so re-extracting them wholesale
+ * would silently discard real prices on the grounds that our own text
+ * rules — written for full pages — could not find them. Measured over all
+ * 203 tagged creatives, this rule changes exactly one and drops none.
+ */
+function judgeArtworkValue(raw: string, stored: number): number | null {
+  if (!raw) return stored;
+  const anchored = extractPrices(raw).filter((p) => p.anchored);
+  if (anchored.length) return Math.min(...anchored.map((p) => p.value));
+  if (isNonPriceContext(raw, stored)) return null;
+  return stored;
+}
+
+/** Did this exact value appear anchored in the raw? Used to rank creatives
+ *  against each other, not to change any single one's value. */
+function isAnchoredIn(raw: string, value: number): boolean {
+  return extractPrices(raw).some((p) => p.value === value && p.anchored);
+}
+
 type CreativeRow = { ad_id: string; creative_group: string | null };
 export const getArtworkPrice = cache(
   async (
@@ -95,7 +128,7 @@ export const getArtworkPrice = cache(
       // table is pulled whole and why the two read it together.
       const tags = await readCreativeTags();
 
-      let best: { value: number; raw: string } | null = null;
+      let best: { value: number; raw: string; anchored: boolean } | null = null;
       let ads = 0;
       let pending = false;
       const seenGroup = new Set<string>();
@@ -122,9 +155,28 @@ export const getArtworkPrice = cache(
           if (grp === g && live.adIds.has(adId)) ads++;
         }
         const raw = String(t.price_on_image_raw || "");
-        if (!allByValue.has(value)) allByValue.set(value, raw);
-        if (!best || value < best.value) {
-          best = { value, raw };
+        // Re-judge the tagger's pick against the string it matched. The
+        // vision pass reads the image correctly and then values it the
+        // naive way — lowest number wins — so a creative reading
+        // "החל מ-3,290,000 ₪ | 1,000,000 ₪" is stored as ₪1,000,000, the
+        // deferred payment rather than the price. See judgeArtworkValue.
+        const judged = judgeArtworkValue(raw, value);
+        if (judged == null) continue;
+        const anchored = judged !== value || isAnchoredIn(raw, judged);
+        if (!allByValue.has(judged)) allByValue.set(judged, raw);
+        // Prefer an anchored price over a lower unanchored one — the same
+        // two-tier rule startingPrice() applies WITHIN a text, applied
+        // here ACROSS creatives. מרום ראשון runs four: one advertising
+        // "החל מ-3,290,000 ₪" and three saying "משלמים 1,000,000₪ רק
+        // ב-2030". A plain minimum published the payment term as the
+        // project's artwork price and then flagged it as disagreeing with
+        // the copy — a mismatch warning generated entirely by the pick.
+        if (
+          !best ||
+          (anchored && !best.anchored) ||
+          (anchored === best.anchored && judged < best.value)
+        ) {
+          best = { value: judged, raw, anchored };
         }
       }
 

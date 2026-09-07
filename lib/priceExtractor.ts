@@ -137,26 +137,98 @@ const HEADLINE_ANCHOR_RE = new RegExp(
   // Built from CURRENCY_RE rather than repeating the marker list, so adding
   // a new currency spelling there fixes both the plausibility gate and the
   // anchor test instead of only one of them.
-  `(?:החל\\s*מ|מחיר\\s*התחלתי|מחיר:?|^)\\s*[-־‐‑–—−]?\\s*(?:${CURRENCY_RE.source})?\\s*$`,
+  //
+  // The bare `מ־` alternative is listed separately from `החל מ` and is NOT
+  // optional-`החל`: it has to require the dash. This branch is what the
+  // doc block above always claimed ("מ-2,175,000 ₪ → anchored ✓") and what
+  // the regex never did — `החל\s*מ` needs the word, and the `^` branch
+  // only matches an EMPTY prefix, so "מ-2,175,000" fell through as
+  // unanchored. Nothing depended on it while an unanchored price could
+  // still win the fallback; the ads rule in startingPrice() removes that
+  // safety net, so a copywriter writing "דירות 4 חד׳ מ-2,890,000 ₪"
+  // instead of "החל מ-" has to reach the anchored bucket. The dash is
+  // required because bare `מ` is an everyday Hebrew prefix — "יותר מ" and
+  // "פחות מ" carry it too, and those ARE price claims, but "מכירה" is not.
+  `(?:החל\\s*מ|מחיר\\s*התחלתי|מחיר:?|(?:^|[\\s(])מ(?=\\s*[-־‐‑–—−])|^)\\s*[-־‐‑–—−]?\\s*(?:${CURRENCY_RE.source})?\\s*$`,
 );
 
 /**
- * Anti-anchor markers — phrases that, when they appear right before
- * an otherwise-anchored price, mean the price is a payment-plan
- * figure (down payment / first payment / equity requirement /
- * remaining balance), NOT the apartment's "starting from" price.
+ * Non-price markers — phrases that, when they appear right before a
+ * number, mean the number is a financing or incentive figure (down
+ * payment / developer loan / benefits package / grant), NOT the price
+ * of an apartment.
  *
  * Yad2 project pages often carry both — e.g. a project sells at
  * "החל מ-3,199,000" AND offers financing with "מקדמה החל מ-500,000".
- * Without this filter the lowest-anchored rule picks the smaller
- * payment-plan figure and the alert fires a false positive against
- * the website's real headline.
  *
- * Matched in the ~30 chars BEFORE the anchor regex's start. Match
- * → strip the `anchored` flag from this DetectedPrice.
+ * DISQUALIFIES RATHER THAN DE-ANCHORS. This used to run only on
+ * already-anchored prices and only clear the `anchored` bit, which left
+ * the figure in the pool as an "unanchored price" — and `startingPrice`
+ * falls back to the lowest unanchored price when nothing is anchored.
+ * לוריא is what that costs: its live Facebook copy advertises no
+ * apartment price at all, only "חבילת הטבות … בשווי של עד 400,000 ₪"
+ * and "הלוואת יזם ע״ס 1,000,000 ₪ ללא ריבית". The 400k fell below
+ * MIN_PLAUSIBLE, the loan did not, and the card published ₪1,000,000 as
+ * the project's Facebook price against a ₪3,360,000 landing page — a
+ * 236% "drift" that was really a loan being read as a price.
+ * (Maayan, 2026-09-07.)
+ *
+ * A loan is not a cheaper price for the same thing; it is a different
+ * thing. So a match removes the number from the extraction entirely —
+ * out of the headline pick, out of the per-room inventory, and out of
+ * the Yad2 sponsored/organic classification. When that leaves nothing,
+ * "no price advertised" is the honest answer and the one the card now
+ * gives.
+ *
+ * Matched in the ~30 chars BEFORE the number. Kept deliberately narrow:
+ * only phrases that INTRODUCE a sum which is definitionally not a
+ * price. `הנחה` is absent on purpose — "מחיר לאחר הנחה 2,500,000" is a
+ * real price, so the word cuts both ways and the window cannot tell
+ * which.
  */
-const ANTI_ANCHOR_RE = /(?:מקדמה|תשלום\s*ראשון|הון\s*עצמי|הלוואת\s*יזם|הלוואה|היתרה|מימון|תשלומים)/;
-const ANTI_ANCHOR_WINDOW = 30;
+const NON_PRICE_RE =
+  /(?:מקדמה|תשלום\s*ראשון|הון\s*עצמי|הלוואת\s*יזם|הלוואה|היתרה|מימון|תשלומים|בשווי|שווי\s*של|הטבות|מענק|החזר|ערבות|פיקדון)/;
+const NON_PRICE_WINDOW = 30;
+
+/**
+ * Is `value` introduced as a financing / incentive figure in `text`?
+ *
+ * Exposed for callers that hold a number somebody ELSE extracted and want
+ * the same disqualification applied to it — specifically lib/artworkPrice.ts,
+ * which reads the warehouse vision pass's `price_on_image_value` and can
+ * only re-judge it against the `price_on_image_raw` string beside it.
+ *
+ * Deliberately answers about one value rather than re-extracting: the raw
+ * strings are short OCR fragments that often carry no currency mark at all
+ * ("2,350,000 | 2,530,000-2,700,000"), so extractPrices would find nothing
+ * in them and "found nothing" must not be read as "it is not a price".
+ * This asks the narrow question it can actually answer.
+ *
+ * Returns false when the value does not literally appear in the text — no
+ * evidence either way, and the caller keeps what it had.
+ */
+export function isNonPriceContext(text: string, value: number): boolean {
+  const clean = String(text ?? "").replace(BIDI_MARKS_RE, "");
+  // Both spellings the OCR produces for the same number.
+  const forms = [value.toLocaleString("en-US"), String(value)];
+  let found = false;
+  for (const form of forms) {
+    let from = 0;
+    for (;;) {
+      const i = clean.indexOf(form, from);
+      if (i < 0) break;
+      found = true;
+      const wide = clean.slice(Math.max(0, i - NON_PRICE_WINDOW), i);
+      // Any clean sighting is enough to keep the value: a creative that
+      // says "החל מ-3,290,000 ₪ | הלוואת יזם 1,000,000" carries both, and
+      // one financing mention must not condemn a number the same image
+      // also advertises plainly.
+      if (!NON_PRICE_RE.test(wide)) return false;
+      from = i + form.length;
+    }
+  }
+  return found;
+}
 
 /**
  * Invisible Unicode "format" / direction characters that real-world
@@ -464,16 +536,15 @@ export function extractPrices(text: string): DetectedPrice[] {
     // marketing anchor. We trim the prefix to its tail because the
     // anchor's important position is "right next to the number", not
     // somewhere within range.
+    // Non-price pass, BEFORE the anchor test and regardless of it: a
+    // financing or incentive keyword in the 30-char window means this
+    // number is not an apartment price at all, so it leaves the pool
+    // rather than staying in it as a weaker candidate. See NON_PRICE_RE.
+    const wide = text.slice(Math.max(0, m.index - NON_PRICE_WINDOW), m.index);
+    if (NON_PRICE_RE.test(wide)) continue;
     const prefixStart = Math.max(0, m.index - 12);
     const prefix = text.slice(prefixStart, m.index);
-    let anchored = HEADLINE_ANCHOR_RE.test(prefix);
-    // Anti-anchor pass: even if the immediate prefix looks like
-    // "החל מ-", a payment-plan keyword in the broader 30-char window
-    // (e.g. "מקדמה החל מ-X") flips the anchored bit back off.
-    if (anchored) {
-      const wide = text.slice(Math.max(0, m.index - ANTI_ANCHOR_WINDOW), m.index);
-      if (ANTI_ANCHOR_RE.test(wide)) anchored = false;
-    }
+    const anchored = HEADLINE_ANCHOR_RE.test(prefix);
     const { rooms, roomsLabel, source } = findRoomLabel(
       text,
       m.index,
@@ -581,19 +652,31 @@ export function classifyYad2Page(text: string): Yad2PageType {
  * is the smallest apartment type in a price table, not a comparable
  * "starting from" headline. See classifyYad2Page() doc above.
  *
- * Returns null when no plausible (or comparable, for Yad2) price was
- * found.
+ * Ad-copy hint (`opts.surface === "ads"`): the fallback is disabled for
+ * the same structural reason, arrived at from the other direction. A
+ * landing page that means to publish a price often lays it out as a
+ * table with no "החל מ" anywhere, so the lowest number on the page is a
+ * reasonable guess. Ad copy is the opposite: it is written, not laid
+ * out, and copy that advertises a price says "החל מ-" — that phrase IS
+ * the ad. A bare shekel figure in ad copy is overwhelmingly a benefit,
+ * a loan, a discount or a payment split, and guessing at it is how
+ * לוריא's "הלוואת יזם ע״ס 1,000,000 ₪" became its published Facebook
+ * price. NON_PRICE_RE catches the phrasings we have seen; this catches
+ * the ones we have not.
+ *
+ * Returns null when no plausible (or, for yad2/ads, no anchored) price
+ * was found.
  */
 export function startingPrice(
   text: string,
-  opts: { surface?: "landing" | "yad2" } = {},
+  opts: { surface?: "landing" | "yad2" | "ads" } = {},
 ): DetectedPrice | null {
   const all = extractPrices(text);
   if (all.length === 0) return null;
   const anchored = all.filter((p) => p.anchored);
   if (anchored.length === 0) {
-    // Yad2 organic-page guard — see fn doc + classifyYad2Page() above.
-    if (opts.surface === "yad2") return null;
+    // Anchor-only surfaces — see fn doc + classifyYad2Page() above.
+    if (opts.surface === "yad2" || opts.surface === "ads") return null;
     return all.reduce((min, p) => (p.value < min.value ? p : min));
   }
   return anchored.reduce((min, p) => (p.value < min.value ? p : min));

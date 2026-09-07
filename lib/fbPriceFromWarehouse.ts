@@ -122,7 +122,10 @@ export const getWarehouseFbPrice = cache(
         if (seen.has(text)) continue;
         seen.add(text);
 
-        const head = startingPrice(text);
+        // "ads" and not the landing default: ad copy that advertises a
+        // price writes "החל מ-", so a bare figure here is a benefit or a
+        // loan rather than a cheaper apartment. See startingPrice().
+        const head = startingPrice(text, { surface: "ads" });
         if (head) headlines.push(head.value);
 
         for (const p of extractPrices(text)) {

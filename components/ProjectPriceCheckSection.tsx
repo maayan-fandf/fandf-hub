@@ -108,7 +108,20 @@ export default async function ProjectPriceCheckSection({
               }
             : s,
         )
-      : data.surfaces;
+      : warehouseFb && warehouseFb.adsWithText > 0
+        ? // Read the live ads, found copy, found no price in it. Apps
+          // Script's own status for this project is `no-input`, which the
+          // card renders as "אין קמפיינים פעילים ב-FB" — and that is a
+          // false statement about a project spending on twelve live ads.
+          // לוריא is the case: its copy sells a benefits package and a
+          // developer loan and never names an apartment price, which is a
+          // fact about the ads worth seeing, not an absence of ads.
+          data.surfaces.map((s) =>
+            s.name === "facebook" && s.price == null
+              ? { ...s, status: "no-price", hasInput: true }
+              : s,
+          )
+        : data.surfaces;
 
   // The כתבה, appended here rather than in Apps Script. The nightly scrape
   // already reads it as a third page alongside the landing page and Yad2
@@ -170,13 +183,38 @@ export default async function ProjectPriceCheckSection({
   // comparator over the surfaces as rendered, and let a local mismatch
   // override an Apps Script all-clear. A mismatch Apps Script already
   // found wins, because its per-room verdict is richer than this one.
+  //
+  // The כתבה is the same situation and was missing from this test: Apps
+  // Script has never heard of that surface, so an article still quoting
+  // last quarter's price sat on the card with an "all sources agree" pill
+  // above it. It has to be able to raise the flag it was added to raise.
+  //
+  // יד2 is left OUT of the local comparison. This comparator is a plain
+  // min/max, and יד2 is precisely the surface where plain min/max is known
+  // to be wrong — an organic listing has no headline at all, and even a
+  // sponsored one quotes its cheapest typology, which is not what the
+  // landing page's "החל מ-" means (see classifyYad2Page). Apps Script's
+  // room-aware verdict owns that surface; this is only a safety net for
+  // the ones we put on the card ourselves.
   const localCmp =
-    injectedFbPrice != null
-      ? comparePrices(surfaces.map((s) => ({ name: s.name, price: s.price })))
+    injectedFbPrice != null || articleAsset
+      ? comparePrices(
+          surfaces
+            .filter((s) => s.name !== "yad2")
+            .map((s) => ({ name: s.name, price: s.price })),
+        )
       : null;
+  // Over the SAME surfaces localCmp judged — a percentage computed from a
+  // wider set than the verdict it labels is a number that explains nothing.
+  const localPrices = surfaces
+    .filter((s) => s.name !== "yad2")
+    .map((s) => s.price)
+    .filter((p): p is number => p != null);
   const localDriftPct =
-    prices.length >= 2
-      ? ((Math.max(...prices) - Math.min(...prices)) / Math.min(...prices)) * 100
+    localPrices.length >= 2
+      ? ((Math.max(...localPrices) - Math.min(...localPrices)) /
+          Math.min(...localPrices)) *
+        100
       : 0;
 
   const statusPill =
@@ -314,6 +352,12 @@ function PriceCheckCard({
         case "google":
           return "אין קמפיינים פעילים בגוגל";
       }
+    }
+    if (surface.status === "no-price" && surface.name === "facebook") {
+      // Distinct from "לא זוהה מחיר", which reads as a failure to look.
+      // Here we read every live ad's copy and it genuinely carries no
+      // price — a decision the ads made, not a gap in the data.
+      return "המודעות רצות ולא מפרסמות מחיר";
     }
     if (surface.status === "fetch-error") return "שגיאת קריאה — בדוק ידנית";
     if (surface.status === "skipped") return "המתנה לסריקה הבאה";
@@ -686,6 +730,9 @@ function SurfaceIcon({ name }: { name: ProjectPriceSurface["name"] }) {
   if (name === "google" || name === "facebook" || name === "yad2") {
     return <PlatformIcon platform={name} size="1em" />;
   }
+  // Every כתבה in the portfolio is published on i11, so it has a brand
+  // mark like the other three rather than a generic newspaper emoji.
+  if (name === "article") return <PlatformIcon platform="i11" size="1em" />;
   return <>{SURFACE_ICONS[name]}</>;
 }
 
