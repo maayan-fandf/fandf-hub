@@ -414,6 +414,47 @@ function sehelBookedBy(rawAgent: string): string {
   return m ? m[1].trim() : "";
 }
 
+/**
+ * Sehel wraps a meeting note in scheduling boilerplate, and it is most of
+ * the column: of 876 meeting touches, 458 contain one of these clauses and
+ * 458 minus the ones with real text beside them are nothing else. Counting
+ * those as "written summaries" made the tile claim 8 of 8 on גינות when
+ * several rows said only "יוצר הפגישה: ירון קידר" — the name of whoever
+ * opened the calendar entry, which is not a record of what was discussed.
+ *
+ * Stripped, 418 of 876 (48%) carry a real write-up, median 153 characters,
+ * and they read like "יוסי ועומר זוג מבוגרים מנס ציונה… הסתכלנו על".
+ * The rate is higher among HELD meetings specifically, because most of the
+ * pure-boilerplate rows belong to meetings that were booked and cancelled.
+ *
+ * Applied to the summary COLUMN only. The drawer keeps the full text — the
+ * booking trail is part of the record, it is just not a summary.
+ */
+const SEHEL_BOILERPLATE = [
+  /יוצר הפגישה:.*$/s,
+  /משתתפים:.*$/s,
+  /נקבעה על[- ]ידי.*$/s,
+  /בוטלה על[- ]ידי.*$/s,
+  /אושרה על[- ]ידי.*$/s,
+];
+function sehelNoteBody(cleaned: string): string {
+  let v = cleaned;
+  for (const re of SEHEL_BOILERPLATE) v = v.replace(re, "");
+  return v.trim();
+}
+
+/** "משתתפים: אילן גרבר" — who was actually in the room. The one place
+ *  Sehel records it, and better than any of the other candidates because
+ *  it is neither the lead's owner nor whoever clicked "new meeting". */
+function sehelAttendees(cleaned: string): string[] {
+  const m = /משתתפים:\s*(.+?)$/s.exec(cleaned);
+  if (!m) return [];
+  return m[1]
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 /** The salesperson suffix Sehel appends to a lead's project_name. Returns
  *  "" when the row is the bare account name (no rep encoded). */
 function sehelRepSuffix(projectName: string, accounts: readonly string[]): string {
@@ -584,11 +625,11 @@ export const getHeldMeetingsSehel = cache(
         };
       });
 
-      const noteFor = (clientId: string, on: string): string => {
-        const list = (touches.get(clientId) ?? []).filter(
-          (t) => t.isMeeting && t.content,
-        );
-        if (!list.length || !on) return "";
+      /** The meeting touch nearest this date, within three days — the desk
+       *  sometimes writes it up the next morning. */
+      const touchFor = (clientId: string, on: string): DossierTouch | null => {
+        const list = (touches.get(clientId) ?? []).filter((t) => t.isMeeting);
+        if (!list.length || !on) return null;
         const target = Date.parse(`${on}T00:00:00Z`);
         let best: DossierTouch | null = null;
         let bestGap = Infinity;
@@ -600,15 +641,18 @@ export const getHeldMeetingsSehel = cache(
             best = t;
           }
         }
-        return best?.content ?? "";
+        return best;
       };
+      const noteFor = (clientId: string, on: string): string =>
+        sehelNoteBody(touchFor(clientId, on)?.content ?? "");
       const agentFor = (clientId: string, on: string): string => {
+        const t = touchFor(clientId, on);
+        // Who was in the room beats who owns the lead beats who booked it.
+        const attendees = sehelAttendees(t?.content ?? "");
+        if (attendees.length) return attendees[0];
         const rep = sehelRepSuffix(clean(leadFor(clientId)?.project_name), accounts);
         if (rep) return rep;
-        const hit = (touches.get(clientId) ?? []).find(
-          (t) => t.isMeeting && t.date === on && t.agent,
-        );
-        return sehelBookedBy(hit?.agent ?? "");
+        return sehelBookedBy(t?.agent ?? "") || sehelBookedBy(t?.content ?? "");
       };
 
       // BMBY numbers a client's meetings; Sehel does not. Derived from the
