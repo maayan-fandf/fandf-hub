@@ -183,7 +183,10 @@ function AdPreviewLinks({ previews }: { previews?: string[] }) {
 
 /** Hover trendline (legacy _buildAdTrendlinePopover_): dense calendar
  *  days over the report window clamped to the last date with data; two
- *  sparklines — cost #14b8a6, leads #8b5cf6. */
+ *  sparklines — cost --teal, leads --violet. Through the tokens rather
+ *  than the literals they used to name, so a skin can restyle them; both
+ *  vars default to exactly those two hex values, so the default look is
+ *  unchanged. */
 function AdTrend({
   title,
   daily,
@@ -230,15 +233,15 @@ function AdTrend({
         {title} · {fmtDateHe(from).slice(0, 5)} ← {fmtDateHe(to).slice(0, 5)}
       </div>
       <div className="rpt-cr-trend-row">
-        <span style={{ color: "#14b8a6" }}>{fmtILS(totalCost)}</span>
+        <span style={{ color: "var(--teal)" }}>{fmtILS(totalCost)}</span>
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}>
-          <polyline points={line((p) => p.cost)} fill="none" stroke="#14b8a6" strokeWidth={1.6} />
+          <polyline points={line((p) => p.cost)} fill="none" style={{ stroke: "var(--teal)" }} strokeWidth={1.6} />
         </svg>
       </div>
       <div className="rpt-cr-trend-row">
-        <span style={{ color: "#8b5cf6" }}>{fmtInt(totalLeads)} לידים</span>
+        <span style={{ color: "var(--violet)" }}>{fmtInt(totalLeads)} לידים</span>
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}>
-          <polyline points={line((p) => p.leads)} fill="none" stroke="#8b5cf6" strokeWidth={1.6} />
+          <polyline points={line((p) => p.leads)} fill="none" style={{ stroke: "var(--violet)" }} strokeWidth={1.6} />
         </svg>
       </div>
     </div>

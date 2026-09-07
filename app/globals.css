@@ -30372,6 +30372,48 @@ html[data-theme="dark"] {
   --violet-soft: #f0dcdf;
   --indigo: #7a96ac;
   --indigo-soft: #dfe7ed;
+
+  /* THE REST OF M3. The eight above were the ones this skin was first
+     judged on — the page ground, the card, the body text, the accent —
+     and they made it look right at a glance. The other twenty-eight kept
+     the hub's indigo scheme, which is why a bone page still had a
+     lavender nav tab (`secondary-container` #454559 with
+     `on-secondary-container` #e2e0f9), an indigo glyph on the terracotta
+     `+` button (`on-primary` #1000a9), and a violet `primary-container`.
+     A palette that covers the big surfaces and not the components reads
+     as two designs on one screen, so the set is completed here rather
+     than patched per component. (Maayan, 2026-09-07.)
+
+     Roles, not shades: `secondary` is the quiet warm neutral this palette
+     uses for chrome, `tertiary` is its dusty rose, and `error` stays red
+     — warmed toward the paper, never turned into an accent, because it
+     has to keep meaning "wrong". */
+  --md-sys-color-background: #f7efe3;
+  --md-sys-color-on-background: #2b3a38;
+  --md-sys-color-surface-dim: #ebe0cd;
+  --md-sys-color-surface-bright: #fdf7ee;
+  --md-sys-color-surface-container-lowest: #fffaf3;
+  --md-sys-color-surface-container-highest: #d9cdb6;
+  --md-sys-color-surface-variant: #e6dbc7;
+  --md-sys-color-outline: #9d8f79;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #f2d5c8;
+  --md-sys-color-on-primary-container: #5e2413;
+  --md-sys-color-secondary: #6b7a72;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #e2d8c4;
+  --md-sys-color-on-secondary-container: #3a4a46;
+  --md-sys-color-tertiary: #7a3b47;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #f0dcdf;
+  --md-sys-color-on-tertiary-container: #4a2028;
+  --md-sys-color-error: #b23a26;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #f6dcd4;
+  --md-sys-color-on-error-container: #5c1a0e;
+  --md-sys-color-inverse-surface: #2b3a38;
+  --md-sys-color-inverse-on-surface: #f1e7d8;
+  --md-sys-color-inverse-primary: #e39170;
 }
 
 /* Dark wins on specificity (0,3,0 against the light block's 0,2,0) and on
@@ -30392,6 +30434,38 @@ html[data-theme="dark"] {
   --violet-soft: #3d2830;
   --indigo: #7f9bb2;
   --indigo-soft: #2b3742;
+
+  /* The same completion, dark. `on-primary` is a dark brown rather than
+     white: on this palette the primary is a mid-value orange, and M3's
+     dark scheme puts the ink INSIDE the accent, which is also what makes
+     the `+` button read as one object instead of a glyph floating on a
+     tile. */
+  --md-sys-color-background: #141c1b;
+  --md-sys-color-on-background: #e9e0d2;
+  --md-sys-color-surface-dim: #101817;
+  --md-sys-color-surface-bright: #35423e;
+  --md-sys-color-surface-container-lowest: #0c1413;
+  --md-sys-color-surface-container-highest: #35423e;
+  --md-sys-color-surface-variant: #2b3733;
+  --md-sys-color-outline: #6d7a74;
+  --md-sys-color-on-primary: #3c1608;
+  --md-sys-color-primary-container: #7a3a22;
+  --md-sys-color-on-primary-container: #ffdcc9;
+  --md-sys-color-secondary: #a2b0a9;
+  --md-sys-color-on-secondary: #1c2624;
+  --md-sys-color-secondary-container: #2f3d39;
+  --md-sys-color-on-secondary-container: #e0d9c9;
+  --md-sys-color-tertiary: #b05c70;
+  --md-sys-color-on-tertiary: #2a1219;
+  --md-sys-color-tertiary-container: #4a2b34;
+  --md-sys-color-on-tertiary-container: #ffd9e0;
+  --md-sys-color-error: #ff9d80;
+  --md-sys-color-on-error: #4a1400;
+  --md-sys-color-error-container: #6b2412;
+  --md-sys-color-on-error-container: #ffd9cc;
+  --md-sys-color-inverse-surface: #e9e0d2;
+  --md-sys-color-inverse-on-surface: #1c2624;
+  --md-sys-color-inverse-primary: #a8451f;
 }
 
 /* Emoji in monochrome — the other half of what makes MOAD read as print
@@ -30540,6 +30614,175 @@ html[data-theme="dark"] {
   --overdue: #d96b41;      --overdue-soft: #3f2820;
   --due-today: #e8a33d;    --due-today-soft: #402f1a;
   --done: #5e9a7c;         --done-soft: #23332b;
+}
+
+/* Status + priority pills under נייר.
+
+   These families never went through a token. They are literal Tailwind
+   pairs (`#dbeafe` on `#1e40af`, `#fee2e2` on `#991b1b`, …) written
+   three times over for the pill, the table cell and the cell button, and
+   with no dark-theme variant at all — which is why a dark page showed a
+   cream "ממתין לאישור" chip, and why a bone page showed a cyan "2".
+
+   The skin already defines every hue it wants, in both modes, so this
+   points the families at those instead of inventing a second set. Order
+   is preserved exactly — red for what is stuck, amber for what is
+   waiting, green for what is done, blue for what is moving — because the
+   colours carry meaning that people read at a glance; only the shade
+   changes. Text darkens in light mode: these palettes' mid-tones are
+   readable ON the dark grounds but not on the pale ones.
+
+   Scoped to the skin. The default look keeps the literals it has. */
+:root[data-skin="paper"] {
+  --pill-ink-mix: 68%;
+  /* Amber is light by nature: at the shared 68% it lands on 3.4:1 against
+     its own tint, which is under the bar. It gets its own, darker mix
+     rather than dragging the other four down with it. */
+  --pill-ink-mix-warm: 44%;
+  --pill-ink-base: #1a1210;
+}
+:root[data-skin="paper"][data-theme="dark"] {
+  --pill-ink-mix: 100%;
+  --pill-ink-mix-warm: 100%;
+  --pill-ink-base: #ffffff;
+}
+:root[data-skin="paper"] .tasks-priority-pill.p1,
+:root[data-skin="paper"] .tasks-status-awaiting_clarification {
+  background: var(--red-soft);
+  color: color-mix(in srgb, var(--red) var(--pill-ink-mix), var(--pill-ink-base));
+}
+:root[data-skin="paper"] .tasks-priority-pill.p2,
+:root[data-skin="paper"] .tasks-status-in_progress {
+  background: var(--sky-soft);
+  color: color-mix(in srgb, var(--sky) var(--pill-ink-mix), var(--pill-ink-base));
+}
+:root[data-skin="paper"] .tasks-status-awaiting_approval {
+  background: var(--amber-soft);
+  color: color-mix(in srgb, var(--amber) var(--pill-ink-mix-warm), var(--pill-ink-base));
+}
+:root[data-skin="paper"] .tasks-status-done {
+  background: var(--done-soft);
+  color: color-mix(in srgb, var(--done) var(--pill-ink-mix), var(--pill-ink-base));
+}
+:root[data-skin="paper"] .tasks-priority-pill.p3,
+:root[data-skin="paper"] .tasks-status-draft,
+:root[data-skin="paper"] .tasks-status-awaiting_handling,
+:root[data-skin="paper"] .tasks-status-cancelled,
+:root[data-skin="paper"] .tasks-status-blocked {
+  background: var(--md-sys-color-surface-container-high);
+  /* on-surface, not on-surface-variant: these are the QUIET pills, and
+     quiet is the tint's job. Muting the ink as well put them at 3.8:1,
+     which is not quiet, it is hard to read. */
+  color: var(--md-sys-color-on-surface);
+}
+
+/* Avatars. The twelve hues used to be written into the element's inline
+   style from lib/colors.ts, which put them beyond the reach of any skin —
+   ninety-odd neon-violet and hot-pink discs on a bone page, and the single
+   loudest thing left on screen. components/Avatar.tsx now emits the SLOT
+   (`data-av`) and these rules supply the colour, which is the pattern
+   companyColorSlot() already established in that same file for company
+   tints, and for the same stated reason.
+
+   The default look keeps the exact twelve hex values it always had, in
+   the same order, so nobody's avatar changes colour. */
+[data-av="0"]  { --av-solid: #8b5cf6; }
+[data-av="1"]  { --av-solid: #ec4899; }
+[data-av="2"]  { --av-solid: #f97316; }
+[data-av="3"]  { --av-solid: #eab308; }
+[data-av="4"]  { --av-solid: #84cc16; }
+[data-av="5"]  { --av-solid: #10b981; }
+[data-av="6"]  { --av-solid: #14b8a6; }
+[data-av="7"]  { --av-solid: #06b6d4; }
+[data-av="8"]  { --av-solid: #3b82f6; }
+[data-av="9"]  { --av-solid: #6366f1; }
+[data-av="10"] { --av-solid: #a855f7; }
+[data-av="11"] { --av-solid: #f43f5e; }
+
+/* …and נייר reuses the twelve it already defines. The order matches
+   AVATAR_HUES exactly, so the same person keeps the same slot and simply
+   wears the paper version of their colour. */
+:root[data-skin="paper"] [data-av="0"]  { --av-solid: var(--violet); }
+:root[data-skin="paper"] [data-av="1"]  { --av-solid: var(--pink); }
+:root[data-skin="paper"] [data-av="2"]  { --av-solid: var(--orange); }
+:root[data-skin="paper"] [data-av="3"]  { --av-solid: var(--yellow); }
+:root[data-skin="paper"] [data-av="4"]  { --av-solid: var(--lime); }
+:root[data-skin="paper"] [data-av="5"]  { --av-solid: var(--green); }
+:root[data-skin="paper"] [data-av="6"]  { --av-solid: var(--teal); }
+:root[data-skin="paper"] [data-av="7"]  { --av-solid: var(--cyan); }
+:root[data-skin="paper"] [data-av="8"]  { --av-solid: var(--blue); }
+:root[data-skin="paper"] [data-av="9"]  { --av-solid: var(--indigo); }
+:root[data-skin="paper"] [data-av="10"] { --av-solid: var(--purple); }
+:root[data-skin="paper"] [data-av="11"] { --av-solid: var(--rose); }
+
+/* Report verdicts and rail badges. Same story as the task pills: literal
+   Tailwind pairs, and the `prl-*` families have no dark variant at all,
+   so a dark report page was showing #fee2e2 cream chips with #991b1b ink
+   — a light-mode component that never noticed the lights went out. Under
+   נייר they take the skin's own good/attention/bad, which ARE defined for
+   both modes and which the skin deliberately keeps readable as status
+   rather than as company hues. */
+:root[data-skin="paper"] .rpt-conv-green { color: var(--done); }
+:root[data-skin="paper"] .rpt-conv-amber { color: var(--due-today); }
+:root[data-skin="paper"] .rpt-conv-red { color: var(--overdue); }
+:root[data-skin="paper"] .prl-triage-chip.is-danger,
+:root[data-skin="paper"] .prl-bdg.is-danger {
+  background: var(--overdue-soft);
+  color: color-mix(in srgb, var(--overdue) var(--pill-ink-mix), var(--pill-ink-base));
+  border-color: color-mix(in srgb, var(--overdue) 35%, transparent);
+}
+:root[data-skin="paper"] .prl-triage-chip.is-warning,
+:root[data-skin="paper"] .prl-bdg.is-warning {
+  background: var(--due-today-soft);
+  color: color-mix(in srgb, var(--due-today) var(--pill-ink-mix-warm), var(--pill-ink-base));
+  border-color: color-mix(in srgb, var(--due-today) 35%, transparent);
+}
+:root[data-skin="paper"] .prl-bdg.is-success {
+  background: var(--done-soft);
+  color: color-mix(in srgb, var(--done) var(--pill-ink-mix), var(--pill-ink-base));
+}
+
+/* The wordmark. It gradients violet→pink, which the skin dutifully
+   remaps to dusty rose — on palette, and still the one warm-pink object
+   on a page where every other accent is terracotta. A single accent is
+   most of what makes the MOAD look read as considered rather than
+   colourful, so under נייר the mark joins it and keeps the gradient only
+   as a shift in depth. */
+:root[data-skin="paper"] .topnav-brand {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--md-sys-color-primary) 78%, var(--md-sys-color-on-surface)),
+    var(--md-sys-color-primary)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Two stragglers with their own literals: the chain chip's #fcd34d and
+   the overdue date's #fca5a5. The skin has a word for both. */
+:root[data-skin="paper"] .tasks-type-chip.tasks-type-chip-chain {
+  color: var(--yellow);
+  border-color: var(--yellow);
+}
+:root[data-skin="paper"] .task-date-overdue {
+  color: var(--overdue);
+  border-color: var(--overdue);
+}
+
+/* The last indigo literals on the filter pills — rgba(99,102,241,…) for
+   hover / active / open, which put a violet halo on a bone toolbar. */
+:root[data-skin="paper"] .sms-filter-trigger {
+  background: var(--md-sys-color-surface);
+}
+:root[data-skin="paper"] .sms-filter-trigger:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, var(--md-sys-color-surface));
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+}
+:root[data-skin="paper"] .sms-filter-trigger.is-active,
+:root[data-skin="paper"] .sms-filter-trigger.is-open {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, var(--md-sys-color-surface));
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+  color: var(--md-sys-color-primary);
 }
 
 /* Monochrome emoji under נייר.

@@ -1,4 +1,4 @@
-import { colorForKey, initialsForKey } from "@/lib/colors";
+import { companyColorSlot, initialsForKey } from "@/lib/colors";
 import { roleEmoji } from "./RoleChip";
 
 type Props = {
@@ -39,7 +39,12 @@ export function avatarHoverText(
  * (non-fandf) addresses skip the request entirely and keep initials.
  */
 export default function Avatar({ name, title, role, size = 28 }: Props) {
-  const { solid } = colorForKey(name);
+  // Slot, not a hex. An inline style beats the cascade, so a hard-coded
+  // colour here is a colour no skin can ever restyle — the exact trap
+  // companyColorSlot() was written for. CSS maps the slot to --av-solid,
+  // which the default look defines as the same twelve hues it always had
+  // and נייר redefines as its own muted twelve.
+  const slot = companyColorSlot(name);
   const initials = initialsForKey(name);
   const px = `${size}px`;
   const showPhoto = /^[^\s@]+@fandf\.co\.il$/i.test(name);
@@ -62,12 +67,13 @@ export default function Avatar({ name, title, role, size = 28 }: Props) {
       data-user-email={isUserEmail ? name : undefined}
       data-user-name={isUserEmail ? title || name : undefined}
       data-user-role={isUserEmail && role ? role : undefined}
+      data-av={slot}
       style={{
         position: "relative",
         width: px,
         height: px,
         lineHeight: px,
-        background: solid,
+        background: "var(--av-solid, #6366f1)",
         fontSize: `${Math.max(10, Math.round(size * 0.42))}px`,
       }}
     >

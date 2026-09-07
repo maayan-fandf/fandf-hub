@@ -235,7 +235,7 @@ function ChannelTrendPop({
           <path
             d={path("cost", maxCost)}
             fill="none"
-            stroke="#14b8a6"
+            style={{ stroke: "var(--teal)" }}
             strokeWidth={1.6}
           />
         </svg>
@@ -247,7 +247,7 @@ function ChannelTrendPop({
           <path
             d={path("leads", maxLeads)}
             fill="none"
-            stroke="#8b5cf6"
+            style={{ stroke: "var(--violet)" }}
             strokeWidth={1.6}
           />
         </svg>
