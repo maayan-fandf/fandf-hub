@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
+import type { DetectedPriceShape } from "@/lib/appsScript";
 
 /**
  * נכסים דיגיטליים — everything running for a project OUTSIDE the paid
@@ -44,6 +45,11 @@ export type DigitalAsset = {
   price: number | null;
   /** Every distinct price found, for the ones that list per-room. */
   allPrices: number[];
+  /** The same list with its room labels, exactly as the scraper wrote it
+   *  (`[{value, anchored, rooms, roomsLabel}, …]`). Kept raw so the price
+   *  card can render the per-room table it already renders for the other
+   *  surfaces, instead of a second shape meaning the same thing. */
+  inventory: DetectedPriceShape[];
   /** Yad2 only: "sponsored" (a marketing page with a החל-מ anchor) vs
    *  "organic" (a per-apartment table with no headline). The two are not
    *  comparable and the UI must not put them side by side as if they
@@ -63,6 +69,27 @@ export type DigitalAssets = {
 const num = (v: unknown): number | null => {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
+};
+/** The per-room JSON the scraper writes. Never throws: a malformed cell
+ *  costs the room table, not the card. */
+const inv = (v: unknown): DetectedPriceShape[] => {
+  try {
+    const j = JSON.parse(String(v ?? "[]"));
+    if (!Array.isArray(j)) return [];
+    // Normalised rather than cast: the optional fields are optional in the
+    // SHEET, and DetectedPriceShape is what every price surface renders
+    // from, so the gap has to close here and not at the render.
+    return j
+      .map((r) => ({
+        value: Number(r?.value) || 0,
+        anchored: !!r?.anchored,
+        rooms: r?.rooms == null ? null : Number(r.rooms),
+        roomsLabel: String(r?.roomsLabel ?? ""),
+      }))
+      .filter((r) => r.value > 0);
+  } catch {
+    return [];
+  }
 };
 const list = (v: unknown): number[] =>
   String(v ?? "")
@@ -134,6 +161,7 @@ export const getDigitalAssets = cache(
         url: landingUrls[0],
         price: num(row.headline_price),
         allPrices: list(row.all_prices),
+        inventory: inv(row.all_prices_json),
         pageType: "",
       });
     }
@@ -147,6 +175,7 @@ export const getDigitalAssets = cache(
         url: u,
         price: null,
         allPrices: [],
+        inventory: [],
         pageType: "",
       });
     }
@@ -157,6 +186,7 @@ export const getDigitalAssets = cache(
         url: row.yad2_url,
         price: num(row.yad2_headline_price),
         allPrices: list(row.yad2_all_prices),
+        inventory: inv(row.yad2_all_prices_json),
         pageType: String(row.yad2_page_type ?? ""),
       });
     }
@@ -167,6 +197,7 @@ export const getDigitalAssets = cache(
         url: row.article_url,
         price: num(row.article_headline_price),
         allPrices: list(row.article_all_prices),
+        inventory: inv(row.article_all_prices_json),
         pageType: "",
       });
     }

@@ -1890,7 +1890,10 @@ export type DetectedPriceShape = {
 };
 
 export type ProjectPriceSurface = {
-  name: "landing" | "yad2" | "google" | "facebook";
+  /** "article" is not produced by Apps Script — the hub appends it from
+   *  the nightly scrape's article columns (see ProjectPriceCheckSection).
+   *  It is in the union because everything downstream keys on this name. */
+  name: "landing" | "yad2" | "google" | "facebook" | "article";
   label: string;
   price: number | null;
   url: string;

@@ -2,6 +2,7 @@ import {
   getProjectPriceCheck,
   type ProjectPriceSurface,
 } from "@/lib/appsScript";
+import { getDigitalAssets } from "@/lib/digitalAssets";
 import { getArtworkPrice, type ArtworkPrice } from "@/lib/artworkPrice";
 import {
   getArtworkPriceFlag,
@@ -92,7 +93,7 @@ export default async function ProjectPriceCheckSection({
   const artworkIsSource = fbTextPrice == null && artworkPrice != null;
   const injectedFbPrice =
     warehouseFb?.price ?? (artworkIsSource ? artworkPrice.value : null);
-  const surfaces: ProjectPriceSurface[] =
+  const withFb: ProjectPriceSurface[] =
     injectedFbPrice != null
       ? data.surfaces.map((s) =>
           s.name === "facebook"
@@ -108,6 +109,37 @@ export default async function ProjectPriceCheckSection({
             : s,
         )
       : data.surfaces;
+
+  // The כתבה, appended here rather than in Apps Script. The nightly scrape
+  // already reads it as a third page alongside the landing page and Yad2
+  // (scripts/scrape-landing-prices.mjs), but the report's own snapshot
+  // still speaks of four surfaces — so the hub adds the fifth from the
+  // same tab, the way it already adds Facebook's warehouse price above.
+  //
+  // It matters more than the count suggests: an article is bought once
+  // when the campaign launches and nobody opens it again, while the
+  // landing page keeps getting edited. It is the surface most likely to be
+  // quietly advertising last quarter's price, and until now the price card
+  // could not see it at all.
+  const articleAsset = (await getDigitalAssets(projectName).catch(() => null))
+    ?.assets.find((a) => a.kind === "article");
+  const surfaces: ProjectPriceSurface[] = articleAsset
+    ? [
+        ...withFb,
+        {
+          name: "article",
+          label: "כתבה",
+          price: articleAsset.price,
+          url: articleAsset.url,
+          // "no-price" and not "no-input": the scrape opened the page and
+          // read it. An article that advertises no price is a fact about
+          // the article, and the card says so rather than looking unread.
+          status: articleAsset.price == null ? "no-price" : "ok",
+          hasInput: true,
+          inventory: articleAsset.inventory,
+        },
+      ]
+    : withFb;
 
   // Self-hide when every surface is dark — no landing scrape AND no ad
   // copy on either platform. (`hasInput` is true for any surface where
@@ -647,6 +679,7 @@ const SURFACE_ICONS: Record<ProjectPriceSurface["name"], string> = {
   yad2: "",
   google: "",
   facebook: "",
+  article: "📰",
 };
 
 function SurfaceIcon({ name }: { name: ProjectPriceSurface["name"] }) {
@@ -661,6 +694,7 @@ const LINK_LABEL: Record<ProjectPriceSurface["name"], string> = {
   yad2: "פתח ביד2",
   google: "פתח בגוגל Ads",
   facebook: "פתח בפייסבוק Ads",
+  article: "פתח את הכתבה",
 };
 
 function fmtIls(n: number): string {
