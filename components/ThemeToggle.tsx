@@ -5,36 +5,68 @@ import { useEffect, useRef, useState } from "react";
 /**
  * תצוגה — the look picker.
  *
- * TWO independent axes, which is why this stopped being a three-state
- * cycle. `mode` is light/dark/auto and has always existed. `skin` is the
- * palette: the hub's own M3 violet, or "נייר" — the bone-and-terracotta
- * editorial palette from MOAD's design system (design/moad-base.css),
- * which the owner asked for on 2026-09-07 as a cleaner, more print-like
- * alternative.
+ * TWO axes, shown as two axes, because that is what they are:
  *
- * Cycling through five combinations with one button would mean pressing
- * it four times to get back, so the control is a small menu instead. The
- * two axes stay separate in storage: someone on the paper skin who
- * switches to dark keeps the paper skin.
+ *   מצב     בהיר / כהה / אוטומטי        → data-theme
+ *   נראות   the backdrop scene + palette → data-skin + the particles pair
+ *
+ * The four original scenes (זוהר / שלג / קוסמוס / זוהר ירוק) already
+ * existed but were only reachable by rotation — each light→dark toggle
+ * advanced to the next one and there was no way to ask for a particular
+ * one. A first version of this menu offered five flat entries and made
+ * that worse: the four looked like they had been removed. They are named
+ * here instead, alongside מתחלף, which is the old rotating behaviour and
+ * stays the default.
+ *
+ * Picking a look is what selects the palette too: the two נייר scenes
+ * carry the bone-and-terracotta token skin, the other four carry the
+ * hub's own. A backdrop and a palette that disagree are two products on
+ * one screen, so they are one choice rather than two.
  */
 
 type Mode = "auto" | "light" | "dark";
-type Skin = "hub" | "paper";
+/** "rotate" keeps the historical behaviour; anything else pins a pair by
+ *  its name in components/ParticlesBackground.tsx. */
+type Look =
+  | "rotate"
+  | "aurora"
+  | "snow"
+  | "cosmos"
+  | "aurora-green"
+  | "paper"
+  | "paper-teal";
 
 const MODE_KEY = "hub-theme";
-const SKIN_KEY = "hub-skin";
+const LOOK_KEY = "hub-look";
+/** Read by ParticlesBackground, which owns the pair list. */
+const PAIR_KEY = "hub-particles-pair";
+const PAIR_ORDER: Look[] = [
+  "aurora",
+  "snow",
+  "cosmos",
+  "aurora-green",
+  "paper",
+  "paper-teal",
+];
+const PAPER_LOOKS = new Set<Look>(["paper", "paper-teal"]);
 
-const OPTIONS: { mode: Mode; skin: Skin; label: string; hint: string }[] = [
-  { mode: "auto", skin: "hub", label: "אוטומטי", hint: "לפי הגדרת המערכת" },
-  { mode: "light", skin: "hub", label: "בהיר", hint: "" },
-  { mode: "dark", skin: "hub", label: "כהה", hint: "" },
-  { mode: "light", skin: "paper", label: "נייר · בהיר", hint: "פלטה עיתונאית" },
-  { mode: "dark", skin: "paper", label: "נייר · כהה", hint: "פלטה עיתונאית" },
+const MODES: { key: Mode; label: string; hint?: string }[] = [
+  { key: "auto", label: "אוטומטי", hint: "לפי הגדרת המערכת" },
+  { key: "light", label: "בהיר" },
+  { key: "dark", label: "כהה" },
 ];
 
-/** Resolve and paint. Kept in step with THEME_INIT_SCRIPT in layout.tsx —
- *  that one runs before hydration, this one on every change. */
-function apply(mode: Mode, skin: Skin) {
+const LOOKS: { key: Look; label: string; hint?: string }[] = [
+  { key: "rotate", label: "מתחלף", hint: "נראות חדשה בכל מעבר לכהה" },
+  { key: "aurora", label: "זוהר" },
+  { key: "snow", label: "שלג" },
+  { key: "cosmos", label: "קוסמוס" },
+  { key: "aurora-green", label: "זוהר ירוק" },
+  { key: "paper", label: "נייר", hint: "פלטה עיתונאית" },
+  { key: "paper-teal", label: "נייר · טורקיז", hint: "פלטה עיתונאית" },
+];
+
+function apply(mode: Mode, look: Look) {
   const effective =
     mode === "dark"
       ? "dark"
@@ -44,32 +76,37 @@ function apply(mode: Mode, skin: Skin) {
           ? "dark"
           : "light";
   document.documentElement.dataset.theme = effective;
-  // Absent rather than "hub" for the default, so every existing rule that
-  // matches on :root keeps applying with no skin selector at all.
-  if (skin === "paper") document.documentElement.dataset.skin = "paper";
+  // Absent rather than "hub" for the default, so every rule written
+  // against plain :root keeps applying with no skin selector at all.
+  if (PAPER_LOOKS.has(look)) document.documentElement.dataset.skin = "paper";
   else delete document.documentElement.dataset.skin;
+  // Pin the scene by writing the pair index the backdrop reads. "rotate"
+  // leaves whatever is stored alone — that is the whole point of it.
+  if (look !== "rotate") {
+    try {
+      localStorage.setItem(PAIR_KEY, String(PAIR_ORDER.indexOf(look)));
+    } catch {
+      /* private mode */
+    }
+  }
+  document.documentElement.dataset.look = look;
 }
 
 export default function ThemeToggle() {
-  // "auto"/"hub" for SSR so server and client agree; the stored values
-  // arrive in the effect below.
   const [mode, setMode] = useState<Mode>("auto");
-  const [skin, setSkin] = useState<Skin>("hub");
+  const [look, setLook] = useState<Look>("rotate");
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const m = (localStorage.getItem(MODE_KEY) as Mode | null) ?? "auto";
-    const s = (localStorage.getItem(SKIN_KEY) as Skin | null) ?? "hub";
+    const l = (localStorage.getItem(LOOK_KEY) as Look | null) ?? "rotate";
     setMode(m);
-    setSkin(s);
-
-    // Follow the system while in auto.
+    setLook(l);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onSystem = () => {
-      const cur = (localStorage.getItem(MODE_KEY) as Mode | null) ?? "auto";
-      if (cur === "auto") {
-        apply("auto", (localStorage.getItem(SKIN_KEY) as Skin | null) ?? "hub");
+      if ((localStorage.getItem(MODE_KEY) as Mode | null) === "auto" || !localStorage.getItem(MODE_KEY)) {
+        apply("auto", (localStorage.getItem(LOOK_KEY) as Look | null) ?? "rotate");
       }
     };
     mq.addEventListener("change", onSystem);
@@ -92,17 +129,16 @@ export default function ThemeToggle() {
     };
   }, [open]);
 
-  const choose = (o: (typeof OPTIONS)[number]) => {
-    setMode(o.mode);
-    setSkin(o.skin);
-    localStorage.setItem(MODE_KEY, o.mode);
-    localStorage.setItem(SKIN_KEY, o.skin);
-    apply(o.mode, o.skin);
-    setOpen(false);
+  const chooseMode = (m: Mode) => {
+    setMode(m);
+    localStorage.setItem(MODE_KEY, m);
+    apply(m, look);
   };
-
-  const current =
-    OPTIONS.find((o) => o.mode === mode && o.skin === skin) ?? OPTIONS[0];
+  const chooseLook = (l: Look) => {
+    setLook(l);
+    localStorage.setItem(LOOK_KEY, l);
+    apply(mode, l);
+  };
 
   return (
     <div className="theme-wrap" ref={wrapRef}>
@@ -110,32 +146,45 @@ export default function ThemeToggle() {
         type="button"
         className="theme-toggle"
         onClick={() => setOpen((v) => !v)}
-        title={`תצוגה: ${current.label}`}
-        aria-label={`תצוגה: ${current.label}`}
+        title="תצוגה"
+        aria-label="תצוגה"
         aria-expanded={open}
       >
         <span aria-hidden>◑</span>
       </button>
       {open && (
         <div className="theme-menu" role="menu" aria-label="תצוגה">
-          <div className="theme-menu-title">תצוגה</div>
-          {OPTIONS.map((o) => {
-            const on = o.mode === current.mode && o.skin === current.skin;
-            return (
-              <button
-                key={`${o.skin}-${o.mode}`}
-                type="button"
-                role="menuitemradio"
-                aria-checked={on}
-                className={"theme-menu-item" + (on ? " is-on" : "")}
-                onClick={() => choose(o)}
-              >
-                <span className={`theme-swatch is-${o.skin}-${o.mode}`} aria-hidden />
-                <span className="theme-menu-label">{o.label}</span>
-                {o.hint && <span className="theme-menu-hint">{o.hint}</span>}
-              </button>
-            );
-          })}
+          <div className="theme-menu-title">מצב</div>
+          {MODES.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={mode === o.key}
+              className={"theme-menu-item" + (mode === o.key ? " is-on" : "")}
+              onClick={() => chooseMode(o.key)}
+            >
+              <span className={`theme-swatch is-mode-${o.key}`} aria-hidden />
+              <span className="theme-menu-label">{o.label}</span>
+              {o.hint && <span className="theme-menu-hint">{o.hint}</span>}
+            </button>
+          ))}
+          <div className="theme-menu-sep" />
+          <div className="theme-menu-title">נראות</div>
+          {LOOKS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={look === o.key}
+              className={"theme-menu-item" + (look === o.key ? " is-on" : "")}
+              onClick={() => chooseLook(o.key)}
+            >
+              <span className={`theme-swatch is-look-${o.key}`} aria-hidden />
+              <span className="theme-menu-label">{o.label}</span>
+              {o.hint && <span className="theme-menu-hint">{o.hint}</span>}
+            </button>
+          ))}
         </div>
       )}
     </div>

@@ -348,10 +348,25 @@ function currentMode(): "dark" | "light" {
   return t === "dark" ? "dark" : "light";
 }
 
+/** The look the user pinned in the תצוגה menu, or "" while rotating. */
+function pinnedLook(): string {
+  const v =
+    typeof document !== "undefined" ? document.documentElement.dataset.look : "";
+  return !v || v === "rotate" ? "" : v;
+}
+
 /** The stored index, snapped into the pairs the current skin allows.
- *  One key across both skins on purpose: switching to נייר and back
- *  should land where the rotation was, not reset it. */
+ *
+ *  A pinned look wins outright: the reader asked for שלג and must get
+ *  שלג, not whatever the rotation had reached. One key across both skins
+ *  otherwise, so switching to נייר and back lands where the rotation was
+ *  rather than resetting it. */
 function readPairIdx(): number {
+  const pin = pinnedLook();
+  if (pin) {
+    const at = PAIRS.findIndex((p) => p.name === pin);
+    if (at >= 0) return at;
+  }
   const allowed = pairsForSkin();
   try {
     const v = parseInt(localStorage.getItem(PAIR_KEY) || "0", 10);
@@ -412,7 +427,7 @@ export default function ParticlesBackground() {
           // A skin change repaints without advancing: the reader picked a
           // palette, not a new scene, and rotating underneath them would
           // make the same menu entry look different every time.
-          if (r.attributeName === "data-skin") {
+          if (r.attributeName === "data-skin" || r.attributeName === "data-look") {
             pairIdxRef.current = readPairIdx();
             writePairIdx(pairIdxRef.current);
             lastModeRef.current = currentMode();
@@ -423,8 +438,10 @@ export default function ParticlesBackground() {
             const next = currentMode();
             const prev = lastModeRef.current;
             if (next === prev) continue;
-            // light → dark: advance pair before rendering the new dark side.
-            if (prev === "light" && next === "dark") {
+            // light → dark advances the rotation — unless the reader
+            // pinned a look, in which case advancing would silently
+            // override the thing they just asked for.
+            if (prev === "light" && next === "dark" && !pinnedLook()) {
               pairIdxRef.current = nextPairIdx(pairIdxRef.current);
               writePairIdx(pairIdxRef.current);
             }
@@ -435,7 +452,7 @@ export default function ParticlesBackground() {
       });
       obs.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ["data-theme", "data-skin"],
+        attributeFilter: ["data-theme", "data-skin", "data-look"],
       });
 
       // Stash on the closure so cleanup can disconnect.

@@ -30404,11 +30404,23 @@ html[data-theme="dark"] {
   flex: none;
   border: 1px solid rgba(0, 0, 0, 0.18);
 }
-.theme-swatch.is-hub-auto { background: linear-gradient(135deg, #f7f5ff 50%, #0a0a18 50%); }
-.theme-swatch.is-hub-light { background: linear-gradient(135deg, #f7f5ff 50%, #6366f1 50%); }
-.theme-swatch.is-hub-dark { background: linear-gradient(135deg, #0a0a18 50%, #8b5cf6 50%); }
-.theme-swatch.is-paper-light { background: linear-gradient(135deg, #f7efe3 50%, #c4562f 50%); }
-.theme-swatch.is-paper-dark { background: linear-gradient(135deg, #141c1b 50%, #d96b41 50%); }
+.theme-swatch.is-mode-auto { background: linear-gradient(135deg, #f7f5ff 50%, #0a0a18 50%); }
+.theme-swatch.is-mode-light { background: #f7f5ff; }
+.theme-swatch.is-mode-dark { background: #0a0a18; }
+/* Each look swatch is that scene own ground beside its own accent, so
+   the menu shows the choice rather than describing it. */
+.theme-swatch.is-look-rotate { background: conic-gradient(#a78bfa, #bfdbfe, #f0abfc, #7dd3fc, #a78bfa); }
+.theme-swatch.is-look-aurora { background: linear-gradient(135deg, #0b1430 50%, #67e8f9 50%); }
+.theme-swatch.is-look-snow { background: linear-gradient(135deg, #0f172a 50%, #dbeafe 50%); }
+.theme-swatch.is-look-cosmos { background: linear-gradient(135deg, #1a0b2e 50%, #f0abfc 50%); }
+.theme-swatch.is-look-aurora-green { background: linear-gradient(135deg, #052e2b 50%, #6ee7b7 50%); }
+.theme-swatch.is-look-paper { background: linear-gradient(135deg, #f7efe3 50%, #c4562f 50%); }
+.theme-swatch.is-look-paper-teal { background: linear-gradient(135deg, #f4efe6 50%, #3d6b6b 50%); }
+.theme-menu-sep {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 0.35rem 0.2rem;
+}
 
 /* The rest of the palette under נייר.
  

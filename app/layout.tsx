@@ -97,9 +97,13 @@ const THEME_INIT_SCRIPT = `
     else if (t === 'light') effective = 'light';
     else effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.dataset.theme = effective;
-    // Absent for the default skin, so every rule written against plain
-    // :root keeps applying with no skin selector at all.
-    if (localStorage.getItem('hub-skin') === 'paper') {
+    // The palette rides on the chosen LOOK — the two נייר scenes carry the
+    // bone skin, the other four carry the hub's own. Absent for the
+    // default, so every rule written against plain :root keeps applying
+    // with no skin selector at all.
+    var look = localStorage.getItem('hub-look') || 'rotate';
+    document.documentElement.dataset.look = look;
+    if (look === 'paper' || look === 'paper-teal') {
       document.documentElement.dataset.skin = 'paper';
     }
   } catch (e) {}
