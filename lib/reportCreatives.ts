@@ -204,6 +204,12 @@ type FbAssetRec = {
    *  the sheet ever gave: the sheet reports the ad's own status, this one
    *  also folds in a paused campaign or ad set. */
   statusFromWarehouse?: boolean;
+  /** The status came from OUR nightly Meta pull (the fb-ad-previews tab's
+   *  `effective_status` column) rather than from the assets tab or the
+   *  warehouse. Last of the three in precedence — it only ever fills a gap,
+   *  never overrides — but it is the only one that covers the accounts the
+   *  warehouse has no rows for at all. */
+  statusFromMeta?: boolean;
   image: string;
   thumb: string;
   destUrl: string;
@@ -253,6 +259,11 @@ type ProjectCreativeRaw = {
    *  Separate from fbAssets because it is a different source with a
    *  different lifetime — see applyMetaImages for the precedence. */
   fbMetaImages: Record<string, string>;
+  /** (campaign|ad).lc → `effective_status` from the same Meta pull. The
+   *  column has been written to the tab since the cron was built and read by
+   *  nobody; applyMetaStatus fills the cards the other two sources leave
+   *  blank. */
+  fbMetaStatus: Record<string, string>;
   /** Facebook-adsets rows (SSOT for the FB cost/leads KPIs). */
   fbAdSets: {
     date: string;
@@ -309,6 +320,7 @@ async function fetchProjectCreativeRaw(
     fbAssetsIndexed: {},
     fbPreviews: {},
     fbMetaImages: {},
+    fbMetaStatus: {},
     fbAdSets: [],
     gKeywords: [],
     gAds: [],
@@ -423,6 +435,7 @@ async function fetchProjectCreativeRaw(
     const iAd = h.indexOf("ad_name");
     const iUrl = h.indexOf("preview_url");
     const iImg = h.indexOf("image_url");
+    const iStat = h.indexOf("effective_status");
     if (iCamp >= 0 && iAd >= 0 && iUrl >= 0) {
       for (let r = 1; r < vMetaPreviews.length; r++) {
         const row = vMetaPreviews[r];
@@ -436,6 +449,12 @@ async function fetchProjectCreativeRaw(
         // The 1080px creative render, asked of Meta in the same pull.
         const img = iImg >= 0 ? String(row[iImg] ?? "").trim() : "";
         if (img.startsWith("http")) out.fbMetaImages[k] = img;
+        // …and the effective status from that same row. First writer wins,
+        // matching the tab's own ad_id-keyed merge: one ad name can front
+        // several creatives, and re-reading later rows would let an old
+        // paused variant overwrite the running one's status.
+        const st = iStat >= 0 ? String(row[iStat] ?? "").trim() : "";
+        if (st && !out.fbMetaStatus[k]) out.fbMetaStatus[k] = st;
       }
     }
   }
@@ -715,6 +734,7 @@ async function fetchProjectCreativeRaw(
   // a permanent URL to keep — running it before would overwrite nothing and
   // then be overwritten itself.
   applyMetaImages(out);
+  applyMetaStatus(out);
 
   return out;
 }
@@ -825,6 +845,29 @@ function applyMetaImages(out: ProjectCreativeRaw): void {
     // the fallback re-requests the same failing address (the v563 note on
     // the render side says the same thing from the other end).
     if (rec.thumb === url) rec.thumb = "";
+  }
+}
+
+/**
+ * Fill the status pill on cards that have none, from the same nightly Meta
+ * pull that supplies the preview link and the 1080px image.
+ *
+ * A GAP-FILLER ONLY, deliberately last of the three. Card sort, the slice
+ * cap and the fatigue badge all key on `status === "ACTIVE"`, so changing
+ * which source WINS would silently rearrange every project's grid; filling
+ * a blank only ever adds a pill where the card previously showed none.
+ *
+ * It earns its place because it is the one source with no account-level
+ * gaps: the assets tab depends on Supermetrics covering the account, and the
+ * warehouse has no rows at all for three of them — which is why ESSENCE's
+ * cards showed no פעילה/כבויה indicator while running perfectly well.
+ */
+function applyMetaStatus(out: ProjectCreativeRaw): void {
+  for (const [k, status] of Object.entries(out.fbMetaStatus)) {
+    const rec = out.fbAssets[k];
+    if (!rec || rec.status) continue;
+    rec.status = status;
+    rec.statusFromMeta = true;
   }
 }
 
@@ -1216,6 +1259,7 @@ function aggregateCreatives(
     return {
       account: a.account || assets?.account || "",
       statusFromWarehouse: assets?.statusFromWarehouse ?? false,
+      statusFromMeta: assets?.statusFromMeta ?? false,
       campaign: a.campaign,
       ad: a.ad,
       status: assets?.status ?? "",

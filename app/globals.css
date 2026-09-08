@@ -26679,6 +26679,43 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   font-weight: 700;
   color: var(--ink-soft);
 }
+/* The Facebook block's header line: title, the live-refresh button, and the
+   button's one-line answer. `baseline` rather than `center` so the button
+   sits on the title's line instead of floating above its descenders. */
+.rpt-cr-titlerow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.rpt-cr-titlerow .rpt-cr-title {
+  margin-top: 0;
+}
+.rpt-cr-refresh {
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  padding: 0.15rem 0.6rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.rpt-cr-refresh:hover:not(:disabled) {
+  background: var(--surface-alt);
+  border-color: var(--ink-soft);
+}
+.rpt-cr-refresh:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.rpt-cr-refresh-note {
+  font-size: 0.74rem;
+  color: var(--muted);
+}
 /* 265, not 230: the columns stretch to fill, so the real card width is
    whatever is left after the column count is decided — and at a 1000px
    section a 230px minimum resolves to four ~240px cards, which is inside
@@ -26719,6 +26756,33 @@ html[data-theme="dark"] .prl-bdg.is-accent {
 .rpt-cr-badge-win {
   background: #f59e0b;
   color: #fff;
+}
+/* Pulled live from Meta, not from the feeds. Emerald so it reads as fresh
+   rather than as a warning, and top-START like the winner badge — the two
+   never coexist, since a card with no numbers cannot win anything. */
+.rpt-cr-card.is-live {
+  border-color: #10b981;
+  box-shadow: 0 0 0 1px #10b981;
+}
+.rpt-cr-badge-new {
+  background: #10b981;
+  color: #fff;
+}
+/* Its campaign matches nothing in Keys — the ad runs, but the rest of the
+   report will not count it. Amber, not red: it is a mapping gap for someone
+   to fix, not a failed launch. */
+.rpt-cr-unmapped {
+  display: block;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, transparent);
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: color-mix(in srgb, #f59e0b 75%, var(--ink-soft));
+  padding: 0.2rem 0.4rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: help;
 }
 /* Top-END, opposite the winner badge — NOT bottom-start, which is where
    the links row sits: the badge floated over "דף נחיתה" / "תצוגת מודעה"
@@ -29878,6 +29942,31 @@ html[data-theme="dark"] {
 }
 .ct-table .ct-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ct-src { display: flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+/* Contributing channels, beside the one the sale is credited to. Muted and
+   a size down so the attributed source still reads as the answer and these
+   read as context — the column must not look like several sources sharing
+   one sale. `flex-wrap` on the cell keeps a three-channel client from
+   stretching the table. */
+.ct-src { flex-wrap: wrap; }
+.ct-src-assist {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 0.85;
+  cursor: help;
+}
+.ct-src-assist::before {
+  content: "+";
+  margin-inline-end: 0.1rem;
+  opacity: 0.7;
+}
+.ct-src-more {
+  font-size: 0.72rem;
+  color: var(--muted);
+  cursor: help;
+}
 /* An opportunity is not a sale — it sits in the same table so the pipeline
    is visible, but reads as secondary. */
 .ct-table tr.is-opp td { opacity: 0.66; }

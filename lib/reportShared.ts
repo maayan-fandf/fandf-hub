@@ -1137,6 +1137,11 @@ export type ReportFbAd = {
    *  A stricter reading than the sheet gives — it accounts for a paused
    *  parent campaign or ad set — so the pill says where it came from. */
   statusFromWarehouse?: boolean;
+  /** The status pill came from our own nightly Meta pull (the
+   *  `effective_status` column of the fb-ad-previews tab), because neither
+   *  the assets tab nor the warehouse had one. The only source with no
+   *  account-level blind spots. */
+  statusFromMeta?: boolean;
   /** Warehouse `last_seen` for that creative — the last date Meta reported
    *  delivery. Only set alongside `imageFromWarehouse`; "" when unknown. */
   imageLastSeen?: string;
@@ -1154,6 +1159,16 @@ export type ReportFbAd = {
    *  a link cached longer than the refresh interval will 400. Don't persist
    *  these anywhere. */
   previews?: string[];
+  /** Creation date of an ad pulled LIVE from the Graph API by the רענון
+   *  button (lib/fbNewAds.ts), not from any sheet or the warehouse. Set only
+   *  on those cards: it is what marks a card as "launched since the feeds
+   *  last ran" and it carries no numbers, because none exist yet. */
+  liveCreatedIso?: string;
+  /** That live ad's campaign matches no project's `campaign ID` pattern in
+   *  Keys. Shown rather than hidden on purpose — an ad running under a
+   *  campaign nobody registered is invisible to every other surface in the
+   *  hub, and surfacing it is half the value of the refresh. */
+  unmappedCampaign?: boolean;
 };
 
 /** One month of an ad's life. cost/leads come from the ad-metrics tab

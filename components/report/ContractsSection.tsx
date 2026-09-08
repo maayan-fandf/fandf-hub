@@ -63,6 +63,38 @@ function sourceOf(c: Client): string {
   return c.mediaSource || c.source.split(",")[0]?.trim() || "לא ידוע";
 }
 
+/**
+ * The OTHER channels this client touched, beside the attributed one.
+ *
+ * `source_agg` carries the whole list ("Facebook-normal,כוכבית 9926 ארנונה
+ * ירושלים"); the column used to drop everything after the first entry, so a
+ * client who came through a phone campaign and closed off Facebook read as a
+ * one-channel sale. They are kept SECONDARY rather than promoted to equals —
+ * the whole reason the column shows one source is that five channels sharing
+ * one sale credits it five times — but hiding them entirely lost the fact
+ * that other media contributed at all.
+ *
+ * Case-insensitive dedupe against the primary: BMBY writes the same channel
+ * as "Facebook-normal" in the aggregate and "facebook-normal" on the lead. */
+/** Contributing channels shown inline before the rest collapse to "+N".
+ *  Two, because the busiest client on לוריא touched seven channels and a
+ *  cell listing all of them is a paragraph, not a column. */
+const ASSISTS_SHOWN = 2;
+
+function assistsOf(c: Client): string[] {
+  const primary = sourceOf(c).toLowerCase();
+  const seen = new Set<string>([primary]);
+  const out: string[] = [];
+  for (const raw of c.source.split(",")) {
+    const s = raw.trim();
+    const k = s.toLowerCase();
+    if (!s || seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+  }
+  return out;
+}
+
 export default function ContractsSection({
   project,
   company,
@@ -325,6 +357,25 @@ export default function ContractsSection({
                   </td>
                   <td className="ct-src">
                     <ChannelIcon name={sourceOf(c)} fallback="●" /> {sourceOf(c)}
+                    {assistsOf(c)
+                      .slice(0, ASSISTS_SHOWN)
+                      .map((s) => (
+                        <span
+                          key={s}
+                          className="ct-src-assist"
+                          title={`ערוץ נוסף שהלקוח נגע בו לפני הסגירה — המכירה מיוחסת ל${sourceOf(c)}`}
+                        >
+                          <ChannelIcon name={s} fallback="●" /> {s}
+                        </span>
+                      ))}
+                    {assistsOf(c).length > ASSISTS_SHOWN && (
+                      <span
+                        className="ct-src-more"
+                        title={assistsOf(c).slice(ASSISTS_SHOWN).join(", ")}
+                      >
+                        +{assistsOf(c).length - ASSISTS_SHOWN}
+                      </span>
+                    )}
                   </td>
                   <td>{c.salesperson || "—"}</td>
                   <td>{c.rooms || "—"}</td>

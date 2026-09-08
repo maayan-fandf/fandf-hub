@@ -161,8 +161,10 @@ export type MetaAd = {
   id: string;
   name?: string;
   effective_status?: string;
+  created_time?: string;
   preview_shareable_link?: string;
   campaign?: { name?: string };
+  adset?: { name?: string };
   creative?: { thumbnail_url?: string };
 };
 
@@ -209,6 +211,46 @@ export async function listAdsWithPreview(
  * carrying a 1080 image, in 26 seconds. A paused ad keeps whatever the
  * warehouse has for it, which is the same picture it has today.
  */
+/**
+ * Ads CREATED in one account since a moment — everything a card needs, in a
+ * single call.
+ *
+ * This is the one Graph shape the nightly cron cannot serve, and it exists
+ * for a question the sheets structurally cannot answer: "did the ad I
+ * launched ten minutes ago go up correctly?" Nothing upstream knows about
+ * that ad yet — Supermetrics writes `facebook-ads-metrics` on a daily
+ * trigger, the warehouse syncs nightly, and even our own fb-ad-previews
+ * cron is once a day — so an on-demand pull is the only source.
+ *
+ * ONE CALL, unlike the cron's two. The cron has to split the creative into
+ * its own walk because Meta refuses a 500-ad page with `creative{…}`
+ * expanded (see listActiveAdImages). That limit is about page WEIGHT, not
+ * about the field: at limit=50 over a couple of days' worth of ads the same
+ * expansion is served without complaint. Measured 2026-09-08 across all 23
+ * accounts at a 48-hour window: 20 ads, 675ms average per account, worst
+ * case 1.8s, zero failures — and every ad came back with both its preview
+ * link and its 1080px render.
+ *
+ * `ad.created_time` rather than `updated_time` on purpose. The cron wants
+ * "what changed" so it can merge; a person pressing רענון wants "what is
+ * new", and an edit to a month-old ad is not what they are checking.
+ */
+export async function listAdsCreatedSince(
+  accountId: string,
+  sinceUnix: number,
+): Promise<MetaAd[]> {
+  return graphEdge<MetaAd>(`act_${accountId}/ads`, {
+    fields:
+      "id,name,effective_status,created_time,preview_shareable_link," +
+      "campaign{name},adset{name}," +
+      `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX}){thumbnail_url}`,
+    filtering: JSON.stringify([
+      { field: "ad.created_time", operator: "GREATER_THAN", value: sinceUnix },
+    ]),
+    limit: 50,
+  });
+}
+
 export async function listActiveAdImages(
   accountId: string,
 ): Promise<{ id: string; image: string }[]> {

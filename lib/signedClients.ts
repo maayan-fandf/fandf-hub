@@ -61,7 +61,7 @@ const MAX_CLIENTS = 200;
  *
  *  Sets carrying nothing but a platform are dropped ONLY when a richer set
  *  exists — otherwise "פלטפורמה: Google" alone is still the honest answer. */
-function utmSets(
+export function utmSets(
   rows: UtmSourceRow[] | undefined,
   campaignNames: Record<string, string>,
 ): UtmTag[][] {
@@ -161,7 +161,7 @@ function isLeadArrival(t: JourneyTouch): boolean {
 
 /** Number the lead arrivals in place, oldest first. Mutates and returns the
  *  same array — the journey is already sorted ascending by both readers. */
-function numberLeadEntries(journey: JourneyTouch[]): JourneyTouch[] {
+export function numberLeadEntries(journey: JourneyTouch[]): JourneyTouch[] {
   let n = 0;
   for (const t of journey) {
     if (isLeadArrival(t)) t.entryNo = ++n;
@@ -210,7 +210,7 @@ function attachSehelEntry(
   return journey;
 }
 
-function attachEntryUtms(
+export function attachEntryUtms(
   journey: JourneyTouch[],
   rows: BucketedRow[] | undefined,
   campaignNames: Record<string, string>,

@@ -1,6 +1,12 @@
 import { cache } from "react";
 import { orExactFilter, supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
-import { cleanSehelContent } from "@/lib/signedClients";
+import {
+  attachEntryUtms,
+  cleanSehelContent,
+  numberLeadEntries,
+  utmSets,
+} from "@/lib/signedClients";
+import { getGoogleCampaignNames } from "@/lib/googleCampaignNames";
 import type { DossierClient, DossierTouch } from "@/components/report/ClientDossier";
 
 /**
@@ -71,6 +77,13 @@ type DailyRow = {
   agent: string | null;
   objections: string | null;
   lead_created_at: string | null;
+  /** The link that brought the lead. Present on this table all along and
+   *  simply never selected — see the utms note in the client build below. */
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
 };
 type LeadRow = {
   client_id: string | null;
@@ -194,6 +207,10 @@ export const getHeldMeetings = cache(
       const capped = held.slice(0, MAX_MEETINGS);
 
       const daily = new Map<string, DailyRow>();
+      /** EVERY lead row per client, for the UTM tags only — see the note at
+       *  the fill site. `daily` still holds just the newest, which is the
+       *  right snapshot for status, salesperson and the rest. */
+      const utmRows = new Map<string, DailyRow[]>();
       const leads = new Map<string, LeadRow>();
       const touches = new Map<string, DossierTouch[]>();
       for (let i = 0; i < ids.length; i += 100) {
@@ -202,7 +219,8 @@ export const getHeldMeetings = cache(
           supabaseRowsAll<DailyRow>(
             `bmby_leads_daily?client_id=in.(${inList(chunk)})` +
               `&select=client_id,client_name,phone,client_status,pipeline,` +
-              `media_source_clean,salesperson,agent,objections,lead_created_at` +
+              `media_source_clean,salesperson,agent,objections,lead_created_at,` +
+              `utm_source,utm_medium,utm_campaign,utm_content,utm_term` +
               `&order=lead_created_at.desc`,
             { maxRows: 5000 },
           ).catch(() => [] as DailyRow[]),
@@ -222,9 +240,20 @@ export const getHeldMeetings = cache(
         ]);
         // Newest lead row per client wins for the snapshot fields; the query
         // is already ordered, so the first one seen is the one to keep.
+        //
+        // The UTMs are the exception and must NOT follow that rule. A client
+        // who first arrived through a tagged Google ad and later re-entered
+        // by phone has two lead rows; the newest is the phone one, whose
+        // utm columns are all NULL, and reading the tags off it reported
+        // "הליד הגיע בלי תגיות UTM" for a lead the warehouse has fully
+        // tagged. Measured: it blanks 1,389 of the 13,744 clients the
+        // warehouse could answer for. So every row is kept for the tags,
+        // and utmSets dedupes them into one set per distinct link.
         for (const r of dr) {
           const id = clean(r.client_id);
-          if (id && !daily.has(id)) daily.set(id, r);
+          if (!id) continue;
+          if (!daily.has(id)) daily.set(id, r);
+          (utmRows.get(id) ?? utmRows.set(id, []).get(id)!).push(r);
         }
         for (const r of lr) {
           const id = clean(r.client_id);
@@ -250,6 +279,13 @@ export const getHeldMeetings = cache(
         }
       }
 
+      // Google writes its campaign as a numeric id; the map turns it into a
+      // name. Degrades to {} so a lookup failure costs the campaign's NAME,
+      // not the whole tag set.
+      const campaignNames = await getGoogleCampaignNames().catch(
+        () => ({}) as Record<string, string>,
+      );
+
       const clients: DossierClient[] = ids.map((id) => {
         const d = daily.get(id);
         const l = leads.get(id);
@@ -274,7 +310,16 @@ export const getHeldMeetings = cache(
           meetingsCount: Number(l?.meetings_count ?? 0) || 0,
           leadsCount: Number(l?.lids_count ?? 0) || 0,
           objections: clean(d?.objections),
-          journey,
+          utms: utmSets(utmRows.get(id), campaignNames),
+          // Per-ARRIVAL tags too, not only the client's whole pile: a client
+          // who came in twice off two different ads gets each entry labelled
+          // with the one that brought it. Same pair signedClients uses; the
+          // dossier renders them under each "ליד נכנס" row in the journey.
+          journey: attachEntryUtms(
+            numberLeadEntries(journey),
+            utmRows.get(id),
+            campaignNames,
+          ),
         };
       });
 

@@ -340,6 +340,16 @@ export default function ReportCreativesTab({
    *  this for media-workbook projects only. */
   showPreviews?: boolean;
 }) {
+  /* Ads pulled live from Meta by the רענון button — see the handler below
+     and lib/fbNewAds.ts. Declared before the `!c` early return because hooks
+     cannot sit after one. An overlay rather than a replacement: the server's
+     cards stay exactly as rendered and these are prepended, so a page reload
+     (which will eventually carry them for real, once the feeds catch up)
+     simply drops the overlay. Same shape as ReportChannelsTab's budgetEdits. */
+  const [liveAds, setLiveAds] = useState<ReportFbAd[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState("");
+
   const c = data.creatives;
   if (!c) {
     return (
@@ -363,6 +373,64 @@ export default function ReportCreativesTab({
     (a) => a.status === "Enabled",
   ).length;
 
+  /* The cards the page is already showing, keyed the way lib/reportCreatives
+     keys them, so the server can tell us only what is genuinely NEW and the
+     count in the note means what it says. */
+  const knownKeys = [...fb.topAds, ...liveAds].map((a) =>
+    `${a.campaign}|${a.ad}`.toLowerCase(),
+  );
+
+  async function refreshNewAds() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshNote("");
+    try {
+      const res = await fetch("/api/report/fb-new-ads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project: data.project, knownKeys }),
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        ads?: ReportFbAd[];
+        hours?: number;
+        sweptAll?: boolean;
+        failed?: { accountId: string }[];
+        error?: string;
+      };
+      if (!res.ok || !j.ok) {
+        setRefreshNote(
+          j.error === "too-soon"
+            ? "רגע אחד — נסו שוב בעוד כמה שניות"
+            : "לא הצלחנו לבדוק מול פייסבוק כרגע",
+        );
+        return;
+      }
+      const found = j.ads ?? [];
+      if (found.length) setLiveAds((prev) => [...found, ...prev]);
+      // A partial answer must not read as a whole one: if an account errored
+      // we cannot claim there is nothing new, only that we found nothing.
+      const partial = (j.failed?.length ?? 0) > 0;
+      const days = Math.round((j.hours ?? 72) / 24);
+      setRefreshNote(
+        found.length
+          ? `נמצאו ${found.length} מודעות חדשות`
+          : partial
+            ? "חלק מחשבונות המודעות לא ענו — נסו שוב"
+            : `אין מודעות חדשות מ-${days} הימים האחרונים`,
+      );
+    } catch {
+      setRefreshNote("לא הצלחנו לבדוק מול פייסבוק כרגע");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  /* Live cards first: the ad someone just launched is the one they opened
+     the page to look at. They carry no numbers, so they cannot distort the
+     ranking of the cards that do. */
+  const fbCards = [...liveAds, ...fb.topAds];
+
   return (
     <div className="rpt-creatives">
       <ReportMediaSection data={data} />
@@ -376,11 +444,30 @@ export default function ReportCreativesTab({
         activeAds={fb.adCount}
       />
 
-      {fb.topAds.length > 0 && (
+      {fbCards.length > 0 && (
         <>
-          <h3 className="rpt-cr-title">🎨 מודעות פייסבוק</h3>
+          {/* The refresh lives on this header rather than beside the tab
+              because it acts on exactly what sits under it. Note that a
+              project with no FB cards at all shows no header and therefore
+              no button — the feeds have never carried it, so there is
+              nothing to compare a live pull against. */}
+          <div className="rpt-cr-titlerow">
+            <h3 className="rpt-cr-title">🎨 מודעות פייסבוק</h3>
+            <button
+              type="button"
+              className="rpt-cr-refresh"
+              onClick={refreshNewAds}
+              disabled={refreshing}
+              title="בודק מול פייסבוק אילו מודעות עלו בימים האחרונים ועדיין לא הופיעו כאן. הנתונים בדוח מתעדכנים פעם ביום, אז מודעה שעלתה היום עוד לא בפנים."
+            >
+              {refreshing ? "בודק…" : "🔄 מודעות שעלו עכשיו"}
+            </button>
+            {refreshNote && (
+              <span className="rpt-cr-refresh-note">{refreshNote}</span>
+            )}
+          </div>
           <div className="rpt-cr-grid">
-            {fb.topAds.map((a) => {
+            {fbCards.map((a) => {
               const status = fbStatusInfo(a.status);
               const isActive = String(a.status).toUpperCase().trim() === "ACTIVE";
               const landing = a.destUrl || a.url || "";
@@ -391,9 +478,18 @@ export default function ReportCreativesTab({
                     "rpt-cr-card" +
                     (a.isWinner ? " is-winner" : "") +
                     (a.fatigued ? " is-fatigued" : "") +
+                    (a.liveCreatedIso ? " is-live" : "") +
                     (isActive ? "" : " is-paused")
                   }
                 >
+                  {a.liveCreatedIso && (
+                    <div
+                      className="rpt-cr-badge rpt-cr-badge-new"
+                      title={`נמשכה עכשיו ישירות מפייסבוק — עלתה ב-${fmtDateHe(a.liveCreatedIso)}. עוד אין לה נתונים בדוח: הפידים מתעדכנים פעם ביום.`}
+                    >
+                      ✨ עלתה {fmtDateHe(a.liveCreatedIso)}
+                    </div>
+                  )}
                   {a.isWinner && (
                     <div className="rpt-cr-badge rpt-cr-badge-win">🏆 הכי משתלם</div>
                   )}
@@ -422,7 +518,10 @@ export default function ReportCreativesTab({
                           a.statusFromWarehouse
                             ? `${a.status} — נקרא ממאגר הנתונים (Supabase), לא מגיליון הקריאייטיבים. ` +
                               `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
-                            : a.status
+                            : a.statusFromMeta
+                              ? `${a.status} — נמשך ישירות מפייסבוק בסנכרון הלילי. ` +
+                                `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
+                              : a.status
                         }
                       >
                         {status.label}
@@ -472,12 +571,24 @@ export default function ReportCreativesTab({
                         Every figure would be a zero meaning "not measured in
                         this window", which reads as "spent nothing" — so say
                         the true thing instead of drawing an empty grid. */}
+                    {a.unmappedCampaign && (
+                      <div
+                        className="rpt-cr-unmapped"
+                        title="שם הקמפיין הזה לא תואם לאף תבנית ב-campaign ID בגיליון Keys. המודעה רצה בחשבון של הפרויקט, אבל כל שאר הדוח לא יספור אותה עד שהקמפיין ימופה."
+                      >
+                        ⚠️ קמפיין לא ממופה ל-Keys
+                      </div>
+                    )}
                     {a.noWindowData ? (
                       <div
                         className="rpt-cr-nodata"
-                        title="הקריאייטיב נשמר בארכיון של 365 יום, אבל הקמפיין רץ לפני תחילת חלון הנתונים של הדוח — אין לו עלות או חשיפות למדוד"
+                        title={
+                          a.liveCreatedIso
+                            ? "המודעה עלתה זה עתה. הנתונים בדוח מגיעים מפידים שמתעדכנים פעם ביום, אז עלות, חשיפות ולידים יופיעו כאן בעדכון הבא."
+                            : "הקריאייטיב נשמר בארכיון של 365 יום, אבל הקמפיין רץ לפני תחילת חלון הנתונים של הדוח — אין לו עלות או חשיפות למדוד"
+                        }
                       >
-                        אין נתונים בטווח
+                        {a.liveCreatedIso ? "טרם נצברו נתונים" : "אין נתונים בטווח"}
                       </div>
                     ) : (
                       <>
