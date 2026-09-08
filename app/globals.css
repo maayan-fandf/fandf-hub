@@ -27176,32 +27176,30 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   color: #f59e0b;
   font-weight: 700;
 }
-.rpt-cr-adset-aimrow {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-}
-.rpt-cr-adset-aimrow .rpt-cr-adset-aim {
-  min-width: 0;
-  flex: 1;
-}
-/* Opens the real map. On the CARD rather than in the hover panel, which is
-   pointer-events:none and therefore cannot hold a control. */
+/* Opens the real map, from INSIDE the hover panel.
+   `pointer-events: auto` is the whole trick: the panel is deliberately
+   pointer-events:none so the mouse can pass over it without the card losing
+   :hover, and re-enabling events on this one element makes it clickable
+   without giving that up. The button is a descendant of the card, so hovering
+   it keeps the card hovered and the panel open. */
 .rpt-cr-adset-mapbtn {
-  flex: none;
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  pointer-events: auto;
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--surface-alt);
-  padding: 0 0.28rem;
+  color: var(--ink-soft);
+  padding: 0.22rem 0.4rem;
+  font: inherit;
   font-size: 0.72rem;
-  line-height: 1.5;
+  font-weight: 600;
   cursor: pointer;
-  opacity: 0.75;
-  transition: opacity 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s;
 }
 .rpt-cr-adset-mapbtn:hover {
-  opacity: 1;
+  background: var(--surface);
   border-color: var(--ink-soft);
 }
 

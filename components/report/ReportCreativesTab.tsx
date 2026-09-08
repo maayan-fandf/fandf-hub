@@ -402,9 +402,11 @@ function mapZonesOf(s: ReportFbAdSet): MapZone[] {
 function AdSetHoverCard({
   s,
   window,
+  onOpenMap,
 }: {
   s: ReportFbAdSet;
   window: { startIso: string; endIso: string };
+  onOpenMap: () => void;
 }) {
   const zones = s.targetZones ?? [];
   const pts = s.targetZonePoints ?? [];
@@ -449,6 +451,21 @@ function AdSetHoverCard({
           <div className="rpt-cr-zonemap-note">
             העיגול הוא רדיוס הטירגוט בפועל · הכבישים סכמטיים
           </div>
+          {/* IN the panel, not on the card. On the card it was correct in
+              principle — the panel is pointer-events:none, so a control there
+              would normally be dead — but the panel is also centred over the
+              card and simply HID the button. The fix is to put it where the
+              reader is already looking and re-enable pointer events on this
+              one element; the button is a descendant of the card, so hovering
+              it keeps the card :hover true and the panel open. */}
+          <button
+            type="button"
+            className="rpt-cr-adset-mapbtn"
+            onClick={onOpenMap}
+            title="מפה אמיתית עם זום, גרירה ורחובות"
+          >
+            📍 פתיחה במפה
+          </button>
         </>
       )}
 
@@ -903,32 +920,16 @@ export default function ReportCreativesTab({
                     trendline is absolutely positioned at bottom:2.2rem, and
                     anything added below the stats disappears behind it. */}
                 {adSetAudience(s) && (
-                  <div className="rpt-cr-adset-aimrow">
-                    <span
-                      className="rpt-cr-adset-aim"
-                      title={adSetAudienceTitle(s)}
-                    >
-                      🎯 <bdi>{adSetAudience(s)}</bdi>
-                      {s.targetAmbiguous && (
-                        <span className="rpt-cr-adset-aim-warn" aria-hidden>
-                          {" "}
-                          ~
-                        </span>
-                      )}
-                    </span>
-                    {/* Sits on the CARD, not in the hover panel: that panel is
-                        pointer-events:none so the mouse can cross it without
-                        flicker, which also makes anything inside it
-                        unclickable. */}
-                    {mapZonesOf(s).length > 0 && (
-                      <button
-                        type="button"
-                        className="rpt-cr-adset-mapbtn"
-                        title="פתיחת אזור הטירגוט במפה — עם זום וגרירה"
-                        onClick={() => setMapFor(s.name)}
-                      >
-                        📍
-                      </button>
+                  <div
+                    className="rpt-cr-adset-aim"
+                    title={adSetAudienceTitle(s)}
+                  >
+                    🎯 <bdi>{adSetAudience(s)}</bdi>
+                    {s.targetAmbiguous && (
+                      <span className="rpt-cr-adset-aim-warn" aria-hidden>
+                        {" "}
+                        ~
+                      </span>
                     )}
                   </div>
                 )}
@@ -961,7 +962,11 @@ export default function ReportCreativesTab({
                     </span>
                   </div>
                 )}
-                <AdSetHoverCard s={s} window={data.window} />
+                <AdSetHoverCard
+                  s={s}
+                  window={data.window}
+                  onOpenMap={() => setMapFor(s.name)}
+                />
               </div>
             ))}
           </div>
