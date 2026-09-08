@@ -27293,6 +27293,12 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   stroke-width: 3px;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
+  /* NOT inherited. The app sets letter-spacing in PIXELS, which SVG does not
+     scale with the viewBox — against a font that is ~3 user units tall, half
+     a pixel of tracking is enormous, and Hebrew labels rendered as
+     "נ ת נ י ה". Same trap would hit any px-valued text property in here. */
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 .rpt-cr-adset-stats {
   display: flex;

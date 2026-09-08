@@ -116,14 +116,42 @@ export default function AdSetZoneMap({ zones }: { zones: Zone[] }) {
    * four towns inside a few kilometres and drew them as a smudge.
    */
   const rings = pins.map(({ p }) => ({ ...project(p[0], p[1]), r: radiusUnits(p[2]) }));
+
+  /**
+   * Overlap is tested BOX against BOX, not centre against centre.
+   *
+   * The first version compared distances between the anchor points and let
+   * anything more than a couple of font-heights apart through. But a label is
+   * far wider than it is tall — "בית שמש" measures 15 units against a 3-unit
+   * font — so two names 8 units apart still printed straight through each
+   * other, and "פתח תקוה" and "תל אביב" came out as one unreadable row of
+   * interleaved letters.
+   *
+   * The width is estimated rather than measured: this renders on the server,
+   * where there is no text metric to ask for. 0.55em per character is a
+   * deliberate over-estimate for Rubik's Hebrew — erring wide drops a label,
+   * erring narrow prints a smudge, and the first is the better failure.
+   */
+  const labelBox = (a: { x: number; y: number; he: string }) => {
+    const w = a.he.length * font * 0.55;
+    const yTop = a.y - anchorR * 2.4 - font;
+    return { x0: a.x - w / 2, x1: a.x + w / 2, y0: yTop, y1: yTop + font * 1.35 };
+  };
+  const hits = (
+    p: ReturnType<typeof labelBox>,
+    q: ReturnType<typeof labelBox>,
+  ) => p.x0 < q.x1 && q.x0 < p.x1 && p.y0 < q.y1 && q.y0 < p.y1;
+
   const placed: { x: number; y: number; he: string }[] = [];
-  const MIN_GAP = font * 2.6;
+  const boxes: ReturnType<typeof labelBox>[] = [];
   for (const a of [...anchors].sort(
     (m, n) => Math.hypot(m.x - cx, m.y - cy) - Math.hypot(n.x - cx, n.y - cy),
   )) {
     if (rings.some((g) => Math.hypot(a.x - g.x, a.y - g.y) < g.r)) continue;
-    if (placed.some((p) => Math.hypot(a.x - p.x, a.y - p.y) < MIN_GAP)) continue;
+    const box = labelBox(a);
+    if (boxes.some((b) => hits(box, b))) continue;
     placed.push(a);
+    boxes.push(box);
     if (placed.length >= 4) break;
   }
 
