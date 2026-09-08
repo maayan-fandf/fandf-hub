@@ -166,7 +166,14 @@ export default async function HomePage() {
   // Budget + time progress per project (native — was `morning`-sourced).
   const progressByProject = new Map<
     string,
-    { pctBudget: number; pctTime: number; budget: number; spend: number }
+    {
+      pctBudget: number;
+      pctTime: number;
+      budget: number;
+      spend: number;
+      startIso: string;
+      endIso: string;
+    }
   >();
   // Per-project CRM funnel (leads → scheduled → held) + blended cost-per.
   const funnelByProject = new Map<string, ProjectFunnelTotals>();
@@ -193,6 +200,8 @@ export default async function HomePage() {
           pctTime: pctTimeFor(f.startIso, f.endIso),
           budget: f.budget,
           spend: f.spend,
+          startIso: f.startIso || "",
+          endIso: f.endIso || "",
         });
       }
       if (f.leads > 0 || f.scheduled > 0 || f.held > 0) {
@@ -573,53 +582,70 @@ function ProjectPillBadges({
 function ProjectPillProgress({
   progress,
 }: {
-  progress: { pctBudget: number; pctTime: number; budget: number; spend: number };
+  progress: {
+    pctBudget: number;
+    pctTime: number;
+    budget: number;
+    spend: number;
+    startIso: string;
+    endIso: string;
+  };
 }) {
   const budgetPct = Math.round((progress.pctBudget || 0) * 100);
   const timePct = Math.round((progress.pctTime || 0) * 100);
   const budgetOver = budgetPct > 100;
   const ils = (v: number) => `₪${Math.round(v).toLocaleString("he-IL")}`;
+  const dmy = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+    return m ? `${+m[3]}.${+m[2]}.${m[1].slice(2)}` : "";
+  };
+  const dates =
+    progress.startIso && progress.endIso
+      ? `${dmy(progress.startIso)} – ${dmy(progress.endIso)}`
+      : "";
   const budgetTooltip =
     progress.budget > 0
       ? `${progress.spend.toLocaleString("he-IL")} ₪ מתוך ${progress.budget.toLocaleString(
           "he-IL",
         )} ₪`
       : "אין תקציב מוגדר";
+  // Laid out like the budget desk (.bp-* in BudgetGrid): a head line —
+  // label, percentage, and the figures pushed to the far end — over a
+  // full-width track. The three used to share one row WITH the bar, which
+  // left the bar about ninety pixels on a 230px card and gave the זמן row
+  // nothing to say at all; here each bar spans the card and each carries
+  // its own detail — the money for one, the flight dates for the other.
   return (
     <div className="project-pill-bars">
       <div className={`pill-bar pill-bar-budget${budgetOver ? " pill-bar-over" : ""}`}>
-        {/* The two numbers behind the bar, ABOVE it. They were only in the
-            track's `title` — a tooltip on a 6px-high strip, on a card people
-            scan rather than hover. A percentage without them says how far
-            along the money is and not how much money it is, and "26%" reads
-            very differently at ₪12,000 than at ₪120,000.
-            Its own row rather than a fourth column: the label, the track and
-            the percentage already share ~230px, and "₪12,345 מתוך ₪47,000"
-            beside them would leave the bar about forty pixels wide. */}
-        {progress.budget > 0 && (
-          <span className="pill-bar-money">
-            {ils(progress.spend)} <span className="pill-bar-of">מתוך</span>{" "}
-            {ils(progress.budget)}
-          </span>
-        )}
-        <span className="pill-bar-label">תקציב</span>
+        <span className="pill-bar-head">
+          <span className="pill-bar-label">תקציב</span>
+          <span className="pill-bar-pct">{budgetPct}%</span>
+          {progress.budget > 0 && (
+            <span className="pill-bar-detail">
+              {ils(progress.spend)} / {ils(progress.budget)}
+            </span>
+          )}
+        </span>
         <span className="pill-bar-track" title={budgetTooltip}>
           <span
             className="pill-bar-fill"
             style={{ width: `${Math.min(budgetPct, 100)}%` }}
           />
         </span>
-        <span className="pill-bar-pct">{budgetPct}%</span>
       </div>
       <div className="pill-bar pill-bar-time">
-        <span className="pill-bar-label">זמן</span>
-        <span className="pill-bar-track">
+        <span className="pill-bar-head">
+          <span className="pill-bar-label">זמן</span>
+          <span className="pill-bar-pct">{timePct}%</span>
+          {dates && <span className="pill-bar-detail">{dates}</span>}
+        </span>
+        <span className="pill-bar-track" title={dates}>
           <span
             className="pill-bar-fill"
             style={{ width: `${Math.min(timePct, 100)}%` }}
           />
         </span>
-        <span className="pill-bar-pct">{timePct}%</span>
       </div>
     </div>
   );

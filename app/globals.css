@@ -1796,18 +1796,45 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
    tracks align to the same width regardless of label length ("תקציב" vs
    "זמן") or percentage width ("1%" vs "361%"). Each .pill-bar uses
    display:contents so its 3 children flow directly into the parent grid. */
+/* Head line over a full-width track, the same shape the budget desk uses
+   (.bp-head / .bp-track in BudgetGrid). Was a three-column grid with the
+   label, the bar and the percentage sharing one row — on a ~230px card that
+   left the bar about ninety pixels, and there was nowhere to put a figure
+   without squeezing it further. */
 .project-pill-bars {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  column-gap: 0.5rem;
-  row-gap: 0.3rem;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
 .pill-bar {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
   font-weight: 500;
+  min-width: 0;
 }
+
+.pill-bar-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45em;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* Pushed to the far end of the head line, and allowed to ellipsize rather
+   than shove the percentage off the card on a narrow one. */
+.pill-bar-detail {
+  margin-inline-start: auto;
+  font-size: 0.68rem;
+  color: var(--text-muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pill-bar-budget.pill-bar-over .pill-bar-detail { color: var(--overdue, #dc2626); }
 
 .pill-bar-label {
   font-size: 0.72rem;
@@ -1816,6 +1843,10 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
 }
 
 .pill-bar-track {
+  /* Explicit, because the track is no longer a `1fr` grid column — it is a
+     block in a flex column and would otherwise size to its (empty) content. */
+  display: block;
+  width: 100%;
   height: 6px;
   background: var(--border);
   border-radius: 999px;
@@ -1865,26 +1896,6 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
   letter-spacing: 0.01em;
 }
 
-/* Spend / budget, on its own row ABOVE the bar it describes. Spans the
-   whole three-column track (`.pill-bar` is display:contents, so this is a
-   grid item of .project-pill-bars, not of the row).
-   Above and not below, because below it sat between the two bars and read
-   as a caption for whichever one the eye landed on — the זמן bar has no
-   money line of its own to claim it back. */
-.pill-bar-money {
-  grid-column: 1 / -1;
-  font-size: 0.68rem;
-  color: var(--text-muted, #6b7280);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-  margin-bottom: -0.12rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pill-bar-of { opacity: 0.7; }
-/* Over budget, the number is the point — match the percentage's alarm. */
-.pill-bar-budget.pill-bar-over .pill-bar-money { color: var(--overdue, #dc2626); }
 
 /* Mini CRM funnel under the progress bars — leads / scheduled / held with
    blended cost-per-metric. Three equal columns; each cell stacks the count,
