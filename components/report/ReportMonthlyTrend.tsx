@@ -473,6 +473,8 @@ export default function ReportMonthlyTrend({
         prim.monthly.indexOf(m) === prim.currentIdx && prim.isCurrentPartial;
       return {
         month: monthLabelHe(m.month),
+        // Carried so the dot can be drawn hollow — see the renderer below.
+        isCurrent: isCur,
         costPerLead: ratioOrNull(isCur, projCpl, m.spend, m.leads),
         costPerScheduled: ratioOrNull(isCur, projCps, m.spend, m.scheduled),
         costPerMeeting: ratioOrNull(isCur, projCpm, m.spend, m.meetings),
@@ -589,7 +591,38 @@ export default function ReportMonthlyTrend({
                       name={l.label}
                       stroke={l.color}
                       strokeWidth={2.5}
-                      dot={{ r: 3 }}
+                      // FILLED = the month is closed. HOLLOW = it is still
+                      // running, so the figure is a projection and will
+                      // move. Recharts' default dot is hollow for every
+                      // point, which said the opposite of what the tables
+                      // beside this chart say — and the sparklines in the
+                      // מטריקות box next to it already use exactly this
+                      // convention for their projected point. One rule for
+                      // "not closed yet" across the whole section.
+                      dot={(props: unknown) => {
+                        const d = props as {
+                          cx?: number;
+                          cy?: number;
+                          index?: number;
+                          payload?: { isCurrent?: boolean };
+                        };
+                        const key = `${l.key}-${d.index ?? 0}`;
+                        // A gapped month (null ratio) gets no dot at all.
+                        if (d.cx == null || d.cy == null)
+                          return <g key={key} />;
+                        const open = !!d.payload?.isCurrent;
+                        return (
+                          <circle
+                            key={key}
+                            cx={d.cx}
+                            cy={d.cy}
+                            r={3.2}
+                            fill={open ? pal.hollow : l.color}
+                            stroke={l.color}
+                            strokeWidth={open ? 2 : 1}
+                          />
+                        );
+                      }}
                       isAnimationActive={false}
                       connectNulls
                     />
