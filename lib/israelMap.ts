@@ -129,6 +129,51 @@ export function lookupCity(name: string): CityPoint | null {
   return CITY_COORDS.get(normCity(name)) ?? null;
 }
 
+/**
+ * Landmark cities, in Hebrew, for orienting a ZOOMED map.
+ *
+ * The gazetteer above is keyed by GA4's English strings, which is right for
+ * matching GA4 rows and wrong for labelling a Hebrew UI. This is the other
+ * half: a short list of places a reader recognises instantly, so a cropped
+ * map can say "this circle sits between הרצליה and כפר סבא" instead of
+ * showing an anonymous stretch of coastline.
+ *
+ * Deliberately SHORT. Every entry is a label competing for room on a map an
+ * inch across; the point is one or two recognisable neighbours, not a
+ * gazetteer. Chosen for spread and name-recognition rather than population,
+ * so that anywhere in the country has something known within ~25km.
+ */
+export const ANCHORS: { he: string; lat: number; lon: number }[] = [
+  { he: "תל אביב", lat: 32.0853, lon: 34.7818 },
+  { he: "ירושלים", lat: 31.7683, lon: 35.2137 },
+  { he: "חיפה", lat: 32.794, lon: 34.9896 },
+  { he: "ראשון לציון", lat: 31.973, lon: 34.7925 },
+  { he: "פתח תקווה", lat: 32.0878, lon: 34.8878 },
+  { he: "נתניה", lat: 32.3215, lon: 34.8532 },
+  { he: "אשדוד", lat: 31.804, lon: 34.6553 },
+  { he: "באר שבע", lat: 31.253, lon: 34.7915 },
+  { he: "הרצליה", lat: 32.1663, lon: 34.8436 },
+  { he: "כפר סבא", lat: 32.175, lon: 34.907 },
+  { he: "רעננה", lat: 32.1848, lon: 34.8713 },
+  { he: "רחובות", lat: 31.8947, lon: 34.8093 },
+  { he: "אשקלון", lat: 31.6688, lon: 34.5742 },
+  { he: "מודיעין", lat: 31.8969, lon: 35.0104 },
+  { he: "רמלה", lat: 31.9288, lon: 34.8667 },
+  { he: "חדרה", lat: 32.434, lon: 34.9196 },
+  { he: "קרית גת", lat: 31.61, lon: 34.7642 },
+  { he: "בית שמש", lat: 31.7457, lon: 34.9887 },
+  { he: "עכו", lat: 32.9281, lon: 35.0818 },
+  { he: "נהריה", lat: 33.0058, lon: 35.0947 },
+  { he: "טבריה", lat: 32.7959, lon: 35.53 },
+  { he: "נצרת", lat: 32.7021, lon: 35.2978 },
+  { he: "עפולה", lat: 32.6078, lon: 35.2897 },
+  { he: "צפת", lat: 32.9646, lon: 35.496 },
+  { he: "אריאל", lat: 32.1056, lon: 35.1878 },
+  { he: "מעלה אדומים", lat: 31.7772, lon: 35.2983 },
+  { he: "דימונה", lat: 31.07, lon: 35.0325 },
+  { he: "אילת", lat: 29.5577, lon: 34.9519 },
+];
+
 /* ── Projection ───────────────────────────────────────────────────── */
 
 // Bounds chosen to frame the whole country with a little margin.

@@ -206,6 +206,8 @@ function windowBuckets(
 type AdSetTargetingRec = {
   ageMin: number;
   ageMax: number;
+  /** "all" | "male" | "female". */
+  genders: string;
   zones: string[];
   /** Parallel to `zones`: [lat, lon, radiusKm] for the ones that are a pin,
    *  null for a whole region or country. Feeds the hover minimap. */
@@ -935,6 +937,7 @@ function indexAdSetTargeting(
   const iName = h.indexOf("adset_name");
   const iMin = h.indexOf("age_min");
   const iMax = h.indexOf("age_max");
+  const iGen = h.indexOf("genders");
   const iZones = h.indexOf("zones");
   const iPts = h.indexOf("zone_points");
   const iLoc = h.indexOf("location_types");
@@ -988,6 +991,7 @@ function indexAdSetTargeting(
     const rec: AdSetTargetingRec = {
       ageMin: Number(row[iMin] ?? 0) || 0,
       ageMax: Number(row[iMax] ?? 0) || 0,
+      genders: iGen >= 0 ? clean(row[iGen]) : "",
       zones,
       points,
       locTypes: String(row[iLoc] ?? "")
@@ -1300,6 +1304,7 @@ function aggregateCreatives(
         ...s,
         targetAgeMin: t.ageMin || undefined,
         targetAgeMax: t.ageMax || undefined,
+        targetGenders: t.genders && t.genders !== "all" ? t.genders : undefined,
         targetZones: t.zones.length ? t.zones : undefined,
         targetZonePoints: t.points.some(Boolean) ? t.points : undefined,
         targetLocTypes: t.locTypes.length ? t.locTypes : undefined,

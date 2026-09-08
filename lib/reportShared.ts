@@ -1213,6 +1213,9 @@ export type ReportFbAdSet = {
    *  and Meta spell differently. */
   targetAgeMin?: number;
   targetAgeMax?: number;
+  /** "male" / "female". Absent when the ad set targets everyone, which is
+   *  the overwhelming default — a value here is the notable case. */
+  targetGenders?: string;
   /** Human-readable zones, e.g. ["קטמונים ירושלים (1mi)"]. Meta's own geo
    *  primitives here are `places` and `custom_locations`, never cities or
    *  regions — see zonesOf in lib/metaGraph. */

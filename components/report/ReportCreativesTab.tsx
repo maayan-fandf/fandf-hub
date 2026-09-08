@@ -193,10 +193,16 @@ function AdTrend({
   title,
   daily,
   window,
+  /** Which shell to wear. The default is the absolutely-positioned hover
+   *  popover the ad cards use; the ad-set panel passes its own class to drop
+   *  the sparklines INTO a bigger card instead of floating a second one over
+   *  the first. Same markup either way, so the two cannot drift. */
+  className = "rpt-cr-trend",
 }: {
   title: string;
   daily: ReportAdDaily[];
   window: { startIso: string; endIso: string };
+  className?: string;
 }) {
   if (!daily.length) return null;
   const dataLast = daily[daily.length - 1].date;
@@ -230,7 +236,7 @@ function AdTrend({
   const totalCost = days.reduce((s, p) => s + p.cost, 0);
   const totalLeads = days.reduce((s, p) => s + p.leads, 0);
   return (
-    <div className="rpt-cr-trend" aria-hidden>
+    <div className={className} aria-hidden>
       <div className="rpt-cr-trend-head">
         {title} · {fmtDateHe(from).slice(0, 5)} ← {fmtDateHe(to).slice(0, 5)}
       </div>
@@ -361,6 +367,115 @@ function adSetAudienceTitle(s: ReportFbAdSet): string {
   }
   lines.push("נמשך מפייסבוק בסנכרון הלילי.");
   return lines.join("\n");
+}
+/* Kept as the aim line's own tooltip: the rich panel needs a hover, and a
+   touch device never sends one. On a phone the line is all there is. */
+
+/**
+ * The whole ad set, on hover: who it targeted, where, what it cost and what
+ * the CRM did with the leads.
+ *
+ * ONE PANEL, not several. The card already had a hover trendline, and the
+ * targeting map arrived as a second popover on the line above it — two
+ * floating panels racing to cover the same card, each holding a third of the
+ * story. A reader asking "why is this audience expensive" wants the age, the
+ * radius, the spend curve and the meeting count in one glance, so they are in
+ * one place, in that order: who → where → how it went.
+ *
+ * Pure CSS hover, no state: the panel is in the DOM and the card's :hover
+ * reveals it. Nothing to fetch, nothing to time, and it works on keyboard
+ * focus for free.
+ */
+function AdSetHoverCard({
+  s,
+  window,
+}: {
+  s: ReportFbAdSet;
+  window: { startIso: string; endIso: string };
+}) {
+  const zones = s.targetZones ?? [];
+  const pts = s.targetZonePoints ?? [];
+  const hasMap = pts.some(Boolean);
+  const crm = s.crmLeads > 0 || s.scheduled > 0 || s.held > 0;
+  const loc = (s.targetLocTypes ?? [])
+    .map((t) => (t === "home" ? "תושבי האזור" : t === "recent" ? "מי שהיה שם לאחרונה" : t))
+    .join(" + ");
+
+  return (
+    <div className="rpt-cr-adset-pop">
+      <div className="rpt-cr-adset-pop-head">{s.name}</div>
+
+      {(adSetAudience(s) || loc) && (
+        <div className="rpt-cr-adset-pop-sec">
+          <div className="rpt-cr-adset-pop-lbl">קהל</div>
+          <div className="rpt-cr-adset-pop-val">
+            <bdi>{ageRangeOf(s) || "—"}</bdi>
+            {s.targetGenders && (
+              <> · {s.targetGenders === "male" ? "גברים" : "נשים"}</>
+            )}
+            {loc && <> · {loc}</>}
+          </div>
+        </div>
+      )}
+
+      {zones.length > 0 && (
+        <div className="rpt-cr-adset-pop-sec">
+          <div className="rpt-cr-adset-pop-lbl">מיקום</div>
+          <div className="rpt-cr-adset-pop-val">{zones.join(" · ")}</div>
+        </div>
+      )}
+
+      {hasMap && (
+        <AdSetZoneMap
+          zones={zones.map((label, i) => ({ label, point: pts[i] ?? null }))}
+        />
+      )}
+
+      {/* The same sparklines the card used to float on its own, now sitting
+          inside instead of over. */}
+      <AdTrend
+        title="השקעה ולידים"
+        daily={s.daily}
+        window={window}
+        className="rpt-cr-adset-pop-trend"
+      />
+
+      <div className="rpt-cr-adset-pop-grid">
+        <span>
+          עלות <b>{fmtILS(s.cost)}</b>
+        </span>
+        <span>
+          לידים <b>{fmtInt(s.leads)}</b>
+        </span>
+        <span>
+          CPL <b>{s.cpl > 0 ? fmtILS(s.cpl) : "—"}</b>
+        </span>
+      </div>
+
+      {crm && (
+        <div className="rpt-cr-adset-pop-grid is-crm">
+          <span style={{ color: "#6366f1" }}>
+            לידים ב-CRM <b>{fmtInt(s.crmLeads)}</b>
+          </span>
+          <span style={{ color: "#ec4899" }}>
+            תואמו <b>{fmtInt(s.scheduled)}</b>
+            {s.costPerSched > 0 && ` (${fmtILS(s.costPerSched)})`}
+          </span>
+          <span style={{ color: "#f5576c" }}>
+            בוצעו <b>{fmtInt(s.held)}</b>
+            {s.costPerHeld > 0 && ` (${fmtILS(s.costPerHeld)})`}
+          </span>
+        </div>
+      )}
+
+      {s.targetAmbiguous && (
+        <div className="rpt-cr-adset-pop-note">
+          ⚠️ הכרטיס מאחד כמה קהלים בעלי אותו שם עם טירגוט שונה. המוצג הוא של
+          הקהל הפעיל.
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ReportCreativesTab({
@@ -763,33 +878,16 @@ export default function ReportCreativesTab({
                     trendline is absolutely positioned at bottom:2.2rem, and
                     anything added below the stats disappears behind it. */}
                 {adSetAudience(s) && (
-                  <div className="rpt-cr-adset-aimwrap">
-                    <div
-                      className="rpt-cr-adset-aim"
-                      title={adSetAudienceTitle(s)}
-                    >
-                      🎯 <bdi>{adSetAudience(s)}</bdi>
-                      {s.targetAmbiguous && (
-                        <span className="rpt-cr-adset-aim-warn" aria-hidden>
-                          {" "}
-                          ~
-                        </span>
-                      )}
-                    </div>
-                    {/* The zones drawn. Opens ABOVE the card, where the hover
-                        trendline (which sits at bottom:2.2rem) is not. */}
-                    {s.targetZonePoints?.some(Boolean) && (
-                      <div className="rpt-cr-zonemap">
-                        <AdSetZoneMap
-                          zones={(s.targetZones ?? []).map((label, zi) => ({
-                            label,
-                            point: s.targetZonePoints?.[zi] ?? null,
-                          }))}
-                        />
-                        <div className="rpt-cr-zonemap-cap">
-                          {(s.targetZones ?? []).join(" · ")}
-                        </div>
-                      </div>
+                  <div
+                    className="rpt-cr-adset-aim"
+                    title={adSetAudienceTitle(s)}
+                  >
+                    🎯 <bdi>{adSetAudience(s)}</bdi>
+                    {s.targetAmbiguous && (
+                      <span className="rpt-cr-adset-aim-warn" aria-hidden>
+                        {" "}
+                        ~
+                      </span>
                     )}
                   </div>
                 )}
@@ -822,7 +920,7 @@ export default function ReportCreativesTab({
                     </span>
                   </div>
                 )}
-                <AdTrend title={s.name} daily={s.daily} window={data.window} />
+                <AdSetHoverCard s={s} window={data.window} />
               </div>
             ))}
           </div>
