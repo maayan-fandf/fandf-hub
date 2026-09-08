@@ -5,6 +5,7 @@ import ReportMediaSection, {
   PlatformKpiBand,
 } from "@/components/report/ReportMediaSection";
 import AdHistoryPopover from "@/components/report/AdHistoryPopover";
+import AdSetZoneMap from "@/components/report/AdSetZoneMap";
 import {
   fbStatusInfo,
   fmtInt,
@@ -14,6 +15,7 @@ import {
   type ProjectReportData,
   type ReportAdDaily,
   type ReportFbAd,
+  type ReportFbAdSet,
 } from "@/lib/reportShared";
 
 /**
@@ -311,6 +313,54 @@ function CrmRow({
       </div>
     </div>
   );
+}
+
+/**
+ * The one-line audience summary under an ad set's name: age range, then the
+ * geographic zones, joined with the same separator the rest of the tab uses.
+ *
+ * Kept to ONE line and truncated in CSS because the ad-set grid is
+ * minmax(260px) and its rows equalise height — a five-zone ad set would
+ * otherwise stretch every card beside it. The full list lives in the
+ * tooltip, which is where the detail belongs.
+ */
+/** 65 is Meta's open-ended top bucket, and the ads manager itself renders it
+ *  "65+". Shared by the line and its tooltip so the two cannot drift. */
+function ageRangeOf(s: ReportFbAdSet): string {
+  if (!s.targetAgeMin && !s.targetAgeMax) return "";
+  const hi = s.targetAgeMax && s.targetAgeMax >= 65 ? "65+" : String(s.targetAgeMax || "?");
+  return `${s.targetAgeMin || "?"}–${hi}`;
+}
+
+function adSetAudience(s: ReportFbAdSet): string {
+  const bits: string[] = [];
+  const age = ageRangeOf(s);
+  if (age) bits.push(age);
+  if (s.targetZones?.length) bits.push(s.targetZones.join(" · "));
+  return bits.join(" · ");
+}
+
+function adSetAudienceTitle(s: ReportFbAdSet): string {
+  const lines: string[] = [];
+  if (s.targetAgeMin || s.targetAgeMax) {
+    lines.push(`גילאים ${s.targetAgeMin || "?"}–${s.targetAgeMax || "?"}`);
+  }
+  if (s.targetZones?.length) lines.push(`אזורים: ${s.targetZones.join(", ")}`);
+  // home = lives there, recent = was there lately. Meta's default is both,
+  // and the difference is the whole question on a 1-mile pin.
+  if (s.targetLocTypes?.length) {
+    const he = s.targetLocTypes
+      .map((t) => (t === "home" ? "תושבי האזור" : t === "recent" ? "מי שהיה שם לאחרונה" : t))
+      .join(" + ");
+    lines.push(`נוכחות: ${he}`);
+  }
+  if (s.targetAmbiguous) {
+    lines.push(
+      "שימו לב: הכרטיס הזה מאחד כמה קהלים בעלי אותו שם עם טירגוט שונה — המוצג הוא של הקהל הפעיל, ולא בהכרח של כולם.",
+    );
+  }
+  lines.push("נמשך מפייסבוק בסנכרון הלילי.");
+  return lines.join("\n");
 }
 
 export default function ReportCreativesTab({
@@ -708,6 +758,41 @@ export default function ReportCreativesTab({
                   {i === 0 && s.cpl > 0 ? "🏆 " : ""}
                   {s.name}
                 </div>
+                {/* Who it was aimed at. Sits directly under the name rather
+                    than at the foot of the card on purpose: the hover
+                    trendline is absolutely positioned at bottom:2.2rem, and
+                    anything added below the stats disappears behind it. */}
+                {adSetAudience(s) && (
+                  <div className="rpt-cr-adset-aimwrap">
+                    <div
+                      className="rpt-cr-adset-aim"
+                      title={adSetAudienceTitle(s)}
+                    >
+                      🎯 <bdi>{adSetAudience(s)}</bdi>
+                      {s.targetAmbiguous && (
+                        <span className="rpt-cr-adset-aim-warn" aria-hidden>
+                          {" "}
+                          ~
+                        </span>
+                      )}
+                    </div>
+                    {/* The zones drawn. Opens ABOVE the card, where the hover
+                        trendline (which sits at bottom:2.2rem) is not. */}
+                    {s.targetZonePoints?.some(Boolean) && (
+                      <div className="rpt-cr-zonemap">
+                        <AdSetZoneMap
+                          zones={(s.targetZones ?? []).map((label, zi) => ({
+                            label,
+                            point: s.targetZonePoints?.[zi] ?? null,
+                          }))}
+                        />
+                        <div className="rpt-cr-zonemap-cap">
+                          {(s.targetZones ?? []).join(" · ")}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="rpt-cr-adset-stats">
                   <span>
                     עלות: <b>{fmtILS(s.cost)}</b>

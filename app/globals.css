@@ -27155,6 +27155,80 @@ html[data-theme="dark"] .prl-bdg.is-accent {
   font-weight: 700;
   font-size: 0.84rem;
 }
+/* Audience line: age + geographic zone, from the nightly Meta pull.
+   One line, ellipsised — the ad-set grid equalises row heights, so a
+   five-zone ad set wrapping to three lines would stretch every card beside
+   it. The full list is in the title tooltip. Muted 0.72rem matches
+   .rpt-cr-age, the tab's existing secondary-metadata recipe. */
+.rpt-cr-adset-aim {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+/* The `~` marking a card that merges ad sets with differing targeting. Amber
+   rather than red: the number is still useful, it just isn't the whole row. */
+.rpt-cr-adset-aim-warn {
+  color: #f59e0b;
+  font-weight: 700;
+}
+/* ── The zone minimap ──
+   Opens on hover of the audience line, ABOVE the card. Above, because the
+   ad-set card's other popover (the cost/leads trendline) is pinned at
+   bottom:2.2rem inside it — putting this one at bottom:100% keeps the two
+   from ever covering each other.
+   Hover-only in CSS, with no JS: the SVG is already in the DOM, so there is
+   nothing to fetch and nothing to time. */
+.rpt-cr-adset-aimwrap {
+  position: relative;
+}
+.rpt-cr-zonemap {
+  position: absolute;
+  bottom: 100%;
+  inset-inline-start: 0;
+  margin-bottom: 0.35rem;
+  z-index: 5;
+  display: none;
+  padding: 0.4rem 0.5rem 0.3rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  pointer-events: none;
+}
+.rpt-cr-adset-aimwrap:hover .rpt-cr-zonemap,
+.rpt-cr-adset-aim:focus-visible + .rpt-cr-zonemap {
+  display: block;
+}
+.rpt-cr-zonemap-svg {
+  height: 150px;
+  width: auto;
+  display: block;
+}
+.rpt-cr-zonemap-cap {
+  margin-top: 0.25rem;
+  max-width: 15ch;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: var(--muted);
+}
+/* The targeted radius. Filled so a wide one reads as area at a glance, and
+   stroked so a 1-mile pin is still visible when the fill is a few pixels. */
+.rpt-cr-zonemap-ring {
+  fill: #10b981;
+  fill-opacity: 0.22;
+  stroke: #10b981;
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+.rpt-cr-zonemap-dot {
+  fill: #059669;
+  stroke: var(--surface);
+  stroke-width: 0.4;
+  vector-effect: non-scaling-stroke;
+}
 .rpt-cr-adset-stats {
   display: flex;
   flex-wrap: wrap;

@@ -57,6 +57,9 @@ const TTL_SECONDS = 900; // 15 min (legacy CREATIVE_MAP caches 60)
  */
 const ASSETS_TAB = "facebook-ads-assets 365";
 
+/** Ours, written nightly from the Meta Graph — see lib/fbAdsetTargetingExport. */
+const ADSET_TARGETING_TAB = "fb-adset-targeting";
+
 const TOP_ADS = 8;
 const TOP_ADS_HISTORICAL = 3;
 /**
@@ -196,6 +199,22 @@ function windowBuckets(
 
 /* ------------------------------ raw reader ------------------------------ */
 
+/** Who one ad set was aimed at, off the Meta pull. `ambiguous` is set when
+ *  the project has several ad sets under this NAME whose targeting differs —
+ *  the report's own rows are keyed by name alone, so the card would
+ *  otherwise present one campaign's audience as if it were the merged row's. */
+type AdSetTargetingRec = {
+  ageMin: number;
+  ageMax: number;
+  zones: string[];
+  /** Parallel to `zones`: [lat, lon, radiusKm] for the ones that are a pin,
+   *  null for a whole region or country. Feeds the hover minimap. */
+  points: ([number, number, number] | null)[];
+  locTypes: string[];
+  status: string;
+  ambiguous?: boolean;
+};
+
 type FbAssetRec = {
   account: string;
   status: string;
@@ -264,6 +283,12 @@ type ProjectCreativeRaw = {
    *  nobody; applyMetaStatus fills the cards the other two sources leave
    *  blank. */
   fbMetaStatus: Record<string, string>;
+  /** ad-set name → who it was aimed at, from the Meta pull
+   *  (lib/fbAdsetTargetingExport). Keyed by NAME ALONE, and under two
+   *  spellings — the raw trimmed one and a bidi-stripped lowercase one —
+   *  because the ad-set aggregation keys on the sheet's bare `.trim()` while
+   *  Meta's own names carry LRM marks ("‎רשימת לקוחות‎ - LL‎"). */
+  fbAdSetTargeting: Record<string, AdSetTargetingRec>;
   /** Facebook-adsets rows (SSOT for the FB cost/leads KPIs). */
   fbAdSets: {
     date: string;
@@ -321,6 +346,7 @@ async function fetchProjectCreativeRaw(
     fbPreviews: {},
     fbMetaImages: {},
     fbMetaStatus: {},
+    fbAdSetTargeting: {},
     fbAdSets: [],
     gKeywords: [],
     gAds: [],
@@ -348,6 +374,21 @@ async function fetchProjectCreativeRaw(
     .get({
       spreadsheetId: ssId,
       range: `'${ASSETS_TAB}'!A1:Z`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    })
+    .then((r) => (r.data.values ?? []) as unknown[][])
+    .catch(() => []);
+
+  // Ad-set targeting (ours, from the Meta pull). Read BESIDE the batch and
+  // not inside it, deliberately: the batchGet is all-or-nothing, so naming a
+  // tab there that does not exist yet would blank the whole קריאייטיבים tab
+  // for every project until the first cron run created it. Same reasoning as
+  // the assets read above, and the same `.catch(() => [])` floor.
+  const targetingP: Promise<unknown[][]> = sheets.spreadsheets.values
+    .get({
+      spreadsheetId: ssId,
+      range: `'${ADSET_TARGETING_TAB}'!A1:L`,
       valueRenderOption: "UNFORMATTED_VALUE",
       dateTimeRenderOption: "FORMATTED_STRING",
     })
@@ -735,6 +776,7 @@ async function fetchProjectCreativeRaw(
   // then be overwritten itself.
   applyMetaImages(out);
   applyMetaStatus(out);
+  out.fbAdSetTargeting = indexAdSetTargeting(await targetingP, mine);
 
   return out;
 }
@@ -862,6 +904,105 @@ function applyMetaImages(out: ProjectCreativeRaw): void {
  * warehouse has no rows at all for three of them — which is why ESSENCE's
  * cards showed no פעילה/כבויה indicator while running perfectly well.
  */
+/**
+ * Index the ad-set targeting tab, keyed by ad-set NAME.
+ *
+ * WHY NAME ALONE, when the tab carries the campaign too. The report's own
+ * ad-set rows are grouped by `r.adSet` and nothing else (see aggregateCreatives),
+ * so two ad sets sharing a name across two campaigns are already ONE row
+ * carrying their combined cost. Widening the join key here would not fix that;
+ * it would just fail to match. Widening the GROUP key would fix it and change
+ * every project's ad-set list, which is a different decision than "show the
+ * targeting".
+ *
+ * So: name it is — and where that collapses ad sets whose targeting actually
+ * differs, the record is marked `ambiguous` rather than silently presenting
+ * one of them. The card then shows the range it can defend and says why.
+ *
+ * TWO SPELLINGS PER KEY. The aggregation keys on the sheet's bare `.trim()`,
+ * while Meta hands back names wrapped in LRM marks. Storing both the raw and
+ * the cleaned-lowercase form lets the lookup try the exact key first and fall
+ * back, instead of missing every bidi-wrapped name.
+ */
+function indexAdSetTargeting(
+  vals: unknown[][],
+  mine: (campaign: string) => boolean,
+): Record<string, AdSetTargetingRec> {
+  const out: Record<string, AdSetTargetingRec> = {};
+  if (!vals?.length || vals.length < 2) return out;
+  const h = (vals[0] as unknown[]).map(clean);
+  const iCamp = h.indexOf("campaign");
+  const iName = h.indexOf("adset_name");
+  const iMin = h.indexOf("age_min");
+  const iMax = h.indexOf("age_max");
+  const iZones = h.indexOf("zones");
+  const iPts = h.indexOf("zone_points");
+  const iLoc = h.indexOf("location_types");
+  const iStat = h.indexOf("effective_status");
+  if (iName < 0 || iCamp < 0) return out;
+
+  /** What makes two rows "the same targeting" — compared, not displayed. */
+  const sig = (r: AdSetTargetingRec) =>
+    `${r.ageMin}-${r.ageMax}|${r.zones.join("|")}`;
+
+  const put = (key: string, rec: AdSetTargetingRec) => {
+    if (!key) return;
+    const prev = out[key];
+    if (!prev) {
+      out[key] = rec;
+      return;
+    }
+    if (sig(prev) === sig(rec)) return; // same audience twice — nothing to flag
+    // Different audiences under one name. An ACTIVE ad set is the better
+    // answer than a paused one for "who is this reaching now", so it wins —
+    // but the row is flagged either way, because the card is a merge.
+    const prevActive = prev.status.toUpperCase() === "ACTIVE";
+    const recActive = rec.status.toUpperCase() === "ACTIVE";
+    if (recActive && !prevActive) out[key] = { ...rec, ambiguous: true };
+    else out[key] = { ...prev, ambiguous: true };
+  };
+
+  for (let r = 1; r < vals.length; r++) {
+    const row = vals[r] as unknown[];
+    const camp = clean(row[iCamp]);
+    const name = String(row[iName] ?? "").trim();
+    if (!name || !mine(camp)) continue;
+    // Split BEFORE trimming empties: zone_points is positional — an empty
+    // slot means "this zone is a region, not a pin" — so dropping blanks
+    // would slide every later point onto the wrong zone.
+    const rawZones = String(row[iZones] ?? "").split("·");
+    const rawPts = iPts >= 0 ? String(row[iPts] ?? "").split("·") : [];
+    const zones: string[] = [];
+    const points: ([number, number, number] | null)[] = [];
+    for (let i = 0; i < rawZones.length; i++) {
+      const z = rawZones[i].trim();
+      if (!z) continue;
+      zones.push(z);
+      const p = (rawPts[i] ?? "").trim().split(",").map(Number);
+      points.push(
+        p.length === 3 && p.every((n) => Number.isFinite(n)) && (p[0] !== 0 || p[1] !== 0)
+          ? [p[0], p[1], p[2]]
+          : null,
+      );
+    }
+    const rec: AdSetTargetingRec = {
+      ageMin: Number(row[iMin] ?? 0) || 0,
+      ageMax: Number(row[iMax] ?? 0) || 0,
+      zones,
+      points,
+      locTypes: String(row[iLoc] ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      status: iStat >= 0 ? clean(row[iStat]) : "",
+    };
+    put(name, rec);
+    const alt = normCardName(name).toLowerCase();
+    if (alt && alt !== name) put(alt, rec);
+  }
+  return out;
+}
+
 function applyMetaStatus(out: ProjectCreativeRaw): void {
   for (const [k, status] of Object.entries(out.fbMetaStatus)) {
     const rec = out.fbAssets[k];
@@ -1140,7 +1281,31 @@ function aggregateCreatives(
       (a, b) =>
         (a.cpl <= 0 ? Infinity : a.cpl) - (b.cpl <= 0 ? Infinity : b.cpl),
     )
-    .slice(0, TOP_ADSETS);
+    .slice(0, TOP_ADSETS)
+    // Targeting is attached AFTER the slice: only five rows are ever
+    // rendered, and the sort must run on the unenriched list anyway so the
+    // CPL ordering cannot be disturbed by a missing lookup.
+    .map((s) => {
+      // `?? {}` is load-bearing ACROSS A DEPLOY. unstable_cache entries
+      // written by a build that predates this field carry no such key, and
+      // indexing `undefined` throws in here — inside aggregateCreatives,
+      // which is outside the cache and has no catch of its own. That kills
+      // getProjectCreatives, and the whole קריאייטיבים tab renders its empty
+      // state for as long as the 15-minute entry lives. Observed exactly
+      // that way in dev while this was being built.
+      const tmap = raw.fbAdSetTargeting ?? {};
+      const t = tmap[s.name] ?? tmap[normCardName(s.name).toLowerCase()];
+      if (!t?.zones) return s;
+      return {
+        ...s,
+        targetAgeMin: t.ageMin || undefined,
+        targetAgeMax: t.ageMax || undefined,
+        targetZones: t.zones.length ? t.zones : undefined,
+        targetZonePoints: t.points.some(Boolean) ? t.points : undefined,
+        targetLocTypes: t.locTypes.length ? t.locTypes : undefined,
+        targetAmbiguous: t.ambiguous,
+      };
+    });
 
   // FB top ads: join (campaign|ad).lc over in-range metrics rows.
   type AdAcc = {

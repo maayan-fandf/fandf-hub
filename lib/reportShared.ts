@@ -1207,6 +1207,26 @@ export type ReportFbAdSet = {
   costPerSched: number;
   costPerHeld: number;
   daily: ReportAdDaily[];
+  /** Who the ad set was aimed at, from the nightly Meta pull
+   *  (lib/fbAdsetTargetingExport → the `fb-adset-targeting` tab). Absent when
+   *  the pull has not seen this ad set — an older one, or a name the sheet
+   *  and Meta spell differently. */
+  targetAgeMin?: number;
+  targetAgeMax?: number;
+  /** Human-readable zones, e.g. ["קטמונים ירושלים (1mi)"]. Meta's own geo
+   *  primitives here are `places` and `custom_locations`, never cities or
+   *  regions — see zonesOf in lib/metaGraph. */
+  targetZones?: string[];
+  /** Parallel to targetZones: [lat, lon, radiusKm] for each zone that is a
+   *  pin, null for a whole region. Drives the hover minimap — a coordinate
+   *  is unreadable, a circle over the country is not. */
+  targetZonePoints?: ([number, number, number] | null)[];
+  /** "home" / "recent" — residents of the zone vs people recently in it. */
+  targetLocTypes?: string[];
+  /** This card merges several ad sets that share a name but NOT a targeting
+   *  set, so the shown audience covers only part of the row. The card says so
+   *  rather than presenting one campaign's audience as the whole. */
+  targetAmbiguous?: boolean;
 };
 
 export type ReportGoogleAd = {

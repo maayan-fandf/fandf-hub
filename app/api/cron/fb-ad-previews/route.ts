@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { exportFbAdPreviews } from "@/lib/fbAdPreviewsExport";
+import {
+  exportFbAdsetTargeting,
+  type FbAdsetTargetingResult,
+} from "@/lib/fbAdsetTargetingExport";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +25,13 @@ export const maxDuration = 300;
  * added to middleware.ts's allowlist, or the request is redirected to the
  * login page and Cloud Scheduler records a cheerful 200 for the HTML of a
  * sign-in form.
+ *
+ * TWO PULLS, ONE JOB. Since 2026-09-08 this also refreshes the ad-set
+ * targeting tab (age + geographic zone, lib/fbAdsetTargetingExport) that the
+ * קהלים block joins onto. Both want the same nightly Meta window, and one
+ * Cloud Scheduler job is one thing to create, monitor and remember. Budget:
+ * previews ~70s incremental, targeting ~79s on a FULL walk of 5,055 ad sets
+ * and far less incrementally — comfortably inside maxDuration below.
  *
  * Cloud Scheduler: POST https://hub.fandf.co.il/api/cron/fb-ad-previews
  * with header X-Cron-Token=<APPS_SCRIPT_API_TOKEN> and body "{}", once daily.
@@ -56,7 +67,21 @@ export async function POST(req: Request) {
     // A per-account failure is reported, not thrown: twenty-two accounts
     // refreshing is a better outcome than none, and the count is what tells
     // anyone reading the scheduler log that something needs looking at.
-    return NextResponse.json({ ok: true, ...res });
+
+    // Second pull, same job. Ad-set targeting rides this route rather than a
+    // Cloud Scheduler job of its own — one nightly Meta window, one thing to
+    // keep alive. Its own try/catch because the two are independent: a
+    // targeting failure must not throw away a completed preview refresh, and
+    // the caller can see which half worked.
+    let targeting: FbAdsetTargetingResult | { error: string };
+    try {
+      targeting = await exportFbAdsetTargeting({ full });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[cron/fb-ad-previews] targeting pass failed:", msg);
+      targeting = { error: msg };
+    }
+    return NextResponse.json({ ok: true, ...res, targeting });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[cron/fb-ad-previews] failed:", msg);

@@ -192,6 +192,224 @@ export async function listAdsWithPreview(
 }
 
 /**
+ * Meta's own city gazetteer, id → name, in Hebrew.
+ *
+ * WHY THIS EXISTS. A `custom_locations` pin arrives as bare coordinates —
+ * "31.777523, 35.191956, 10 miles" — which is not information anyone can act
+ * on. But every one of them (75 of 75, measured) also carries
+ * `primary_city_id`, and this endpoint turns that into a name. With
+ * `locale=he_IL` it answers in Hebrew: 1013481 → ירושלים,
+ * 2673756 → מעלה אדומים.
+ *
+ * Batched deliberately: one call resolves every id in the portfolio, and the
+ * result is small enough to hold for the length of an export run.
+ */
+export async function lookupCityNames(
+  cityIds: string[],
+): Promise<Record<string, string>> {
+  const ids = [...new Set(cityIds.map((s) => String(s).trim()).filter(Boolean))];
+  if (!ids.length) return {};
+  const t = token();
+  if (!t) throw new MetaGraphError("META_ACCESS_TOKEN is not set", 0);
+  const out: Record<string, string> = {};
+  // Chunked: the id list rides in the query string, and a portfolio-wide
+  // call would otherwise build a URL long enough for Meta to reject.
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const url = new URL(`${BASE}/search`);
+    url.searchParams.set("type", "adgeolocationmeta");
+    url.searchParams.set("cities", JSON.stringify(chunk));
+    url.searchParams.set("locale", "he_IL");
+    url.searchParams.set("access_token", t);
+    try {
+      const res = await get<{
+        data?: { cities?: Record<string, { name?: string }> };
+      }>(url.toString());
+      for (const [id, v] of Object.entries(res.data?.cities ?? {})) {
+        const n = String(v?.name ?? "").trim();
+        if (n) out[id] = n;
+      }
+    } catch {
+      // A name is a nicety; the coordinate still renders. Never let the
+      // gazetteer fail an export that has already done its real work.
+    }
+  }
+  return out;
+}
+
+/** One geographic zone, in the shape the report needs to both LABEL it and
+ *  DRAW it: a name for the line, and a point + radius for the minimap. */
+export type MetaZone = {
+  label: string;
+  lat?: number;
+  lon?: number;
+  /** Radius in kilometres, normalised from Meta's miles-or-km. */
+  radiusKm?: number;
+  /** Meta's city id, when the zone came from a pin that carried one. */
+  cityId?: string;
+};
+
+/** One ad set's targeting, flattened to what a report row can show. */
+export type MetaAdSetTargeting = {
+  id: string;
+  name: string;
+  campaign: string;
+  effectiveStatus: string;
+  ageMin: number;
+  ageMax: number;
+  /** "all" | "male" | "female" — Meta sends [1]=male, [2]=female, absent=all. */
+  genders: string;
+  /** Geographic zones — a label for the line, and geometry for the map. */
+  zones: MetaZone[];
+  /** "home" / "recent" — residents vs people recently there. */
+  locationTypes: string[];
+};
+
+/** Meta's `genders` is an array of ints; absent means everyone. */
+function gendersOf(v: unknown): string {
+  const a = Array.isArray(v) ? v.map(Number) : [];
+  if (!a.length || (a.includes(1) && a.includes(2))) return "all";
+  if (a.includes(1)) return "male";
+  if (a.includes(2)) return "female";
+  return "all";
+}
+
+/**
+ * Geographic zones, read from the fields F&F actually uses.
+ *
+ * THE TRAP THIS AVOIDS. Every example of Meta geo targeting reaches for
+ * `geo_locations.cities` / `.regions` / `.countries`. Measured across all
+ * 5,055 ad sets in the portfolio on 2026-09-08: those three are used by
+ * ZERO of them. The targeting lives in `places` (a named pin with a radius —
+ * "קטמונים ירושלים", 1 mile) and in `custom_locations` (the same thing with
+ * no name, just a coordinate). Asking for cities/regions returns an empty
+ * object and reads as "no geographic targeting" on a portfolio where 99.9%
+ * of ad sets have some.
+ *
+ * The other four are still read, because nothing stops someone from
+ * targeting a whole country tomorrow.
+ */
+function zonesOf(g: Record<string, unknown> | undefined): MetaZone[] {
+  if (!g) return [];
+  const out: MetaZone[] = [];
+  /** Meta reports "mile" or "kilometer"; the map works in km. */
+  const toKm = (r: unknown, u: unknown) => {
+    const n = Number(r);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    return String(u ?? "") === "mile" ? n * 1.60934 : n;
+  };
+  const label = (r: unknown, u: unknown) =>
+    r ? ` (${r}${String(u ?? "") === "mile" ? "mi" : "km"})` : "";
+  type Pin = {
+    name?: string;
+    radius?: number;
+    distance_unit?: string;
+    latitude?: number;
+    longitude?: number;
+    key?: string;
+    primary_city_id?: number | string;
+  };
+  const pin = (p: Pin, name: string): MetaZone => ({
+    label: `${name}${label(p.radius, p.distance_unit)}`,
+    lat: Number.isFinite(Number(p.latitude)) ? Number(p.latitude) : undefined,
+    lon: Number.isFinite(Number(p.longitude)) ? Number(p.longitude) : undefined,
+    radiusKm: toKm(p.radius, p.distance_unit),
+    cityId: p.primary_city_id != null ? String(p.primary_city_id) : undefined,
+  });
+  for (const p of (g.places as Pin[]) ?? []) out.push(pin(p, p.name || p.key || "?"));
+  // No name of its own — the city id is resolved to one later, in the export,
+  // where a single batched call can cover the whole portfolio. Until then the
+  // coordinate stands in so the zone is never simply missing.
+  for (const c of (g.custom_locations as Pin[]) ?? []) {
+    const at =
+      c.latitude != null && c.longitude != null
+        ? `${Number(c.latitude).toFixed(3)},${Number(c.longitude).toFixed(3)}`
+        : "?";
+    out.push(pin(c, c.name || at));
+  }
+  for (const c of (g.cities as Pin[]) ?? []) out.push(pin(c, c.name || "?"));
+  for (const r of (g.regions as Pin[]) ?? []) out.push({ label: String(r.name || r.key || "?") });
+  // Meta returns an ISO code here. "IL" on a card is a riddle; "כל הארץ" is
+  // the answer, and it is also the operationally important fact — a
+  // country-wide ad set is a different animal from a 4-mile pin.
+  for (const c of (g.countries as string[]) ?? []) {
+    const code = String(c).toUpperCase();
+    out.push({ label: COUNTRY_HE[code] ?? code });
+  }
+  return out;
+}
+
+/** Only the ones F&F actually targets; anything else keeps its ISO code,
+ *  which is at least honest about being a code. */
+const COUNTRY_HE: Record<string, string> = {
+  IL: "כל הארץ",
+  US: "ארצות הברית",
+  GB: "בריטניה",
+  FR: "צרפת",
+  RU: "רוסיה",
+  CA: "קנדה",
+  AU: "אוסטרליה",
+};
+
+/**
+ * Every ad set in one account, with its age range and geographic zones.
+ *
+ * `targeting` is requested WHOLE rather than with a subfield selection. Meta
+ * returns only the keys an ad set actually sets, and the interesting ones
+ * differ per account (`places` here, `custom_locations` there) — a fixed
+ * subfield list quietly drops whatever it did not name. The object is small
+ * and the walk is cheap either way.
+ *
+ * Measured 2026-09-08 across the whole portfolio: 5,055 ad sets over 23
+ * accounts in 79 seconds at limit=200, 39 pages, zero failures — age present
+ * on 100%, a geographic zone on 99.9%.
+ */
+export async function listAdSetTargeting(
+  accountId: string,
+  updatedSince?: number,
+): Promise<MetaAdSetTargeting[]> {
+  const params: Record<string, string | number> = {
+    fields: "id,name,effective_status,campaign{name},targeting",
+    limit: 200,
+  };
+  if (updatedSince) {
+    params.filtering = JSON.stringify([
+      { field: "adset.updated_time", operator: "GREATER_THAN", value: updatedSince },
+    ]);
+  }
+  type Row = {
+    id?: string;
+    name?: string;
+    effective_status?: string;
+    campaign?: { name?: string };
+    targeting?: {
+      age_min?: number;
+      age_max?: number;
+      genders?: number[];
+      geo_locations?: Record<string, unknown>;
+    };
+  };
+  const rows = await graphEdge<Row>(`act_${accountId}/adsets`, params);
+  const out: MetaAdSetTargeting[] = [];
+  for (const r of rows) {
+    if (!r.id) continue;
+    const t = r.targeting ?? {};
+    out.push({
+      id: String(r.id),
+      name: String(r.name ?? "").trim(),
+      campaign: String(r.campaign?.name ?? "").trim(),
+      effectiveStatus: String(r.effective_status ?? "").trim(),
+      ageMin: Number(t.age_min ?? 0) || 0,
+      ageMax: Number(t.age_max ?? 0) || 0,
+      genders: gendersOf(t.genders),
+      zones: zonesOf(t.geo_locations),
+      locationTypes: ((t.geo_locations?.location_types as string[]) ?? []).map(String),
+    });
+  }
+  return out;
+}
+
+/**
  * The 1080px creative render, for the RUNNING ads only.
  *
  * A SECOND PASS, and both halves of that are deliberate.
