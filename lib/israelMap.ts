@@ -143,35 +143,153 @@ export function lookupCity(name: string): CityPoint | null {
  * gazetteer. Chosen for spread and name-recognition rather than population,
  * so that anywhere in the country has something known within ~25km.
  */
-export const ANCHORS: { he: string; lat: number; lon: number }[] = [
-  { he: "תל אביב", lat: 32.0853, lon: 34.7818 },
-  { he: "ירושלים", lat: 31.7683, lon: 35.2137 },
-  { he: "חיפה", lat: 32.794, lon: 34.9896 },
-  { he: "ראשון לציון", lat: 31.973, lon: 34.7925 },
-  { he: "פתח תקווה", lat: 32.0878, lon: 34.8878 },
-  { he: "נתניה", lat: 32.3215, lon: 34.8532 },
-  { he: "אשדוד", lat: 31.804, lon: 34.6553 },
-  { he: "באר שבע", lat: 31.253, lon: 34.7915 },
-  { he: "הרצליה", lat: 32.1663, lon: 34.8436 },
-  { he: "כפר סבא", lat: 32.175, lon: 34.907 },
-  { he: "רעננה", lat: 32.1848, lon: 34.8713 },
-  { he: "רחובות", lat: 31.8947, lon: 34.8093 },
-  { he: "אשקלון", lat: 31.6688, lon: 34.5742 },
-  { he: "מודיעין", lat: 31.8969, lon: 35.0104 },
-  { he: "רמלה", lat: 31.9288, lon: 34.8667 },
-  { he: "חדרה", lat: 32.434, lon: 34.9196 },
-  { he: "קרית גת", lat: 31.61, lon: 34.7642 },
-  { he: "בית שמש", lat: 31.7457, lon: 34.9887 },
-  { he: "עכו", lat: 32.9281, lon: 35.0818 },
-  { he: "נהריה", lat: 33.0058, lon: 35.0947 },
-  { he: "טבריה", lat: 32.7959, lon: 35.53 },
-  { he: "נצרת", lat: 32.7021, lon: 35.2978 },
-  { he: "עפולה", lat: 32.6078, lon: 35.2897 },
-  { he: "צפת", lat: 32.9646, lon: 35.496 },
-  { he: "אריאל", lat: 32.1056, lon: 35.1878 },
-  { he: "מעלה אדומים", lat: 31.7772, lon: 35.2983 },
-  { he: "דימונה", lat: 31.07, lon: 35.0325 },
-  { he: "אילת", lat: 29.5577, lon: 34.9519 },
+export const ANCHORS: { he: string; lat: number; lon: number; rank: 1 | 2 | 3 }[] = [
+  // rank 1 — read at any zoom, and worth keeping even when a smaller town
+  // sits nearer the middle of the frame.
+  { he: "תל אביב", lat: 32.0853, lon: 34.7818, rank: 1 },
+  { he: "ירושלים", lat: 31.7683, lon: 35.2137, rank: 1 },
+  { he: "חיפה", lat: 32.794, lon: 34.9896, rank: 1 },
+  { he: "באר שבע", lat: 31.253, lon: 34.7915, rank: 1 },
+  { he: "אשדוד", lat: 31.804, lon: 34.6553, rank: 1 },
+  { he: "נתניה", lat: 32.3215, lon: 34.8532, rank: 1 },
+  { he: "ראשון לציון", lat: 31.973, lon: 34.7925, rank: 1 },
+  { he: "פתח תקווה", lat: 32.0878, lon: 34.8878, rank: 1 },
+  // rank 2 — the city you name to place a neighbourhood.
+  { he: "הרצליה", lat: 32.1663, lon: 34.8436, rank: 2 },
+  { he: "כפר סבא", lat: 32.175, lon: 34.907, rank: 2 },
+  { he: "רעננה", lat: 32.1848, lon: 34.8713, rank: 2 },
+  { he: "הוד השרון", lat: 32.15, lon: 34.8892, rank: 2 },
+  { he: "רמת גן", lat: 32.0684, lon: 34.8248, rank: 2 },
+  { he: "בני ברק", lat: 32.0807, lon: 34.8338, rank: 2 },
+  { he: "חולון", lat: 32.0114, lon: 34.7722, rank: 2 },
+  { he: "בת ים", lat: 32.0171, lon: 34.75, rank: 2 },
+  { he: "רמת השרון", lat: 32.1461, lon: 34.8394, rank: 2 },
+  { he: "ראש העין", lat: 32.0956, lon: 34.9567, rank: 2 },
+  { he: "רחובות", lat: 31.8947, lon: 34.8093, rank: 2 },
+  { he: "נס ציונה", lat: 31.9293, lon: 34.7986, rank: 2 },
+  { he: "יבנה", lat: 31.8781, lon: 34.7397, rank: 2 },
+  { he: "רמלה", lat: 31.9288, lon: 34.8667, rank: 2 },
+  { he: "לוד", lat: 31.9514, lon: 34.8953, rank: 2 },
+  { he: "מודיעין", lat: 31.8969, lon: 35.0104, rank: 2 },
+  { he: "בית שמש", lat: 31.7457, lon: 34.9887, rank: 2 },
+  { he: "אשקלון", lat: 31.6688, lon: 34.5742, rank: 2 },
+  { he: "קרית גת", lat: 31.61, lon: 34.7642, rank: 2 },
+  { he: "חדרה", lat: 32.434, lon: 34.9196, rank: 2 },
+  { he: "עכו", lat: 32.9281, lon: 35.0818, rank: 2 },
+  { he: "נהריה", lat: 33.0058, lon: 35.0947, rank: 2 },
+  { he: "טבריה", lat: 32.7959, lon: 35.53, rank: 2 },
+  { he: "נצרת", lat: 32.7021, lon: 35.2978, rank: 2 },
+  { he: "עפולה", lat: 32.6078, lon: 35.2897, rank: 2 },
+  { he: "צפת", lat: 32.9646, lon: 35.496, rank: 2 },
+  { he: "כרמיאל", lat: 32.9186, lon: 35.2951, rank: 2 },
+  { he: "אריאל", lat: 32.1056, lon: 35.1878, rank: 2 },
+  { he: "מעלה אדומים", lat: 31.7772, lon: 35.2983, rank: 2 },
+  { he: "דימונה", lat: 31.07, lon: 35.0325, rank: 2 },
+  { he: "אילת", lat: 29.5577, lon: 34.9519, rank: 2 },
+  // rank 3 — only when the frame is tight enough that nothing bigger is in it.
+  { he: "גבעתיים", lat: 32.0722, lon: 34.8106, rank: 3 },
+  { he: "קרית אונו", lat: 32.0636, lon: 34.8553, rank: 3 },
+  { he: "אור יהודה", lat: 32.03, lon: 34.8547, rank: 3 },
+  { he: "יהוד", lat: 32.0333, lon: 34.8833, rank: 3 },
+  { he: "גני תקווה", lat: 32.0603, lon: 34.8744, rank: 3 },
+  { he: "שוהם", lat: 31.9992, lon: 34.9469, rank: 3 },
+  { he: "אלעד", lat: 32.0525, lon: 34.9508, rank: 3 },
+  { he: "כפר יונה", lat: 32.3172, lon: 34.9358, rank: 3 },
+  { he: "אבן יהודה", lat: 32.27, lon: 34.8869, rank: 3 },
+  { he: "תל מונד", lat: 32.25, lon: 34.9167, rank: 3 },
+  { he: "קדימה", lat: 32.2792, lon: 34.9036, rank: 3 },
+  { he: "טירה", lat: 32.2333, lon: 34.95, rank: 3 },
+  { he: "טייבה", lat: 32.2667, lon: 35.0083, rank: 3 },
+  { he: "באר יעקב", lat: 31.9333, lon: 34.8333, rank: 3 },
+  { he: "גדרה", lat: 31.8139, lon: 34.7775, rank: 3 },
+  { he: "גן יבנה", lat: 31.7883, lon: 34.705, rank: 3 },
+  { he: "קרית מלאכי", lat: 31.73, lon: 34.7472, rank: 3 },
+  { he: "שדרות", lat: 31.525, lon: 34.5964, rank: 3 },
+  { he: "נתיבות", lat: 31.4222, lon: 34.5889, rank: 3 },
+  { he: "אופקים", lat: 31.3139, lon: 34.6203, rank: 3 },
+  { he: "רהט", lat: 31.3925, lon: 34.7544, rank: 3 },
+  { he: "ערד", lat: 31.2589, lon: 35.2137, rank: 3 },
+  { he: "פרדס חנה", lat: 32.4747, lon: 34.975, rank: 3 },
+  { he: "בנימינה", lat: 32.5167, lon: 34.95, rank: 3 },
+  { he: "זכרון יעקב", lat: 32.5731, lon: 34.9531, rank: 3 },
+  { he: "נשר", lat: 32.7667, lon: 35.05, rank: 3 },
+  { he: "קרית אתא", lat: 32.8114, lon: 35.1128, rank: 3 },
+  { he: "קרית ביאליק", lat: 32.83, lon: 35.0864, rank: 3 },
+  { he: "קרית מוצקין", lat: 32.8378, lon: 35.0728, rank: 3 },
+  { he: "טירת כרמל", lat: 32.7614, lon: 34.9714, rank: 3 },
+  { he: "יקנעם", lat: 32.6572, lon: 35.1103, rank: 3 },
+  { he: "מגדל העמק", lat: 32.6708, lon: 35.24, rank: 3 },
+  { he: "נוף הגליל", lat: 32.7, lon: 35.3167, rank: 3 },
+  { he: "אום אל-פחם", lat: 32.5194, lon: 35.1522, rank: 3 },
+  { he: "ראש פינה", lat: 32.9694, lon: 35.5425, rank: 3 },
+];
+
+/**
+ * Schematic corridors for the trunk roads, as [lon, lat] waypoints.
+ *
+ * ── READ THIS BEFORE TRUSTING A LINE ──
+ * These are NOT surveyed centrelines. There is no road dataset in this repo
+ * and no network call to fetch one, so each route is a handful of waypoints
+ * through towns and junctions the route is known to pass, drawn straight
+ * between them. At the zoom this map uses — tens of kilometres across — that
+ * is close enough to answer "is the targeted circle east or west of the
+ * highway", which is the question. It is NOT close enough to say which side
+ * of a road a street is on, and the map labels them as approximate so nobody
+ * reads them that way.
+ *
+ * Only the trunk routes are here. A denser network would turn a one-inch
+ * locator into a road atlas nobody can read.
+ */
+export const ROADS: { no: string; pts: [number, number][] }[] = [
+  {
+    // 2 — the coastal road, Tel Aviv to Haifa.
+    no: "2",
+    pts: [
+      [34.77, 32.09], [34.8, 32.17], [34.85, 32.32], [34.89, 32.44],
+      [34.92, 32.56], [34.96, 32.7], [34.99, 32.79],
+    ],
+  },
+  {
+    // 1 — Tel Aviv to Jerusalem, via Latrun and Sha'ar HaGai.
+    no: "1",
+    pts: [
+      [34.8, 32.08], [34.88, 32.0], [34.98, 31.83], [35.05, 31.81],
+      [35.13, 31.79], [35.21, 31.79],
+    ],
+  },
+  {
+    // 6 — the cross-Israel toll road, well inland of the coast.
+    no: "6",
+    pts: [
+      [34.8, 31.55], [34.86, 31.7], [34.95, 31.87], [34.96, 32.02],
+      [34.99, 32.15], [35.03, 32.33], [35.06, 32.5], [35.08, 32.62],
+    ],
+  },
+  {
+    // 4 — the older coastal artery, inland of route 2 and through the towns.
+    no: "4",
+    pts: [
+      [34.66, 31.8], [34.73, 31.88], [34.8, 31.97], [34.83, 32.06],
+      [34.87, 32.19], [34.9, 32.32], [34.93, 32.44], [35.0, 32.72],
+    ],
+  },
+  {
+    // 40 — Kfar Saba down the middle of the country to Be'er Sheva.
+    no: "40",
+    pts: [
+      [34.92, 32.17], [34.89, 32.09], [34.88, 31.99], [34.87, 31.93],
+      [34.82, 31.83], [34.79, 31.7], [34.78, 31.5], [34.79, 31.26],
+    ],
+  },
+  {
+    // 90 — the Jordan valley road along the eastern edge.
+    no: "90",
+    pts: [
+      [35.57, 33.05], [35.58, 32.87], [35.55, 32.72], [35.5, 32.4],
+      [35.47, 32.0], [35.45, 31.7], [35.39, 31.35], [35.05, 30.6],
+      [34.96, 29.65],
+    ],
+  },
 ];
 
 /* ── Projection ───────────────────────────────────────────────────── */

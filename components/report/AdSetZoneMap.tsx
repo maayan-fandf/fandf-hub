@@ -1,4 +1,4 @@
-import { ANCHORS, MAP_H, OUTLINE_PATH, project } from "@/lib/israelMap";
+import { ANCHORS, MAP_H, OUTLINE_PATH, ROADS, project } from "@/lib/israelMap";
 
 /**
  * Where an ad set was actually aimed, drawn.
@@ -142,11 +142,19 @@ export default function AdSetZoneMap({ zones }: { zones: Zone[] }) {
     q: ReturnType<typeof labelBox>,
   ) => p.x0 < q.x1 && q.x0 < p.x1 && p.y0 < q.y1 && q.y0 < p.y1;
 
+  const vx0 = cx - w / 2;
+  const vx1 = cx + w / 2;
+  const vy0 = cy - h / 2;
+  const vy1 = cy + h / 2;
+
   const placed: { x: number; y: number; he: string }[] = [];
   const boxes: ReturnType<typeof labelBox>[] = [];
-  for (const a of [...anchors].sort(
-    (m, n) => Math.hypot(m.x - cx, m.y - cy) - Math.hypot(n.x - cx, n.y - cy),
-  )) {
+  // Nearest first, but weighted by how well-known the place is: a village
+  // half a kilometre closer to the middle should not push תל אביב out of a
+  // frame that contains both. Rank 1 competes as if it were half as far.
+  const cost = (a: (typeof anchors)[number]) =>
+    Math.hypot(a.x - cx, a.y - cy) * (a.rank === 1 ? 0.5 : a.rank === 2 ? 0.8 : 1.15);
+  for (const a of [...anchors].sort((m, n) => cost(m) - cost(n))) {
     if (rings.some((g) => Math.hypot(a.x - g.x, a.y - g.y) < g.r)) continue;
     const box = labelBox(a);
     if (boxes.some((b) => hits(box, b))) continue;
@@ -154,6 +162,50 @@ export default function AdSetZoneMap({ zones }: { zones: Zone[] }) {
     boxes.push(box);
     if (placed.length >= 4) break;
   }
+
+  /**
+   * The roads, projected, and their numbers placed LAST.
+   *
+   * The line itself is always drawn once any of it crosses the frame — that
+   * is the orientation cue and it cannot collide with anything. The NUMBER
+   * is the fussy part: placed at the route's midpoint it landed on top of the
+   * target ring, which is the one thing on this map that must stay readable.
+   * So each in-frame waypoint is tried from the middle outward and the first
+   * clear one wins; a route with no clear spot keeps its line and loses its
+   * number, which is the right trade.
+   */
+  const roadNumBox = (p: { x: number; y: number }) => {
+    const s = font * 0.8;
+    return { x0: p.x - s, x1: p.x + s, y0: p.y - s, y1: p.y + s * 0.4 };
+  };
+  const roads = ROADS.map((r) => {
+    const pts = r.pts.map(([lon, lat]) => project(lat, lon));
+    const inside = pts.filter((p) => p.x > vx0 && p.x < vx1 && p.y > vy0 && p.y < vy1);
+    if (!inside.length) return null;
+    // Middle first, then alternating outward — the middle of the visible run
+    // is where a number reads as belonging to this line and not a neighbour.
+    const order = [...inside].sort(
+      (a, b) =>
+        Math.abs(inside.indexOf(a) - (inside.length - 1) / 2) -
+        Math.abs(inside.indexOf(b) - (inside.length - 1) / 2),
+    );
+    let label: { x: number; y: number } | null = null;
+    for (const p of order) {
+      if (rings.some((g) => Math.hypot(p.x - g.x, p.y - g.y) < g.r + font * 0.7)) continue;
+      const nb = roadNumBox(p);
+      if (boxes.some((b) => hits(nb, b))) continue;
+      label = p;
+      boxes.push(nb);
+      break;
+    }
+    return {
+      no: r.no,
+      d: pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "),
+      label,
+    };
+  }).filter(
+    (r): r is { no: string; d: string; label: { x: number; y: number } | null } => !!r,
+  );
 
   return (
     <svg
@@ -164,6 +216,25 @@ export default function AdSetZoneMap({ zones }: { zones: Zone[] }) {
       aria-label={`אזורי טירגוט: ${pins.map((p) => p.label).join(", ")}`}
     >
       <path className="ga4w-map-land" d={OUTLINE_PATH} />
+
+      {/* Trunk roads, drawn under everything else. Schematic — see ROADS. */}
+      {roads.map((r) => (
+        <path key={r.no} className="rpt-cr-zonemap-road" d={r.d} />
+      ))}
+      {roads.map((r) =>
+        r.label ? (
+          <text
+            key={`n${r.no}`}
+            className="rpt-cr-zonemap-roadno"
+            x={r.label.x}
+            y={r.label.y}
+            fontSize={font * 0.8}
+            textAnchor="middle"
+          >
+            {r.no}
+          </text>
+        ) : null,
+      )}
 
       {placed.map((a) => (
         <g key={a.he}>

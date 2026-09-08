@@ -426,9 +426,17 @@ function AdSetHoverCard({
       )}
 
       {hasMap && (
-        <AdSetZoneMap
-          zones={zones.map((label, i) => ({ label, point: pts[i] ?? null }))}
-        />
+        <>
+          <AdSetZoneMap
+            zones={zones.map((label, i) => ({ label, point: pts[i] ?? null }))}
+          />
+          {/* Said out loud rather than left to be inferred: the road lines are
+              drawn from a few waypoints, not from a road dataset. Good enough
+              to tell which side of a highway the circle is on, and no more. */}
+          <div className="rpt-cr-zonemap-note">
+            העיגול הוא רדיוס הטירגוט בפועל · הכבישים סכמטיים
+          </div>
+        </>
       )}
 
       {/* The same sparklines the card used to float on its own, now sitting
