@@ -42,6 +42,11 @@ export default auth((req) => {
     // into the creative Sheet for the report. Same X-Cron-Token shared secret;
     // server-to-server, must skip the NextAuth redirect.
     path === "/api/cron/fb-creative-meetings" ||
+    // Cloud Scheduler cron — pulls the Meta ad-preview links ("צפייה במודעה")
+    // into the creatives workbook. Same X-Cron-Token shared secret; listed
+    // here for the reason the comment below spells out, which is that a
+    // missing entry turns a broken cron into a 200 nobody notices.
+    path === "/api/cron/fb-ad-previews" ||
     // Cloud Scheduler cron — refreshes the precomputed portfolio morning
     // feed (lib/morningSnapshot.ts). Same X-Cron-Token shared secret;
     // server-to-server, must skip the NextAuth redirect. Caught by

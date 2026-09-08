@@ -364,11 +364,19 @@ async function fetchProjectCreativeRaw(
       // months can still be looked at — hence reading a second FB tab whose
       // other four columns duplicate what we already have.
       "'כל מודעות פפיסבוק'!A1:F",
+      // The same links, pulled from the Meta Graph API by
+      // /api/cron/fb-ad-previews. Read SECOND and applied FIRST: the
+      // Supermetrics tab above has been empty since its query outgrew a
+      // refresh, which took the "צפייה במודעה" link off every card in the
+      // hub. Both are read because the Supermetrics one may come back, and
+      // two sources for one link cost a range in a batchGet that is already
+      // happening.
+      "'fb-ad-previews'!A1:G",
     ],
     valueRenderOption: "UNFORMATTED_VALUE",
     dateTimeRenderOption: "FORMATTED_STRING",
   });
-  const [vMetrics, vAdsets, vKw, vGAds, vDiscovery, vPreviews] = (
+  const [vMetrics, vAdsets, vKw, vGAds, vDiscovery, vPreviews, vMetaPreviews] = (
     bg.data.valueRanges ?? []
   ).map((r) => (r?.values ?? []) as unknown[][]);
 
@@ -395,6 +403,29 @@ async function fetchProjectCreativeRaw(
         const list = (out.fbPreviews[k] ??= []);
         // The tab repeats a row per adset, so the same creative shows up more
         // than once — dedupe on the URL itself, not on position.
+        if (!list.includes(url)) list.push(url);
+      }
+    }
+  }
+
+  // fb-ad-previews (Meta Graph, ours) → the same map. Merged rather than
+  // replacing: an ad present in both contributes one link, because the dedupe
+  // below is on the URL. Keyed identically, so a card does not care which
+  // source found its link.
+  if (vMetaPreviews.length > 1) {
+    const h = vMetaPreviews[0].map(clean);
+    const iCamp = h.indexOf("campaign");
+    const iAd = h.indexOf("ad_name");
+    const iUrl = h.indexOf("preview_url");
+    if (iCamp >= 0 && iAd >= 0 && iUrl >= 0) {
+      for (let r = 1; r < vMetaPreviews.length; r++) {
+        const row = vMetaPreviews[r];
+        const camp = String(row[iCamp] ?? "").trim();
+        const ad = adNameOf(row[iAd]);
+        const url = String(row[iUrl] ?? "").trim();
+        if (!camp || !ad || !url.startsWith("http") || !mine(camp)) continue;
+        const k = `${camp}|${normCardName(ad)}`.toLowerCase();
+        const list = (out.fbPreviews[k] ??= []);
         if (!list.includes(url)) list.push(url);
       }
     }
