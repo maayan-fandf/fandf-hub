@@ -36,6 +36,20 @@ import {
  * The state that makes that work is one cell: `synced_at` on the newest row.
  * Keeping it IN the tab rather than beside it means a hand-cleared tab
  * simply re-seeds itself instead of silently syncing nothing.
+ *
+ * ── DO NOT USE `synced_at` TO CHECK WHETHER A RUN HAPPENED ──
+ * It is the incremental CURSOR, not a heartbeat. The stamp is written only
+ * onto rows this run re-pulled — ads whose `updated_time` moved — so a run
+ * that finds nothing changed refreshes every ACTIVE ad's image, rewrites all
+ * 30,335 rows, returns ok:true, and leaves `synced_at` exactly where it was.
+ * Measured twice on 2026-09-08: two separate 200s (`adsSeen: 0`,
+ * `withImage: 694` then `690`) both left it at 10:39:26.953Z.
+ *
+ * The signal that DOES move is `image_url`: those are freshly SIGNED CDN
+ * addresses, so hashing the sorted `ad_id=image_url` pairs gives a
+ * fingerprint that changes on every successful run and on no failed one.
+ * That is how to tell a working cron from a Cloud Scheduler job cheerfully
+ * reporting 200 for the HTML of a login page.
  */
 
 const SHEET_ID_CREATIVES =
