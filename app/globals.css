@@ -1863,6 +1863,27 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
   letter-spacing: 0.01em;
 }
 
+/* Spend / budget, on its own row ABOVE the bar it describes. Spans the
+   whole three-column track (`.pill-bar` is display:contents, so this is a
+   grid item of .project-pill-bars, not of the row).
+   Above and not below, because below it sat between the two bars and read
+   as a caption for whichever one the eye landed on — the זמן bar has no
+   money line of its own to claim it back. */
+.pill-bar-money {
+  grid-column: 1 / -1;
+  font-size: 0.68rem;
+  color: var(--text-muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  margin-bottom: -0.12rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pill-bar-of { opacity: 0.7; }
+/* Over budget, the number is the point — match the percentage's alarm. */
+.pill-bar-budget.pill-bar-over .pill-bar-money { color: var(--overdue, #dc2626); }
+
 /* Mini CRM funnel under the progress bars — leads / scheduled / held with
    blended cost-per-metric. Three equal columns; each cell stacks the count,
    a tiny label, and a colored cost chip (green=cheap … red=dear, same

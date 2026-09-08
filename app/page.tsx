@@ -581,6 +581,7 @@ function ProjectPillProgress({
   const budgetPct = Math.round((progress.pctBudget || 0) * 100);
   const timePct = Math.round((progress.pctTime || 0) * 100);
   const budgetOver = budgetPct > 100;
+  const ils = (v: number) => `₪${Math.round(v).toLocaleString("he-IL")}`;
   const budgetTooltip =
     progress.budget > 0
       ? `${progress.spend.toLocaleString("he-IL")} ₪ מתוך ${progress.budget.toLocaleString(
@@ -590,6 +591,20 @@ function ProjectPillProgress({
   return (
     <div className="project-pill-bars">
       <div className={`pill-bar pill-bar-budget${budgetOver ? " pill-bar-over" : ""}`}>
+        {/* The two numbers behind the bar, ABOVE it. They were only in the
+            track's `title` — a tooltip on a 6px-high strip, on a card people
+            scan rather than hover. A percentage without them says how far
+            along the money is and not how much money it is, and "26%" reads
+            very differently at ₪12,000 than at ₪120,000.
+            Its own row rather than a fourth column: the label, the track and
+            the percentage already share ~230px, and "₪12,345 מתוך ₪47,000"
+            beside them would leave the bar about forty pixels wide. */}
+        {progress.budget > 0 && (
+          <span className="pill-bar-money">
+            {ils(progress.spend)} <span className="pill-bar-of">מתוך</span>{" "}
+            {ils(progress.budget)}
+          </span>
+        )}
         <span className="pill-bar-label">תקציב</span>
         <span className="pill-bar-track" title={budgetTooltip}>
           <span
