@@ -6,6 +6,7 @@ import ReportMediaSection, {
 } from "@/components/report/ReportMediaSection";
 import AdHistoryPopover from "@/components/report/AdHistoryPopover";
 import AdSetZoneMap from "@/components/report/AdSetZoneMap";
+import AdSetMapModal, { type MapZone } from "@/components/report/AdSetMapModal";
 import {
   fbStatusInfo,
   fmtInt,
@@ -371,6 +372,18 @@ function adSetAudienceTitle(s: ReportFbAdSet): string {
 /* Kept as the aim line's own tooltip: the rich panel needs a hover, and a
    touch device never sends one. On a phone the line is all there is. */
 
+/** The zones of one ad set that carry a real point, in the shape the map
+ *  modal wants. A whole-country or region target has no circle to draw. */
+function mapZonesOf(s: ReportFbAdSet): MapZone[] {
+  const out: MapZone[] = [];
+  const pts = s.targetZonePoints ?? [];
+  (s.targetZones ?? []).forEach((label, i) => {
+    const p = pts[i];
+    if (p) out.push({ label, point: p });
+  });
+  return out;
+}
+
 /**
  * The whole ad set, on hover: who it targeted, where, what it cost and what
  * the CRM did with the leads.
@@ -522,6 +535,10 @@ export default function ReportCreativesTab({
   const [liveAds, setLiveAds] = useState<ReportFbAd[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState("");
+  /** Ad-set name whose targeting is open on the real map, or null. Held by
+   *  NAME rather than by object so a re-render from the refresh button above
+   *  cannot leave a stale row open. */
+  const [mapFor, setMapFor] = useState<string | null>(null);
 
   const c = data.creatives;
   if (!c) {
@@ -886,16 +903,32 @@ export default function ReportCreativesTab({
                     trendline is absolutely positioned at bottom:2.2rem, and
                     anything added below the stats disappears behind it. */}
                 {adSetAudience(s) && (
-                  <div
-                    className="rpt-cr-adset-aim"
-                    title={adSetAudienceTitle(s)}
-                  >
-                    🎯 <bdi>{adSetAudience(s)}</bdi>
-                    {s.targetAmbiguous && (
-                      <span className="rpt-cr-adset-aim-warn" aria-hidden>
-                        {" "}
-                        ~
-                      </span>
+                  <div className="rpt-cr-adset-aimrow">
+                    <span
+                      className="rpt-cr-adset-aim"
+                      title={adSetAudienceTitle(s)}
+                    >
+                      🎯 <bdi>{adSetAudience(s)}</bdi>
+                      {s.targetAmbiguous && (
+                        <span className="rpt-cr-adset-aim-warn" aria-hidden>
+                          {" "}
+                          ~
+                        </span>
+                      )}
+                    </span>
+                    {/* Sits on the CARD, not in the hover panel: that panel is
+                        pointer-events:none so the mouse can cross it without
+                        flicker, which also makes anything inside it
+                        unclickable. */}
+                    {mapZonesOf(s).length > 0 && (
+                      <button
+                        type="button"
+                        className="rpt-cr-adset-mapbtn"
+                        title="פתיחת אזור הטירגוט במפה — עם זום וגרירה"
+                        onClick={() => setMapFor(s.name)}
+                      >
+                        📍
+                      </button>
                     )}
                   </div>
                 )}
@@ -932,6 +965,22 @@ export default function ReportCreativesTab({
               </div>
             ))}
           </div>
+          {/* The real map, mounted only while open. Leaflet and its CSS are
+              imported inside the modal's own effect, so nothing about it is
+              paid for until someone presses 📍. */}
+          {mapFor &&
+            (() => {
+              const s = fb.topAdSets.find((a) => a.name === mapFor);
+              const zs = s ? mapZonesOf(s) : [];
+              if (!s || !zs.length) return null;
+              return (
+                <AdSetMapModal
+                  title={s.name}
+                  zones={zs}
+                  onClose={() => setMapFor(null)}
+                />
+              );
+            })()}
         </>
       )}
 
