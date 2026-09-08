@@ -1,6 +1,7 @@
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import {
   listAdAccounts,
+  listActiveAdImages,
   listAdsWithPreview,
   metaConfigured,
   MetaGraphError,
@@ -45,6 +46,7 @@ const HEADER = [
   "campaign",
   "ad_name",
   "preview_url",
+  "image_url",
   "ad_id",
   "account_id",
   "effective_status",
@@ -62,6 +64,8 @@ export type FbAdPreviewsResult = {
   accountsFailed: { accountId: string; error: string }[];
   adsSeen: number;
   withPreview: number;
+  /** Running ads that got a fresh 1080px render this run. */
+  withImage: number;
   rowsWritten: number;
   mode: "full" | "incremental";
   since: string;
@@ -130,8 +134,10 @@ export async function exportFbAdPreviews(
   const accounts = await listAdAccounts();
   const failed: { accountId: string; error: string }[] = [];
   const now = new Date().toISOString();
+  const iImage = HEADER.indexOf("image_url");
   let adsSeen = 0;
   let withPreview = 0;
+  let withImage = 0;
 
   for (const acct of accounts) {
     const id = clean(acct.account_id);
@@ -143,15 +149,31 @@ export async function exportFbAdPreviews(
         const url = clean(ad.preview_shareable_link);
         if (!url) continue;
         withPreview++;
-        byAdId.set(clean(ad.id), [
+        const adId = clean(ad.id);
+        // An incremental run re-pulls only the ads that changed, so the
+        // image cell has to survive from the previous row — the image pass
+        // below writes it and it is not part of this pull.
+        const keepImage = String(byAdId.get(adId)?.[iImage] ?? "");
+        byAdId.set(adId, [
           clean(ad.campaign?.name),
           clean(ad.name),
           url,
-          clean(ad.id),
+          keepImage,
+          adId,
           id,
           clean(ad.effective_status),
           now,
         ]);
+      }
+
+      // Pass two: the 1080px render for this account's RUNNING ads. Its own
+      // walk at a smaller page size — see listActiveAdImages for why it
+      // cannot ride the one above.
+      for (const { id: adId, image } of await listActiveAdImages(id)) {
+        const row = byAdId.get(adId);
+        if (!row) continue; // an ad with no preview link has no row to sit in
+        row[iImage] = image;
+        withImage++;
       }
     } catch (e) {
       // One account's failure must not cost the other twenty-two. A revoked
@@ -194,6 +216,7 @@ export async function exportFbAdPreviews(
     accountsFailed: failed,
     adsSeen,
     withPreview,
+    withImage,
     rowsWritten: rows.length,
     mode: full ? "full" : "incremental",
     since: updatedSince ? new Date(updatedSince * 1000).toISOString() : "",

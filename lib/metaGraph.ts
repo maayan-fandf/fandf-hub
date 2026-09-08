@@ -141,12 +141,29 @@ export async function listAdAccounts(): Promise<MetaAdAccount[]> {
   });
 }
 
+/**
+ * The pixel size asked of Meta for the creative thumbnail.
+ *
+ * `thumbnail_url` defaults to 64×64 — a 2KB image the report card blows up
+ * to 284px, which is what "מפוקסל" looked like. The same field returns a
+ * 1080×1080 / ~120KB render when the size is requested, and it costs
+ * nothing extra: `creative.thumbnail_width(N).thumbnail_height(N){…}` is a
+ * FIELD-level parameter, so it rides the one ads-edge call per account.
+ * (Node-level `&thumbnail_width=` on the edge is silently ignored and
+ * hands back the 64px default — measured both ways.)
+ *
+ * 1080 because that is Meta's own square creative spec; asking for more
+ * would upscale rather than reveal detail.
+ */
+export const THUMB_PX = 1080;
+
 export type MetaAd = {
   id: string;
   name?: string;
   effective_status?: string;
   preview_shareable_link?: string;
   campaign?: { name?: string };
+  creative?: { thumbnail_url?: string };
 };
 
 /** Ads in one account, with the preview link. `updatedSince` (unix seconds)
@@ -170,4 +187,44 @@ export async function listAdsWithPreview(
     ]);
   }
   return graphEdge<MetaAd>(`act_${accountId}/ads`, params);
+}
+
+/**
+ * The 1080px creative render, for the RUNNING ads only.
+ *
+ * A SECOND PASS, and both halves of that are deliberate.
+ *
+ * Second, because expanding `creative{…}` inside the ads edge makes Meta
+ * refuse the 500-ad page it happily serves without it — measured: the same
+ * account returns 4,938 ads in 39s at limit=500 with the preview fields, and
+ * answers `500 Please reduce the amount of data you're asking for` the moment
+ * the creative is added. So the image cannot ride the preview walk; it needs
+ * its own, at limit=100.
+ *
+ * Only the running ads, because at limit=100 the whole 30,585-ad archive
+ * would take the better part of an hour — and would be wasted work. This URL
+ * is a signed CDN address that expires within days; caching one for an ad
+ * paused last year means storing a link that is dead before anyone opens the
+ * card. Measured across the portfolio: 674 ACTIVE ads, every one of them
+ * carrying a 1080 image, in 26 seconds. A paused ad keeps whatever the
+ * warehouse has for it, which is the same picture it has today.
+ */
+export async function listActiveAdImages(
+  accountId: string,
+): Promise<{ id: string; image: string }[]> {
+  const rows = await graphEdge<MetaAd>(`act_${accountId}/ads`, {
+    fields:
+      "id," +
+      `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX}){thumbnail_url}`,
+    filtering: JSON.stringify([
+      { field: "ad.effective_status", operator: "IN", value: ["ACTIVE"] },
+    ]),
+    limit: 100,
+  });
+  const out: { id: string; image: string }[] = [];
+  for (const r of rows) {
+    const image = String(r.creative?.thumbnail_url ?? "").trim();
+    if (r.id && image) out.push({ id: String(r.id), image });
+  }
+  return out;
 }

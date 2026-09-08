@@ -249,6 +249,10 @@ type ProjectCreativeRaw = {
    *  fronting several creatives yields several links and the card can offer
    *  each. Project-matched. */
   fbPreviews: Record<string, string[]>;
+  /** (campaign|ad).lc → the 1080px creative render from the Meta pull.
+   *  Separate from fbAssets because it is a different source with a
+   *  different lifetime — see applyMetaImages for the precedence. */
+  fbMetaImages: Record<string, string>;
   /** Facebook-adsets rows (SSOT for the FB cost/leads KPIs). */
   fbAdSets: {
     date: string;
@@ -304,6 +308,7 @@ async function fetchProjectCreativeRaw(
     fbAssets: {},
     fbAssetsIndexed: {},
     fbPreviews: {},
+    fbMetaImages: {},
     fbAdSets: [],
     gKeywords: [],
     gAds: [],
@@ -417,6 +422,7 @@ async function fetchProjectCreativeRaw(
     const iCamp = h.indexOf("campaign");
     const iAd = h.indexOf("ad_name");
     const iUrl = h.indexOf("preview_url");
+    const iImg = h.indexOf("image_url");
     if (iCamp >= 0 && iAd >= 0 && iUrl >= 0) {
       for (let r = 1; r < vMetaPreviews.length; r++) {
         const row = vMetaPreviews[r];
@@ -427,6 +433,9 @@ async function fetchProjectCreativeRaw(
         const k = `${camp}|${normCardName(ad)}`.toLowerCase();
         const list = (out.fbPreviews[k] ??= []);
         if (!list.includes(url)) list.push(url);
+        // The 1080px creative render, asked of Meta in the same pull.
+        const img = iImg >= 0 ? String(row[iImg] ?? "").trim() : "";
+        if (img.startsWith("http")) out.fbMetaImages[k] = img;
       }
     }
   }
@@ -702,6 +711,10 @@ async function fetchProjectCreativeRaw(
   }
 
   await fillAssetsFromWarehouse(out);
+  // AFTER the warehouse fill, so rule 1 in applyMetaImages can actually see
+  // a permanent URL to keep — running it before would overwrite nothing and
+  // then be overwritten itself.
+  applyMetaImages(out);
 
   return out;
 }
@@ -780,6 +793,38 @@ async function fillAssetsFromWarehouse(out: ProjectCreativeRaw): Promise<void> {
     if (!rec.body) rec.body = w.body;
     if (!rec.title) rec.title = w.title;
     if (!rec.destUrl) rec.destUrl = w.destUrl;
+  }
+}
+
+/**
+ * Put the Meta 1080px render on the cards that need it.
+ *
+ * PRECEDENCE, and the reason for it. The warehouse hands back two shapes of
+ * image URL: `www.facebook.com/ads/image/?d=…`, which is permanent and
+ * measured at 1200×1200 / 1080×1920, and `scontent-*.fbcdn.net/…t45.1600-4`,
+ * which is the 64×64 THUMBNAIL — 2KB, drawn by the card at 284px, which is
+ * what "מפוקסל" was. So:
+ *
+ *   1. a permanent full-size warehouse URL wins and is left alone;
+ *   2. anything else — a 64px thumb, or nothing at all — takes ours.
+ *
+ * Ours is a signed CDN URL and it does expire, which is why rule 1 exists at
+ * all: a permanent 1200px image is worth more than a fresher 1080px one. The
+ * nightly cron is what keeps the rest alive; if it stops, those images go
+ * stale rather than wrong, and the card's own onError still falls back.
+ */
+const PERMANENT_IMAGE = /^https?:\/\/(www\.)?facebook\.com\/ads\/image\//i;
+
+function applyMetaImages(out: ProjectCreativeRaw): void {
+  for (const [k, url] of Object.entries(out.fbMetaImages)) {
+    const rec = out.fbAssets[k];
+    if (!rec) continue;
+    if (PERMANENT_IMAGE.test(rec.image)) continue;
+    rec.image = url;
+    // The thumb is the onError fallback and must stay a DIFFERENT url, or
+    // the fallback re-requests the same failing address (the v563 note on
+    // the render side says the same thing from the other end).
+    if (rec.thumb === url) rec.thumb = "";
   }
 }
 
