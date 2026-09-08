@@ -474,3 +474,29 @@ env:
     secret: VAPID_PRIVATE_KEY
     availability:
       - RUNTIME
+
+  # ─── Meta Marketing (Graph) API — "צפייה במודעה" ──────────────────
+  # Activated 2026-09-08. A Business Manager SYSTEM USER token
+  # (the `creativeintelbot` identity, scoped `ads_read`, which already
+  # holds asset access on the ad accounts). It exists for the one field
+  # neither Supermetrics nor the Supabase warehouse has: the ad's
+  # shareable preview link — see lib/metaGraph.ts for the measurements
+  # behind that, and lib/fbAdPreviewsExport.ts for the tab it writes.
+  # A system-user token has no expiry date; what kills it is the system
+  # user losing asset access, which surfaces as Graph error code 190.
+  #
+  # Consumed ONLY by /api/cron/fb-ad-previews, and read LAZILY inside
+  # metaGraph.ts's token() rather than at module scope, so RUNTIME
+  # availability is enough — the build never touches it. (A module-level
+  # read would drag the token into any bundle that type-imports from
+  # there, which is the trap lib/supabase.ts documents.)
+  #
+  # GCP Secret Manager IAM: granted via
+  #   firebase apphosting:secrets:grantaccess META_ACCESS_TOKEN --backend fandf-hub --project fandf-dashboard
+  # on 2026-09-08. Re-run grantaccess if the backend is ever recreated —
+  # raw gcloud grants are NOT sufficient; see the VAPID note above for
+  # the rollout failure that taught us the difference.
+  - variable: META_ACCESS_TOKEN
+    secret: META_ACCESS_TOKEN
+    availability:
+      - RUNTIME
