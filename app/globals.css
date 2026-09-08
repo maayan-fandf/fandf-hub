@@ -1762,7 +1762,9 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
   align-items: stretch;
   gap: 0.5rem;
   padding: 0.9rem 1rem 0.9rem 1rem;
-  padding-inline-start: 1.25rem;
+  /* Was 1.25rem to clear the company stripe that used to sit at
+     inset-inline-start: 0.45rem. The stripe is gone, so the extra
+     indent is just a card whose text starts further in on one side. */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1993,16 +1995,24 @@ html[data-theme="dark"] { --loading-video-bg: #848585; }
   font-size: 0.85rem;
 }
 
-/* Color-coded left edge from the parent company group's --co-solid. */
-.project-list a::before {
-  content: "";
-  position: absolute;
-  inset-block: 0.4rem;
-  inset-inline-start: 0.45rem;
-  width: 4px;
-  border-radius: 4px;
-  background: var(--co-solid, var(--accent));
-}
+/* The card's coloured start edge is GONE, along with the company tint it
+   came from (2026-09-08).
+
+   It carried the parent company's `--co-solid` — which is a hash of the
+   company NAME into twelve fixed hues, so nothing about גיא ודורון was
+   ever yellow. That buys stable identity and no meaning, and on this page
+   it bought neither: `.project-list` exists in exactly one place and is
+   always inside a single `.company-group`, so every card in a group wore
+   the same stripe, under a group header already tinted the same colour.
+   Eight collapsed groups stacked up read as eight pastel bands with
+   nothing to say.
+
+   The vars themselves stay — the kanban board still tints its columns with
+   them, keyed on the ASSIGNEE rather than the company, where a column's
+   colour does separate one thing from another on the same screen. This
+   page simply no longer sets `data-co`, so every `var(--co-*, …)` below
+   falls back on its own and the accent that remains is the hub's one
+   accent. */
 
 .project-list a:hover {
   border-color: var(--co-solid, var(--accent));

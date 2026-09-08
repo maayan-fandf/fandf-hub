@@ -16,7 +16,6 @@ import {
 } from "@/lib/appsScript";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
-import { companyColorSlot } from "@/lib/colors";
 import { scopeProjectsToPerson } from "@/lib/scope";
 import { projectHref } from "@/lib/projectHref";
 import { isProjectEndedByIso, morningScopeFor } from "@/lib/projectEnded";
@@ -274,7 +273,6 @@ export default async function HomePage() {
           childSelector=":scope > .company-group"
         >
           {grouped.map((g) => {
-            const slot = companyColorSlot(g.company || "__ungrouped");
             // A company is "fully ended" only when every one of its projects
             // is past-end. CSS uses data-all-ended="1" on the whole group to
             // hide the group (not just its rows) when hide-ended is active.
@@ -307,7 +305,6 @@ export default async function HomePage() {
               <details
                 key={g.company || "__ungrouped"}
                 className="company-group"
-                data-co={slot}
                 data-all-ended={allEnded ? "1" : "0"}
                 data-all-inactive={allInactive ? "1" : "0"}
                 data-any-mine={anyMine ? "1" : "0"}
