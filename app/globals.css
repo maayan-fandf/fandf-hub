@@ -1238,9 +1238,17 @@ a:hover {
    on <html>. When set, the home grid hides everything that isn't a
    live campaign: projects past their end-date (data-ended="1") AND
    projects with no current-month spend (data-inactive="1"), plus the
-   company groups where every project is one or the other. Merged from
-   two separate toggles per Maayan 2026-05-16 — the only question the
-   grid needs to answer is "is this live right now".
+   whole company card when nothing inside it is live at all
+   (data-no-live="1"). Merged from two separate toggles per Maayan
+   2026-05-16 — the only question the grid needs to answer is "is this
+   live right now".
+
+   data-no-live REPLACED a pair of data-all-ended / data-all-inactive
+   selectors on 2026-09-09. Two aggregates could not express "no live
+   project": a dormant client whose projects were dead in two different
+   ways satisfied neither, and every company's כללי row — never ended,
+   never inactive — held both at 0 on its own. תדהר and פרשקובסקי sat on
+   the grid that way, as a card whose only visible row was כללי.
 
    The top-nav dropdown is ALWAYS filtered to live (no data-hide-ended
    gate) — a tight hover-menu should never carry dead weight, and the
@@ -1249,8 +1257,7 @@ html[data-hide-ended="1"] .project-list > li[data-ended="1"],
 html[data-hide-ended="1"] .project-list > li[data-inactive="1"] {
   display: none;
 }
-html[data-hide-ended="1"] .company-group[data-all-ended="1"],
-html[data-hide-ended="1"] .company-group[data-all-inactive="1"] {
+html[data-hide-ended="1"] .company-group[data-no-live="1"] {
   display: none;
 }
 
@@ -1261,9 +1268,29 @@ html[data-hide-ended="1"] .company-group[data-all-inactive="1"] {
 .projects-nav-projects > li[data-inactive="1"] {
   display: none;
 }
-.projects-nav-company[data-all-ended="1"],
-.projects-nav-company[data-all-inactive="1"] {
+.projects-nav-company[data-no-live="1"] {
   display: none;
+}
+
+/* "The filters emptied the grid" note. Hidden by default; shown only when
+   no company group survives the toggles that are currently on. Written as
+   three explicit combinations rather than one clever selector because the
+   two filters hide on different attributes and :has() has no "or" —
+   the fourth combination (both toggles off) can't hide anything, so it
+   needs no rule. */
+.home-all-filtered {
+  display: none;
+}
+html[data-hide-ended="1"][data-show-mine="1"]
+  .company-groups:not(:has(> .company-group[data-no-live="0"][data-any-mine="1"]))
+  ~ .home-all-filtered,
+html[data-hide-ended="1"][data-show-mine="0"]
+  .company-groups:not(:has(> .company-group[data-no-live="0"]))
+  ~ .home-all-filtered,
+html[data-hide-ended="0"][data-show-mine="1"]
+  .company-groups:not(:has(> .company-group[data-any-mine="1"]))
+  ~ .home-all-filtered {
+  display: block;
 }
 
 /* "רק שלי" CSS: the toggle writes data-show-mine="1" on <html>.

@@ -11,17 +11,18 @@ import { isProjectEndedByIso } from "@/lib/projectEnded";
 // All state handled by CSS :hover / :focus-within — no React state required, so
 // this can stay a plain server component.
 //
-// Hide-ended: when html[data-hide-ended="1"] is active (HomeFilterBar toggle
-// or the SSR default), per-project <li>s with data-ended="1" hide via CSS,
-// and company groups where every project is ended (data-all-ended="1") hide
-// entirely. Same data attributes + same CSS pattern as the home grid.
+// Always filtered to live — unlike the home grid, this menu has no toggle.
+// Two data attributes drive it, both stamped here and hidden by CSS in
+// globals.css: data-ended="1" on a project past its end date, and
+// data-inactive="1" on one with no budget and no spend. A company whose
+// every non-כללי project is one or the other carries data-no-live="1" and
+// leaves the menu whole — its way back in is the "כל הפרויקטים" link at the
+// top of this dropdown, which lands on the grid where the toggle lives.
 //
-// Hide-inactive: same pattern but for projects without a currently-running
-// campaign (paused-budget signal active, or never spent anything). The
-// data-inactive / data-all-inactive attributes are stamped here and the CSS
-// hide rule keys off html[data-hide-inactive="1"]. The General (כללי)
-// catch-all project is always shown even when inactive so the user has a
-// place to drop ad-hoc tasks.
+// The General (כללי) catch-all is never stamped either way, so it always
+// shows — the user needs somewhere to drop ad-hoc tasks. That is also why
+// it is excluded from the data-no-live aggregate: it would otherwise keep
+// every dormant client on the menu single-handedly.
 export default function ProjectsNavMenu({
   projects,
   endIsoByProject,
@@ -70,30 +71,33 @@ export default function ProjectsNavMenu({
           <div className="projects-nav-empty">אין פרויקטים זמינים</div>
         )}
         {grouped.map(({ company, projects: list }) => {
-          // A company is "fully ended" only when every one of its projects
-          // is past-end. CSS uses data-all-ended="1" to hide the whole
-          // company entry (not just the inner <li>s) when hide-ended is
-          // active — matches the home grid's company-group treatment.
-          const allEnded =
-            list.length > 0 &&
-            list.every((p) => isProjectEndedByIso(endIsoByProject[p.name]));
-          // Parallel concept for "fully inactive" — every non-General
-          // project lacks current campaign activity. General (כללי)
-          // is excluded from this aggregate because it always shows,
-          // so if a company's only "active" project is the General one
-          // we still want the whole company group to collapse.
+          // A company leaves the menu when nothing inside it is live —
+          // every non-כללי project is past-end OR has no budget and no
+          // spend. Same single predicate as the home grid (app/page.tsx),
+          // deliberately: the two surfaces are meant to give the same
+          // answer, and the pair of all-ended / all-inactive aggregates
+          // this replaces let a company through whenever its dead
+          // projects were dead in two different ways — or whenever כללי
+          // (never ended, never inactive) was there to hold the average up.
+          //
+          // The menu has no toggle of its own; the escape hatch is the
+          // "כל הפרויקטים" link at the top of this dropdown, which lands
+          // on the grid where the פעילים / כל הפרויקטים toggle lives.
           const nonGeneral = list.filter(
             (p) => p.name !== GENERAL_PROJECT_NAME,
           );
-          const allInactive =
+          const noLive =
             nonGeneral.length > 0 &&
-            nonGeneral.every((p) => !!inactiveByProject[p.name]);
+            nonGeneral.every(
+              (p) =>
+                isProjectEndedByIso(endIsoByProject[p.name]) ||
+                !!inactiveByProject[p.name],
+            );
           return (
             <div
               key={company}
               className="projects-nav-company"
-              data-all-ended={allEnded ? "1" : "0"}
-              data-all-inactive={allInactive ? "1" : "0"}
+              data-no-live={noLive ? "1" : "0"}
             >
               <div
                 className="projects-nav-company-btn"
@@ -104,9 +108,17 @@ export default function ProjectsNavMenu({
                 <span className="projects-nav-company-count">
                   {/* Count only what's actually shown — the menu is
                       always-filtered to active, so the raw list length
-                      would over-report. */}
+                      would over-report. Ended counts as not-shown too:
+                      the CSS hides those rows, and counting only the
+                      inactive ones made a company read "2" above a
+                      single visible row. */}
                   {list.reduce(
-                    (n, p) => n + (inactiveByProject[p.name] ? 0 : 1),
+                    (n, p) =>
+                      n +
+                      (isProjectEndedByIso(endIsoByProject[p.name]) ||
+                      inactiveByProject[p.name]
+                        ? 0
+                        : 1),
                     0,
                   )}
                 </span>

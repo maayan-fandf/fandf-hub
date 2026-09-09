@@ -282,13 +282,31 @@ export default async function HomePage() {
           childSelector=":scope > .company-group"
         >
           {grouped.map((g) => {
-            // A company is "fully ended" only when every one of its projects
-            // is past-end. CSS uses data-all-ended="1" on the whole group to
-            // hide the group (not just its rows) when hide-ended is active.
-            const allEnded =
-              g.projects.length > 0 &&
-              g.projects.every((p) =>
-                isProjectEndedByIso(endIsoByProject.get(p.name)),
+            // A company drops out of the "פעילים" view when NOTHING inside it
+            // is live — every non-כללי project is either past its end date or
+            // has no budget and no spend. One predicate, not two, because
+            // "every project ended" and "every project inactive" each missed
+            // the mixed case: תדהר (one ended project) and פרשקובסקי (six
+            // ended) both stayed on the grid as a company card whose only
+            // visible row was כללי, since כללי is never ended and never
+            // inactive and so kept the all-* aggregates at 0. Measured
+            // 2026-09-09 against the rendered grid.
+            //
+            // The `length > 0` guard keeps a company that has ONLY כללי (F&F
+            // itself) visible: it is a workspace, not a dormant client.
+            //
+            // Fail-open is preserved: a project with no ALL CLIENTS match gets
+            // neither stamp, so it reads as live and holds its company on the
+            // grid. Better a stale card than a hidden live campaign.
+            const nonGeneral = g.projects.filter(
+              (p) => p.name !== GENERAL_PROJECT_NAME,
+            );
+            const noLive =
+              nonGeneral.length > 0 &&
+              nonGeneral.every(
+                (p) =>
+                  isProjectEndedByIso(endIsoByProject.get(p.name)) ||
+                  inactiveByProject.has(p.name),
               );
             // "רק שלי" filter — a project is "mine" when the viewer is
             // on its roster (matches the /tasks-page semantic of "you
@@ -301,21 +319,11 @@ export default async function HomePage() {
             const anyMine = g.projects.some((p) =>
               mineKeys.has(`${p.company}|${p.name}`),
             );
-            // "Fully inactive" — every non-General project is paused/
-            // never-ran. General (כללי) is excluded so a company that
-            // only has its catch-all as "active" still collapses out
-            // when hide-inactive is on.
-            const allInactive =
-              g.projects.filter((p) => p.name !== GENERAL_PROJECT_NAME).length > 0 &&
-              g.projects
-                .filter((p) => p.name !== GENERAL_PROJECT_NAME)
-                .every((p) => inactiveByProject.has(p.name));
             return (
               <details
                 key={g.company || "__ungrouped"}
                 className="company-group"
-                data-all-ended={allEnded ? "1" : "0"}
-                data-all-inactive={allInactive ? "1" : "0"}
+                data-no-live={noLive ? "1" : "0"}
                 data-any-mine={anyMine ? "1" : "0"}
               >
                 <summary className="company-group-summary">
@@ -385,6 +393,20 @@ export default async function HomePage() {
             );
           })}
         </StaggerReveal>
+      )}
+
+      {/* The grid isn't empty — the filters emptied it. Reachable for real
+          now that a whole company can drop out: a client whose only project
+          ended would otherwise land on a blank page with no hint that a
+          toggle put it there. Rendered always and revealed by CSS (see
+          .home-all-filtered in globals.css), because which groups survive is
+          decided client-side by the two toggles — the server can't know. */}
+      {grouped.length > 0 && (
+        <div className="empty home-all-filtered">
+          <span className="emoji" aria-hidden>🟢</span>
+          אין כרגע פרויקטים פעילים להצגה. הכפתור «כל הפרויקטים» למעלה מחזיר גם
+          את אלה שהסתיימו או שאין להם הוצאה החודש.
+        </div>
       )}
     </main>
   );
