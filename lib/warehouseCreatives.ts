@@ -187,7 +187,24 @@ export const getWarehouseCreatives = cache(
         if (!campaign || !ad) continue;
         const k = cardKey(campaign, ad);
         const eff = statusById.get(String(r.ad_id ?? ""));
-        if (eff && !statusByKey.has(k)) statusByKey.set(k, eff);
+        // ACTIVE WINS over whatever arrived first.
+        //
+        // A card is a (campaign, ad-name) GROUP, and one ad name routinely
+        // fronts many real ads across ad sets. They do not share a status:
+        // measured on לוריא's "2026-08-19A", the warehouse holds 30 rows —
+        // 9 ACTIVE, 10 PAUSED, 7 ADSET_PAUSED, 4 CAMPAIGN_PAUSED. Taking
+        // whichever row came back first labelled a running creative
+        // "⏸ קהל מושהה", which is what the account manager saw and correctly
+        // called wrong.
+        //
+        // If any member of the group is delivering, the group is delivering —
+        // that is also what Ads Manager shows the person who paused one ad set
+        // out of three. Anything else keeps the first value, so a fully paused
+        // card still reports WHY it is paused rather than collapsing to
+        // "paused".
+        if (eff && (!statusByKey.has(k) || eff.toUpperCase() === "ACTIVE")) {
+          statusByKey.set(k, eff);
+        }
         const image = String(r.image_url ?? "").trim();
         const thumb = String(r.thumbnail_url ?? "").trim();
         if (!image && !thumb) continue;

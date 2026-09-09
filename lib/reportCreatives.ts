@@ -492,12 +492,20 @@ async function fetchProjectCreativeRaw(
         // The 1080px creative render, asked of Meta in the same pull.
         const img = iImg >= 0 ? String(row[iImg] ?? "").trim() : "";
         if (img.startsWith("http")) out.fbMetaImages[k] = img;
-        // …and the effective status from that same row. First writer wins,
-        // matching the tab's own ad_id-keyed merge: one ad name can front
-        // several creatives, and re-reading later rows would let an old
-        // paused variant overwrite the running one's status.
+        // …and the effective status from that same row, with ACTIVE winning.
+        //
+        // First-writer-wins was wrong here for the same reason it was wrong in
+        // warehouseCreatives: one ad NAME fronts many real ads, and they do
+        // not share a status. The previews tab holds both ACTIVE and
+        // ADSET_PAUSED rows under לוריא's "2026-08-19A" in one campaign, so
+        // whichever landed first decided the pill — and it labelled a running
+        // creative as paused. If any ad in the group delivers, the group
+        // delivers; otherwise the first reason stands, so a genuinely stopped
+        // card still says whether it was the ad, the ad set or the campaign.
         const st = iStat >= 0 ? String(row[iStat] ?? "").trim() : "";
-        if (st && !out.fbMetaStatus[k]) out.fbMetaStatus[k] = st;
+        if (st && (!out.fbMetaStatus[k] || st.toUpperCase() === "ACTIVE")) {
+          out.fbMetaStatus[k] = st;
+        }
       }
     }
   }
@@ -1010,9 +1018,27 @@ function indexAdSetTargeting(
 function applyMetaStatus(out: ProjectCreativeRaw): void {
   for (const [k, status] of Object.entries(out.fbMetaStatus)) {
     const rec = out.fbAssets[k];
-    if (!rec || rec.status) continue;
+    if (!rec) continue;
+    // Fill a blank, as before — and additionally UPGRADE a paused value to
+    // ACTIVE when our own Meta pull says the ad is running.
+    //
+    // This was a pure gap-filler, on the reasoning that overriding a source
+    // could rearrange the grid. What that cost was worse: לוריא's
+    // "2026-08-27A" is ONE real ad and Meta reports it ACTIVE, while the
+    // warehouse's single row for it says ADSET_PAUSED — so the hub showed a
+    // running ad as stopped, and the account manager who had just checked
+    // Ads Manager was the one who caught it.
+    //
+    // Only in this direction. A paused reading never overrides an active one,
+    // which keeps the rule the same as the within-source one above: if
+    // anything says the ad is delivering, it is delivering. The cost is that
+    // an ad paused since our last nightly pull can read active for a day; the
+    // opposite error hides live spend, and that is the worse of the two.
+    const isActive = status.toUpperCase() === "ACTIVE";
+    if (rec.status && !(isActive && rec.status.toUpperCase() !== "ACTIVE")) continue;
     rec.status = status;
     rec.statusFromMeta = true;
+    rec.statusFromWarehouse = false;
   }
 }
 
