@@ -53,6 +53,9 @@ export type FbNewAdsResult = {
   hours: number;
   /** Accounts that errored, so a partial answer never passes as a whole one. */
   failed: { accountId: string; error: string }[];
+  /** How many of the ads turned up OUTSIDE the accounts this project is known
+   *  to advertise in — i.e. only the widening pass found them. */
+  foreign: number;
 };
 
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
@@ -148,13 +151,14 @@ export async function getNewFbAdsForProject(opts: {
   const slugLower = slug.toLowerCase();
 
   const bySlug = await accountsBySlugCached(subjectEmail);
-  let accounts = bySlug[slugLower] ?? [];
+  const known = bySlug[slugLower] ?? [];
+  let accounts = known;
   let sweptAll = false;
+  const { listAdAccounts } = await import("@/lib/metaGraph");
   if (!accounts.length) {
     // Never advertised on Facebook, or advertises under a campaign name the
     // Keys patterns miss. 23 accounts is ~15s — slow for a button, but this
     // is the path where the alternative is an empty answer with no reason.
-    const { listAdAccounts } = await import("@/lib/metaGraph");
     accounts = (await listAdAccounts()).map((a) => clean(a.account_id)).filter(Boolean);
     sweptAll = true;
   }
@@ -164,45 +168,58 @@ export async function getNewFbAdsForProject(opts: {
   const ads: ReportFbAd[] = [];
   const seen = new Set<string>();
 
-  for (const accountId of accounts) {
-    let rows;
-    try {
-      rows = await listAdsCreatedSince(accountId, since);
-    } catch (e) {
-      failed.push({
-        accountId,
-        error:
-          e instanceof MetaGraphError
-            ? `${e.status}${e.code ? `/${e.code}` : ""} ${e.message}`
-            : e instanceof Error
-              ? e.message
-              : String(e),
-      });
-      continue;
+  const scan = async (list: string[]) => {
+    for (const accountId of list) {
+      let rows;
+      try {
+        rows = await listAdsCreatedSince(accountId, since);
+      } catch (e) {
+        failed.push({
+          accountId,
+          error:
+            e instanceof MetaGraphError
+              ? `${e.status}${e.code ? `/${e.code}` : ""} ${e.message}`
+              : e instanceof Error
+                ? e.message
+                : String(e),
+        });
+        continue;
+      }
+
+      for (const r of rows) {
+        const campaign = clean(r.campaign?.name);
+        const ad = clean(r.name);
+        if (!campaign || !ad) continue;
+
+        // Three outcomes, and the middle one is the point of the feature.
+        // Matches THIS project → ours. Matches ANOTHER project → someone
+        // else's ad that happens to share our account; showing it here would
+        // be a leak of the wrong kind, so it is dropped. Matches NOTHING →
+        // a campaign nobody has added to Keys yet, which is precisely the
+        // "just launched" case the sheets are blind to. Those are shown,
+        // flagged, because a campaign missing from Keys is itself the defect
+        // an account manager is checking for.
+        const matched = matchSlug(campaign, matchMap);
+        if (matched && matched !== slugLower) continue;
+        const unmapped = !matched;
+
+        const key = `${campaign}|${ad}`.toLowerCase();
+        if (knownKeys?.has(key)) continue;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        pushAd(r, accountId, campaign, ad, unmapped);
+      }
     }
+  };
 
-    for (const r of rows) {
-      const campaign = clean(r.campaign?.name);
-      const ad = clean(r.name);
-      if (!campaign || !ad) continue;
-
-      // Three outcomes, and the middle one is the point of the feature.
-      // Matches THIS project → ours. Matches ANOTHER project → someone
-      // else's ad that happens to share our account; showing it here would
-      // be a leak of the wrong kind, so it is dropped. Matches NOTHING →
-      // a campaign nobody has added to Keys yet, which is precisely the
-      // "just launched" case the sheets are blind to. Those are shown,
-      // flagged, because a campaign missing from Keys is itself the defect
-      // an account manager is checking for.
-      const matched = matchSlug(campaign, matchMap);
-      if (matched && matched !== slugLower) continue;
-      const unmapped = !matched;
-
-      const key = `${campaign}|${ad}`.toLowerCase();
-      if (knownKeys?.has(key)) continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
+  function pushAd(
+    r: Awaited<ReturnType<typeof listAdsCreatedSince>>[number],
+    accountId: string,
+    campaign: string,
+    ad: string,
+    unmapped: boolean,
+  ) {
       const image = clean(r.creative?.thumbnail_url);
       const preview = clean(r.preview_shareable_link);
       ads.push({
@@ -240,11 +257,44 @@ export async function getNewFbAdsForProject(opts: {
         unmappedCampaign: unmapped,
         previews: withPreviews && preview ? [preview] : undefined,
       });
+  }
+
+  await scan(accounts);
+
+  /**
+   * FOUND NOTHING IN THE PROJECT'S OWN ACCOUNTS? LOOK EVERYWHERE.
+   *
+   * The account list above is derived from where this project has ADVERTISED
+   * BEFORE, which is circular against the one case that matters: an ad
+   * launched into an account the project has no history in. That is not
+   * hypothetical — it is the first thing that happened in real use, on לוריא,
+   * where the ad someone had just put up was in another account entirely and
+   * the button reported "nothing new" with complete confidence.
+   *
+   * So a scoped miss widens instead of giving up. It costs ~15s across 23
+   * accounts, and it is spent only on the path where the alternative is a
+   * wrong answer — a hit never reaches here. `matchSlug` still decides
+   * ownership, so widening the SEARCH does not widen what gets shown: an ad
+   * belonging to another project is still dropped wherever it is found.
+   */
+  if (!ads.length && !sweptAll) {
+    const all = (await listAdAccounts())
+      .map((a) => clean(a.account_id))
+      .filter((id) => id && !known.includes(id));
+    if (all.length) {
+      await scan(all);
+      sweptAll = true;
+      accounts = [...known, ...all];
     }
   }
 
   // Newest first: the ad someone just launched is the one they came to see.
   ads.sort((a, b) => String(b.liveCreatedIso).localeCompare(String(a.liveCreatedIso)));
 
-  return { ads, accounts, sweptAll, hours, failed };
+  /** Ads found somewhere OTHER than the project's known accounts — worth
+   *  telling the reader, because it means the project has started
+   *  advertising from a new account and nothing else in the hub knows yet. */
+  const foreign = ads.filter((a) => !known.includes(a.account)).length;
+
+  return { ads, accounts, sweptAll, hours, failed, foreign };
 }

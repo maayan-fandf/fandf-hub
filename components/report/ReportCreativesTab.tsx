@@ -602,6 +602,8 @@ export default function ReportCreativesTab({
         ads?: ReportFbAd[];
         hours?: number;
         sweptAll?: boolean;
+        accounts?: string[];
+        foreign?: number;
         failed?: { accountId: string }[];
         error?: string;
       };
@@ -619,12 +621,20 @@ export default function ReportCreativesTab({
       // we cannot claim there is nothing new, only that we found nothing.
       const partial = (j.failed?.length ?? 0) > 0;
       const days = Math.round((j.hours ?? 72) / 24);
+      const n = j.accounts?.length ?? 0;
+      // Say what was CHECKED, not just what was found. A bare "nothing new"
+      // after a button press reads as a broken button — the first report of
+      // this feature failing was exactly that, on a project where the answer
+      // was correct. Naming the accounts scanned makes it a result.
       setRefreshNote(
         found.length
-          ? `נמצאו ${found.length} מודעות חדשות`
+          ? `נמצאו ${found.length} מודעות חדשות` +
+              ((j.foreign ?? 0) > 0
+                ? ` (${j.foreign} בחשבון שאינו החשבון הרגיל של הפרויקט)`
+                : "")
           : partial
             ? "חלק מחשבונות המודעות לא ענו — נסו שוב"
-            : `אין מודעות חדשות מ-${days} הימים האחרונים`,
+            : `נבדקו ${n} חשבונות — אין מודעה שעלתה ב-${days} הימים האחרונים`,
       );
     } catch {
       setRefreshNote("לא הצלחנו לבדוק מול פייסבוק כרגע");

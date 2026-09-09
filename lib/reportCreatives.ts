@@ -1797,9 +1797,34 @@ function aggregateCreatives(
     .sort((a, b) => b.impressions - a.impressions)
     .slice(0, TOP_KEYWORDS);
 
-  // History rides only the RENDERED cards — attaching before the slice would
-  // pay payload for ads nobody sees.
-  const topAds = ads.slice(0, sliceCap);
+  /**
+   * EVERY AD THAT SPENT IN THE WINDOW GETS A CARD. The cap rations only the
+   * ones that spent nothing.
+   *
+   * The plain `slice(0, sliceCap)` hid real spend. An ad with cost and no
+   * leads has `cpl = 0`, which the sort above pushes to Infinity — dead last
+   * — so a paused ad that burned budget without converting was exactly the
+   * card most likely to be cut, and it is exactly the card someone needs to
+   * see. The grid also stopped reconciling with the platform total: money
+   * appeared in the KPI band with no creative behind it.
+   *
+   * Safe to uncap because the population is small. Measured across the
+   * portfolio for 2026-08-01..09-09: 29 projects had FB spend, the median
+   * project had 7 ads with spend and the busiest (לוריא, רובע איילון) had 18.
+   * So this adds at most ~10 cards to the heaviest project, not hundreds.
+   *
+   * Order is untouched — both halves keep the sort above, so the winner is
+   * still first and the ranking within the spenders is unchanged.
+   *
+   * History rides only the RENDERED cards; attaching before this would pay
+   * payload for ads nobody sees.
+   */
+  const spent = ads.filter((a) => a.cost > 0);
+  const unspent = ads.filter((a) => a.cost <= 0);
+  const topAds = [
+    ...spent,
+    ...unspent.slice(0, Math.max(0, sliceCap - spent.length)),
+  ];
 
   // Creatives that survive only in the 365-day assets tab: they ran before the
   // metrics window opens, so there is no cost/impressions row for them
