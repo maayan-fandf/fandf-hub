@@ -1,7 +1,8 @@
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import {
   listAdAccounts,
-  listActiveAdImages,
+  listRecentAdImages,
+  IMAGE_WINDOW_DAYS,
   listAdsWithPreview,
   metaConfigured,
   MetaGraphError,
@@ -40,7 +41,7 @@ import {
  * ── DO NOT USE `synced_at` TO CHECK WHETHER A RUN HAPPENED ──
  * It is the incremental CURSOR, not a heartbeat. The stamp is written only
  * onto rows this run re-pulled — ads whose `updated_time` moved — so a run
- * that finds nothing changed refreshes every ACTIVE ad's image, rewrites all
+ * that finds nothing changed refreshes every recent ad's image, rewrites all
  * 30,335 rows, returns ok:true, and leaves `synced_at` exactly where it was.
  * Measured twice on 2026-09-08: two separate 200s (`adsSeen: 0`,
  * `withImage: 694` then `690`) both left it at 10:39:26.953Z.
@@ -78,7 +79,7 @@ export type FbAdPreviewsResult = {
   accountsFailed: { accountId: string; error: string }[];
   adsSeen: number;
   withPreview: number;
-  /** Running ads that got a fresh 1080px render this run. */
+  /** Ads inside IMAGE_WINDOW_DAYS that got a fresh 1080px render this run. */
   withImage: number;
   rowsWritten: number;
   mode: "full" | "incremental";
@@ -143,6 +144,10 @@ export async function exportFbAdPreviews(
   const full = !!opts.full || !byAdId.size || !newestSync;
   const sinceMs = full ? 0 : Date.parse(newestSync) - OVERLAP_SECONDS * 1000;
   const updatedSince = full || !Number.isFinite(sinceMs) ? undefined : Math.floor(sinceMs / 1000);
+  /** The image pass has its own, much wider window — it is not incremental.
+   *  Signed CDN URLs expire, so every recent ad needs a FRESH one every night,
+   *  not just the ads whose definition happened to change. */
+  const imagesSince = Math.floor(Date.now() / 1000) - IMAGE_WINDOW_DAYS * 86400;
 
   // ── pull ────────────────────────────────────────────────────────────
   const accounts = await listAdAccounts();
@@ -180,10 +185,12 @@ export async function exportFbAdPreviews(
         ]);
       }
 
-      // Pass two: the 1080px render for this account's RUNNING ads. Its own
-      // walk at a smaller page size — see listActiveAdImages for why it
-      // cannot ride the one above.
-      for (const { id: adId, image } of await listActiveAdImages(id)) {
+      // Pass two: the 1080px render for this account's RECENT ads — not just
+      // the running ones. A paused ad still holds a card for as long as its
+      // spend is in the window, and those cards were rendering "אין תצוגה"
+      // while Meta had the picture. Its own walk at a smaller page size; see
+      // listRecentAdImages for why it cannot ride the one above.
+      for (const { id: adId, image } of await listRecentAdImages(id, imagesSince)) {
         const row = byAdId.get(adId);
         if (!row) continue; // an ad with no preview link has no row to sit in
         row[iImage] = image;
@@ -213,17 +220,31 @@ export async function exportFbAdPreviews(
   }
 
   // ── write ───────────────────────────────────────────────────────────
+  //
+  // CHUNKED, because the body outgrew a single request. The tab is 30,335
+  // rows, and widening the image pass from ACTIVE-only to 150 days took the
+  // filled image cells from 694 to ~2,600 — each a ~565-character signed CDN
+  // URL. That put the payload at 6.6 MB, and the first run at that size came
+  // back `read ECONNRESET` from the Sheets write (the data had landed, but a
+  // reset the caller can see is a reset that will one night mean a half-empty
+  // tab). Five thousand rows a request keeps each body near a megabyte.
   const rows = [...byAdId.values()];
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID_CREATIVES,
     range: `'${TAB}'!A:Z`,
   });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID_CREATIVES,
-    range: `'${TAB}'!A1`,
-    valueInputOption: "RAW",
-    requestBody: { values: [[...HEADER], ...rows] },
-  });
+  const all = [[...HEADER], ...rows];
+  const CHUNK = 5000;
+  for (let i = 0; i < all.length; i += CHUNK) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID_CREATIVES,
+      // 1-based, and row 1 is the header — so the slice starting at index i
+      // lands on sheet row i+1.
+      range: `'${TAB}'!A${i + 1}`,
+      valueInputOption: "RAW",
+      requestBody: { values: all.slice(i, i + CHUNK) },
+    });
+  }
 
   return {
     accounts: accounts.length,

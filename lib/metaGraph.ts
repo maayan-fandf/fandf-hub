@@ -410,7 +410,7 @@ export async function listAdSetTargeting(
 }
 
 /**
- * The 1080px creative render, for the RUNNING ads only.
+ * The 1080px creative render, for ads recent enough to still have a card.
  *
  * A SECOND PASS, and both halves of that are deliberate.
  *
@@ -421,13 +421,18 @@ export async function listAdSetTargeting(
  * the creative is added. So the image cannot ride the preview walk; it needs
  * its own, at limit=100.
  *
- * Only the running ads, because at limit=100 the whole 30,585-ad archive
- * would take the better part of an hour — and would be wasted work. This URL
- * is a signed CDN address that expires within days; caching one for an ad
- * paused last year means storing a link that is dead before anyone opens the
- * card. Measured across the portfolio: 674 ACTIVE ads, every one of them
- * carrying a 1080 image, in 26 seconds. A paused ad keeps whatever the
- * warehouse has for it, which is the same picture it has today.
+ * Scoped by IMAGE_WINDOW_DAYS rather than by status — see that constant for
+ * why the ACTIVE-only cut was wrong. Measured 2026-09-09 at 150 days: 2,576
+ * ads across 23 accounts, ALL of them carrying a 1080 image, zero failures,
+ * 56 seconds; the ACTIVE-only pass it replaces covered 674 ads in 26s.
+ *
+ * ── THESE URLS EXPIRE, AND THAT IS LOAD-BEARING ──
+ * Every one is a signed scontent-*.fbcdn.net address (measured on אפרידר:
+ * 197 of 197 signed, none of the permanent facebook.com/ads/image/ form,
+ * because 190 of its creatives are SHARE). They stay good for days, so this
+ * works only BECAUSE the cron rewrites them nightly. If that job stops, the
+ * pictures fade out across the whole tab within about a week — quietly, one
+ * card at a time.
  */
 /**
  * Ads CREATED in one account since a moment — everything a card needs, in a
@@ -442,7 +447,7 @@ export async function listAdSetTargeting(
  *
  * ONE CALL, unlike the cron's two. The cron has to split the creative into
  * its own walk because Meta refuses a 500-ad page with `creative{…}`
- * expanded (see listActiveAdImages). That limit is about page WEIGHT, not
+ * expanded (see listRecentAdImages). That limit is about page WEIGHT, not
  * about the field: at limit=50 over a couple of days' worth of ads the same
  * expansion is served without complaint. Measured 2026-09-08 across all 23
  * accounts at a 48-hour window: 20 ads, 675ms average per account, worst
@@ -469,15 +474,33 @@ export async function listAdsCreatedSince(
   });
 }
 
-export async function listActiveAdImages(
+/**
+ * How far back the image pass reaches, in days.
+ *
+ * Not the whole archive: at limit=100 the full 30,585-ad history would take
+ * the better part of an hour, and most of it would be dead weight. But not
+ * only the RUNNING ads either — that was the first cut and it was wrong. A
+ * card stays in the report for as long as its spend sits in the window, so a
+ * recently PAUSED ad is exactly the card someone is looking at, and it was
+ * rendering "📷 אין תצוגה" while Meta had its picture the whole time.
+ * Reported on אחוזת אפרידר, where 136 of its 197 recent ads are non-active
+ * and every single one had a thumbnail waiting to be asked for.
+ *
+ * 150 days because that is roughly the span the metrics tab's rolling
+ * lookback can still produce cards for.
+ */
+export const IMAGE_WINDOW_DAYS = 150;
+
+export async function listRecentAdImages(
   accountId: string,
+  sinceUnix: number,
 ): Promise<{ id: string; image: string }[]> {
   const rows = await graphEdge<MetaAd>(`act_${accountId}/ads`, {
     fields:
       "id," +
       `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX}){thumbnail_url}`,
     filtering: JSON.stringify([
-      { field: "ad.effective_status", operator: "IN", value: ["ACTIVE"] },
+      { field: "ad.created_time", operator: "GREATER_THAN", value: sinceUnix },
     ]),
     limit: 100,
   });
