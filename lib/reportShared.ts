@@ -1197,15 +1197,28 @@ export type ReportAdHistory = {
 };
 
 export type ReportFbAdSet = {
+  /** The campaign this ad set ran in. Part of the row's IDENTITY, not a
+   *  label: one ad-set name is rebuilt in every new campaign, and grouping
+   *  without the campaign added their costs together and presented the total
+   *  as a single audience. */
+  campaign: string;
   name: string;
   cost: number;
   leads: number;
   cpl: number;
+  /** CRM figures for this row. They cover EVERY ad set sharing this name when
+   *  `crmAtNameLevel` is set — the meetings source has no campaign dimension,
+   *  so they are attached to the highest-spending row rather than repeated on
+   *  each, which would show the same meetings two or three times over. */
   crmLeads: number;
   scheduled: number;
   held: number;
   costPerSched: number;
   costPerHeld: number;
+  /** True when the CRM figures above span every campaign that reuses this
+   *  ad-set name, not just this row's. The card says so rather than letting
+   *  them read as this one audience's. */
+  crmAtNameLevel?: boolean;
   daily: ReportAdDaily[];
   /** Who the ad set was aimed at, from the nightly Meta pull
    *  (lib/fbAdsetTargetingExport → the `fb-adset-targeting` tab). Absent when

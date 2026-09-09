@@ -90,8 +90,13 @@ function compactData(d: ProjectReportData): unknown {
               לידים: a.leads,
               עייפה: a.fatigued ? a.fatigueReason : false,
             })),
+            // The campaign rides along because ad-set rows are keyed by
+            // (campaign, name) — the same audience is rebuilt per campaign, so
+            // without it the model sees two identical "קהל" entries with
+            // different numbers and has no way to tell them apart.
             קהלים: d.creatives.fb.topAdSets.slice(0, 5).map((s) => ({
               קהל: s.name,
+              קמפיין: s.campaign,
               עלות_לליד: Math.round(s.cpl),
               לידים: s.leads,
             })),

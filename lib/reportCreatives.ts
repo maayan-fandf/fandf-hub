@@ -1008,6 +1008,11 @@ function indexAdSetTargeting(
         .filter(Boolean),
       status: iStat >= 0 ? clean(row[iStat]) : "",
     };
+    // Campaign-scoped key FIRST — it is exact, and the report's ad-set rows
+    // are now split by campaign so they can ask for it. The two name-only
+    // keys stay as fallbacks for a row whose campaign string differs between
+    // the sheet and Meta.
+    put(`${camp}|${name}`.toLowerCase(), rec);
     put(name, rec);
     const alt = normCardName(name).toLowerCase();
     if (alt && alt !== name) put(alt, rec);
@@ -1272,30 +1277,79 @@ function aggregateCreatives(
   // FB totals + ad-sets (the adsets tab is the KPI SSOT — legacy parity).
   let totalCost = 0;
   let totalLeads = 0;
+  /**
+   * Keyed by CAMPAIGN AND ad-set name, not by name alone.
+   *
+   * One ad-set name is reused across campaigns as a matter of routine — the
+   * same audience definition ("RM", "Geo", "רשימת לקוחות") is rebuilt in each
+   * new campaign. Grouping on the name alone added their costs together and
+   * presented the total as one audience. Measured over 2026-08-01..09-09:
+   * 7 of 29 projects were affected and 47 ad-set rows were folded away; on
+   * לוריא it was ALL SIX of its ad-set names, so every card on that project
+   * was a blend of several campaigns.
+   *
+   * It also poisoned the targeting join downstream, since the age and radius
+   * shown then belonged to whichever campaign's ad set was read first — the
+   * `~` marker on nearly every לוריא card was this, not real ambiguity.
+   *
+   * Every row here has already passed `mine()`, i.e. its campaign matched one
+   * of the project's Keys campaign-ID patterns, so splitting by campaign
+   * cannot pull in another project's spend.
+   */
   const adSetAgg = new Map<
     string,
-    { cost: number; leads: number; daily: { date: string; cost: number; leads: number }[] }
+    {
+      campaign: string;
+      name: string;
+      cost: number;
+      leads: number;
+      daily: { date: string; cost: number; leads: number }[];
+    }
   >();
   for (const r of raw.fbAdSets) {
     if (!inRange(r.date)) continue;
     totalCost += r.cost;
     totalLeads += r.leads;
     if (!r.adSet) continue;
-    const a = adSetAgg.get(r.adSet) ?? { cost: 0, leads: 0, daily: [] };
+    const key = `${r.campaign}|${r.adSet}`;
+    const a =
+      adSetAgg.get(key) ??
+      { campaign: r.campaign, name: r.adSet, cost: 0, leads: 0, daily: [] };
     a.cost += r.cost;
     a.leads += r.leads;
     a.daily.push({ date: r.date, cost: r.cost, leads: r.leads });
-    adSetAgg.set(r.adSet, a);
+    adSetAgg.set(key, a);
+  }
+
+  /**
+   * CRM figures are keyed by AUDIENCE NAME and cannot be split by campaign —
+   * the meetings source has no campaign dimension. Attaching them to every
+   * split row would show the same meetings two or three times over, so they
+   * go to the row that spent the most under that name and the others show
+   * none. The card that carries them says it covers the whole name.
+   */
+  const topSpenderByName = new Map<string, string>();
+  for (const [key, a] of adSetAgg) {
+    const n = clean(a.name).toLowerCase();
+    const cur = topSpenderByName.get(n);
+    if (!cur || a.cost > (adSetAgg.get(cur)?.cost ?? 0)) topSpenderByName.set(n, key);
+  }
+  const sharesName = new Map<string, number>();
+  for (const a of adSetAgg.values()) {
+    const n = clean(a.name).toLowerCase();
+    sharesName.set(n, (sharesName.get(n) ?? 0) + 1);
   }
   const topAdSets: ReportFbAdSet[] = [...adSetAgg.entries()]
-    .map(([name, a]) => {
-      const mtg = sumOverMonths(
-        meet.audience,
-        months,
-        `${projLc}|${clean(name).toLowerCase()}`,
-      );
+    .map(([key, a]) => {
+      const nameLc = clean(a.name).toLowerCase();
+      const ownsCrm = topSpenderByName.get(nameLc) === key;
+      const shared = (sharesName.get(nameLc) ?? 1) > 1;
+      const mtg = ownsCrm
+        ? sumOverMonths(meet.audience, months, `${projLc}|${nameLc}`)
+        : null;
       return {
-        name,
+        campaign: a.campaign,
+        name: a.name,
         cost: a.cost,
         leads: a.leads,
         cpl: a.leads > 0 ? a.cost / a.leads : 0,
@@ -1304,6 +1358,9 @@ function aggregateCreatives(
         held: mtg?.held ?? 0,
         costPerSched: mtg && mtg.scheduled > 0 ? a.cost / mtg.scheduled : 0,
         costPerHeld: mtg && mtg.held > 0 ? a.cost / mtg.held : 0,
+        // Only worth flagging when the figures are actually shown AND the
+        // name really is split — a lone ad set owns its CRM outright.
+        crmAtNameLevel: ownsCrm && shared ? true : undefined,
         daily: dedupeDaily(a.daily),
       };
     })
@@ -1324,7 +1381,15 @@ function aggregateCreatives(
       // state for as long as the 15-minute entry lives. Observed exactly
       // that way in dev while this was being built.
       const tmap = raw.fbAdSetTargeting ?? {};
-      const t = tmap[s.name] ?? tmap[normCardName(s.name).toLowerCase()];
+      // CAMPAIGN-SCOPED FIRST. Now that rows are split by campaign, the
+      // targeting can be matched exactly instead of by name — which is what
+      // the `ambiguous` flag existed to apologise for. Name-only stays as the
+      // fallback, for a row whose campaign string differs between the sheet
+      // and Meta's own spelling.
+      const t =
+        tmap[`${s.campaign}|${s.name}`.toLowerCase()] ??
+        tmap[s.name] ??
+        tmap[normCardName(s.name).toLowerCase()];
       if (!t?.zones) return s;
       return {
         ...s,

@@ -419,6 +419,12 @@ function AdSetHoverCard({
   return (
     <div className="rpt-cr-adset-pop">
       <div className="rpt-cr-adset-pop-head">{s.name}</div>
+      {s.campaign && (
+        <div className="rpt-cr-adset-pop-sec">
+          <div className="rpt-cr-adset-pop-lbl">קמפיין</div>
+          <div className="rpt-cr-adset-pop-val">{s.campaign}</div>
+        </div>
+      )}
 
       {(adSetAudience(s) || loc) && (
         <div className="rpt-cr-adset-pop-sec">
@@ -916,7 +922,10 @@ export default function ReportCreativesTab({
           <div className="rpt-cr-adsets">
             {fb.topAdSets.map((s, i) => (
               <div
-                key={s.name}
+                // Composite, because the name alone is NOT unique: the same
+                // audience is rebuilt in each new campaign, and rows are now
+                // split accordingly.
+                key={`${s.campaign}|${s.name}`}
                 className={
                   "rpt-cr-adset" + (i === 0 && s.cpl > 0 ? " is-winner" : "")
                 }
@@ -925,6 +934,13 @@ export default function ReportCreativesTab({
                   {i === 0 && s.cpl > 0 ? "🏆 " : ""}
                   {s.name}
                 </div>
+                {/* The campaign, so two rows sharing an audience name can be
+                    told apart. Same treatment the ad cards give it. */}
+                {s.campaign && (
+                  <div className="rpt-cr-campaign" title={s.campaign}>
+                    {s.campaign}
+                  </div>
+                )}
                 {/* Who it was aimed at. Sits directly under the name rather
                     than at the foot of the card on purpose: the hover
                     trendline is absolutely positioned at bottom:2.2rem, and
