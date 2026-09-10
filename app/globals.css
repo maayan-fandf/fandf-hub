@@ -7174,6 +7174,35 @@ html[data-theme="dark"] .crm-trend-hilite {
   fill: rgba(255, 255, 255, 0.08);
   opacity: 1;
 }
+/* Opt-in zero-day marks (the zeroDays prop — the budget desk's strip). */
+.crm-trend-zero {
+  fill: #ef4444;
+}
+.crm-trend-nodata {
+  fill: var(--muted);
+  opacity: 0.35;
+}
+/* Portaled hover card (the portalHover prop) — fixed to the viewport so a
+   host with overflow:hidden (the budget desk's cards) cannot clip it. */
+.crm-trend-hover.is-portal {
+  position: fixed;
+  bottom: auto;
+  z-index: 1000;
+  transform: translate(-50%, -100%);
+}
+.crm-trend-hover.is-portal.is-below {
+  transform: translate(-50%, 0);
+}
+.crm-trend-hover-status {
+  font-size: 0.72em;
+  text-align: center;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.crm-trend-hover-status.is-zero {
+  color: #ef4444;
+  font-weight: 600;
+}
 .crm-trend-hover {
   position: absolute;
   /* Sit ABOVE the chart (anchored to the plot's top edge, popping upward)
@@ -21644,6 +21673,46 @@ html[data-theme="dark"] .tasks-table tr[data-user-state="awaiting_clarification"
 .budget-sort button.is-active {
   color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
 }
+/* "לידים יומיים מה-CRM" — the toolbar toggle and the per-project strip it
+   opens between a card's summary and its drill-in. The toggle is a URL
+   param (?crm=1); lib/crmDailyForBudgets says why it is page-render work. */
+.budget-crm-toggle {
+  padding: .3em .8em; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); font-size: .85em; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.budget-crm-toggle:hover { color: var(--text); }
+.budget-crm-toggle.is-active {
+  color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+}
+.budget-crm-toggle[aria-busy="true"] { opacity: .7; cursor: progress; }
+.budget-crm-strip { border-top: 1px dashed var(--border); padding: .5em 1em; }
+/* The one-line summary — a <button> that opens the chart, or a plain row
+   when there is nothing to open (no mapping, no leads). */
+.budget-crm-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3em .9em;
+  width: 100%; margin: 0; padding: 0; border: 0; background: none;
+  font: inherit; font-size: .82em; color: var(--muted); text-align: start;
+}
+button.budget-crm-head { cursor: pointer; }
+button.budget-crm-head:hover .budget-crm-title { color: var(--accent); }
+button.budget-crm-head:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px;
+}
+.budget-crm-head b { color: var(--text); font-variant-numeric: tabular-nums; }
+.budget-crm-title { color: var(--text); font-weight: 700; }
+.budget-crm-chip { border-radius: 999px; padding: .08em .65em; font-weight: 700; }
+.budget-crm-chip.is-zero { color: #dc2626; background: rgba(239,68,68,.12); }
+.budget-crm-chip.is-clean { color: #16a34a; background: rgba(34,197,94,.12); }
+html[data-theme="dark"] .budget-crm-chip.is-zero { color: #f87171; }
+html[data-theme="dark"] .budget-crm-chip.is-clean { color: #4ade80; }
+.budget-crm-note { color: var(--muted); font-size: .82em; }
+.budget-crm-note.is-alert { color: #dc2626; font-weight: 600; }
+html[data-theme="dark"] .budget-crm-note.is-alert { color: #f87171; }
+.budget-crm-loading { color: var(--muted); font-size: .82em; }
+.budget-crm-strip .crm-trend-block { margin-top: .35rem; }
+
 .budget-legend {
   display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.1em;
   color: var(--muted); font-size: .8em; margin-bottom: 1em;

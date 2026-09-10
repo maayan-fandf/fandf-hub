@@ -221,6 +221,13 @@ export type CrmFunnel = {
       meetings: number;
     }[];
   }[];
+  /** Leads per calendar day WITHOUT the source requirement the series above
+   *  applies — every in-window row with a parseable date. A day whose only
+   *  leads lack a מקור הגעה has no bar in the series, but it is not a day
+   *  without leads; the budget desk's zero-day test (lib/crmDailyForBudgets)
+   *  reads this so it does not paint such a day red. The project page does
+   *  not read it. */
+  dailyLeadTotals?: Record<string, number>;
   /** Earliest and latest dates seen in the matched rows (formatted
    *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
    *  is more than a few days behind today, the upstream pipeline has
@@ -452,6 +459,67 @@ const readSehel = cache((subjectEmail: string) =>
 const readSalesforce = cache((subjectEmail: string) =>
   fetchTabFromSheet(subjectEmail, "Salesforce!A:T"),
 );
+
+/**
+ * The newest lead DAY each CRM feed holds, whatever project it belongs to,
+ * keyed `${platform}:${source}` (lib/crmDailyShared horizonKey). "sheet" is
+ * read off the tabs above — cache()d, so free inside the render that just
+ * computed the funnels, and read as driveFolderOwner() exactly as
+ * getCrmFunnelForProject does so the cache actually hits. "warehouse" is one
+ * newest-row query per table.
+ *
+ * For the budget desk's freshness line. Taking it from the desk projects'
+ * own last leads made a feed with a single routed project (the BMBY sheet →
+ * נרקיסים, 2026-09-10) exactly as fresh as that project's last lead, so its
+ * trailing empty days drew grey instead of red — found in review.
+ *
+ * Never throws: a feed it cannot read is simply absent, and the caller falls
+ * back to the desk's own evidence. Days after today (IL) are ignored, so a
+ * typo'd future date cannot push the horizon forward.
+ */
+export async function getCrmFeedNewestDays(): Promise<Record<string, string>> {
+  const today = todayIsoIL();
+  const owner = driveFolderOwner();
+  const newestIn = (tab: RawTab, match: (h: string) => boolean): string => {
+    const i = tab.headers.findIndex(match);
+    if (i < 0) return "";
+    let best = "";
+    for (const r of tab.rows) {
+      const d = dateOnly((r as unknown[])[i]);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today && d > best) best = d;
+    }
+    return best;
+  };
+  const out: Record<string, string> = {};
+  const put = (key: string, day: string) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day <= today) out[key] = day;
+  };
+  const tasks: Promise<unknown>[] = [
+    readBmby(owner).then((t) => put("bmby:sheet", newestIn(t, (h) => h === "תאריך כניסה"))),
+    readSehel(owner).then((t) => put("sehel:sheet", newestIn(t, (h) => h === "תאריך רישום"))),
+    readSalesforce(owner).then((t) =>
+      put("salesforce:sheet", newestIn(t, (h) => h.startsWith("תאריך יצירה"))),
+    ),
+  ];
+  if (supabaseConfigured()) {
+    tasks.push(
+      // Same +03:00 / ilDay convention as the BMBY funnel query.
+      supabaseRowsAll<{ lead_created_at: string | null }>(
+        `v_bmby_leads_bucketed?select=lead_created_at` +
+          `&lead_created_at=lte.${today}T23:59:59%2B03:00` +
+          `&order=lead_created_at.desc&limit=1`,
+      ).then((r) => put("bmby:warehouse", ilDay(r[0]?.lead_created_at))),
+      // Sehel wall-clock is tagged +00:00; the day is the string's date part.
+      supabaseRowsAll<{ registered_at: string | null }>(
+        `sehel_leads_daily?select=registered_at` +
+          `&registered_at=lte.${today}T23:59:59%2B00:00` +
+          `&order=registered_at.desc&limit=1`,
+      ).then((r) => put("sehel:warehouse", String(r[0]?.registered_at ?? "").slice(0, 10))),
+    );
+  }
+  await Promise.all(tasks.map((t) => t.catch(() => undefined)));
+  return out;
+}
 
 /* ── Utility ────────────────────────────────────────────────────────── */
 
@@ -1316,6 +1384,7 @@ function aggregateBmbyFunnel(
   // can also be part of a single account name. crmAccountCandidates
   // returns both readings — match ANY. See its doc for the overload.
   const targets = crmAccountCandidates(crmAccount).map(norm);
+  const dailyLeadTotals = new Map<string, number>();
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה — broad, includes cancelled
   let canceledMeetings = 0;  // בוטלו — the cancelled subset of scheduled
@@ -1415,6 +1484,11 @@ function aggregateBmbyFunnel(
       if (!rowInWindow(dateOnly(arr[iEntry]), window)) continue;
     }
     leads++;
+    // Every dated in-window lead, source or not (CrmFunnel.dailyLeadTotals).
+    {
+      const day = dateOnly(arr[iEntry]);
+      if (day) dailyLeadTotals.set(day, (dailyLeadTotals.get(day) || 0) + 1);
+    }
     // Two meeting metrics (per Maayan, 2026-05-12):
     //
     //   תואמה פגישה (scheduled) — any "פגישה" status, including
@@ -1523,6 +1597,7 @@ function aggregateBmbyFunnel(
       statusSourceMatrix, objectionSourceMatrix,
     }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
+    dailyLeadTotals: Object.fromEntries(dailyLeadTotals),
     dateRange: { from: minDate, to: maxDate },
     staleLeads: {
       count: staleCount,
@@ -2151,6 +2226,7 @@ function aggregateSehelFunnel(
   // בני דן, תל אביב"). crmAccountCandidates returns both the full string
   // and each split part; a row matches if it prefixes ANY candidate.
   const targetPrefixes = crmAccountCandidates(crmAccount).map(norm);
+  const dailyLeadTotals = new Map<string, number>();
   let leads = 0;
   let scheduledMeetings = 0; // תואמה פגישה
   let meetings = 0;          // פגישות (held)
@@ -2231,6 +2307,11 @@ function aggregateSehelFunnel(
       if (!rowInWindow(dateOnly(arr[iRegDate]), window)) continue;
     }
     leads++;
+    // Every dated in-window lead, source or not (CrmFunnel.dailyLeadTotals).
+    {
+      const day = dateOnly(arr[iRegDate]);
+      if (day) dailyLeadTotals.set(day, (dailyLeadTotals.get(day) || 0) + 1);
+    }
     const st = String(arr[iStage] ?? "").trim();
     // Sehel meeting metrics — best-guess interim pending Maayan's
     // clarification from upstream (2026-05-12). Sehel's stage taxonomy
@@ -2346,6 +2427,7 @@ function aggregateSehelFunnel(
       statusSourceMatrix, objectionSourceMatrix,
     }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
+    dailyLeadTotals: Object.fromEntries(dailyLeadTotals),
     dateRange: { from: minDate, to: maxDate },
     staleLeads: {
       count: staleCount,
@@ -3011,6 +3093,7 @@ async function computeSalesforceFunnel(
   const statusSourceMatrix = new Map<string, Map<string, number>>();
   let minDate = "";
   let maxDate = "";
+  const dailyLeadTotals = new Map<string, number>();
 
   for (const row of rows) {
     const arr = row as unknown[];
@@ -3042,6 +3125,11 @@ async function computeSalesforceFunnel(
       if (!rowInWindow(dateOnly(arr[iEntry]), window)) continue;
     }
     leads++;
+    // Every dated in-window lead, source or not (CrmFunnel.dailyLeadTotals).
+    {
+      const day = dateOnly(arr[iEntry]);
+      if (day) dailyLeadTotals.set(day, (dailyLeadTotals.get(day) || 0) + 1);
+    }
     const st = String(arr[iStatus] ?? "").trim();
     // Funnel buckets per Maayan's status matrix (see the block above
     // SALESFORCE_STATUS_FUNNEL_ORDER). scheduledMeetings ⊇ meetings.
@@ -3179,6 +3267,7 @@ async function computeSalesforceFunnel(
       statusSourceMatrix, objectionSourceMatrix,
     }),
     dailyTimeSeries: buildDailyTimeSeries(dailySourceMatrix),
+    dailyLeadTotals: Object.fromEntries(dailyLeadTotals),
     dateRange: { from: minDate, to: maxDate },
     staleLeads: {
       count: staleCount,

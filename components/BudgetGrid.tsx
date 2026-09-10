@@ -1,6 +1,17 @@
 "use client";
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import {
+  Component,
+  Fragment,
+  Suspense,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import BudgetCrmDaily from "./BudgetCrmDaily";
+import type { CrmDailyBundle } from "@/lib/crmDailyShared";
 import CopyAmountButton from "./CopyAmountButton";
 import PrisaButton from "./PrisaButton";
 import GoogleAdsIcon from "./GoogleAdsIcon";
@@ -57,6 +68,8 @@ export type BudgetDismissal = {
 };
 
 export default function BudgetGrid({
+  crmOn = false,
+  crmDaily = null,
   projects: initial,
   adLinks,
   inactiveProjects,
@@ -96,6 +109,12 @@ export default function BudgetGrid({
   /** Overspend spikes (latest day ≫ trailing avg) keyed by slug →
    *  platform. Only spiking platforms are present. */
   spikes: DailySpendSpikes;
+  /** The "לידים יומיים מה-CRM" toggle — mirrors ?crm=1. */
+  crmOn?: boolean;
+  /** Settles to every project's daily CRM series; null while the toggle is
+   *  off. Created by the page and NOT awaited there, so the desk paints
+   *  first and each row's strip streams in (lib/crmDailyForBudgets). */
+  crmDaily?: Promise<CrmDailyBundle> | null;
 }) {
   const [projects, setProjects] = useState<BudgetProject[]>(initial);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -108,6 +127,49 @@ export default function BudgetGrid({
   // the worst-health company + project to the top of each group so a
   // campaign manager sees trouble first without leaving the desk.
   const [sortMode, setSortMode] = useState<"grouped" | "urgent">("grouped");
+  // "לידים יומיים מה-CRM" flips ?crm=1. A URL param, not state like the
+  // controls above, because the series is computed in the page's server
+  // render (lib/crmDailyForBudgets says why). The transition keeps the desk
+  // on screen and usable while the page re-renders with it.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [crmPending, startCrm] = useTransition();
+  const toggleCrm = () => {
+    const qs = new URLSearchParams(searchParams?.toString() ?? "");
+    if (crmOn) qs.delete("crm");
+    else qs.set("crm", "1");
+    const s = qs.toString();
+    startCrm(() =>
+      router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false }),
+    );
+  };
+  // The server promise never rejects (lib/crmDailyForBudgets), but its
+  // CLIENT copy does if the connection drops before the bundle's chunk
+  // arrives — Flight rejects every pending chunk when the stream closes.
+  // app/ has no error boundary, so that rejection in use() would take the
+  // whole desk down. Turned into the bundle's own error, which the strip
+  // already knows how to show.
+  //
+  // Promise.resolve() FIRST, not crmDaily.then(): what arrives here is a
+  // Flight chunk — a thenable whose .then() registers callbacks and returns
+  // undefined rather than a chained promise. Calling it directly made
+  // crmSafe undefined, and every row rendered as if the toggle were off.
+  const crmSafe = useMemo(
+    () =>
+      crmDaily
+        ? Promise.resolve(crmDaily).then(
+            (b) => b,
+            (e): CrmDailyBundle => ({
+              byTab: {},
+              horizon: {},
+              ms: 0,
+              error: e instanceof Error ? e.message : String(e),
+            }),
+          )
+        : null,
+    [crmDaily],
+  );
   // Optimistic "טיפלתי" snoozes lifted here (signal_key → on/off) so BOTH
   // the campaign row AND the project's platform-summary cell fade
   // immediately, before the next server read.
@@ -360,6 +422,16 @@ export default function BudgetGrid({
             />
             הצג פרויקטים לא פעילים
           </label>
+          <button
+            type="button"
+            className={`budget-crm-toggle${crmOn ? " is-active" : ""}`}
+            onClick={toggleCrm}
+            aria-pressed={crmOn}
+            aria-busy={crmPending}
+            title="גרף לידים יומי מה-CRM לכל פרויקט — כולל סימון של ימים שלא נכנס בהם אף ליד"
+          >
+            📈 לידים יומיים מה-CRM{crmPending ? " · טוען…" : ""}
+          </button>
         </div>
       </div>
 
@@ -406,7 +478,12 @@ export default function BudgetGrid({
                   />
                 </h3>
                 <BudgetProjectList
-                  flipKey={cg.projects.map((p) => p.tab).join("|")}
+                  // "|crm" re-measures when the strips come and go — they
+                  // change every row's height without changing the tabs.
+                  flipKey={
+                    cg.projects.map((p) => p.tab).join("|") +
+                    (crmOn ? "|crm" : "")
+                  }
                 >
                   {cg.projects.map((p) => (
                     <ProjectRow
@@ -431,6 +508,7 @@ export default function BudgetGrid({
                       perf={perf[p.tab.toLowerCase()]}
                       spike={spikes[p.tab.toLowerCase()]}
                       health={healthByTab[p.tab.toLowerCase()]}
+                      crm={crmSafe}
                     />
                   ))}
                 </BudgetProjectList>
@@ -463,6 +541,40 @@ function BudgetProjectList({
       {children}
     </ul>
   );
+}
+
+/**
+ * Backstop around one card's CRM row. crmSafe already turns a dropped
+ * connection into data; this catches anything else the new row might throw,
+ * so the worst a strip can do is replace itself with one line — app/ has no
+ * error boundary, and without one a render error here would blank the desk.
+ * Clears itself when a new bundle arrives (`reset` changes).
+ */
+class CrmStripBoundary extends Component<
+  { reset: unknown; children: ReactNode },
+  { failed: boolean; reset: unknown }
+> {
+  state = { failed: false, reset: this.props.reset };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  static getDerivedStateFromProps(
+    props: { reset: unknown },
+    state: { failed: boolean; reset: unknown },
+  ) {
+    return props.reset !== state.reset ? { failed: false, reset: props.reset } : null;
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="budget-crm-head is-static">
+        <span className="budget-crm-title">📈 לידים יומיים מה-CRM</span>
+        <span className="budget-crm-note is-alert">
+          השורה הזו נכשלה בהצגה — שאר הדסק לא נפגע.
+        </span>
+      </div>
+    );
+  }
 }
 
 /** Σ E3 vs Σ allocated for a set of projects (manager/company subtotal). */
@@ -611,6 +723,7 @@ function ProjectRow({
   perf,
   spike,
   health,
+  crm,
 }: {
   p: BudgetProject;
   open: boolean;
@@ -631,6 +744,8 @@ function ProjectRow({
   spike?: Partial<Record<Platform, SpendSpike>>;
   /** Synthesized 🔴/🟠/🟢 verdict for the row dot + critical border. */
   health?: HealthVerdict;
+  /** The desk-wide daily CRM bundle; null/undefined while the toggle is off. */
+  crm?: Promise<CrmDailyBundle> | null;
 }) {
   const [showPlan, setShowPlan] = useState(false);
   const projectHref =
@@ -824,6 +939,26 @@ function ProjectRow({
             onSnooze={onSnooze}
             perf={perf}
           />
+        </div>
+      )}
+
+      {/* Daily CRM leads — the card's last row, below the summary and below
+          the drill-in when that is open (Maayan: "מתחת לאזור הקיים"). Outside
+          the summary <button>, whose every click toggles the drill-in. The
+          row itself opens and closes its chart; BudgetCrmDaily holds that. */}
+      {crm && (
+        <div className="budget-crm-strip">
+          <CrmStripBoundary reset={crm}>
+            <Suspense
+              fallback={
+                <div className="budget-crm-loading">
+                  📈 טוען לידים מה-CRM… בפתיחה הראשונה זה יכול לקחת עד חצי דקה
+                </div>
+              }
+            >
+              <BudgetCrmDaily bundle={crm} tab={p.tab} today={today} />
+            </Suspense>
+          </CrmStripBoundary>
         </div>
       )}
     </li>

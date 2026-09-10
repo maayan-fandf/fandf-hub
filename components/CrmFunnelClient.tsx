@@ -11,6 +11,7 @@ import ChannelIcon from "@/components/ChannelIcon";
 import PlatformIcon from "@/components/PlatformIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
+import { CHANNEL_PALETTE } from "@/lib/crmDailyShared";
 import CountUp from "./anim/CountUp";
 import StaggerReveal from "./anim/StaggerReveal";
 import { useFlipReorder } from "./anim/useFlipReorder";
@@ -93,16 +94,9 @@ function useHoverPopover<T extends HTMLElement>() {
 
 type StackedSource = { source: string; count: number; isOther?: boolean };
 
-// Media-channel colors — large + well-separated so channels don't recycle
-// the same hue. (Was a 10-color palette → the 11th channel collided with
-// the 1st, and objections reused these same colors. A project here can
-// have ~13+ sources.)
-const CHANNEL_PALETTE = [
-  "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9",
-  "#8b5cf6", "#14b8a6", "#ef4444", "#84cc16", "#f97316",
-  "#06b6d4", "#d946ef", "#22c55e", "#eab308", "#3b82f6",
-  "#fb7185", "#a855f7", "#0d9488", "#65a30d", "#e11d48",
-];
+// Media-channel colors (CHANNEL_PALETTE) live in lib/crmDailyShared, so the
+// budget desk's daily-leads strip colors a project's sources exactly as
+// this card does.
 // Objection colors — a SEPARATE set sharing no hex with CHANNEL_PALETTE,
 // so an objection slice/dot never reads the same color as a media channel
 // (deeper jewel tones read as their own family vs the brighter channels).

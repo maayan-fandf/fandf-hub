@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Daily trend over the cohort's date range. The bars stack the day's
@@ -46,14 +54,72 @@ export default function CrmFunnelTrendline({
   dailyTimeSeries,
   selectedSources,
   sourceColors,
+  title = "מגמה לאורך זמן — לידים לפי ערוץ",
+  zeroDays,
+  portalHover = false,
+  fitWidth = false,
+  height,
+  legend = true,
 }: {
   dailyTimeSeries: DailyTimeSeries;
   selectedSources: Set<string>;
   /** Stable source→hex map (the chips' palette) so a channel reads the
    *  same color in the bars, the hover pies and the legend. */
   sourceColors: Map<string, string>;
+  /** null hides the heading — for a host that labels the chart itself. */
+  title?: string | null;
+  /**
+   * Opt-in (the budget desk): mark days with NO leads instead of leaving an
+   * empty slot, which reads as "no data" rather than "zero". Expects a series
+   * that already holds every calendar day (fillDailySeries). A zero day on or
+   * before `flagUntil` gets a red mark; a later one a grey mark — the CRM has
+   * not reported it yet, so calling it zero would be a guess.
+   */
+  zeroDays?: {
+    flagUntil: string;
+    /** Leads per day INCLUDING ones with no source. A day with none drawn
+     *  but some here had leads the bars cannot hold — not a zero day. */
+    dayTotals?: Record<string, number>;
+  };
+  /** Render the hover card into <body>, for hosts that clip their content
+   *  (the budget desk's cards are overflow:hidden). */
+  portalHover?: boolean;
+  /** Draw at the rendered pixel width instead of stretching the 800-wide
+   *  viewBox. The SVG is preserveAspectRatio="none", so a chart much wider
+   *  or shorter than 800×220 would otherwise distort its own labels. */
+  fitWidth?: boolean;
+  /** Pixel height (default 220). */
+  height?: number;
+  /** false drops the channel legend under the chart — for a host short on
+   *  room. The hover card still names every channel, with its counts, for
+   *  the hovered day. */
+  legend?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [measuredW, setMeasuredW] = useState<number | null>(null);
+  const hasDays = dailyTimeSeries.length > 0;
+
+  useEffect(() => {
+    if (!fitWidth) return;
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0]?.contentRect.width || 0);
+      if (w > 0) setMeasuredW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitWidth, hasDays]);
+
+  // A portaled card is placed in viewport coordinates when a day is
+  // hovered; a scroll would leave it floating over the wrong spot.
+  useEffect(() => {
+    if (!portalHover || hover == null) return;
+    const clear = () => setHover(null);
+    window.addEventListener("scroll", clear, { passive: true, capture: true });
+    return () => window.removeEventListener("scroll", clear, { capture: true });
+  }, [portalHover, hover]);
 
   const model = useMemo(() => {
     if (selectedSources.size === 0 || dailyTimeSeries.length === 0) return null;
@@ -104,8 +170,11 @@ export default function CrmFunnelTrendline({
   const rawMax = Math.max(...days.map((d) => d.leads), 1);
   const yMax = niceCeiling(rawMax * 1.1);
 
-  const plotW = VB_W - PAD_START - PAD_END;
-  const plotH = VB_H - PAD_TOP - PAD_BOTTOM;
+  // fitWidth: draw at the rendered pixel size so nothing stretches.
+  const vbW = fitWidth && measuredW ? measuredW : VB_W;
+  const vbH = height ?? VB_H;
+  const plotW = vbW - PAD_START - PAD_END;
+  const plotH = vbH - PAD_TOP - PAD_BOTTOM;
   const slotW = plotW / n;
   const barW = Math.min(slotW * 0.62, 46);
 
@@ -120,13 +189,22 @@ export default function CrmFunnelTrendline({
       )
       .join(" ");
 
-  // X-axis ticks — ~6 evenly spaced day labels.
-  const tickCount = Math.min(n, 6);
+  // X-axis ticks — ~6 evenly spaced day labels. Under fitWidth the chart can
+  // be narrow (a phone, the budget desk's strip), and six "dd/mm" labels need
+  // ~46px each or they run together ("05/0906/09", seen at 342px). There the
+  // count follows the width, and the labels step back evenly from the NEWEST
+  // day — the one someone hunting for empty days is looking at.
   const tickIndexes: number[] = [];
   if (n === 1) tickIndexes.push(0);
-  else
+  else if (fitWidth) {
+    const maxTicks = Math.max(2, Math.floor(plotW / 46));
+    const step = Math.max(1, Math.ceil((n - 1) / (maxTicks - 1)));
+    for (let i = n - 1; i >= 0; i -= step) tickIndexes.push(i);
+  } else {
+    const tickCount = Math.min(n, 6);
     for (let i = 0; i < tickCount; i++)
       tickIndexes.push(Math.round((i * (n - 1)) / (tickCount - 1)));
+  }
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * yMax);
 
@@ -136,17 +214,18 @@ export default function CrmFunnelTrendline({
   const hoverDay = hover != null ? days[hover] : null;
   const hoverLeftPct =
     hover != null
-      ? Math.min(82, Math.max(18, (xCenter(hover) / VB_W) * 100))
+      ? Math.min(82, Math.max(18, (xCenter(hover) / vbW) * 100))
       : 50;
 
   return (
     <div className="crm-block crm-trend-block">
-      <div className="crm-block-title">מגמה לאורך זמן — לידים לפי ערוץ</div>
+      {title && <div className="crm-block-title">{title}</div>}
 
-      <div className="crm-trend-chartwrap">
+      <div className="crm-trend-chartwrap" ref={wrapRef}>
         <svg
-          viewBox={`0 0 ${VB_W} ${VB_H}`}
+          viewBox={`0 0 ${vbW} ${vbH}`}
           className="crm-trend-svg"
+          style={height ? { height } : undefined}
           role="img"
           aria-label="מגמת לידים לפי ערוץ מדיה, עם תיאומי פגישות וביצועי פגישות, לאורך התקופה"
           preserveAspectRatio="none"
@@ -155,9 +234,9 @@ export default function CrmFunnelTrendline({
           {/* Y gridlines + labels */}
           {yTicks.map((v) => (
             <g key={v} className="crm-trend-grid">
-              <line x1={PAD_START} x2={VB_W - PAD_END} y1={yAt(v)} y2={yAt(v)} />
+              <line x1={PAD_START} x2={vbW - PAD_END} y1={yAt(v)} y2={yAt(v)} />
               <text
-                x={VB_W - PAD_END + 8}
+                x={vbW - PAD_END + 8}
                 y={yAt(v) + 4}
                 className="crm-trend-axis-label"
                 textAnchor="start"
@@ -174,7 +253,7 @@ export default function CrmFunnelTrendline({
               <text
                 key={i}
                 x={xCenter(i)}
-                y={VB_H - 6}
+                y={vbH - 6}
                 className="crm-trend-axis-label"
                 textAnchor="middle"
               >
@@ -222,6 +301,26 @@ export default function CrmFunnelTrendline({
             );
           })}
 
+          {/* Opt-in zero-day marks — see the zeroDays prop. */}
+          {zeroDays &&
+            days.map((d, i) =>
+              d.leads > 0 || (zeroDays.dayTotals?.[d.date] ?? 0) > 0 ? null : (
+                <rect
+                  key={`z${i}`}
+                  x={xCenter(i) - barW / 2}
+                  y={yAt(0) - 4}
+                  width={barW}
+                  height={4}
+                  rx={1}
+                  className={
+                    d.date <= zeroDays.flagUntil
+                      ? "crm-trend-zero"
+                      : "crm-trend-nodata"
+                  }
+                />
+              ),
+            )}
+
           {/* Scheduled / held lines on top */}
           {LINE_META.map(({ key, color }) => (
             <g key={key}>
@@ -263,12 +362,27 @@ export default function CrmFunnelTrendline({
 
         {/* Hover card — three channel-segmented pies for the hovered day */}
         {hoverDay && (
-          <div
-            className="crm-trend-hover"
-            style={{ left: `${hoverLeftPct}%` }}
-            role="presentation"
-          >
+          <HoverLayer portal={portalHover} anchor={wrapRef} leftPct={hoverLeftPct}>
             <div className="crm-trend-hover-date">{formatDate(hoverDay.date)}</div>
+            {zeroDays &&
+              hoverDay.leads === 0 &&
+              (() => {
+                const unsourced = zeroDays.dayTotals?.[hoverDay.date] ?? 0;
+                const counted = hoverDay.date <= zeroDays.flagUntil;
+                return (
+                  <div
+                    className={`crm-trend-hover-status${
+                      unsourced === 0 && counted ? " is-zero" : ""
+                    }`}
+                  >
+                    {unsourced > 0
+                      ? `${unsourced} לידים בלי מקור הגעה ביום הזה — אין להם עמודה`
+                      : counted
+                        ? "לא נכנסו לידים ביום הזה"
+                        : "ה-CRM עוד לא דיווח על היום הזה"}
+                  </div>
+                );
+              })()}
             <div className="crm-trend-pies">
               {(
                 [
@@ -313,34 +427,85 @@ export default function CrmFunnelTrendline({
                   );
                 })}
             </ul>
-          </div>
+          </HoverLayer>
         )}
       </div>
 
       {/* Legend: one swatch per channel (bars) + the two overlay lines. */}
-      <ul className="crm-trend-legend">
-        {channels.map((ch) => (
-          <li key={ch}>
-            <span className="crm-trend-legend-dot" style={{ background: colorOf(ch) }} />
-            <span className="crm-trend-legend-label">{ch}</span>
-            <span className="crm-trend-legend-sum">{leadTotal.get(ch) || 0}</span>
+      {legend && (
+        <ul className="crm-trend-legend">
+          {channels.map((ch) => (
+            <li key={ch}>
+              <span className="crm-trend-legend-dot" style={{ background: colorOf(ch) }} />
+              <span className="crm-trend-legend-label">{ch}</span>
+              <span className="crm-trend-legend-sum">{leadTotal.get(ch) || 0}</span>
+            </li>
+          ))}
+          <li className="crm-trend-legend-sep">
+            <span className="crm-trend-legend-line" style={{ background: "#f59e0b" }} />
+            <span className="crm-trend-legend-label">תיאומים</span>
+            <span className="crm-trend-legend-sum">{periodSched}</span>
           </li>
-        ))}
-        <li className="crm-trend-legend-sep">
-          <span className="crm-trend-legend-line" style={{ background: "#f59e0b" }} />
-          <span className="crm-trend-legend-label">תיאומים</span>
-          <span className="crm-trend-legend-sum">{periodSched}</span>
-        </li>
-        <li>
-          <span
-            className="crm-trend-legend-line crm-trend-legend-line-dash"
-            style={{ background: "#10b981" }}
-          />
-          <span className="crm-trend-legend-label">פגישות</span>
-          <span className="crm-trend-legend-sum">{periodHeld}</span>
-        </li>
-      </ul>
+          <li>
+            <span
+              className="crm-trend-legend-line crm-trend-legend-line-dash"
+              style={{ background: "#10b981" }}
+            />
+            <span className="crm-trend-legend-label">פגישות</span>
+            <span className="crm-trend-legend-sum">{periodHeld}</span>
+          </li>
+        </ul>
+      )}
     </div>
+  );
+}
+
+/**
+ * The hover card's positioning shell. Inline (the default) it sits above the
+ * chart inside `.crm-trend-chartwrap`, as it always has. With `portal` it
+ * renders into <body> at fixed viewport coordinates — the budget desk's
+ * cards are overflow:hidden, and an inline card popping above the chart
+ * would be cut off at the card's top edge.
+ */
+function HoverLayer({
+  portal,
+  anchor,
+  leftPct,
+  children,
+}: {
+  portal: boolean;
+  anchor: RefObject<HTMLDivElement | null>;
+  leftPct: number;
+  children: ReactNode;
+}) {
+  if (!portal) {
+    return (
+      <div
+        className="crm-trend-hover"
+        style={{ left: `${leftPct}%` }}
+        role="presentation"
+      >
+        {children}
+      </div>
+    );
+  }
+  const r = anchor.current?.getBoundingClientRect();
+  if (!r || typeof document === "undefined") return null;
+  // ~230px is the card with three pies and a short legend; with less room
+  // than that above the chart, open below it instead.
+  const below = r.top < 240;
+  return createPortal(
+    <div
+      className={`crm-trend-hover is-portal${below ? " is-below" : ""}`}
+      style={{
+        left: r.left + (r.width * leftPct) / 100,
+        top: below ? r.bottom + 8 : r.top - 8,
+      }}
+      role="presentation"
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 

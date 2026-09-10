@@ -29,10 +29,19 @@ import {
 } from "@/lib/budgetShiftSuggestions";
 import BudgetGrid, { type BudgetDismissal } from "@/components/BudgetGrid";
 import CampaignsTabs from "@/components/CampaignsTabs";
+import { getCrmDailyForBudgets } from "@/lib/crmDailyForBudgets";
 
 export const dynamic = "force-dynamic";
 
-export default async function BudgetsPage() {
+export default async function BudgetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // "לידים יומיים מה-CRM" — a URL param rather than client state, because
+  // the series is page-render work (lib/crmDailyForBudgets says why). Off by
+  // default: it is the heaviest thing this page can do.
+  const crmOn = (await searchParams).crm === "1";
   const me = await currentUserEmail().catch(() => "");
   const viewAs = me ? await getEffectiveViewAs(me).catch(() => "") : "";
   const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
@@ -242,6 +251,32 @@ export default async function BudgetsPage() {
         }
         const spikes: DailySpendSpikes =
           spikesRes.status === "fulfilled" ? spikesRes.value : {};
+        // Created, NOT awaited: the desk paints off the reads above and each
+        // row's strip streams in when this settles. Window per project = the
+        // flight the project page's CRM card defaults to (earliest start →
+        // latest end over the ALL CLIENTS current rows), falling back to the
+        // budget tab's own dates, then to the month so far.
+        const crmDaily = crmOn
+          ? getCrmDailyForBudgets(
+              filtered.map((p) => {
+                let from = "";
+                let to = "";
+                for (const r of bySlug.get(p.tab.toLowerCase().trim())?.current ?? []) {
+                  if (r.startIso && (!from || r.startIso < from)) from = r.startIso;
+                  if (r.endIso && r.endIso > to) to = r.endIso;
+                }
+                if (!from || !to) {
+                  from = p.startIso || "";
+                  to = p.endIso || "";
+                }
+                if (!from || !to) {
+                  from = `${today.slice(0, 7)}-01`;
+                  to = today;
+                }
+                return { tab: p.tab, name: p.name, company: p.company, from, to };
+              }),
+            )
+          : null;
         return (
           <BudgetGrid
             projects={filtered}
@@ -255,6 +290,8 @@ export default async function BudgetsPage() {
             shifts={shifts}
             perf={perf}
             spikes={spikes}
+            crmOn={crmOn}
+            crmDaily={crmDaily}
           />
         );
       })()}
