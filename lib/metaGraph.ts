@@ -495,17 +495,38 @@ export async function listRecentAdImages(
   accountId: string,
   sinceUnix: number,
 ): Promise<{ id: string; image: string }[]> {
-  const rows = await graphEdge<MetaAd>(`act_${accountId}/ads`, {
-    fields:
-      "id," +
-      `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX}){thumbnail_url}`,
+  const fields =
+    "id," +
+    `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX}){thumbnail_url}`;
+  // Walk one: everything created inside the window, whatever its status.
+  const recent = await graphEdge<MetaAd>(`act_${accountId}/ads`, {
+    fields,
     filtering: JSON.stringify([
       { field: "ad.created_time", operator: "GREATER_THAN", value: sinceUnix },
     ]),
     limit: 100,
   });
+  // Walk two: ads still RUNNING that were created BEFORE the window —
+  // evergreen ads, which walk one cannot see. Meta ANDs filter clauses and
+  // has no OR, so "recent OR active" has to be two walks; this one is the
+  // exact complement (LESS_THAN the same cutoff), so nothing is fetched twice.
+  //
+  // Walk one used to be the WHOLE pass, and that was a regression: widening
+  // from ACTIVE-only to created-in-window REPLACED the active filter instead
+  // of adding to it. Measured 2026-09-10: 95 running ads across 7 accounts
+  // were created before the window, 18 of them already showing an expired
+  // image (17 in one גינדי מרום ראשון account, running since 2025-11). This
+  // walk costs 15s across all 23 accounts.
+  const evergreen = await graphEdge<MetaAd>(`act_${accountId}/ads`, {
+    fields,
+    filtering: JSON.stringify([
+      { field: "ad.created_time", operator: "LESS_THAN", value: sinceUnix },
+      { field: "ad.effective_status", operator: "IN", value: ["ACTIVE"] },
+    ]),
+    limit: 100,
+  });
   const out: { id: string; image: string }[] = [];
-  for (const r of rows) {
+  for (const r of [...recent, ...evergreen]) {
     const image = String(r.creative?.thumbnail_url ?? "").trim();
     if (r.id && image) out.push({ id: String(r.id), image });
   }

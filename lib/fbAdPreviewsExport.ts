@@ -79,7 +79,8 @@ export type FbAdPreviewsResult = {
   accountsFailed: { accountId: string; error: string }[];
   adsSeen: number;
   withPreview: number;
-  /** Ads inside IMAGE_WINDOW_DAYS that got a fresh 1080px render this run. */
+  /** Ads that got a fresh 1080px render this run: created inside
+   *  IMAGE_WINDOW_DAYS, plus any still-running ad older than that. */
   withImage: number;
   rowsWritten: number;
   mode: "full" | "incremental";

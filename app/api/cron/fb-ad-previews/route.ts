@@ -30,8 +30,13 @@ export const maxDuration = 300;
  * targeting tab (age + geographic zone, lib/fbAdsetTargetingExport) that the
  * קהלים block joins onto. Both want the same nightly Meta window, and one
  * Cloud Scheduler job is one thing to create, monitor and remember. Budget:
- * previews ~70s incremental, targeting ~79s on a FULL walk of 5,055 ad sets
- * and far less incrementally — comfortably inside maxDuration below.
+ * previews ~70s incremental while the image pass was ACTIVE-only; since it
+ * became recent-150-days PLUS still-running evergreen ads it measured 178s
+ * from a workstation (2026-09-10, 2,652 images). Targeting is ~79s on a FULL
+ * walk of 5,055 ad sets and far less incrementally. That leaves roughly a
+ * third of maxDuration spare — watch this number before widening either
+ * pass again, because a kill during the write phase leaves a part-written
+ * tab (the write clears first).
  *
  * Cloud Scheduler: POST https://hub.fandf.co.il/api/cron/fb-ad-previews
  * with header X-Cron-Token=<APPS_SCRIPT_API_TOKEN> and body "{}", once daily.
