@@ -11,7 +11,11 @@ import ChannelIcon from "@/components/ChannelIcon";
 import PlatformIcon from "@/components/PlatformIcon";
 import { costMetricColor } from "@/lib/budgetShiftSuggestions";
 import CrmFunnelTrendline from "./CrmFunnelTrendline";
-import { CHANNEL_PALETTE } from "@/lib/crmDailyShared";
+import {
+  CHANNEL_PALETTE,
+  fillDailySeries,
+  lastReportedDay,
+} from "@/lib/crmDailyShared";
 import CountUp from "./anim/CountUp";
 import StaggerReveal from "./anim/StaggerReveal";
 import { useFlipReorder } from "./anim/useFlipReorder";
@@ -119,6 +123,8 @@ export default function CrmFunnelClient({
   funnel,
   journey = null,
   view = "full",
+  today = "",
+  feedNewest = "",
 }: {
   funnel: CrmFunnel;
   /** מקור מול טריגר, read server-side in CrmFunnelCard. A plain object, so
@@ -134,6 +140,12 @@ export default function CrmFunnelClient({
    *  feed multiple rail sections; hiding is CSS-only (crm-view-*) so the
    *  shared source-chip filter keeps driving them. */
   view?: "full" | "funnel" | "analysis" | "campaigns";
+  /** Israel-local YYYY-MM-DD, from the server. With it the trendline gets
+   *  every day of the window; empty keeps the days-with-leads-only series. */
+  today?: string;
+  /** Newest lead day this project's CRM feed holds (lib/crmData
+   *  getCrmFeedNewestDay) — how far a zero day is provable. */
+  feedNewest?: string;
 }) {
   const sm = funnel.sourceMatrices;
   // Source-chip selection. When a CrmSourceFilterProvider is above us (the
@@ -486,12 +498,49 @@ export default function CrmFunnelClient({
   }, [selected, sm]);
 
   // ── Trendline daily series — filter dailyTimeSeries by chip + substring ─
+  //
+  // Every calendar day of the window, not only the days that had a lead
+  // (Maayan 2026-09-11: "ימים בלי לידים יראו 0"). The funnel's series holds
+  // just the days with a sourced lead and the chart places bars by position,
+  // so an empty day used to vanish and its neighbours closed the gap. The
+  // fill stops at today; without `today` the series stays as it was.
+  const trendEnd =
+    funnel.windowTo && today
+      ? funnel.windowTo < today
+        ? funnel.windowTo
+        : today
+      : "";
   const trendDaily = useMemo(() => {
-    return funnel.dailyTimeSeries.map((day) => ({
+    const picked = funnel.dailyTimeSeries.map((day) => ({
       date: day.date,
       bySource: day.bySource.filter((s) => selected.has(s.source)),
     }));
-  }, [selected, funnel.dailyTimeSeries]);
+    return funnel.windowFrom && trendEnd
+      ? fillDailySeries(picked, funnel.windowFrom, trendEnd)
+      : picked;
+  }, [selected, funnel.dailyTimeSeries, funnel.windowFrom, trendEnd]);
+  // Where a zero is provable: the day before the feed's newest lead, never
+  // later than yesterday (lib/crmDailyShared lastReportedDay) — later empty
+  // days draw grey, not red. Zero is judged on ALL the day's leads
+  // (dailyLeadTotals), not on the chips: a day whose leads all come from a
+  // deselected source is not an empty day.
+  const trendZero = useMemo(() => {
+    if (!today || !funnel.windowFrom) return undefined;
+    const own = funnel.dateRange?.to || "";
+    return {
+      flagUntil: lastReportedDay(feedNewest > own ? feedNewest : own, today),
+      dayTotals: funnel.dailyLeadTotals,
+      filtered: selected.size < sm.allSources.length,
+    };
+  }, [
+    today,
+    feedNewest,
+    funnel.windowFrom,
+    funnel.dateRange,
+    funnel.dailyLeadTotals,
+    selected,
+    sm.allSources,
+  ]);
 
   const noneSelected = selected.size === 0;
 
@@ -1080,6 +1129,7 @@ export default function CrmFunnelClient({
               dailyTimeSeries={trendDaily}
               selectedSources={selected}
               sourceColors={palette}
+              zeroDays={trendZero}
             />
           )}
         </div>

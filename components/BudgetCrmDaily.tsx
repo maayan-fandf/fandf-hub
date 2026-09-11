@@ -25,15 +25,16 @@ function ddmm(iso: string): string {
 
 /**
  * One project's daily CRM leads on the budget desk, at the bottom of its
- * card: a one-line summary, and on click the project page's "מגמה לאורך
- * זמן — לידים לפי ערוץ" chart, fed the same numbers.
+ * card: a one-line summary, and — while the CARD is open — the project
+ * page's "מגמה לאורך זמן — לידים לפי ערוץ" chart, fed the same numbers.
  *
- * COLLAPSED BY DEFAULT, per Maayan 2026-09-10 ("שבדיפולט יהיה מקופל בתוך
- * כל כרטיס"): thirty-odd charts open at once buried the desk. The line that
- * stays visible carries the one answer the toggle exists for — how many
- * days had no leads — so scanning the whole desk is still one click, and a
- * chart opens only where the chip says to look. No channel legend either,
- * same request: the hover card on each day already names every channel.
+ * THE CHART FOLLOWS THE CARD, per Maayan: first "collapsed by default inside
+ * each card" (2026-09-10), then "opening the project should look like this,
+ * not with a fold of its own" (2026-09-11). So there is no second disclosure:
+ * a closed card shows the summary line — the zero-day chip is the at-a-glance
+ * answer — and opening the card (its summary, or this line) shows the chart
+ * under the channel table. No channel legend: the hover card on each day
+ * already names every channel.
  *
  * Three kinds of day, kept apart on purpose:
  *   - a day with leads → the usual stacked bar (a day whose only leads
@@ -48,10 +49,16 @@ export default function BudgetCrmDaily({
   bundle,
   tab,
   today,
+  expanded,
+  onOpen,
 }: {
   bundle: Promise<CrmDailyBundle>;
   tab: string;
   today: string;
+  /** The card's own open state — the chart shows exactly when it does. */
+  expanded: boolean;
+  /** Opens the card, from the summary line of a closed one. */
+  onOpen: () => void;
 }) {
   // Keep the bundle already on screen until a newer one SETTLES. Every
   // server render hands down a fresh promise, and a router.refresh() — the
@@ -75,7 +82,6 @@ export default function BudgetCrmDaily({
     };
   }, [bundle, shown]);
   const b = use(shown);
-  const [open, setOpen] = useState(false);
   const d = b.byTab[tab.toLowerCase().trim()];
   const yesterday = isoAddDays(today, -1);
 
@@ -144,68 +150,78 @@ export default function BudgetCrmDaily({
     return line(`הפריסה מתחילה ב-${ddmm(d.from)} — עוד אין ימים להציג.`);
   }
 
-  return (
+  const summary = (
     <>
+      {title}
+      {model.zero > 0 ? (
+        <span className="budget-crm-chip is-zero">
+          {model.zero} ימים ללא לידים
+        </span>
+      ) : (
+        <span className="budget-crm-chip is-clean">כל יום עם לידים</span>
+      )}
+      <span>
+        <b>{d.leads}</b> לידים · <b>{d.scheduled}</b> תיאומים ·{" "}
+        <b>{d.held}</b> פגישות
+      </span>
+      <span title="מאיפה נקראו הלידים — אותה בחירה שעמוד הפרויקט עושה (warehouse כשיש בו לפחות כמו בגיליון, אחרת הגיליון)">
+        {PLATFORM_LABEL[d.platform] || d.platform} ·{" "}
+        {d.source === "warehouse" ? "warehouse" : "גיליון"}
+      </span>
+      {model.stale && (
+        <span
+          className="budget-crm-note"
+          title="היום האחרון שהפיד הזה של ה-CRM דיווח עליו במלואו. ימים אחריו מסומנים באפור ולא נספרים כימים ריקים."
+        >
+          ה-CRM מעודכן עד {ddmm(model.stale)}
+        </span>
+      )}
+      {d.unsourced > 0 && (
+        <span
+          className="budget-crm-note"
+          title="לידים בלי מקור הגעה נספרים בסך הלידים ולא נחשבים ליום ריק, אבל אין עמודה שאפשר לשים אותם בה — כמו בעמוד הפרויקט. ההובר על היום אומר כמה היו."
+        >
+          {d.unsourced} לידים בלי מקור לא מופיעים בגרף
+        </span>
+      )}
+    </>
+  );
+
+  if (!expanded) {
+    // A closed card: the line is a shortcut into the card, not a fold of its
+    // own — one click from a red chip to the chart.
+    return (
       <button
         type="button"
         className="budget-crm-head"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
+        onClick={onOpen}
+        title="פתיחת הפרויקט מציגה את הגרף"
       >
-        <span className={`budget-caret ${open ? "open" : ""}`} aria-hidden>
-          ▸
-        </span>
-        {title}
-        {model.zero > 0 ? (
-          <span className="budget-crm-chip is-zero">
-            {model.zero} ימים ללא לידים
-          </span>
-        ) : (
-          <span className="budget-crm-chip is-clean">כל יום עם לידים</span>
-        )}
-        <span>
-          <b>{d.leads}</b> לידים · <b>{d.scheduled}</b> תיאומים ·{" "}
-          <b>{d.held}</b> פגישות
-        </span>
-        <span title="מאיפה נקראו הלידים — אותה בחירה שעמוד הפרויקט עושה (warehouse כשיש בו לפחות כמו בגיליון, אחרת הגיליון)">
-          {PLATFORM_LABEL[d.platform] || d.platform} ·{" "}
-          {d.source === "warehouse" ? "warehouse" : "גיליון"}
-        </span>
-        {model.stale && (
-          <span
-            className="budget-crm-note"
-            title="היום האחרון שהפיד הזה של ה-CRM דיווח עליו במלואו. ימים אחריו מסומנים באפור ולא נספרים כימים ריקים."
-          >
-            ה-CRM מעודכן עד {ddmm(model.stale)}
-          </span>
-        )}
-        {d.unsourced > 0 && (
-          <span
-            className="budget-crm-note"
-            title="לידים בלי מקור הגעה נספרים בסך הלידים ולא נחשבים ליום ריק, אבל אין עמודה שאפשר לשים אותם בה — כמו בעמוד הפרויקט. ההובר על היום אומר כמה היו."
-          >
-            {d.unsourced} לידים בלי מקור לא מופיעים בגרף
-          </span>
-        )}
+        {summary}
       </button>
-      {open &&
-        (d.allSources.length === 0 ? (
-          <div className="budget-crm-note">
-            כל הלידים בחלון הזה בלי מקור הגעה — אין עמודות לצייר.
-          </div>
-        ) : (
-          <CrmFunnelTrendline
-            dailyTimeSeries={model.series}
-            selectedSources={model.selected}
-            sourceColors={model.palette}
-            title={null}
-            zeroDays={{ flagUntil: model.flagUntil, dayTotals: d.dayTotals }}
-            portalHover
-            fitWidth
-            height={150}
-            legend={false}
-          />
-        ))}
+    );
+  }
+
+  return (
+    <>
+      <div className="budget-crm-head is-static">{summary}</div>
+      {d.allSources.length === 0 ? (
+        <div className="budget-crm-note">
+          כל הלידים בחלון הזה בלי מקור הגעה — אין עמודות לצייר.
+        </div>
+      ) : (
+        <CrmFunnelTrendline
+          dailyTimeSeries={model.series}
+          selectedSources={model.selected}
+          sourceColors={model.palette}
+          title={null}
+          zeroDays={{ flagUntil: model.flagUntil, dayTotals: d.dayTotals }}
+          portalHover
+          fitWidth
+          height={150}
+          legend={false}
+        />
+      )}
     </>
   );
 }

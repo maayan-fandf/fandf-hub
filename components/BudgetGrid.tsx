@@ -945,7 +945,8 @@ function ProjectRow({
       {/* Daily CRM leads — the card's last row, below the summary and below
           the drill-in when that is open (Maayan: "מתחת לאזור הקיים"). Outside
           the summary <button>, whose every click toggles the drill-in. The
-          row itself opens and closes its chart; BudgetCrmDaily holds that. */}
+          chart follows the card: closed → the one-line summary (a shortcut
+          that opens the card), open → the chart under the channel table. */}
       {crm && (
         <div className="budget-crm-strip">
           <CrmStripBoundary reset={crm}>
@@ -956,7 +957,13 @@ function ProjectRow({
                 </div>
               }
             >
-              <BudgetCrmDaily bundle={crm} tab={p.tab} today={today} />
+              <BudgetCrmDaily
+                bundle={crm}
+                tab={p.tab}
+                today={today}
+                expanded={open}
+                onOpen={onToggle}
+              />
             </Suspense>
           </CrmStripBoundary>
         </div>

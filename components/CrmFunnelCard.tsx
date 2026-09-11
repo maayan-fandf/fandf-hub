@@ -1,5 +1,6 @@
 import {
   getCrmFunnelForProject,
+  getCrmFeedNewestDay,
   canonicalMediaChannel,
   type CrmFunnel,
 } from "@/lib/crmData";
@@ -174,7 +175,29 @@ export default async function CrmFunnelCard({
           to: funnel.windowTo,
         }).catch(() => null)
       : null;
-  return <CrmFunnelClient funnel={funnel} journey={journey} view={view} />;
+  // What the trendline needs to give every day of the window its own slot
+  // and to tell a real zero day from one the CRM has not reported yet:
+  // today, and how far this project's feed has actually reported. Only the
+  // views that draw the trendline pay for the feed read (cache()d per
+  // request — for a Sheet feed it is the tab the funnel just read).
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+  const feedNewest =
+    view === "full" || view === "funnel"
+      ? await getCrmFeedNewestDay(funnel.platform, funnel.dataSource ?? "sheet").catch(
+          () => "",
+        )
+      : "";
+  return (
+    <CrmFunnelClient
+      funnel={funnel}
+      journey={journey}
+      view={view}
+      today={today}
+      feedNewest={feedNewest}
+    />
+  );
 }
 
 // Re-export so callers (alerts, etc.) keep importing from one place.

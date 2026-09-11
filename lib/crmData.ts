@@ -461,63 +461,97 @@ const readSalesforce = cache((subjectEmail: string) =>
 );
 
 /**
- * The newest lead DAY each CRM feed holds, whatever project it belongs to,
- * keyed `${platform}:${source}` (lib/crmDailyShared horizonKey). "sheet" is
- * read off the tabs above — cache()d, so free inside the render that just
- * computed the funnels, and read as driveFolderOwner() exactly as
- * getCrmFunnelForProject does so the cache actually hits. "warehouse" is one
- * newest-row query per table.
+ * The newest lead DAY one CRM feed holds, whatever project it belongs to —
+ * the point up to which a day with no leads is provably a zero day
+ * (lib/crmDailyShared lastReportedDay). `source` is "sheet" or "warehouse",
+ * as a funnel's `dataSource` names it; Salesforce is sheet-only.
  *
- * For the budget desk's freshness line. Taking it from the desk projects'
- * own last leads made a feed with a single routed project (the BMBY sheet →
+ * "sheet" is read off the tabs above — cache()d, so free inside a render
+ * that already computed a funnel, and read as driveFolderOwner() exactly as
+ * getCrmFunnelForProject does so the cache actually hits. "warehouse" is one
+ * newest-row query. The whole function is cache()d too, so a project page's
+ * several CRM cards ask once.
+ *
+ * Why the FEED and not the projects: taking it from the budget desk's own
+ * projects made a feed with a single routed project (the BMBY sheet →
  * נרקיסים, 2026-09-10) exactly as fresh as that project's last lead, so its
  * trailing empty days drew grey instead of red — found in review.
  *
- * Never throws: a feed it cannot read is simply absent, and the caller falls
- * back to the desk's own evidence. Days after today (IL) are ignored, so a
- * typo'd future date cannot push the horizon forward.
+ * Never throws; "" when the feed cannot be read, and callers fall back to
+ * their own evidence. Days after today (IL) are ignored, so a typo'd future
+ * date cannot push the horizon forward.
  */
-export async function getCrmFeedNewestDays(): Promise<Record<string, string>> {
-  const today = todayIsoIL();
-  const owner = driveFolderOwner();
-  const newestIn = (tab: RawTab, match: (h: string) => boolean): string => {
-    const i = tab.headers.findIndex(match);
-    if (i < 0) return "";
-    let best = "";
-    for (const r of tab.rows) {
-      const d = dateOnly((r as unknown[])[i]);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today && d > best) best = d;
+export const getCrmFeedNewestDay = cache(
+  async (platform: string, source: string): Promise<string> => {
+    const today = todayIsoIL();
+    const owner = driveFolderOwner();
+    const valid = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today ? d : "");
+    const newestIn = (tab: RawTab, match: (h: string) => boolean): string => {
+      const i = tab.headers.findIndex(match);
+      if (i < 0) return "";
+      let best = "";
+      for (const r of tab.rows) {
+        const d = valid(dateOnly((r as unknown[])[i]));
+        if (d > best) best = d;
+      }
+      return best;
+    };
+    try {
+      switch (`${platform}:${source || "sheet"}`) {
+        case "bmby:sheet":
+          return newestIn(await readBmby(owner), (h) => h === "תאריך כניסה");
+        case "sehel:sheet":
+          return newestIn(await readSehel(owner), (h) => h === "תאריך רישום");
+        case "salesforce:sheet":
+          return newestIn(await readSalesforce(owner), (h) => h.startsWith("תאריך יצירה"));
+        case "bmby:warehouse": {
+          if (!supabaseConfigured()) return "";
+          // Same +03:00 / ilDay convention as the BMBY funnel query.
+          const r = await supabaseRowsAll<{ lead_created_at: string | null }>(
+            `v_bmby_leads_bucketed?select=lead_created_at` +
+              `&lead_created_at=lte.${today}T23:59:59%2B03:00` +
+              `&order=lead_created_at.desc&limit=1`,
+          );
+          return valid(ilDay(r[0]?.lead_created_at));
+        }
+        case "sehel:warehouse": {
+          if (!supabaseConfigured()) return "";
+          // Sehel wall-clock is tagged +00:00; the day is the date part.
+          const r = await supabaseRowsAll<{ registered_at: string | null }>(
+            `sehel_leads_daily?select=registered_at` +
+              `&registered_at=lte.${today}T23:59:59%2B00:00` +
+              `&order=registered_at.desc&limit=1`,
+          );
+          return valid(String(r[0]?.registered_at ?? "").slice(0, 10));
+        }
+        default:
+          return "";
+      }
+    } catch {
+      return "";
     }
-    return best;
-  };
+  },
+);
+
+const CRM_FEEDS = [
+  ["bmby", "sheet"],
+  ["sehel", "sheet"],
+  ["salesforce", "sheet"],
+  ["bmby", "warehouse"],
+  ["sehel", "warehouse"],
+] as const;
+
+/** Every feed's newest day, keyed `${platform}:${source}` (lib/crmDailyShared
+ *  horizonKey) — for the budget desk, which spans all of them. A feed that
+ *  cannot be read is simply absent. */
+export async function getCrmFeedNewestDays(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  const put = (key: string, day: string) => {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day <= today) out[key] = day;
-  };
-  const tasks: Promise<unknown>[] = [
-    readBmby(owner).then((t) => put("bmby:sheet", newestIn(t, (h) => h === "תאריך כניסה"))),
-    readSehel(owner).then((t) => put("sehel:sheet", newestIn(t, (h) => h === "תאריך רישום"))),
-    readSalesforce(owner).then((t) =>
-      put("salesforce:sheet", newestIn(t, (h) => h.startsWith("תאריך יצירה"))),
-    ),
-  ];
-  if (supabaseConfigured()) {
-    tasks.push(
-      // Same +03:00 / ilDay convention as the BMBY funnel query.
-      supabaseRowsAll<{ lead_created_at: string | null }>(
-        `v_bmby_leads_bucketed?select=lead_created_at` +
-          `&lead_created_at=lte.${today}T23:59:59%2B03:00` +
-          `&order=lead_created_at.desc&limit=1`,
-      ).then((r) => put("bmby:warehouse", ilDay(r[0]?.lead_created_at))),
-      // Sehel wall-clock is tagged +00:00; the day is the string's date part.
-      supabaseRowsAll<{ registered_at: string | null }>(
-        `sehel_leads_daily?select=registered_at` +
-          `&registered_at=lte.${today}T23:59:59%2B00:00` +
-          `&order=registered_at.desc&limit=1`,
-      ).then((r) => put("sehel:warehouse", String(r[0]?.registered_at ?? "").slice(0, 10))),
-    );
-  }
-  await Promise.all(tasks.map((t) => t.catch(() => undefined)));
+  await Promise.all(
+    CRM_FEEDS.map(async ([platform, source]) => {
+      const d = await getCrmFeedNewestDay(platform, source);
+      if (d) out[`${platform}:${source}`] = d;
+    }),
+  );
   return out;
 }
 

@@ -80,6 +80,9 @@ export default function CrmFunnelTrendline({
     /** Leads per day INCLUDING ones with no source. A day with none drawn
      *  but some here had leads the bars cannot hold — not a zero day. */
     dayTotals?: Record<string, number>;
+    /** Some sources are deselected (the project page's chips), so a day's
+     *  hidden leads may simply be filtered out rather than sourceless. */
+    filtered?: boolean;
   };
   /** Render the hover card into <body>, for hosts that clip their content
    *  (the budget desk's cards are overflow:hidden). */
@@ -367,16 +370,20 @@ export default function CrmFunnelTrendline({
             {zeroDays &&
               hoverDay.leads === 0 &&
               (() => {
-                const unsourced = zeroDays.dayTotals?.[hoverDay.date] ?? 0;
+                // Leads that day which no bar shows: sourceless, or (with the
+                // chips narrowed) from a deselected source.
+                const hidden = zeroDays.dayTotals?.[hoverDay.date] ?? 0;
                 const counted = hoverDay.date <= zeroDays.flagUntil;
                 return (
                   <div
                     className={`crm-trend-hover-status${
-                      unsourced === 0 && counted ? " is-zero" : ""
+                      hidden === 0 && counted ? " is-zero" : ""
                     }`}
                   >
-                    {unsourced > 0
-                      ? `${unsourced} לידים בלי מקור הגעה ביום הזה — אין להם עמודה`
+                    {hidden > 0
+                      ? zeroDays.filtered
+                        ? `${hidden} לידים ביום הזה לא מוצגים — ממקור שלא נבחר או בלי מקור הגעה`
+                        : `${hidden} לידים בלי מקור הגעה ביום הזה — אין להם עמודה`
                       : counted
                         ? "לא נכנסו לידים ביום הזה"
                         : "ה-CRM עוד לא דיווח על היום הזה"}
