@@ -364,6 +364,34 @@ const COUNTRY_HE: Record<string, string> = {
  * accounts in 79 seconds at limit=200, 39 pages, zero failures — age present
  * on 100%, a geographic zone on 99.9%.
  */
+/**
+ * The age range the advertiser CHOSE — which is not always age_min/age_max.
+ *
+ * With Advantage+ audience on, Meta keeps the chosen range in `age_range` and
+ * opens the top-level pair to whatever it may serve instead, usually 18–65.
+ * Reading the pair therefore reports an audience nobody asked for: The 57's
+ * "Geo" is set to 27–65 and rendered "18–65+" on the project page, which is
+ * how this was found (2026-09-16).
+ *
+ * Measured the same day over 298 sampled ad sets: 60 carry `age_range`, and
+ * 41 of those disagree with the pair — 18→35 (×11), 18→27 (×6), 18→30 (×5),
+ * 18→28 (×5), 18→26 (×4), and also 21→25 and 25→31, so the expanded floor is
+ * not always 18 and cannot be special-cased.
+ *
+ * `age_range` is absent unless the expansion is on, so it wins when present
+ * and the pair answers otherwise. What this does NOT say is that Meta will
+ * stay inside the range: with the expansion on it may serve outside it. The
+ * card shows the target, the same number the ads manager shows.
+ */
+function chosenAgeRange(t: {
+  age_min?: number;
+  age_max?: number;
+  age_range?: unknown[];
+}): [number, number] {
+  const r = Array.isArray(t.age_range) ? t.age_range.map((v) => Number(v) || 0) : [];
+  return [r[0] || Number(t.age_min ?? 0) || 0, r[1] || Number(t.age_max ?? 0) || 0];
+}
+
 export async function listAdSetTargeting(
   accountId: string,
   updatedSince?: number,
@@ -385,6 +413,8 @@ export async function listAdSetTargeting(
     targeting?: {
       age_min?: number;
       age_max?: number;
+      /** Present only under Advantage+ age expansion — see chosenAgeRange. */
+      age_range?: unknown[];
       genders?: number[];
       geo_locations?: Record<string, unknown>;
     };
@@ -399,8 +429,8 @@ export async function listAdSetTargeting(
       name: String(r.name ?? "").trim(),
       campaign: String(r.campaign?.name ?? "").trim(),
       effectiveStatus: String(r.effective_status ?? "").trim(),
-      ageMin: Number(t.age_min ?? 0) || 0,
-      ageMax: Number(t.age_max ?? 0) || 0,
+      ageMin: chosenAgeRange(t)[0],
+      ageMax: chosenAgeRange(t)[1],
       genders: gendersOf(t.genders),
       zones: zonesOf(t.geo_locations),
       locationTypes: ((t.geo_locations?.location_types as string[]) ?? []).map(String),
