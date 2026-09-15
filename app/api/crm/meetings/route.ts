@@ -3,7 +3,11 @@ import { currentUserEmail } from "@/lib/appsScript";
 import { crmAccountCandidates } from "@/lib/crmData";
 import { readKeysCached } from "@/lib/keys";
 import { driveFolderOwner } from "@/lib/sa";
-import { getHeldMeetings, getHeldMeetingsSehel } from "@/lib/heldMeetings";
+import {
+  getHeldMeetings,
+  getHeldMeetingsSehel,
+  getUnsyncedMeetingAccounts,
+} from "@/lib/heldMeetings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +17,8 @@ export const dynamic = "force-dynamic";
  * behind each one.
  *
  *   GET /api/crm/meetings?project=&company=&from=YYYY-MM-DD&to=YYYY-MM-DD
- *     → { ok, total, clientsMet, withNotes, meetings: [...], clients: [...] }
+ *     → { ok, total, clientsMet, withNotes, meetings: [...], clients: [...],
+ *         notSynced?, notSyncedAccounts? (staff only) }
  *
  * On demand for the same reason /api/crm/signed is: it returns customer
  * names, phones and the salesperson's write-up of the conversation. Putting
@@ -133,14 +138,41 @@ export async function GET(req: Request) {
     }
 
     const accounts = crmAccountCandidates(crmAccount);
-    const parts = (
-      await Promise.all([
-        wantsBmby ? getHeldMeetings({ crmAccounts: accounts, from, to }) : null,
-        wantsSehel
-          ? getHeldMeetingsSehel({ crmAccounts: accounts, from, to })
-          : null,
-      ])
-    ).filter((x): x is NonNullable<typeof x> => !!x);
+    // Alongside the readers: which of the project's accounts the meetings
+    // sync never reached. Without it an account outside the sync renders
+    // "לא התקיימו פגישות" — on גניה גן יבנה while ALL CLIENTS counted 3 held
+    // meetings that month (2026-09-15). null = could not tell, claim nothing.
+    const [bmby, sehel, coverage] = await Promise.all([
+      wantsBmby ? getHeldMeetings({ crmAccounts: accounts, from, to }) : null,
+      wantsSehel
+        ? getHeldMeetingsSehel({ crmAccounts: accounts, from, to })
+        : null,
+      getUnsyncedMeetingAccounts({
+        crmAccount,
+        platforms: [
+          ...(wantsBmby ? (["bmby"] as const) : []),
+          ...(wantsSehel ? (["sehel"] as const) : []),
+        ],
+        from,
+        to,
+      }).catch(() => null),
+    ]);
+    // The count is the fact and every viewer gets it; which account it is
+    // and why is plumbing, for staff only — same split as the GA4 section.
+    // syncChecked lets the panel tell "the project is not synced" from "one
+    // of its five accounts is not" without learning which.
+    const sync = coverage?.unsynced.length
+      ? {
+          notSynced: coverage.unsynced.length,
+          syncChecked: coverage.checked,
+          ...(email.endsWith("@fandf.co.il")
+            ? { notSyncedAccounts: coverage.unsynced }
+            : {}),
+        }
+      : {};
+    const parts = [bmby, sehel].filter(
+      (x): x is NonNullable<typeof x> => !!x,
+    );
     // The counts ADD: a project on both CRMs splits its meetings between
     // them, it does not record each one twice. Sorted newest-first across
     // the merge so the table reads as one diary rather than two appended
@@ -169,7 +201,7 @@ export async function GET(req: Request) {
         reason: "unavailable",
       });
     }
-    return NextResponse.json({ ok: true, ...res });
+    return NextResponse.json({ ok: true, ...res, ...sync });
   } catch (e) {
     console.warn(
       `[api/crm/meetings] failed for "${project}": ${e instanceof Error ? e.message : String(e)}`,

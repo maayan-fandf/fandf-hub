@@ -1,5 +1,11 @@
 import { cache } from "react";
-import { orExactFilter, supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
+import {
+  orExactFilter,
+  orPrefixFilter,
+  supabaseConfigured,
+  supabaseFetch,
+  supabaseRowsAll,
+} from "@/lib/supabase";
 import {
   attachEntryUtms,
   cleanSehelContent,
@@ -162,6 +168,204 @@ const EMPTY: HeldMeetingsResult = {
   clientsMet: 0,
   withNotes: 0,
 };
+
+/**
+ * Which of a project's CRM accounts the meetings sync never reached.
+ *
+ * Both readers below return an empty list for such an account, and an empty
+ * list rendered as "לא התקיימו פגישות". Measured 2026-09-15:
+ *
+ *   BMBY   "מניבים- GANYA גן יבנה" (project 11651, גניה גן יבנה): 60 leads in
+ *          September, 6 of them at a meeting status, and not one row for any
+ *          of those clients in bmby_meetings, bmby_touches or bmby_leads —
+ *          while ALL CLIENTS counted 3 held meetings. Every other live BMBY
+ *          account had its meeting-status clients synced within days.
+ *   Sehel  sehel_meetings holds six accounts. "רייסדור כרמי גת צפון" and
+ *          "רייסדור בני עי״ש" are not among them, have leads sitting at
+ *          "אחרי פגישה", and ALL CLIENTS counted 5 and 3 held that month.
+ *
+ * An account is reported only on proof from both sides, so a correctly
+ * synced account that simply had no meeting yet is never accused. The CRM
+ * side is always a lead IN THE WINDOW at a meeting stage (BMBY status or
+ * pipeline, Sehel stage — "פגישה 1", "אחרי פגישה", …). The warehouse side
+ * is either of:
+ *
+ *   • not one meeting row for the account ON ANY DATE — it is outside the
+ *     sync (גניה, the two Reisdor accounts); or
+ *   • the account has rows, but none of those clients does — at least two
+ *     of them, with leads at least SYNC_LAG_DAYS old. An account can be
+ *     partway in: "נתניה" (ימים הצעירה) gained 4 future bookings on
+ *     2026-09-06 while its 7 September meeting-stage clients had nothing,
+ *     and the account-level test alone called it synced. Synced accounts
+ *     measured 75–100% of such clients covered; the floor of two and the
+ *     lag allowance keep a short window, or a meeting booked yesterday,
+ *     from accusing one. Matching by client also counts a meeting filed
+ *     under a sibling account name as covered.
+ *
+ * Returns null when it cannot tell. Every probe throws on a non-2xx rather
+ * than going through supabaseRowsAll, which returns [] on a 4xx — a
+ * malformed filter would otherwise read as "no meetings ever" and accuse
+ * every account at once.
+ */
+const SYNC_LAG_DAYS = 3;
+/** Stage rows read per account — the test needs a sample, not a census. */
+const MAX_STAGE_ROWS = 200;
+/** Client ids per coverage probe, keeping the in.() list well inside a URL. */
+const MAX_STAGE_CLIENTS = 50;
+
+export type UnsyncedMeetingAccount = {
+  account: string;
+  /** null: not one meeting row for the account on any date. A number: that
+   *  many meeting-stage clients in the window, none with a meeting row, on
+   *  an account that has some. */
+  missingClients: number | null;
+};
+
+export const getUnsyncedMeetingAccounts = cache(
+  async (args: {
+    /** The raw Keys CRM cell — see the comma note below. */
+    crmAccount: string;
+    platforms: readonly ("bmby" | "sehel")[];
+    from: string;
+    to: string;
+  }): Promise<{
+    /** Accounts evaluated — lets the caller tell "every account" from "one of five". */
+    checked: number;
+    unsynced: UnsyncedMeetingAccount[];
+  } | null> => {
+    const full = clean(args.crmAccount);
+    if (!supabaseConfigured() || !full || !args.platforms.length) return null;
+    try {
+      const rows = async <T>(path: string): Promise<T[]> => {
+        const res = await supabaseFetch(path);
+        if (!res.ok) throw new Error(`HTTP ${res.status} on ${path.split("?")[0]}`);
+        const j = await res.json();
+        if (!Array.isArray(j)) throw new Error(`non-array from ${path.split("?")[0]}`);
+        return j as T[];
+      };
+      const any = async (path: string) => (await rows(`${path}&limit=1`)).length > 0;
+      const next = new Date(`${args.to}T00:00:00Z`);
+      next.setUTCDate(next.getUTCDate() + 1);
+      const toExcl = next.toISOString().slice(0, 10);
+      const todayIL = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Jerusalem",
+      }).format(new Date());
+      const lagCutoff =
+        Date.parse(`${todayIL}T00:00:00+03:00`) - SYNC_LAG_DAYS * 86400000;
+
+      type Stage = { all: string[]; settled: string[] };
+      const readStage = async (acc: string, p: "bmby" | "sehel"): Promise<Stage> => {
+        const list =
+          p === "bmby"
+            ? // `or` carries the stage match, so the account goes in as a
+              // standalone eq — unquoted, which is how a standalone filter
+              // reads a comma. Nesting both into one or/and tree is the
+              // shape that matches nothing (see getHeldMeetings).
+              (
+                await rows<{ client_id: string | null; lead_created_at: string | null }>(
+                  `bmby_leads_daily?project_name=eq.${encodeURIComponent(acc)}` +
+                    `&or=(client_status.ilike.*${encodeURIComponent("פגישה")}*,` +
+                    `pipeline.ilike.*${encodeURIComponent("פגישה")}*)` +
+                    `&lead_created_at=gte.${args.from}T00:00:00%2B03:00` +
+                    `&lead_created_at=lt.${toExcl}T00:00:00%2B03:00` +
+                    `&select=client_id,lead_created_at&limit=${MAX_STAGE_ROWS}`,
+                )
+              ).map((r) => ({ id: clean(r.client_id), at: r.lead_created_at }))
+            : // Sehel's project_name carries a salesperson suffix, so the
+              // account is the exact name OR the name followed by a space.
+              // The stage filter cannot share that `or`, so it is an ilike.
+              (
+                await rows<{ client_uuid: string | null; registered_at: string | null }>(
+                  `sehel_leads_daily?or=(${orExactFilter("project_name", [acc])},` +
+                    `${orPrefixFilter("project_name", [`${acc} `], "like")})` +
+                    `&stage=ilike.*${encodeURIComponent("פגישה")}*` +
+                    `&registered_at=gte.${args.from}T00:00:00` +
+                    `&registered_at=lt.${toExcl}T00:00:00` +
+                    `&select=client_uuid,registered_at&limit=${MAX_STAGE_ROWS}`,
+                )
+              ).map((r) => ({ id: clean(r.client_uuid), at: r.registered_at }));
+        const all = new Set<string>();
+        const settled = new Set<string>();
+        for (const r of list) {
+          if (!r.id) continue;
+          all.add(r.id);
+          // A lead from the last few days may belong to a meeting the sync
+          // has not fetched yet: it proves the CRM side, not the gap.
+          const t = Date.parse(String(r.at ?? ""));
+          if (Number.isFinite(t) && t < lagCutoff) settled.add(r.id);
+        }
+        return { all: [...all], settled: [...settled] };
+      };
+      // Memoised per call: the comma check below asks the same question the
+      // per-account pass asks again.
+      const stageMemo = new Map<string, Promise<Stage>>();
+      const stage = (acc: string, p: "bmby" | "sehel") => {
+        const k = `${p}|${acc}`;
+        let v = stageMemo.get(k);
+        if (!v) {
+          v = readStage(acc, p);
+          stageMemo.set(k, v);
+        }
+        return v;
+      };
+      const everMet = (acc: string, p: "bmby" | "sehel") =>
+        p === "bmby"
+          ? any(
+              `v_bmby_journey_meetings?or=(${orExactFilter("project_he", [acc])})&select=meeting_id`,
+            )
+          : any(
+              `sehel_meetings?or=(${orExactFilter("project_name", [acc])})&select=event_uid`,
+            );
+      const anyClientMet = (ids: string[], p: "bmby" | "sehel") =>
+        p === "bmby"
+          ? any(`v_bmby_journey_meetings?client_id=in.(${inList(ids)})&select=meeting_id`)
+          : any(`sehel_meetings?client_uuid=in.(${inList(ids)})&select=event_uid`);
+
+      /** false = no gap shown; null = no rows for the account at all; a
+       *  number = that many settled meeting-stage clients, none with a row. */
+      const verdict = async (acc: string, p: "bmby" | "sehel"): Promise<false | null | number> => {
+        const { all, settled } = await stage(acc, p);
+        if (!all.length) return false;
+        const sample = settled.slice(0, MAX_STAGE_CLIENTS);
+        const [ever, clientsMet] = await Promise.all([
+          everMet(acc, p),
+          sample.length >= 2 ? anyClientMet(sample, p) : Promise.resolve(true),
+        ]);
+        if (!ever) return null;
+        return clientsMet ? false : sample.length;
+      };
+
+      // A comma in the cell is either a separator or part of one account's
+      // name ("HaGada בני דן, תל אביב"). When the whole cell answers, it is
+      // one name and its pieces are not accounts to report on.
+      const parts = [...new Set(full.split(",").map(clean).filter(Boolean))];
+      let accounts = [full];
+      if (parts.length > 1) {
+        const whole = await Promise.all(args.platforms.map((p) => stage(full, p)));
+        if (!whole.some((s) => s.all.length)) accounts = parts;
+      }
+
+      const results = await Promise.all(
+        accounts.map(async (account): Promise<UnsyncedMeetingAccount | null> => {
+          const per = await Promise.all(args.platforms.map((p) => verdict(account, p)));
+          // "No rows at all" is the stronger statement, so it wins.
+          if (per.some((v) => v === null)) return { account, missingClients: null };
+          const n = per.find((v): v is number => typeof v === "number");
+          return n === undefined ? null : { account, missingClients: n };
+        }),
+      );
+      return {
+        checked: accounts.length,
+        unsynced: results.filter((r): r is UnsyncedMeetingAccount => !!r),
+      };
+    } catch (e) {
+      console.warn(
+        `[getUnsyncedMeetingAccounts] failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
+  },
+);
 
 /**
  * Held meetings for a project's CRM account(s) inside [from, to].

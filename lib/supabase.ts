@@ -225,7 +225,9 @@ export function orPrefixFilter(
  *
  * It buys BMBY nothing: 29 of its 30 Keys cells match a warehouse name
  * exactly (including the one above), and the 30th ("נתניה", ימים הצעירה)
- * has no warehouse account at all, so no wildcard would find it either.
+ * had no warehouse account at all when this was measured, so no wildcard
+ * would have found it either. It has since arrived under exactly that name
+ * (leads from 2026-08-30).
  *
  * `eq` is case-SENSITIVE where the prefix filter defaulted to `ilike`.
  * Checked: all 29 resolvable cells match case-exactly today. It is also

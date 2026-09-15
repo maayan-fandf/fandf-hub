@@ -30,7 +30,20 @@ type Payload = {
   clients?: DossierClient[];
   reason?: string;
   platform?: string;
+  /** How many of the project's CRM accounts the meetings sync has not
+   *  reached — see getUnsyncedMeetingAccounts for the proof it requires. */
+  notSynced?: number;
+  /** How many accounts were checked; equal to notSynced when none of the
+   *  project's accounts is synced. */
+  syncChecked?: number;
+  /** Which ones, and which proof fired — sent to staff only.
+   *  missingClients null: not one meeting row for the account on any date.
+   *  A number: that many meeting-stage clients in the window, none with a
+   *  meeting row, on an account that has some. */
+  notSyncedAccounts?: { account: string; missingClients: number | null }[];
 };
+
+const quoteList = (names: string[]) => names.map((n) => `״${n}״`).join(", ");
 
 function fmtDay(iso: string): string {
   if (!iso || iso.length < 10) return "—";
@@ -127,7 +140,10 @@ export default function MeetingsSection({
   }, [meetings, byClient]);
 
   if (state === "loading") return <div className="rpt-empty">טוען פגישות…</div>;
-  if (state === "error")
+  // "unavailable" is the route's word for a warehouse read that failed. It
+  // used to fall through to "no meetings were held", reporting an outage
+  // as a fact about the project.
+  if (state === "error" || data?.reason === "unavailable")
     return <div className="rpt-empty">לא הצלחתי לטעון את נתוני הפגישות.</div>;
   if (data?.reason === "unsupported-platform")
     return (
@@ -138,6 +154,38 @@ export default function MeetingsSection({
     );
   if (data?.reason === "no-crm")
     return <div className="rpt-empty">אין לפרויקט הזה חשבון CRM ב-Keys.</div>;
+  const unsyncedCount = data?.notSynced ?? 0;
+  const unsyncedAccounts = data?.notSyncedAccounts ?? [];
+  // An account the sync has not reached has no meeting rows to count, so an
+  // empty list there says nothing about whether meetings happened. Worded
+  // for the whole project only when every account it has is the problem —
+  // on חמסה one account of five is, and the other four may simply have held
+  // nothing in the window.
+  if (!meetings.length && unsyncedCount > 0)
+    return (
+      <div className="rpt-empty">
+        {unsyncedCount === data?.syncChecked
+          ? "הפגישות של הפרויקט הזה עוד לא מסונכרנות מה-CRM, ולכן אין כאן רשימה — זה לא אומר שלא התקיימו פגישות."
+          : `${
+              unsyncedCount === 1
+                ? "חשבון CRM אחד של הפרויקט עוד לא מסונכרן"
+                : `${unsyncedCount} חשבונות CRM של הפרויקט עוד לא מסונכרנים`
+            }, ולכן רשימה ריקה כאן לא אומרת שלא התקיימו פגישות.`}
+        {unsyncedAccounts.length > 0 && (
+          <div className="rpt-empty-why">
+            {unsyncedAccounts.map((a) => (
+              <div key={a.account}>
+                ״{a.account}״:{" "}
+                {a.missingClients == null
+                  ? "יש בטווח הדוח לידים בשלב פגישה, ואין במחסן הנתונים אף פגישה של החשבון, מאף תאריך — הוא לא נכלל בסנכרון הפגישות."
+                  : `ל-${a.missingClients} לקוחות שבשלב פגישה בטווח הדוח אין אף פגישה במחסן הנתונים — החשבון מסונכרן רק בחלקו.`}
+              </div>
+            ))}
+            <div>התיקון הוא בסנכרון הפגישות, לא בדוח.</div>
+          </div>
+        )}
+      </div>
+    );
   if (!meetings.length)
     return (
       <div className="rpt-empty">
@@ -174,6 +222,19 @@ export default function MeetingsSection({
         </div>
       </div>
 
+      {unsyncedCount > 0 && (
+        <p className="ct-note">
+          <b>
+            הרשימה חלקית:{" "}
+            {unsyncedCount === 1
+              ? "חשבון CRM אחד של הפרויקט לא מסונכרן במלואו, ופגישות שלו חסרות כאן"
+              : `${unsyncedCount} חשבונות CRM של הפרויקט לא מסונכרנים במלואם, ופגישות שלהם חסרות כאן`}
+            {unsyncedAccounts.length > 0 &&
+              ` (${quoteList(unsyncedAccounts.map((a) => a.account))})`}
+            .
+          </b>
+        </p>
+      )}
       <p className="ct-note">
         נספרות פגישות לפי <b>מועד קיומן</b> בתוך טווח הדוח, לא לפי מועד
         התיאום — שתי אוכלוסיות שונות. הסיכום הוא מה שאיש המכירות כתב ב-CRM;
