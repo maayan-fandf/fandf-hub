@@ -65,7 +65,14 @@ async function freshnessIso(): Promise<string> {
 
 /** Held breakdown for one project over [from, toExcl). Keys on project_he
  *  (the Hebrew account name) until Nadav adds project_id to the journey
- *  view. `from`/`toExcl` empty → no date filter (all rows). */
+ *  view. `from`/`toExcl` empty → no date filter (all rows).
+ *
+ *  Windowed on when the meeting HAPPENED — appointment_date, with the
+ *  booking date (meeting_date) only as the fallback when it is missing —
+ *  the rule every other BMBY meeting count uses (crmData meetingInWindow,
+ *  datedChannelMeetings, heldMeetings). The strip this feeds reads
+ *  "פגישות התקיימו בפועל"; on the booking date it said 132 held for
+ *  2026-09-01..15 across the portfolio where 141 actually happened. */
 async function bmbyHeld(
   projectHe: string,
   from: string,
@@ -73,13 +80,20 @@ async function bmbyHeld(
 ): Promise<BmbyHeldEnrichment> {
   const base = `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(projectHe)}`;
   const win =
+    from && toExcl
+      ? `&or=(and(appointment_date.gte.${from},appointment_date.lt.${toExcl}),` +
+        `and(appointment_date.is.null,meeting_date.gte.${from},meeting_date.lt.${toExcl}))`
+      : "";
+  // "Leads first-booked" is a statement about the booking, so it alone keeps
+  // the booking date.
+  const bookedWin =
     from && toExcl ? `&meeting_date=gte.${from}&meeting_date=lt.${toExcl}` : "";
   const [authoritative, estimated, canceled, scheduledFirstMeetings, asOf] =
     await Promise.all([
       supabaseCount(`${base}${win}&appointment_outcome=eq.held&select=meeting_id`),
       supabaseCount(`${base}${win}&held=is.true&select=meeting_id`),
       supabaseCount(`${base}${win}&appointment_outcome=eq.canceled&select=meeting_id`),
-      supabaseCount(`${base}${win}&meeting_seq=eq.1&select=meeting_id`),
+      supabaseCount(`${base}${bookedWin}&meeting_seq=eq.1&select=meeting_id`),
       freshnessIso(),
     ]);
   return {

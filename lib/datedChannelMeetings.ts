@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
-import { supabaseConfigured, supabaseRows } from "@/lib/supabase";
+import { supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
 import { canonicalMediaChannel, type CrmPlatform } from "@/lib/crmData";
 
 /**
@@ -18,10 +18,13 @@ import { canonicalMediaChannel, type CrmPlatform } from "@/lib/crmData";
  *      created in June had 335 held meetings by the end of June, 435 by
  *      today — the number you read at month-end grew 30% afterwards.
  *      July went 291 → 365 and is still climbing.
- *   2. Its per-channel split differs from what actually happened. Same
- *      measurement, July, facebook: 82 by the snapshot, 129 by meeting
- *      date. Cost-per-meeting for the biggest channel moves by ~57%
- *      depending purely on which definition the table uses.
+ *   2. Its per-channel split differs from what actually happened. July,
+ *      facebook: 82 held by the snapshot (2026-08-25), 141 by when the
+ *      meeting happened (re-measured 2026-09-16). The 129 first quoted
+ *      here was filtered on meeting_date, which is the BOOKING date (124
+ *      by that rule today) — see the BMBY block below. Cost-per-meeting
+ *      for the biggest channel moves by ~70% depending purely on which
+ *      definition the table uses.
  *
  * Totals can hide this. Across Salesforce in July the two agree almost
  * exactly (77 vs 75) while only 52 rows are common to both — a third of
@@ -244,6 +247,18 @@ async function resolveCrm(
  * BmbyHeldEnrichment, which surfaces it separately as "estimated").
  * Channel coverage measured 2026-08-25: first_lid_channel was present on
  * 100% of the last 90 days' meetings.
+ *
+ * Windowed on `appointment_date`, when the meeting HAPPENED, falling back
+ * to `meeting_date` only when that is null — the same rule as crmData's
+ * meetingInWindow and fbCreativeMeetingsExport. `meeting_date` is when it
+ * was BOOKED (see heldMeetings), and filtering on it alone answered a
+ * different question than the toggle asks: measured 2026-09-16 on The 57
+ * in September it read google-search 2 where the keyword table credited
+ * one client with 3 meetings (one booked in August), and facebook 14 vs
+ * 20; across the portfolio 215 of August's rows sit in only one of the two
+ * definitions. Both columns are `date`, so lte on a bare day keeps [from,
+ * to] inclusive, and this or=(…) was checked row-for-row against the rule
+ * applied in memory over five accounts' full history.
  */
 type BmbyRow = {
   first_lid_channel: string | null;
@@ -257,19 +272,31 @@ async function bmbyDated(
   to: string,
   attribute: (source: string) => Attribution,
 ): Promise<DatedChannelMeetings | null> {
-  const rows = await supabaseRows<BmbyRow>(
+  // Paged, on a unique order: the warehouse caps a response at 1000 rows and
+  // the `limit=20000` this used to send was silently ignored — a multi-month
+  // range on a busy account (נתיבות 2026-01..09: 1,331 meetings) came back
+  // as an arbitrary 1,000 with nothing to say so.
+  const rows = await supabaseRowsAll<BmbyRow>(
     `v_bmby_journey_meetings?select=first_lid_channel,first_lid_source,appointment_outcome` +
       `&project_he=eq.${encodeURIComponent(account)}` +
-      `&meeting_date=gte.${from}&meeting_date=lte.${to}&limit=20000`,
+      `&or=(and(appointment_date.gte.${from},appointment_date.lte.${to}),` +
+      `and(appointment_date.is.null,meeting_date.gte.${from},meeting_date.lte.${to}))` +
+      `&order=meeting_id.asc`,
   );
   if (!rows.length) return null;
   const byChannel: Record<string, DatedCounts> = {};
   const unattributed = emptyCounts();
   const ambiguous = emptyCounts();
   let unresolved = 0;
+  // A meeting with no outcome at all cannot be counted as held, so where
+  // there are any the held figure is a floor. Common on נתיבות in the first
+  // half of 2026 (87-117 a month). `in_process` is not one of them: that is
+  // a meeting not marked YET, the normal lag the owner accepted.
+  let noOutcome = 0;
   for (const r of rows) {
     const outcome = norm(r.appointment_outcome);
     const held = outcome === "held";
+    if (!outcome) noOutcome++;
     if (!outcome || outcome === "in_process") unresolved++;
     // first_lid_source is the campaign-level string the table's rows are
     // actually named after ("google-search-brand", "Article2");
@@ -292,7 +319,7 @@ async function bmbyDated(
     byChannel,
     unattributed,
     ambiguous,
-    heldConfidence: "authoritative",
+    heldConfidence: noOutcome > 0 ? "partial" : "authoritative",
     unresolved,
   };
 }
@@ -334,10 +361,12 @@ async function sehelDated(
   const toExcl = new Date(Date.parse(`${to}T00:00:00Z`) + 86400000)
     .toISOString()
     .slice(0, 10);
-  const meetings = await supabaseRows<SehelMeeting>(
+  // Paged for the same reason as bmbyDated: the 1000-row cap ignores limit=.
+  const meetings = await supabaseRowsAll<SehelMeeting>(
     `sehel_meetings?select=client_uuid,status_label` +
       `&project_name=like.${likePrefix(account)}` +
-      `&starts_at=gte.${from}T00:00:00&starts_at=lt.${toExcl}T00:00:00&limit=20000`,
+      `&starts_at=gte.${from}T00:00:00&starts_at=lt.${toExcl}T00:00:00` +
+      `&order=event_uid.asc`,
   );
   if (!meetings.length) return null;
 
@@ -346,9 +375,9 @@ async function sehelDated(
   // Chunked: a project-season's worth of uuids overflows a practical URL.
   for (let i = 0; i < uuids.length; i += 150) {
     const chunk = uuids.slice(i, i + 150);
-    const leads = await supabaseRows<SehelLead>(
+    const leads = await supabaseRowsAll<SehelLead>(
       `sehel_leads_daily?select=client_uuid,media_source_raw` +
-        `&client_uuid=in.(${chunk.join(",")})&limit=20000`,
+        `&client_uuid=in.(${chunk.join(",")})&order=client_uuid.asc,registered_at.asc`,
     );
     for (const l of leads) {
       if (l.client_uuid && l.media_source_raw) {

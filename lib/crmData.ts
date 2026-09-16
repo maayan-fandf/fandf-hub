@@ -396,8 +396,8 @@ export type CrmFunnel = {
   /** Lead-journey velocity (warehouse BMBY only): DAYS from a cohort lead to
    *  the client's first held meeting that falls on/after that lead, per
    *  media channel (the lead's normSource'd source). median + avg + n (held
-   *  count). lead→scheduled is NOT here — the warehouse has no booking
-   *  timestamp, only the meeting date. Whole-window. */
+   *  count). The meeting is dated by appointment_date (when it happened),
+   *  falling back to meeting_date (when it was booked). Whole-window. */
   journeyVelocity?: {
     overall: { medianDays: number; avgDays: number; n: number };
     bySource: Record<string, { medianDays: number; avgDays: number; n: number }>;
@@ -819,15 +819,25 @@ function computeJourneyVelocity(
     lead_created_at: string | null;
     media_source_clean: string | null;
   }[],
-  meetings: { client_id: string | null; appointment_outcome: string | null; meeting_date: string | null }[],
+  meetings: {
+    client_id: string | null;
+    appointment_outcome: string | null;
+    meeting_date: string | null;
+    appointment_date: string | null;
+  }[],
 ): CrmFunnel["journeyVelocity"] {
   const DAY = 86400000;
   const heldByClient = new Map<string, number[]>();
   for (const m of meetings) {
-    if (m.appointment_outcome !== "held" || !m.meeting_date) continue;
+    // When the meeting happened; meeting_date is when it was BOOKED and is
+    // only the fallback (the meetingInWindow rule). On the booking date this
+    // measured lead → booking: August 2026 medians of 0 days instead of 4 on
+    // באר יעקב מערב, 2 instead of 5 on נתיבות.
+    const when = m.appointment_date || m.meeting_date;
+    if (m.appointment_outcome !== "held" || !when) continue;
     const c = String(m.client_id ?? "");
     if (!c) continue;
-    const ms = Date.parse(m.meeting_date);
+    const ms = Date.parse(when);
     if (Number.isNaN(ms)) continue;
     let arr = heldByClient.get(c);
     if (!arr) heldByClient.set(c, (arr = []));
