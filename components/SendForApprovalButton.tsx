@@ -235,6 +235,11 @@ export default function SendForApprovalButton({
                 ✕
               </button>
             </div>
+            {/* The only part that scrolls. Header and actions stay put: with
+                two rosters, the add row, the message and the hint, the
+                dialog outgrew a laptop screen and the send button sat below
+                the fold of an overlay that does not scroll. */}
+            <div className="send-approval-body">
             <p className="send-approval-file" title={fileName}>
               קובץ: <b>{fileName}</b>
             </p>
@@ -361,6 +366,7 @@ export default function SendForApprovalButton({
                 ✓ נשלח. הנמענים יקבלו מייל עם קישור לצפייה ואישור הפריסה.
               </div>
             )}
+            </div>
             <div className="send-approval-actions">
               <button
                 type="button"

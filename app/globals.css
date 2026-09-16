@@ -8503,6 +8503,20 @@ details.crm-collapsible[open] > summary.crm-block-title::before {
    (suggested-clients list, add-extra row, action footer). */
 .send-approval-dialog {
   width: min(480px, 100%);
+  /* Bounded to what the overlay leaves (its 8vh top + 2rem bottom padding),
+     so the actions row can never be pushed off-screen. Only the body
+     scrolls — see .send-approval-body. */
+  max-height: calc(100dvh - 8vh - 2rem);
+  overflow: hidden;
+}
+.send-approval-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
 }
 .send-approval-file {
   margin: 0;
