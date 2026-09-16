@@ -1,20 +1,32 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import ReportMediaSection, {
   PlatformKpiBand,
 } from "@/components/report/ReportMediaSection";
 import AdHistoryPopover from "@/components/report/AdHistoryPopover";
 import AdSetZoneMap from "@/components/report/AdSetZoneMap";
 import AdSetMapModal, { type MapZone } from "@/components/report/AdSetMapModal";
+import { BasisDash, UntaggedMeetingsLine } from "@/components/report/BasisBadge";
+import { useMeetingBasis } from "@/components/report/MeetingBasisContext";
 import {
+  BASIS_COPY,
+  BASIS_LABELS,
+  BASIS_TITLES,
+  type MeetingBasis,
+} from "@/lib/meetingBasis";
+import {
+  applyBasisToCreatives,
   fbStatusInfo,
   fmtInt,
   fmtILS,
   fmtPct2,
   fmtDateHe,
+  untaggedFor,
+  type BasisAppliedCreatives,
   type ProjectReportData,
   type ReportAdDaily,
+  type ReportCreatives,
   type ReportFbAd,
   type ReportFbAdSet,
 } from "@/lib/reportShared";
@@ -25,7 +37,107 @@ import {
  * (image→thumb→placeholder fallback chain, status pills, 🏆 winner,
  * fatigue badges, ad copy, CRM meetings row, hover trendline), ad-set
  * list, Google RSA assets by campaign, and the top-keywords table.
+ *
+ * MEETING BASIS. Every תואמו/בוצעו on this tab — ad-card CRM row, history
+ * panel, ad-set line and hover grid, keyword table, Google campaign chip —
+ * follows the page-level switch (useMeetingBasis). The payload carries both
+ * bases (lib/reportShared ReportFbAd: unprefixed = לפי כניסת ליד, dated* =
+ * לפי מועד הפגישה) and applyBasisToCreatives swaps them here, at render, so
+ * a flip costs no request. That helper maps every list in place, and every
+ * sort in this file keys on basis-free fields (spend, CPL, impressions), so
+ * neither the card order nor the keyword order can move on a flip — and the
+ * React keys stay put, so a card's image fallback state survives it too.
+ *
+ * The trigger case, The 57 Sept: keyword "גיא ודורון לוי מתחם האלף" reads
+ * 0 · 0 on lead-entry (its one lead arrived 2026-08-25, so all four of its
+ * meeting events belong to August) and 3 · 1 on meeting date.
+ *
+ * Where the selected basis has no source (Salesforce under dated — its
+ * capture sheet has no meeting dates; or a project with no CRM join at
+ * all), the helper ZEROES the counts and flags meetingBasisMissing; every
+ * count then renders "—" with the reason in its tooltip, never a 0 that
+ * would read as measured, and never the other basis's number.
  */
+
+/** Rows that carry CRM joins, in the shape the visibility test needs. */
+type CrmJoinRow = Pick<
+  ReportFbAd,
+  "crmLeads" | "scheduled" | "held" | "datedScheduled" | "datedHeld"
+>;
+
+/**
+ * Whether a row has ANY CRM figure on EITHER basis. Evaluated on the
+ * payload's own rows, before the swap — once swapped to dated, `scheduled`
+ * holds the dated count and the lead-entry one is gone.
+ *
+ * The CRM line's visibility keys on this rather than on the numbers being
+ * shown, so a flip changes the numbers in place instead of making the line
+ * appear or vanish (and the card change height under the reader's eye). A
+ * line that is 0 · 0 on this basis and non-zero on the other is exactly the
+ * comparison the switch exists for: an old ad whose leads booked meetings
+ * this month is 0 · 0 by lead-entry and 2 · 1 by meeting date. A row that is
+ * zero on both still hides, as before the switch.
+ */
+function hasCrmOnEitherBasis(r: CrmJoinRow): boolean {
+  return (
+    r.crmLeads > 0 ||
+    r.scheduled > 0 ||
+    r.held > 0 ||
+    (r.datedScheduled ?? 0) > 0 ||
+    (r.datedHeld ?? 0) > 0
+  );
+}
+
+type CreativesBasisView = {
+  /** The payload with `basis`'s numbers in the unprefixed fields. */
+  cb: BasisAppliedCreatives;
+  /** The SWAPPED ad and ad-set rows (identity) whose CRM line shows. */
+  withCrm: Set<ReportFbAd | ReportFbAdSet>;
+  /** Tooltip for the "—" every meeting count renders when the basis has no
+   *  source (cb.meetingBasisMissing); null when the numbers are real. */
+  noSource: string | null;
+  /** Salesforce under dated: the caveat line under the Facebook and keyword
+   *  titles (BASIS_COPY.sfDatedCreatives). */
+  sfDated: boolean;
+};
+
+function creativesBasisView(
+  c: ReportCreatives,
+  basis: MeetingBasis,
+  datedSource: ProjectReportData["datedSource"],
+): CreativesBasisView {
+  const cb = applyBasisToCreatives(c, basis);
+  const withCrm = new Set<ReportFbAd | ReportFbAdSet>();
+  // applyBasisToCreatives maps each list index-for-index, so position i of
+  // the swapped list IS row i of the payload.
+  cb.fb.topAds.forEach((a, i) => {
+    if (hasCrmOnEitherBasis(c.fb.topAds[i])) withCrm.add(a);
+  });
+  cb.fb.topAdSets.forEach((s, i) => {
+    if (hasCrmOnEitherBasis(c.fb.topAdSets[i])) withCrm.add(s);
+  });
+  // `{lead: true, dated: false}` is Salesforce by the payload contract
+  // (ReportCreatives.meetingBases). The platform check only guards the
+  // copy: the note names Salesforce, so a BMBY/Sehel project that ever
+  // arrived in that state gets the generic "no source" tooltip instead.
+  const sfDated =
+    basis === "dated" &&
+    cb.meetingBasisMissing &&
+    c.meetingBases?.lead === true &&
+    (datedSource?.platform ?? "salesforce") === "salesforce";
+  const noSource = !cb.meetingBasisMissing
+    ? null
+    : sfDated
+      ? BASIS_COPY.sfDatedCreatives
+      : BASIS_COPY.dashNoSource[basis];
+  return { cb, withCrm, noSource, sfDated };
+}
+
+/** A תואמו/בוצעו count on the page's basis, or "—" (with the reason as its
+ *  tooltip) when that basis has no source for this project. */
+function meetNum(n: number, noSource: string | null): ReactNode {
+  return noSource ? <BasisDash title={noSource} /> : fmtInt(n);
+}
 
 /** image → thumb → placeholder chain. fbcdn URLs are signed and expire,
  *  and cdninstagram frequently 403s on hotlink — the onError fallback is
@@ -264,8 +376,12 @@ function CrmRow({
   costPerSched,
   costPerHeld,
   groupLevel = false,
+  show,
+  basis,
+  noSource,
 }: {
   crmLeads: number;
+  /** On the page's basis — the caller passes applyBasisToCreatives' row. */
   scheduled: number;
   held: number;
   costPerSched: number;
@@ -274,15 +390,22 @@ function CrmRow({
    *  card — the CRM can't tell Video/Static/Carousel apart. Say so rather
    *  than letting the number read as this one ad's. */
   groupLevel?: boolean;
+  /** hasCrmOnEitherBasis of the unswapped row — not the shown numbers, so a
+   *  flip never adds or removes the line. */
+  show: boolean;
+  basis: MeetingBasis;
+  /** Set when `basis` has no source: the counts render "—" with this. */
+  noSource: string | null;
 }) {
-  if (!crmLeads && !scheduled && !held) return null;
+  if (!show) return null;
   return (
     <div
       className="rpt-cr-stats rpt-cr-stats-crm"
       title={
-        groupLevel
+        (groupLevel
           ? "לידים, תואמו ובוצעו מה-CRM עבור הקריאייטיב כולו — כל הווריאציות (Video / Static / Carousel) יחד. ה-CRM לא מבדיל ביניהן, ולכן הנתון מוצג פעם אחת ולא על כל וריאציה"
-          : "לידים, תואמו ובוצעו מה-CRM שמקורם בקריאייטיב זה — כולל עלות לתיאום ולביצוע"
+          : "לידים, תואמו ובוצעו מה-CRM שמקורם בקריאייטיב זה — כולל עלות לתיאום ולביצוע") +
+        ` · תואמו ובוצעו ${BASIS_LABELS[basis]}`
       }
     >
       <div className="rpt-cr-stat">
@@ -299,8 +422,9 @@ function CrmRow({
       <div className="rpt-cr-stat">
         <span className="rpt-cr-stat-l">תואמו</span>
         <span className="rpt-cr-stat-v" style={{ color: "#ec4899" }}>
-          {fmtInt(scheduled)}
+          {meetNum(scheduled, noSource)}
         </span>
+        {/* Zeroed by the swap when the basis has no source, so no ₪ under a "—". */}
         {costPerSched > 0 && (
           <span className="rpt-cr-stat-sub" style={{ color: "#ec4899" }}>
             {fmtILS(costPerSched)}
@@ -310,7 +434,7 @@ function CrmRow({
       <div className="rpt-cr-stat">
         <span className="rpt-cr-stat-l">בוצעו</span>
         <span className="rpt-cr-stat-v" style={{ color: "#f5576c" }}>
-          {fmtInt(held)}
+          {meetNum(held, noSource)}
         </span>
         {costPerHeld > 0 && (
           <span className="rpt-cr-stat-sub" style={{ color: "#f5576c" }}>
@@ -403,15 +527,22 @@ function AdSetHoverCard({
   s,
   window,
   onOpenMap,
+  crm,
+  noSource,
 }: {
+  /** Already on the page's basis (applyBasisToCreatives). */
   s: ReportFbAdSet;
   window: { startIso: string; endIso: string };
   onOpenMap: () => void;
+  /** Whether the CRM grid shows — the same either-basis test as the card's
+   *  own CRM line, so the panel and the card never disagree about it. */
+  crm: boolean;
+  /** Set when the basis has no source: counts render "—" with this. */
+  noSource: string | null;
 }) {
   const zones = s.targetZones ?? [];
   const pts = s.targetZonePoints ?? [];
   const hasMap = pts.some(Boolean);
-  const crm = s.crmLeads > 0 || s.scheduled > 0 || s.held > 0;
   const loc = (s.targetLocTypes ?? [])
     .map((t) => (t === "home" ? "תושבי האזור" : t === "recent" ? "מי שהיה שם לאחרונה" : t))
     .join(" + ");
@@ -502,11 +633,11 @@ function AdSetHoverCard({
             לידים ב-CRM <b>{fmtInt(s.crmLeads)}</b>
           </span>
           <span style={{ color: "#ec4899" }}>
-            תואמו <b>{fmtInt(s.scheduled)}</b>
+            תואמו <b>{meetNum(s.scheduled, noSource)}</b>
             {s.costPerSched > 0 && ` (${fmtILS(s.costPerSched)})`}
           </span>
           <span style={{ color: "#f5576c" }}>
-            בוצעו <b>{fmtInt(s.held)}</b>
+            בוצעו <b>{meetNum(s.held, noSource)}</b>
             {s.costPerHeld > 0 && ` (${fmtILS(s.costPerHeld)})`}
           </span>
         </div>
@@ -563,8 +694,18 @@ export default function ReportCreativesTab({
    *  cannot leave a stale row open. */
   const [mapFor, setMapFor] = useState<string | null>(null);
 
+  /* The page-level תיאומים/ביצועים basis, applied once per flip. Before the
+     `!c` return for the same reason as the state above. Memoised on the
+     payload identity, which only changes with a server render — the refresh
+     overlay re-renders this tab without touching it. */
+  const { basis } = useMeetingBasis();
   const c = data.creatives;
-  if (!c) {
+  const view = useMemo(
+    () => (c ? creativesBasisView(c, basis, data.datedSource) : null),
+    [c, basis, data.datedSource],
+  );
+
+  if (!c || !view) {
     return (
       <div className="rpt-creatives">
         <ReportMediaSection data={data} />
@@ -579,9 +720,33 @@ export default function ReportCreativesTab({
       </div>
     );
   }
-  const { fb, google } = c;
+  // Everything below reads the SWAPPED payload. Only the meeting fields
+  // differ from `c`; order, keys and every basis-free figure are the same.
+  const { cb, withCrm, noSource, sfDated } = view;
+  const { fb, google } = cb;
   const ap = data.adPlatform;
   const prevAp = data.prevAdPlatform;
+  /* Salesforce under dated: one caveat line, under the first Facebook block
+     that shows a CRM line (ads, else ad sets) and under the keyword table's
+     title. Nowhere else — a note over cards that carry no CRM figures would
+     explain a "—" the reader cannot see. */
+  const fbSfNoteAt: "ads" | "adsets" | null = !sfDated
+    ? null
+    : fb.topAds.some((a) => withCrm.has(a))
+      ? "ads"
+      : fb.topAdSets.some((s) => withCrm.has(s))
+        ? "adsets"
+        : null;
+  const sfNote = (
+    <div className="rpt-basis-note">{BASIS_COPY.sfDatedCreatives}</div>
+  );
+  /* The internal "עוד N תיאומים · M ביצועים מלידים ללא תגית UTM" remainders
+     (CSS-hidden under .rpt-clientview). Facebook's closes the ad-set grid,
+     because Σ audiences + it = the ערוצים facebook row; with no ad sets it
+     closes the ad grid instead. undefined on a basis with no source, and
+     the component renders nothing for an empty pair. */
+  const fbUntagged = untaggedFor(cb, "fb", basis);
+  const gsUntagged = untaggedFor(cb, "gs", basis);
   const googleActiveAds = google.ads.filter(
     (a) => a.status === "Enabled",
   ).length;
@@ -689,6 +854,7 @@ export default function ReportCreativesTab({
               <span className="rpt-cr-refresh-note">{refreshNote}</span>
             )}
           </div>
+          {fbSfNoteAt === "ads" && sfNote}
           <div className="rpt-cr-grid">
             {fbCards.map((a) => {
               const status = fbStatusInfo(a.status);
@@ -849,6 +1015,9 @@ export default function ReportCreativesTab({
                             </div>
                           </div>
                         )}
+                        {/* Live overlay cards are not in withCrm (they come
+                            from fbNewAds, not the swapped payload) and carry
+                            hard zeros, so they never show the line. */}
                         <CrmRow
                           crmLeads={a.crmLeads}
                           scheduled={a.scheduled}
@@ -856,6 +1025,9 @@ export default function ReportCreativesTab({
                           costPerSched={a.costPerSched}
                           costPerHeld={a.costPerHeld}
                           groupLevel={a.meetingsAtGroupLevel}
+                          show={withCrm.has(a)}
+                          basis={basis}
+                          noSource={noSource}
                         />
                       </>
                     )}
@@ -902,9 +1074,19 @@ export default function ReportCreativesTab({
                           Still deliberately OUTSIDE CrmRow — that returns null
                           when the in-window CRM figures are all zero, i.e.
                           exactly the paused/old cards whose history is most
-                          worth reading. */}
+                          worth reading.
+
+                          `a.history` is already swapped to the page's basis
+                          (months, לפני התקופה and סה״כ alike); the panel is
+                          told which, so its footnote defines the numbers it
+                          actually shows. */}
                       {a.history && (
-                        <AdHistoryPopover ad={a.ad} history={a.history} />
+                        <AdHistoryPopover
+                          ad={a.ad}
+                          history={a.history}
+                          basis={cb.meetingBasis}
+                          noSource={noSource}
+                        />
                       )}
                     </div>
                     <AdTrend title={a.ad} daily={a.daily} window={data.window} />
@@ -913,12 +1095,14 @@ export default function ReportCreativesTab({
               );
             })}
           </div>
+          {fb.topAdSets.length === 0 && <UntaggedMeetingsLine pair={fbUntagged} />}
         </>
       )}
 
       {fb.topAdSets.length > 0 && (
         <>
           <h3 className="rpt-cr-title">🎯 קהלים (Ad Sets) — לפי עלות לליד</h3>
+          {fbSfNoteAt === "adsets" && sfNote}
           <div className="rpt-cr-adsets">
             {fb.topAdSets.map((s, i) => (
               <div
@@ -970,20 +1154,23 @@ export default function ReportCreativesTab({
                     CPL: <b>{s.cpl > 0 ? fmtILS(s.cpl) : "—"}</b>
                   </span>
                 </div>
-                {(s.crmLeads > 0 || s.scheduled > 0 || s.held > 0) && (
+                {/* Shown when the row has CRM figures on EITHER basis — see
+                    hasCrmOnEitherBasis — so a flip changes the numbers in
+                    place rather than adding or removing the line. */}
+                {withCrm.has(s) && (
                   <div
                     className="rpt-cr-adset-stats rpt-cr-adset-crm"
-                    title="לידים, תואמו ובוצעו מה-CRM מקהל זה"
+                    title={`לידים, תואמו ובוצעו מה-CRM מקהל זה · תואמו ובוצעו ${BASIS_LABELS[basis]}`}
                   >
                     <span style={{ color: "#6366f1" }}>
                       לידים: <b>{fmtInt(s.crmLeads)}</b>
                     </span>
                     <span style={{ color: "#ec4899" }}>
-                      תואמו: <b>{fmtInt(s.scheduled)}</b>
+                      תואמו: <b>{meetNum(s.scheduled, noSource)}</b>
                       {s.costPerSched > 0 ? ` (${fmtILS(s.costPerSched)})` : ""}
                     </span>
                     <span style={{ color: "#f5576c" }}>
-                      בוצעו: <b>{fmtInt(s.held)}</b>
+                      בוצעו: <b>{meetNum(s.held, noSource)}</b>
                       {s.costPerHeld > 0 ? ` (${fmtILS(s.costPerHeld)})` : ""}
                     </span>
                   </div>
@@ -992,10 +1179,13 @@ export default function ReportCreativesTab({
                   s={s}
                   window={data.window}
                   onOpenMap={() => setMapFor(s.name)}
+                  crm={withCrm.has(s)}
+                  noSource={noSource}
                 />
               </div>
             ))}
           </div>
+          <UntaggedMeetingsLine pair={fbUntagged} />
           {/* The real map, mounted only while open. Leaflet and its CSS are
               imported inside the modal's own effect, so nothing about it is
               paid for until someone presses 📍. */}
@@ -1028,11 +1218,12 @@ export default function ReportCreativesTab({
 
       {google.dgAds.length > 0 && <GoogleDgBlock ads={google.dgAds} />}
 
-      {google.ads.length > 0 && <GoogleAdsBlock ads={google.ads} />}
+      {google.ads.length > 0 && <GoogleAdsBlock ads={google.ads} basis={basis} />}
 
       {google.topKeywords.length > 0 && (
         <>
           <h3 className="rpt-cr-title">🔍 מילות חיפוש מובילות — Google</h3>
+          {sfDated && sfNote}
           <div className="rpt-ch-table-wrap">
             <table className="rpt-ch-table">
               <thead>
@@ -1041,24 +1232,31 @@ export default function ReportCreativesTab({
                   <th>חשיפות</th>
                   <th>קליקים</th>
                   <th>המרות</th>
-                  <th>תיאומים</th>
-                  <th>ביצועים</th>
+                  {/* The definition on the header, where a reader who wonders
+                      why this column disagrees with another surface looks. */}
+                  <th title={BASIS_TITLES[basis]}>תיאומים</th>
+                  <th title={BASIS_TITLES[basis]}>ביצועים</th>
                 </tr>
               </thead>
               <tbody>
+                {/* Order is the server's (impressions, top 10) and the swap
+                    maps it index-for-index, so a flip only changes the two
+                    meeting cells: The 57 Sept "גיא ודורון לוי מתחם האלף"
+                    0 · 0 ↔ 3 · 1, in the same row. */}
                 {google.topKeywords.map((k) => (
                   <tr key={k.keyword}>
                     <td className="rpt-cr-kw">{k.keyword}</td>
                     <td>{fmtInt(k.impressions)}</td>
                     <td>{fmtInt(k.clicks)}</td>
                     <td>{fmtInt(k.conversions)}</td>
-                    <td style={{ color: "#ec4899" }}>{fmtInt(k.scheduled)}</td>
-                    <td style={{ color: "#f5576c" }}>{fmtInt(k.held)}</td>
+                    <td style={{ color: "#ec4899" }}>{meetNum(k.scheduled, noSource)}</td>
+                    <td style={{ color: "#f5576c" }}>{meetNum(k.held, noSource)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <UntaggedMeetingsLine pair={gsUntagged} />
         </>
       )}
     </div>
@@ -1337,8 +1535,11 @@ function DgAdCard({
 
 function GoogleAdsBlock({
   ads,
+  basis,
 }: {
+  /** Already on `basis` (applyBasisToCreatives). */
   ads: NonNullable<ProjectReportData["creatives"]>["google"]["ads"];
+  basis: MeetingBasis;
 }) {
   // Group by campaign, order groups by total impressions desc (legacy).
   const byCamp = new Map<string, typeof ads>();
@@ -1373,11 +1574,18 @@ function GoogleAdsBlock({
                     in the group shares one campaign, so the first row's join
                     IS the group's — summing them would multiply it by the ad
                     count. Omitted entirely when no CRM row matched, so a
-                    blank never reads as a measured zero. */}
+                    blank never reads as a measured zero.
+
+                    hasCrm means a row exists on EITHER basis, so the chip
+                    stays put on a flip and a 0 · 0 on this basis is a
+                    measured zero. On a basis with no source the swap forces
+                    hasCrm false and the chip is omitted — BMBY-only anyway,
+                    so that is only a project with no CRM join at all. The
+                    title is the definition of the basis on screen. */}
                 {list[0]?.hasCrm && (
                   <span
                     className="rpt-cr-gcamp-crm"
-                    title="תיאומים וביצועים של הלידים שהקמפיין הזה הביא, לפי אירועי פגישה בתקופה — אותה הגדרה כמו במודעות פייסבוק"
+                    title={BASIS_COPY.googleCampaignChip[basis]}
                   >
                     <span className="rpt-cr-gcamp-sched">
                       {fmtInt(list[0].scheduled)} תיאומים

@@ -3,6 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import DateRangePicker from "./DateRangePicker";
+import { useReportNavigationPending } from "@/components/report/MeetingBasisContext";
 
 type Props = {
   /** Currently-applied month-override, mirrored from `?monthOverride=` in
@@ -72,6 +73,12 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
   useEffect(() => {
     if (!isPending) setPendingLabel(null);
   }, [isPending]);
+  // The meeting switch sits right next to this picker. A flip mirrors to the
+  // URL with history.replaceState, which Next turns into a RESTORE that
+  // discards a pending router.push — so a flip during "מעדכן…" silently
+  // cancelled the month change. Reporting the navigation makes the switch
+  // hold its URL write until the new period has committed.
+  useReportNavigationPending(isPending);
 
   function pushParams(mutate: (p: URLSearchParams) => void, label: string) {
     const params = new URLSearchParams(searchParams?.toString() ?? "");

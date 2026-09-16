@@ -12,6 +12,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useChartPalette } from "@/lib/chartTheme";
+import { BasisBadge } from "@/components/report/BasisBadge";
+import { useMeetingBasis } from "@/components/report/MeetingBasisContext";
 import {
   buildProjectionPrimitives,
   fmtInt,
@@ -31,6 +33,17 @@ import {
  * is a HOLLOW projection dot + solid actual dot, and a per-channel pie
  * popover on month hover — plus the unit-cost line chart and a channel
  * filter. Sits ABOVE the daily platform charts.
+ *
+ * MEETING BASIS: LEAD-ENTRY ONLY. Every month here is an ALL CLIENTS חודשי
+ * row (data.monthlyRaw), and the current month's projection extrapolates
+ * data.totals — both לפי כניסת ליד. No dated monthly series exists (the
+ * warehouse could rebuild one, at one dated read per month of history on
+ * every page load; basis-design §1e row 42 chose the badge instead). So the
+ * page switch does not move a single number in this section; under "לפי
+ * מועד הפגישה" the title wears the trendLeadOnly badge instead, so a reader
+ * who just saw 49 dated תיאומים on the overview (The 57, Sept flight;
+ * 20 on lead entry) is told why this chart's September is built on the
+ * smaller count. עלות and לידים have no basis at all.
  */
 
 const PIE_COLORS = [
@@ -386,6 +399,7 @@ export default function ReportMonthlyTrend({
   data: ProjectReportData;
 }) {
   const pal = useChartPalette();
+  const { basis } = useMeetingBasis();
   const rows = data.monthlyRaw;
   const allChannels = useMemo(
     () => [...new Set(rows.map((r) => r.channel))].filter(Boolean).sort(),
@@ -484,7 +498,10 @@ export default function ReportMonthlyTrend({
   return (
     <section className="rpt-monthly">
       <div className="rpt-mt-title-row">
-        <div className="rpt-mt-section-title">📈 מגמה היסטורית</div>
+        <div className="rpt-mt-section-title">
+          📈 מגמה היסטורית
+          {basis === "dated" && <BasisBadge kind="trendLeadOnly" />}
+        </div>
         {allChannels.length > 1 && (
           <div className="rpt-mt-filter">
             <button

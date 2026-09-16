@@ -8,8 +8,9 @@ import { getWarehouseCreatives } from "@/lib/warehouseCreatives";
 import {
   getProjectMeetingsLiveWindows,
   monthWindow,
+  type MeetingsSource,
   type MeetingsWindow,
-  type ProjectMeetings,
+  type ProjectMeetingsBoth,
 } from "@/lib/fbCreativeMeetingsExport";
 import type {
   ReportAdDaily,
@@ -21,6 +22,8 @@ import type {
   ReportGoogleCopy,
   ReportGoogleDgAd,
   ReportKeyword,
+  ReportMeetingPair,
+  ReportUntaggedMeetings,
   ReportWindow,
 } from "@/lib/reportShared";
 
@@ -1064,7 +1067,24 @@ export function invalidateReportCreativesCache(): void {
 
 /* ---------------------------- meetings lookups --------------------------- */
 
-type MeetVal = { leads: number; scheduled: number; held: number };
+/**
+ * One group's CRM join in the REPORT convention (lib/meetingBasis): the
+ * unprefixed pair is LEAD-ENTRY, `dated*` is MEETING-DATE. This is the one
+ * place the export layer's inverted prefix is undone (see "THE BASIS PREFIX
+ * IS INVERTED" in lib/fbCreativeMeetingsExport). Downstream of buildMeetLookups
+ * nothing in this file reads the export's field names.
+ *
+ * `datedScheduled`/`datedHeld` are 0 on a Salesforce lookup and are never
+ * read there: MeetBases.dated is false, so aggregateCreatives leaves the
+ * payload's dated* fields undefined ("—") instead.
+ */
+type MeetVal = {
+  leads: number;
+  scheduled: number;
+  held: number;
+  datedScheduled: number;
+  datedHeld: number;
+};
 type MeetLookups = {
   creative: Map<string, MeetVal>;
   audience: Map<string, MeetVal>;
@@ -1072,6 +1092,9 @@ type MeetLookups = {
   /** Google meetings per campaign NAME. BMBY only — see ReportGoogleAd. */
   campaign: Map<string, MeetVal>;
 };
+
+/** ReportCreatives.meetingBases: which bases the joins exist on. */
+type MeetBases = { lead: boolean; dated: boolean };
 
 function emptyLookups(): MeetLookups {
   return {
@@ -1082,11 +1105,34 @@ function emptyLookups(): MeetLookups {
   };
 }
 
+/** Which bases a live meetings read can fill, by the reader that answered.
+ *  BMBY and Sehel have meeting EVENTS, so both; Salesforce has a lead status
+ *  snapshot only, so lead-entry; no source means no join at all. */
+function basesOf(source: MeetingsSource): MeetBases {
+  if (source === "bmby" || source === "sehel") return { lead: true, dated: true };
+  if (source === "salesforce") return { lead: true, dated: false };
+  return { lead: false, dated: false };
+}
+
+const meetVal = (r: {
+  leads: number;
+  scheduled: number;
+  held: number;
+  leadScheduled: number;
+  leadHeld: number;
+}): MeetVal => ({
+  leads: r.leads || 0,
+  scheduled: r.leadScheduled || 0,
+  held: r.leadHeld || 0,
+  datedScheduled: r.scheduled || 0,
+  datedHeld: r.held || 0,
+});
+
 /** Keyed by the caller's BUCKET KEY, not by month — the report passes bare
  *  months for its (edge-clipped) window buckets, so `sumOverMonths` still looks
  *  them up by month exactly as before. */
 function buildMeetLookups(
-  results: Array<{ key: string } & ProjectMeetings>,
+  results: Array<{ key: string } & ProjectMeetingsBoth>,
   crmName: string,
 ): MeetLookups {
   const out = emptyLookups();
@@ -1095,46 +1141,64 @@ function buildMeetLookups(
     for (const c of r.creative) {
       out.creative.set(
         `${r.key}|${c.campaign}|${normAdName(c.ad)}`.toLowerCase(),
-        { leads: c.leads || 0, scheduled: c.scheduled || 0, held: c.held || 0 },
+        meetVal(c),
       );
     }
     for (const a of r.audience) {
-      out.audience.set(`${r.key}|${projLc}|${clean(a.audience).toLowerCase()}`, {
-        leads: a.leads || 0,
-        scheduled: a.scheduled || 0,
-        held: a.held || 0,
-      });
+      out.audience.set(`${r.key}|${projLc}|${clean(a.audience).toLowerCase()}`, meetVal(a));
     }
     for (const k of r.keyword) {
-      out.keyword.set(`${r.key}|${projLc}|${clean(k.keyword).toLowerCase()}`, {
-        leads: k.leads || 0,
-        scheduled: k.scheduled || 0,
-        held: k.held || 0,
-      });
+      out.keyword.set(`${r.key}|${projLc}|${clean(k.keyword).toLowerCase()}`, meetVal(k));
     }
     // Keyed on the campaign NAME — the export already resolved it out of
     // the numeric utm_campaign, so this matches the גוגל tab's own campaign
     // column with no further translation here.
     for (const c of r.campaign ?? []) {
-      out.campaign.set(`${r.key}|${projLc}|${clean(c.campaign).toLowerCase()}`, {
-        leads: c.leads || 0,
-        scheduled: c.scheduled || 0,
-        held: c.held || 0,
-      });
+      out.campaign.set(`${r.key}|${projLc}|${clean(c.campaign).toLowerCase()}`, meetVal(c));
     }
   }
   return out;
 }
 
+/**
+ * ReportCreatives.untagged over the report's own window buckets (the bare
+ * months — not `h:` or `pre`, which overlap them). A side is undefined when
+ * that basis has no source; the whole thing is undefined when the reader
+ * keeps no untagged tally (Salesforce, or no source).
+ */
+function sumUntagged(
+  results: Array<{ key: string } & ProjectMeetingsBoth>,
+  months: string[],
+  bases: MeetBases,
+): ReportUntaggedMeetings | undefined {
+  const inWindow = new Set(months);
+  const rows = results.filter((r) => inWindow.has(r.key) && r.untagged);
+  if (!rows.length || !bases.lead) return undefined;
+  const side = (p: "fb" | "gs") => {
+    const lead: ReportMeetingPair = { scheduled: 0, held: 0 };
+    const dated: ReportMeetingPair = { scheduled: 0, held: 0 };
+    for (const r of rows) {
+      const u = r.untagged![p];
+      lead.scheduled += u.leadScheduled;
+      lead.held += u.leadHeld;
+      dated.scheduled += u.scheduled;
+      dated.held += u.held;
+    }
+    return { lead, dated: bases.dated ? dated : undefined };
+  };
+  return { fb: side("fb"), gs: side("gs") };
+}
+
 /** Legacy `sumMeetingsOverMonths_` — null when NO month had a row (the
- *  UI hides the CRM row then). */
+ *  UI hides the CRM row then). Sums both bases; a row found on either
+ *  counts as found. */
 function sumOverMonths(
   lookup: Map<string, MeetVal>,
   months: string[],
   base: string,
 ): MeetVal | null {
   let found = false;
-  const t = { leads: 0, scheduled: 0, held: 0 };
+  const t: MeetVal = { leads: 0, scheduled: 0, held: 0, datedScheduled: 0, datedHeld: 0 };
   for (const m of months) {
     const v = lookup.get(`${m}|${base}`);
     if (!v) continue;
@@ -1142,8 +1206,38 @@ function sumOverMonths(
     t.leads += v.leads;
     t.scheduled += v.scheduled;
     t.held += v.held;
+    t.datedScheduled += v.datedScheduled;
+    t.datedHeld += v.datedHeld;
   }
   return found ? t : null;
+}
+
+/**
+ * The payload's meeting fields for one card-like row with `cost` spend, on
+ * both bases. The unprefixed four are lead-entry. The dated four are present
+ * only when the project HAS a dated join (`bases.dated`), and then they are
+ * numbers even with no row (0, measured). Absent they mean "no source", which
+ * the card renders as "—" (lib/reportShared applyBasisToCreatives).
+ */
+function meetingFields(mtg: MeetVal | null, cost: number, bases: MeetBases) {
+  const scheduled = mtg?.scheduled ?? 0;
+  const held = mtg?.held ?? 0;
+  const lead = {
+    scheduled,
+    held,
+    costPerSched: scheduled > 0 ? cost / scheduled : 0,
+    costPerHeld: held > 0 ? cost / held : 0,
+  };
+  if (!bases.dated) return lead;
+  const datedScheduled = mtg?.datedScheduled ?? 0;
+  const datedHeld = mtg?.datedHeld ?? 0;
+  return {
+    ...lead,
+    datedScheduled,
+    datedHeld,
+    datedCostPerSched: datedScheduled > 0 ? cost / datedScheduled : 0,
+    datedCostPerHeld: datedHeld > 0 ? cost / datedHeld : 0,
+  };
 }
 
 /* ------------------------------ aggregation ------------------------------ */
@@ -1264,6 +1358,7 @@ function aggregateCreatives(
   months: string[],
   crmName: string,
   hist: { from: string; months: string[] } | null,
+  bases: MeetBases,
 ): ReportCreatives {
   // Legacy inRange (Code.js:3721): undated rows pass only with no window.
   const inRange = (d: string) => {
@@ -1354,10 +1449,7 @@ function aggregateCreatives(
         leads: a.leads,
         cpl: a.leads > 0 ? a.cost / a.leads : 0,
         crmLeads: mtg?.leads ?? 0,
-        scheduled: mtg?.scheduled ?? 0,
-        held: mtg?.held ?? 0,
-        costPerSched: mtg && mtg.scheduled > 0 ? a.cost / mtg.scheduled : 0,
-        costPerHeld: mtg && mtg.held > 0 ? a.cost / mtg.held : 0,
+        ...meetingFields(mtg, a.cost, bases),
         // Only worth flagging when the figures are actually shown AND the
         // name really is split — a lone ad set owns its CRM outright.
         crmAtNameLevel: ownsCrm && shared ? true : undefined,
@@ -1544,10 +1636,7 @@ function aggregateCreatives(
       cpl: a.leads > 0 ? a.cost / a.leads : 0,
       ctr: a.impressions > 0 ? a.clicks / a.impressions : 0,
       crmLeads: mtg?.leads ?? 0,
-      scheduled: mtg?.scheduled ?? 0,
-      held: mtg?.held ?? 0,
-      costPerSched: mtg && mtg.scheduled > 0 ? a.cost / mtg.scheduled : 0,
-      costPerHeld: mtg && mtg.held > 0 ? a.cost / mtg.held : 0,
+      ...meetingFields(mtg, a.cost, bases),
       ageDays,
       ctrEarly,
       ctrRecent,
@@ -1589,8 +1678,16 @@ function aggregateCreatives(
           : best,
     );
     meetingsOwner.add(owner);
+    // On EITHER basis: the flag is basis-free (it says whose card carries the
+    // group's CRM row), so it must not appear or vanish when the switch flips.
+    // A group whose owner leads all arrived before the window has dated
+    // meetings and a lead-entry 0/0, and still needs the "for the group" note.
     owner.meetingsAtGroupLevel =
-      owner.crmLeads > 0 || owner.scheduled > 0 || owner.held > 0;
+      owner.crmLeads > 0 ||
+      owner.scheduled > 0 ||
+      owner.held > 0 ||
+      (owner.datedScheduled ?? 0) > 0 ||
+      (owner.datedHeld ?? 0) > 0;
     for (const a of group) {
       if (a === owner) continue;
       a.crmLeads = 0;
@@ -1598,6 +1695,13 @@ function aggregateCreatives(
       a.held = 0;
       a.costPerSched = 0;
       a.costPerHeld = 0;
+      // Zeroed only where the basis exists; undefined stays "no source".
+      if (bases.dated) {
+        a.datedScheduled = 0;
+        a.datedHeld = 0;
+        a.datedCostPerSched = 0;
+        a.datedCostPerHeld = 0;
+      }
     }
   }
 
@@ -1883,6 +1987,9 @@ function aggregateCreatives(
         conversions: a.conv,
         scheduled: mtg?.scheduled ?? 0,
         held: mtg?.held ?? 0,
+        ...(bases.dated
+          ? { datedScheduled: mtg?.datedScheduled ?? 0, datedHeld: mtg?.datedHeld ?? 0 }
+          : {}),
       };
     })
     .sort((a, b) => b.impressions - a.impressions)
@@ -1981,10 +2088,7 @@ function aggregateCreatives(
       cpl: 0,
       ctr: 0,
       crmLeads: 0,
-      scheduled: 0,
-      held: 0,
-      costPerSched: 0,
-      costPerHeld: 0,
+      ...meetingFields(null, 0, bases),
       ageDays: 0,
       ctrEarly: 0,
       ctrRecent: 0,
@@ -2005,36 +2109,53 @@ function aggregateCreatives(
       const mKey = meetingsOwner.has(a) ? adKey(a.campaign, a.ad) : null;
       const cm = byMonth.get(key);
       const rows: ReportAdHistoryMonth[] = [];
-      const total = { cost: 0, leads: 0, scheduled: 0, held: 0 };
+      // Both bases per month. Lead-entry months are additive the same way
+      // dated ones are (an event counts in its owner lead's month only), so
+      // `total` is a plain sum on each basis. The dated pair is present only
+      // when the project has a dated join, like the card face.
+      const pairOf = (v: MeetVal | undefined) => ({
+        scheduled: v?.scheduled ?? 0,
+        held: v?.held ?? 0,
+        ...(bases.dated
+          ? { datedScheduled: v?.datedScheduled ?? 0, datedHeld: v?.datedHeld ?? 0 }
+          : {}),
+      });
+      const total = { cost: 0, leads: 0, ...pairOf(undefined) };
       for (const mon of hist.months) {
         const c = cm?.get(mon);
         const v = mKey ? meet.creative.get(`h:${mon}|${mKey}`) : undefined;
         if (!c && !v) continue; // a month this ad didn't exist in
-        const row = {
+        const row: ReportAdHistoryMonth = {
           month: mon,
           cost: c?.cost ?? 0,
           leads: c?.leads ?? 0,
-          scheduled: v?.scheduled ?? 0,
-          held: v?.held ?? 0,
+          ...pairOf(v),
         };
         rows.push(row);
         total.cost += row.cost;
         total.leads += row.leads;
         total.scheduled += row.scheduled;
         total.held += row.held;
+        if (bases.dated) {
+          total.datedScheduled = (total.datedScheduled ?? 0) + (row.datedScheduled ?? 0);
+          total.datedHeld = (total.datedHeld ?? 0) + (row.datedHeld ?? 0);
+        }
       }
       const p = pre.get(key);
       const pv = mKey ? meet.creative.get(`pre|${mKey}`) : undefined;
       const before = {
         cost: p?.cost ?? 0,
         leads: p?.leads ?? 0,
-        scheduled: pv?.scheduled ?? 0,
-        held: pv?.held ?? 0,
+        ...pairOf(pv),
       };
       // Only worth a panel when it says something the card face doesn't:
-      // more than one month of life, or any activity before this window.
+      // more than one month of life, or any activity before this window —
+      // on either basis, so the panel doesn't come and go with the switch.
       a.history =
-        rows.length > 1 || before.cost > 0 || before.scheduled > 0
+        rows.length > 1 ||
+        before.cost > 0 ||
+        before.scheduled > 0 ||
+        (before.datedScheduled ?? 0) > 0
           ? { since: hist.from, months: rows, before, total }
           : null;
     }
@@ -2055,6 +2176,11 @@ function aggregateCreatives(
       ...a,
       scheduled: mtg?.scheduled ?? 0,
       held: mtg?.held ?? 0,
+      ...(bases.dated
+        ? { datedScheduled: mtg?.datedScheduled ?? 0, datedHeld: mtg?.datedHeld ?? 0 }
+        : {}),
+      // A row on EITHER basis. buildMeetLookups keeps one row per group with
+      // both pairs, so "found" cannot depend on the switch.
       hasCrm: !!mtg,
     };
   });
@@ -2075,6 +2201,7 @@ function aggregateCreatives(
       ads: gAdsWithCrm,
       dgAds,
     },
+    meetingBases: { ...bases },
   };
 }
 
@@ -2116,6 +2243,9 @@ export const getProjectCreatives = cache(
       const months = monthsInRange(window.startIso, window.endIso);
       let lookups = emptyLookups();
       let crmName = projectName;
+      // No read (no window, or it threw) = no join on either basis.
+      let bases: MeetBases = basesOf(null);
+      let untagged: ReportUntaggedMeetings | undefined;
       const hist = adMetricsSpan(raw);
       if (months.length) {
         crmName = await resolveCrmName(subjectEmail, projectName);
@@ -2135,6 +2265,8 @@ export const getProjectCreatives = cache(
               : []),
           ]);
           lookups = buildMeetLookups(live.results, crmName);
+          bases = basesOf(live.source);
+          untagged = sumUntagged(live.results, months, bases);
         } catch {
           /* meetings are an enrichment — cards render without them */
         }
@@ -2147,7 +2279,9 @@ export const getProjectCreatives = cache(
         months,
         crmName,
         hist,
+        bases,
       );
+      if (untagged) out.untagged = untagged;
       const has =
         out.fb.topAds.length > 0 ||
         out.fb.cost > 0 ||

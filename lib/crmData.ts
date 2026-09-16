@@ -33,7 +33,28 @@ import { cache } from "react";
 import { sheetsClient } from "@/lib/sa";
 import { driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
-import { computeCrmEnrichment, type CrmEnrichment } from "./crmEnrichment";
+import {
+  bmbyLeadSourceKey,
+  buildBmbyWarehouseMeetings,
+  fetchBmbyJourneyEvents,
+  fetchBmbyLeadHistory,
+  type BmbyHistoryLead,
+  type BmbyJourneyEvent,
+  type BmbyWarehouseMeetings,
+  type MeetingDaily,
+} from "./crmEnrichment";
+import {
+  bmbyEventCanceled,
+  bmbyEventHeld,
+  datedDay,
+  dayInWindow,
+  ilDayJerusalem,
+  nextDay,
+  sehelLeadEntryHeld,
+  type DayWindow,
+  type MeetingTally,
+  type OwnerAssignment,
+} from "./meetingBasis";
 import {
   useSupabaseCrmEnrichment,
   useSupabaseSehelWarehouse,
@@ -81,9 +102,98 @@ export type CrmPlatform = "bmby" | "sehel" | "salesforce";
 export type UtmRow = {
   label: string;
   leads: number;
+  /** LEAD-ENTRY (lib/meetingBasis): BMBY — events whose OWNER lead was
+   *  created in the window and carries this row's UTM; Sehel — the
+   *  registration cohort by the client's UTM, held = "הלקוח הגיע לפגישה";
+   *  Salesforce — lead rows by current stage. */
   scheduled: number;
   held: number;
+  /** MEETING-DATE: events dated in the window, credited to the client's
+   *  first-touch lead. undefined ⇒ no dated source (Salesforce) → "—". */
+  datedScheduled?: number;
+  datedHeld?: number;
   objections?: { label: string; n: number }[];
+};
+
+/**
+ * The three per-source meeting maps, on ONE basis. The unprefixed maps on
+ * `CrmFunnel.sourceMatrices` are this shape on the LEAD-ENTRY basis;
+ * `sourceMatrices.dated` is the same shape on the MEETING-DATE basis. The
+ * card sums them over the chip-selected sources exactly as it sums the lead
+ * maps, so a dated tile under "all sources" equals Σ of its map.
+ */
+export type CrmMeetingSourceMaps = {
+  /** source → תואמה (every event, cancelled included). */
+  scheduledMeetingsBySource: Record<string, number>;
+  /** source → פגישות (confirmed held). ⊆ scheduled. */
+  meetingsBySource: Record<string, number>;
+  /** source → בוטלו. ⊆ scheduled. Absent where the platform has no clean
+   *  cancelled state. */
+  canceledMeetingsBySource?: Record<string, number>;
+};
+
+/** MEETING-DATE maps, plus what only the dated side has. */
+export type CrmDatedMeetingMaps = CrmMeetingSourceMaps & {
+  /** BMBY only: dated events the journey view's `held` boolean marks held —
+   *  confirmed PLUS status-inferred. Whole-window, not chip-filterable. The
+   *  retired held strip's "כולל משוער", now a line in the פגישות tile's
+   *  tooltip. Never a tile value. */
+  estimatedHeld?: number;
+};
+
+/**
+ * How a funnel's meeting maps were produced on each basis, so the card can
+ * label what it shows. Set by every getCrmFunnelForProject route.
+ */
+export type CrmMeetingBasisInfo = {
+  /** The unprefixed (lead-entry) maps:
+   *   "owner-lead"          BMBY — warehouse route, and Sheet-routed BMBY
+   *                         projects whose warehouse covers the window
+   *                         (owner decision D3). Unit = events.
+   *   "registration-cohort" Sehel warehouse route. Unit = events.
+   *   "status-snapshot"     Sheet / Salesforce routes, and the D3 fallback.
+   *                         Unit = LEADS by current status → the card wears
+   *                         FIXED_BADGES.statusSnapshot / warehouseFallback. */
+  lead: "owner-lead" | "registration-cohort" | "status-snapshot";
+  /** `sourceMatrices.dated`'s source; null ⇒ no dated maps → "—".
+   *   "journey-events" BMBY v_bmby_journey_meetings (both BMBY routes).
+   *   "sehel-events"   sehel_meetings (both Sehel routes, where it exists). */
+  dated: "journey-events" | "sehel-events" | null;
+  /** D3 fallback: a windowed BMBY Sheet-routed card whose warehouse does
+   *  not cover the window — no project_id, no journey, no warehouse lead in
+   *  the window, or a lead feed ≥ 3 days behind the Sheet (crmData
+   *  warehouseCoversWindow) — or with the warehouse flag off / unreachable.
+   *  `lead` is then "status-snapshot" and `dated` null, and the card shows
+   *  FIXED_BADGES.warehouseFallback. */
+  warehouseFallback?: boolean;
+};
+
+/** One paid channel's cost row on the CRM card (see CrmFunnel.channelCosts). */
+export type CrmChannelCost = {
+  channel: string; // canonical key (google-search / facebook / yad2 …)
+  label: string;
+  spend: number;
+  leads: number;
+  scheduled: number;
+  meetings: number;
+  cpl: number; // spend ÷ leads
+  cps: number; // spend ÷ scheduled (תואמה)
+  cpm: number; // spend ÷ meetings (held)
+};
+
+/** raw `מקור הגעה` → its channel's CPL / CP-meeting (see CrmFunnel.costBySource). */
+export type CrmSourceCost = { channel: string; cpl: number; cpm: number };
+
+/** One day of the trendline on the MEETING-DATE basis: events by the day
+ *  they are dated on (appointment_date || meeting_date). No leads — a lead
+ *  has no meeting day. */
+export type CrmDatedDailyPoint = {
+  date: string; // YYYY-MM-DD
+  bySource: {
+    source: string;
+    scheduledMeetings: number;
+    meetings: number;
+  }[];
 };
 
 export type CrmFunnel = {
@@ -111,7 +221,12 @@ export type CrmFunnel = {
    *  OR a meeting date is set — best-guess equivalent pending upstream
    *  clarification. Salesforce: the SALESFORCE status matrix, which since
    *  2026-08-12 also counts "טופס הרשמה" — so there `scheduledMeetings`
-   *  overlaps `contracts` by design rather than being disjoint from it. */
+   *  overlaps `contracts` by design rather than being disjoint from it.
+   *
+   *  This, `canceledMeetings` and `meetings` are LEAD-ENTRY totals (see
+   *  `meetingBasis` for how each route counts them). There is deliberately
+   *  no dated twin at this level: the dated tiles sum
+   *  `sourceMatrices.dated`, as the lead tiles sum the lead maps. */
   scheduledMeetings: number;
   /** Of `scheduledMeetings`, the canceled subset ("פגישה בוטלה" / בוטלו).
    *  So תואמה = תואמו (non-canceled = held + upcoming) + בוטלו (this).
@@ -172,7 +287,9 @@ export type CrmFunnel = {
     /** source → attemptedMeetings (ניסיון תיאום פגישה, cumulative) count.
      *  SUPERSET of scheduledMeetingsBySource. Salesforce only. */
     attemptedMeetingsBySource?: Record<string, number>;
-    /** source → scheduledMeetings (תואמה פגישה) count. */
+    /** source → scheduledMeetings (תואמה פגישה) count. LEAD-ENTRY, like
+     *  the two meeting maps below — see `dated` and `CrmFunnel.meetingBasis`
+     *  for the meeting-date side and how each was counted. */
     scheduledMeetingsBySource: Record<string, number>;
     /** source → cancelled-meeting (בוטלו) count. Subset of
      *  scheduledMeetingsBySource; BMBY only (empty/absent elsewhere).
@@ -189,7 +306,21 @@ export type CrmFunnel = {
     /** objection → (source → count). Drives the chip-filtered
      *  objections matrix + pie. */
     objectionBySource: Record<string, Record<string, number>>;
+    /**
+     * The meeting maps on the MEETING-DATE basis (lib/meetingBasis). The
+     * unprefixed scheduled/meetings/canceled maps above are LEAD-ENTRY.
+     * Same event set as the ערוצים dated columns (BMBY: journey events with
+     * appointment_date||meeting_date in the window), grouped by
+     * normSource(first_lid_source) with the first lead's media_source_clean
+     * as fallback, so Σ over all sources = ProjectReportData.datedTotals.
+     * undefined ⇒ no dated source (Salesforce, the D3 fallback) → the
+     * meeting tiles render "—" under the dated basis.
+     */
+    dated?: CrmDatedMeetingMaps;
   };
+  /** How the meeting maps were produced, per basis — drives the card's
+   *  basis labels. Absent on funnels built before the routes set it. */
+  meetingBasis?: CrmMeetingBasisInfo;
   /**
    * True when `objectionBySource` was NOT tallied off the same rows that
    * produced `leadsBySource` — currently only the BMBY warehouse path,
@@ -228,6 +359,13 @@ export type CrmFunnel = {
    *  reads this so it does not paint such a day red. The project page does
    *  not read it. */
   dailyLeadTotals?: Record<string, number>;
+  /** The trendline's תיאומים / פגישות on the MEETING-DATE basis: events by
+   *  the day they are dated on, per source, same sources as
+   *  `sourceMatrices.dated`. `dailyTimeSeries` above stays LEAD-ENTRY (by
+   *  lead day) and keeps feeding the leads line under both bases. Sorted
+   *  ascending. undefined ⇒ no dated source (Sheet-only / Salesforce) → the
+   *  meeting lines render "—" under dated. */
+  dailyDated?: CrmDatedDailyPoint[];
   /** Earliest and latest dates seen in the matched rows (formatted
    *  YYYY-MM-DD). Surfaces upstream freshness — when the latest date
    *  is more than a few days behind today, the upstream pipeline has
@@ -276,43 +414,42 @@ export type CrmFunnel = {
    *  channel they name), and CPL / CP-meeting use the funnel's OWN
    *  per-source counts (the CRM-attribution lens). Sorted by spend desc;
    *  empty when no spend was supplied (e.g. month-rewind mode). */
-  channelCosts?: {
-    channel: string; // canonical key (google-search / facebook / yad2 …)
-    label: string;
-    spend: number;
-    leads: number;
-    scheduled: number;
-    meetings: number;
-    cpl: number; // spend ÷ leads
-    cps: number; // spend ÷ scheduled (תואמה)
-    cpm: number; // spend ÷ meetings (held)
-  }[];
+  channelCosts?: CrmChannelCost[];
   /** raw `מקור הגעה` → its channel's CPL/CP-meeting, ONLY for sources
    *  that map 1:1 to a single paid channel — drives the inline cost on
    *  the source chips. Composite / non-paid sources are omitted. */
-  costBySource?: Record<string, { channel: string; cpl: number; cpm: number }>;
-  /** Supabase BMBY warehouse enrichment (ADDITIVE, bmby-platform only,
-   *  flag-gated by SUPABASE_CRM_ENRICHMENT). Authoritative held-meeting
-   *  counts re-derived from the raw v_bmby_* views — see lib/crmEnrichment.ts.
-   *  Absent/null when the flag is off, the project isn't in the warehouse,
-   *  or a fetch failed: the base Sheet funnel is always intact. Whole-window
-   *  figure (NOT chip-filtered). */
-  supabaseEnrichment?: CrmEnrichment;
-  /** Which backend produced this funnel: "sheet" (the ארכיון Google Sheet —
-   *  the default / fallback) or "warehouse" (the Supabase BMBY journey,
-   *  used for flag-allowed bmby projects when it's at least as complete as
-   *  the Sheet on lead count). Drives the small source badge; absent ⇒
-   *  "sheet". When "warehouse", the funnel's own `meetings` IS the
-   *  authoritative held count, so the separate held strip is suppressed. */
+  costBySource?: Record<string, CrmSourceCost>;
+  /** `channelCosts` / `costBySource` with scheduled / meetings / cps / cpm
+   *  taken from `sourceMatrices.dated` instead of the lead-entry maps. The
+   *  plain pair above is LEAD-ENTRY. spend, leads and cpl are identical in
+   *  both (basis-free). undefined ⇒ no dated maps → "—" in the meeting
+   *  columns under dated. */
+  channelCostsDated?: CrmChannelCost[];
+  costBySourceDated?: Record<string, CrmSourceCost>;
+  /** Which backend produced this funnel's LEADS: "sheet" (the ארכיון Google
+   *  Sheet — the default / fallback) or "warehouse" (the Supabase BMBY
+   *  journey, used for flag-allowed bmby projects when it's at least as
+   *  complete as the Sheet on lead count). Drives the small source badge;
+   *  absent ⇒ "sheet". A "sheet" BMBY card can still count its MEETINGS from
+   *  the warehouse (owner decision D3) — `meetingBasis` says which. (The
+   *  `supabaseEnrichment` held strip that used to sit beside a Sheet card
+   *  went away 2026-09-16; its numbers are the dated tiles.) */
   dataSource?: "sheet" | "warehouse";
   /** Facebook/Meta UTM drill (warehouse-sourced funnels only) — how the
    *  Meta leads (channel_key='fb' = fb+ig+an) split by ad placement
    *  (utm_medium), audience (utm_term) and creative (utm_content). Counts
    *  lead rows; top-8 per dimension + "אחר". Absent when the project has no
    *  Meta leads or the funnel is Sheet-sourced (UTM lives only in the
-   *  warehouse). Per-segment CPL is a later slice (needs the meta_* join). */
+   *  warehouse) — except a Sheet-routed BMBY card that took the warehouse's
+   *  meeting maps (D3), which takes this drill with them, leads column
+   *  included (the warehouse's fb leads). Per-segment CPL is a later slice
+   *  (needs the meta_* join). */
   fbBreakdown?: {
     totalLeads: number;
+    /** Rows carry both bases (UtmRow.scheduled/held = lead-entry,
+     *  datedScheduled/datedHeld = meeting-date). The top-8 cut ranks by
+     *  leads + max(lead scheduled, dated scheduled), so a row never moves
+     *  when the switch flips. */
     byPlacement: UtmRow[];
     byAudience: UtmRow[];
     /** Per creative (= ad name / utm_content). leads/scheduled/held from the
@@ -322,13 +459,26 @@ export type CrmFunnel = {
     byCreative: (UtmRow & {
       spend: number;
       cpl: number;
+      /** spend ÷ scheduled / held — LEAD-ENTRY. */
       cps: number;
       cpm: number;
+      /** spend ÷ datedScheduled / datedHeld. undefined with them. */
+      datedCps?: number;
+      datedCpm?: number;
     })[];
     /** Per Google keyword (utm_term on google-source leads) — leads/scheduled/
      *  held only (no spend join). Set by the Sehel warehouse funnel; absent on
      *  BMBY (whose keyword drill lives only in the classic report). */
     byKeyword?: UtmRow[];
+    /** Meta meetings no placement / audience / creative row could take: the
+     *  fb lead they are credited to (OWNER lead on lead-entry, FIRST lead on
+     *  meeting-date) carried no usable UTM. Σ audiences + untagged = the
+     *  ערוצים facebook row on each basis. A side is undefined when that
+     *  basis has no source. INTERNAL ONLY (.rpt-basis-untagged). */
+    untagged?: {
+      lead?: { scheduled: number; held: number };
+      dated?: { scheduled: number; held: number };
+    };
   };
   /** Speed-to-lead (warehouse BMBY funnels only): response time from lead
    *  arrival to the first desk touch, per media channel, measured as
@@ -819,8 +969,8 @@ function computeJourneyVelocity(
     lead_created_at: string | null;
     media_source_clean: string | null;
   }[],
-  meetings: {
-    client_id: string | null;
+  meetings: readonly {
+    client_id: string | number | null;
     appointment_outcome: string | null;
     meeting_date: string | null;
     appointment_date: string | null;
@@ -1271,6 +1421,40 @@ function windowIso(window: DateWindow | null): { from: string; to: string } {
     : { from: window.from, to: window.to };
 }
 
+/** The active window as a half-open [from, toExcl) day window — the shape
+ *  every lib/meetingBasis rule takes. */
+function dayWindowOf(window: DateWindow): DayWindow {
+  const { from, to } = windowIso(window);
+  return { from, toExcl: nextDay(to) };
+}
+
+/**
+ * Midnight of `day` in Asia/Jerusalem as a PostgREST timestamptz literal
+ * ("2026-12-01T00:00:00%2B02:00"), for bounding lead_created_at.
+ *
+ * The warehouse lead window used a fixed +03:00, right only in summer: in
+ * winter it cut each month an hour early, so a lead created 23:00–24:00
+ * Israel time on the last day fell out of its month. The meeting maps now
+ * bucket a lead by lib/meetingBasis ilDayJerusalem, and the leads the card
+ * counts have to be cut on the same calendar or an owner lead's meetings
+ * could land in a month whose lead count leaves that lead out. The offset
+ * is read at 21:30 UTC the evening before — local midnight or the half
+ * hour after it, never across an Israeli clock change (those happen at
+ * 02:00). Summer windows get +03:00, i.e. exactly the old query.
+ */
+const IL_OFFSET_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Jerusalem",
+  timeZoneName: "longOffset",
+});
+function ilMidnightParam(day: string): string {
+  const probe = Date.parse(`${day}T00:00:00Z`) - 2.5 * 3600 * 1000;
+  const name =
+    IL_OFFSET_FMT.formatToParts(probe).find((p) => p.type === "timeZoneName")?.value ?? "";
+  const m = /GMT([+-]\d{2}):?(\d{2})?/.exec(name);
+  const offset = m ? `${m[1]}:${m[2] ?? "00"}` : "+03:00";
+  return `${day}T00:00:00${offset.replace("+", "%2B")}`;
+}
+
 const FRESHNESS_LAG_DAYS = 3;
 function dataFreshnessLag(window: DateWindow | null, dataTo: string): string {
   if (!window || !dataTo) return "";
@@ -1308,6 +1492,148 @@ function buildDailyTimeSeries(
       meetings: counts.meetings,
     })),
   }));
+}
+
+/**
+ * The trendline's LEAD-ENTRY meeting lines, re-drawn from meeting EVENTS.
+ *
+ * The rows a funnel is aggregated from count a meeting as a lead STATUS
+ * (the Sheet) or as one stamped status per lead (the warehouse routes), so
+ * their daily תיאומים / פגישות never summed to the event-count tiles above
+ * the chart — The 57 read 20 in the tile against a legend of distinct
+ * leads. This keeps every point's `leads` and replaces its two meeting
+ * counts with `daily` (events by the day their lead arrived, per source),
+ * adding a zero-lead point where a (day, source) had meetings but no row.
+ */
+function overlayDailyMeetings(
+  series: CrmFunnel["dailyTimeSeries"],
+  daily: MeetingDaily,
+): CrmFunnel["dailyTimeSeries"] {
+  const byDay = new Map<string, Map<string, CrmFunnel["dailyTimeSeries"][number]["bySource"][number]>>();
+  for (const d of series) {
+    const m = new Map<string, CrmFunnel["dailyTimeSeries"][number]["bySource"][number]>();
+    for (const s of d.bySource) m.set(s.source, { ...s, scheduledMeetings: 0, meetings: 0 });
+    byDay.set(d.date, m);
+  }
+  for (const [day, perSource] of Object.entries(daily)) {
+    let m = byDay.get(day);
+    if (!m) byDay.set(day, (m = new Map()));
+    for (const [source, c] of Object.entries(perSource)) {
+      const cur = m.get(source) ?? { source, leads: 0, scheduledMeetings: 0, meetings: 0 };
+      cur.scheduledMeetings += c.scheduled;
+      cur.meetings += c.held;
+      m.set(source, cur);
+    }
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([date, m]) => ({ date, bySource: [...m.values()] }));
+}
+
+/** MEETING-DATE trendline points (CrmFunnel.dailyDated), sorted ascending. */
+function datedDailyPoints(daily: MeetingDaily): NonNullable<CrmFunnel["dailyDated"]> {
+  return Object.keys(daily)
+    .sort()
+    .map((date) => ({
+      date,
+      bySource: Object.entries(daily[date]).map(([source, c]) => ({
+        source,
+        scheduledMeetings: c.scheduled,
+        meetings: c.held,
+      })),
+    }));
+}
+
+/**
+ * Make `allSources` name every key the meeting maps use.
+ *
+ * The card sums a map over the SELECTED chips, and the selection is seeded
+ * from allSources — so a key missing from it is silently left out of the
+ * tile even with every chip on. The lead-count sources can no longer be
+ * assumed to cover the maps: a dated meeting is filed under its client's
+ * first-touch source, which may have brought no lead this window, and a
+ * Sheet-routed BMBY card (D3) takes warehouse maps whose source spellings
+ * the Sheet may not share. The missing ones are appended after the lead
+ * sources (which stay in lead-count order, so no existing chip changes
+ * colour), biggest meeting count first, as zero-lead chips.
+ */
+function extendAllSources(
+  sm: CrmFunnel["sourceMatrices"],
+  maps: ReadonlyArray<Record<string, number> | undefined>,
+): void {
+  const have = new Set(sm.allSources);
+  const extra = new Map<string, number>();
+  for (const m of maps) {
+    if (!m) continue;
+    for (const [k, n] of Object.entries(m)) {
+      if (!k || have.has(k)) continue;
+      extra.set(k, (extra.get(k) || 0) + n);
+    }
+  }
+  if (!extra.size) return;
+  sm.allSources = [
+    ...sm.allSources,
+    ...[...extra.entries()]
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .map(([k]) => k),
+  ];
+}
+
+/**
+ * Install BMBY warehouse meeting maps (lib/crmEnrichment) on a funnel — the
+ * warehouse route's own, or a Sheet-routed card's (owner decision D3).
+ * Leads, contacts, contracts, statuses and objections are left as the
+ * funnel's route counted them; only the meeting side moves:
+ *   • scheduledMeetings / canceledMeetings / meetings, the three lead-entry
+ *     maps and meetingRatePct ← the OWNER-LEAD counts;
+ *   • sourceMatrices.dated and dailyDated ← events dated in the window;
+ *   • the trendline's meeting lines ← owner-lead events by lead day.
+ */
+function applyBmbyWarehouseMeetings(funnel: CrmFunnel, m: BmbyWarehouseMeetings): void {
+  const sm = funnel.sourceMatrices;
+  funnel.scheduledMeetings = m.lead.totals.scheduled;
+  funnel.canceledMeetings = m.lead.totals.canceled;
+  funnel.meetings = m.lead.totals.held;
+  funnel.meetingRatePct = funnel.leads > 0 ? (m.lead.totals.held / funnel.leads) * 100 : null;
+  sm.scheduledMeetingsBySource = { ...m.lead.scheduledMeetingsBySource };
+  sm.meetingsBySource = { ...m.lead.meetingsBySource };
+  sm.canceledMeetingsBySource = { ...m.lead.canceledMeetingsBySource };
+  sm.dated = {
+    scheduledMeetingsBySource: { ...m.dated.scheduledMeetingsBySource },
+    meetingsBySource: { ...m.dated.meetingsBySource },
+    canceledMeetingsBySource: { ...m.dated.canceledMeetingsBySource },
+    estimatedHeld: m.dated.estimatedHeld,
+  };
+  extendAllSources(sm, [sm.scheduledMeetingsBySource, sm.dated.scheduledMeetingsBySource]);
+  funnel.dailyTimeSeries = overlayDailyMeetings(funnel.dailyTimeSeries, m.lead.daily);
+  funnel.dailyDated = datedDailyPoints(m.dated.daily);
+  funnel.meetingBasis = { lead: "owner-lead", dated: "journey-events" };
+}
+
+/**
+ * May a Sheet-routed BMBY card take the warehouse's meeting maps (D3)?
+ * Only when the warehouse carries the window, or its counts are zeros that
+ * look measured. Three tests, all off data already read:
+ *   • a journey at all (journeyEvents);
+ *   • leads in the window — every lead-entry owner is one, so with none
+ *     the lead tiles are 0 by construction (הרימון, September 2026: the
+ *     feed's last lead 08-31, the Sheet 150 leads and 3 meetings);
+ *   • the newest warehouse lead within FRESHNESS_LAG_DAYS of the Sheet's
+ *     newest window lead — a feed that stopped mid-window has no owners
+ *     for the latest meetings and no journey events after it stopped.
+ * The Sheet out-counting the warehouse on leads is NOT a reason by itself:
+ * that is why the card is Sheet-routed at all, and is common on a live
+ * feed (The 57, August 2026: 172 Sheet vs 159 warehouse leads, newest
+ * warehouse lead 09-15; נרקיסים, September: 40 vs 30, 09-15 vs 09-15).
+ */
+function warehouseCoversWindow(m: BmbyWarehouseMeetings, sheet: CrmFunnel): boolean {
+  if (m.journeyEvents === 0 || m.windowLeads === 0) return false;
+  const sheetTo = sheet.dateRange.to;
+  if (!sheetTo) return true;
+  const lagDays =
+    (Date.parse(`${sheetTo}T00:00:00Z`) - Date.parse(`${m.newestLeadDay}T00:00:00Z`)) /
+    86_400_000;
+  return lagDays < FRESHNESS_LAG_DAYS;
 }
 
 function dateOnly(value: unknown): string {
@@ -1661,28 +1987,42 @@ function aggregateBmbyFunnel(
  * Produces the SAME CrmFunnel as the Sheet path by synthesizing one row
  * per warehouse lead (cohort = leads created in the window) carrying the
  * columns aggregateBmbyFunnel reads, then running the identical
- * aggregation. A lead's meeting state is joined from v_bmby_journey_meetings
- * by client_id, but ONLY from meetings whose date falls inside the active
- * window (owner decision 2026-06-22 — "scheduled/held should reflect meetings
- * IN the period, not every meeting the lead ever had"): an in-window HELD
- * event → "פגישה התקיימה" (counts scheduled+held); any other in-window meeting
- * event → "נקבעה פגישה" / "פגישה בוטלה" (scheduled only); otherwise the lead's
- * client_status maps to an early/late funnel stage. (The full meeting history
- * is still kept for journeyVelocity, which legitimately needs all dates.)
- * Source token = media_source_clean (same token family the Sheet uses, so
- * the cost-join canonicalizer and the source chips work unchanged).
+ * aggregation. Source token = media_source_clean (same token family the
+ * Sheet uses, so the cost-join canonicalizer and the source chips work
+ * unchanged).
+ *
+ * The MEETING side is then laid over it from v_bmby_journey_meetings, on
+ * both bases (lib/crmEnrichment buildBmbyWarehouseMeetings):
+ *   • the unprefixed tiles / maps are LEAD-ENTRY — the owner-lead rule, the
+ *     one ALL CLIENTS counts (The 57, September 2026: 20 תואמה · 6 פגישות,
+ *     every channel row exact);
+ *   • sourceMatrices.dated / dailyDated are events DATED in the window.
+ * Until 2026-09-16 the tiles were a third thing: events dated in the window
+ * but only for clients with a lead in it (cohort ∩ dated, the 2026-06-22
+ * rule, which "verified exact on רמת אפעל 19/8/6" for one month). It agreed
+ * with neither basis — The 57's keyword client, lead 08-25 with three
+ * September meetings, read 0 in this card and 3 in the keyword table.
+ *
+ * A lead row's status stamp follows the same ownership: a lead that owns
+ * meeting events reads "פגישה התקיימה" / "נקבעה פגישה" / "פגישה בוטלה" off
+ * its own events, any date; one that owns none keeps its client_status
+ * stage. The status funnel is a lead-status view by nature (the card badges
+ * it "לפי כניסת ליד"), so it does not follow the basis switch.
  *
  * Returns null — so the caller keeps the Sheet funnel — on: no key, no
  * window (unbounded fetch), unknown project, or zero in-window leads.
+ * Otherwise the funnel plus the maps, which the router grafts onto the
+ * Sheet funnel when the Sheet wins on leads and the warehouse still covers
+ * the window (owner decision D3, warehouseCoversWindow).
  *
  * NOTE: held counts reflect the warehouse's CONFIRMED outcomes, which are
  * logged retrospectively, so current-month held is naturally low and grows
- * through the month (see lib/crmEnrichment.ts). Stale-leads detection here
- * is window-scoped (the Sheet path sees all-time rows) — acceptable for v1. */
-/** Israel-local calendar day of a warehouse timestamptz. PostgREST returns
- *  UTC ISO strings, so a bare slice(0,10) gives the UTC day — off by one for
- *  events between 00:00-03:00 IL. The exporter writes fixed +03:00, so a
- *  fixed +3h shift reproduces its calendar exactly (no DST bookkeeping). */
+ * through the month. Stale-leads detection here is window-scoped (the Sheet
+ * path sees all-time rows) — acceptable for v1. */
+/** Israel-local calendar day of a warehouse timestamptz, by a fixed +3h
+ *  shift. Summer-correct only; the funnel windows moved to lib/meetingBasis
+ *  ilDayJerusalem. Left for getCrmFeedNewestDay's horizon, whose query
+ *  bound is the same fixed +03:00. */
 function ilDay(ts: string | null | undefined): string {
   const raw = String(ts ?? "");
   if (!raw) return "";
@@ -1691,25 +2031,19 @@ function ilDay(ts: string | null | undefined): string {
   return new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+type BmbyWarehouseFunnel = {
+  funnel: CrmFunnel;
+  /** Both bases' meeting maps, for the D3 graft onto a Sheet funnel. */
+  meetings: BmbyWarehouseMeetings;
+};
+
 async function computeBmbyFunnelFromWarehouse(
   crmAccount: string,
   window: DateWindow | null,
-): Promise<CrmFunnel | null> {
+): Promise<BmbyWarehouseFunnel | null> {
   if (!supabaseConfigured() || !window) return null;
-  // Window bounds [from, toExcl).
-  let from = "";
-  let toExcl = "";
-  if (window.kind === "month") {
-    from = `${window.month}-01`;
-    const [y, mo] = window.month.split("-").map(Number);
-    toExcl =
-      mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
-  } else {
-    from = window.from;
-    const d = new Date(`${window.to}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + 1);
-    toExcl = d.toISOString().slice(0, 10);
-  }
+  const w = dayWindowOf(window);
+  const { from, toExcl } = w;
   // Resolve numeric project_id (the leads view keys on it).
   const proj = await supabaseRowsAll<{ project_id: number }>(
     `v_report_v2_bmby_projects?select=project_id&project_name=eq.${encodeURIComponent(crmAccount)}`,
@@ -1719,6 +2053,7 @@ async function computeBmbyFunnelFromWarehouse(
   // Window-cohort leads.
   const leads = await supabaseRowsAll<{
     client_id: string | null;
+    lead_id: string | number | null;
     lead_created_at: string | null;
     handled_at: string | null;
     is_handled: boolean | null;
@@ -1737,80 +2072,40 @@ async function computeBmbyFunnelFromWarehouse(
     utm_content: string | null;
     utm_campaign: string | null;
   }>(
-    // Window bounds carry an explicit +03:00 offset: lead_created_at is a
-    // timestamptz the exporter writes as Israel(+03:00), so a bare date here
-    // compares at UTC midnight and misfiles each month's first/last 3 IL
-    // hours (found 2026-07-09 by diffing a BMBY leads-grid export — 4 of
-    // מיה's July-1 00:00-03:00 leads landed in June). %2B = url-encoded +.
+    // Window bounds are Israel midnights with an explicit offset:
+    // lead_created_at is a timestamptz, so a bare date compares at UTC
+    // midnight and misfiles each month's first/last IL hours (found
+    // 2026-07-09 by diffing a BMBY leads-grid export — 4 of מיה's July-1
+    // 00:00-03:00 leads landed in June). The offset is DST-aware
+    // (ilMidnightParam); it was a fixed +03:00 until 2026-09-16.
     `v_bmby_leads_bucketed?project_id=eq.${pid}` +
-      `&lead_created_at=gte.${from}T00:00:00%2B03:00&lead_created_at=lt.${toExcl}T00:00:00%2B03:00` +
+      `&lead_created_at=gte.${ilMidnightParam(from)}&lead_created_at=lt.${ilMidnightParam(toExcl)}` +
       `&select=client_id,lead_id,lead_created_at,handled_at,is_handled,is_return_lead,media_source_clean,objections,client_status,pipeline,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
       // Stable total order on the PK — Range pagination is non-deterministic
       // without an explicit ORDER BY (rows could repeat/drop past 1000).
       `&order=lead_id.asc`,
   );
   if (!leads.length) return null;
-  // Project journey meetings (all-time history fetched; journeyVelocity
-  // below needs every date). The meeting metrics are built from meetings
-  // DATED in the window (anchor appointment_date → meeting_date) — matching
-  // BMBY's דוח יחסי המרה, which counts meeting EVENTS in the period.
-  // (2026-06-24, per Maayan, verified exact on רמת אפעל 19/8/6.)
-  const meetings = await supabaseRowsAll<{
-    client_id: string | null;
-    appointment_outcome: string | null;
-    meeting_date: string | null;
-    appointment_date: string | null;
-  }>(
-    `v_bmby_journey_meetings?project_he=eq.${encodeURIComponent(crmAccount)}` +
-      `&select=client_id,appointment_outcome,meeting_date,appointment_date&order=meeting_id.asc`,
-  );
-  const meetingInWindow = (m: {
-    appointment_date: string | null;
-    meeting_date: string | null;
-  }): boolean => {
-    const d = (m.appointment_date || m.meeting_date || "").slice(0, 10);
-    return !!d && d >= from && d < toExcl;
-  };
-  // client → its first cohort-lead source (lead_id order), for attributing
-  // each meeting event to a channel. Cohort = clients with a lead in window.
-  const cohortSrc = new Map<string, string>();
-  for (const l of leads) {
-    const c = String(l.client_id ?? "");
-    if (c && !cohortSrc.has(c)) cohortSrc.set(c, normSource(l.media_source_clean));
-  }
-  // Distinct-client sets — drive the synthesized status per cohort lead row
-  // (so the status funnel / objections / daily series stay coherent).
-  const heldClients = new Set<string>();
-  const anyClients = new Set<string>();
-  const nonCanceledClients = new Set<string>();
-  // Meeting-EVENT tallies (in-window, cohort clients only) — these OVERRIDE
-  // the distinct-client KPI counts below so תואמה / פגישות / בוטלו equal the
-  // BMBY event counts. תואמה = all events; פגישות = held; בוטלו = cancelled.
-  let evSched = 0, evHeld = 0, evCanc = 0;
-  const evSchedBySrc = new Map<string, number>();
-  const evHeldBySrc = new Map<string, number>();
-  const evCancBySrc = new Map<string, number>();
-  for (const m of meetings) {
-    const c = String(m.client_id ?? "");
-    if (!c || !meetingInWindow(m)) continue;
-    anyClients.add(c);
-    const held = m.appointment_outcome === "held";
-    const canceled = m.appointment_outcome === "canceled";
-    if (held) heldClients.add(c);
-    if (!canceled) nonCanceledClients.add(c);
-    if (cohortSrc.has(c)) {
-      const src = cohortSrc.get(c) || "";
-      evSched++;
-      if (src) evSchedBySrc.set(src, (evSchedBySrc.get(src) || 0) + 1);
-      if (held) {
-        evHeld++;
-        if (src) evHeldBySrc.set(src, (evHeldBySrc.get(src) || 0) + 1);
-      }
-      if (canceled) {
-        evCanc++;
-        if (src) evCancBySrc.set(src, (evCancBySrc.get(src) || 0) + 1);
-      }
-    }
+  // The project's full journey (every date) and full lead history. Both
+  // bases need all of it: an August lead owns the meetings it books in
+  // September, and a dated September meeting is filed under a first lead
+  // from any year. The history also serves the returning-lead priors and
+  // the פילוח פייסבוק first-touch map, which used to fetch it twice, each
+  // behind its own gate.
+  const [meetings, history] = await Promise.all([
+    fetchBmbyJourneyEvents(crmAccount),
+    fetchBmbyLeadHistory(pid),
+  ]);
+  const built = buildBmbyWarehouseMeetings(history, meetings, w);
+  // lead_id → the outcomes of the events that lead OWNS (any date).
+  const owned = new Map<string, { held: boolean; live: boolean }>();
+  for (const a of built.assignments) {
+    if (!a.owner || a.owner.lead_id == null) continue;
+    const id = String(a.owner.lead_id);
+    const rec = owned.get(id) ?? { held: false, live: false };
+    if (bmbyEventHeld(a.event)) rec.held = true;
+    if (!bmbyEventCanceled(a.event)) rec.live = true;
+    owned.set(id, rec);
   }
   // Synthesize rows in the BMBY column layout aggregateBmbyFunnel reads.
   const headers = [
@@ -1821,143 +2116,88 @@ async function computeBmbyFunnelFromWarehouse(
     "התנגדויות",
     "תאריך קשר",
   ];
-  // A client can own MULTIPLE in-window lead rows (return leads). Each row
-  // is a real lead (counted), but the client's meeting is a single event —
-  // so stamp the meeting status on only the FIRST row per client; later
-  // return-lead rows get a neutral in-progress status. Otherwise scheduled/
-  // held (and meetingRate) over-count by the return-lead multiple. Leads
-  // are ordered by lead_id, so "first" is deterministic.
-  const meetingStamped = new Set<string>();
   const rows: unknown[][] = leads.map((l) => {
-    const c = String(l.client_id ?? "");
-    const hasMeeting = !!c && anyClients.has(c);
-    let status: string;
-    if (hasMeeting && !meetingStamped.has(c)) {
-      meetingStamped.add(c);
-      status = heldClients.has(c)
+    const own = l.lead_id != null ? owned.get(String(l.lead_id)) : undefined;
+    const status = own
+      ? own.held
         ? "פגישה התקיימה"
-        : nonCanceledClients.has(c)
+        : own.live
           ? "נקבעה פגישה"
-          : "פגישה בוטלה";
-    } else if (hasMeeting) {
-      // return-lead row for an already-counted client — don't re-count the
-      // meeting; show as in-progress so the status funnel still places it.
-      status = l.is_handled ? "בטיפול" : "ליד";
-    } else {
-      status = mapWarehouseStatus(l.client_status, l.pipeline, l.is_handled);
-    }
+          : "פגישה בוטלה"
+      : mapWarehouseStatus(l.client_status, l.pipeline, l.is_handled);
     // Any lead with a meeting is contacted by definition (the is_handled
     // flag occasionally lags), so contacted >= scheduled >= held holds.
     const contactDate =
-      l.is_handled || hasMeeting
-        ? ilDay(l.handled_at || l.lead_created_at)
+      l.is_handled || own
+        ? ilDayJerusalem(l.handled_at || l.lead_created_at)
         : "";
     return [
       crmAccount,
-      ilDay(l.lead_created_at),
-      (l.media_source_clean || "").trim(),
+      ilDayJerusalem(l.lead_created_at),
+      // channel_key when the source is blank ("other"), as ALL CLIENTS
+      // files it — the key the owner-lead meeting maps use too, so a
+      // range-mode "Other" row gets its leads with its meetings instead of
+      // reading 0 leads next to 5 תואמה (bmbyLeadSourceKey).
+      bmbyLeadSourceKey(l),
       status,
       (l.objections || "").trim(),
       contactDate,
     ];
   });
   const funnel = aggregateBmbyFunnel(headers, rows, crmAccount, window);
-  if (funnel) {
-    funnel.dataSource = "warehouse";
-    // Override the meeting KPIs (which aggregateBmbyFunnel computed per
-    // distinct client) with the in-window EVENT counts, so תואמה / פגישות /
-    // בוטלו mirror BMBY's דוח יחסי המרה (counts events, not clients —
-    // verified exact on רמת אפעל 19/8/6). תואמה = all events; פגישות = held;
-    // בוטלו = cancelled; תואמו (card breakdown) = תואמה − בוטלו.
-    funnel.scheduledMeetings = evSched;
-    funnel.meetings = evHeld;
-    funnel.canceledMeetings = evCanc;
-    funnel.meetingRatePct = funnel.leads > 0 ? (evHeld / funnel.leads) * 100 : null;
-    funnel.sourceMatrices.scheduledMeetingsBySource = Object.fromEntries(evSchedBySrc);
-    funnel.sourceMatrices.meetingsBySource = Object.fromEntries(evHeldBySrc);
-    funnel.sourceMatrices.canceledMeetingsBySource = Object.fromEntries(evCancBySrc);
-    // Speed-to-lead + returning/new split + arrival heatmap — all derived
-    // from the leads we already fetched (no extra query). Whole-window.
-    funnel.speedToLead = computeSpeedToLead(leads);
-    funnel.returningSplit = computeReturningSplit(leads);
-    // Prior-channel breakdown for returning leads — needs the project's full
-    // lead history (the prior inquiry is usually before the window), so a
-    // separate paginated read, gated on there being returning leads.
-    if (funnel.returningSplit && funnel.returningSplit.returning > 0) {
-      const history = await supabaseRowsAll<{
-        client_id: string | null;
-        lead_created_at: string | null;
-        media_source_clean: string | null;
-      }>(
-        `v_bmby_leads_bucketed?project_id=eq.${pid}` +
-          `&select=client_id,lead_created_at,media_source_clean&order=lead_id.asc`,
-      );
-      funnel.returningSplit.priorBySource = computeReturningPriors(
-        leads.filter((l) => l.is_return_lead === true),
-        history,
-      );
-    }
-    funnel.arrivalHeatmap = computeArrivalHeatmap(leads);
-    funnel.journeyVelocity = computeJourneyVelocity(leads, meetings);
-    // Contracts: the synthesized funnel status stamps meeting state over a
-    // lead, hiding "חוזה" for any contracted lead that also had a meeting.
-    // Recount from the raw client_status, per distinct client (return leads
-    // share one status), attributing to the client's first lead source.
-    {
-      const seen = new Set<string>();
-      const bySrc: Record<string, number> = {};
-      let n = 0;
-      for (const l of leads) {
-        if (l.client_status !== "חוזה") continue;
-        const c = String(l.client_id ?? "");
-        if (c && seen.has(c)) continue;
-        if (c) seen.add(c);
-        n++;
-        const src = normSource(l.media_source_clean);
-        if (src) bySrc[src] = (bySrc[src] || 0) + 1;
-      }
-      funnel.contracts = n;
-      funnel.sourceMatrices.contractsBySource = bySrc;
-    }
-    // FB UTM drill — placement / audience / creative split of the Meta
-    // (channel_key='fb' = fb+ig+an) leads. Creative rows also carry
-    // scheduled/held + spend & CPL/CPS/CPM (joined from the dashboard's
-    // facebook-ads-metrics Sheet by exact campaign + ad name).
-    //
-    // Meeting credit is EVENT-in-window, attributed to the creative that
-    // ORIGINALLY brought each meeting's client — which may be a lead created
-    // BEFORE the window (a June ad's July meetings). So build a client → first
-    // fb lead map from the project's FULL fb-lead history (not just the window
-    // cohort), gated on there being in-window meetings to attribute.
-    const fbAttrByClient = new Map<string, FbLead>();
-    if (anyClients.size > 0) {
-      // First-TOUCH attribution: credit a meeting to fb ONLY when the client's
-      // FIRST lead (across ALL channels, by lead_id) is an fb lead — matching
-      // BMBY's single-source model. Otherwise a client who arrived via yad2/
-      // phone first and merely also clicked an fb ad would inflate fb's
-      // scheduled/held (seen on מיה: any-fb 34 vs first-touch 30).
-      const history = await supabaseRowsAll<FbLead>(
-        `v_bmby_leads_bucketed?project_id=eq.${pid}` +
-          `&select=client_id,channel_key,utm_medium,utm_term,utm_content,utm_campaign` +
-          `&order=lead_id.asc`,
-      );
-      const seen = new Set<string>();
-      for (const l of history) {
-        const c = String(l.client_id ?? "");
-        if (!c || seen.has(c)) continue;
-        seen.add(c); // this client's first (originating) lead
-        if (l.channel_key === "fb") fbAttrByClient.set(c, l);
-      }
-    }
-    funnel.fbBreakdown = await buildFbBreakdown(
-      leads,
-      meetings,
-      fbAttrByClient,
-      from,
-      toExcl,
+  if (!funnel) return null;
+  funnel.dataSource = "warehouse";
+  applyBmbyWarehouseMeetings(funnel, built.meetings);
+  // Speed-to-lead + returning/new split + arrival heatmap — all derived
+  // from the leads we already fetched (no extra query). Whole-window.
+  funnel.speedToLead = computeSpeedToLead(leads);
+  funnel.returningSplit = computeReturningSplit(leads);
+  // Prior-channel breakdown for returning leads — off the project's full
+  // lead history (the prior inquiry is usually before the window).
+  if (funnel.returningSplit && funnel.returningSplit.returning > 0) {
+    funnel.returningSplit.priorBySource = computeReturningPriors(
+      leads.filter((l) => l.is_return_lead === true),
+      history.map((h) => ({
+        client_id: h.client_id == null ? null : String(h.client_id),
+        lead_created_at: h.lead_created_at,
+        media_source_clean: h.media_source_clean,
+      })),
     );
   }
-  return funnel;
+  funnel.arrivalHeatmap = computeArrivalHeatmap(leads);
+  funnel.journeyVelocity = computeJourneyVelocity(leads, meetings);
+  // Contracts: the synthesized funnel status stamps meeting state over a
+  // lead, hiding "חוזה" for any contracted lead that also had a meeting.
+  // Recount from the raw client_status, per distinct client (return leads
+  // share one status), attributing to the client's first lead source.
+  {
+    const seen = new Set<string>();
+    const bySrc: Record<string, number> = {};
+    let n = 0;
+    for (const l of leads) {
+      if (l.client_status !== "חוזה") continue;
+      const c = String(l.client_id ?? "");
+      if (c && seen.has(c)) continue;
+      if (c) seen.add(c);
+      n++;
+      const src = bmbyLeadSourceKey(l);
+      if (src) bySrc[src] = (bySrc[src] || 0) + 1;
+    }
+    funnel.contracts = n;
+    funnel.sourceMatrices.contractsBySource = bySrc;
+  }
+  // FB UTM drill — placement / audience / creative split of the Meta
+  // (channel_key='fb' = fb+ig+an) leads, meetings on both bases. Creative
+  // rows also carry spend & CPL/CPS/CPM (joined from the dashboard's
+  // facebook-ads-metrics Sheet by exact campaign + ad name).
+  funnel.fbBreakdown = await buildFbBreakdown(
+    leads,
+    built.assignments,
+    meetings,
+    (clientId) => built.index.first.get(clientId)?.lead,
+    w,
+  );
+  return { funnel, meetings: built.meetings };
 }
 
 /** How many objections a UTM row lists. Three names the pattern without
@@ -2036,47 +2276,145 @@ function topObjections(
     .slice(0, TOP_OBJECTIONS);
 }
 
-type FbLead = {
-  client_id: string | null;
-  channel_key: string | null;
-  /** Already in the warehouse lead select — see the bmby_leads_daily query. */
-  objections?: string | null;
+/** The UTM tags a breakdown groups by. */
+type FbUtm = {
+  channel_key?: string | null;
   utm_medium: string | null;
   utm_term: string | null;
   utm_content: string | null;
   utm_campaign: string | null;
 };
 
+type FbLead = FbUtm & {
+  client_id: string | null;
+  /** Already in the warehouse lead select — see the bmby_leads_daily query. */
+  objections?: string | null;
+};
+
+/** One UTM group (placement / audience / creative / keyword) while a
+ *  breakdown is being built: its window leads, and its meetings on both
+ *  bases. */
+type UtmAcc = {
+  leads: number;
+  /** LEAD-ENTRY תואמו / פגישות. */
+  sched: number;
+  held: number;
+  /** MEETING-DATE תואמו / פגישות. */
+  dSched: number;
+  dHeld: number;
+  obj: Map<string, number>;
+};
+
+function ensureUtmAcc(m: Map<string, UtmAcc>, k: string): UtmAcc {
+  let r = m.get(k);
+  if (!r) {
+    r = { leads: 0, sched: 0, held: 0, dSched: 0, dHeld: 0, obj: new Map() };
+    m.set(k, r);
+  }
+  return r;
+}
+
+/** The order a breakdown's rows are ranked and cut in: leads plus the
+ *  LARGER of the two bases' תואמו. A row must not move — or fall behind the
+ *  top-8 cut into "אחר" — when the basis switch flips, and ranking on either
+ *  basis alone would do exactly that. A creative that produced meetings but
+ *  no new leads this window (an older ad) still surfaces. */
+const utmRank = (r: { leads: number; scheduled: number; datedScheduled?: number }) =>
+  r.leads + Math.max(r.scheduled, r.datedScheduled ?? 0);
+
+/** Top-N rows on both bases plus an "אחר" remainder. The "אחר" bucket
+ *  deliberately carries NO objection list: it merges unrelated placements /
+ *  creatives, so an objection on it names nothing. */
+function utmRowsBothBases(m: Map<string, UtmAcc>, top: number): UtmRow[] {
+  const sorted: UtmRow[] = [...m.entries()]
+    .map(([label, r]) => ({
+      label,
+      leads: r.leads,
+      scheduled: r.sched,
+      held: r.held,
+      datedScheduled: r.dSched,
+      datedHeld: r.dHeld,
+      objections: topObjections(r.obj),
+    }))
+    .sort((a, b) => utmRank(b) - utmRank(a));
+  const head = sorted.slice(0, top);
+  const rest = sorted.slice(top).reduce(
+    (s, r) => ({
+      leads: s.leads + r.leads,
+      scheduled: s.scheduled + r.scheduled,
+      held: s.held + r.held,
+      datedScheduled: s.datedScheduled + (r.datedScheduled ?? 0),
+      datedHeld: s.datedHeld + (r.datedHeld ?? 0),
+    }),
+    { leads: 0, scheduled: 0, held: 0, datedScheduled: 0, datedHeld: 0 },
+  );
+  if (rest.leads > 0 || rest.scheduled > 0 || rest.datedScheduled > 0) {
+    head.push({ label: "אחר", ...rest });
+  }
+  return head;
+}
+
+/** Creative rows on both bases with the spend join: CPS / CPM per basis.
+ *  `withObjections` is off for Sehel, whose creative rows never carried
+ *  them. */
+function creativeRowsBothBases(
+  m: Map<string, UtmAcc>,
+  spendByAd: Map<string, { cost: number }>,
+  top: number,
+  withObjections: boolean,
+): NonNullable<CrmFunnel["fbBreakdown"]>["byCreative"] {
+  return [...m.entries()]
+    .map(([label, r]) => {
+      const spend = spendByAd.get(label)?.cost ?? 0;
+      return {
+        label,
+        leads: r.leads,
+        scheduled: r.sched,
+        held: r.held,
+        datedScheduled: r.dSched,
+        datedHeld: r.dHeld,
+        spend,
+        ...(withObjections ? { objections: topObjections(r.obj) } : {}),
+        cpl: r.leads ? spend / r.leads : 0,
+        cps: r.sched ? spend / r.sched : 0,
+        cpm: r.held ? spend / r.held : 0,
+        datedCps: r.dSched ? spend / r.dSched : 0,
+        datedCpm: r.dHeld ? spend / r.dHeld : 0,
+      };
+    })
+    .sort((a, b) => utmRank(b) - utmRank(a))
+    .slice(0, top);
+}
+
 /** Placement / audience / creative breakdown of a project's Meta leads
  *  (channel_key='fb' = fb+ig+an) from their UTM tags.
- *   • leads   = window fb lead rows, grouped by their own UTM tag.
- *   • תואמו   = meeting EVENTS dated IN the window, credited to the group of
- *     the meeting-client's FIRST-touch fb lead (any lead age) — so a June ad
- *     gets its clients' July meetings in the July view. Same event-in-window
- *     definition as the funnel KPI tiles (owner-verified exact on רמת אפעל
- *     19/8/6) and BMBY's period reports (2026-07-09 3-tenant sweep: נתיבות
- *     June 129≈133, kenko June ~70≈57+30, מיה July 53≈55; the one outlier —
- *     מיה June 76 vs 125 — is that tenant's cohort-cumulative column variant,
- *     and chasing it over-counted mature projects 3x, e.g. kenko 180 vs 57).
- *   • פגישות = in-window events BMBY-confirmed as held. Strictly marked-held
- *     only — counting past-due-unmarked in_process as performed presented
- *     estimates as fact (בוצעו 18 on a card whose BMBY row said 10; keyword
- *     rows collapsed to תיאומים==ביצועים) — owner decision 2026-07-09. The
- *     cost: current-month held lags BMBY until outcomes are marked.
- *  Non-fb-first clients don't credit fb groups. The creative rows also carry
- *  spend + CPL/CPS/CPM joined from the dashboard's facebook-ads-metrics Sheet.
- *  undefined when the project has no in-window Meta leads. */
+ *   • leads = window fb lead rows, grouped by their own UTM tag.
+ *   • תואמו / פגישות, LEAD-ENTRY (scheduled / held): meeting EVENTS whose
+ *     OWNER lead (lib/meetingBasis assignOwnerLeads) is an fb lead created
+ *     in the window, credited to that lead's own tags — any meeting date.
+ *     The rule ALL CLIENTS counts, so Σ audiences + untagged.lead = the
+ *     ערוצים facebook row: The 57, September 2026, 5/3 + 2/1 = 7/4 (the
+ *     dated join read 21/7 against that 7/4).
+ *   • תואמו / פגישות, MEETING-DATE (datedScheduled / datedHeld): events
+ *     dated IN the window (appointment_date, booking date as fallback),
+ *     credited to the client's FIRST lead by lead_id when that lead is fb
+ *     — so a June ad gets its clients' July meetings in the July view. The
+ *     same set as the dated tiles (2026-07-09 3-tenant sweep of BMBY period
+ *     reports: נתיבות June 129≈133, kenko June ~70≈57+30, מיה July 53≈55).
+ *   • held on both = BMBY-confirmed only. Counting past-due-unmarked
+ *     in_process as performed presented estimates as fact (בוצעו 18 on a
+ *     card whose BMBY row said 10) — owner decision 2026-07-09. The cost:
+ *     current-month held lags BMBY until outcomes are marked.
+ *  Meetings of an fb lead with no audience tag land in `untagged`, per
+ *  basis. The creative rows also carry spend + CPL/CPS/CPM joined from the
+ *  dashboard's facebook-ads-metrics Sheet. undefined when the project has
+ *  no in-window Meta leads. */
 async function buildFbBreakdown(
   windowLeads: FbLead[],
-  meetings: Array<{
-    client_id: string | null;
-    appointment_outcome: string | null;
-    meeting_date: string | null;
-    appointment_date: string | null;
-  }>,
-  fbAttrByClient: Map<string, FbLead>,
-  from: string,
-  toExcl: string,
+  assignments: readonly OwnerAssignment<BmbyHistoryLead, BmbyJourneyEvent>[],
+  events: readonly BmbyJourneyEvent[],
+  firstLeadOf: (clientId: string) => BmbyHistoryLead | undefined,
+  w: DayWindow,
 ): Promise<CrmFunnel["fbBreakdown"]> {
   const fb = windowLeads.filter((l) => l.channel_key === "fb");
   if (!fb.length) return undefined;
@@ -2088,121 +2426,95 @@ async function buildFbBreakdown(
     return /^\d{8,}$/.test(v) ? "אחר" : v;
   };
 
-  // Per-client tallies of meeting events dated IN the window: total events +
-  // performed. Performed = BMBY-CONFIRMED held ONLY (owner decision 2026-07-09:
-  // past-dated-but-unmarked in_process read as "בוצעו 18" on a card while the
-  // BMBY screen said 6 — some past-dues turn out no-shows, so counting them
-  // presented estimates as fact).
-  const winEvByClient = new Map<string, { total: number; done: number }>();
-  for (const m of meetings) {
-    const c = String(m.client_id ?? "");
-    if (!c) continue;
-    const d = String(m.appointment_date || m.meeting_date || "").slice(0, 10);
-    if (!d || d < from || d >= toExcl) continue;
-    const rec = winEvByClient.get(c) || { total: 0, done: 0 };
-    rec.total++;
-    if (m.appointment_outcome === "held") rec.done++;
-    winEvByClient.set(c, rec);
+  // One entry per meeting event, with the tags of the lead it is credited
+  // to on that basis.
+  const leadEvents: { utm: FbUtm; held: boolean }[] = [];
+  for (const a of assignments) {
+    if (!a.owner || a.owner.channel_key !== "fb" || !dayInWindow(a.ownerDay, w)) continue;
+    leadEvents.push({ utm: a.owner, held: bmbyEventHeld(a.event) });
+  }
+  const datedEvents: { utm: FbUtm; held: boolean }[] = [];
+  for (const e of events) {
+    if (!dayInWindow(datedDay(e), w)) continue;
+    const first = firstLeadOf(String(e.client_id ?? "").trim());
+    if (first?.channel_key !== "fb") continue;
+    datedEvents.push({ utm: first, held: bmbyEventHeld(e) });
   }
 
-  type Acc = { leads: number; sched: number; held: number; obj: Map<string, number> };
-  const accumulate = (getLabel: (l: FbLead) => string): Map<string, Acc> => {
-    const m = new Map<string, Acc>();
-    const ensure = (k: string): Acc => {
-      let r = m.get(k);
-      if (!r) { r = { leads: 0, sched: 0, held: 0, obj: new Map() }; m.set(k, r); }
-      return r;
-    };
+  const accumulate = (getLabel: (u: FbUtm) => string): Map<string, UtmAcc> => {
+    const m = new Map<string, UtmAcc>();
     for (const l of fb) {
       const v = getLabel(l);
       if (!v) continue;
-      const r = ensure(v);
+      const r = ensureUtmAcc(m, v);
       r.leads++;
       // Objections come off the LEAD only — never the meeting credit below,
-      // whose originating lead can sit outside the window.
+      // whose credited lead can sit outside the window.
       tallyObjection(r.obj, l.objections);
     }
-    // Meetings: each client's in-window event tally credited once, to the
-    // group of their first-touch fb lead (one group per dimension — sums
-    // cleanly; clients whose first touch isn't fb don't credit fb groups).
-    for (const [c, ev] of winEvByClient) {
-      const origin = fbAttrByClient.get(c);
-      if (!origin) continue;
-      const v = getLabel(origin);
+    for (const ev of leadEvents) {
+      const v = getLabel(ev.utm);
       if (!v) continue;
-      const r = ensure(v);
-      r.sched += ev.total;
-      r.held += ev.done;
+      const r = ensureUtmAcc(m, v);
+      r.sched++;
+      if (ev.held) r.held++;
+    }
+    for (const ev of datedEvents) {
+      const v = getLabel(ev.utm);
+      if (!v) continue;
+      const r = ensureUtmAcc(m, v);
+      r.dSched++;
+      if (ev.held) r.dHeld++;
     }
     return m;
   };
-  // Rank by leads + scheduled so a creative that produced meetings but no NEW
-  // leads this window (an older ad) still surfaces, not only lead-heavy ones.
-  const toRows = (m: Map<string, Acc>): UtmRow[] => {
-    const sorted: UtmRow[] = [...m.entries()]
-      .map(([label, r]) => ({
-        label, leads: r.leads, scheduled: r.sched, held: r.held,
-        objections: topObjections(r.obj),
-      }))
-      .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
-    const head = sorted.slice(0, TOP);
-    const rest = sorted.slice(TOP).reduce(
-      (s, r) => ({ leads: s.leads + r.leads, scheduled: s.scheduled + r.scheduled, held: s.held + r.held }),
-      { leads: 0, scheduled: 0, held: 0 },
-    );
-    // The "אחר" bucket deliberately carries NO objection list: it merges
-    // unrelated placements/creatives, so an objection on it names nothing.
-    if (rest.leads > 0 || rest.scheduled > 0) head.push({ label: "אחר", ...rest });
-    return head;
-  };
 
-  const placement = accumulate((l) => norm(String(l.utm_medium ?? "").replace(/_/g, " ")));
-  const audience = accumulate((l) => deId(String(l.utm_term ?? "")));
-  const creativeAcc = accumulate((l) => {
-    const ad = normAdName(l.utm_content);
+  const audienceOf = (u: FbUtm) => deId(String(u.utm_term ?? ""));
+  const placement = accumulate((u) => norm(String(u.utm_medium ?? "").replace(/_/g, " ")));
+  const audience = accumulate(audienceOf);
+  const creativeAcc = accumulate((u) => {
+    const ad = normAdName(u.utm_content);
     return ad && !/^\d{8,}$/.test(ad) ? ad : "";
   });
+  const untaggedOf = (list: { utm: FbUtm; held: boolean }[]) => {
+    const t = { scheduled: 0, held: 0 };
+    for (const ev of list) {
+      if (audienceOf(ev.utm)) continue;
+      t.scheduled++;
+      if (ev.held) t.held++;
+    }
+    return t;
+  };
 
   // Campaign scope for the spend join — union of window fb leads' campaigns AND
-  // the campaigns behind meeting-credited (older) creatives, so a creative that
-  // produced meetings but no new window leads still gets its spend scoped.
+  // the campaigns behind meeting-credited (older) creatives on either basis, so
+  // a creative that produced meetings but no new window leads still gets its
+  // spend scoped.
   const campaigns = new Set<string>();
-  const addCamp = (l: FbLead) => {
-    const camp = norm(String(l.utm_campaign ?? ""));
+  const addCamp = (u: FbUtm) => {
+    const camp = norm(String(u.utm_campaign ?? ""));
     if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
   };
   for (const l of fb) addCamp(l);
-  for (const c of winEvByClient.keys()) { const o = fbAttrByClient.get(c); if (o) addCamp(o); }
+  for (const ev of leadEvents) addCamp(ev.utm);
+  for (const ev of datedEvents) addCamp(ev.utm);
 
   // Join per-ad spend from the dashboard's facebook-ads-metrics Sheet (exact
   // campaign scope → collision-free). Degrades to spend=0 on any failure.
   let spendByAd = new Map<string, { cost: number; impressions: number; websiteLeads: number }>();
   try {
-    spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, from, toExcl);
+    spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, w.from, w.toExcl);
   } catch {
     /* leave spend at 0 */
   }
-  const byCreative = [...creativeAcc.entries()]
-    .map(([label, r]) => {
-      const leads = r.leads, scheduled = r.sched, held = r.held;
-      const spend = spendByAd.get(label)?.cost ?? 0;
-      return {
-        label, leads, scheduled, held, spend,
-        objections: topObjections(r.obj),
-        cpl: leads ? spend / leads : 0,
-        cps: scheduled ? spend / scheduled : 0,
-        cpm: held ? spend / held : 0,
-      };
-    })
-    .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled))
-    .slice(0, TOP);
 
   return {
     totalLeads: fb.length,
     // utm_medium = ad placement (Facebook_Mobile_Feed → "Facebook Mobile Feed").
-    byPlacement: toRows(placement),
-    byAudience: toRows(audience),
-    byCreative,
+    byPlacement: utmRowsBothBases(placement, TOP),
+    byAudience: utmRowsBothBases(audience, TOP),
+    byCreative: creativeRowsBothBases(creativeAcc, spendByAd, TOP, true),
+    untagged: { lead: untaggedOf(leadEvents), dated: untaggedOf(datedEvents) },
   };
 }
 
@@ -2530,37 +2842,102 @@ type SehelWhMeeting = {
   client_uuid: string | null;
   project_name: string | null;
   status_id: number | null;
+  status_label: string | null;
   starts_at: string | null;
+};
+
+/** The UTC calendar day of a Sehel timestamptz — the calendar the Sehel
+ *  lead window (`+00:00` bounds, dateOnly) already runs on, so a meeting and
+ *  the lead window it is compared with agree. See the open question in
+ *  computeSehelFunnelFromWarehouse's doc about whether that calendar is
+ *  right. */
+function sehelUtcDay(ts: string | null | undefined): string {
+  const ms = Date.parse(String(ts ?? ""));
+  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : "";
+}
+
+/** One basis' Sehel meeting tallies while they are being counted. */
+type SehelMeetingAcc = {
+  scheduledMeetingsBySource: Record<string, number>;
+  meetingsBySource: Record<string, number>;
+  totals: MeetingTally;
+  daily: MeetingDaily;
+};
+
+const emptySehelAcc = (): SehelMeetingAcc => ({
+  scheduledMeetingsBySource: {},
+  meetingsBySource: {},
+  totals: { scheduled: 0, held: 0, canceled: 0 },
+  daily: {},
+});
+
+/** Count one Sehel meeting event: totals always, a source map only when the
+ *  client has a source, a trendline day only when it has one too. */
+function tallySehelMeeting(into: SehelMeetingAcc, src: string, day: string, held: boolean): void {
+  into.totals.scheduled++;
+  if (held) into.totals.held++;
+  if (!src) return;
+  into.scheduledMeetingsBySource[src] = (into.scheduledMeetingsBySource[src] || 0) + 1;
+  if (held) into.meetingsBySource[src] = (into.meetingsBySource[src] || 0) + 1;
+  if (!day) return;
+  const cell = ((into.daily[day] ??= {})[src] ??= { scheduled: 0, held: 0 });
+  cell.scheduled++;
+  if (held) cell.held++;
+}
+
+type SehelWarehouseFunnel = {
+  funnel: CrmFunnel;
+  /** Meeting events DATED in the window, every source. The router's
+   *  sync-gap test reads this — the same count it read before the tiles
+   *  moved to the registration cohort, so which projects route to the
+   *  warehouse did not change with them. */
+  datedWindow: MeetingTally;
+  /** The dated maps and trendline, for a Sheet-routed card to borrow.
+   *  undefined when the project has no sehel_meetings at all. */
+  dated?: { maps: CrmDatedMeetingMaps; daily: CrmDatedDailyPoint[] };
 };
 
 /** Warehouse-backed Sehel funnel. Leads are windowed on `registered_at` from
  *  sehel_leads_daily and fed through the shared `aggregateSehelFunnel` (which
- *  gives leads / sources / objections / status / stale / daily). The
- *  scheduled + held counts are then OVERRIDDEN with authoritative
- *  sehel_meetings events (held = status_id 10), attributed to the meeting-
- *  client's lead source by client_uuid — so held stops relying on the Sheet's
- *  stage heuristic. Sehel timestamps are tagged +00:00 (unlike BMBY's +03:00),
- *  so the window compares in that space and `dateOnly` (not `ilDay`) keeps the
- *  wall-clock day. Returns null so the caller keeps the Sheet funnel; window-
- *  scoped, so the caller preserves the Sheet's project-wide stale tally. */
+ *  gives leads / sources / objections / status / stale / daily). The meeting
+ *  counts are then OVERRIDDEN with authoritative sehel_meetings events, so
+ *  they stop relying on the Sheet's stage heuristic, on both bases:
+ *
+ *   • LEAD-ENTRY (the unprefixed tiles and maps) — the REGISTRATION COHORT:
+ *     every meeting event, at any date and any status, of a client who
+ *     registered in the window, under that registration's source. ביצועים =
+ *     status exactly "הלקוח הגיע לפגישה" (owner decision D2). Ginot
+ *     2026-09-01..16: 8 תואמה (פייסבוק 4, גוגל 2, פניה טלפונית 2) · 4
+ *     פגישות — ALL CLIENTS' 8/4, every row. It used to be dated events
+ *     (15/11) under a "לפי כניסת ליד" window.
+ *   • MEETING-DATE (sourceMatrices.dated, dailyDated) — events whose starts_at
+ *     is in the window, held = status_id 10 (the same meetings as the label;
+ *     paired 1:1 in all 1,272 since 2026-01), credited to the client's lead
+ *     source whenever that lead registered. What the tiles used to show.
+ *
+ *  Both come off ONE read of the project's meetings, all dates (a cohort
+ *  client's meeting can be months after the window). Sehel meeting volume
+ *  is small — 659 all-time on CAZAR, 234 on Ginot, 83 on HaGada — so this
+ *  replaces the windowed read rather than adding a second.
+ *
+ *  Sehel timestamps are compared in +00:00 (unlike BMBY's Israel days), so
+ *  the window and `dateOnly` keep the calendar this route has always used.
+ *  OPEN: they measure as true UTC, not wall-clock (meeting starts peak at
+ *  07:00 UTC = 10:00 Israel), so strictly an Israel-day window would move
+ *  the few registrations made 21:00–24:00 UTC to the next day. On Ginot,
+ *  CAZAR and HaGada's windows the cohort came out identical either way
+ *  (2026-09-16), and moving it here would move lead counts too — left for
+ *  one decision across the Sehel readers.
+ *
+ *  Returns null so the caller keeps the Sheet funnel; window-scoped, so the
+ *  caller preserves the Sheet's project-wide stale tally. */
 async function computeSehelFunnelFromWarehouse(
   crmAccount: string,
   window: DateWindow | null,
-): Promise<CrmFunnel | null> {
+): Promise<SehelWarehouseFunnel | null> {
   if (!supabaseConfigured() || !window) return null;
-  let from = "";
-  let toExcl = "";
-  if (window.kind === "month") {
-    from = `${window.month}-01`;
-    const [y, mo] = window.month.split("-").map(Number);
-    toExcl =
-      mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
-  } else {
-    from = window.from;
-    const d = new Date(`${window.to}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + 1);
-    toExcl = d.toISOString().slice(0, 10);
-  }
+  const w = dayWindowOf(window);
+  const { from, toExcl } = w;
   // Sehel project_name carries a "<project> <salesperson>" suffix, and a Keys
   // account can be comma-joined — match server-side with a prefix `like` per
   // candidate (double-quoted so a comma inside a name doesn't break the `or`),
@@ -2609,21 +2986,32 @@ async function computeSehelFunnelFromWarehouse(
   const base = aggregateSehelFunnel(synthHeaders, synthRows, crmAccount, window);
   if (!base) return null;
 
-  // Authoritative meetings dated in the window (starts_at); held = status_id
-  // 10. Attribute each event to the meeting-client's lead source.
-  const meetingsRaw = await supabaseRowsAll<SehelWhMeeting>(
-    `sehel_meetings?or=(${orLike})` +
-      `&starts_at=gte.${gte}&starts_at=lt.${lt}` +
-      `&select=client_uuid,project_name,status_id,starts_at&order=event_uid.asc`,
-  );
-  const winMeetings = meetingsRaw.filter((m) => matchesProject(m.project_name));
+  // The project's meetings, every date (see the doc above).
+  const meetingsAll = (
+    await supabaseRowsAll<SehelWhMeeting>(
+      `sehel_meetings?or=(${orLike})` +
+        `&select=client_uuid,project_name,status_id,status_label,starts_at&order=event_uid.asc`,
+    )
+  ).filter((m) => matchesProject(m.project_name));
+  const hasMeetings = meetingsAll.length > 0;
+  const winMeetings = meetingsAll.filter((m) => dayInWindow(sehelUtcDay(m.starts_at), w));
+
+  // The cohort: client → its earliest registration in the window. That
+  // lead's source and UTM are what its meetings are credited to.
+  const cohort = new Map<string, SehelWhLead>();
+  for (const l of leads) {
+    if (!l.client_uuid) continue;
+    const cur = cohort.get(l.client_uuid);
+    if (!cur || String(l.registered_at ?? "") < String(cur.registered_at ?? "")) {
+      cohort.set(l.client_uuid, l);
+    }
+  }
   const srcByClient = new Map<string, string>();
   const utmByClient = new Map<string, SehelUtm>();
-  for (const l of leads)
-    if (l.client_uuid) {
-      srcByClient.set(l.client_uuid, l.media_source_raw ?? "");
-      utmByClient.set(l.client_uuid, l);
-    }
+  for (const [c, l] of cohort) {
+    srcByClient.set(c, l.media_source_raw ?? "");
+    utmByClient.set(c, l);
+  }
   // Meeting-clients whose lead registered OUTSIDE the window aren't in the
   // cohort above — fetch their source + first-touch UTM in one batch.
   const missing = [
@@ -2646,52 +3034,90 @@ async function computeSehelFunnelFromWarehouse(
         utmByClient.set(r.client_uuid, r);
       }
   }
-  let sched = 0;
-  let held = 0;
-  const schedBySrc: Record<string, number> = {};
-  const heldBySrc: Record<string, number> = {};
-  for (const m of winMeetings) {
-    const src = normSource(srcByClient.get(m.client_uuid ?? "") ?? "");
-    sched++;
-    if (src) schedBySrc[src] = (schedBySrc[src] || 0) + 1;
-    if (Number(m.status_id) === 10) {
-      held++;
-      if (src) heldBySrc[src] = (heldBySrc[src] || 0) + 1;
-    }
+
+  const lead = emptySehelAcc();
+  const cohortEvents = meetingsAll.filter((m) => !!m.client_uuid && cohort.has(m.client_uuid));
+  for (const m of cohortEvents) {
+    const l = cohort.get(m.client_uuid as string) as SehelWhLead;
+    tallySehelMeeting(
+      lead,
+      normSource(l.media_source_raw),
+      dateOnly(l.registered_at),
+      sehelLeadEntryHeld(m.status_label),
+    );
   }
-  base.scheduledMeetings = sched;
-  base.meetings = held;
-  base.meetingRatePct = base.leads > 0 ? (held / base.leads) * 100 : null;
-  base.sourceMatrices.scheduledMeetingsBySource = schedBySrc;
-  base.sourceMatrices.meetingsBySource = heldBySrc;
+  const dated = emptySehelAcc();
+  for (const m of winMeetings) {
+    tallySehelMeeting(
+      dated,
+      normSource(srcByClient.get(m.client_uuid ?? "") ?? ""),
+      sehelUtcDay(m.starts_at),
+      Number(m.status_id) === 10,
+    );
+  }
+
+  const sm = base.sourceMatrices;
+  base.scheduledMeetings = lead.totals.scheduled;
+  base.meetings = lead.totals.held;
+  base.meetingRatePct = base.leads > 0 ? (lead.totals.held / base.leads) * 100 : null;
+  sm.scheduledMeetingsBySource = lead.scheduledMeetingsBySource;
+  sm.meetingsBySource = lead.meetingsBySource;
+  base.dailyTimeSeries = overlayDailyMeetings(base.dailyTimeSeries, lead.daily);
+  // "Mapped, reachable, nothing in the window" is a measured 0; only a
+  // project with no sehel_meetings at all (the sync gap the router below
+  // describes) has no dated source.
+  const datedOut = hasMeetings
+    ? {
+        maps: {
+          scheduledMeetingsBySource: dated.scheduledMeetingsBySource,
+          meetingsBySource: dated.meetingsBySource,
+        },
+        daily: datedDailyPoints(dated.daily),
+      }
+    : undefined;
+  sm.dated = datedOut?.maps;
+  base.dailyDated = datedOut?.daily;
+  extendAllSources(sm, [sm.scheduledMeetingsBySource, datedOut?.maps.scheduledMeetingsBySource]);
+  base.meetingBasis = {
+    lead: "registration-cohort",
+    dated: hasMeetings ? "sehel-events" : null,
+  };
   base.dataSource = "warehouse";
   // Meta placement/audience/creative + Google keyword UTM drill.
   try {
     base.fbBreakdown = await buildSehelBreakdown(
       leads,
+      cohortEvents,
       winMeetings,
       utmByClient,
-      from,
-      toExcl,
+      w,
     );
   } catch {
     /* leave fbBreakdown unset */
   }
-  return base;
+  return { funnel: base, datedWindow: dated.totals, dated: datedOut };
 }
 
 /** Sehel UTM drill — mirrors buildFbBreakdown for Meta (placement=utm_medium,
  *  audience=utm_term, creative=utm_content + spend) and ADDS a Google keyword
  *  dimension (utm_term on google-source leads). Channel split is on utm_source
  *  (Sehel has no channel_key). The lead's utm is already first-touch (per the
- *  exporter), so in-window meetings attribute directly by client_uuid. Returns
- *  undefined when there are no window UTM leads at all. */
+ *  exporter), so meetings attribute directly by client_uuid, on both bases:
+ *   • lead-entry (scheduled / held): the registration cohort's meetings, any
+ *     date, held = "הלקוח הגיע לפגישה" (D2) — Ginot Sept: audiences 4/2 =
+ *     the פייסבוק row, keywords 2/1 = the גוגל row;
+ *   • meeting-date (datedScheduled / datedHeld): meetings dated in the
+ *     window, held = status_id 10.
+ *  A cohort client is credited through its own registration's UTM (the
+ *  earliest in the window); `utmByClient` holds those plus the clients of
+ *  dated meetings who registered earlier. Returns undefined when there are
+ *  no window UTM leads at all. */
 async function buildSehelBreakdown(
   windowLeads: SehelUtm[],
+  cohortEvents: Array<{ client_uuid: string | null; status_label: string | null }>,
   winMeetings: Array<{ client_uuid: string | null; status_id: number | null }>,
   utmByClient: Map<string, SehelUtm>,
-  from: string,
-  toExcl: string,
+  w: DayWindow,
 ): Promise<CrmFunnel["fbBreakdown"]> {
   const fbLeads = windowLeads.filter((l) => isSehelFbSource(l.utm_source));
   const gLeads = windowLeads.filter((l) => isSehelGoogleSource(l.utm_source));
@@ -2702,63 +3128,57 @@ async function buildSehelBreakdown(
     const v = cl(raw);
     return /^\d{8,}$/.test(v) ? "אחר" : v;
   };
-  // In-window meeting events per client; held = status_id 10.
-  const evByClient = new Map<string, { total: number; done: number }>();
-  for (const m of winMeetings) {
-    const c = String(m.client_uuid ?? "");
-    if (!c) continue;
-    const rec = evByClient.get(c) || { total: 0, done: 0 };
-    rec.total++;
-    if (Number(m.status_id) === 10) rec.done++;
-    evByClient.set(c, rec);
-  }
-  type Acc = { leads: number; sched: number; held: number; obj: Map<string, number> };
+  // Meeting events per client, per basis.
+  type Ev = { total: number; done: number };
+  const perClient = <M,>(list: M[], clientOf: (m: M) => string | null, held: (m: M) => boolean) => {
+    const out = new Map<string, Ev>();
+    for (const m of list) {
+      const c = String(clientOf(m) ?? "");
+      if (!c) continue;
+      const rec = out.get(c) || { total: 0, done: 0 };
+      rec.total++;
+      if (held(m)) rec.done++;
+      out.set(c, rec);
+    }
+    return out;
+  };
+  const leadEvByClient = perClient(cohortEvents, (m) => m.client_uuid, (m) => sehelLeadEntryHeld(m.status_label));
+  const evByClient = perClient(winMeetings, (m) => m.client_uuid, (m) => Number(m.status_id) === 10);
   // Group a channel's leads by a UTM label, then credit each meeting-client's
   // events to the group of their first-touch lead (same channel only).
   const build = (
     leadSet: SehelUtm[],
     getLabel: (u: SehelUtm) => string,
     channelMatch: (s: string | null) => boolean,
-  ): Map<string, Acc> => {
-    const m = new Map<string, Acc>();
-    const ensure = (k: string): Acc => {
-      let r = m.get(k);
-      if (!r) { r = { leads: 0, sched: 0, held: 0, obj: new Map() }; m.set(k, r); }
-      return r;
-    };
+  ): Map<string, UtmAcc> => {
+    const m = new Map<string, UtmAcc>();
     for (const l of leadSet) {
       const v = getLabel(l);
       if (!v) continue;
-      const r = ensure(v);
+      const r = ensureUtmAcc(m, v);
       r.leads++;
       // Lead-side only, same as BMBY — see UtmRow.objections.
       tallyObjection(r.obj, l.objections);
+    }
+    for (const [c, ev] of leadEvByClient) {
+      const u = utmByClient.get(c);
+      if (!u || !channelMatch(u.utm_source)) continue;
+      const v = getLabel(u);
+      if (!v) continue;
+      const r = ensureUtmAcc(m, v);
+      r.sched += ev.total;
+      r.held += ev.done;
     }
     for (const [c, ev] of evByClient) {
       const u = utmByClient.get(c);
       if (!u || !channelMatch(u.utm_source)) continue;
       const v = getLabel(u);
       if (!v) continue;
-      const r = ensure(v);
-      r.sched += ev.total;
-      r.held += ev.done;
+      const r = ensureUtmAcc(m, v);
+      r.dSched += ev.total;
+      r.dHeld += ev.done;
     }
     return m;
-  };
-  const toRows = (m: Map<string, Acc>): UtmRow[] => {
-    const sorted: UtmRow[] = [...m.entries()]
-      .map(([label, r]) => ({
-        label, leads: r.leads, scheduled: r.sched, held: r.held,
-        objections: topObjections(r.obj),
-      }))
-      .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled));
-    const head = sorted.slice(0, TOP);
-    const rest = sorted.slice(TOP).reduce(
-      (s, r) => ({ leads: s.leads + r.leads, scheduled: s.scheduled + r.scheduled, held: s.held + r.held }),
-      { leads: 0, scheduled: 0, held: 0 },
-    );
-    if (rest.leads > 0 || rest.scheduled > 0) head.push({ label: "אחר", ...rest });
-    return head;
   };
   // Sehel's utm_medium is inconsistent — ~half the fb rows carry a truncated
   // 2-char code ("Fa"/"In"/"an"/"di"/"Ot") instead of a full placement
@@ -2774,13 +3194,25 @@ async function buildSehelBreakdown(
     if (map[v]) return map[v];
     return v.replace(/_/g, " ");
   };
+  const audienceOf = (u: SehelUtm) => deId(String(u.utm_term ?? ""));
   const placement = build(fbLeads, (u) => normPlacement(String(u.utm_medium ?? "")), isSehelFbSource);
-  const audience = build(fbLeads, (u) => deId(String(u.utm_term ?? "")), isSehelFbSource);
+  const audience = build(fbLeads, audienceOf, isSehelFbSource);
   const creativeAcc = build(fbLeads, (u) => {
     const ad = normAdName(u.utm_content);
     return ad && !/^\d{8,}$/.test(ad) ? ad : "";
   }, isSehelFbSource);
   const keyword = build(gLeads, (u) => deId(String(u.utm_term ?? "")), isSehelGoogleSource);
+  // Meta meetings no audience row can take (the client's UTM has no term).
+  const untaggedOf = (byClient: Map<string, Ev>) => {
+    const t = { scheduled: 0, held: 0 };
+    for (const [c, ev] of byClient) {
+      const u = utmByClient.get(c);
+      if (!u || !isSehelFbSource(u.utm_source) || audienceOf(u)) continue;
+      t.scheduled += ev.total;
+      t.held += ev.done;
+    }
+    return t;
+  };
 
   // Spend join for fb creatives (same facebook-ads-metrics Sheet as BMBY).
   const campaigns = new Set<string>();
@@ -2789,35 +3221,24 @@ async function buildSehelBreakdown(
     if (camp && !/^\d{8,}$/.test(camp)) campaigns.add(camp);
   };
   for (const l of fbLeads) addCamp(l);
-  for (const c of evByClient.keys()) {
+  for (const c of new Set([...leadEvByClient.keys(), ...evByClient.keys()])) {
     const u = utmByClient.get(c);
     if (u && isSehelFbSource(u.utm_source)) addCamp(u);
   }
   let spendByAd = new Map<string, { cost: number; impressions: number; websiteLeads: number }>();
   try {
-    spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, from, toExcl);
+    spendByAd = await fbAdSpendByCreative(driveFolderOwner(), campaigns, w.from, w.toExcl);
   } catch {
     /* leave spend at 0 */
   }
-  const byCreative = [...creativeAcc.entries()]
-    .map(([label, r]) => {
-      const spend = spendByAd.get(label)?.cost ?? 0;
-      return {
-        label, leads: r.leads, scheduled: r.sched, held: r.held, spend,
-        cpl: r.leads ? spend / r.leads : 0,
-        cps: r.sched ? spend / r.sched : 0,
-        cpm: r.held ? spend / r.held : 0,
-      };
-    })
-    .sort((a, b) => b.leads + b.scheduled - (a.leads + a.scheduled))
-    .slice(0, TOP);
 
   return {
     totalLeads: fbLeads.length,
-    byPlacement: toRows(placement),
-    byAudience: toRows(audience),
-    byCreative,
-    byKeyword: gLeads.length ? toRows(keyword) : undefined,
+    byPlacement: utmRowsBothBases(placement, TOP),
+    byAudience: utmRowsBothBases(audience, TOP),
+    byCreative: creativeRowsBothBases(creativeAcc, spendByAd, TOP, false),
+    byKeyword: gLeads.length ? utmRowsBothBases(keyword, TOP) : undefined,
+    untagged: { lead: untaggedOf(leadEvByClient), dated: untaggedOf(evByClient) },
   };
 }
 
@@ -3286,6 +3707,10 @@ async function computeSalesforceFunnel(
     platform: "salesforce",
     crmAccount,
     fbBreakdown,
+    // No meeting-events source: the maps are lead rows by current stage, and
+    // there is nothing to date them by (the gathering-workbook meeting tab
+    // carries no lead identity to join on) — "—" under the dated basis.
+    meetingBasis: { lead: "status-snapshot", dated: null },
     leads,
     contacted,
     attemptedMeetings,
@@ -3449,8 +3874,15 @@ export function canonicalMediaChannel(name: string): string | null {
  * the report can attribute real per-channel funnel stages instead of
  * splitting the totals by spend). Non-paid sources (phone/own-site/…)
  * canonicalize to null and contribute to no channel.
+ *
+ * scheduled / meetings come from the LEAD-ENTRY maps unless `maps` names
+ * another set — attachChannelCosts passes `sm.dated` for the meeting-date
+ * cost table. Leads are basis-free.
  */
-export function funnelByCanonicalChannel(sm: CrmFunnel["sourceMatrices"]): {
+export function funnelByCanonicalChannel(
+  sm: CrmFunnel["sourceMatrices"],
+  maps: CrmMeetingSourceMaps = sm,
+): {
   byChannel: Record<string, { leads: number; scheduled: number; meetings: number }>;
   sourceChannels: Record<string, string[]>;
 } {
@@ -3469,8 +3901,8 @@ export function funnelByCanonicalChannel(sm: CrmFunnel["sourceMatrices"]): {
     for (const c of chans) {
       if (!byChannel[c]) byChannel[c] = { leads: 0, scheduled: 0, meetings: 0 };
       byChannel[c].leads += sm.leadsBySource[src] || 0;
-      byChannel[c].scheduled += sm.scheduledMeetingsBySource[src] || 0;
-      byChannel[c].meetings += sm.meetingsBySource[src] || 0;
+      byChannel[c].scheduled += maps.scheduledMeetingsBySource[src] || 0;
+      byChannel[c].meetings += maps.meetingsBySource[src] || 0;
     }
   }
   return { byChannel, sourceChannels };
@@ -3485,14 +3917,32 @@ export function funnelByCanonicalChannel(sm: CrmFunnel["sourceMatrices"]): {
  * CPL = spend÷leads, CP-sched = spend÷scheduled, CP-meeting = spend÷
  * meetings. Also builds a per-raw-source map (atomic single-channel
  * sources only) for the inline chip cost. Mutates `funnel`.
+ *
+ * Twice when the funnel has dated maps: channelCosts / costBySource off the
+ * lead-entry maps, channelCostsDated / costBySourceDated off
+ * `sourceMatrices.dated`. Spend, leads and CPL are the same in both.
  */
 function attachChannelCosts(
   funnel: CrmFunnel,
   spendByChannel: Record<string, number>,
 ): void {
-  const { byChannel: agg, sourceChannels } = funnelByCanonicalChannel(
-    funnel.sourceMatrices,
-  );
+  const lead = channelCostsFor(funnel.sourceMatrices, funnel.sourceMatrices, spendByChannel);
+  funnel.channelCosts = lead.channelCosts;
+  funnel.costBySource = lead.costBySource;
+  const datedMaps = funnel.sourceMatrices.dated;
+  if (datedMaps) {
+    const dated = channelCostsFor(funnel.sourceMatrices, datedMaps, spendByChannel);
+    funnel.channelCostsDated = dated.channelCosts;
+    funnel.costBySourceDated = dated.costBySource;
+  }
+}
+
+function channelCostsFor(
+  sm: CrmFunnel["sourceMatrices"],
+  maps: CrmMeetingSourceMaps,
+  spendByChannel: Record<string, number>,
+): { channelCosts: CrmChannelCost[]; costBySource: Record<string, CrmSourceCost> } {
+  const { byChannel: agg, sourceChannels } = funnelByCanonicalChannel(sm, maps);
   const channelCosts: NonNullable<CrmFunnel["channelCosts"]> = [];
   for (const [channel, spend] of Object.entries(spendByChannel)) {
     if (!(spend > 0)) continue;
@@ -3510,7 +3960,6 @@ function attachChannelCosts(
     });
   }
   channelCosts.sort((x, y) => y.spend - x.spend);
-  funnel.channelCosts = channelCosts;
   const byChannel = new Map(channelCosts.map((c) => [c.channel, c]));
   const costBySource: NonNullable<CrmFunnel["costBySource"]> = {};
   for (const [src, chans] of Object.entries(sourceChannels)) {
@@ -3519,7 +3968,7 @@ function attachChannelCosts(
     if (c && c.spend > 0)
       costBySource[src] = { channel: c.channel, cpl: c.cpl, cpm: c.cpm };
   }
-  funnel.costBySource = costBySource;
+  return { channelCosts, costBySource };
 }
 
 /* ── Public entry ──────────────────────────────────────────────────── */
@@ -3650,9 +4099,13 @@ export async function getCrmFunnelForProject(args: {
     // the Sheet, which stays the full-CRM safety net). Per-project,
     // per-window, automatic. Never throws to the caller.
     if (useSupabaseCrmEnrichment() && supabaseCrmProjectAllowed(crmAccount)) {
+      // The warehouse funnel whether or not it wins — a Sheet win still takes
+      // its meeting maps (D3, below).
+      let whBuilt: BmbyWarehouseFunnel | null = null;
       try {
         const sheetFunnel = funnel;
-        const wh = await computeBmbyFunnelFromWarehouse(crmAccount, window);
+        whBuilt = await computeBmbyFunnelFromWarehouse(crmAccount, window);
+        const wh = whBuilt?.funnel;
         if (wh && wh.leads > 0 && (!sheetFunnel || wh.leads >= sheetFunnel.leads)) {
           if (sheetFunnel) {
             // The warehouse funnel is window-scoped, but the stale-leads
@@ -3679,7 +4132,40 @@ export async function getCrmFunnelForProject(args: {
         }
       } catch {
         /* keep the Sheet funnel */
+        whBuilt = null;
       }
+      // D3 (owner decision 2026-09-16): a card the Sheet won on leads still
+      // counts its MEETINGS from the warehouse, on both bases — the Sheet
+      // knows a lead's current status, not its meeting events, and a status
+      // snapshot in the tiles is a third definition beside the ערוצים table
+      // and the קמפיינים joins. Leads, contacts, statuses and objections stay
+      // the Sheet's; the maps are the warehouse funnel's just built. Only
+      // when the warehouse covers the window (warehouseCoversWindow) — a
+      // project it has no project_id, journey or current leads for keeps
+      // the snapshot, labelled as the fallback below. No window (noFilter —
+      // alerts' objection read, the assistant's all-time tool) has no
+      // period to count meetings for: the snapshot, unlabelled.
+      if (
+        funnel &&
+        funnel.dataSource !== "warehouse" &&
+        whBuilt &&
+        warehouseCoversWindow(whBuilt.meetings, funnel)
+      ) {
+        applyBmbyWarehouseMeetings(funnel, whBuilt.meetings);
+        // The פילוח פייסבוק drill needs warehouse UTM tags, which only the
+        // warehouse funnel read; its leads column is therefore the
+        // warehouse's fb leads, not the Sheet's.
+        if (whBuilt.funnel.fbBreakdown) funnel.fbBreakdown = whBuilt.funnel.fbBreakdown;
+      }
+    }
+    if (funnel && !funnel.meetingBasis) {
+      // The Sheet's status snapshot is what the card shows. With a window,
+      // that is D3's fallback (warehouse off, unreachable, no project_id, or
+      // not covering the window); without one it is simply an unwindowed
+      // read.
+      funnel.meetingBasis = window
+        ? { lead: "status-snapshot", dated: null, warehouseFallback: true }
+        : { lead: "status-snapshot", dated: null };
     }
   } else if (platform === "salesforce") {
     funnel = await computeSalesforceFunnel(driveFolderOwner(), crmAccount, window);
@@ -3693,7 +4179,8 @@ export async function getCrmFunnelForProject(args: {
     if (useSupabaseSehelWarehouse() && supabaseCrmProjectAllowed(crmAccount)) {
       try {
         const sheetFunnel = funnel;
-        const wh = await computeSehelFunnelFromWarehouse(crmAccount, window);
+        const whBuilt = await computeSehelFunnelFromWarehouse(crmAccount, window);
+        const wh = whBuilt?.funnel;
         // sehel_meetings sync gap (2026-07): some projects have warehouse LEADS
         // but NO warehouse meetings yet (כוכב הצפון אשדוד / תדהר / רייסדור /
         // קיימא — see SEHEL_MEETINGS_SYNC_GAP.md). Superseding those would
@@ -3701,7 +4188,12 @@ export async function getCrmFunnelForProject(args: {
         // when it actually carries meetings — OR the Sheet also has none (no
         // regression either way). Complete projects (CAZAR / אפרידר / HaGada /
         // ברוריה) still win; the rest stay on the Sheet until Nadav backfills.
-        const whMeetings = (wh?.scheduledMeetings ?? 0) + (wh?.meetings ?? 0);
+        // "Carries meetings" is read off the DATED window count, which is what
+        // the tiles showed when this test was written; the tiles moved to the
+        // registration cohort (2026-09-16) but the routing did not.
+        const whMeetings = whBuilt
+          ? whBuilt.datedWindow.scheduled + whBuilt.datedWindow.held
+          : 0;
         const sheetMeetings =
           (sheetFunnel?.scheduledMeetings ?? 0) + (sheetFunnel?.meetings ?? 0);
         if (
@@ -3712,46 +4204,29 @@ export async function getCrmFunnelForProject(args: {
         ) {
           if (sheetFunnel) wh.staleLeads = sheetFunnel.staleLeads;
           funnel = wh;
+        } else if (funnel && whBuilt?.dated) {
+          // The Sheet kept the card. Its lead-entry tiles stay the Sheet's
+          // stage snapshot (D3 is BMBY's), but the warehouse's dated
+          // meetings exist for the window, so the dated basis has a source.
+          const sm = funnel.sourceMatrices;
+          sm.dated = whBuilt.dated.maps;
+          funnel.dailyDated = whBuilt.dated.daily;
+          extendAllSources(sm, [sm.dated.scheduledMeetingsBySource]);
+          funnel.meetingBasis = { lead: "status-snapshot", dated: "sehel-events" };
         }
       } catch {
         /* keep the Sheet funnel */
       }
     }
+    if (funnel && !funnel.meetingBasis) {
+      funnel.meetingBasis = { lead: "status-snapshot", dated: null };
+    }
   }
   // Attribute media cost onto the lead sources (anda model) when spend
-  // was supplied for this window.
+  // was supplied for this window. After every meeting map is final (the
+  // D3 graft above), so the cost table and the tiles count the same events.
   if (funnel && args.spendByChannel && Object.keys(args.spendByChannel).length) {
     attachChannelCosts(funnel, args.spendByChannel);
-  }
-  // Additive Supabase enrichment (bmby only, flag-gated). Runs AFTER the
-  // cost-join, inside try/catch, so a warehouse hiccup never touches the
-  // base Sheet funnel. Bounds [from, toExcl) derived from the active
-  // window; empty = no date filter. See lib/crmEnrichment.ts / plan §12.5.
-  if (
-    funnel &&
-    platform === "bmby" &&
-    funnel.dataSource !== "warehouse" &&
-    useSupabaseCrmEnrichment() &&
-    supabaseCrmProjectAllowed(crmAccount)
-  ) {
-    try {
-      let from = "";
-      let toExcl = "";
-      if (window?.kind === "month") {
-        from = `${window.month}-01`;
-        const [y, mo] = window.month.split("-").map(Number);
-        toExcl =
-          mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
-      } else if (window?.kind === "range") {
-        from = window.from;
-        const d = new Date(`${window.to}T00:00:00Z`);
-        d.setUTCDate(d.getUTCDate() + 1);
-        toExcl = d.toISOString().slice(0, 10);
-      }
-      funnel.supabaseEnrichment = await computeCrmEnrichment(crmAccount, from, toExcl);
-    } catch {
-      /* leave the base Sheet funnel intact */
-    }
   }
   // Freshness note — does the data reach the (clamped) end of the selected
   // window? Computed at the single exit point so it covers every path

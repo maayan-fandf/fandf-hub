@@ -13,6 +13,12 @@ import {
   utmSets,
 } from "@/lib/signedClients";
 import { getGoogleCampaignNames } from "@/lib/googleCampaignNames";
+import {
+  SEHEL_HELD_STATUS,
+  bmbyEventHeld,
+  datedDay,
+  nextDay,
+} from "@/lib/meetingBasis";
 import type { DossierClient, DossierTouch } from "@/components/report/ClientDossier";
 
 /**
@@ -31,6 +37,41 @@ import type { DossierClient, DossierTouch } from "@/components/report/ClientDoss
  * was booked. Those are different populations and the gap is not small: on
  * דרימס ארנונה in August, 77 meeting rows were booked and 33 were held. The
  * held figure is what the funnel counts and what a status call is about.
+ * `meeting_date` stands in only where `appointment_date` is null — the
+ * dated basis's own rule (lib/meetingBasis datedDay, datedChannelMeetings),
+ * so this list and "לפי מועד הפגישה" ביצועים are one population. Measured
+ * 2026-09-16: not one journey row in the warehouse has a null
+ * appointment_date, so today the fallback reads nothing; it is there so the
+ * two cannot drift apart if the view ever starts emitting one.
+ *
+ * ── Which meetings count ──
+ * This section never follows the page's meeting-count switch: it is a list
+ * of meetings that TOOK PLACE, dated by nature. What it does share with the
+ * switch's dated basis is the definition of a ביצוע, and the two used to
+ * differ. The list took the view's `held` boolean OR `appointment_outcome`
+ * = 'held'; the boolean adds meetings BMBY never marked, inferred from the
+ * client's status (crmEnrichment's "משוער"). So the tile could exceed the
+ * dated ביצועים beside it. Now:
+ *
+ *   authoritativeHeld  outcome 'held' only — the tile, and the number that
+ *                      equals dated ביצועים. Replayed 2026-09-16 against
+ *                      datedChannelMeetings' own read: The 57 Sept 15 = 15
+ *                      (of 49 dated), Aug 14 = 14, metro Sept 2 = 2,
+ *                      נתיבות June 70 = 70; Sehel Ginot Sept 11 = 11,
+ *                      CAZAR Aug 24 = 24.
+ *   total              every row in the list, inferred ones included. They
+ *                      stay in the table, each marked `estimated`, because
+ *                      the salesperson's note behind one is still worth
+ *                      reading.
+ *
+ * How often they differ, measured across every BMBY account on 2026-09-16:
+ * September 142 confirmed + 1 inferred (metro); August 537 + 0; June 527 +
+ * 33, 32 of them נתיבות. Every inferred row had a null outcome, and in those
+ * months no row with outcome 'held' lacked the boolean. Where outcomes went
+ * unmarked for months the gap is the whole story: נתיבות over 2026-01..09
+ * lists 728 and confirms 307, and 728 is what the tile used to say beside a
+ * dated ביצועים of 307. Sehel has no inferred tier — its held test is the
+ * status label itself — so there the two are equal.
  *
  * ── Two platforms, one shape ──
  * getHeldMeetings reads BMBY, getHeldMeetingsSehel reads Sehel, and both
@@ -147,14 +188,24 @@ export type HeldMeeting = {
    *  חתימת הסכם / הרשמה / מו״מ). BMBY has no equivalent; it numbers
    *  meetings instead, which is what `seq` carries. */
   kind?: string;
+  /** BMBY only, and only when true: the meeting is here on the view's
+   *  status-inferred `held` boolean, with no confirmed outcome. Listed and
+   *  marked "משוער", never counted in `authoritativeHeld`. Absent on every
+   *  confirmed row and on all of Sehel. */
+  estimated?: boolean;
 };
 
 export type HeldMeetingsResult = {
   meetings: HeldMeeting[];
   /** One entry per distinct client across those meetings. */
   clients: DossierClient[];
-  /** Held meetings in the window (before the display cap). */
+  /** Rows in the list in the window (before the display cap) — confirmed
+   *  and inferred alike. */
   total: number;
+  /** Confirmed held meetings only: BMBY `appointment_outcome` = 'held',
+   *  Sehel status "הלקוח הגיע לפגישה". The tile number, and the same
+   *  count as the "לפי מועד הפגישה" ביצועים for the window. ≤ total. */
+  authoritativeHeld: number;
   /** Distinct people met. */
   clientsMet: number;
   /** How many of the meetings carry a written note. */
@@ -165,6 +216,7 @@ const EMPTY: HeldMeetingsResult = {
   meetings: [],
   clients: [],
   total: 0,
+  authoritativeHeld: 0,
   clientsMet: 0,
   withNotes: 0,
 };
@@ -388,24 +440,56 @@ export const getHeldMeetings = cache(
     if (!supabaseConfigured() || !accounts.length) return null;
     try {
       const or = orExactFilter("project_he", accounts);
-      const rows = await supabaseRowsAll<MeetingRow>(
-        `v_bmby_journey_meetings?or=(${or})` +
-          `&appointment_date=gte.${args.from}&appointment_date=lte.${args.to}` +
-          `&select=meeting_id,client_id,meeting_date,appointment_date,` +
-          `appointment_outcome,held,taskedit_subject,meeting_user,meeting_seq,` +
-          `first_lid_source,first_lid_channel,last_lid_source,lead_age_days` +
-          `&order=appointment_date.desc`,
-        { maxRows: 5000 },
+      const select =
+        `&select=meeting_id,client_id,meeting_date,appointment_date,` +
+        `appointment_outcome,held,taskedit_subject,meeting_user,meeting_seq,` +
+        `first_lid_source,first_lid_channel,last_lid_source,lead_age_days`;
+      // The dated window is "appointment_date in range, or no
+      // appointment_date and meeting_date in range" (see Which date). It is
+      // TWO reads, not datedChannelMeetings' single or=(and(…),and(…)),
+      // because the account list already occupies this query's `or` and
+      // nesting both into one tree is the shape that silently matches
+      // nothing (see the held note below). The second read has returned no
+      // rows on any account to date.
+      //
+      // Ordered on a unique key: pages are 1000 rows, a multi-month window on
+      // a busy account crosses a page boundary (נתיבות 2026-01..09: 1,331
+      // rows), and Postgres promises no order among rows tied on the date
+      // alone, so a boundary may repeat one and drop another. It did not in
+      // three runs of that window; the tie-break makes it impossible rather
+      // than lucky, which matters now that the rows are counted, not only
+      // listed.
+      const [onAppointment, bookedOnly] = await Promise.all([
+        supabaseRowsAll<MeetingRow>(
+          `v_bmby_journey_meetings?or=(${or})` +
+            `&appointment_date=gte.${args.from}&appointment_date=lte.${args.to}` +
+            select +
+            `&order=appointment_date.desc,meeting_id.desc`,
+          { maxRows: 5000 },
+        ),
+        supabaseRowsAll<MeetingRow>(
+          `v_bmby_journey_meetings?or=(${or})` +
+            `&appointment_date=is.null` +
+            `&meeting_date=gte.${args.from}&meeting_date=lte.${args.to}` +
+            select +
+            `&order=meeting_date.desc,meeting_id.desc`,
+          { maxRows: 5000 },
+        ),
+      ]);
+      // Newest first across both reads. Array sort is stable, so each read's
+      // own order survives within a day.
+      const rows = [...onAppointment, ...bookedOnly].sort((a, b) =>
+        datedDay(b).localeCompare(datedDay(a)),
       );
       // Held filtered in memory rather than server-side: it lives in two
       // columns (`held` and `appointment_outcome`) and expressing "account
       // matches AND (either)" as nested PostgREST or=/and= is the shape that
       // silently matches nothing. The window already bounds this to tens of
-      // rows per project.
-      const held = rows.filter(
-        (r) => r.held === true || clean(r.appointment_outcome) === "held",
-      );
+      // rows per project. The outcome test is bmbyEventHeld — the dated
+      // basis's own — so a confirmed row here is a ביצוע there.
+      const held = rows.filter((r) => r.held === true || bmbyEventHeld(r));
       if (!held.length) return EMPTY;
+      const authoritativeHeld = held.filter((r) => bmbyEventHeld(r)).length;
 
       const ids = [...new Set(held.map((r) => clean(r.client_id)).filter(Boolean))];
       const capped = held.slice(0, MAX_MEETINGS);
@@ -553,7 +637,7 @@ export const getHeldMeetings = cache(
 
       const meetings: HeldMeeting[] = capped.map((r) => {
         const clientId = clean(r.client_id);
-        const date = clean(r.appointment_date).slice(0, 10);
+        const date = datedDay(r);
         const first = clean(r.first_lid_source);
         const last = clean(r.last_lid_source);
         return {
@@ -574,6 +658,7 @@ export const getHeldMeetings = cache(
           leadAgeDays:
             r.lead_age_days == null ? null : Number(r.lead_age_days) || 0,
           note: noteFor(clientId, date),
+          ...(bmbyEventHeld(r) ? {} : { estimated: true }),
         };
       });
 
@@ -581,6 +666,7 @@ export const getHeldMeetings = cache(
         meetings,
         clients,
         total: held.length,
+        authoritativeHeld,
         clientsMet: ids.length,
         withNotes: meetings.filter((m) => m.note).length,
       };
@@ -628,8 +714,9 @@ type SehelTouchRow = {
 /** Sehel's own word for "they turned up". The other three values are
  *  `יש אישור הגעה` (confirmed, not yet held), `הלקוח ביקש לבטל` and
  *  `לא ידוע` — none of which is evidence the meeting happened. 1,037 of
- *  1,247 rows carry this one. */
-const SEHEL_HELD = "הלקוח הגיע לפגישה";
+ *  1,247 rows carry this one. Read from lib/meetingBasis, which every
+ *  Sehel ביצוע count on the page shares. */
+const SEHEL_HELD = SEHEL_HELD_STATUS;
 
 /**
  * Who to credit a Sehel meeting to.
@@ -763,12 +850,16 @@ export const getHeldMeetingsSehel = cache(
       // table on a prefix would buy nothing and open the same door that
       // put one developer's customers on another's page.
       const or = orExactFilter("project_name", accounts);
+      // Half-open on the day after `to`, the bound datedChannelMeetings'
+      // Sehel read uses, so this list and the dated ביצועים window the same
+      // meetings. `lt ${to}T23:59:59` dropped the closing day's last second.
+      // Unique order for stable paging, as in getHeldMeetings.
       const rows = await supabaseRowsAll<SehelMeetingRow>(
         `sehel_meetings?or=(${or})` +
           `&starts_at=gte.${args.from}T00:00:00` +
-          `&starts_at=lt.${args.to}T23:59:59` +
+          `&starts_at=lt.${nextDay(args.to)}T00:00:00` +
           `&select=event_uid,client_uuid,client_name,meeting_type,status_label,starts_at` +
-          `&order=starts_at.desc`,
+          `&order=starts_at.desc,event_uid.desc`,
         { maxRows: 5000 },
       );
       const held = rows.filter((r) => clean(r.status_label) === SEHEL_HELD);
@@ -960,6 +1051,8 @@ export const getHeldMeetingsSehel = cache(
         meetings,
         clients,
         total: held.length,
+        // Every row passed the status test itself; nothing here is inferred.
+        authoritativeHeld: held.length,
         clientsMet: ids.length,
         withNotes: meetings.filter((m) => m.note).length,
       };

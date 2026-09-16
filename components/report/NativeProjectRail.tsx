@@ -20,6 +20,8 @@ import ReportTrendsTab from "@/components/report/ReportTrendsTab";
 import ContractsSection from "@/components/report/ContractsSection";
 import MeetingsSection from "@/components/report/MeetingsSection";
 import DigitalAssetsSection from "@/components/report/DigitalAssetsSection";
+import { MeetingBasisAvailability } from "@/components/report/MeetingBasisContext";
+import { creativesBasisAvailable } from "@/lib/reportShared";
 
 /**
  * Server assembler for the native project page's vertical-nav rail. Fetches
@@ -521,22 +523,44 @@ export default async function NativeProjectRail({
     });
   }
 
+  // Whether the page's meeting switch may offer לפי מועד הפגישה at all. The
+  // switch renders in the header long before this payload exists, so it
+  // starts optimistic and this tells it the truth once the rail streams in.
+  // A project has a dated basis when EITHER half of the report found one:
+  // the ערוצים dated join (datedSource — null only when the CRM account is
+  // unmapped or unreachable; a mapped period with no meetings is a non-null
+  // zero) or the קמפיינים joins (Salesforce has lead-entry joins only).
+  //
+  // No payload at all (no campaign ID, or the report read threw) reports
+  // TRUE, i.e. "unknown", not false. The only meeting numbers such a page
+  // still shows are the CRM card's, whose dated maps come from the funnel
+  // and carry their own "—" per tile — disabling the page switch because a
+  // DIFFERENT read came back empty would hide a basis that section has.
+  // Reporting (rather than rendering nothing) also clears a stale false left
+  // by an earlier period on this same page instance.
+  const datedAvailable = data
+    ? !!data.datedSource || creativesBasisAvailable(data.creatives, "dated")
+    : true;
+
   return (
-    <ProjectRailShell
-      groups={groups}
-      sections={sections}
-      // A media-workbook project lands on its own workbook, always. The
-      // `!data` guard this replaces was written when such a project had no
-      // campaign ID and therefore no platform data — the media card was the
-      // only thing to land on. Give one a campaign ID (דיגיתל שלי, 2026-08-12)
-      // and `data` turns truthy, which silently demoted the media card to a
-      // nav click and dropped the client on a generic platform overview.
-      // For these projects the media team's hand-kept workbook IS the report;
-      // the platform sections are supplementary, so presence of `data` must
-      // not change where you land.
-      defaultSection={mediaNode ? "media" : "overview"}
-      initialSection={initialSection}
-      triage={triage}
-    />
+    <>
+      <MeetingBasisAvailability dated={datedAvailable} />
+      <ProjectRailShell
+        groups={groups}
+        sections={sections}
+        // A media-workbook project lands on its own workbook, always. The
+        // `!data` guard this replaces was written when such a project had no
+        // campaign ID and therefore no platform data — the media card was the
+        // only thing to land on. Give one a campaign ID (דיגיתל שלי, 2026-08-12)
+        // and `data` turns truthy, which silently demoted the media card to a
+        // nav click and dropped the client on a generic platform overview.
+        // For these projects the media team's hand-kept workbook IS the report;
+        // the platform sections are supplementary, so presence of `data` must
+        // not change where you land.
+        defaultSection={mediaNode ? "media" : "overview"}
+        initialSection={initialSection}
+        triage={triage}
+      />
+    </>
   );
 }

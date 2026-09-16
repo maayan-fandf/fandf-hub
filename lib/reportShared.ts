@@ -10,7 +10,20 @@
  * (:7872), renderFunnelDiagnosis (:7900), the top-funnel derived ratios
  * (:7993). Change them only together with the Apps Script until the
  * legacy report is retired.
+ *
+ * MEETING BASIS. Every תיאומים / ביצועים field in these payload types
+ * follows one convention (the full statement lives in lib/meetingBasis):
+ * no prefix = LEAD-ENTRY (לפי כניסת ליד), `dated*` = MEETING-DATE (לפי
+ * מועד הפגישה), `undefined` = that basis has no source → render "—", never
+ * the other basis. The page-level switch picks one; the swap helpers at
+ * the bottom of this file (applyBasisToChannels / applyBasisToCreatives /
+ * totalsForBasis) are the only place a surface should turn the pair into
+ * the numbers it shows.
  */
+
+import type { MeetingBasis } from "@/lib/meetingBasis";
+
+export type { MeetingBasis } from "@/lib/meetingBasis";
 
 export type ReportPlat = "google" | "facebook" | "taboola" | "outbrain";
 
@@ -99,10 +112,20 @@ export type ReportSubCampaign = {
   meetings: number;
 };
 
+/** A תיאומים / ביצועים pair on ONE basis, in the ערוצים vocabulary
+ *  (`meetings` = ביצועים). */
+export type ReportMeetingTotals = { scheduled: number; meetings: number };
+
+/** A תיאומים / ביצועים pair on ONE basis, in the קמפיינים vocabulary
+ *  (`held` = ביצועים). */
+export type ReportMeetingPair = { scheduled: number; held: number };
+
 /**
  * Where a project's dated meeting counts came from, and how far they can
- * be trusted. Rendered as the caption under the ערוצים table's
- * dated/snapshot toggle so the reader can see what they switched to.
+ * be trusted. Rendered as the caption under the ערוצים table so the reader
+ * can see what the page-level "לפי מועד הפגישה" switch is showing. Its
+ * presence is also the ערוצים/overview availability test for the dated
+ * basis: null ⇒ no dated source ⇒ "—".
  */
 export type DatedSourceInfo = {
   platform: "bmby" | "sehel" | "salesforce";
@@ -144,6 +167,17 @@ export type ReportChannel = {
    *  from the payload). A numeric 0 is the opposite — a tracked channel
    *  that fired no events — and must survive to the tooltip. */
   pixelLeads?: number;
+  /**
+   * תיאומים / ביצועים on the LEAD-ENTRY basis. Where they come from:
+   *   live mode   — the ALL CLIENTS current row (pushed daily; matched the
+   *                 BMBY owner-lead rule exactly on The 57).
+   *   month mode  — owner decision D1: the LIVE warehouse lead-entry count
+   *                 (BMBY owner-lead / Sehel registration cohort) attributed
+   *                 to the rows like range mode, NOT the frozen חודשי
+   *                 literals. Salesforce keeps its frozen חודשי numbers.
+   *   range mode  — the CRM funnel's lead-entry source maps via
+   *                 buildAttributor.
+   */
   scheduled: number;
   meetings: number;
   /**
@@ -152,9 +186,12 @@ export type ReportChannel = {
    * and `meetings` above are). Sourced per CRM platform — see
    * lib/datedChannelMeetings.ts for why the two differ and by how much.
    *
-   * undefined ⇒ no dated source for this project's CRM, and the ערוצים
-   * table hides its dated/snapshot toggle rather than offering a switch
-   * that would silently show zeros.
+   * undefined ⇒ no dated source for this project's CRM (and then
+   * `ProjectReportData.datedSource` is null): the cells render "—" under the
+   * dated basis. When a dated source exists every row carries both fields,
+   * 0 included, so a row with no meetings reads 0 rather than "—".
+   * Meetings no row could claim are NOT in any row — they are
+   * datedSource.unmatched* / ambiguous* (the "לא שויכו לשורה" row).
    */
   datedScheduled?: number;
   datedMeetings?: number;
@@ -217,6 +254,79 @@ export type RangeBasis = {
   /** Total leads the CRM counted in the window (the denominator for the
    *  two above). */
   totalCrmLeads: number;
+  /**
+   * The rule behind the CRM maps the תיאומים / ביצועים columns were taken
+   * from (CrmMeetingBasisInfo.lead), when `outcomes` is "crm"; null on the
+   * "prorated" path. Range mode takes whatever maps the funnel has, and on
+   * a Sheet-routed Sehel project or a BMBY D3 fallback those are a
+   * "status-snapshot" — LEADS by current stage, not meeting events — which
+   * month mode refuses outright (MonthLeadSource "no-warehouse"). A range
+   * keeps the numbers (design §2.3) but must say what unit they are in, so
+   * the tab reads this rather than captioning them as lead-entry events.
+   * Optional only so a payload built before it existed still type-checks.
+   */
+  leadRule?: "owner-lead" | "registration-cohort" | "status-snapshot" | null;
+  /** With leadRule "status-snapshot": the snapshot is BMBY's D3 fallback
+   *  (the warehouse does not cover the range), not a CRM that only records
+   *  statuses — picks FIXED_BADGES.warehouseFallback's wording. */
+  warehouseFallback?: boolean;
+};
+
+/**
+ * Month mode only: where the ערוצים rows' LEAD-ENTRY תיאומים / ביצועים —
+ * and so `totals.scheduled` / `totals.meetings` — came from (owner decision
+ * D1, lib/meetingBasis). Set by lib/reportData.
+ *
+ * ALL CLIENTS' חודשי rows are literals pasted at month end, while every
+ * other lead-entry surface (קמפיינים joins, CRM tiles) is recomputed live —
+ * and lead-entry keeps growing after the month closes. So a past month
+ * reads the live warehouse count instead, attributed to the rows the way
+ * range mode does. Leads, spend and every other column stay ALL CLIENTS.
+ */
+export type MonthLeadSource = {
+  /** "warehouse" — the live CRM lead-entry count (BMBY owner-lead / Sehel
+   *  registration cohort). "frozen" — the ALL CLIENTS חודשי numbers. */
+  source: "warehouse" | "frozen";
+  /**
+   * Why frozen (absent when source is "warehouse"):
+   *   "salesforce"   no warehouse — the frozen numbers ARE the intended
+   *                  source (D1), not a caveat.
+   *   "no-crm"       no CRM mapping, or the funnel could not be read.
+   *   "no-warehouse" the funnel's lead maps are a status snapshot of leads,
+   *                  not events. On Sehel that is the Sheet route — the
+   *                  CRM source itself records statuses. On BMBY it is the
+   *                  D3 fallback: BMBY records meeting events, but the
+   *                  warehouse does not cover this month (flag off or
+   *                  unreachable, no project_id / journey, or crmData's
+   *                  warehouseCoversWindow failed), so the caption names
+   *                  coverage, not the CRM, as the reason.
+   *   "low-coverage" the CRM's source names cover under half of the month's
+   *                  CRM leads (range mode's rule), so a live split would
+   *                  read as zeros next to real spend.
+   * Everything but "salesforce" is a fallback the table should label.
+   */
+  frozenReason?: "salesforce" | "no-crm" | "no-warehouse" | "low-coverage";
+  platform: "bmby" | "sehel" | "salesforce" | null;
+  /** The funnel's lead-entry rule when one was read (CrmMeetingBasisInfo.lead). */
+  rule: "owner-lead" | "registration-cohort" | "status-snapshot" | null;
+  /** The coverage test's numbers (0 when no funnel was read). */
+  totalCrmLeads: number;
+  attributedLeads: number;
+  /** Live lead-entry meetings no row could claim / several rows share.
+   *  NOT in any row and NOT in `totals` — lead-entry totals are Σ rows by
+   *  design, in every mode — and named in the ערוצים caption instead, which
+   *  is what reconciles the table with the CRM card. Zero when frozen. */
+  unattributed: ReportMeetingTotals;
+  ambiguous: ReportMeetingTotals;
+  /** Live lead-entry meetings the CRM counted but filed under no source at
+   *  all (the funnel's scalar tiles minus Σ its maps): a Sehel registration
+   *  with a blank source, a BMBY owner lead with neither media_source_clean
+   *  nor channel_key. Same treatment as the two above. Optional only so a
+   *  payload built before it existed still type-checks; zero when frozen. */
+  unsourced?: ReportMeetingTotals;
+  /** Σ of the חודשי numbers, whichever source won — what the table showed
+   *  before D1, for an internal "was N" note. */
+  frozen: ReportMeetingTotals;
 };
 
 export type ProjectReportData = {
@@ -238,14 +348,21 @@ export type ProjectReportData = {
    *  these are folded across the months the range spans — see
    *  reportData's buildRangeReportChannels and `rangeBasis` below. */
   channels: ReportChannel[];
-  /** Provenance for the channels' `datedScheduled`/`datedMeetings`, and
-   *  the switch that decides whether the ערוצים table offers its
-   *  dated/snapshot toggle at all. Null ⇒ no dated source. */
+  /** Provenance for the channels' `datedScheduled`/`datedMeetings`. Null ⇒
+   *  this table has no dated source: under the page switch's לפי מועד
+   *  הפגישה its meeting cells render "—". Non-null with zeros is a mapped,
+   *  synced period with no meetings. Also one of the two inputs to the
+   *  switch's availability (NativeProjectRail → MeetingBasisAvailability). */
   datedSource: DatedSourceInfo | null;
   /** How the free-range channel rows were derived. Null outside range
    *  mode, where every number comes from one ALL CLIENTS row and there is
    *  nothing to disclose. */
   rangeBasis: RangeBasis | null;
+  /** Month mode's lead-entry meeting source (D1). null in live and range
+   *  mode, and in a month with no ALL CLIENTS rows (nothing to replace).
+   *  Optional only so payloads built before lib/reportData set it still
+   *  type-check. */
+  monthLeadSource?: MonthLeadSource | null;
   /** קריאייטיבים tab data (null when the creative sheet has nothing
    *  for the project or the fetch failed — the tab shows an empty note). */
   creatives: ReportCreatives | null;
@@ -279,7 +396,8 @@ export type ProjectReportData = {
     remainingDays: number;
     totalDays: number;
   } | null;
-  /** ALL CLIENTS per-channel rows for the window mode ([] in range mode). */
+  /** ALL CLIENTS per-channel rows for the window mode ([] in range mode).
+   *  `scheduled` / `meetings` here are LEAD-ENTRY. */
   totals: {
     budget: number;
     spend: number;
@@ -289,6 +407,19 @@ export type ProjectReportData = {
     meetings: number;
     sales: number;
   } | null;
+  /**
+   * The overview's תיאומים / ביצועים on the MEETING-DATE basis:
+   *   Σ channels[].datedScheduled + datedSource.unmatchedScheduled
+   *     + datedSource.ambiguousScheduled
+   * (and the same for meetings), so it equals the ערוצים סה״כ row including
+   * its "לא שויכו לשורה" line, and the dated funnel cards divide spend by it.
+   *
+   * null ⇒ no dated source (datedSource is null) → the cards show "—".
+   * Optional only so payloads built before the report reader sets it still
+   * type-check; read it through totalsForBasis(), which treats undefined as
+   * null.
+   */
+  datedTotals?: ReportMeetingTotals | null;
 };
 
 export function emptyPlatTotals(): PlatTotals {
@@ -1025,6 +1156,22 @@ export function computePrevFunnel(
 
 export type ReportAnomaly = { type: "good" | "bad"; text: string };
 
+/**
+ * Whether an anomaly chip is built from MEETING counts — today only "🏆 זינוק
+ * בביצועי פגישה" (detectAnomalies below: this period's lead-entry meetings
+ * against last month's ALL CLIENTS row). Such a chip is lead-entry only and
+ * has no dated twin, so the page (ReportHeader) and the AI summary input
+ * (reportAiSummary) both drop it under the "לפי מועד הפגישה" switch — through
+ * this one predicate, so the two cannot drift apart. ReportAnomaly carries no
+ * metric key, hence the wording test; the stems also cover any future
+ * תיאומים rule, which would have the same problem, and none of the other
+ * rules' texts (CTR, CPC, המרות Google, לידים, חשיפות, הוצאה, עלות לליד)
+ * contains either.
+ */
+export function isMeetingAnomaly(a: ReportAnomaly): boolean {
+  return /ביצועי פגישה|תיאומ/.test(a.text);
+}
+
 /** Legacy detectAnomalies (Index.html:4465) — period-over-period media
  *  + CRM anomaly chips (pickChannelAlerts covers the per-channel ones). */
 export function detectAnomalies(
@@ -1094,12 +1241,35 @@ export type ReportFbAd = {
   leads: number;
   cpl: number;
   ctr: number;
-  /** Warehouse CRM joins (0/absent hides the CRM row). */
+  /** Warehouse CRM joins (0/absent hides the CRM row). `crmLeads` has no
+   *  basis — leads created in the window, grouped by their own UTM. */
   crmLeads: number;
+  /**
+   * LEAD-ENTRY תיאומים / ביצועים of this creative, and spend ÷ each (0 when
+   * the count is 0). Their meaning FLIPPED with the page-level switch: they
+   * used to be dated. Now:
+   *   BMBY       — owner-lead rule: events whose owner lead (lib/meetingBasis
+   *                assignOwnerLeads) was created in the window and carries
+   *                this campaign|ad in its own UTM.
+   *   Sehel      — registration cohort, credited by the client's UTM;
+   *                held = status "הלקוח הגיע לפגישה" (D2).
+   *   Salesforce — lead rows created in the window, by current stage.
+   */
   scheduled: number;
   held: number;
   costPerSched: number;
   costPerHeld: number;
+  /**
+   * The same four on the MEETING-DATE basis: events dated in the window,
+   * credited to the client's FIRST lead (by lead_id) when it is this
+   * creative. undefined ⇒ no dated join source (Salesforce;
+   * `ReportCreatives.meetingBases.dated` is false) → "—". When the source
+   * exists, a creative with no dated events carries 0, not undefined.
+   */
+  datedScheduled?: number;
+  datedHeld?: number;
+  datedCostPerSched?: number;
+  datedCostPerHeld?: number;
   /** True when these CRM figures cover the whole creative rather than this
    *  one card. Format variants ("… - Video" / "- Static" / "- Carousel") are
    *  separate ads with separate spend, but the CRM cannot tell them apart —
@@ -1172,13 +1342,29 @@ export type ReportFbAd = {
 };
 
 /** One month of an ad's life. cost/leads come from the ad-metrics tab
- *  (unclipped), scheduled/held from the `h:` whole-month warehouse buckets. */
+ *  (unclipped), scheduled/held from the `h:` whole-month warehouse buckets.
+ *  scheduled/held are LEAD-ENTRY (owner leads created that month — additive
+ *  across months); dated* are events dated in that month, undefined where
+ *  there is no dated source. */
 export type ReportAdHistoryMonth = {
   month: string;
   cost: number;
   leads: number;
   scheduled: number;
   held: number;
+  datedScheduled?: number;
+  datedHeld?: number;
+};
+
+/** A span of an ad's history (before the report / whole life). Same basis
+ *  convention as ReportAdHistoryMonth. */
+export type ReportAdHistoryTotals = {
+  cost: number;
+  leads: number;
+  scheduled: number;
+  held: number;
+  datedScheduled?: number;
+  datedHeld?: number;
 };
 
 /** An ad's whole observable life, for the קריאייטיבים card hover. */
@@ -1191,9 +1377,9 @@ export type ReportAdHistory = {
   since: string;
   months: ReportAdHistoryMonth[];
   /** [since, window.startIso) — the observable life BEFORE this report. */
-  before: { cost: number; leads: number; scheduled: number; held: number };
+  before: ReportAdHistoryTotals;
   /** Sum of `months` — the whole observable life. */
-  total: { cost: number; leads: number; scheduled: number; held: number };
+  total: ReportAdHistoryTotals;
 };
 
 export type ReportFbAdSet = {
@@ -1211,10 +1397,16 @@ export type ReportFbAdSet = {
    *  so they are attached to the highest-spending row rather than repeated on
    *  each, which would show the same meetings two or three times over. */
   crmLeads: number;
+  /** LEAD-ENTRY, same rules as ReportFbAd.scheduled (grouped by utm_term). */
   scheduled: number;
   held: number;
   costPerSched: number;
   costPerHeld: number;
+  /** MEETING-DATE, same rules as ReportFbAd.datedScheduled. */
+  datedScheduled?: number;
+  datedHeld?: number;
+  datedCostPerSched?: number;
+  datedCostPerHeld?: number;
   /** True when the CRM figures above span every campaign that reuses this
    *  ad-set name, not just this row's. The card says so rather than letting
    *  them read as this one audience's. */
@@ -1263,11 +1455,17 @@ export type ReportGoogleAd = {
    * קמפיין ID גוגל id→name lookup, and a campaign whose leads all carry an
    * unexpanded {campaigned} placeholder resolves to nothing. `hasCrm` says
    * which case a zero is.
+   *
+   * `scheduled`/`held` are LEAD-ENTRY (owner-lead rule), `dated*` are
+   * MEETING-DATE (first-touch, events dated in the window). Both BMBY-only.
    */
   scheduled: number;
   held: number;
-  /** False when no CRM row was found at all — the card then omits the
-   *  columns instead of printing two zeros that look like a result. */
+  datedScheduled?: number;
+  datedHeld?: number;
+  /** False when no CRM row was found on EITHER basis — the card then omits
+   *  the columns instead of printing two zeros that look like a result.
+   *  True with a zero pair on the selected basis is a measured zero. */
   hasCrm: boolean;
 };
 
@@ -1276,8 +1474,12 @@ export type ReportKeyword = {
   impressions: number;
   clicks: number;
   conversions: number;
+  /** LEAD-ENTRY. The 57, Sept, "גיא ודורון לוי מתחם האלף": 0 / 0. */
   scheduled: number;
   held: number;
+  /** MEETING-DATE. Same keyword: 3 / 1. undefined ⇒ no dated source. */
+  datedScheduled?: number;
+  datedHeld?: number;
 };
 
 export type ReportCreatives = {
@@ -1299,6 +1501,37 @@ export type ReportCreatives = {
      *  when the project runs no Demand Gen campaigns. */
     dgAds: ReportGoogleDgAd[];
   };
+  /**
+   * Which bases the CRM joins above were computed on — the קמפיינים
+   * availability test. `lead` false ⇒ no CRM join at all (no mapping, or the
+   * join failed). `dated` false ⇒ no dated join source (Salesforce: always
+   * `{lead: true, dated: false}`) → every dated* field is undefined and the
+   * cards show "—" with BASIS_COPY.sfDatedCreatives.
+   *
+   * Optional only for payloads built before the creatives reader sets it;
+   * applyBasisToCreatives treats a missing value as `{lead: true, dated:
+   * false}`.
+   */
+  meetingBases?: { lead: boolean; dated: boolean };
+  /**
+   * Meetings the group rows above could not take because the fb / gs lead
+   * they are credited to carried no usable UTM (empty, numeric id, unexpanded
+   * placeholder). Per basis: on lead-entry that lead is the OWNER lead, on
+   * meeting-date the client's FIRST lead. With them, Σ audiences + untagged.fb
+   * = the ערוצים facebook row, and Σ keywords + untagged.gs = google-search
+   * (within the top-N cut). INTERNAL ONLY — the line is CSS-hidden under
+   * `.rpt-clientview` (class rpt-basis-untagged).
+   *
+   * A side is undefined when that basis has no source; the whole field is
+   * undefined on Salesforce, whose capture sheet has no owner-lead notion.
+   */
+  untagged?: ReportUntaggedMeetings;
+};
+
+/** See ReportCreatives.untagged. */
+export type ReportUntaggedMeetings = {
+  fb: { lead?: ReportMeetingPair; dated?: ReportMeetingPair };
+  gs: { lead?: ReportMeetingPair; dated?: ReportMeetingPair };
 };
 
 /**
@@ -1745,6 +1978,205 @@ export function diagnosePaidChannels(channels: ReportChannel[]): PaidDiagCard[] 
     .filter((c) => (seen.has(c.head) ? false : (seen.add(c.head), true)))
     .slice(0, 3)
     .map(({ priority: _p, ...rest }) => rest);
+}
+
+/* ---------------------------- meeting basis ---------------------------- */
+
+/*
+ * The client edge of the page-level meeting switch. Both bases ship in the
+ * payload; these turn the pair into the one set of numbers a surface shows,
+ * so sorting, totals, charts and diagnosis cards read the substituted rows
+ * and cannot disagree with the table above them — the pattern the ערוצים
+ * tab's local toggle proved before it was lifted to the page.
+ *
+ * All of them take the EFFECTIVE basis (useMeetingBasis().basis, which is
+ * already lead-entry when the project has no dated source anywhere) and are
+ * pure, so wrap the call in useMemo keyed on (payload, basis).
+ */
+
+/** Dated meetings no ערוצים row could claim: the "לא שויכו לשורה" row and
+ *  the overview pies' extra slice. */
+export function datedUnattributed(ds: DatedSourceInfo): ReportMeetingTotals {
+  return {
+    scheduled: ds.unmatchedScheduled + ds.ambiguousScheduled,
+    meetings: ds.unmatchedMeetings + ds.ambiguousMeetings,
+  };
+}
+
+/**
+ * The definition of `ProjectReportData.datedTotals`, in one place so the
+ * reader that sets it and any surface that re-derives it (the ערוצים סה״כ
+ * row under a channel filter) cannot drift: Σ row dated counts + the
+ * unattributed remainder. null when there is no dated source.
+ */
+export function computeDatedTotals(
+  channels: readonly Pick<ReportChannel, "datedScheduled" | "datedMeetings">[],
+  ds: DatedSourceInfo | null,
+): ReportMeetingTotals | null {
+  if (!ds) return null;
+  const un = datedUnattributed(ds);
+  let scheduled = un.scheduled;
+  let meetings = un.meetings;
+  for (const c of channels) {
+    scheduled += c.datedScheduled ?? 0;
+    meetings += c.datedMeetings ?? 0;
+  }
+  return { scheduled, meetings };
+}
+
+/**
+ * The overview's תיאומים / ביצועים on `basis` — LEAD-ENTRY from
+ * `data.totals`, MEETING-DATE from `data.datedTotals`. null ⇒ that basis
+ * has no number here: render "—" (BasisDash), never the other basis.
+ * Spend, leads and sales are basis-free; read them from `data.totals`.
+ */
+export function totalsForBasis(
+  data: Pick<ProjectReportData, "totals" | "datedTotals">,
+  basis: MeetingBasis,
+): ReportMeetingTotals | null {
+  if (basis === "dated") return data.datedTotals ?? null;
+  return data.totals
+    ? { scheduled: data.totals.scheduled, meetings: data.totals.meetings }
+    : null;
+}
+
+/**
+ * ערוצים rows with `scheduled` / `meetings` / `costPerScheduled` /
+ * `costPerMeeting` holding `basis`'s numbers. "lead" returns the SAME array
+ * (the payload is already lead-entry), so a memo downstream does not
+ * recompute. "dated" substitutes datedScheduled / datedMeetings and divides
+ * the row's spend by them; `dated*` stay on the rows untouched.
+ *
+ * Precondition for "dated": `data.datedSource` is non-null. Rows then carry
+ * both dated fields (a missing one reads as 0); without a dated source the
+ * caller renders "—" instead of calling this.
+ */
+export function applyBasisToChannels(
+  channels: ReportChannel[],
+  basis: MeetingBasis,
+): ReportChannel[] {
+  if (basis === "lead") return channels;
+  return channels.map((c) => {
+    const scheduled = c.datedScheduled ?? 0;
+    const meetings = c.datedMeetings ?? 0;
+    return {
+      ...c,
+      scheduled,
+      meetings,
+      costPerScheduled: scheduled > 0 ? c.spend / scheduled : 0,
+      costPerMeeting: meetings > 0 ? c.spend / meetings : 0,
+    };
+  });
+}
+
+/** Whether the קמפיינים CRM joins exist on `basis` (see
+ *  ReportCreatives.meetingBases; a payload without it is lead-only). */
+export function creativesBasisAvailable(
+  c: Pick<ReportCreatives, "meetingBases"> | null | undefined,
+  basis: MeetingBasis,
+): boolean {
+  if (!c) return false;
+  return (c.meetingBases ?? { lead: true, dated: false })[basis];
+}
+
+/** applyBasisToCreatives' result: the payload plus which basis its
+ *  unprefixed meeting fields now hold. */
+export type BasisAppliedCreatives = ReportCreatives & {
+  meetingBasis: MeetingBasis;
+  /**
+   * `meetingBasis` has no source for this project (Salesforce under dated).
+   * Every scheduled / held / costPer* has been ZEROED — not left holding the
+   * other basis — and every one of them must render "—" (BasisDash with
+   * BASIS_COPY.dashNoSource[meetingBasis]), not 0. Google campaign rows get
+   * `hasCrm: false`, which already hides their columns.
+   */
+  meetingBasisMissing: boolean;
+};
+
+/**
+ * קמפיינים payload with every ad / ad set / keyword / Google campaign row —
+ * and each ad's history months, `before` and `total` — carrying `basis`'s
+ * numbers in `scheduled` / `held` / `costPerSched` / `costPerHeld`.
+ *
+ *   lead, available  → shallow copy; the rows are already lead-entry.
+ *   dated, available → dated* substituted; a row with no dated field reads
+ *                      0 (the source exists and credited it nothing). Costs
+ *                      use datedCostPer* when set, else spend ÷ count.
+ *   either, missing  → counts and costs zeroed + meetingBasisMissing.
+ *
+ * Basis-free fields (crmLeads, meetingsAtGroupLevel, crmAtNameLevel, spend,
+ * ordering) are untouched, so card order never moves on a flip. `untagged`
+ * is not swapped — read it with untaggedFor().
+ */
+export function applyBasisToCreatives(
+  c: ReportCreatives,
+  basis: MeetingBasis,
+): BasisAppliedCreatives {
+  const missing = !creativesBasisAvailable(c, basis);
+  if (basis === "lead" && !missing) {
+    return { ...c, meetingBasis: basis, meetingBasisMissing: false };
+  }
+  const costPer = (cost: number, n: number, given: number | undefined) =>
+    given ?? (n > 0 ? cost / n : 0);
+  const row = <T extends ReportFbAd | ReportFbAdSet>(r: T): T => {
+    if (missing)
+      return { ...r, scheduled: 0, held: 0, costPerSched: 0, costPerHeld: 0 };
+    const scheduled = r.datedScheduled ?? 0;
+    const held = r.datedHeld ?? 0;
+    return {
+      ...r,
+      scheduled,
+      held,
+      costPerSched: costPer(r.cost, scheduled, r.datedCostPerSched),
+      costPerHeld: costPer(r.cost, held, r.datedCostPerHeld),
+    };
+  };
+  const pair = <T extends ReportMeetingPair & { datedScheduled?: number; datedHeld?: number }>(
+    r: T,
+  ): T =>
+    missing
+      ? { ...r, scheduled: 0, held: 0 }
+      : { ...r, scheduled: r.datedScheduled ?? 0, held: r.datedHeld ?? 0 };
+  const ad = (a: ReportFbAd): ReportFbAd => {
+    const out = row(a);
+    if (a.history) {
+      out.history = {
+        ...a.history,
+        months: a.history.months.map(pair),
+        before: pair(a.history.before),
+        total: pair(a.history.total),
+      };
+    }
+    return out;
+  };
+  return {
+    ...c,
+    fb: {
+      ...c.fb,
+      topAds: c.fb.topAds.map(ad),
+      topAdSets: c.fb.topAdSets.map(row),
+    },
+    google: {
+      ...c.google,
+      topKeywords: c.google.topKeywords.map(pair),
+      ads: c.google.ads.map((g) => ({
+        ...pair(g),
+        hasCrm: missing ? false : g.hasCrm,
+      })),
+    },
+    meetingBasis: basis,
+    meetingBasisMissing: missing,
+  };
+}
+
+/** The untagged remainder for one platform on one basis; undefined when
+ *  that basis has no source (render nothing — the line is internal). */
+export function untaggedFor(
+  c: Pick<ReportCreatives, "untagged"> | null | undefined,
+  platform: "fb" | "gs",
+  basis: MeetingBasis,
+): ReportMeetingPair | undefined {
+  return c?.untagged?.[platform][basis];
 }
 
 /* ------------------------------ formatters ------------------------------ */

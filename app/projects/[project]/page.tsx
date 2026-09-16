@@ -49,6 +49,12 @@ import Avatar from "@/components/Avatar";
 import MetricsIframe from "@/components/MetricsIframe";
 import ProjectReportSection from "@/components/report/ProjectReportSection";
 import NativeProjectRail from "@/components/report/NativeProjectRail";
+import MeetingBasisToggle from "@/components/report/MeetingBasisToggle";
+import {
+  BasisLink,
+  MeetingBasisProvider,
+} from "@/components/report/MeetingBasisContext";
+import { parseMeetingBasis } from "@/lib/meetingBasis";
 import { CrmSourceFilterProvider } from "@/components/CrmSourceFilterContext";
 import CardActions from "@/components/CardActions";
 import CommentBodyExpandable from "@/components/CommentBodyExpandable";
@@ -118,6 +124,11 @@ type Search = {
    *  users; internal users can pass ?clientView=1 to PREVIEW the client view
    *  before any real client cutover. */
   clientView?: string;
+  /** Page-wide meeting-count basis — "dated" = לפי מועד הפגישה; absent (or
+   *  anything else) = לפי כניסת ליד, the default. Seeds MeetingBasisProvider;
+   *  after that the switch mirrors itself back with replaceState, so this
+   *  only matters on a load, a reload or a shared link. See lib/meetingBasis. */
+  meetings?: string;
 };
 
 export default async function ProjectOverviewPage({
@@ -381,6 +392,14 @@ export default async function ProjectOverviewPage({
   const dashboardPeriod = crmDateRange
     ? `${crmDateRange.from}..${crmDateRange.to}`
     : monthOverride;
+  // Meeting-count basis (?meetings=dated), parsed beside the period because
+  // it is the other page-wide filter — but unlike the period it is NOT
+  // threaded down as props and never re-renders the page: both bases ship in
+  // every payload, and this value only seeds the client MeetingBasisProvider
+  // so the first render (server HTML included) already shows the URL's
+  // basis. Flips after that are client state + replaceState. The iframe
+  // (?report=classic) cannot follow it and is deliberately not given it.
+  const initialMeetingBasis = parseMeetingBasis(sp.meetings);
   // `כללי` (catch-all project) has no campaign-ID slug in Keys, so a
   // regular `project=כללי` filter hits 0 ALL CLIENTS rows and the iframe
   // renders empty. The Apps Script side (doGet / _iframeHandle_ /
@@ -526,6 +545,9 @@ export default async function ProjectOverviewPage({
       "monthOverride",
       "from",
       "to",
+      // The classic view has no switch, so this is only ever a value an old
+      // link arrived with — carried out so the native report opens on it.
+      "meetings",
     ] as const;
     for (const k of keep) {
       const v = sp[k];
@@ -549,6 +571,11 @@ export default async function ProjectOverviewPage({
       "from",
       "to",
       "section",
+      // Kept so the preview shows the numbers the owner was just looking at.
+      // This server-built value is only right for the basis the page LOADED
+      // on; the link renders through BasisLink, which re-applies the live
+      // basis after a flip.
+      "meetings",
     ] as const;
     for (const k of keep) {
       const v = sp[k];
@@ -571,6 +598,9 @@ export default async function ProjectOverviewPage({
       "company",
       "section",
       "clientView",
+      // Resetting the PERIOD must not reset the meeting basis. Same BasisLink
+      // treatment as clientPreviewHref.
+      "meetings",
     ] as const;
     for (const k of keep) {
       const v = sp[k];
@@ -858,6 +888,23 @@ export default async function ProjectOverviewPage({
         (reportClientPreview ? " rpt-clientpreview" : "")
       }
     >
+      {/* The meeting-count basis wraps EVERYTHING in <main>: the switch lives
+          in the header and the numbers it drives live in the rail, so the
+          provider has to sit above both — CrmSourceFilterProvider further
+          down reaches the rail only. It renders no DOM, so every
+          `main > …` / .project-top-stack rule is unaffected. The classic
+          layout (?report=classic) is seeded with lead-entry whatever the URL
+          says: it has no switch, so nothing on it could tell the reader that
+          its CRM card was counting by meeting date. The key re-seeds on the
+          classic → native door (newReportHref carries ?meetings out): a
+          soft navigation keeps provider state, and the provider only
+          re-syncs when the URL's basis CHANGES, which on that hop it does
+          not — without the remount the native switch would open on the
+          classic view's lead-entry under a ?meetings=dated URL. */}
+      <MeetingBasisProvider
+        key={useNativeReport ? "native" : "classic"}
+        initial={useNativeReport ? initialMeetingBasis : "lead"}
+      >
       {/* Header + the client approve-prompt share ONE sticky wrapper so both
           stay pinned on scroll — the header no longer scrolls away, and the
           prompt sits beneath it (not riding over it). For internal viewers
@@ -912,6 +959,15 @@ export default async function ProjectOverviewPage({
               <DashboardMonthOverrideSlot current={monthOverride} />
             </Suspense>
           )}
+          {/* Meeting-count switch (לפי כניסת ליד | לפי מועד הפגישה) — the
+              other page-wide filter, so it sits right after the period
+              picker. Visible to clients (owner decision, 2026-09-16), like
+              the picker. Gated on the native report, which is the only
+              layout whose numbers follow it (the classic iframe cannot), and
+              on real estate, the only projects with meetings to count — NOT
+              on dashboardEmbedUrl like the picker: the switch needs no
+              Apps Script URL, only the report payload. */}
+          {useNativeReport && isRealEstateProject && <MeetingBasisToggle />}
           {/* "+ הודעה ללקוח" used to live here next to "+ משימה חדשה",
               but with the channel split it only ever writes to the
               client-tab discussion. Moved into the לקוח tab so users
@@ -984,23 +1040,27 @@ export default async function ProjectOverviewPage({
           {isInternalUser && (
             <div className="rpt-railbar">
               {/* Preview-as-client toggle (internal only): strips the report to
-                  what a client would see, to review before the real cutover. */}
+                  what a client would see, to review before the real cutover.
+                  BasisLink rather than Link for it and the period reset below:
+                  both hrefs are built once on the server, and a flip of the
+                  meeting switch after that would otherwise leave them
+                  pointing at the basis the page loaded on. */}
               {reportClientView ? (
-                <Link
+                <BasisLink
                   className="rpt-clientview-toggle is-active"
                   href={clientPreviewHref(false)}
                   title="את/ה צופה בדוח כפי שהלקוח רואה — לחץ לחזרה לתצוגה המלאה"
                 >
                   👁️ תצוגת לקוח · יציאה
-                </Link>
+                </BasisLink>
               ) : (
-                <Link
+                <BasisLink
                   className="rpt-clientview-toggle"
                   href={clientPreviewHref(true)}
                   title="הצג את הדוח כפי שהלקוח יראה אותו (ללא הצ׳רום הפנימי)"
                 >
                   👁️ תצוגת לקוח
-                </Link>
+                </BasisLink>
               )}
               {dashboardPeriod && periodLabel && (
                 <span
@@ -1008,14 +1068,14 @@ export default async function ProjectOverviewPage({
                   title="התקופה המסוננת המוצגת בדוח"
                 >
                   <span aria-hidden>📅</span> {periodLabel}
-                  <Link
+                  <BasisLink
                     className="rpt-period-reset"
                     href={periodResetHref()}
                     title="חזרה לכל התקופה (הסרת הסינון)"
                     aria-label="הסר סינון תאריכים"
                   >
                     ↩
-                  </Link>
+                  </BasisLink>
                 </span>
               )}
             </div>
@@ -1168,6 +1228,7 @@ export default async function ProjectOverviewPage({
       {pricesNode}
         </>
       )}
+      </MeetingBasisProvider>
     </main>
   );
 }

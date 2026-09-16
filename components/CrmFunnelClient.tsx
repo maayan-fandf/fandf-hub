@@ -1,11 +1,29 @@
 "use client";
 
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import LeadJourneyPanel from "@/components/report/LeadJourneyPanel";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import LeadJourneyPanel, {
+  LeadJourneyBasisBadge,
+} from "@/components/report/LeadJourneyPanel";
 import type { LeadJourney } from "@/lib/leadJourney";
 import { createPortal } from "react-dom";
 import { CrmSourceFilterContext } from "./CrmSourceFilterContext";
-import type { CrmFunnel } from "@/lib/crmData";
+import type {
+  CrmChannelCost,
+  CrmFunnel,
+  CrmMeetingSourceMaps,
+  CrmPlatform,
+  UtmRow,
+} from "@/lib/crmData";
+import { useMeetingBasis } from "@/components/report/MeetingBasisContext";
+import { BasisBadge, BasisDash, UntaggedMeetingsLine } from "@/components/report/BasisBadge";
+import {
+  BASIS_COPY,
+  BASIS_LABELS,
+  FIXED_BADGES,
+  SEHEL_HELD_STATUS,
+  type FixedBadgeKey,
+  type MeetingBasis,
+} from "@/lib/meetingBasis";
 import { channelIcon } from "@/lib/channelIcon";
 import ChannelIcon from "@/components/ChannelIcon";
 import PlatformIcon from "@/components/PlatformIcon";
@@ -98,6 +116,10 @@ function useHoverPopover<T extends HTMLElement>() {
 
 type StackedSource = { source: string; count: number; isOther?: boolean };
 
+/** The meeting half of a עלות לפי ערוץ מדיה row — the part that changes
+ *  with the page's meeting basis (spend, leads and CPL do not). */
+type CostMeetingCells = Pick<CrmChannelCost, "scheduled" | "meetings" | "cps" | "cpm">;
+
 // Media-channel colors (CHANNEL_PALETTE) live in lib/crmDailyShared, so the
 // budget desk's daily-leads strip colors a project's sources exactly as
 // this card does.
@@ -148,6 +170,17 @@ export default function CrmFunnelClient({
   feedNewest?: string;
 }) {
   const sm = funnel.sourceMatrices;
+  // The page-level meeting switch (MeetingBasisProvider around the project
+  // page's <main>). Every תואמה / פגישות number in this card — tiles, cost
+  // table, chip tooltips, trendline lines, פילוח פייסבוק — reads it; the
+  // funnel payload already carries both bases (lib/crmData: unprefixed maps
+  // = lead-entry, `sourceMatrices.dated` / `dailyDated` / `*Dated` /
+  // `datedScheduled` = meeting-date), so a flip re-renders from props and
+  // never fetches. Outside a provider (/morning, the classic card) this is
+  // "lead". A surface whose dated side is undefined shows "—", never the
+  // lead-entry number under a "לפי מועד הפגישה" switch.
+  const { basis } = useMeetingBasis();
+  const dated = basis === "dated";
   // Source-chip selection. When a CrmSourceFilterProvider is above us (the
   // native rail — CRM + התנגדויות sections), we share ONE selection through
   // it so filtering either section filters both. Otherwise (classic full
@@ -253,6 +286,26 @@ export default function CrmFunnelClient({
   const selectAll = () => setSelected(new Set(sm.allSources));
   const clearAll = () => setSelected(new Set());
 
+  // Whether a MEETING map's source key counts under the current chips.
+  // A chip exists only for a source in `allSources` — the sources the
+  // window's LEADS came from — but a meeting-date map is keyed by the
+  // client's FIRST-touch source (lib/crmData sourceMatrices.dated), and a
+  // client whose first lead was a 2025 yad2 lead can hold a September
+  // meeting while no September lead is from yad2. No chip can select that
+  // key, so `selected.has` alone would silently drop it and the dated
+  // תואמה tile would sit below ProjectReportData.datedTotals — the total
+  // the overview and ערוצים show for the same window. So: a key no chip
+  // controls counts while EVERY chip is on (the "all sources" state the
+  // totals are defined for) and drops out as soon as the reader narrows the
+  // chips, which is exactly when they asked for named sources only. For
+  // lead-entry maps this is a no-op in practice — their keys are the window
+  // leads' own sources, all of which have chips.
+  const isPickedMeetingSource = useMemo(() => {
+    const known = new Set(sm.allSources);
+    const all = sm.allSources.every((s) => selected.has(s));
+    return (source: string) => selected.has(source) || (all && !known.has(source));
+  }, [selected, sm.allSources]);
+
   // Stable source→color palette, computed once across ALL sources
   // (independent of chip state). Each source always reads the same
   // color across every view + the chip's own dot.
@@ -295,10 +348,13 @@ export default function CrmFunnelClient({
   // hover popovers on each tile can render a mini-pie + legend
   // showing which channels contributed.
   const kpis = useMemo(() => {
-    const breakdown = (m: Record<string, number>) => {
+    const breakdown = (
+      m: Record<string, number>,
+      picked: (source: string) => boolean = (s) => selected.has(s),
+    ) => {
       const rows: { source: string; count: number }[] = [];
       for (const [s, c] of Object.entries(m)) {
-        if (!selected.has(s) || c === 0) continue;
+        if (!picked(s) || c === 0) continue;
         rows.push({ source: s, count: c });
       }
       rows.sort((a, b) => b.count - a.count);
@@ -307,8 +363,18 @@ export default function CrmFunnelClient({
     const leadsBreakdown = breakdown(sm.leadsBySource);
     const contactedBreakdown = breakdown(sm.contactedBySource);
     const attemptedBreakdown = breakdown(sm.attemptedMeetingsBySource || {});
-    const scheduledBreakdown = breakdown(sm.scheduledMeetingsBySource);
-    const meetingsBreakdown = breakdown(sm.meetingsBySource);
+    // The meeting maps on the page's basis. `sm` itself IS the lead-entry
+    // CrmMeetingSourceMaps (its unprefixed maps); `sm.dated` is the same
+    // shape on the meeting-date basis and is undefined where the funnel's
+    // route has no dated source (Salesforce, the D3 warehouse fallback) —
+    // then `meetingMaps` is undefined and the tiles render "—".
+    const meetingMaps: CrmMeetingSourceMaps | undefined = dated ? sm.dated : sm;
+    const scheduledBreakdown = meetingMaps
+      ? breakdown(meetingMaps.scheduledMeetingsBySource, isPickedMeetingSource)
+      : [];
+    const meetingsBreakdown = meetingMaps
+      ? breakdown(meetingMaps.meetingsBySource, isPickedMeetingSource)
+      : [];
     const contractsBreakdown = breakdown(sm.contractsBySource || {});
     const sumOf = (rows: { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
     const leads = sumOf(leadsBreakdown);
@@ -318,19 +384,32 @@ export default function CrmFunnelClient({
     // the render site reads as "no tile" rather than as a real zero.
     const attempted = sumOf(attemptedBreakdown);
     const scheduled = sumOf(scheduledBreakdown);
-    // Cancelled subset of scheduled (BMBY only) → lets the תואמה tile show
-    // תואמו (non-cancelled) + בוטלו. Chip-filtered like the rest.
-    const canceled = sumOf(breakdown(sm.canceledMeetingsBySource || {}));
+    // Cancelled subset of scheduled → lets the תואמה tile show תואמו
+    // (non-cancelled) + בוטלו. Chip-filtered like the rest. Known only where
+    // the basis's own cancelled map exists: on lead-entry that is signalled
+    // by the funnel-level `canceledMeetings` field (as before), on dated by
+    // `sm.dated.canceledMeetingsBySource` itself.
+    const canceledKnown = dated
+      ? !!sm.dated?.canceledMeetingsBySource
+      : funnel.canceledMeetings != null;
+    const canceled = sumOf(
+      breakdown(meetingMaps?.canceledMeetingsBySource || {}, isPickedMeetingSource),
+    );
     const meetings = sumOf(meetingsBreakdown);
     const contracts = sumOf(contractsBreakdown);
     return {
       leads,
       contacted,
       attemptedMeetings: attempted,
+      /** False ⇒ the funnel has no meeting maps on the page's basis. */
+      meetingsAvailable: !!meetingMaps,
       scheduledMeetings: scheduled,
+      canceledKnown,
       canceledMeetings: canceled,
       meetings,
       contracts,
+      // Lead-entry only: under dated its numerator counts meetings by date
+      // and its denominator leads by arrival, and the tile shows "—".
       meetingRatePct: leads > 0 ? (meetings / leads) * 100 : null,
       breakdowns: {
         leads: leadsBreakdown,
@@ -341,7 +420,7 @@ export default function CrmFunnelClient({
         contracts: contractsBreakdown,
       },
     };
-  }, [selected, sm]);
+  }, [selected, sm, dated, isPickedMeetingSource, funnel.canceledMeetings]);
 
   // ── Per-objection source breakdown for pie-legend hover popovers ──
   // Mirrors the KPI breakdowns shape — for each objection currently
@@ -504,21 +583,89 @@ export default function CrmFunnelClient({
   // just the days with a sourced lead and the chart places bars by position,
   // so an empty day used to vanish and its neighbours closed the gap. The
   // fill stops at today; without `today` the series stays as it was.
+  //
+  // The BARS are leads by lead day on both bases — a lead has no meeting
+  // day. The תיאומים / פגישות LINES follow the page switch: lead-entry reads
+  // them off the same rows as the bars (dailyTimeSeries, by lead day), dated
+  // re-plots them from `funnel.dailyDated` — events on the day they are
+  // dated on — merged into the bar series day by day, so the chart's hover
+  // pies and legend sums need no second code path and the legend's line
+  // sums equal the dated tiles under the same chips. A dated funnel with no
+  // `dailyDated` (Sheet-only / Salesforce) keeps its bars and loses its
+  // lines; CrmFunnelTrendline shows "—" for them (meetingLines.missing).
+  //
+  // Under dated the axis also runs past today when meetings are booked for
+  // later days of the window: The 57's September tile counts appointments
+  // on 09-25 while "today" is 09-16, and a chart that stopped at today
+  // would plot fewer meetings than the tile above it says. Days after today
+  // carry no bars and the grey "not reported yet" mark.
   const trendEnd =
     funnel.windowTo && today
       ? funnel.windowTo < today
         ? funnel.windowTo
         : today
       : "";
+  const datedDaily = dated ? funnel.dailyDated : undefined;
   const trendDaily = useMemo(() => {
-    const picked = funnel.dailyTimeSeries.map((day) => ({
-      date: day.date,
-      bySource: day.bySource.filter((s) => selected.has(s.source)),
+    if (!dated) {
+      const picked = funnel.dailyTimeSeries.map((day) => ({
+        date: day.date,
+        bySource: day.bySource.filter((s) => selected.has(s.source)),
+      }));
+      return funnel.windowFrom && trendEnd
+        ? fillDailySeries(picked, funnel.windowFrom, trendEnd)
+        : picked;
+    }
+    type Cell = CrmFunnel["dailyTimeSeries"][number]["bySource"][number];
+    const inWindow = (d: string) =>
+      (!funnel.windowFrom || d >= funnel.windowFrom) &&
+      (!funnel.windowTo || d <= funnel.windowTo);
+    const byDate = new Map<string, Map<string, Cell>>();
+    const cell = (date: string, source: string): Cell => {
+      let day = byDate.get(date);
+      if (!day) byDate.set(date, (day = new Map()));
+      let c = day.get(source);
+      if (!c) day.set(source, (c = { source, leads: 0, scheduledMeetings: 0, meetings: 0 }));
+      return c;
+    };
+    // Every lead day keeps its slot even when the chips hide all of its
+    // sources, as on the lead-entry path above.
+    for (const day of funnel.dailyTimeSeries) {
+      if (!byDate.has(day.date)) byDate.set(day.date, new Map());
+      for (const s of day.bySource) {
+        if (selected.has(s.source)) cell(day.date, s.source).leads += s.leads;
+      }
+    }
+    let lastDated = "";
+    for (const day of datedDaily ?? []) {
+      if (!inWindow(day.date)) continue;
+      if (!byDate.has(day.date)) byDate.set(day.date, new Map());
+      if (day.date > lastDated) lastDated = day.date;
+      for (const s of day.bySource) {
+        if (!isPickedMeetingSource(s.source)) continue;
+        const c = cell(day.date, s.source);
+        c.scheduledMeetings += s.scheduledMeetings;
+        c.meetings += s.meetings;
+      }
+    }
+    const merged = [...byDate.keys()].sort().map((date) => ({
+      date,
+      bySource: [...byDate.get(date)!.values()],
     }));
-    return funnel.windowFrom && trendEnd
-      ? fillDailySeries(picked, funnel.windowFrom, trendEnd)
-      : picked;
-  }, [selected, funnel.dailyTimeSeries, funnel.windowFrom, trendEnd]);
+    const end = trendEnd && lastDated > trendEnd ? lastDated : trendEnd;
+    return funnel.windowFrom && end
+      ? fillDailySeries(merged, funnel.windowFrom, end)
+      : merged;
+  }, [
+    dated,
+    datedDaily,
+    selected,
+    isPickedMeetingSource,
+    funnel.dailyTimeSeries,
+    funnel.windowFrom,
+    funnel.windowTo,
+    trendEnd,
+  ]);
   // Where a zero is provable: the day before the feed's newest lead, never
   // later than yesterday (lib/crmDailyShared lastReportedDay) — later empty
   // days draw grey, not red. Zero is judged on ALL the day's leads
@@ -605,6 +752,58 @@ export default function CrmFunnelClient({
   // The קמפיינים view carries ONLY the FB/Meta UTM breakdown — if this funnel
   // has none (non-warehouse project), render nothing rather than an empty card.
   if (view === "campaigns" && !funnel.fbBreakdown) return null;
+
+  // ── Basis labels (plain values, not hooks) ────────────────────────
+  // Where the LEAD-ENTRY maps are a status snapshot — Sehel Sheet,
+  // Salesforce, and a Sheet-routed BMBY project the warehouse holds no
+  // journey for (owner decision D3's fallback) — תואמה and פגישות count
+  // LEADS by their current status, not meeting events, so those two tiles
+  // say so. Lead-entry only: under dated those routes either carry event
+  // maps (Sehel's sehel_meetings) or show "—" with its own tooltip.
+  const leadUnitBadge: FixedBadgeKey | null = dated
+    ? null
+    : funnel.meetingBasis?.warehouseFallback
+      ? "warehouseFallback"
+      : funnel.meetingBasis?.lead === "status-snapshot"
+        ? "statusSnapshot"
+        : null;
+  // "כולל משוער" from the retired held strip: dated events BMBY never marked
+  // held but whose status says they were. Whole-window like the strip was
+  // (not chip-filtered), so it lives in the פגישות tile's tooltip rather
+  // than in the tile, where a chip toggle would leave it unmoved beside a
+  // number that moves.
+  const estimatedHeld = dated ? sm.dated?.estimatedHeld : undefined;
+  const estimatedHeldHint =
+    estimatedHeld != null && estimatedHeld > 0
+      ? `כולל משוער: ${fmtInt(estimatedHeld)} — כולל פגישות ש-BMBY לא סימנה כהתקיימו אך הסטטוס שלהן מעיד על כך. לכל התקופה, ללא סינון לפי מקור.`
+      : undefined;
+  // עלות לפי ערוץ מדיה on the page's basis. spend / leads / CPL are
+  // basis-free and always come from `channelCosts`, which also fixes the
+  // row set and order (spend desc) — so a flip changes numbers, never rows.
+  // The meeting columns come from `channelCostsDated` under dated; undefined
+  // there ⇒ "—". A channel the dated list lacks had no dated meetings (both
+  // lists are built over the same spend), so it reads 0, not "—".
+  const datedCostByChannel =
+    dated && funnel.channelCostsDated
+      ? new Map(funnel.channelCostsDated.map((c) => [c.channel, c]))
+      : null;
+  const costMeetings = (c: CrmChannelCost): CostMeetingCells | null =>
+    !dated
+      ? c
+      : datedCostByChannel
+        ? (datedCostByChannel.get(c.channel) ?? { scheduled: 0, meetings: 0, cps: 0, cpm: 0 })
+        : null;
+  // The source chips' "עלות לפגישה" (CPL on the chip is basis-free).
+  const chipMeetingCost = dated ? funnel.costBySourceDated : funnel.costBySource;
+  // פילוח פייסבוק: rows carry both bases (lib/crmData UtmRow); the dated
+  // side is undefined on a route with no dated source (Salesforce).
+  const fb = funnel.fbBreakdown;
+  const fbDatedAvailable =
+    !!fb &&
+    (fb.untagged?.dated != null ||
+      [...fb.byPlacement, ...fb.byAudience, ...fb.byCreative].some(
+        (r) => r.datedScheduled != null,
+      ));
 
   return (
     <section
@@ -806,11 +1005,16 @@ export default function CrmFunnelClient({
             const total = sm.leadsBySource[source] || 0;
             // Inline media cost (anda model) — only for sources that map
             // 1:1 to a single paid channel; composites/non-paid are bare.
+            // CPL is basis-free; the עלות לפגישה in the tooltip divides by
+            // the page basis's meetings, and is left out under dated when the
+            // funnel has no dated cost map rather than quoting the lead-entry
+            // one.
             const cost = funnel.costBySource?.[source];
+            const cpm = chipMeetingCost?.[source]?.cpm ?? 0;
             const title =
               cost && cost.cpl > 0
                 ? `${source} — ${total} לידים · עלות לליד ${fmtILS(cost.cpl)}${
-                    cost.cpm > 0 ? ` · עלות לפגישה ${fmtILS(cost.cpm)}` : ""
+                    cpm > 0 ? ` · עלות לפגישה ${fmtILS(cpm)}` : ""
                   }`
                 : `${source} — ${total} לידים`;
             return (
@@ -866,25 +1070,56 @@ export default function CrmFunnelClient({
             being chased. Gated on the FIELD, not the value: it's a funnel
             stage, so a real 0 is worth showing (like תואמה/פגישות), but
             BMBY and Sehel have no equivalent status and render no tile. */}
-        {funnel.attemptedMeetings != null && (
-          <KpiTile label="ניסיון תיאום פגישה"
-            value={<CountUp value={kpis.attemptedMeetings} format={fmtInt} />}
-            sub={pct(kpis.attemptedMeetings, kpis.leads)}
-            note={
-              // The count is cumulative (see SALESFORCE_ATTEMPTED_STATUSES),
-              // so it exceeds what the status pivot shows for the label
-              // itself. Spell the split out rather than leave the reader to
-              // reconcile 21 here against 19 in the CRM.
-              kpis.scheduledMeetings > 0
-                ? `בשלב זה ${fmtInt(kpis.attemptedMeetings - kpis.scheduledMeetings)} · המשיכו ${fmtInt(kpis.scheduledMeetings)}`
-                : undefined
-            }
-            breakdown={kpis.breakdowns.attemptedMeetings}
-            palette={palette} />
-        )}
+        {funnel.attemptedMeetings != null &&
+          (dated ? (
+            // ניסיון תיאום is a Salesforce LEAD status with no meeting date,
+            // so it has nothing to show on the dated basis — and its note
+            // subtracts תואמה, which under dated would be a count of a
+            // different thing. "—" plus the lead-only badge, not the
+            // lead-entry figure passed off under a dated switch.
+            <KpiTile label="ניסיון תיאום פגישה"
+              badge={<BasisBadge kind="attemptedLeadOnly" />}
+              value={<BasisDash />} />
+          ) : (
+            <KpiTile label="ניסיון תיאום פגישה"
+              value={<CountUp value={kpis.attemptedMeetings} format={fmtInt} />}
+              sub={pct(kpis.attemptedMeetings, kpis.leads)}
+              note={
+                // The count is cumulative (see SALESFORCE_ATTEMPTED_STATUSES),
+                // so it exceeds what the status pivot shows for the label
+                // itself. Spell the split out rather than leave the reader to
+                // reconcile 21 here against 19 in the CRM.
+                kpis.scheduledMeetings > 0
+                  ? `בשלב זה ${fmtInt(kpis.attemptedMeetings - kpis.scheduledMeetings)} · המשיכו ${fmtInt(kpis.scheduledMeetings)}`
+                  : undefined
+              }
+              breakdown={kpis.breakdowns.attemptedMeetings}
+              palette={palette} />
+          ))}
+        {/* תואמה פגישה / פגישות follow the page switch. Lead-entry sums the
+            unprefixed maps (BMBY: the owner-lead rule, exact against ALL
+            CLIENTS on The 57 Sept — 20 תואמה, 6 פגישות); dated sums
+            `sourceMatrices.dated` (events dated in the window by first-touch
+            source — The 57 Sept 49 / 15, = the overview's datedTotals). The
+            "% מהלידים" line is lead-entry only: meetings counted by date
+            over leads counted by arrival is not a conversion rate, so under
+            dated it is the cross-basis "—". */}
         <KpiTile label="תואמה פגישה"
-          value={<CountUp value={kpis.scheduledMeetings} format={fmtInt} />}
-          sub={pct(kpis.scheduledMeetings, kpis.leads)}
+          badge={leadUnitBadge ? <BasisBadge kind={leadUnitBadge} /> : undefined}
+          value={
+            kpis.meetingsAvailable ? (
+              <CountUp value={kpis.scheduledMeetings} format={fmtInt} />
+            ) : (
+              <BasisDash />
+            )
+          }
+          sub={
+            !kpis.meetingsAvailable ? undefined : dated ? (
+              <BasisDash reason="cross-basis" />
+            ) : (
+              pct(kpis.scheduledMeetings, kpis.leads)
+            )
+          }
           note={
             // Gate on the FIELD, not the platform: BMBY always carries it, and
             // Salesforce joined it once מצב ליד 3 started folding the meeting's
@@ -893,15 +1128,29 @@ export default function CrmFunnelClient({
             // with nothing to explain the gap — 27 of them were cancelled.
             // Absent (Sehel, or Salesforce still on an older status column)
             // means UNKNOWN, so we show no split rather than an invented 0.
-            funnel.canceledMeetings != null && kpis.scheduledMeetings > 0
+            kpis.meetingsAvailable && kpis.canceledKnown && kpis.scheduledMeetings > 0
               ? `תואמו ${fmtInt(kpis.scheduledMeetings - kpis.canceledMeetings)} · בוטלו ${fmtInt(kpis.canceledMeetings)}`
               : undefined
           }
           breakdown={kpis.breakdowns.scheduledMeetings}
           palette={palette} />
         <KpiTile label="פגישות"
-          value={<CountUp value={kpis.meetings} format={fmtInt} />}
-          sub={pct(kpis.meetings, kpis.leads)}
+          badge={leadUnitBadge ? <BasisBadge kind={leadUnitBadge} /> : undefined}
+          value={
+            kpis.meetingsAvailable ? (
+              <CountUp value={kpis.meetings} format={fmtInt} />
+            ) : (
+              <BasisDash />
+            )
+          }
+          sub={
+            !kpis.meetingsAvailable ? undefined : dated ? (
+              <BasisDash reason="cross-basis" />
+            ) : (
+              pct(kpis.meetings, kpis.leads)
+            )
+          }
+          hint={estimatedHeldHint}
           breakdown={kpis.breakdowns.meetings}
           palette={palette} />
         {funnel.contracts > 0 && (
@@ -912,49 +1161,26 @@ export default function CrmFunnelClient({
             palette={palette} />
         )}
         <KpiTile label="יחס פגישה"
-          value={kpis.meetingRatePct == null ? "—" : `${kpis.meetingRatePct.toFixed(1)}%`} />
+          value={
+            dated ? (
+              <BasisDash reason={kpis.meetingsAvailable ? "cross-basis" : "no-source"} />
+            ) : kpis.meetingRatePct == null ? (
+              "—"
+            ) : (
+              `${kpis.meetingRatePct.toFixed(1)}%`
+            )
+          } />
       </StaggerReveal>
 
-      {/* Authoritative held meetings from the BMBY warehouse (Supabase).
-          Whole-window figure (NOT chip-filtered) — the Sheet's פגישות tile
-          above conflates scheduled+held and over-counts; this is the
-          BMBY-confirmed number (appointment_outcome='held'). Additive:
-          collapses to nothing when the warehouse enrichment is absent.
-          Gated on authoritative > 0 (not just the object's presence):
-          BMBY logs appointment outcomes retrospectively, so an active
-          project early in the month — or a dormant one with no in-window
-          sync — legitimately has 0 confirmed-held. Showing "0 פגישות
-          התקיימו בפועל · מאומת BMBY" next to a Sheet funnel that reports
-          meetings reads as a bug, so we suppress and fall back to the
-          Sheet figure until a real confirmed count exists. */}
-      {funnel.supabaseEnrichment?.held &&
-      funnel.supabaseEnrichment.held.authoritative > 0 ? (
-        <div
-          className="crm-held-authority"
-          dir="rtl"
-          title="מספר הפגישות שהתקיימו בפועל לפי מערכת BMBY, לכל חלון התאריכים (ללא סינון לפי מקור). הנתון בכרטיס 'פגישות' מעלה הוא הערכה מהגיליון שמערבבת תיאומים והתקיימו."
-        >
-          <span className="crm-held-authority-icon" aria-hidden>✓</span>
-          <span className="crm-held-authority-main">
-            {fmtInt(funnel.supabaseEnrichment.held.authoritative)} פגישות התקיימו בפועל
-            <span className="crm-held-authority-tag">מאומת BMBY</span>
-          </span>
-          <span className="crm-held-authority-sub">
-            כולל משוער: {fmtInt(funnel.supabaseEnrichment.held.estimated)}
-            {funnel.supabaseEnrichment.held.canceled > 0
-              ? ` · בוטלו: ${fmtInt(funnel.supabaseEnrichment.held.canceled)}`
-              : ""}
-          </span>
-          {funnel.supabaseEnrichment.held.asOf ? (
-            <span
-              className="crm-held-authority-fresh"
-              title={`עודכן ${funnel.supabaseEnrichment.held.asOf}`}
-            >
-              עודכן {funnel.supabaseEnrichment.held.asOf.slice(0, 10)}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+      {/* The held strip that sat here ("✓ N פגישות התקיימו בפועל · מאומת
+          BMBY · כולל משוער · בוטלו", Sheet-routed BMBY only) is gone. It was
+          a meeting-dated count parked under lead-status tiles, so one card
+          showed two definitions of פגישות at once and the reader had to
+          know which to believe. Its numbers ARE the dated tiles now (owner
+          decision D3 routes those projects' meeting maps to the warehouse):
+          the confirmed count is פגישות under "לפי מועד הפגישה", its בוטלו is
+          the תואמה note, and its "כולל משוער" is a line in the פגישות
+          tile's tooltip. */}
 
       {/* Cost per media channel (anda "Monthly Channel Leads" model):
           channel media spend over the funnel's window attributed to the
@@ -980,6 +1206,9 @@ export default function CrmFunnelClient({
               </thead>
               <tbody>
                 {funnel.channelCosts.map((c) => {
+                  // Meeting columns on the page's basis; null = no dated
+                  // cost map on this funnel → "—" in all four.
+                  const m = costMeetings(c);
                   return (
                     <tr key={c.channel}>
                       <td className="crm-cost-ch">
@@ -995,23 +1224,23 @@ export default function CrmFunnelClient({
                       >
                         {c.leads > 0 ? fmtILS(c.cpl) : "—"}
                       </td>
-                      <td>{fmtInt(c.scheduled)}</td>
+                      <td>{m ? fmtInt(m.scheduled) : <BasisDash />}</td>
                       <td
                         style={{
-                          color: costMetricColor("cps", c.cps) ?? undefined,
+                          color: (m && costMetricColor("cps", m.cps)) ?? undefined,
                           fontWeight: 600,
                         }}
                       >
-                        {c.scheduled > 0 ? fmtILS(c.cps) : "—"}
+                        {!m ? <BasisDash /> : m.scheduled > 0 ? fmtILS(m.cps) : "—"}
                       </td>
-                      <td>{fmtInt(c.meetings)}</td>
+                      <td>{m ? fmtInt(m.meetings) : <BasisDash />}</td>
                       <td
                         style={{
-                          color: costMetricColor("cpm", c.cpm) ?? undefined,
+                          color: (m && costMetricColor("cpm", m.cpm)) ?? undefined,
                           fontWeight: 600,
                         }}
                       >
-                        {c.meetings > 0 ? fmtILS(c.cpm) : "—"}
+                        {!m ? <BasisDash /> : m.meetings > 0 ? fmtILS(m.cpm) : "—"}
                       </td>
                     </tr>
                   );
@@ -1031,7 +1260,14 @@ export default function CrmFunnelClient({
         <div className="crm-objection-grid">
           {statusRows.length > 0 && (
             <div className="crm-block">
-              <div className="crm-block-title">משפך סטטוסים</div>
+              {/* Fixed on lead-entry by nature: each bar is leads by their
+                  CURRENT status, which has no meeting date to re-count by —
+                  so it wears its basis rather than following the switch, and
+                  its meeting stages need not equal the dated tiles above. */}
+              <div className="crm-block-title">
+                משפך סטטוסים
+                <BasisBadge kind="statusFunnel" />
+              </div>
               <ul className="crm-matrix" ref={statusListRef}>
                 {statusRows.map((row) => {
                   const cumPct = (row.cumulative / Math.max(1, kpis.leads) * 100).toFixed(1);
@@ -1130,6 +1366,14 @@ export default function CrmFunnelClient({
               selectedSources={selected}
               sourceColors={palette}
               zeroDays={trendZero}
+              meetingLines={
+                dated
+                  ? {
+                      title: TREND_DATED_LINES_TITLE,
+                      missing: funnel.dailyDated ? undefined : <BasisDash />,
+                    }
+                  : undefined
+              }
             />
           )}
         </div>
@@ -1303,27 +1547,31 @@ export default function CrmFunnelClient({
           + audience are lead-count splits; the creative table adds scheduled/
           held and spend → cost-per-lead / scheduled / held, joined from the
           dashboard's facebook-ads-metrics Sheet by exact campaign + ad name. */}
-      {funnel.fbBreakdown ? (
+      {fb ? (
         <details className="crm-fb-breakdown" dir="rtl">
           <summary className="crm-fb-head">
             <span className="crm-fb-icon" aria-hidden>
               <PlatformIcon platform="facebook" size="1em" />
             </span>
-            פילוח פייסבוק — {fmtInt(funnel.fbBreakdown.totalLeads)} לידים
+            פילוח פייסבוק — {fmtInt(fb.totalLeads)} לידים
             <span className="crm-fb-headsub">לפי תגיות UTM (Meta — פייסבוק/אינסטגרם)</span>
           </summary>
           <p className="crm-fb-basis">
-            לידים = נכנסו בטווח · תואמו/פגישות = אירועי פגישה שתאריכם בטווח, לפי
-            המודעה שהביאה את הלקוח במגע הראשון (גם אם הליד נכנס לפני הטווח) —
-            אותה הגדרה כמו אריחי המשפך. פגישות = מאושרות-בוצעו בלבד ב-BMBY, לכן
-            בחודש הנוכחי הן מתעדכנות בדיעבד.
+            {fbBasisNote(funnel.platform, basis, fbDatedAvailable, funnel.meetingBasis?.lead)}
           </p>
+          {/* Rows render in PAYLOAD order on both bases. lib/crmData ranks
+              the top-8 by leads + max(lead-entry, dated) תואמו precisely so
+              that a flip changes the numbers in a row and never which rows
+              exist or where they sit; re-sorting here by the visible basis
+              would undo that. Bars are sized by leads — basis-free — against
+              the column's largest lead count, which (with that ranking) is
+              no longer necessarily the first row. */}
           <div className="crm-fb-cols">
             {([
-              ["מיקום (Placement)", funnel.fbBreakdown.byPlacement],
-              ["קהל (Audience)", funnel.fbBreakdown.byAudience],
+              ["מיקום (Placement)", fb.byPlacement],
+              ["קהל (Audience)", fb.byAudience],
             ] as const).map(([title, list]) => {
-              const max = list[0]?.leads || 1;
+              const max = Math.max(1, ...list.map((r) => r.leads));
               return (
                 <div key={title} className="crm-fb-col">
                   <div className="crm-fb-col-title crm-fb-col-title-row">
@@ -1332,39 +1580,48 @@ export default function CrmFunnelClient({
                       לידים · תואמו · פגישות
                     </span>
                   </div>
-                  {list.map((r) => (
-                    <div
-                      key={r.label}
-                      className="crm-fb-row"
-                      title={
-                        `${r.label}: ${r.leads} לידים · ${r.scheduled} תואמו · ${r.held} פגישות` +
-                        objectionTitle(r.objections)
-                      }
-                    >
+                  {list.map((r) => {
+                    const m = utmMeetings(r, basis);
+                    return (
                       <div
-                        className="crm-fb-bar"
-                        style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
-                      />
-                      <span className="crm-fb-rowlabel">
-                        {r.label}
-                        <ObjectionChip list={r.objections} />
-                      </span>
-                      <span className="crm-fb-rowmetrics">
-                        <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
-                        <span className="crm-fb-rowsub" title="תואמו">
-                          {fmtInt(r.scheduled)}
+                        key={r.label}
+                        className="crm-fb-row"
+                        title={
+                          `${r.label}: ${r.leads} לידים · ${countText(m.scheduled)} תואמו · ${countText(m.held)} פגישות` +
+                          objectionTitle(r.objections)
+                        }
+                      >
+                        <div
+                          className="crm-fb-bar"
+                          style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
+                        />
+                        <span className="crm-fb-rowlabel">
+                          {r.label}
+                          <ObjectionChip list={r.objections} />
                         </span>
-                        <span className="crm-fb-rowsub" title="פגישות">
-                          {fmtInt(r.held)}
+                        <span className="crm-fb-rowmetrics">
+                          <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
+                          <span className="crm-fb-rowsub" title="תואמו">
+                            <MeetingCount value={m.scheduled} />
+                          </span>
+                          <span className="crm-fb-rowsub" title="פגישות">
+                            <MeetingCount value={m.held} />
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
-          {funnel.fbBreakdown.byCreative.length > 0 ? (
+          {/* Internal (CSS-hidden under .rpt-clientview): Meta meetings no
+              placement / audience / creative row could take because the
+              lead they are credited to carried no usable UTM. Σ audiences +
+              this = the ערוצים facebook row on the same basis — without it
+              the gap reads as a bug. */}
+          <UntaggedMeetingsLine pair={fb.untagged?.[basis]} />
+          {fb.byCreative.length > 0 ? (
             <div className="crm-fb-creatives">
               <div className="crm-fb-col-title">
                 קריאייטיב — לידים · פגישות · עלות (מתוך נתוני פייסבוק בגיליון)
@@ -1388,24 +1645,41 @@ export default function CrmFunnelClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {funnel.fbBreakdown.byCreative.map((c) => (
-                    <tr key={c.label}>
-                      <td className="crm-fb-adname" title={c.label}>{c.label}</td>
-                      <td className="m-leads">{fmtInt(c.leads)}</td>
-                      <td className="m-sched">{fmtInt(c.scheduled)}</td>
-                      <td className="m-held">{fmtInt(c.held)}</td>
-                      <td className="m-leads">{c.cpl ? `₪${fmtInt(c.cpl)}` : "—"}</td>
-                      <td className="m-sched">{c.cps ? `₪${fmtInt(c.cps)}` : "—"}</td>
-                      <td className="m-held">{c.cpm ? `₪${fmtInt(c.cpm)}` : "—"}</td>
-                      <td className="m-obj">
-                        {c.objections?.length ? (
-                          <ObjectionChip list={c.objections} bare />
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {fb.byCreative.map((c) => {
+                    const m = utmMeetings(c, basis);
+                    // CPS / CPM divide the same spend by the basis's own
+                    // counts. undefined = no source on this basis → the
+                    // tooltip'd "—"; 0 keeps its old meaning (no spend row
+                    // joined, or nothing to divide by) and its plain "—".
+                    const cps = dated ? c.datedCps : c.cps;
+                    const cpm = dated ? c.datedCpm : c.cpm;
+                    return (
+                      <tr key={c.label}>
+                        <td className="crm-fb-adname" title={c.label}>{c.label}</td>
+                        <td className="m-leads">{fmtInt(c.leads)}</td>
+                        <td className="m-sched">
+                          <MeetingCount value={m.scheduled} />
+                        </td>
+                        <td className="m-held">
+                          <MeetingCount value={m.held} />
+                        </td>
+                        <td className="m-leads">{c.cpl ? `₪${fmtInt(c.cpl)}` : "—"}</td>
+                        <td className="m-sched">
+                          {cps == null ? <BasisDash /> : cps ? `₪${fmtInt(cps)}` : "—"}
+                        </td>
+                        <td className="m-held">
+                          {cpm == null ? <BasisDash /> : cpm ? `₪${fmtInt(cpm)}` : "—"}
+                        </td>
+                        <td className="m-obj">
+                          {c.objections?.length ? (
+                            <ObjectionChip list={c.objections} bare />
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1415,7 +1689,10 @@ export default function CrmFunnelClient({
 
       {/* Google keyword drill (Sehel warehouse only) — utm_term on
           google-source leads. Sibling of the FB block so Meta/Google stay
-          visually distinct; shown only when the warehouse populated it. */}
+          visually distinct; shown only when the warehouse populated it.
+          CSS-hidden in every rail view (the קמפיינים keyword table carries
+          the same rows); it follows the switch anyway, for the classic
+          full card where it is visible. Payload order, as above. */}
       {funnel.fbBreakdown?.byKeyword && funnel.fbBreakdown.byKeyword.length > 0 ? (
         <details className="crm-fb-breakdown crm-kw-breakdown" dir="rtl">
           <summary className="crm-fb-head">
@@ -1426,7 +1703,7 @@ export default function CrmFunnelClient({
           <div className="crm-fb-cols">
             {(() => {
               const list = funnel.fbBreakdown.byKeyword;
-              const max = list[0]?.leads || 1;
+              const max = Math.max(1, ...list.map((r) => r.leads));
               return (
                 <div className="crm-fb-col">
                   <div className="crm-fb-col-title crm-fb-col-title-row">
@@ -1435,28 +1712,31 @@ export default function CrmFunnelClient({
                       לידים · תואמו · פגישות
                     </span>
                   </div>
-                  {list.map((r) => (
-                    <div
-                      key={r.label}
-                      className="crm-fb-row"
-                      title={`${r.label}: ${r.leads} לידים · ${r.scheduled} תואמו · ${r.held} פגישות`}
-                    >
+                  {list.map((r) => {
+                    const m = utmMeetings(r, basis);
+                    return (
                       <div
-                        className="crm-fb-bar"
-                        style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
-                      />
-                      <span className="crm-fb-rowlabel">{r.label}</span>
-                      <span className="crm-fb-rowmetrics">
-                        <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
-                        <span className="crm-fb-rowsub" title="תואמו">
-                          {fmtInt(r.scheduled)}
+                        key={r.label}
+                        className="crm-fb-row"
+                        title={`${r.label}: ${r.leads} לידים · ${countText(m.scheduled)} תואמו · ${countText(m.held)} פגישות`}
+                      >
+                        <div
+                          className="crm-fb-bar"
+                          style={{ width: `${Math.max(4, (r.leads / max) * 100)}%` }}
+                        />
+                        <span className="crm-fb-rowlabel">{r.label}</span>
+                        <span className="crm-fb-rowmetrics">
+                          <span className="crm-fb-rowcount">{fmtInt(r.leads)}</span>
+                          <span className="crm-fb-rowsub" title="תואמו">
+                            <MeetingCount value={m.scheduled} />
+                          </span>
+                          <span className="crm-fb-rowsub" title="פגישות">
+                            <MeetingCount value={m.held} />
+                          </span>
                         </span>
-                        <span className="crm-fb-rowsub" title="פגישות">
-                          {fmtInt(r.held)}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -1520,11 +1800,15 @@ export default function CrmFunnelClient({
       )}
 
       {/* Lead-journey velocity — days from a cohort lead to its first held
-          meeting (on/after), per channel. Whole-window, collapsed. */}
+          meeting (on/after), per channel. Whole-window, collapsed. A cohort
+          measure by construction (the clock starts at lead arrival), so it
+          wears the lead-entry badge and never follows the switch: re-cut by
+          meeting date it would stop being a velocity. */}
       {funnel.journeyVelocity && (
         <details className="crm-block crm-collapsible crm-speed-block">
           <summary className="crm-block-title">
             מסע הליד — מהליד עד פגישה שהתקיימה
+            <BasisBadge kind="velocity" />
             <span
               className="crm-speed-overall"
               title="חציון/ממוצע הימים מהגעת הליד עד הפגישה הראשונה שהתקיימה (לכל החלון, לא מסונן)"
@@ -1631,6 +1915,10 @@ export default function CrmFunnelClient({
         <details className="crm-block crm-collapsible">
           <summary className="crm-block-title">
             מקור מול טריגר
+            {/* Counts coordinations by the day they were booked (BMBY) —
+                deliberately, see lib/leadJourney — so it keeps that basis
+                under either switch position and says which it is. */}
+            <LeadJourneyBasisBadge data={journey} />
             <span className="crm-speed-overall">
               {" "}· {fmtInt(journey.moved)} מתוך {fmtInt(journey.total)} לידים
               החליפו ערוץ בין הפנייה לסגירה
@@ -1709,18 +1997,29 @@ export default function CrmFunnelClient({
 
 function KpiTile({
   label,
+  badge,
   value,
   sub,
   note,
+  hint,
   breakdown,
   palette,
 }: {
   label: string;
-  value: React.ReactNode;
-  sub?: string;
+  /** A basis badge after the label (BasisBadge) — the lead-only / status-
+   *  snapshot caveats of the meeting tiles. */
+  badge?: ReactNode;
+  value: ReactNode;
+  /** The "% מהלידים" line — a string, or a BasisDash where the ratio would
+   *  mix the two meeting bases. */
+  sub?: ReactNode;
   /** Optional extra line under `sub` — used for the תואמה breakdown
    *  (תואמו + בוטלו). Plain text, muted. */
   note?: string;
+  /** One more sentence of explanation, in the tooltip rather than on the
+   *  tile: the footer of the source popover when there is one, the tile's
+   *  native title otherwise. */
+  hint?: string;
   /** Per-source breakdown for this metric under the current chip
    *  selection. When present (and non-empty), the tile gets a hover
    *  popover with a mini-pie of which channels contributed. */
@@ -1733,10 +2032,14 @@ function KpiTile({
     <div
       {...(hasPopover ? triggerProps : {})}
       className={"crm-kpi-tile" + (hasPopover ? " crm-kpi-tile-has-popover" : "")}
+      title={!hasPopover && hint ? hint : undefined}
     >
       <div className="crm-kpi-value">{value}</div>
-      <div className="crm-kpi-label">{label}</div>
-      {sub ? <div className="crm-kpi-sub">{sub}</div> : null}
+      <div className="crm-kpi-label">
+        {label}
+        {badge}
+      </div>
+      {sub != null && sub !== "" ? <div className="crm-kpi-sub">{sub}</div> : null}
       {note ? <div className="crm-kpi-note">{note}</div> : null}
       {hasPopover && open && pos
         ? createPortal(
@@ -1756,6 +2059,14 @@ function KpiTile({
               }}
             >
               <ChannelMiniPieContent data={breakdown!} palette={palette!} metric={label} />
+              {hint ? (
+                <div
+                  className="crm-channel-tooltip-title"
+                  style={{ marginTop: "0.45rem", marginBottom: 0, fontWeight: 400 }}
+                >
+                  {hint}
+                </div>
+              ) : null}
             </div>,
             document.body,
           )
@@ -1986,6 +2297,65 @@ function ChannelMiniPieContent({
       </div>
     </>
   );
+}
+
+/** A UTM row's תואמו / פגישות on the page's meeting basis. lib/crmData
+ *  UtmRow: unprefixed = lead-entry, `dated*` = meeting-date and undefined
+ *  where the funnel has no dated source (Salesforce) — kept undefined here
+ *  so the cell renders "—" instead of borrowing the other basis. */
+function utmMeetings(
+  r: UtmRow,
+  basis: MeetingBasis,
+): { scheduled: number | undefined; held: number | undefined } {
+  return basis === "dated"
+    ? { scheduled: r.datedScheduled, held: r.datedHeld }
+    : { scheduled: r.scheduled, held: r.held };
+}
+
+/** A basis-dependent count in a cell: the number, or the tooltip'd "—". */
+function MeetingCount({ value }: { value: number | undefined }) {
+  return value == null ? <BasisDash /> : <>{fmtInt(value)}</>;
+}
+
+/** The same, for a `title` string. */
+function countText(value: number | undefined): string {
+  return value == null ? "—" : String(value);
+}
+
+/** Tooltip on the trendline's תיאומים / פגישות legend entries under dated,
+ *  where the lines and the bars under them sit on different days. */
+const TREND_DATED_LINES_TITLE = `תיאומים ופגישות ${BASIS_LABELS.dated} — כל נקודה היא יום הפגישה עצמה. העמודות (לידים) נשארות לפי יום כניסת הליד.`;
+
+/** Sehel's פילוח פייסבוק basis lines. BASIS_COPY.fbBreakdown is written for
+ *  BMBY — the owner lead "that booked the meeting", held = "מאושרות-בוצעו ב-
+ *  BMBY" — and would misdescribe a Sehel card on both counts: Sehel groups a
+ *  client's meetings by the UTM of its one registration, and its ביצוע is
+ *  the status "הלקוח הגיע לפגישה" (owner decision D2). */
+const SEHEL_FB_BASIS: Record<MeetingBasis, string> = {
+  lead: `לידים = נכנסו בטווח · תואמו/פגישות = כל אירועי הפגישה (כולל שבוטלו) של לקוחות שנרשמו בטווח, לפי המודעה שהביאה את הלקוח — גם אם הפגישה אחרי הטווח. פגישות = בסטטוס ״${SEHEL_HELD_STATUS}״ בלבד.`,
+  dated: `לידים = נכנסו בטווח · תואמו/פגישות = אירועי פגישה שתאריכם בטווח, לפי המודעה שהביאה את הלקוח (גם אם נרשם לפני הטווח) — אותה הגדרה כמו אריחי המשפך. פגישות = בסטטוס ״${SEHEL_HELD_STATUS}״ בלבד, לכן בחודש הנוכחי הן מתעדכנות בדיעבד.`,
+};
+
+/**
+ * The one-line definition over the פילוח פייסבוק rows, for this funnel's
+ * platform and the page's basis. Before the switch it was a single
+ * hard-coded sentence claiming meeting-dated BMBY events "the same as the
+ * funnel tiles" — false on Salesforce (lead rows by stage) and on every
+ * card whose tiles were not warehouse-dated.
+ */
+function fbBasisNote(
+  platform: CrmPlatform,
+  basis: MeetingBasis,
+  datedAvailable: boolean,
+  leadMaps: NonNullable<CrmFunnel["meetingBasis"]>["lead"] | undefined,
+): string {
+  if (basis === "dated" && !datedAvailable) {
+    return `לידים = נכנסו בטווח · תואמו/פגישות: ${BASIS_COPY.dashNoSource.dated}.`;
+  }
+  if (basis === "lead" && (platform === "salesforce" || leadMaps === "status-snapshot")) {
+    return `לידים = נכנסו בטווח · ${FIXED_BADGES.statusSnapshot.title}.`;
+  }
+  return platform === "sehel" ? SEHEL_FB_BASIS[basis] : BASIS_COPY.fbBreakdown[basis];
 }
 
 /** The objections behind a UTM row, for a `title` attribute. Empty string

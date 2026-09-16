@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { parseMeetingBasis } from "@/lib/meetingBasis";
 import { generateReportSummary } from "@/lib/reportAiSummary";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * POST /api/report/ai-summary  Body: { project, period?, company? }
+ * POST /api/report/ai-summary  Body: { project, period?, company?, basis? }
  * On-demand AI performance summary for the native report (internal
  * @fandf.co.il users only — mirrors the legacy admin/owns-project gate,
  * but the whole native report is already internal-gated on the page).
  * The result is 6h-cached server-side (see lib/reportAiSummary).
+ *
+ * `basis` is the page-level meeting switch's EFFECTIVE basis ("lead" |
+ * "dated"). Anything else — absent, garbage, a stale client that predates
+ * the switch — is lead-entry, the page's default, via parseMeetingBasis.
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -18,7 +23,7 @@ export async function POST(req: Request) {
   if (!email.endsWith("@fandf.co.il")) {
     return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
   }
-  let body: { project?: unknown; period?: unknown; company?: unknown };
+  let body: { project?: unknown; period?: unknown; company?: unknown; basis?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -27,11 +32,12 @@ export async function POST(req: Request) {
   const project = String(body.project || "").trim();
   const period = String(body.period || "").trim();
   const company = String(body.company || "").trim();
+  const basis = parseMeetingBasis(body.basis);
   if (!project) {
     return NextResponse.json({ ok: false, error: "project required" }, { status: 400 });
   }
   try {
-    const text = await generateReportSummary(project, period, company);
+    const text = await generateReportSummary(project, period, company, basis);
     if (!text) {
       return NextResponse.json(
         { ok: false, error: "לא התקבל סיכום — ייתכן שאין מספיק נתונים או שמפתח ה-AI לא מוגדר." },

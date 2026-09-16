@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import ChannelIcon from "@/components/ChannelIcon";
+import { BasisBadge } from "@/components/report/BasisBadge";
 import type { LeadJourney } from "@/lib/leadJourney";
+import { BASIS_LABELS, FIXED_BADGES } from "@/lib/meetingBasis";
 
 /**
  * מקור מול טריגר — the card whose behaviour is the argument.
@@ -28,6 +30,47 @@ import type { LeadJourney } from "@/lib/leadJourney";
  */
 
 type Side = "origin" | "trigger";
+
+/**
+ * Which meeting basis this card counts on — shown beside its title, because
+ * it is one of the surfaces that does NOT follow the page's meeting switch.
+ *
+ * It counts coordinations, and a coordination is the act of BOOKING: the
+ * BMBY half windows on `meeting_date`, the day the meeting was set
+ * (lib/leadJourney, deliberately — a meeting booked inside the window and
+ * held after it is still the window's work). Neither switch position is
+ * that: "לפי כניסת ליד" would move the count to the lead's month, "לפי מועד
+ * הפגישה" to the meeting's. So it keeps its own basis and wears the badge.
+ *
+ * Sehel is the exception inside the exception: sehel_meetings has no
+ * booking-date column (starts_at / ends_at / last_synced_at only, checked
+ * 2026-09-16), so its half windows on `starts_at`, the meeting itself. A
+ * Sehel-only card therefore says "לפי מועד הפגישה", and a project read from
+ * both CRMs says which half is which rather than claim one basis for both.
+ */
+export function LeadJourneyBasisBadge({ data }: { data: LeadJourney }) {
+  const bmby = data.platforms.includes("bmby");
+  const sehel = data.platforms.includes("sehel");
+  if (sehel && !bmby) {
+    return (
+      <BasisBadge
+        label={BASIS_LABELS.dated}
+        title="נספרות פגישות לפי מועד הפגישה עצמה, כפי שהיא רשומה ב-Sehel"
+        tone="fixed"
+      />
+    );
+  }
+  if (sehel && bmby) {
+    return (
+      <BasisBadge
+        label={FIXED_BADGES.sourceTrigger.label}
+        title="ב-BMBY נספרים תיאומים לפי היום שבו נקבעה הפגישה; ב-Sehel — לפי מועד הפגישה עצמה"
+        tone="fixed"
+      />
+    );
+  }
+  return <BasisBadge kind="sourceTrigger" />;
+}
 
 /** "ליד אחד" / "7 לידים". A card whose whole job is to be read out loud in
  *  a meeting cannot say "1 לידים". */

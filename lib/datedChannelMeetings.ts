@@ -2,29 +2,40 @@ import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
-import { supabaseConfigured, supabaseRowsAll } from "@/lib/supabase";
+import { supabaseConfigured, supabaseRows, supabaseRowsAll } from "@/lib/supabase";
 import { canonicalMediaChannel, type CrmPlatform } from "@/lib/crmData";
 
 /**
- * Per-channel meeting counts keyed by the date the meeting ACTUALLY
- * HAPPENED, for all three CRM platforms.
+ * Per-channel meeting counts on the MEETING-DATE basis (לפי מועד הפגישה):
+ * meeting events whose date — when the meeting happens, falling back to
+ * when it was booked — falls inside the window, whenever their lead
+ * arrived. They are the `dated*` half of every ערוצים row and of
+ * ProjectReportData.datedTotals; the page-level switch (lib/meetingBasis)
+ * picks between them and the unprefixed LEAD-ENTRY pair.
  *
- * WHY THIS EXISTS. Every held-meeting number the hub shows today is a
- * SNAPSHOT: it counts leads *created* in the window whose status is
- * *currently* held. That is a cohort measure, and it has two properties
- * that make it a poor partner for a spend column:
+ * WHAT THE OTHER BASIS ACTUALLY COUNTS. An earlier version of this header
+ * called the default numbers a status SNAPSHOT ("leads created in the
+ * window whose status is currently held"). Measured 2026-09-16 that is
+ * wrong for the two warehouse platforms: ALL CLIENTS "לפי כניסת ליד" counts
+ * meeting EVENTS — cancelled ones included in תיאומים — credited to the
+ * period in which the lead that owns them arrived. The57!N11 =
+ * SUMIFS(The57CRM בוטלו) + SUMIFS(The57CRM תואמו) = 20 events of 135 cohort
+ * leads, 6 held, and the owner-lead rule (lib/meetingBasis) reproduces all
+ * 7 September rows exactly. Only Salesforce's cells count lead rows by
+ * stage. So both bases count events; they differ in WHICH period an event
+ * belongs to:
  *
- *   1. It restates. Measured 2026-08-25 across all BMBY projects: leads
- *      created in June had 335 held meetings by the end of June, 435 by
- *      today — the number you read at month-end grew 30% afterwards.
- *      July went 291 → 365 and is still climbing.
- *   2. Its per-channel split differs from what actually happened. July,
- *      facebook: 82 held by the snapshot (2026-08-25), 141 by when the
- *      meeting happened (re-measured 2026-09-16). The 129 first quoted
- *      here was filtered on meeting_date, which is the BOOKING date (124
- *      by that rule today) — see the BMBY block below. Cost-per-meeting
- *      for the biggest channel moves by ~70% depending purely on which
- *      definition the table uses.
+ *   1. Lead-entry restates. Measured 2026-08-25 across all BMBY projects:
+ *      leads created in June had 335 held meetings by the end of June and
+ *      435 on the day of measuring — a number read at month-end grew 30%
+ *      afterwards, because June's leads kept booking. The meeting-date count of a closed month
+ *      only moves when an outcome is marked late.
+ *   2. The per-channel split differs. July, facebook: 82 held by the old
+ *      lead-status count (2026-08-25), 141 by when the meeting happened
+ *      (re-measured 2026-09-16). The 129 first quoted here was filtered on
+ *      meeting_date, which is the BOOKING date (124 by that rule today) —
+ *      see the BMBY block below. Cost-per-meeting for the biggest channel
+ *      moves by ~70% depending purely on which definition the table uses.
  *
  * Totals can hide this. Across Salesforce in July the two agree almost
  * exactly (77 vs 75) while only 52 rows are common to both — a third of
@@ -33,8 +44,7 @@ import { canonicalMediaChannel, type CrmPlatform } from "@/lib/crmData";
  *
  * Neither definition is wrong; they answer different questions ("how good
  * were July's leads" vs "how many meetings happened in July"). This module
- * supplies the second one so the ערוצים table can offer both and let the
- * reader pick — see the dated/snapshot toggle in ReportChannelsTab.
+ * supplies the second one, and the page lets the reader pick.
  *
  * THREE PLATFORMS, THREE SOURCES — and only two of them are in Supabase:
  *
@@ -42,8 +52,18 @@ import { canonicalMediaChannel, type CrmPlatform } from "@/lib/crmData";
  *   sehel      sehel_meetings + sehel_leads_daily   warehouse, joined on client
  *   salesforce a tab in the SHBN gathering workbook  SHEET — no warehouse table
  *
+ * NULL VS ZERO. null means "this project has no dated source": no CRM
+ * mapping, an unreachable source, or a warehouse that has never held a
+ * meeting for the account (Carmei-Gat and Bnei-Ayish on Sehel; a BMBY
+ * project the journey view has not onboarded). A mapped account that has
+ * meetings SOMEWHERE but none in this window is an empty result — every
+ * count 0 — because a month with no meetings is a measured zero, and
+ * turning it into null made the whole dated basis read "—" (and, before
+ * the page-level switch, hid the ערוצים toggle) for exactly the months
+ * where zero was the answer.
+ *
  * Never throws: every branch degrades to null so a warehouse or Sheets
- * hiccup costs the toggle, not the table.
+ * hiccup costs the dated basis, not the table.
  */
 
 const TTL_SECONDS = 300;
@@ -185,17 +205,128 @@ export function buildAttributor(
     const c = datedChannelKey(ch);
     if (c) byCanon.set(c, [...(byCanon.get(c) ?? []), ch]);
   }
+  // Row labels longest first, for the prefix step below — so a source that
+  // starts with both "פייסבוק" and "פייסבוק - ויזלמרקטינג" goes to the more
+  // specific row.
+  const byLen = [...byRaw.entries()].sort((x, y) => y[0].length - x[0].length);
   return (source: string): Attribution => {
     const r = norm(source);
     if (!r) return { channel: null, ambiguous: false };
     const exact = byRaw.get(r);
     if (exact) return { channel: exact, ambiguous: false };
+    // A CRM source that IS a row's label plus a suffix belongs to that row.
+    // Sehel stores the ALL CLIENTS label followed by the form / campaign it
+    // came through — גינות, August 2026: "פייסבוק - ויזלמרקטינג ‏אפרידר |
+    // פרויקט גינות - רחובות | טופס לידים | 10.06.26", 31 leads, 3/3 cohort
+    // meetings. The raw match missed it and its canonical key (facebook) is
+    // shared by the rows פייסבוק and "פייסבוק - ויזלמרקטינג", so it was
+    // ambiguous: under the past-month recount (D1) that row read 30 leads,
+    // 0/0, where ALL CLIENTS — which files by its own label — had 2/2. The
+    // character after the label must be a separator (whitespace, the
+    // U+200E/U+200F direction marks, "|"). "-" is left out on purpose, so a
+    // hyphenated BMBY source such as "google-search-brand" still reaches its
+    // row by raw match or canonical key and never the shorter
+    // "google-search" by prefix. Simulated over every captured e2e payload
+    // (The 57, ginot, iris, narkisim, rimon, shbn, karmey, anda, three, hod,
+    // campus, x): it moves only that Ginot source and one 0-meeting karmey
+    // range lead.
+    for (const [lr, label] of byLen) {
+      if (r.length > lr.length && r.startsWith(lr) && /[\s‎‏|]/.test(r[lr.length])) {
+        return { channel: label, ambiguous: false };
+      }
+    }
     const c = datedChannelKey(source);
     const cands = c ? byCanon.get(c) : undefined;
     if (!cands?.length) return { channel: null, ambiguous: false };
     if (cands.length === 1) return { channel: cands[0], ambiguous: false };
     return { channel: null, ambiguous: true };
   };
+}
+
+/** One row's (or remainder's) CRM outcome counts in the ערוצים vocabulary. */
+export type AttributedOutcomes = { leads: number; scheduled: number; meetings: number };
+
+export type SourceMapAttribution = {
+  /** Keyed by the TABLE channel label, verbatim (buildAttributor's rule). */
+  byChannel: Record<string, AttributedOutcomes>;
+  /** Σ leads over every source — the coverage denominator. */
+  totalLeads: number;
+  /** Of totalLeads, those a row claimed. */
+  attributedLeads: number;
+  /** Sources no row owns (no source, or a channel with no spend row). */
+  unattributed: AttributedOutcomes;
+  /** Sources several rows share a canonical key for (plain "google-search"
+   *  on a project that splits brand / generic / competitors). */
+  ambiguous: AttributedOutcomes;
+};
+
+/**
+ * Fold a CRM funnel's per-source maps onto the ערוצים table's rows — range
+ * mode's outcomes, and month mode's LEAD-ENTRY meetings (owner decision D1).
+ * The maps are whatever basis the funnel counted them on (lib/crmData
+ * CrmFunnel.meetingBasis says which); this only decides the ROW, with the
+ * same raw-then-canonical rule as the dated counts above, so a row never
+ * reads a bucket another row also reads.
+ *
+ * Sources are the union of all three maps' keys rather than just the lead
+ * map's: on the owner-lead basis an event is credited to its OWNER lead's
+ * source, which is a lead of the window and so nearly always has a lead
+ * key too — but "nearly" would mean a meeting silently dropped rather than
+ * counted as unattributed, and the remainder is what tells the reader the
+ * split is short.
+ */
+export function attributeSourceMaps(
+  maps: {
+    leadsBySource: Record<string, number>;
+    scheduledMeetingsBySource: Record<string, number>;
+    meetingsBySource: Record<string, number>;
+  },
+  tableChannels: readonly string[],
+): SourceMapAttribution {
+  const attribute = buildAttributor(tableChannels);
+  const zero = (): AttributedOutcomes => ({ leads: 0, scheduled: 0, meetings: 0 });
+  const out: SourceMapAttribution = {
+    byChannel: {},
+    totalLeads: 0,
+    attributedLeads: 0,
+    unattributed: zero(),
+    ambiguous: zero(),
+  };
+  const sources = new Set([
+    ...Object.keys(maps.leadsBySource),
+    ...Object.keys(maps.scheduledMeetingsBySource),
+    ...Object.keys(maps.meetingsBySource),
+  ]);
+  for (const src of sources) {
+    const leads = maps.leadsBySource[src] || 0;
+    const scheduled = maps.scheduledMeetingsBySource[src] || 0;
+    const meetings = maps.meetingsBySource[src] || 0;
+    out.totalLeads += leads;
+    const { channel, ambiguous } = attribute(src);
+    const into = channel
+      ? (out.byChannel[channel] ??= zero())
+      : ambiguous
+        ? out.ambiguous
+        : out.unattributed;
+    if (channel) out.attributedLeads += leads;
+    into.leads += leads;
+    into.scheduled += scheduled;
+    into.meetings += meetings;
+  }
+  return out;
+}
+
+/**
+ * Whether an attribution covers enough of the CRM to replace the numbers a
+ * table already has. A project whose CRM source names have drifted away
+ * from its ALL CLIENTS channel labels would otherwise render a table of
+ * zeros next to real spend, which reads as "this channel produced nothing"
+ * rather than "we could not match the names". Half the window's CRM leads
+ * is the bar range mode has used since it shipped; month mode uses the same
+ * one so the two modes can never disagree about the same month.
+ */
+export function attributionCovers(a: SourceMapAttribution): boolean {
+  return a.totalLeads > 0 && a.attributedLeads * 2 >= a.totalLeads;
 }
 
 /** Keys' `CRM` cell can hold several comma-joined accounts — but a comma
@@ -210,8 +341,11 @@ function accountCandidates(raw: string): string[] {
 
 /** (project, company) → the Keys CRM account + platform, or null when the
  *  project has no CRM mapping. Mirrors getCrmFunnelForProject's own lookup
- *  (which keeps it inline) including the כללי company disambiguation. */
-async function resolveCrm(
+ *  (which keeps it inline) including the כללי company disambiguation.
+ *  Exported so the report reader can tell a Salesforce project (frozen
+ *  month numbers by design) from an unmapped one without building a funnel
+ *  first; Keys is two-layer cached, so the call is ~free. */
+export async function resolveCrm(
   project: string,
   company: string,
 ): Promise<{ account: string; platform: CrmPlatform } | null> {
@@ -238,13 +372,24 @@ async function resolveCrm(
   return null;
 }
 
+/** Whether a warehouse table holds ANY row for an account, at any date —
+ *  the null-vs-zero test for an empty window. `pathWithSelect` carries the
+ *  table, a one-column select and the account filter; limit=1 keeps it to
+ *  one index probe. False on any error (supabaseRows returns []). */
+async function accountHasRows(pathWithSelect: string): Promise<boolean> {
+  const rows = await supabaseRows(`${pathWithSelect}&limit=1`);
+  return rows.length > 0;
+}
+
 /* ── BMBY ─────────────────────────────────────────────────────────────
  * The journey view already carries everything: one row per meeting, its
  * date, its per-event outcome, and the lead's channel.
  *
  * `appointment_outcome` — NOT the `held` boolean. The boolean is
- * confirmed-plus-status-inferred and over-counts (see crmEnrichment's
- * BmbyHeldEnrichment, which surfaces it separately as "estimated").
+ * confirmed-plus-status-inferred and over-counts. Where the page still
+ * shows it, it is labelled: the CRM card's dated פגישות tooltip ("כולל
+ * משוער", sourceMatrices.dated.estimatedHeld) and the "משוער" rows of
+ * פגישות שהתקיימו (lib/heldMeetings).
  * Channel coverage measured 2026-08-25: first_lid_channel was present on
  * 100% of the last 90 days' meetings.
  *
@@ -252,7 +397,7 @@ async function resolveCrm(
  * to `meeting_date` only when that is null — the same rule as crmData's
  * meetingInWindow and fbCreativeMeetingsExport. `meeting_date` is when it
  * was BOOKED (see heldMeetings), and filtering on it alone answered a
- * different question than the toggle asks: measured 2026-09-16 on The 57
+ * different question than the dated basis asks: measured 2026-09-16 on The 57
  * in September it read google-search 2 where the keyword table credited
  * one client with 3 meetings (one booked in August), and facebook 14 vs
  * 20; across the portfolio 215 of August's rows sit in only one of the two
@@ -283,7 +428,14 @@ async function bmbyDated(
       `and(appointment_date.is.null,meeting_date.gte.${from},meeting_date.lte.${to}))` +
       `&order=meeting_id.asc`,
   );
-  if (!rows.length) return null;
+  // An empty window is a measured zero only when the journey view knows
+  // this account at all — see NULL VS ZERO in the header. One limit=1 read,
+  // paid only on empty windows. A failed read comes back [] and so stays
+  // null: an unreachable source must not be dressed up as a zero month.
+  if (!rows.length && !(await accountHasRows("v_bmby_journey_meetings?select=meeting_id" +
+    `&project_he=eq.${encodeURIComponent(account)}`))) {
+    return null;
+  }
   const byChannel: Record<string, DatedCounts> = {};
   const unattributed = emptyCounts();
   const ambiguous = emptyCounts();
@@ -368,7 +520,13 @@ async function sehelDated(
       `&starts_at=gte.${from}T00:00:00&starts_at=lt.${toExcl}T00:00:00` +
       `&order=event_uid.asc`,
   );
-  if (!meetings.length) return null;
+  // Same rule as bmbyDated. This is what keeps Carmei-Gat and Bnei-Ayish —
+  // Sehel accounts with no sehel_meetings rows at all — on null ("—")
+  // while a synced project's quiet month reads 0.
+  if (!meetings.length && !(await accountHasRows("sehel_meetings?select=event_uid" +
+    `&project_name=like.${likePrefix(account)}`))) {
+    return null;
+  }
 
   const uuids = [...new Set(meetings.map((m) => m.client_uuid).filter(Boolean))];
   const sourceByUuid = new Map<string, string>();
@@ -429,7 +587,7 @@ async function sehelDated(
  * signed" on E while P says that meeting was cancelled — coherent, they
  * rebooked). E is the lead-level snapshot this module exists to avoid;
  * P is the per-event truth. Reading E here would silently reintroduce
- * exactly the semantics the toggle is meant to offer an alternative to.
+ * exactly the semantics the dated basis is meant to offer an alternative to.
  */
 const SF_HELD = "התקיימה";
 const SF_PENDING = "טרם התקיימה";
@@ -520,8 +678,8 @@ async function computeUncached(
     if (crm.platform === "salesforce") {
       return await salesforceDated(crm.account, from, to, attribute);
     }
-    // Both warehouse platforms need a key; without one the toggle simply
-    // doesn't offer itself rather than reporting zeros.
+    // Both warehouse platforms need a key; without one the dated basis is
+    // simply unavailable ("—") rather than reporting zeros.
     if (!supabaseConfigured()) return null;
     return crm.platform === "bmby"
       ? await bmbyDated(crm.account, from, to, attribute)
@@ -536,7 +694,10 @@ async function computeUncached(
 
 const computeCrossRequest = unstable_cache(
   computeUncached,
-  ["datedChannelMeetings"],
+  // v2: an empty window became a zero result instead of null. Without the
+  // bump, nulls cached for quiet months before the deploy would keep those
+  // months reading "—" for up to TTL_SECONDS afterwards.
+  ["datedChannelMeetings:v2"],
   { revalidate: TTL_SECONDS, tags: [CACHE_TAG] },
 );
 
@@ -550,8 +711,12 @@ const computeCrossRequest = unstable_cache(
  * identifies a row or is ambiguous between three of them.
  *
  * Null when the project has no CRM mapping, the platform's source is
- * unreachable, or nothing matched — all of which mean "offer the snapshot
- * only", never "show zeros".
+ * unreachable, or the warehouse has never held a meeting for the account —
+ * all of which mean "no dated basis here" ("—"), never "show zeros". A
+ * mapped account with no meetings in THIS window returns every count 0.
+ * Salesforce still returns null for a window with no matching rows: its
+ * capture tab is a one-off CSV drop, so an empty window there cannot be
+ * told apart from a project the drop does not cover.
  */
 export const getDatedChannelMeetings = cache(
   (args: {

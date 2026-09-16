@@ -22,6 +22,12 @@ import { createPortal } from "react-dom";
  * monthOverride (lib/crmData.ts), and `bySource` is already narrowed to
  * the selected chips by the parent (CrmFunnelClient), so we render
  * whatever days/sources we're handed.
+ *
+ * The chart does not know about the page's meeting basis. On the project
+ * page CrmFunnelClient hands it a series whose `leads` are by lead day and
+ * whose scheduledMeetings / meetings are already on the page's basis (by
+ * meeting day under "לפי מועד הפגישה"), and says so through `meetingLines`;
+ * the budget desk passes neither and gets the chart it always had.
  */
 
 type DailyTimeSeries = {
@@ -60,6 +66,7 @@ export default function CrmFunnelTrendline({
   fitWidth = false,
   height,
   legend = true,
+  meetingLines,
 }: {
   dailyTimeSeries: DailyTimeSeries;
   selectedSources: Set<string>;
@@ -97,6 +104,19 @@ export default function CrmFunnelTrendline({
    *  room. The hover card still names every channel, with its counts, for
    *  the hovered day. */
   legend?: boolean;
+  /**
+   * The תיאומים / פגישות overlay lines, when the host counts them on a
+   * basis other than the bars' (the project page's meeting switch).
+   *   title    tooltip on the two legend entries — which days the lines sit
+   *            on, since the bars under them sit on lead days.
+   *   missing  the host has no meeting series on its current basis. The
+   *            lines are not drawn, and this node (the host's "—") stands
+   *            in for every line number — legend sums, hover pies, the
+   *            per-channel hover counts — rather than a 0 that would read
+   *            as "no meetings".
+   * Absent: lines from the same rows as the bars, as always.
+   */
+  meetingLines?: { title?: string; missing?: ReactNode };
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -164,13 +184,23 @@ export default function CrmFunnelTrendline({
   const { channels, days, leadTotal, periodSched, periodHeld } = model;
   const n = days.length;
   if (n === 0) return null;
+  const linesMissing = meetingLines?.missing != null;
+  const linesTitle = meetingLines?.title;
 
   const colorOf = (src: string) => sourceColors.get(src) || FALLBACK_COLOR;
 
   // Y axis is scaled to the busiest day's TOTAL leads (the stack height).
-  // Scheduled/held lines share that axis — they're smaller, so they read
-  // in the lower band, which is fine; the hover pies carry the detail.
-  const rawMax = Math.max(...days.map((d) => d.leads), 1);
+  // Scheduled/held lines share that axis — they're usually smaller, so they
+  // read in the lower band, which is fine; the hover pies carry the detail.
+  // "Usually": once the lines count meetings by the day they happen (the
+  // project page on "לפי מועד הפגישה"), a day can hold more meetings than
+  // leads — a Thursday of site visits with no new leads, or a booked future
+  // day with no bar at all — so a drawn line gets its peak into the scale
+  // rather than running off the top of the plot.
+  const rawMax = Math.max(
+    ...days.map((d) => (linesMissing ? d.leads : Math.max(d.leads, d.scheduled))),
+    1,
+  );
   const yMax = niceCeiling(rawMax * 1.1);
 
   // fitWidth: draw at the rendered pixel size so nothing stretches.
@@ -324,8 +354,9 @@ export default function CrmFunnelTrendline({
               ),
             )}
 
-          {/* Scheduled / held lines on top */}
-          {LINE_META.map(({ key, color }) => (
+          {/* Scheduled / held lines on top — none when the host has no
+              meeting series on its basis (a flat 0 line would claim one). */}
+          {!linesMissing && LINE_META.map(({ key, color }) => (
             <g key={key}>
               <path
                 d={linePath(key)}
@@ -397,19 +428,24 @@ export default function CrmFunnelTrendline({
                   { metric: "scheduledMeetings", label: "תיאומים", total: hoverDay.scheduled },
                   { metric: "meetings", label: "פגישות", total: hoverDay.held },
                 ] as const
-              ).map(({ metric, label, total }) => (
-                <div key={metric} className="crm-trend-pie">
-                  <MiniPie
-                    segments={channels.map((ch) => ({
-                      color: colorOf(ch),
-                      value: hoverDay.bySource.get(ch)?.[metric] ?? 0,
-                    }))}
-                    total={total}
-                  />
-                  <span className="crm-trend-pie-label">{label}</span>
-                  <span className="crm-trend-pie-total">{total}</span>
-                </div>
-              ))}
+              ).map(({ metric, label, total }) => {
+                const na = linesMissing && metric !== "leads";
+                return (
+                  <div key={metric} className="crm-trend-pie">
+                    <MiniPie
+                      segments={channels.map((ch) => ({
+                        color: colorOf(ch),
+                        value: hoverDay.bySource.get(ch)?.[metric] ?? 0,
+                      }))}
+                      total={na ? 0 : total}
+                    />
+                    <span className="crm-trend-pie-label">{label}</span>
+                    <span className="crm-trend-pie-total">
+                      {na ? meetingLines?.missing : total}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
             {/* Per-day channel legend — only channels active that day */}
             <ul className="crm-trend-hover-legend">
@@ -428,7 +464,9 @@ export default function CrmFunnelTrendline({
                       />
                       <span className="crm-trend-hover-legend-name">{ch}</span>
                       <span className="crm-trend-hover-legend-nums">
-                        {s.leads}/{s.scheduledMeetings}/{s.meetings}
+                        {linesMissing
+                          ? `${s.leads}/—/—`
+                          : `${s.leads}/${s.scheduledMeetings}/${s.meetings}`}
                       </span>
                     </li>
                   );
@@ -438,28 +476,37 @@ export default function CrmFunnelTrendline({
         )}
       </div>
 
-      {/* Legend: one swatch per channel (bars) + the two overlay lines. */}
+      {/* Legend: one swatch per channel (bars) + the two overlay lines.
+          Only channels that HAVE a bar: `channels` also holds sources that
+          appear in the lines alone (the hover pies need them to close), and
+          on the dated basis that is every client whose first touch predates
+          the window — a "0" swatch per such source would crowd the legend
+          and make its channel list change when the page's switch flips. */}
       {legend && (
         <ul className="crm-trend-legend">
-          {channels.map((ch) => (
+          {channels.filter((ch) => (leadTotal.get(ch) || 0) > 0).map((ch) => (
             <li key={ch}>
               <span className="crm-trend-legend-dot" style={{ background: colorOf(ch) }} />
               <span className="crm-trend-legend-label">{ch}</span>
               <span className="crm-trend-legend-sum">{leadTotal.get(ch) || 0}</span>
             </li>
           ))}
-          <li className="crm-trend-legend-sep">
+          <li className="crm-trend-legend-sep" title={linesTitle}>
             <span className="crm-trend-legend-line" style={{ background: "#f59e0b" }} />
             <span className="crm-trend-legend-label">תיאומים</span>
-            <span className="crm-trend-legend-sum">{periodSched}</span>
+            <span className="crm-trend-legend-sum">
+              {linesMissing ? meetingLines?.missing : periodSched}
+            </span>
           </li>
-          <li>
+          <li title={linesTitle}>
             <span
               className="crm-trend-legend-line crm-trend-legend-line-dash"
               style={{ background: "#10b981" }}
             />
             <span className="crm-trend-legend-label">פגישות</span>
-            <span className="crm-trend-legend-sum">{periodHeld}</span>
+            <span className="crm-trend-legend-sum">
+              {linesMissing ? meetingLines?.missing : periodHeld}
+            </span>
           </li>
         </ul>
       )}

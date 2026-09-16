@@ -21,25 +21,31 @@ import {
   emptyAdPlatform,
   sumAdPlatform,
   computePacing,
+  computeDatedTotals,
   computeForecast,
   computePrevFunnel,
   detectAnomalies,
   type AdPlatform,
   type DailyPoint,
   type DatedSourceInfo,
+  type MonthLeadSource,
   type MonthlyRow,
   type PlatCampaign,
   monthSegments,
   type ProjectReportData,
   type RangeBasis,
   type ReportChannel,
+  type ReportMeetingTotals,
   type ReportPlat,
   type ReportSubCampaign,
   type ReportWindow,
 } from "@/lib/reportShared";
 import {
-  buildAttributor,
+  attributeSourceMaps,
+  attributionCovers,
   getDatedChannelMeetings,
+  resolveCrm,
+  type DatedChannelMeetings,
 } from "@/lib/datedChannelMeetings";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 
@@ -549,11 +555,19 @@ type RangeAccum = {
  *     that can answer "leads created between the 4th and the 19th", and
  *     ALL CLIENTS' monthly lead counts are themselves derived from it, so
  *     this is the faithful generalisation of what the other modes show
- *     rather than a different measure.
+ *     rather than a different measure. The funnel's meeting maps are its
+ *     LEAD-ENTRY maps (BMBY owner-lead, Sehel registration cohort, a status
+ *     snapshot on the Sheet / Salesforce routes — CrmFunnel.meetingBasis),
+ *     which is what the unprefixed תיאומים / ביצועים mean everywhere; the
+ *     dated pair is attached later from lib/datedChannelMeetings, as in
+ *     every other mode.
  *
- * Row-grain attribution for (3) reuses buildAttributor: matching on the
- * canonical channel alone would hand Google-search-brand, -generic and
- * -competitors the same bucket and triple-count it.
+ * Row-grain attribution for (3) reuses attributeSourceMaps (buildAttributor
+ * underneath): matching on the canonical channel alone would hand
+ * Google-search-brand, -generic and -competitors the same bucket and
+ * triple-count it. Month mode's live lead-entry meetings (D1) go through
+ * the same function and the same coverage bar, so the two modes cannot
+ * attribute one month two ways.
  */
 async function buildRangeReportChannels(args: {
   subjectEmail: string;
@@ -812,41 +826,17 @@ async function buildRangeReportChannels(args: {
     projectWindow: { from: window.startIso, to: window.endIso },
   }).catch(() => null);
 
-  let outcomes: RangeBasis["outcomes"] = "prorated";
-  let unattributedLeads = 0;
-  let ambiguousLeads = 0;
-  let totalCrmLeads = 0;
-  const crm = new Map<string, { leads: number; scheduled: number; meetings: number }>();
-  if (funnel) {
-    const attribute = buildAttributor(labels);
-    const sm = funnel.sourceMatrices;
-    let attributed = 0;
-    for (const src of sm.allSources) {
-      const leads = sm.leadsBySource[src] || 0;
-      totalCrmLeads += leads;
-      const { channel, ambiguous } = attribute(src);
-      if (!channel) {
-        if (ambiguous) ambiguousLeads += leads;
-        else unattributedLeads += leads;
-        continue;
-      }
-      attributed += leads;
-      const cur = crm.get(channel) ?? { leads: 0, scheduled: 0, meetings: 0 };
-      cur.leads += leads;
-      cur.scheduled += sm.scheduledMeetingsBySource[src] || 0;
-      cur.meetings += sm.meetingsBySource[src] || 0;
-      crm.set(channel, cur);
-    }
-    // Only switch the columns over when the attribution actually covers
-    // the cohort. A project whose CRM source names have drifted away from
-    // its ALL CLIENTS channel labels would otherwise render a table of
-    // zeros next to real spend, which reads as "this channel produced
-    // nothing" rather than "we could not match the names".
-    if (totalCrmLeads > 0 && attributed * 2 >= totalCrmLeads) outcomes = "crm";
-  }
+  const attribution = funnel
+    ? attributeSourceMaps(funnel.sourceMatrices, labels)
+    : null;
+  // Only switch the columns over when the attribution actually covers the
+  // cohort — see attributionCovers for why a half-matched table is worse
+  // than a pro-rated one.
+  const outcomes: RangeBasis["outcomes"] =
+    attribution && attributionCovers(attribution) ? "crm" : "prorated";
 
   const channels: ReportChannel[] = built.map(({ a, platform, subs, spend, daily, estimated }) => {
-    const hit = outcomes === "crm" ? crm.get(a.channel) : undefined;
+    const hit = outcomes === "crm" ? attribution?.byChannel[a.channel] : undefined;
     const leads = outcomes === "crm" ? (hit?.leads ?? 0) : Math.round(a.leads);
     const scheduled =
       outcomes === "crm" ? (hit?.scheduled ?? 0) : Math.round(a.scheduled);
@@ -888,11 +878,172 @@ async function buildRangeReportChannels(args: {
       realSpend,
       prorated,
       outcomes,
-      unattributedLeads: outcomes === "crm" ? unattributedLeads : 0,
-      ambiguousLeads: outcomes === "crm" ? ambiguousLeads : 0,
-      totalCrmLeads: outcomes === "crm" ? totalCrmLeads : 0,
+      unattributedLeads:
+        outcomes === "crm" ? (attribution?.unattributed.leads ?? 0) : 0,
+      ambiguousLeads: outcomes === "crm" ? (attribution?.ambiguous.leads ?? 0) : 0,
+      totalCrmLeads: outcomes === "crm" ? (attribution?.totalLeads ?? 0) : 0,
+      // What the CRM maps behind the columns count. Unlike month mode
+      // (liveMonthLeadEntry), a range does not refuse a status snapshot —
+      // it has no frozen numbers to fall back on — but it has to label
+      // one: כרמי גת (Sehel, Sheet-routed), 2026-08-10..09-12, filled
+      // פייסבוק 2/0, יד 2 1/1, כוכבית 3/1 from leads' current stages under a
+      // caption that called them the CRM's lead-entry meetings.
+      leadRule: outcomes === "crm" ? (funnel?.meetingBasis?.lead ?? null) : null,
+      warehouseFallback: outcomes === "crm" && !!funnel?.meetingBasis?.warehouseFallback,
     },
   };
+}
+
+/* ─── Month mode: live lead-entry meetings (owner decision D1) ──────── */
+
+const ZERO_MEETINGS = (): ReportMeetingTotals => ({ scheduled: 0, meetings: 0 });
+
+const sumValues = (m: Record<string, number>): number =>
+  Object.values(m).reduce((s, n) => s + (n || 0), 0);
+
+/**
+ * Month mode's LEAD-ENTRY תיאומים / ביצועים, per ערוצים row.
+ *
+ * ALL CLIENTS' חודשי rows are literals, pasted when the month closed. But a
+ * lead-entry count is not finished when the month is: a lead that arrived
+ * on the 25th books its meetings the month after, and every one of them
+ * still belongs to the month the lead arrived in. Measured 2026-09-16 on
+ * The 57, August: the frozen google-search row reads 2/0 and facebook 9/2,
+ * while the same rule run live over the warehouse gives 4/1 and 18/6 —
+ * and the קמפיינים joins and CRM tiles one scroll away were already live.
+ * So the owner decided (D1) that a month reads the LIVE warehouse count:
+ *
+ *   BMBY   owner-lead rule (lib/meetingBasis assignOwnerLeads)
+ *   Sehel  registration cohort, held = "הלקוח הגיע לפגישה" (D2)
+ *
+ * taken from the CRM funnel windowed on the month (monthFilter — the same
+ * window the page's CRM card uses in month mode, so the card and this table
+ * describe one set of events) and folded onto the rows with
+ * attributeSourceMaps, exactly like range mode. Leads, spend and every
+ * other column stay ALL CLIENTS; only the meeting pair and its two costs
+ * change.
+ *
+ * The frozen numbers stay, labelled by `frozenReason`, when:
+ *   • the project is on Salesforce — no warehouse, D1 keeps its חודשי row;
+ *   • there is no CRM mapping, or the funnel cannot be read;
+ *   • the funnel does not certify its lead maps as warehouse events
+ *     (CrmFunnel.meetingBasis.lead is "status-snapshot" — the Sehel Sheet
+ *     route, the BMBY D3 fallback — or unset). A lead-STATUS count in a
+ *     column the page labels "events of leads that arrived" would be a
+ *     third definition, which is the disagreement D1 exists to remove;
+ *   • the CRM's source names cover under half the month's CRM leads
+ *     (attributionCovers — range mode's bar), where a live split would
+ *     print zeros next to real spend.
+ *
+ * Never throws; every failure is a labelled frozen result.
+ */
+async function liveMonthLeadEntry(args: {
+  project: string;
+  company: string;
+  month: string;
+  channels: ReportChannel[];
+}): Promise<{ channels: ReportChannel[]; source: MonthLeadSource }> {
+  const { project, company, month, channels } = args;
+  const frozen = ZERO_MEETINGS();
+  for (const c of channels) {
+    frozen.scheduled += c.scheduled;
+    frozen.meetings += c.meetings;
+  }
+  const keepFrozen = (
+    frozenReason: NonNullable<MonthLeadSource["frozenReason"]>,
+    platform: MonthLeadSource["platform"],
+    rule: MonthLeadSource["rule"] = null,
+    coverage?: { totalLeads: number; attributedLeads: number },
+  ) => ({
+    channels,
+    source: {
+      source: "frozen" as const,
+      frozenReason,
+      platform,
+      rule,
+      totalCrmLeads: coverage?.totalLeads ?? 0,
+      attributedLeads: coverage?.attributedLeads ?? 0,
+      unattributed: ZERO_MEETINGS(),
+      ambiguous: ZERO_MEETINGS(),
+      unsourced: ZERO_MEETINGS(),
+      frozen,
+    },
+  });
+  if (!channels.length) return keepFrozen("no-crm", null);
+  try {
+    // Resolved up front so a Salesforce or unmapped project never pays for a
+    // funnel it would throw away. Keys is two-layer cached.
+    const crm = await resolveCrm(project, company);
+    if (!crm) return keepFrozen("no-crm", null);
+    if (crm.platform === "salesforce") return keepFrozen("salesforce", "salesforce");
+    const funnel = await getCrmFunnelForProject({
+      company,
+      project,
+      monthFilter: month,
+    }).catch(() => null);
+    if (!funnel) return keepFrozen("no-crm", crm.platform);
+    const rule = funnel.meetingBasis?.lead ?? null;
+    if (rule !== "owner-lead" && rule !== "registration-cohort") {
+      return keepFrozen("no-warehouse", funnel.platform, rule);
+    }
+    const a = attributeSourceMaps(
+      funnel.sourceMatrices,
+      channels.map((c) => c.channel),
+    );
+    if (!attributionCovers(a)) {
+      return keepFrozen("low-coverage", funnel.platform, rule, a);
+    }
+    // Events the funnel counted in its scalar tiles but filed under NO
+    // source key, so attributeSourceMaps never saw them: a Sehel
+    // registration with a blank media_source_raw, a BMBY owner lead with
+    // neither media_source_clean nor channel_key. BMBY's blank sources
+    // used to be all of them — שלישייה על הפארק, August: tiles 38/19, maps
+    // 33/16, the 5/3 gap being exactly ALL CLIENTS' "Other" row, which read
+    // 0/0 here with no caption — until bmbyLeadSourceKey filed them under
+    // channel_key. Whatever is still left is named rather than silently
+    // dropped, so Σ rows + the three remainders = the CRM card's tiles.
+    const unsourced = {
+      scheduled: Math.max(
+        0,
+        funnel.scheduledMeetings - sumValues(funnel.sourceMatrices.scheduledMeetingsBySource),
+      ),
+      meetings: Math.max(
+        0,
+        funnel.meetings - sumValues(funnel.sourceMatrices.meetingsBySource),
+      ),
+    };
+    const live = channels.map((c) => {
+      const hit = a.byChannel[c.channel];
+      const scheduled = hit?.scheduled ?? 0;
+      const meetings = hit?.meetings ?? 0;
+      return {
+        ...c,
+        scheduled,
+        meetings,
+        costPerScheduled: scheduled > 0 ? c.spend / scheduled : 0,
+        costPerMeeting: meetings > 0 ? c.spend / meetings : 0,
+      };
+    });
+    return {
+      channels: live,
+      source: {
+        source: "warehouse",
+        platform: funnel.platform,
+        rule,
+        totalCrmLeads: a.totalLeads,
+        attributedLeads: a.attributedLeads,
+        unattributed: { scheduled: a.unattributed.scheduled, meetings: a.unattributed.meetings },
+        ambiguous: { scheduled: a.ambiguous.scheduled, meetings: a.ambiguous.meetings },
+        unsourced,
+        frozen,
+      },
+    };
+  } catch (e) {
+    console.warn(
+      `[reportData] month lead-entry ${project} ${month}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return keepFrozen("no-crm", null);
+  }
 }
 
 function sumChannelTotals(channels: AllClientsRow[]) {
@@ -1046,20 +1197,43 @@ export const getProjectReportData = cache(
       );
     }
 
-    // Dated meetings — the alternative basis for the scheduled/held
-    // columns (counted by when the meeting HAPPENED, not by when the lead
-    // was created). Attached onto the same rows so the table's toggle is
-    // pure client state and flipping it costs no round-trip. Best-effort:
-    // a null result just means the toggle doesn't appear.
+    // The two meeting bases, fetched side by side (both are warehouse
+    // reads keyed by the same row labels, and neither changes them).
+    //
+    // Dated — counted by when the meeting HAPPENED, not by when its lead
+    // arrived. Attached onto the same rows as `datedScheduled` /
+    // `datedMeetings`, so the page-level switch is pure client state and
+    // flipping it costs no round-trip. Best-effort: null means the project
+    // has no dated source and the dated basis renders "—".
+    //
+    // Lead-entry, month mode only — the live warehouse count replaces the
+    // frozen חודשי meeting pair (D1, liveMonthLeadEntry). Live mode keeps
+    // the ALL CLIENTS current row: it is pushed daily and matched the
+    // owner-lead rule on every row of The 57's September flight.
     let datedSource: DatedSourceInfo | null = null;
+    let monthLeadSource: MonthLeadSource | null = null;
     if (reportChannels.length && window.startIso && window.endIso) {
-      const dated = await getDatedChannelMeetings({
-        project: projectName,
-        company,
-        from: window.startIso,
-        to: window.endIso,
-        channels: reportChannels.map((c) => c.channel),
-      }).catch(() => null);
+      const [dated, monthLead] = await Promise.all([
+        getDatedChannelMeetings({
+          project: projectName,
+          company,
+          from: window.startIso,
+          to: window.endIso,
+          channels: reportChannels.map((c) => c.channel),
+        }).catch((): DatedChannelMeetings | null => null),
+        mode === "month"
+          ? liveMonthLeadEntry({
+              project: projectName,
+              company,
+              month: period,
+              channels: reportChannels,
+            })
+          : null,
+      ]);
+      if (monthLead) {
+        reportChannels = monthLead.channels;
+        monthLeadSource = monthLead.source;
+      }
       if (dated) {
         // Keyed by this project's own channel labels, so a row reads its
         // own bucket and two rows can never share one. Anything the
@@ -1085,6 +1259,31 @@ export const getProjectReportData = cache(
     }
 
     const totals = mode === "range" ? null : sumChannelTotals(channels);
+    // A month on the live warehouse count (D1): the overview's lead-entry
+    // pair has to be the table's Σ rows, or the funnel cards and the ערוצים
+    // סה״כ row would describe two different months. On lead-entry the total
+    // is Σ rows by design (the dated basis is the one that adds a "לא שויכו
+    // לשורה" row), in every mode, so meetings no row claimed — unattributed,
+    // ambiguous, unsourced — stay out of both here and are named in the
+    // ערוצים caption instead, which is what reconciles the table with the
+    // CRM card. They are not meetings ALL CLIENTS "never counts": its
+    // feeder files by its own labels, so a blank BMBY source sits on its
+    // Other row and a suffixed Sehel source on the row it starts with —
+    // which is why bmbyLeadSourceKey and buildAttributor's prefix step
+    // exist, to keep that remainder down to what truly has no row.
+    if (totals && monthLeadSource?.source === "warehouse") {
+      totals.scheduled = 0;
+      totals.meetings = 0;
+      for (const c of reportChannels) {
+        totals.scheduled += c.scheduled;
+        totals.meetings += c.meetings;
+      }
+    }
+    // The same pair on the MEETING-DATE basis: Σ row dated counts + the
+    // "לא שויכו לשורה" remainder (computeDatedTotals is its one
+    // definition). null wherever `totals` is null (range mode, which has no
+    // overview) or there is no dated source.
+    const datedTotals = totals ? computeDatedTotals(reportChannels, datedSource) : null;
     const [landingUrl, monthly, monthlyRaw, creatives] = await Promise.all([
       landingP,
       monthlyP,
@@ -1157,6 +1356,7 @@ export const getProjectReportData = cache(
       channels: reportChannels,
       datedSource,
       rangeBasis,
+      monthLeadSource,
       creatives,
       company,
       landingUrl,
@@ -1169,6 +1369,7 @@ export const getProjectReportData = cache(
       tabSlug,
       budgetSummary,
       totals,
+      datedTotals,
     };
   },
 );

@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { BasisDash } from "@/components/report/BasisBadge";
+import { BASIS_COPY, BASIS_LABELS, type MeetingBasis } from "@/lib/meetingBasis";
 import { fmtDateHe, fmtILS, fmtInt, type ReportAdHistory } from "@/lib/reportShared";
 
 /**
@@ -22,13 +24,30 @@ import { fmtDateHe, fmtILS, fmtInt, type ReportAdHistory } from "@/lib/reportSha
  * edge case. The ergonomics (hide grace so the cursor can cross the gap,
  * focus/blur parity for keyboards) are copied; the geometry is not.
  *
- * WHAT THE NUMBERS MEAN — the panel is not a before/after of the card face.
- * Attribution is first-touch at ANY lead age, so an ad keeps accruing meetings
- * from leads it touched months ago, even while paused. A lifetime figure
- * therefore only ever grows and is NOT comparable to the in-window figure on
- * the card. Hence `מאז <date>` in the header and the explicit לפני התקופה row:
- * the panel states its own span rather than implying it knows the ad's whole
- * life (the ad-metrics tab is a rolling ~200-day export — see ReportAdHistory).
+ * WHAT THE NUMBERS MEAN — they follow the page-level meeting switch. The
+ * caller hands in `history` already swapped (applyBasisToCreatives swaps the
+ * months, לפני התקופה and סה״כ together) and says which basis it holds, and
+ * the footnote defines exactly that basis:
+ *
+ *   לפי כניסת ליד — each month row counts the meetings of leads that arrived
+ *     that month on this ad (the `h:<month>` buckets): BMBY by the owner-lead
+ *     rule, Sehel by registration cohort, Salesforce as lead rows by stage.
+ *     Months are additive — a meeting lives in exactly one row, its lead's —
+ *     so סה״כ is a true lifetime sum. A past month still grows when one of
+ *     its leads books a new meeting.
+ *   לפי מועד הפגישה — meeting events dated in the month, credited first-touch
+ *     at ANY lead age, so an ad keeps accruing meetings from leads it touched
+ *     months ago, even while paused. That lifetime figure only ever grows and
+ *     is NOT comparable to the in-window figure on the card.
+ *
+ * Either way the panel is not a before/after of the card face. Hence `מאז
+ * <date>` in the header and the explicit לפני התקופה row: the panel states its
+ * own span rather than implying it knows the ad's whole life (the ad-metrics
+ * tab is a rolling ~200-day export — see ReportAdHistory).
+ *
+ * A basis with no source (Salesforce under dated) arrives zeroed with
+ * `noSource` set: the meeting columns and the ₪-per line render "—", and the
+ * footnote says why instead of defining numbers that are not there.
  */
 
 const HIDE_GRACE_MS = 80;
@@ -37,9 +56,18 @@ const PANEL_W = 340;
 export default function AdHistoryPopover({
   ad,
   history,
+  basis,
+  noSource = null,
 }: {
   ad: string;
+  /** On `basis` already — see the header. */
   history: ReportAdHistory;
+  /** Which basis `history`'s scheduled/held hold. Only picks the footnote;
+   *  the swap is the caller's. */
+  basis: MeetingBasis;
+  /** Set when `basis` has no source for this project: the tooltip of every
+   *  "—" meeting cell, and the footnote. */
+  noSource?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; flipped: boolean } | null>(
@@ -106,8 +134,12 @@ export default function AdHistoryPopover({
   useEffect(() => () => cancelHide(), [cancelHide]);
 
   const { before, total } = history;
+  // A no-source history is zeroed, so both of these are 0 and the ₪ line
+  // falls to "—" on its own.
   const perSched = total.scheduled > 0 ? total.cost / total.scheduled : 0;
   const perHeld = total.held > 0 ? total.cost / total.held : 0;
+  const meet = (n: number): ReactNode =>
+    noSource ? <BasisDash title={noSource} /> : fmtInt(n);
 
   const panel =
     open && pos && typeof document !== "undefined"
@@ -129,8 +161,10 @@ export default function AdHistoryPopover({
                   <th>חודש</th>
                   <th>עלות</th>
                   <th>לידים</th>
-                  <th>תואמו</th>
-                  <th>בוצעו</th>
+                  {/* The panel is pointer-reachable (onMouseEnter keeps it
+                      open), so a header title does get read. */}
+                  <th title={BASIS_LABELS[basis]}>תואמו</th>
+                  <th title={BASIS_LABELS[basis]}>בוצעו</th>
                 </tr>
               </thead>
               <tbody>
@@ -139,8 +173,8 @@ export default function AdHistoryPopover({
                     <td>{m.month}</td>
                     <td>{m.cost > 0 ? fmtILS(m.cost) : "—"}</td>
                     <td>{fmtInt(m.leads)}</td>
-                    <td>{fmtInt(m.scheduled)}</td>
-                    <td>{fmtInt(m.held)}</td>
+                    <td>{meet(m.scheduled)}</td>
+                    <td>{meet(m.held)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -149,15 +183,15 @@ export default function AdHistoryPopover({
                   <td>לפני התקופה</td>
                   <td>{before.cost > 0 ? fmtILS(before.cost) : "—"}</td>
                   <td>{fmtInt(before.leads)}</td>
-                  <td>{fmtInt(before.scheduled)}</td>
-                  <td>{fmtInt(before.held)}</td>
+                  <td>{meet(before.scheduled)}</td>
+                  <td>{meet(before.held)}</td>
                 </tr>
                 <tr className="rpt-cr-hist-total">
                   <td>סה״כ</td>
                   <td>{total.cost > 0 ? fmtILS(total.cost) : "—"}</td>
                   <td>{fmtInt(total.leads)}</td>
-                  <td>{fmtInt(total.scheduled)}</td>
-                  <td>{fmtInt(total.held)}</td>
+                  <td>{meet(total.scheduled)}</td>
+                  <td>{meet(total.held)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -165,8 +199,7 @@ export default function AdHistoryPopover({
               {perSched > 0 ? `${fmtILS(perSched)} לתיאום` : "—"}
               {perHeld > 0 ? ` · ${fmtILS(perHeld)} לביצוע` : ""}
               <div className="rpt-cr-hist-note">
-                תיאומים מיוחסים למודעה שהביאה את הליד, בכל גיל ליד — לכן המספר
-                מצטבר גם אחרי שהמודעה הופסקה, ואינו בר-השוואה למספר שבכרטיס.
+                {noSource ?? BASIS_COPY.adHistory[basis]}
               </div>
             </div>
           </div>,

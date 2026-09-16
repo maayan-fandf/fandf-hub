@@ -17,8 +17,19 @@ export const dynamic = "force-dynamic";
  * behind each one.
  *
  *   GET /api/crm/meetings?project=&company=&from=YYYY-MM-DD&to=YYYY-MM-DD
- *     → { ok, total, clientsMet, withNotes, meetings: [...], clients: [...],
+ *     → { ok, total, authoritativeHeld, clientsMet, withNotes,
+ *         meetings: [...], clients: [...],
  *         notSynced?, notSyncedAccounts? (staff only) }
+ *
+ *   total              every meeting in the list, inferred ones included
+ *   authoritativeHeld  confirmed only (BMBY outcome 'held', Sehel "הלקוח הגיע
+ *                      לפגישה") — the tile, equal to the dated ביצועים of
+ *                      the same window. A row outside it carries
+ *                      `estimated: true`. See lib/heldMeetings "Which
+ *                      meetings count".
+ *
+ * Not basis-aware and takes no basis param: the section is dated by nature
+ * and reads the same whichever way the page's meeting-count switch is set.
  *
  * On demand for the same reason /api/crm/signed is: it returns customer
  * names, phones and the salesperson's write-up of the conversation. Putting
@@ -36,6 +47,18 @@ export const dynamic = "force-dynamic";
  * no date anywhere in the warehouse; this one is windowed because
  * `appointment_date` is exactly the thing being asked about.
  */
+
+/** The three no-list answers (no-crm, unsupported-platform, unavailable)
+ *  share one body; only the reason differs. */
+const NO_MEETINGS = {
+  ok: true,
+  total: 0,
+  authoritativeHeld: 0,
+  clientsMet: 0,
+  withNotes: 0,
+  meetings: [],
+  clients: [],
+} as const;
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -101,15 +124,7 @@ export async function GET(req: Request) {
       break;
     }
     if (!crmAccount) {
-      return NextResponse.json({
-        ok: true,
-        total: 0,
-        clientsMet: 0,
-        withNotes: 0,
-        meetings: [],
-        clients: [],
-        reason: "no-crm",
-      });
+      return NextResponse.json({ ...NO_MEETINGS, reason: "no-crm" });
     }
 
     // BMBY and Sehel, each with its own reader and the same result shape.
@@ -126,12 +141,7 @@ export async function GET(req: Request) {
     const wantsSehel = platforms.includes("sehel");
     if (!wantsBmby && !wantsSehel) {
       return NextResponse.json({
-        ok: true,
-        total: 0,
-        clientsMet: 0,
-        withNotes: 0,
-        meetings: [],
-        clients: [],
+        ...NO_MEETINGS,
         reason: "unsupported-platform",
         platform,
       });
@@ -186,20 +196,13 @@ export async function GET(req: Request) {
               .sort((a, b) => b.date.localeCompare(a.date)),
             clients: parts.flatMap((p) => p.clients),
             total: parts.reduce((n, p) => n + p.total, 0),
+            authoritativeHeld: parts.reduce((n, p) => n + p.authoritativeHeld, 0),
             clientsMet: parts.reduce((n, p) => n + p.clientsMet, 0),
             withNotes: parts.reduce((n, p) => n + p.withNotes, 0),
           }
       : null;
     if (!res) {
-      return NextResponse.json({
-        ok: true,
-        total: 0,
-        clientsMet: 0,
-        withNotes: 0,
-        meetings: [],
-        clients: [],
-        reason: "unavailable",
-      });
+      return NextResponse.json({ ...NO_MEETINGS, reason: "unavailable" });
     }
     return NextResponse.json({ ok: true, ...res, ...sync });
   } catch (e) {

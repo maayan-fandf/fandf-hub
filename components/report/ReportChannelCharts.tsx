@@ -295,7 +295,16 @@ function OutcomeLegend({
  *  and no spend, a just-launched channel has spend and no leads, and
  *  dropping either would lose a channel the merged card is supposed to
  *  cover. */
-function OutcomeBars({ channels }: { channels: ReportChannel[] }) {
+function OutcomeBars({
+  channels,
+  withMeetings = true,
+}: {
+  channels: ReportChannel[];
+  /** false ⇒ the page's meeting basis has no source for these rows: the
+   *  תיאומים / ביצועים columns (and their legend chips) are left out rather
+   *  than drawn at zero height, which would read as "no meetings". */
+  withMeetings?: boolean;
+}) {
   const pal = useChartPalette();
   const rows = channels.filter(
     (c) => c.leads + c.scheduled + c.meetings > 0 || c.budget > 0 || c.spend > 0,
@@ -324,7 +333,7 @@ function OutcomeBars({ channels }: { channels: ReportChannel[] }) {
     { key: "leads", label: "לידים", color: "#6366f1" },
     { key: "scheduled", label: "תיאומים", color: "#ec4899" },
     { key: "meetings", label: "ביצועים", color: "#f5576c" },
-  ];
+  ].filter((s) => withMeetings || s.key === "leads");
   const SPEND_COLOR = "#14b8a6";
   const OVER_COLOR = "#ef4444";
   const MONEY_LABELS = new Set(["עלות", "תקציב"]);
@@ -501,8 +510,20 @@ function OutcomeBars({ channels }: { channels: ReportChannel[] }) {
 
 export default function ReportChannelCharts({
   channels,
+  meetingsUnavailable,
 }: {
+  /** Rows already on the page's meeting basis (ReportChannelsTab swaps
+   *  them before handing them over), so every chart follows the switch. */
   channels: ReportChannel[];
+  /**
+   * Set when the page is on a meeting basis this project has no source for
+   * ("dated" without a dated CRM source): the text the two meeting scatters
+   * show in place of a chart, and the signal for OutcomeBars to drop its
+   * meeting columns. The rows arrive with those fields zeroed, and without
+   * this the scatters would say "אין תיאומי פגישה" — a measured zero — where
+   * the truth is that nothing was measured.
+   */
+  meetingsUnavailable?: string;
 }) {
   if (!channels.length) return null;
   return (
@@ -538,7 +559,7 @@ export default function ReportChannelCharts({
             countKey="scheduled"
             costLabel="עלות לתיאום"
             countLabel="תיאומים"
-            emptyText="אין תיאומי פגישה"
+            emptyText={meetingsUnavailable ?? "אין תיאומי פגישה"}
             color="#ec4899"
             variant="sched"
             xTitle="עלות לתיאום (₪) — שמאלה = יעיל יותר"
@@ -557,7 +578,7 @@ export default function ReportChannelCharts({
             countKey="meetings"
             costLabel="עלות לביצוע"
             countLabel="ביצועים"
-            emptyText="אין פגישות שהתקיימו"
+            emptyText={meetingsUnavailable ?? "אין פגישות שהתקיימו"}
             color="#f5576c"
             variant="held"
             xTitle="עלות לביצוע (₪) — שמאלה = יעיל יותר"
@@ -566,8 +587,12 @@ export default function ReportChannelCharts({
           <ScatterLegend channels={channels} costKey="costPerMeeting" countKey="meetings" />
         </div>
         <div className="rpt-ch-chart-box">
-          <h4>לידים, תיאומים וביצועים מול תקציב לפי ערוץ</h4>
-          <OutcomeBars channels={channels} />
+          <h4>
+            {meetingsUnavailable
+              ? "לידים מול תקציב לפי ערוץ"
+              : "לידים, תיאומים וביצועים מול תקציב לפי ערוץ"}
+          </h4>
+          <OutcomeBars channels={channels} withMeetings={!meetingsUnavailable} />
         </div>
       </div>
     </div>

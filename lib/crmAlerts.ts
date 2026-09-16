@@ -48,9 +48,23 @@
  * Caveat: hub-side signals don't have a snooze/dismissal flow today.
  * For v1 they re-fire each request. Acceptable since they're slow-
  * moving — daily inspection is the natural cadence.
+ *
+ * Meeting basis: the three ALL CLIENTS signals (meeting-noshow-spike,
+ * source-converts-poorly, creative-mismatch) read the CURRENT flight rows
+ * — lead-entry counts, whatever month or range the page is showing — and
+ * they do not follow the page's meeting-count switch. They are threshold
+ * signals: "≥10 leads and 0 תיאומים" must mean one fixed thing to stay
+ * comparable across days and across projects on /morning, and on the dated
+ * basis a period's meetings can belong to last month's leads (The 57,
+ * 2026-09: one August Google lead, 0 תיאומים by lead entry, 3 by meeting
+ * date). So their detail line names the basis and the window it was
+ * counted on (BASIS_COPY.alertsSuffix); otherwise, next to a page switched
+ * to "לפי מועד הפגישה" or set to a past month, "0 תיאומי פגישה" reads as a
+ * contradiction. stale-leads counts leads, not meetings, and is untouched.
  */
 
 import type { MorningSignal } from "@/lib/appsScript";
+import { BASIS_COPY } from "@/lib/meetingBasis";
 import type { CrmFunnel } from "@/lib/crmData";
 import type { AllClientsRow } from "@/lib/allClients";
 
@@ -103,8 +117,9 @@ export function computeCrmAlerts(args: {
         severity: gapRatio >= 0.50 ? "severe" : "warn",
         title: "פער פגישות גבוה — תיאומים שלא התקיימו",
         detail:
-          `${totalScheduled} תיאומים · ${totalMeetings} פגישות התקיימו · ` +
-          `פער ${gap} (${gapPct}%). בדוק ביטולים / no-shows מול הלקוח או צוות המכירות.`,
+          `${totalScheduled} תיאומים · ${totalMeetings} פגישות התקיימו ` +
+          `${BASIS_COPY.alertsSuffix} · פער ${gap} (${gapPct}%). ` +
+          `בדוק ביטולים / no-shows מול הלקוח או צוות המכירות.`,
         key: `${projectSlug}|meeting-noshow-spike`,
       });
     }
@@ -124,7 +139,7 @@ export function computeCrmAlerts(args: {
       severity: row.leads >= 30 ? "severe" : "warn",
       title: `${row.channel} — לידים בלי תיאומים`,
       detail:
-        `${row.leads} לידים מהמקור הזה · 0 תיאומי פגישה. ` +
+        `${row.leads} לידים מהמקור הזה · 0 תיאומי פגישה ${BASIS_COPY.alertsSuffix}. ` +
         `סביר שזה קהל לא מתאים — שקול להוריד תקציב או לשנות מיקוד.`,
       channel: row.channel,
       key: `${projectSlug}|source-converts-poorly|${row.channel}`,
@@ -196,7 +211,10 @@ export function computeCrmAlerts(args: {
         severity: row.leads >= 30 ? "severe" : "warn",
         title: `${row.channel} — ${topObj} דומיננטי, יחס תיאום נמוך`,
         detail:
-          `${row.leads} לידים · ${row.scheduled} תיאומים (${(schedRate * 100).toFixed(0)}%) · ` +
+          // The rate reads "יחס תיאום N%" rather than "(N%)" so it does not
+          // sit parenthesis-to-parenthesis with the basis suffix.
+          `${row.leads} לידים · ${row.scheduled} תיאומים ${BASIS_COPY.alertsSuffix} · ` +
+          `יחס תיאום ${(schedRate * 100).toFixed(0)}% · ` +
           `${topCount} מתוך ${total} התנגדויות (${(topShare * 100).toFixed(0)}%) הן "${topObj}". ` +
           action,
         channel: row.channel,

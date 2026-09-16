@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { channelIcon } from "@/lib/channelIcon";
 import ChannelIcon from "@/components/ChannelIcon";
 import { pacingChannelKey } from "@/lib/budgetTypes";
@@ -23,12 +23,19 @@ import {
   convTone,
   pickChannelAlerts,
   diagnosePaidChannels,
+  applyBasisToChannels,
+  datedUnattributed,
   fmtInt,
   fmtILS,
   fmtDateHe,
+  type MonthLeadSource,
+  type PaidDiagCard,
   type ProjectReportData,
   type ReportChannel,
 } from "@/lib/reportShared";
+import { BASIS_COPY } from "@/lib/meetingBasis";
+import { useMeetingBasis } from "@/components/report/MeetingBasisContext";
+import { BasisDash } from "@/components/report/BasisBadge";
 
 /**
  * ערוצים tab — the native rebuild of the legacy 📋 פירוט ערוצים table
@@ -44,6 +51,20 @@ import {
  * Not yet ported: spend-divergence ⚠️ (its pixelCostFullRange came from a
  * GADS+FB aggregation the native pipeline doesn't carry), CPL-trend ▲▼,
  * end-date-mismatch ⚠️, per-campaign tooltip detail.
+ *
+ * MEETING BASIS (2026-09-16). The תיאומים / ביצועים columns follow the
+ * PAGE-LEVEL switch in the sticky header (MeetingBasisToggle, read here
+ * through useMeetingBasis) — this tab no longer has a toggle of its own.
+ * Before, it carried a local "לפי כניסת ליד | לפי מועד הפגישה" pair that
+ * nothing else on the page could see: flipping it moved this table and
+ * nothing else, while the קמפיינים joins were dated-only and the overview
+ * lead-only. On The 57 in September the google-search row read 0 · 0 while
+ * the keyword "גיא ודורון לוי מתחם האלף" under it read 3 · 1 — one client's
+ * four meetings, counted on two bases on one page.
+ * Lead-entry rows are the payload's own `scheduled` / `meetings`; dated rows
+ * swap in `datedScheduled` / `datedMeetings` (applyBasisToChannels), and the
+ * swap happens ONCE, before sort / filter / totals / charts / diagnosis, so
+ * none of them can disagree with the cells.
  */
 
 export type PacingDismissal = {
@@ -344,13 +365,133 @@ const STATUS_DOT: Record<
   mixed: { cls: "is-mixed", title: "חלק מהקמפיינים מושהים" },
 };
 
-function ConvCell({ r }: { r: number | null }) {
+/** A conversion-rate cell. `dash` replaces the ratio outright — for a ratio
+ *  that has no honest value on the current meeting basis: המרה לתיאום under
+ *  "dated" divides meetings counted by meeting DATE by leads counted by
+ *  ENTRY, so a row whose meetings belong to last month's leads reads a
+ *  rate above 100%, or a rate on a row with no leads this period at all.
+ *  Plain "—" stays what it always was: no denominator. */
+function ConvCell({ r, dash }: { r: number | null; dash?: ReactNode }) {
+  if (dash) return <td className="rpt-conv rpt-conv-none">{dash}</td>;
   const tone = convTone(r);
   return (
     <td className={`rpt-conv rpt-conv-${tone}`}>
       {r !== null ? `← ${(Math.round(r * 10000) / 100).toString()}%` : "—"}
     </td>
   );
+}
+
+/**
+ * The diagnosis rule that divides תיאומים by לידים (📉 איכות לידים נמוכה).
+ * Under "dated" that is the same cross-basis ratio as המרה לתיאום, so the
+ * card would call a channel low-quality on a number the table itself shows
+ * as "—". Filtered here, after diagnosePaidChannels, to keep reportShared's
+ * port of the legacy rules untouched (basis-design §6 U7). Known edge: the
+ * rules cap at 3 cards BEFORE this filter, so a dated view that drops a
+ * 📉 card shows one card fewer instead of promoting a 4th, and a view whose
+ * only card was 📉 shows none rather than the ✅ all-clear.
+ */
+const isQualityLeakCard = (c: PaidDiagCard) =>
+  c.icon === "📉" || c.head.startsWith("איכות לידים נמוכה");
+
+/** Hebrew takes the singular at exactly one ("1 תיאומים" is wrong). */
+const heCount = (n: number, one: string, many: string) =>
+  n === 1 ? one : `${fmtInt(n)} ${many}`;
+
+/**
+ * The dated caption's two "not in any row" sentences, scheduled side first.
+ * The old caption named only the ביצועים, so a reader comparing the
+ * תיאומים total with the overview card had nothing to explain the gap —
+ * and the scheduled side is never the smaller one: ביצועים ⊆ תיאומים on
+ * every dated source (both count the same events; held adds a confirmed
+ * outcome), so the held count rides in brackets instead of its own clause.
+ */
+function unplacedSentence(
+  pair: { scheduled: number; meetings: number },
+  kind: "unmatched" | "ambiguous" | "unsourced",
+  basis: "lead" | "dated",
+): string {
+  const s = pair.scheduled;
+  const m = pair.meetings;
+  if (s <= 0 && m <= 0) return "";
+  const one = s === 1;
+  const subject =
+    s <= 0
+      ? // Held with nothing scheduled cannot happen on today's sources; say
+        // what is there rather than print "0 תיאומים (מתוכם …)".
+        heCount(m, "ביצוע אחד", "ביצועים")
+      : one
+        ? `תיאום אחד${m > 0 ? " שהתקיים" : ""}`
+        : `${fmtInt(s)} תיאומים${m > 0 ? ` (מתוכם ${heCount(m, "ביצוע אחד", "ביצועים")})` : ""}`;
+  const single = s <= 0 ? m === 1 : one;
+  // Lead-entry meetings are not "in the period" — they belong to leads that
+  // entered in it, and may themselves fall after it.
+  const when = basis === "dated" ? "בתקופה" : "של לידים מהתקופה";
+  if (kind === "unmatched") {
+    return single
+      ? `${subject} ${when} שייך לערוץ שאינו בטבלה.`
+      : `${subject} ${when} שייכים לערוצים שאינם בטבלה.`;
+  }
+  if (kind === "unsourced") {
+    return single
+      ? `${subject} ${when} נרשם ב-CRM ללא מקור הגעה, ולכן לא שויך לאף שורה.`
+      : `${subject} ${when} נרשמו ב-CRM ללא מקור הגעה, ולכן לא שויכו לאף שורה.`;
+  }
+  return single
+    ? `${subject} ${when} נרשם במקור כללי שאינו מבחין בין שורות הטבלה, ולכן לא שויך לאף שורה.`
+    : `${subject} ${when} נרשמו במקור כללי שאינו מבחין בין שורות הטבלה, ולכן לא שויכו לאף שורה.`;
+}
+
+/**
+ * Past month (owner decision D1) whose lead-entry meeting columns could NOT
+ * be recounted live and still show ALL CLIENTS' חודשי numbers — why, in one
+ * sentence. "" when nothing needs saying.
+ *
+ * The חודשי row is pasted at month end, and lead-entry keeps growing after
+ * that as the month's leads book more meetings, so a frozen row reads lower
+ * than the קמפיינים joins and the CRM card beside it, which are recounted
+ * live. The label is what stops that gap reading as a bug.
+ *
+ * "no-crm" is labelled only when the project evidently HAS a CRM (the
+ * reader named its platform, or the dated read found one): a project with no
+ * CRM mapping at all has only ALL CLIENTS to show, in every month, and a
+ * caption on each of them would be noise, not disclosure.
+ */
+function frozenMonthSentence(
+  mls: MonthLeadSource,
+  hasCrm: boolean,
+): string {
+  if (mls.source !== "frozen") return "";
+  const frozen =
+    "תיאומים וביצועים לפי כניסת ליד בחודש הזה הם המספרים שנרשמו ב-ALL CLIENTS בסוף החודש ולא התעדכנו מאז";
+  switch (mls.frozenReason) {
+    case "salesforce":
+      // Not a failure: Salesforce has no warehouse to recount from, so D1
+      // keeps its month-end row on purpose. Still said, because the CRM card
+      // one scroll away reads Salesforce's CURRENT stages.
+      return `ב-Salesforce ${frozen} — אין מקור שממנו אפשר לספור אותם מחדש.`;
+    case "no-warehouse":
+      // Two different causes share this reason. Sehel's Sheet route really
+      // does record lead statuses. BMBY records meeting events — the same
+      // project's covered months ARE recounted — so there it is the D3
+      // fallback: the warehouse does not cover this month (הוד השרון's
+      // lead feed stops at 05-31, so July lands here). Blaming the CRM
+      // would also contradict the CRM card's warehouseFallback badge on
+      // the same page.
+      return mls.platform === "bmby"
+        ? `${frozen} — במחסן הנתונים אין לפרויקט נתוני פגישות של BMBY שמכסים את החודש הזה, ולכן אין ממנו ספירה עדכנית.`
+        : `${frozen} — מקור ה-CRM של הפרויקט מתעד סטטוס של לידים ולא אירועי פגישה, ולכן אין ממנו ספירה עדכנית.`;
+    case "low-coverage": {
+      const pct =
+        mls.totalCrmLeads > 0
+          ? Math.round((mls.attributedLeads / mls.totalCrmLeads) * 100)
+          : 0;
+      return `${frozen} — מקורות הלידים ב-CRM תואמים לשורות הטבלה רק ב-${pct}% מהלידים (${fmtInt(mls.attributedLeads)} מתוך ${fmtInt(mls.totalCrmLeads)}), מעט מדי לפיצול עדכני לפי שורה.`;
+    }
+    case "no-crm":
+    default:
+      return hasCrm ? `${frozen} — לא ניתן היה לקרוא מה-CRM ספירה עדכנית.` : "";
+  }
 }
 
 /** תקציב חודשי strip — the 4 budget-desk summary cells (יעד E3 / חולק /
@@ -627,60 +768,147 @@ export default function ReportChannelsTab({
   const [budgetEdits, setBudgetEdits] = useState<Record<string, number>>({});
   const today = useMemo(ilToday, []);
   /**
-   * Which basis the תיאומים / ביצועים columns count on.
+   * Which basis the תיאומים / ביצועים columns count on — the PAGE's, not
+   * this tab's (see the file header). `basis` is already the effective one:
+   * lead-entry when the project has no dated source anywhere on the page.
    *
-   * "snapshot" — leads CREATED in the window that are scheduled/held now.
-   *   The historical behaviour, and still the default: it is what every
-   *   other surface in the hub reports, so flipping the default would make
-   *   one project show two different numbers depending on the screen.
-   * "dated" — meetings that actually took place in the window.
+   * What each basis means for these rows (measured, basis-design §2.1):
+   *   "lead"  — לפי כניסת ליד. The payload's own `scheduled` / `meetings`.
+   *             BMBY: every meeting EVENT — cancelled ones included in
+   *             תיאומים — owned by a lead that entered in the period, at
+   *             whatever date the meeting itself falls (The57!N11 =
+   *             SUMIFS(CRM!R בוטלו) + SUMIFS(CRM!N תואמו)). Sehel: every
+   *             meeting of a client registered in the period. Salesforce:
+   *             LEADS of the period by current stage — the one source whose
+   *             unit is leads. The old toggle's tooltip described all three
+   *             as "leads whose meeting took place", which none of them is.
+   *   "dated" — לפי מועד הפגישה. `datedScheduled` / `datedMeetings`: meeting
+   *             events dated inside the period, whenever their lead came.
    *
-   * Substituted into the rows here rather than branched on at each cell,
-   * so sorting, the totals line, the alert strip and the charts all follow
-   * the switch for free and cannot disagree with the table above them.
-   * Both numbers ship in the same payload, so flipping costs no fetch.
+   * `dated` requires this table's own dated source. The page can be on
+   * "dated" without one — the קמפיינים joins alone are enough to enable the
+   * switch — and then the meeting cells are "—" with the no-source tooltip
+   * (`meetingsMissing`), never the lead-entry numbers under a "לפי מועד
+   * הפגישה" header: that silent fallback is exactly the disagreement the
+   * page-level switch exists to remove.
    */
-  const [basis, setBasis] = useState<"snapshot" | "dated">("snapshot");
+  const { basis } = useMeetingBasis();
   const datedSource = data.datedSource;
-  const canDate = !!datedSource;
-  const dated = canDate && basis === "dated";
+  const dated = basis === "dated" && !!datedSource;
+  const meetingsMissing = basis === "dated" && !datedSource;
 
   /**
-   * Caveats for the dated basis, as one string — "" when there is nothing
-   * to say, so the line can be skipped entirely rather than rendered
-   * empty. It lives BELOW the controls row, not inside it: as a flex item
-   * on its own line it re-flowed the row and pushed the channel filter to
-   * a second line, so the filter appeared to jump every time the toggle
-   * was clicked — including on projects with no caveat at all, where the
-   * element was empty but still occupied a row.
+   * The caption under the controls row, as one string — "" when there is
+   * nothing to say, so the line can be skipped entirely rather than
+   * rendered empty. It lives BELOW the controls row, not inside it: as a
+   * flex item on its own line it re-flowed the row and pushed the channel
+   * filter to a second line, so the filter appeared to jump every time the
+   * old toggle was clicked — including on projects with no caveat at all,
+   * where the element was empty but still occupied a row.
+   *
+   * Lead-entry, in order:
+   *   1. A past month that could not be recounted live says so and why
+   *      (frozenMonthSentence — owner decision D1 replaced the frozen חודשי
+   *      literals with the live warehouse count wherever one exists).
+   *   2. Sehel's ביצועים, and which caveat depends on who counted the row.
+   *      ALL CLIENTS (the live row, a frozen month, a pro-rated range)
+   *      mirrors Sehel's J column and so counts past meetings still at "לא
+   *      ידוע". What the hub counts itself — a live-recounted month, a
+   *      CRM-attributed range — counts "הלקוח הגיע לפגישה" only (D2).
+   *   3. A live-recounted month's meetings no row could claim — a source
+   *      with no row, one several rows share, or no source at all. They are
+   *      in no row and not in `totals` (lead-entry totals are Σ rows by
+   *      design), but the CRM card, which is windowed on the same month,
+   *      does count them — this is the sentence that reconciles the two.
+   * The CRM is named by monthLeadSource in month mode, else only by
+   * datedSource, so a Sehel project with no sehel_meetings (Carmei-Gat,
+   * Bnei-Ayish) outside month mode gets no Sehel caveat — it has no
+   * hub-counted meetings to caveat either.
    */
+  const mls = data.mode === "month" ? (data.monthLeadSource ?? null) : null;
   const basisNote = useMemo(() => {
-    if (!dated || !datedSource) return "";
+    if (meetingsMissing) return "";
+    if (!dated) {
+      const parts: string[] = [];
+      if (mls) {
+        const f = frozenMonthSentence(mls, !!mls.platform || !!datedSource);
+        if (f) parts.push(f);
+      }
+      const platform = mls?.platform ?? datedSource?.platform ?? null;
+      if (platform === "sehel") {
+        // A range counts its own meetings only off warehouse EVENTS: a
+        // Sheet-routed Sehel range's CRM maps are a status snapshot of
+        // leads (rangeBasis.leadRule), not "הלקוח הגיע לפגישה" events.
+        const hubCounted = mls
+          ? mls.source === "warehouse"
+          : data.mode === "range" &&
+            data.rangeBasis?.outcomes === "crm" &&
+            data.rangeBasis.leadRule === "registration-cohort";
+        parts.push(
+          hubCounted
+            ? BASIS_COPY.sehelLeadHeldStrict
+            : BASIS_COPY.sehelLeadHeldAllClients,
+        );
+      }
+      if (mls?.source === "warehouse") {
+        const u = unplacedSentence(mls.unattributed, "unmatched", "lead");
+        if (u) parts.push(u);
+        const a = unplacedSentence(mls.ambiguous, "ambiguous", "lead");
+        if (a) parts.push(a);
+        if (mls.unsourced) {
+          const n = unplacedSentence(mls.unsourced, "unsourced", "lead");
+          if (n) parts.push(n);
+        }
+      }
+      return parts.join(" ");
+    }
+    if (!datedSource) return "";
     const parts: string[] = [];
     if (datedSource.heldConfidence === "partial") {
       parts.push(
         "חלק מהפגישות ללא סטטוס סופי — הביצועים הם רצפה, לא ספירה מלאה.",
       );
     }
-    // Hebrew takes the singular at exactly one, so "1 ביצועים" is wrong.
-    const n = datedSource.unmatchedMeetings;
-    if (n > 0) {
-      parts.push(
-        n === 1
-          ? "ביצוע אחד בתקופה שייך לערוצים שאינם בטבלה."
-          : `${fmtInt(n)} ביצועים בתקופה שייכים לערוצים שאינם בטבלה.`,
-      );
-    }
-    const a = datedSource.ambiguousMeetings;
-    if (a > 0) {
-      parts.push(
-        a === 1
-          ? "ביצוע אחד נרשם במקור כללי שאינו מבחין בין שורות הטבלה, ולכן לא שויך לאף שורה."
-          : `${fmtInt(a)} ביצועים נרשמו במקור כללי שאינו מבחין בין שורות הטבלה, ולכן לא שויכו לאף שורה.`,
-      );
-    }
+    const unmatched = unplacedSentence(
+      {
+        scheduled: datedSource.unmatchedScheduled,
+        meetings: datedSource.unmatchedMeetings,
+      },
+      "unmatched",
+      "dated",
+    );
+    if (unmatched) parts.push(unmatched);
+    const ambiguous = unplacedSentence(
+      {
+        scheduled: datedSource.ambiguousScheduled,
+        meetings: datedSource.ambiguousMeetings,
+      },
+      "ambiguous",
+      "dated",
+    );
+    if (ambiguous) parts.push(ambiguous);
     return parts.join(" ");
-  }, [dated, datedSource]);
+  }, [dated, meetingsMissing, datedSource, mls, data.mode, data.rangeBasis]);
+
+  /**
+   * Internal only (canEditBudget is false for clients and the client
+   * preview): what ALL CLIENTS' חודשי row said for a month the table now
+   * recounts live, so whoever reconciles the page against the sheet sees
+   * both numbers instead of assuming one of them is wrong. Skipped when the
+   * two agree — the sentence would only say "nothing changed".
+   */
+  const frozenWasNote = useMemo(() => {
+    if (!canEditBudget || dated || meetingsMissing) return "";
+    if (mls?.source !== "warehouse") return "";
+    let s = 0;
+    let m = 0;
+    for (const c of data.channels) {
+      s += c.scheduled;
+      m += c.meetings;
+    }
+    if (s === mls.frozen.scheduled && m === mls.frozen.meetings) return "";
+    return `לשם השוואה: בגיליון ALL CLIENTS רשומים לחודש הזה ${heCount(mls.frozen.scheduled, "תיאום אחד", "תיאומים")} · ${heCount(mls.frozen.meetings, "ביצוע אחד", "ביצועים")} — המספרים מסוף החודש, לפני הספירה העדכנית.`;
+  }, [canEditBudget, dated, meetingsMissing, mls, data.channels]);
 
   /**
    * What a free range's numbers actually are, said out loud.
@@ -692,6 +920,17 @@ export default function ReportChannelsTab({
    * one number here nobody can check against a platform. Same for the
    * funnel columns, which come from the CRM windowed on the range rather
    * than from ALL CLIENTS.
+   *
+   * The outcomes sentence follows the meeting basis. It used to say
+   * "נספרים מה-CRM לפי תאריכי הטווח" for every column under a table whose
+   * default claimed לפי כניסת ליד, while the CRM maps behind it were a third
+   * thing (cohort ∩ dated on BMBY warehouse projects, pure meeting date on
+   * Sehel ones). Those maps are lead-entry now (lib/crmData: owner-lead on
+   * BMBY, registration cohort on Sehel), and the dated columns
+   * come from the same getDatedChannelMeetings read as every other mode —
+   * which, unlike the maps, does not depend on the CRM sources attributing
+   * well enough to switch `outcomes` to "crm", so a pro-rated range still
+   * has real dated meetings.
    */
   const rangeNote = useMemo(() => {
     const rb = data.rangeBasis;
@@ -707,11 +946,36 @@ export default function ReportChannelsTab({
         `עלות עבור ${rb.realSpend.join(", ")} נסכמת מהוצאה יומית אמיתית בטווח.`,
       );
     }
-    parts.push(
-      rb.outcomes === "crm"
-        ? "לידים, תיאומים וביצועים נספרים מה-CRM לפי תאריכי הטווח."
-        : "לידים, תיאומים וביצועים מחושבים יחסית למספר הימים — לא ניתן היה לשייך את מקורות ה-CRM לשורות הטבלה.",
-    );
+    const unattributable =
+      "לא ניתן היה לשייך את מקורות ה-CRM לשורות הטבלה";
+    if (dated) {
+      parts.push(
+        rb.outcomes === "crm"
+          ? BASIS_COPY.rangeOutcomes.dated
+          : `לידים מחושבים יחסית למספר הימים — ${unattributable}. תיאומים וביצועים נספרים לפי מועד הפגישה בטווח.`,
+      );
+    } else if (meetingsMissing) {
+      // The meeting cells are "—" and say why on hover; the sentence speaks
+      // only for the column that still has numbers.
+      parts.push(
+        rb.outcomes === "crm"
+          ? "לידים נספרים מה-CRM ללידים שנכנסו בטווח."
+          : `לידים מחושבים יחסית למספר הימים — ${unattributable}.`,
+      );
+    } else {
+      // A status snapshot (Sheet-routed Sehel, BMBY D3 fallback) fills the
+      // same columns with LEADS by current stage; say so in the sentence
+      // that would otherwise call them lead-entry meeting events.
+      parts.push(
+        rb.outcomes !== "crm"
+          ? `לידים, תיאומים וביצועים מחושבים יחסית למספר הימים — ${unattributable}.`
+          : rb.leadRule === "status-snapshot"
+            ? BASIS_COPY.rangeOutcomesSnapshot[
+                rb.warehouseFallback ? "warehouseFallback" : "statusSnapshot"
+              ]
+            : BASIS_COPY.rangeOutcomes.lead,
+      );
+    }
     const un = rb.unattributedLeads + rb.ambiguousLeads;
     if (un > 0 && rb.totalCrmLeads > 0) {
       parts.push(
@@ -719,22 +983,31 @@ export default function ReportChannelsTab({
       );
     }
     return parts.join(" ");
-  }, [data.mode, data.rangeBasis]);
+  }, [data.mode, data.rangeBasis, dated, meetingsMissing]);
 
-  const datedChannels = useMemo(() => {
-    if (!dated) return data.channels;
-    return data.channels.map((c) => {
-      const scheduled = c.datedScheduled ?? 0;
-      const meetings = c.datedMeetings ?? 0;
-      return {
+  /**
+   * The rows on the page's basis — the ONE substitution everything below
+   * reads (budget edits, sort, filter, totals, cells, charts, diagnosis).
+   *
+   * With no dated source under "dated" the meeting fields are ZEROED rather
+   * than left holding lead-entry numbers, the same contract as
+   * applyBasisToCreatives: the cells render "—" from `meetingsMissing`, and
+   * zeros keep every derived reader — a sort by תיאומים, the charts, the
+   * ⭐ card quoting עלות לתיאום — from quietly presenting the other basis.
+   */
+  const basisChannels = useMemo(() => {
+    if (dated) return applyBasisToChannels(data.channels, "dated");
+    if (meetingsMissing) {
+      return data.channels.map((c) => ({
         ...c,
-        scheduled,
-        meetings,
-        costPerScheduled: scheduled > 0 ? c.spend / scheduled : 0,
-        costPerMeeting: meetings > 0 ? c.spend / meetings : 0,
-      };
-    });
-  }, [data.channels, dated]);
+        scheduled: 0,
+        meetings: 0,
+        costPerScheduled: 0,
+        costPerMeeting: 0,
+      }));
+    }
+    return data.channels;
+  }, [data.channels, dated, meetingsMissing]);
 
   /**
    * Budget cells write to the sheet, and the numbers DERIVED from a budget
@@ -762,8 +1035,8 @@ export default function ReportChannelsTab({
    * be worse than leaving it alone until the sheet recomputes.
    */
   const channels = useMemo(() => {
-    if (!Object.keys(budgetEdits).length) return datedChannels;
-    return datedChannels.map((c) => {
+    if (!Object.keys(budgetEdits).length) return basisChannels;
+    return basisChannels.map((c) => {
       const next = budgetEdits[c.channel];
       if (next == null || next === c.budget) return c;
       const daysLeft = daysLeftOf(c.endIso, today);
@@ -774,7 +1047,7 @@ export default function ReportChannelsTab({
           daysLeft > 0 ? c.dailyRate + (next - c.budget) / daysLeft : c.dailyRate,
       };
     });
-  }, [datedChannels, budgetEdits, today]);
+  }, [basisChannels, budgetEdits, today]);
 
   /** Net change against the SERVER's budgets — never against the edited
    *  list, which would compound on a second edit of the same channel. */
@@ -795,7 +1068,12 @@ export default function ReportChannelsTab({
   );
   const sorted = useMemo(() => {
     if (!sort) return channels;
-    const val = SORT_VAL[sort.key];
+    // המרה לתיאום prints "—" under "dated" (see ConvCell), so it sorts as
+    // "no value" there too — otherwise a click would order the table by a
+    // ratio the reader cannot see. Array sort is stable, so the rows simply
+    // keep their order.
+    const val =
+      sort.key === "r1" && basis === "dated" ? () => -1 : SORT_VAL[sort.key];
     return [...channels].sort((a, b) => {
       const av = val(a);
       const bv = val(b);
@@ -803,7 +1081,7 @@ export default function ReportChannelsTab({
         return String(av).localeCompare(String(bv)) * sort.dir;
       return ((av as number) - (bv as number)) * sort.dir;
     });
-  }, [channels, sort]);
+  }, [channels, sort, basis]);
   const visible = useMemo(
     () =>
       selected === null ? sorted : sorted.filter((c) => selected.has(c.channel)),
@@ -840,6 +1118,40 @@ export default function ReportChannelsTab({
     },
     { budget: 0, spend: 0, leads: 0, scheduled: 0, meetings: 0, daily: 0 },
   );
+
+  /**
+   * "לא שויכו לשורה" — dated meetings in the period that no row could claim
+   * (datedSource.unmatched* + ambiguous*), as a row of the סה״כ block.
+   *
+   * Without it the dated סה״כ was Σ attributed rows only, silently short of
+   * the project's dated total: the overview card (ProjectReportData.
+   * datedTotals, defined by computeDatedTotals as Σ rows + exactly this
+   * remainder) and the table under it disagreed by the meetings of every
+   * lead with no source or a source the table splits into several rows. With
+   * the row added into סה״כ, the table's total IS the card's number.
+   *
+   * Shown only with no channel filter: the remainder belongs to no channel,
+   * so it cannot belong to any filtered subset either, and a filtered total
+   * is meant to add up its visible rows. Hidden when both counts are 0 — a
+   * row of zeros is noise, and the total is unchanged without it.
+   *
+   * Lead-entry has no such row, on purpose: there the overview card is
+   * `data.totals`, which is Σ rows in every mode — an ALL CLIENTS row set
+   * adds up to its own total, and a live-recounted month keeps its
+   * unclaimed meetings out of totals the same way (they are named in
+   * basisNote instead). Adding a row would make the table disagree with the
+   * card.
+   */
+  const unattributed =
+    dated && datedSource && selected === null
+      ? datedUnattributed(datedSource)
+      : null;
+  const showUnattributed =
+    !!unattributed && (unattributed.scheduled > 0 || unattributed.meetings > 0);
+  if (unattributed && showUnattributed) {
+    totals.scheduled += unattributed.scheduled;
+    totals.meetings += unattributed.meetings;
+  }
 
   // One budget-utilization bar per row, spanning the תקציב + עלות cells: the
   // TRACK length ∝ this channel's budget (biggest budget in view = full width,
@@ -953,7 +1265,30 @@ export default function ReportChannelsTab({
     }
   };
 
-  const diagCards = diagnosePaidChannels(channels);
+  const diagCards =
+    basis === "dated"
+      ? diagnosePaidChannels(channels).filter((c) => !isQualityLeakCard(c))
+      : diagnosePaidChannels(channels);
+
+  /**
+   * The "—" each meeting-derived cell shows when the current basis has no
+   * honest number for it. Built once and reused by every row and the סה״כ
+   * line, so all of them carry the same tooltip.
+   *   noSource   — "dated" with no dated source for this table.
+   *   r1Dash     — המרה לתיאום under "dated": cross-basis when the table has
+   *                dated meetings (they would be divided by entry-dated
+   *                leads), no-source when it has none at all.
+   *   r2Dash     — המרה לביצוע stays a real ratio under "dated" (dated ÷
+   *                dated), so it is dashed only when there is no source.
+   */
+  const noSource = meetingsMissing ? (
+    <BasisDash reason="no-source" basis="dated" />
+  ) : null;
+  const r1Dash =
+    basis !== "dated"
+      ? undefined
+      : noSource ?? <BasisDash reason="cross-basis" />;
+  const r2Dash = noSource ?? undefined;
 
   return (
     <div className="rpt-channels">
@@ -1039,41 +1374,13 @@ export default function ReportChannelsTab({
         />
       )}
 
-      {(channels.length > 1 || canDate) && (
+      {/* The meeting-basis toggle that used to open this row moved to the
+          page header (MeetingBasisToggle) — its tooltip also described the
+          lead-entry count as "leads whose meeting took place", which is not
+          what any CRM source counts (see `basis` above; the corrected copy
+          is BASIS_TITLES in lib/meetingBasis). The row keeps the filter. */}
+      {channels.length > 1 && (
         <div className="rpt-ch-tablecontrols">
-          {canDate && (
-            <span className="rpt-ch-basis">
-              <span className="rpt-ch-tablecontrols-lbl">ספירת פגישות:</span>
-              <span
-                className="rpt-ch-basis-group"
-                role="group"
-                aria-label="בסיס ספירת התיאומים והביצועים"
-              >
-                <button
-                  type="button"
-                  className={
-                    "rpt-ch-basis-btn" + (!dated ? " is-active" : "")
-                  }
-                  onClick={() => setBasis("snapshot")}
-                  aria-pressed={!dated}
-                  title="לפי מועד כניסת הליד — נספרים לידים שנוצרו בתקופה ושהפגישה שלהם התקיימה (המספר ממשיך לגדול גם אחרי סוף התקופה)"
-                >
-                  לפי כניסת ליד
-                </button>
-                <button
-                  type="button"
-                  className={"rpt-ch-basis-btn" + (dated ? " is-active" : "")}
-                  onClick={() => setBasis("dated")}
-                  aria-pressed={dated}
-                  title="לפי מועד הפגישה — נספרות פגישות שהתקיימו בפועל בתוך התקופה (מספר יציב שלא משתנה בדיעבד)"
-                >
-                  לפי מועד הפגישה
-                </button>
-              </span>
-            </span>
-          )}
-          {channels.length > 1 && (
-          <>
           <span className="rpt-ch-tablecontrols-lbl">סינון לפי ערוץ:</span>
           <div className="rpt-mt-filter">
             <button
@@ -1129,13 +1436,12 @@ export default function ReportChannelsTab({
               </>
             )}
           </div>
-          </>
-          )}
         </div>
       )}
 
-      {rangeNote && <p className="rpt-ch-basis-note">📅 {rangeNote}</p>}
-      {basisNote && <p className="rpt-ch-basis-note">{basisNote}</p>}
+      {rangeNote && <p className="rpt-basis-note">📅 {rangeNote}</p>}
+      {basisNote && <p className="rpt-basis-note">{basisNote}</p>}
+      {frozenWasNote && <p className="rpt-basis-note">{frozenWasNote}</p>}
 
       <div className="rpt-ch-table-wrap">
         <table className="rpt-ch-table">
@@ -1310,17 +1616,19 @@ export default function ReportChannelsTab({
                   <td style={costHeatStyle("costPerLead", c.costPerLead)}>
                     {c.costPerLead > 0 ? fmtILS(c.costPerLead) : "—"}
                   </td>
-                  <ConvCell r={r1Of(c)} />
-                  <td>{fmtInt(c.scheduled)}</td>
+                  <ConvCell r={r1Of(c)} dash={r1Dash} />
+                  <td>{noSource ?? fmtInt(c.scheduled)}</td>
                   <td
                     style={costHeatStyle("costPerScheduled", c.costPerScheduled)}
                   >
-                    {c.costPerScheduled > 0 ? fmtILS(c.costPerScheduled) : "—"}
+                    {noSource ??
+                      (c.costPerScheduled > 0 ? fmtILS(c.costPerScheduled) : "—")}
                   </td>
-                  <ConvCell r={r2Of(c)} />
-                  <td>{fmtInt(c.meetings)}</td>
+                  <ConvCell r={r2Of(c)} dash={r2Dash} />
+                  <td>{noSource ?? fmtInt(c.meetings)}</td>
                   <td style={costHeatStyle("costPerMeeting", c.costPerMeeting)}>
-                    {c.costPerMeeting > 0 ? fmtILS(c.costPerMeeting) : "—"}
+                    {noSource ??
+                      (c.costPerMeeting > 0 ? fmtILS(c.costPerMeeting) : "—")}
                   </td>
                   {flightCols && (
                     <td
@@ -1412,6 +1720,30 @@ export default function ReportChannelsTab({
                 </tr>
               );
             })}
+            {unattributed && showUnattributed && (
+              // Not a channel: no spend, no leads, so every money and ratio
+              // cell is left EMPTY rather than "—" — nothing is missing
+              // there, the columns just don't apply. It sits above סה״כ
+              // because סה״כ adds it in (see `unattributed`).
+              <tr className="rpt-basis-unattr-row">
+                <td title={BASIS_COPY.unattributedRow.title}>
+                  <span className="rpt-ch-label">
+                    {BASIS_COPY.unattributedRow.label}
+                  </span>
+                </td>
+                {flightCols && <td />}
+                <td />
+                <td />
+                <td />
+                <td />
+                <td>{fmtInt(unattributed.scheduled)}</td>
+                <td />
+                <td />
+                <td>{fmtInt(unattributed.meetings)}</td>
+                <td />
+                {flightCols && <td />}
+              </tr>
+            )}
             <tr className="rpt-ch-totals">
               <td>
                 <b>סה״כ</b>
@@ -1430,19 +1762,19 @@ export default function ReportChannelsTab({
               <td style={costHeatStyle("costPerLead", tCpl)}>
                 <b>{tCpl > 0 ? fmtILS(tCpl) : "—"}</b>
               </td>
-              <ConvCell r={tR1} />
+              <ConvCell r={tR1} dash={r1Dash} />
               <td>
-                <b>{fmtInt(totals.scheduled)}</b>
+                <b>{noSource ?? fmtInt(totals.scheduled)}</b>
               </td>
               <td style={costHeatStyle("costPerScheduled", tCps)}>
-                <b>{tCps > 0 ? fmtILS(tCps) : "—"}</b>
+                <b>{noSource ?? (tCps > 0 ? fmtILS(tCps) : "—")}</b>
               </td>
-              <ConvCell r={tR2} />
+              <ConvCell r={tR2} dash={r2Dash} />
               <td>
-                <b>{fmtInt(totals.meetings)}</b>
+                <b>{noSource ?? fmtInt(totals.meetings)}</b>
               </td>
               <td style={costHeatStyle("costPerMeeting", tCpm)}>
-                <b>{tCpm > 0 ? fmtILS(tCpm) : "—"}</b>
+                <b>{noSource ?? (tCpm > 0 ? fmtILS(tCpm) : "—")}</b>
               </td>
               {flightCols && (
                 <td>
@@ -1454,7 +1786,12 @@ export default function ReportChannelsTab({
         </table>
       </div>
 
-      <ReportChannelCharts channels={channels} />
+      <ReportChannelCharts
+        channels={channels}
+        meetingsUnavailable={
+          meetingsMissing ? BASIS_COPY.dashNoSource.dated : undefined
+        }
+      />
     </div>
   );
 }

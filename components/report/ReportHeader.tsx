@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 import AssetThumb from "@/components/report/AssetThumb";
+import { BasisBadge } from "@/components/report/BasisBadge";
+import { useMeetingBasis } from "@/components/report/MeetingBasisContext";
+import {
+  BASIS_LABELS,
+  BASIS_TITLES,
+  type MeetingBasis,
+} from "@/lib/meetingBasis";
 import {
   deltaInfo,
   fmtILS,
   fmtInt,
   fmtDateHe,
+  isMeetingAnomaly,
   type ProjectReportData,
 } from "@/lib/reportShared";
 
@@ -17,6 +25,25 @@ import {
  * anomaly chips, landing-page preview, and the on-demand AI summary
  * button. All numbers are precomputed server-side (data.pacing /
  * .forecast / .anomalies) so this is a pure render.
+ *
+ * MEETING BASIS (page-level switch, lib/meetingBasis). Three things here
+ * touch תיאומים / ביצועים:
+ *   • the 📅 תיאומים / 🏆 ביצועים forecast pills and
+ *   • the 🏆 זינוק בביצועי פגישה anomaly chip
+ *     are LEAD-ENTRY ONLY. Both project from, or compare against, ALL
+ *     CLIENTS חודשי rows (computeForecast's median of the last completed
+ *     months, computePrevFunnel's previous month), and no dated monthly
+ *     history exists to build a dated twin from. Under "לפי מועד הפגישה"
+ *     they are hidden, not relabelled: a lead-entry projection sitting next
+ *     to dated cards 2.5× larger (The 57, Sept: 20 vs 49 תיאומים) would read
+ *     as "the month is about to fall off a cliff". The budget and לידים
+ *     pills and every other chip have no basis and stay.
+ *   • the AI summary follows the switch: the basis goes in the POST body
+ *     (the route keys its 6h cache on it), and each basis keeps its own
+ *     generated text, so flipping back and forth never shows a summary
+ *     written from the other basis's numbers and never re-requests one
+ *     that is already on screen. The badge in the summary's head names the
+ *     basis it was written on.
  */
 
 const PACE_BAR_COLOR: Record<string, string> = {
@@ -84,14 +111,30 @@ function LandingCard({ url, project }: { url: string; project: string }) {
   );
 }
 
+type AiEntry = {
+  state: "idle" | "loading" | "done" | "error";
+  text: string;
+  err: string;
+};
+
+const AI_IDLE: AiEntry = { state: "idle", text: "", err: "" };
+
 function AiSummary({ data }: { data: ProjectReportData }) {
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [text, setText] = useState("");
-  const [err, setErr] = useState("");
+  const { basis } = useMeetingBasis();
+  // One entry per basis. The summary is prose written from one basis's
+  // numbers ("12 תיאומים בגוגל…"), so after a flip the other basis's text
+  // must not stay on screen — and flipping back should bring the first one
+  // back rather than asking for (and paying for) it again.
+  const [byBasis, setByBasis] = useState<Partial<Record<MeetingBasis, AiEntry>>>({});
+  const { state, text, err } = byBasis[basis] ?? AI_IDLE;
+  const patch = (b: MeetingBasis, next: Partial<AiEntry>) =>
+    setByBasis((m) => ({ ...m, [b]: { ...(m[b] ?? AI_IDLE), ...next } }));
 
   const run = async () => {
-    setState("loading");
-    setErr("");
+    // Pinned at click time: a flip while the request is in flight must not
+    // file this basis's answer under the other one.
+    const b = basis;
+    patch(b, { state: "loading", err: "" });
     try {
       const period =
         data.mode === "month"
@@ -102,15 +145,18 @@ function AiSummary({ data }: { data: ProjectReportData }) {
       const res = await fetch("/api/report/ai-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: data.project, period, company: data.company }),
+        body: JSON.stringify({
+          project: data.project,
+          period,
+          company: data.company,
+          basis: b,
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setText(json.text);
-      setState("done");
+      patch(b, { state: "done", text: json.text });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      setState("error");
+      patch(b, { state: "error", err: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -118,7 +164,10 @@ function AiSummary({ data }: { data: ProjectReportData }) {
     return (
       <div className="rpt-ai">
         <div className="rpt-ai-head">
-          <span>🧠 סיכום AI</span>
+          <span>
+            🧠 סיכום AI
+            <BasisBadge label={BASIS_LABELS[basis]} title={BASIS_TITLES[basis]} />
+          </span>
           <button
             type="button"
             className="rpt-ai-refresh"
@@ -148,6 +197,8 @@ function AiSummary({ data }: { data: ProjectReportData }) {
 }
 
 export default function ReportHeader({ data }: { data: ProjectReportData }) {
+  const { basis } = useMeetingBasis();
+  const dated = basis === "dated";
   const t = data.totals;
   const pace = data.pacing;
   const isMonth = data.mode === "month";
@@ -155,6 +206,10 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
     t && data.prevFunnel
       ? deltaInfo(t.spend, data.prevFunnel.spend, "neutral")
       : null;
+  // Lead-entry-only chips drop out under dated (see the header comment).
+  const anomalies = dated
+    ? data.anomalies.filter((a) => !isMeetingAnomaly(a))
+    : data.anomalies;
 
   return (
     <div className="rpt-header">
@@ -168,9 +223,9 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
         </div>
       </div>
 
-      {data.anomalies.length > 0 && (
+      {anomalies.length > 0 && (
         <div className="rpt-header-alerts">
-          {data.anomalies.map((a, i) => (
+          {anomalies.map((a, i) => (
             <div key={i} className={`rpt-anomaly is-${a.type}`}>
               {a.text}
             </div>
@@ -244,10 +299,11 @@ export default function ReportHeader({ data }: { data: ProjectReportData }) {
             {data.forecast.leads > 0 && (
               <span className="rpt-forecast-pill">🎯 לידים: {fmtInt(data.forecast.leads)}</span>
             )}
-            {data.forecast.scheduled > 0 && (
+            {/* Lead-entry projections — hidden under dated (header comment). */}
+            {!dated && data.forecast.scheduled > 0 && (
               <span className="rpt-forecast-pill">📅 תיאומים: {fmtInt(data.forecast.scheduled)}</span>
             )}
-            {data.forecast.meetings > 0 && (
+            {!dated && data.forecast.meetings > 0 && (
               <span className="rpt-forecast-pill">🏆 ביצועים: {fmtInt(data.forecast.meetings)}</span>
             )}
           </div>

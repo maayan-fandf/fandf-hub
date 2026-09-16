@@ -6,6 +6,7 @@ import ChannelIcon from "@/components/ChannelIcon";
 import ClientDossier, {
   type DossierClient,
 } from "@/components/report/ClientDossier";
+import { BasisBadge } from "@/components/report/BasisBadge";
 import type { HeldMeeting } from "@/lib/heldMeetings";
 
 /**
@@ -19,11 +20,31 @@ import type { HeldMeeting } from "@/lib/heldMeetings";
  *
  * Structured like ContractsSection on purpose: same tiles, same table, and
  * the SAME drawer, so a client reads identically whichever door was used.
+ *
+ * ── Against the page's meeting-count switch ──
+ * It does not follow it and never reads it: a list of meetings that took
+ * place is dated by nature, so it wears the fixed "תמיד לפי מועד הפגישה"
+ * badge instead, and a flip changes nothing here. What it shares with the
+ * dated basis is the meaning of a ביצוע. The tile counts confirmed meetings
+ * only (the route's `authoritativeHeld`), so it equals "לפי מועד הפגישה"
+ * ביצועים for the same window — The 57, September 2026: 15 and 15. Before,
+ * it also counted meetings BMBY never marked, inferred from the client's
+ * status, and could sit above the number the rest of the page showed. Those
+ * rows are still listed, marked "משוער", and the tile names how many.
  */
+
+/** Copy for the inferred rows — BMBY only; Sehel has no such tier. */
+const ESTIMATED_ROW_TITLE =
+  "ב-BMBY לא סומנה לפגישה הזו תוצאה. היא ברשימה כי הסטטוס של הלקוח מעיד שהתקיימה, אבל אינה נספרת באריח ״פגישות שהתקיימו״ — כמו שאינה נספרת בביצועים בשאר הדוח.";
+const ESTIMATED_TILE_TITLE =
+  "פגישות שב-BMBY לא סומנה להן תוצאה, והסטטוס של הלקוח מעיד שהתקיימו. הן מופיעות בטבלה ומסומנות ״משוער״, ואינן נספרות במספר שלמעלה — כמו שאינן נספרות בביצועים בשאר הדוח.";
 
 type Payload = {
   ok: boolean;
+  /** Every meeting in the list, inferred ones included. */
   total?: number;
+  /** Confirmed only — the tile. total − this = the "משוער" rows. */
+  authoritativeHeld?: number;
   clientsMet?: number;
   withNotes?: number;
   meetings?: HeldMeeting[];
@@ -109,16 +130,21 @@ export default function MeetingsSection({
 
   /** Which channels brought the people who were actually met. Counted per
    *  MEETING, matching the number in the tile above it — a client met twice
-   *  is two meetings and the reader is comparing against a meeting count. */
+   *  is two meetings and the reader is comparing against a meeting count.
+   *  Confirmed and inferred are kept apart for the same reason: the bold
+   *  number adds up to the tile, the muted one to the "משוערות" beside it. */
   const bySource = useMemo(() => {
-    const m = new Map<string, number>();
+    const m = new Map<string, { n: number; est: number }>();
     for (const x of meetings) {
       const k = x.firstSource || "לא ידוע";
-      m.set(k, (m.get(k) ?? 0) + 1);
+      const v = m.get(k) ?? { n: 0, est: 0 };
+      if (x.estimated) v.est++;
+      else v.n++;
+      m.set(k, v);
     }
     return [...m.entries()]
-      .map(([label, n]) => ({ label, n }))
-      .sort((a, b) => b.n - a.n);
+      .map(([label, v]) => ({ label, ...v }))
+      .sort((a, b) => b.n - a.n || b.est - a.est);
   }, [meetings]);
 
   /** Objections across the people met. Counted once per CLIENT, not per
@@ -190,20 +216,41 @@ export default function MeetingsSection({
     return (
       <div className="rpt-empty">
         לא התקיימו פגישות בטווח התאריכים של הדוח.
+        <BasisBadge kind="heldMeetings" />
       </div>
     );
 
   const anyKind = meetings.some((m) => m.kind);
-  const maxSrc = Math.max(...bySource.map((s) => s.n), 1);
+  const maxSrc = Math.max(...bySource.map((s) => s.n + s.est), 1);
   const maxObj = Math.max(...byObjection.map((s) => s.n), 1);
   const repeat = meetings.filter((m) => m.seq > 1).length;
+  // From the route's uncapped counts; the list fallback only covers a
+  // payload from before authoritativeHeld existed.
+  const listed = data?.total ?? meetings.length;
+  const confirmed =
+    data?.authoritativeHeld ?? meetings.filter((m) => !m.estimated).length;
+  const estimated = Math.max(0, listed - confirmed);
 
   return (
     <div className="ct-wrap" dir="rtl">
+      {/* Its own line, not a grid item: .ct-wrap is a grid and would
+          stretch a bare badge across the full width. */}
+      <div>
+        <BasisBadge kind="heldMeetings" />
+      </div>
       <div className="ct-tiles">
         <div className="ct-tile">
-          <div className="ct-tile-v">{data?.total ?? meetings.length}</div>
-          <div className="ct-tile-l">פגישות שהתקיימו</div>
+          <div className="ct-tile-v">{confirmed}</div>
+          <div className="ct-tile-l">
+            פגישות שהתקיימו
+            {estimated > 0 && (
+              <span className="ct-tile-n" title={ESTIMATED_TILE_TITLE}>
+                {estimated === 1
+                  ? "ועוד אחת משוערת"
+                  : `ועוד ${estimated} משוערות`}
+              </span>
+            )}
+          </div>
         </div>
         <div className="ct-tile">
           <div className="ct-tile-v">{data?.clientsMet ?? 0}</div>
@@ -245,19 +292,27 @@ export default function MeetingsSection({
         <div className="ct-col">
           <div className="ct-col-title">
             מאיפה הגיעו
-            <span className="ct-col-legend">לפי הערוץ שפתח את הליד</span>
+            <span className="ct-col-legend">
+              לפי הערוץ שפתח את הליד
+              {estimated > 0 && " · התקיימו · משוערות"}
+            </span>
           </div>
           {bySource.map((s) => (
-            <div key={s.label} className="ct-row" title={`${s.label}: ${s.n}`}>
+            <div
+              key={s.label}
+              className="ct-row"
+              title={`${s.label}: ${s.n}${s.est ? ` · ועוד ${s.est} ${s.est === 1 ? "משוערת" : "משוערות"}` : ""}`}
+            >
               <div
                 className="ct-bar"
-                style={{ width: `${Math.max(4, (s.n / maxSrc) * 100)}%` }}
+                style={{ width: `${Math.max(4, ((s.n + s.est) / maxSrc) * 100)}%` }}
               />
               <span className="ct-row-label">
                 <ChannelIcon name={s.label} fallback="●" /> {s.label}
               </span>
               <span className="ct-row-nums">
                 <b>{s.n}</b>
+                {s.est > 0 && <span className="ct-row-opp">{s.est}</span>}
               </span>
             </div>
           ))}
@@ -324,6 +379,15 @@ export default function MeetingsSection({
                     title={m.bookedDate ? `תואמה ב-${fmtDay(m.bookedDate)}` : undefined}
                   >
                     {fmtDay(m.date)}
+                    {/* Inferred, not confirmed — listed, but outside the
+                        tile's count. */}
+                    {m.estimated && (
+                      <BasisBadge
+                        label="משוער"
+                        title={ESTIMATED_ROW_TITLE}
+                        tone="fallback"
+                      />
+                    )}
                   </td>
                   <td>
                     <button
