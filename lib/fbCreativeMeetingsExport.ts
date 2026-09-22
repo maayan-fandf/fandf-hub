@@ -18,6 +18,7 @@ import {
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { normAdName } from "./fbCreatives";
 import { getGoogleCampaignNames } from "./googleCampaignNames";
+import { getMetaIdNames, type MetaIdNames } from "./metaIdNames";
 import { getSalesforceCreativeMeetings } from "./crmData";
 import {
   assignOwnerLeads,
@@ -218,9 +219,32 @@ const NO_GROUPS: LeadGroups = { ch: "", cre: null, aud: "", kw: "", gc: "" };
  *  applied once. Numeric Meta/Google ids cannot join the name-keyed card rows,
  *  so they read as unusable, exactly as the per-dimension checks did inline
  *  before. */
-function fbGroups(utmCampaign: unknown, utmContent: string | null, utmTerm: unknown): LeadGroups {
-  const camp = clean(utmCampaign);
-  const ad = normAdName(utmContent);
+/**
+ * A Facebook lead's join keys.
+ *
+ * `names` translates the tags that carry a numeric Meta id instead of a name
+ * — 8.6% of Facebook leads, and 70% of נתיבות's (see lib/metaIdNames). The
+ * ad id is tried FIRST and carries its own campaign, because ad ids resolve
+ * far more often than campaign ids do (73 of 73 vs 5 of 16, measured); a
+ * campaign id is only consulted when the content did not already name one.
+ * Anything still numeric after that is dropped exactly as before — a bare id
+ * matches nothing on the other side of the join.
+ */
+function fbGroups(
+  utmCampaign: unknown,
+  utmContent: string | null,
+  utmTerm: unknown,
+  names: MetaIdNames = EMPTY_ID_NAMES,
+): LeadGroups {
+  const rawCamp = clean(utmCampaign);
+  const rawAd = clean(utmContent);
+  const viaAd = numericId(rawAd) ? names.ads[rawAd] : undefined;
+  const camp = viaAd?.campaign
+    ? viaAd.campaign
+    : numericId(rawCamp)
+      ? (names.campaigns[rawCamp] ?? "")
+      : rawCamp;
+  const ad = viaAd ? normAdName(viaAd.ad) : normAdName(utmContent);
   const aud = clean(utmTerm);
   return {
     ch: "fb",
@@ -237,9 +261,13 @@ function gsGroups(utmTerm: unknown, campaignName: string): LeadGroups {
 }
 
 /** A BMBY lead's groups, by channel_key. Anything but fb / gs joins nothing. */
-function bmbyLeadGroups(l: LeadRow, gCampNames: Record<string, string>): LeadGroups {
+function bmbyLeadGroups(
+  l: LeadRow,
+  gCampNames: Record<string, string>,
+  metaNames: MetaIdNames = EMPTY_ID_NAMES,
+): LeadGroups {
   const ch = String(l.channel_key ?? "");
-  if (ch === "fb") return fbGroups(l.utm_campaign, l.utm_content, l.utm_term);
+  if (ch === "fb") return fbGroups(l.utm_campaign, l.utm_content, l.utm_term, metaNames);
   if (ch === "gs") return gsGroups(l.utm_term, gCampName(l.utm_campaign, gCampNames));
   return NO_GROUPS;
 }
@@ -298,6 +326,25 @@ function gCampName(raw: unknown, names: Record<string, string>): string {
 }
 
 const numericId = (s: string) => /^\d{8,}$/.test(s);
+
+const EMPTY_ID_NAMES: MetaIdNames = { campaigns: {}, ads: {} };
+
+/** Every numeric id sitting in a lead's utm_campaign / utm_content, for the
+ *  one lookup that names them (lib/metaIdNames). Both columns go in: which of
+ *  the two holds an ad id and which a campaign id is not knowable from the
+ *  value, and the resolver asks both ways regardless. */
+function numericUtmIds(
+  leads: ReadonlyArray<{ utm_campaign?: unknown; utm_content?: unknown }>,
+): string[] {
+  const out = new Set<string>();
+  for (const l of leads) {
+    const c = clean(l.utm_campaign);
+    const a = clean(l.utm_content);
+    if (numericId(c)) out.add(c);
+    if (numericId(a)) out.add(a);
+  }
+  return [...out];
+}
 
 /**
  * One window's group rows on both bases, built in the order the legacy
@@ -478,8 +525,11 @@ function bmbyProjectJoin(
   allLeads: LeadRow[],
   jm: MeetingRow[],
   gCampNames: Record<string, string>,
+  metaNames: MetaIdNames = EMPTY_ID_NAMES,
 ): (w: DayWindow) => ProjectMeetingsBoth {
-  const groupsOf = groupsMemo((l: LeadRow) => bmbyLeadGroups(l, gCampNames));
+  const groupsOf = groupsMemo((l: LeadRow) =>
+    bmbyLeadGroups(l, gCampNames, metaNames),
+  );
   const { attr } = buildAttr(allLeads, (l) => String(l.client_id ?? ""), groupsOf);
   const { assignments } = assignOwnerLeads(indexLeadsByClient(allLeads), jm);
   const leadDays = allLeads.map((l) => ilDayJerusalem(l.lead_created_at));
@@ -507,8 +557,11 @@ export async function computeProjectMeetings(
   ]);
   if (!allLeads.length)
     return { creative: [], audience: [], keyword: [], campaign: [] };
+  const metaNames = await getMetaIdNames(numericUtmIds(allLeads));
   // The cron's Sheet tabs are the same legacy contract as the endpoint.
-  return toWire(bmbyProjectJoin(allLeads, jm, gCampNames)({ from, toExcl }));
+  return toWire(
+    bmbyProjectJoin(allLeads, jm, gCampNames, metaNames)({ from, toExcl }),
+  );
 }
 
 /* ── Sehel warehouse variant ──────────────────────────────────────────
@@ -584,8 +637,12 @@ type SehelMeetRow = {
 
 /** Google campaign meetings are BMBY-only; Sehel's google leads join on the
  *  keyword alone (see the `campaign: []` note below). */
-function sehelLeadGroups(l: SehelLeadRow): LeadGroups {
-  if (isSehelFb(l.utm_source)) return fbGroups(l.utm_campaign, l.utm_content, l.utm_term);
+function sehelLeadGroups(
+  l: SehelLeadRow,
+  metaNames: MetaIdNames = EMPTY_ID_NAMES,
+): LeadGroups {
+  if (isSehelFb(l.utm_source))
+    return fbGroups(l.utm_campaign, l.utm_content, l.utm_term, metaNames);
   if (isSehelGoogle(l.utm_source)) return gsGroups(l.utm_term, "");
   return NO_GROUPS;
 }
@@ -631,7 +688,8 @@ async function computeSehelMeetingsWindows(
   if (!leads.length || !meets.length) return empty();
 
   const clientOf = (l: SehelLeadRow) => String(l.client_uuid ?? "");
-  const groupsOf = groupsMemo(sehelLeadGroups);
+  const metaNames = await getMetaIdNames(numericUtmIds(leads));
+  const groupsOf = groupsMemo((l: SehelLeadRow) => sehelLeadGroups(l, metaNames));
   // First-touch attribution (first lead per client by registered_at) for the
   // dated side; the same first row is the client's registration for the cohort.
   const { attr, first } = buildAttr(leads, clientOf, groupsOf);
@@ -892,7 +950,8 @@ export async function getProjectMeetingsLiveWindows(
     fetchMeetings(projName),
     getGoogleCampaignNames().catch(() => ({}) as Record<string, string>),
   ]);
-  const perWindow = bmbyProjectJoin(allLeads, jm, gCampNames);
+  const metaNames = await getMetaIdNames(numericUtmIds(allLeads));
+  const perWindow = bmbyProjectJoin(allLeads, jm, gCampNames, metaNames);
   const results = wins.map((w) => ({ key: w.key, ...perWindow(w) }));
   return { project: projName, projectId, source: "bmby", results };
 }
