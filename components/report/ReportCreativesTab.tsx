@@ -7,7 +7,10 @@ import ReportMediaSection, {
 import AdHistoryPopover from "@/components/report/AdHistoryPopover";
 import AdSetZoneMap from "@/components/report/AdSetZoneMap";
 import AdSetMapModal, { type MapZone } from "@/components/report/AdSetMapModal";
-import { BasisDash, UntaggedMeetingsLine } from "@/components/report/BasisBadge";
+import {
+  BasisDash,
+  UntaggedMeetingsLine,
+} from "@/components/report/BasisBadge";
 import { useMeetingBasis } from "@/components/report/MeetingBasisContext";
 import {
   BASIS_COPY,
@@ -203,7 +206,9 @@ function FbAdImage({
           title={
             "התמונה נטענה ממאגר הנתונים (Supabase) ולא מגיליון הקריאייטיבים — " +
             "הגיליון ריק כרגע." +
-            (ad.imageLastSeen ? ` הופעה אחרונה של הקריאייטיב: ${ad.imageLastSeen}.` : "")
+            (ad.imageLastSeen
+              ? ` הופעה אחרונה של הקריאייטיב: ${ad.imageLastSeen}.`
+              : "")
           }
         >
           🗄️
@@ -299,7 +304,9 @@ function AdPreviewLinks({ previews }: { previews?: string[] }) {
 
 /** ISO day → dd/MM/yyyy, for the one place this tab prints a date in prose. */
 const dmy = (iso: string) =>
-  iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso;
+  iso.length >= 10
+    ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+    : iso;
 
 /** Hover trendline (legacy _buildAdTrendlinePopover_): dense calendar
  *  days over the report window clamped to the last date with data; two
@@ -325,7 +332,8 @@ function AdTrend({
   if (!daily.length) return null;
   const dataLast = daily[daily.length - 1].date;
   const from = window.startIso || daily[0].date;
-  const to = window.endIso && window.endIso < dataLast ? window.endIso : dataLast;
+  const to =
+    window.endIso && window.endIso < dataLast ? window.endIso : dataLast;
   if (!from || !to || from > to) return null;
   const byDate = new Map(daily.map((d) => [d.date, d]));
   const days: ReportAdDaily[] = [];
@@ -361,13 +369,25 @@ function AdTrend({
       <div className="rpt-cr-trend-row">
         <span style={{ color: "var(--teal)" }}>{fmtILS(totalCost)}</span>
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}>
-          <polyline points={line((p) => p.cost)} fill="none" style={{ stroke: "var(--teal)" }} strokeWidth={1.6} />
+          <polyline
+            points={line((p) => p.cost)}
+            fill="none"
+            style={{ stroke: "var(--teal)" }}
+            strokeWidth={1.6}
+          />
         </svg>
       </div>
       <div className="rpt-cr-trend-row">
-        <span style={{ color: "var(--violet)" }}>{fmtInt(totalLeads)} לידים</span>
+        <span style={{ color: "var(--violet)" }}>
+          {fmtInt(totalLeads)} לידים
+        </span>
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}>
-          <polyline points={line((p) => p.leads)} fill="none" style={{ stroke: "var(--violet)" }} strokeWidth={1.6} />
+          <polyline
+            points={line((p) => p.leads)}
+            fill="none"
+            style={{ stroke: "var(--violet)" }}
+            strokeWidth={1.6}
+          />
         </svg>
       </div>
     </div>
@@ -464,7 +484,10 @@ function CrmRow({
  *  "65+". Shared by the line and its tooltip so the two cannot drift. */
 function ageRangeOf(s: ReportFbAdSet): string {
   if (!s.targetAgeMin && !s.targetAgeMax) return "";
-  const hi = s.targetAgeMax && s.targetAgeMax >= 65 ? "65+" : String(s.targetAgeMax || "?");
+  const hi =
+    s.targetAgeMax && s.targetAgeMax >= 65
+      ? "65+"
+      : String(s.targetAgeMax || "?");
   return `${s.targetAgeMin || "?"}–${hi}`;
 }
 
@@ -486,7 +509,13 @@ function adSetAudienceTitle(s: ReportFbAdSet): string {
   // and the difference is the whole question on a 1-mile pin.
   if (s.targetLocTypes?.length) {
     const he = s.targetLocTypes
-      .map((t) => (t === "home" ? "תושבי האזור" : t === "recent" ? "מי שהיה שם לאחרונה" : t))
+      .map((t) =>
+        t === "home"
+          ? "תושבי האזור"
+          : t === "recent"
+            ? "מי שהיה שם לאחרונה"
+            : t,
+      )
       .join(" + ");
     lines.push(`נוכחות: ${he}`);
   }
@@ -549,7 +578,9 @@ function AdSetHoverCard({
   const pts = s.targetZonePoints ?? [];
   const hasMap = pts.some(Boolean);
   const loc = (s.targetLocTypes ?? [])
-    .map((t) => (t === "home" ? "תושבי האזור" : t === "recent" ? "מי שהיה שם לאחרונה" : t))
+    .map((t) =>
+      t === "home" ? "תושבי האזור" : t === "recent" ? "מי שהיה שם לאחרונה" : t,
+    )
     .join(" + ");
 
   return (
@@ -762,7 +793,9 @@ export default function ReportCreativesTab({
   // Built with the SHARED key, because the server compares Meta's own ad
   // names against it and those carry invisible bidi marks the card's name has
   // already had stripped — see fbCardKey in lib/reportShared.
-  const knownKeys = [...fb.topAds, ...liveAds].map((a) => fbCardKey(a.campaign, a.ad));
+  const knownKeys = [...fb.topAds, ...liveAds].map((a) =>
+    fbCardKey(a.campaign, a.ad),
+  );
 
   async function refreshNewAds() {
     if (refreshing) return;
@@ -825,6 +858,45 @@ export default function ReportCreativesTab({
      ranking of the cards that do. */
   const fbCards = [...liveAds, ...fb.topAds];
 
+  /**
+   * The cards, split into one block per CAMPAIGN.
+   *
+   * A project routinely runs the same three creatives in two campaigns aimed
+   * at different audiences (אחוזת אפרידר: `…_45-60_fb` and `…_60+_fb`), and a
+   * single ranked grid interleaves them — so the two things an account
+   * manager actually compares, the same ad in each campaign and the campaigns
+   * against each other, both have to be assembled by eye.
+   *
+   * Order: biggest spender first, which is also the order the ערוצים tab
+   * lists campaigns in. WITHIN a group the server's ranking is preserved
+   * untouched (active → winner → CPL → cost), so the 🏆 still marks the
+   * cheapest lead in the project, not one per block.
+   *
+   * One campaign → no headers at all, just the grid as it always was.
+   */
+  const fbGroups = useMemo(() => {
+    const by = new Map<string, ReportFbAd[]>();
+    for (const a of fbCards) {
+      const k = a.campaign || "";
+      const list = by.get(k);
+      if (list) list.push(a);
+      else by.set(k, [a]);
+    }
+    return [...by.entries()]
+      .map(([campaign, ads]) => ({
+        campaign,
+        ads,
+        cost: ads.reduce((n, a) => n + a.cost, 0),
+        leads: ads.reduce((n, a) => n + a.leads, 0),
+        active: ads.filter(
+          (a) => String(a.status).toUpperCase().trim() === "ACTIVE",
+        ).length,
+      }))
+      .sort((a, b) => b.cost - a.cost || a.campaign.localeCompare(b.campaign));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fb.topAds, liveAds]);
+  const grouped = fbGroups.length > 1;
+
   return (
     <div className="rpt-creatives">
       <ReportMediaSection data={data} />
@@ -860,8 +932,8 @@ export default function ReportCreativesTab({
               .
             </>
           )}{" "}
-          הסכומים שבראש הטאב מגיעים מפיד אחר ולא הושפעו, כך שהם לא בהכרח
-          מסתכמים לסכום הכרטיסים.
+          הסכומים שבראש הטאב מגיעים מפיד אחר ולא הושפעו, כך שהם לא בהכרח מסתכמים
+          לסכום הכרטיסים.
           {fbCards.length === 0 && " בתקופה הזו גם למקור הזה אין מודעות להציג."}
         </div>
       )}
@@ -889,197 +961,235 @@ export default function ReportCreativesTab({
             )}
           </div>
           {fbSfNoteAt === "ads" && sfNote}
-          <div className="rpt-cr-grid">
-            {fbCards.map((a) => {
-              const status = fbStatusInfo(a.status);
-              const isActive = String(a.status).toUpperCase().trim() === "ACTIVE";
-              const landing = a.destUrl || a.url || "";
-              return (
-                <div
-                  key={`${a.campaign}|${a.ad}`}
-                  className={
-                    "rpt-cr-card" +
-                    (a.isWinner ? " is-winner" : "") +
-                    (a.fatigued ? " is-fatigued" : "") +
-                    (a.liveCreatedIso ? " is-live" : "") +
-                    (isActive ? "" : " is-paused")
-                  }
-                >
-                  {a.liveCreatedIso && (
+          {fbGroups.map((g) => (
+            <div key={g.campaign || "—"} className="rpt-cr-campgroup">
+              {grouped && (
+                <div className="rpt-cr-campgroup-head">
+                  <span className="rpt-cr-campgroup-name" title={g.campaign}>
+                    <bdi>{g.campaign || "ללא קמפיין"}</bdi>
+                  </span>
+                  <span className="rpt-cr-campgroup-sum">
+                    {g.ads.length} מודעות
+                    {g.active > 0 ? ` · ${g.active} פעילות` : ""}
+                    {g.cost > 0 ? ` · ${fmtILS(g.cost)}` : ""}
+                    {g.leads > 0 ? ` · ${fmtInt(g.leads)} לידים` : ""}
+                    {g.leads > 0 && g.cost > 0
+                      ? ` · ${fmtILS(g.cost / g.leads)} לליד`
+                      : ""}
+                  </span>
+                </div>
+              )}
+              <div className="rpt-cr-grid">
+                {g.ads.map((a) => {
+                  const status = fbStatusInfo(a.status);
+                  const isActive =
+                    String(a.status).toUpperCase().trim() === "ACTIVE";
+                  const landing = a.destUrl || a.url || "";
+                  return (
                     <div
-                      className="rpt-cr-badge rpt-cr-badge-new"
-                      title={`נמשכה עכשיו ישירות מפייסבוק — עלתה ב-${fmtDateHe(a.liveCreatedIso)}. עוד אין לה נתונים בדוח: הפידים מתעדכנים פעם ביום.`}
+                      key={`${a.campaign}|${a.ad}`}
+                      className={
+                        "rpt-cr-card" +
+                        (a.isWinner ? " is-winner" : "") +
+                        (a.fatigued ? " is-fatigued" : "") +
+                        (a.liveCreatedIso ? " is-live" : "") +
+                        (isActive ? "" : " is-paused")
+                      }
                     >
-                      ✨ עלתה {fmtDateHe(a.liveCreatedIso)}
-                    </div>
-                  )}
-                  {a.isWinner && (
-                    <div className="rpt-cr-badge rpt-cr-badge-win">🏆 הכי משתלם</div>
-                  )}
-                  {a.fatigued && a.fatigueReason === "declining" && (
-                    <div
-                      className="rpt-cr-badge rpt-cr-badge-fatigue"
-                      title={`CTR ירד מ-${fmtPct2(a.ctrEarly)} ל-${fmtPct2(a.ctrRecent)} — המודעה פעילה ${a.ageDays} ימים`}
-                    >
-                      ⚠️ CTR יורד
-                    </div>
-                  )}
-                  {a.fatigued && a.fatigueReason === "long" && (
-                    <div
-                      className="rpt-cr-badge rpt-cr-badge-fatigue"
-                      title={`המודעה פעילה ${a.ageDays} ימים`}
-                    >
-                      ⏳ שקלו לרענן
-                    </div>
-                  )}
-                  <div className="rpt-cr-thumb">
-                    <FbAdImage ad={a} landing={landing} />
-                    {status.label && (
-                      <span
-                        className={`rpt-cr-status is-${status.cls}`}
-                        title={
-                          a.statusFromWarehouse
-                            ? `${a.status} — נקרא ממאגר הנתונים (Supabase), לא מגיליון הקריאייטיבים. ` +
-                              `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
-                            : a.statusFromMeta
-                              ? `${a.status} — נמשך ישירות מפייסבוק בסנכרון הלילי. ` +
-                                `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
-                              : a.status
-                        }
-                      >
-                        {status.label}
-                      </span>
-                    )}
-                    {/* Only the EXTRA versions: the first preview is now the
+                      {a.liveCreatedIso && (
+                        <div
+                          className="rpt-cr-badge rpt-cr-badge-new"
+                          title={`נמשכה עכשיו ישירות מפייסבוק — עלתה ב-${fmtDateHe(a.liveCreatedIso)}. עוד אין לה נתונים בדוח: הפידים מתעדכנים פעם ביום.`}
+                        >
+                          ✨ עלתה {fmtDateHe(a.liveCreatedIso)}
+                        </div>
+                      )}
+                      {a.isWinner && (
+                        <div className="rpt-cr-badge rpt-cr-badge-win">
+                          🏆 הכי משתלם
+                        </div>
+                      )}
+                      {a.fatigued && a.fatigueReason === "declining" && (
+                        <div
+                          className="rpt-cr-badge rpt-cr-badge-fatigue"
+                          title={`CTR ירד מ-${fmtPct2(a.ctrEarly)} ל-${fmtPct2(a.ctrRecent)} — המודעה פעילה ${a.ageDays} ימים`}
+                        >
+                          ⚠️ CTR יורד
+                        </div>
+                      )}
+                      {a.fatigued && a.fatigueReason === "long" && (
+                        <div
+                          className="rpt-cr-badge rpt-cr-badge-fatigue"
+                          title={`המודעה פעילה ${a.ageDays} ימים`}
+                        >
+                          ⏳ שקלו לרענן
+                        </div>
+                      )}
+                      <div className="rpt-cr-thumb">
+                        <FbAdImage ad={a} landing={landing} />
+                        {status.label && (
+                          <span
+                            className={`rpt-cr-status is-${status.cls}`}
+                            title={
+                              a.statusFromWarehouse
+                                ? `${a.status} — נקרא ממאגר הנתונים (Supabase), לא מגיליון הקריאייטיבים. ` +
+                                  `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
+                                : a.statusFromMeta
+                                  ? `${a.status} — נמשך ישירות מפייסבוק בסנכרון הלילי. ` +
+                                    `זהו הסטטוס האפקטיבי: הוא מביא בחשבון גם קמפיין או קהל מושהים, ולא רק את מצב המודעה עצמה.`
+                                  : a.status
+                            }
+                          >
+                            {status.label}
+                          </span>
+                        )}
+                        {/* Only the EXTRA versions: the first preview is now the
                         links row's תצוגת מודעה, so listing it here again
                         would put the same URL on the card twice. */}
-                    {showPreviews && (a.previews?.length ?? 0) > 1 && (
-                      <AdPreviewLinks previews={a.previews} />
-                    )}
-                  </div>
-                  <div className="rpt-cr-body">
-                    <div className="rpt-cr-name" title={a.ad}>
-                      {a.ad}
-                    </div>
-                    <div className="rpt-cr-campaign" title={a.campaign}>
-                      {a.campaign}
-                    </div>
-                    {a.title && (
-                      <div className="rpt-cr-adtitle" title={a.title}>
-                        {a.title}
+                        {showPreviews && (a.previews?.length ?? 0) > 1 && (
+                          <AdPreviewLinks previews={a.previews} />
+                        )}
                       </div>
-                    )}
-                    {!a.fatigued && a.ageDays >= 14 && (
-                      <div
-                        className="rpt-cr-age"
-                        // Paused ads reach this chip now that "שקלו לרענן"
-                        // is gated on still running, so the tooltip can't
-                        // keep claiming the ad is active.
-                        title={
-                          isActive
-                            ? `מודעה פעילה ${a.ageDays} ימים`
-                            : `המודעה רצה ${a.ageDays} ימים`
-                        }
-                      >
-                        📅 {a.ageDays} ימים
-                      </div>
-                    )}
-                    {a.body && (
-                      <details className="rpt-cr-copy">
-                        <summary>📝 טקסט המודעה</summary>
-                        <div className="rpt-cr-copy-text">{a.body}</div>
-                      </details>
-                    )}
-                    {/* An archive card: the creative outlived its metrics.
+                      <div className="rpt-cr-body">
+                        <div className="rpt-cr-name" title={a.ad}>
+                          {a.ad}
+                        </div>
+                        {/* The campaign, unless the block above already says it. */}
+                        {!grouped && (
+                          <div className="rpt-cr-campaign" title={a.campaign}>
+                            {a.campaign}
+                          </div>
+                        )}
+                        {a.title && (
+                          <div className="rpt-cr-adtitle" title={a.title}>
+                            {a.title}
+                          </div>
+                        )}
+                        {!a.fatigued && a.ageDays >= 14 && (
+                          <div
+                            className="rpt-cr-age"
+                            // Paused ads reach this chip now that "שקלו לרענן"
+                            // is gated on still running, so the tooltip can't
+                            // keep claiming the ad is active.
+                            title={
+                              isActive
+                                ? `מודעה פעילה ${a.ageDays} ימים`
+                                : `המודעה רצה ${a.ageDays} ימים`
+                            }
+                          >
+                            📅 {a.ageDays} ימים
+                          </div>
+                        )}
+                        {a.body && (
+                          <details className="rpt-cr-copy">
+                            <summary>📝 טקסט המודעה</summary>
+                            <div className="rpt-cr-copy-text">{a.body}</div>
+                          </details>
+                        )}
+                        {/* An archive card: the creative outlived its metrics.
                         Every figure would be a zero meaning "not measured in
                         this window", which reads as "spent nothing" — so say
                         the true thing instead of drawing an empty grid. */}
-                    {a.unmappedCampaign && (
-                      <div
-                        className="rpt-cr-unmapped"
-                        title="שם הקמפיין הזה לא תואם לאף תבנית ב-campaign ID בגיליון Keys. המודעה רצה בחשבון של הפרויקט, אבל כל שאר הדוח לא יספור אותה עד שהקמפיין ימופה."
-                      >
-                        ⚠️ קמפיין לא ממופה ל-Keys
-                      </div>
-                    )}
-                    {a.noWindowData ? (
-                      <div
-                        className="rpt-cr-nodata"
-                        title={
-                          a.liveCreatedIso
-                            ? "המודעה עלתה זה עתה. הנתונים בדוח מגיעים מפידים שמתעדכנים פעם ביום, אז עלות, חשיפות ולידים יופיעו כאן בעדכון הבא."
-                            : "הקריאייטיב נשמר בארכיון של 365 יום, אבל הקמפיין רץ לפני תחילת חלון הנתונים של הדוח — אין לו עלות או חשיפות למדוד"
-                        }
-                      >
-                        {a.liveCreatedIso ? "טרם נצברו נתונים" : "אין נתונים בטווח"}
-                      </div>
-                    ) : (
-                      <>
-                        <div className="rpt-cr-stats">
-                          <div className="rpt-cr-stat">
-                            <span className="rpt-cr-stat-l">עלות</span>
-                            <span className="rpt-cr-stat-v">{fmtILS(a.cost)}</span>
-                          </div>
-                          <div className="rpt-cr-stat">
-                            <span className="rpt-cr-stat-l">לידים</span>
-                            <span className="rpt-cr-stat-v">{fmtInt(a.leads)}</span>
-                          </div>
-                          <div className="rpt-cr-stat">
-                            <span className="rpt-cr-stat-l">CPL</span>
-                            <span className="rpt-cr-stat-v">
-                              {a.cpl > 0 ? fmtILS(a.cpl) : "—"}
-                            </span>
-                          </div>
-                        </div>
-                        {(a.impressions > 0 || a.clicks > 0) && (
-                          <div className="rpt-cr-stats rpt-cr-stats-sec">
-                            <div className="rpt-cr-stat">
-                              <span className="rpt-cr-stat-l">חשיפות</span>
-                              <span className="rpt-cr-stat-v">{fmtInt(a.impressions)}</span>
-                            </div>
-                            <div className="rpt-cr-stat">
-                              <span className="rpt-cr-stat-l">קליקים</span>
-                              <span className="rpt-cr-stat-v">{fmtInt(a.clicks)}</span>
-                            </div>
-                            <div className="rpt-cr-stat">
-                              <span className="rpt-cr-stat-l">CTR</span>
-                              <span className="rpt-cr-stat-v">
-                                {a.ctr > 0 ? fmtPct2(a.ctr) : "—"}
-                              </span>
-                            </div>
+                        {a.unmappedCampaign && (
+                          <div
+                            className="rpt-cr-unmapped"
+                            title="שם הקמפיין הזה לא תואם לאף תבנית ב-campaign ID בגיליון Keys. המודעה רצה בחשבון של הפרויקט, אבל כל שאר הדוח לא יספור אותה עד שהקמפיין ימופה."
+                          >
+                            ⚠️ קמפיין לא ממופה ל-Keys
                           </div>
                         )}
-                        {/* Live overlay cards are not in withCrm (they come
+                        {a.noWindowData ? (
+                          <div
+                            className="rpt-cr-nodata"
+                            title={
+                              a.liveCreatedIso
+                                ? "המודעה עלתה זה עתה. הנתונים בדוח מגיעים מפידים שמתעדכנים פעם ביום, אז עלות, חשיפות ולידים יופיעו כאן בעדכון הבא."
+                                : "הקריאייטיב נשמר בארכיון של 365 יום, אבל הקמפיין רץ לפני תחילת חלון הנתונים של הדוח — אין לו עלות או חשיפות למדוד"
+                            }
+                          >
+                            {a.liveCreatedIso
+                              ? "טרם נצברו נתונים"
+                              : "אין נתונים בטווח"}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="rpt-cr-stats">
+                              <div className="rpt-cr-stat">
+                                <span className="rpt-cr-stat-l">עלות</span>
+                                <span className="rpt-cr-stat-v">
+                                  {fmtILS(a.cost)}
+                                </span>
+                              </div>
+                              <div className="rpt-cr-stat">
+                                <span className="rpt-cr-stat-l">לידים</span>
+                                <span className="rpt-cr-stat-v">
+                                  {fmtInt(a.leads)}
+                                </span>
+                              </div>
+                              <div className="rpt-cr-stat">
+                                <span className="rpt-cr-stat-l">CPL</span>
+                                <span className="rpt-cr-stat-v">
+                                  {a.cpl > 0 ? fmtILS(a.cpl) : "—"}
+                                </span>
+                              </div>
+                            </div>
+                            {(a.impressions > 0 || a.clicks > 0) && (
+                              <div className="rpt-cr-stats rpt-cr-stats-sec">
+                                <div className="rpt-cr-stat">
+                                  <span className="rpt-cr-stat-l">חשיפות</span>
+                                  <span className="rpt-cr-stat-v">
+                                    {fmtInt(a.impressions)}
+                                  </span>
+                                </div>
+                                <div className="rpt-cr-stat">
+                                  <span className="rpt-cr-stat-l">קליקים</span>
+                                  <span className="rpt-cr-stat-v">
+                                    {fmtInt(a.clicks)}
+                                  </span>
+                                </div>
+                                <div className="rpt-cr-stat">
+                                  <span className="rpt-cr-stat-l">CTR</span>
+                                  <span className="rpt-cr-stat-v">
+                                    {a.ctr > 0 ? fmtPct2(a.ctr) : "—"}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                            {/* Live overlay cards are not in withCrm (they come
                             from fbNewAds, not the swapped payload) and carry
                             hard zeros, so they never show the line. */}
-                        <CrmRow
-                          crmLeads={a.crmLeads}
-                          scheduled={a.scheduled}
-                          held={a.held}
-                          costPerSched={a.costPerSched}
-                          costPerHeld={a.costPerHeld}
-                          groupLevel={a.meetingsAtGroupLevel}
-                          show={withCrm.has(a)}
-                          basis={basis}
-                          noSource={noSource}
-                        />
-                      </>
-                    )}
-                  </div>
-                  {/* Wrapper exists purely to give AdTrend something to sit on
+                            <CrmRow
+                              crmLeads={a.crmLeads}
+                              scheduled={a.scheduled}
+                              held={a.held}
+                              costPerSched={a.costPerSched}
+                              costPerHeld={a.costPerHeld}
+                              groupLevel={a.meetingsAtGroupLevel}
+                              show={withCrm.has(a)}
+                              basis={basis}
+                              noSource={noSource}
+                            />
+                          </>
+                        )}
+                      </div>
+                      {/* Wrapper exists purely to give AdTrend something to sit on
                       top of. The trend overlay used to hang off the CARD at a
                       fixed `bottom`, which assumed the links row was one line —
                       the moment it wrapped (דף נחיתה + תצוגת מודעה, then
                       היסטוריה) the panel covered the first line. Anchored to
                       this wrapper it clears the row at any height. */}
-                  <div className="rpt-cr-foot">
-                    <div className="rpt-cr-links">
-                      {landing && (
-                        <a href={landing} target="_blank" rel="noopener noreferrer">
-                          🔗 דף נחיתה
-                        </a>
-                      )}
-                      {/* `url` is the assets tab's "Link to promoted post",
+                      <div className="rpt-cr-foot">
+                        <div className="rpt-cr-links">
+                          {landing && (
+                            <a
+                              href={landing}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              🔗 דף נחיתה
+                            </a>
+                          )}
+                          {/* `url` is the assets tab's "Link to promoted post",
                           and that tab has been empty since its Supermetrics
                           query broke — so this link, which was on every card,
                           silently disappeared from all of them. The preview
@@ -1087,21 +1197,21 @@ export default function ReportCreativesTab({
                           working preview for the same ad, so it stands in.
                           Second-choice on purpose: the promoted post is the
                           real thing, the preview is a rendering of it. */}
-                      {(a.url || a.previews?.[0]) && (
-                        <a
-                          href={a.url || a.previews![0]}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={
-                            a.url
-                              ? "פתח את הפוסט המקודם בפייסבוק"
-                              : "פתח תצוגה מקדימה של המודעה (דורש חיבור ל-Business Manager)"
-                          }
-                        >
-                          👁️ תצוגת מודעה
-                        </a>
-                      )}
-                      {/* In the links row rather than the card body: it is one
+                          {(a.url || a.previews?.[0]) && (
+                            <a
+                              href={a.url || a.previews![0]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={
+                                a.url
+                                  ? "פתח את הפוסט המקודם בפייסבוק"
+                                  : "פתח תצוגה מקדימה של המודעה (דורש חיבור ל-Business Manager)"
+                              }
+                            >
+                              👁️ תצוגת מודעה
+                            </a>
+                          )}
+                          {/* In the links row rather than the card body: it is one
                           of the card's three ways out, so it belongs with the
                           other two instead of as a stray pill above them.
 
@@ -1114,22 +1224,30 @@ export default function ReportCreativesTab({
                           (months, לפני התקופה and סה״כ alike); the panel is
                           told which, so its footnote defines the numbers it
                           actually shows. */}
-                      {a.history && (
-                        <AdHistoryPopover
-                          ad={a.ad}
-                          history={a.history}
-                          basis={cb.meetingBasis}
-                          noSource={noSource}
+                          {a.history && (
+                            <AdHistoryPopover
+                              ad={a.ad}
+                              history={a.history}
+                              basis={cb.meetingBasis}
+                              noSource={noSource}
+                            />
+                          )}
+                        </div>
+                        <AdTrend
+                          title={a.ad}
+                          daily={a.daily}
+                          window={data.window}
                         />
-                      )}
+                      </div>
                     </div>
-                    <AdTrend title={a.ad} daily={a.daily} window={data.window} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {fb.topAdSets.length === 0 && <UntaggedMeetingsLine pair={fbUntagged} />}
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {fb.topAdSets.length === 0 && (
+            <UntaggedMeetingsLine pair={fbUntagged} />
+          )}
         </>
       )}
 
@@ -1252,7 +1370,9 @@ export default function ReportCreativesTab({
 
       {google.dgAds.length > 0 && <GoogleDgBlock ads={google.dgAds} />}
 
-      {google.ads.length > 0 && <GoogleAdsBlock ads={google.ads} basis={basis} />}
+      {google.ads.length > 0 && (
+        <GoogleAdsBlock ads={google.ads} basis={basis} />
+      )}
 
       {google.topKeywords.length > 0 && (
         <>
@@ -1283,8 +1403,12 @@ export default function ReportCreativesTab({
                     <td>{fmtInt(k.impressions)}</td>
                     <td>{fmtInt(k.clicks)}</td>
                     <td>{fmtInt(k.conversions)}</td>
-                    <td style={{ color: "#ec4899" }}>{meetNum(k.scheduled, noSource)}</td>
-                    <td style={{ color: "#f5576c" }}>{meetNum(k.held, noSource)}</td>
+                    <td style={{ color: "#ec4899" }}>
+                      {meetNum(k.scheduled, noSource)}
+                    </td>
+                    <td style={{ color: "#f5576c" }}>
+                      {meetNum(k.held, noSource)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1316,7 +1440,9 @@ function dgStatusInfo(raw: string): {
   cls: string;
   off: boolean;
 } {
-  const s = String(raw || "").toUpperCase().trim();
+  const s = String(raw || "")
+    .toUpperCase()
+    .trim();
   if (!s) return { label: "", cls: "", off: false };
   if (s === "ENABLED") return { label: "🟢 פעילה", cls: "on", off: false };
   if (s === "PAUSED") return { label: "⏸️ מושהית", cls: "off", off: true };
@@ -1380,189 +1506,184 @@ function DgAdCard({
   const st = dgStatusInfo(ad.status);
   return (
     <div className={"rpt-cr-dgad" + (st.off ? " is-off" : "")}>
-            <div className="rpt-cr-dgad-head">
-              {st.label && (
-                <span
-                  className={`rpt-cr-dgstatus is-${st.cls}`}
-                  title={
-                    ad.adIds.length > 1
-                      ? `סטטוס של ${ad.adIds.length} המודעות המשתמשות בקריאייטיב הזה`
-                      : "סטטוס המודעה ב-Google Ads"
-                  }
-                >
-                  {st.label}
-                </span>
-              )}
-              <span className="rpt-cr-dgad-camp" title={ad.campaign}>
-                {ad.campaign}
-              </span>
-              <span className="rpt-cr-dgad-meta">
-                {ad.images.length} תמונות · {ad.copy.length} טקסטים
-              </span>
-            </div>
-            {/* The same creative typically runs against several audiences.
+      <div className="rpt-cr-dgad-head">
+        {st.label && (
+          <span
+            className={`rpt-cr-dgstatus is-${st.cls}`}
+            title={
+              ad.adIds.length > 1
+                ? `סטטוס של ${ad.adIds.length} המודעות המשתמשות בקריאייטיב הזה`
+                : "סטטוס המודעה ב-Google Ads"
+            }
+          >
+            {st.label}
+          </span>
+        )}
+        <span className="rpt-cr-dgad-camp" title={ad.campaign}>
+          {ad.campaign}
+        </span>
+        <span className="rpt-cr-dgad-meta">
+          {ad.images.length} תמונות · {ad.copy.length} טקסטים
+        </span>
+      </div>
+      {/* The same creative typically runs against several audiences.
                 They're merged into one card; this says which. */}
-            {ad.adGroups.length > 0 && (
-              <div
-                className="rpt-cr-dggroups"
-                title={ad.adGroups.join("\n")}
-              >
-                <span className="rpt-cr-dggroups-l">
-                  {ad.adGroups.length > 1
-                    ? `רץ ב-${ad.adGroups.length} קבוצות מודעות:`
-                    : "קבוצת מודעות:"}
+      {ad.adGroups.length > 0 && (
+        <div className="rpt-cr-dggroups" title={ad.adGroups.join("\n")}>
+          <span className="rpt-cr-dggroups-l">
+            {ad.adGroups.length > 1
+              ? `רץ ב-${ad.adGroups.length} קבוצות מודעות:`
+              : "קבוצת מודעות:"}
+          </span>
+          {ad.adGroups.map((g) => (
+            <span key={g} className="rpt-cr-dggroup">
+              {g}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {ad.images.length > 0 && (
+        <div className="rpt-cr-dgimgs themed-scrollbar">
+          {ad.images.map((im, i) => (
+            <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
+              {im.imageUrl ? (
+                <DgAssetImage src={im.imageUrl} alt={im.name || im.fieldType} />
+              ) : (
+                <a
+                  className="rpt-cr-dgvid"
+                  href={im.videoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ▶ וידאו
+                </a>
+              )}
+              <figcaption title={im.name || im.fieldType}>
+                <span className="rpt-cr-dgimg-kind">{im.fieldType}</span>
+                <span className="rpt-cr-dgimg-nums">
+                  {fmtILS(im.cost)} · {fmtInt(im.clicks)} קליקים
                 </span>
-                {ad.adGroups.map((g) => (
-                  <span key={g} className="rpt-cr-dggroup">
-                    {g}
+                {im.sharedWith > 0 && (
+                  <span
+                    className="rpt-cr-dgimg-shared"
+                    title={`התמונה משמשת גם ב-${im.sharedWith} מודעות נוספות בפרויקט`}
+                  >
+                    ↻ {im.sharedWith}
                   </span>
-                ))}
-              </div>
-            )}
+                )}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
 
-            {ad.images.length > 0 && (
-              <div className="rpt-cr-dgimgs themed-scrollbar">
-                {ad.images.map((im, i) => (
-                  <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
-                    {im.imageUrl ? (
-                      <DgAssetImage
-                        src={im.imageUrl}
-                        alt={im.name || im.fieldType}
-                      />
-                    ) : (
-                      <a
-                        className="rpt-cr-dgvid"
-                        href={im.videoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        ▶ וידאו
-                      </a>
-                    )}
-                    <figcaption title={im.name || im.fieldType}>
-                      <span className="rpt-cr-dgimg-kind">{im.fieldType}</span>
-                      <span className="rpt-cr-dgimg-nums">
-                        {fmtILS(im.cost)} · {fmtInt(im.clicks)} קליקים
-                      </span>
-                      {im.sharedWith > 0 && (
-                        <span
-                          className="rpt-cr-dgimg-shared"
-                          title={`התמונה משמשת גם ב-${im.sharedWith} מודעות נוספות בפרויקט`}
-                        >
-                          ↻ {im.sharedWith}
-                        </span>
-                      )}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
+      {ad.copy.length > 0 && (
+        <ul className="rpt-cr-dgcopy">
+          {ad.copy.map((c, i) => (
+            <li key={`${c.fieldType}-${i}`}>
+              <span className="rpt-cr-dgcopy-kind">{c.fieldType}</span>
+              <span className="rpt-cr-dgcopy-text">{c.text}</span>
+              <span className="rpt-cr-dgcopy-nums">
+                {fmtInt(c.impressions)} חשיפות · {fmtInt(c.clicks)} קליקים
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
-            {ad.copy.length > 0 && (
-              <ul className="rpt-cr-dgcopy">
-                {ad.copy.map((c, i) => (
-                  <li key={`${c.fieldType}-${i}`}>
-                    <span className="rpt-cr-dgcopy-kind">{c.fieldType}</span>
-                    <span className="rpt-cr-dgcopy-text">{c.text}</span>
-                    <span className="rpt-cr-dgcopy-nums">
-                      {fmtInt(c.impressions)} חשיפות · {fmtInt(c.clicks)} קליקים
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {/* Copy that ran and was then unlinked. Folded away by default so
+      {/* Copy that ran and was then unlinked. Folded away by default so
                 the open card is exactly what Google Ads shows — the numbers are
                 real spend, but reading them as live copy is how the card ended
                 up claiming 7 headlines on a 3-headline ad. See copyRetired. */}
-            {ad.copyRetired.length > 0 && (
-              <details className="rpt-cr-dgretired">
-                <summary>
-                  🗄️ {ad.copyRetired.length} טקסטים היסטוריים
-                  <span className="rpt-cr-dgretired-hint">
-                    כבר לא במודעה · לחצו להצגה
-                  </span>
-                </summary>
-                <ul className="rpt-cr-dgcopy">
-                  {ad.copyRetired.map((c, i) => (
-                    <li key={`${c.fieldType}-${i}`}>
-                      <span className="rpt-cr-dgcopy-kind">{c.fieldType}</span>
-                      <span className="rpt-cr-dgcopy-text">{c.text}</span>
-                      <span className="rpt-cr-dgcopy-nums">
-                        {fmtInt(c.impressions)} חשיפות · {fmtInt(c.clicks)} קליקים
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
+      {ad.copyRetired.length > 0 && (
+        <details className="rpt-cr-dgretired">
+          <summary>
+            🗄️ {ad.copyRetired.length} טקסטים היסטוריים
+            <span className="rpt-cr-dgretired-hint">
+              כבר לא במודעה · לחצו להצגה
+            </span>
+          </summary>
+          <ul className="rpt-cr-dgcopy">
+            {ad.copyRetired.map((c, i) => (
+              <li key={`${c.fieldType}-${i}`}>
+                <span className="rpt-cr-dgcopy-kind">{c.fieldType}</span>
+                <span className="rpt-cr-dgcopy-text">{c.text}</span>
+                <span className="rpt-cr-dgcopy-nums">
+                  {fmtInt(c.impressions)} חשיפות · {fmtInt(c.clicks)} קליקים
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
-            {/* Creatives that ran and were then unlinked. Folded away for the
+      {/* Creatives that ran and were then unlinked. Folded away for the
                 same reason as the copy above: the 🟢 פעילה pill is the AD's
                 status, so anything sitting open under it reads as currently
                 running. Shbn-holon showed four swapped-out images beside the
                 five live ones. The spend is real, so it stays reachable. */}
-            {ad.imagesRetired.length > 0 && (
-              <details className="rpt-cr-dgretired">
-                <summary>
-                  🗄️ {ad.imagesRetired.length === 1
-                    ? "קריאייטיב היסטורי אחד"
-                    : `${ad.imagesRetired.length} קריאייטיבים היסטוריים`}
-                  <span className="rpt-cr-dgretired-hint">
-                    כבר לא במודעה · לחצו להצגה
-                  </span>
-                </summary>
-                <div className="rpt-cr-dgimgs themed-scrollbar">
-                  {ad.imagesRetired.map((im, i) => (
-                    <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
-                      {im.imageUrl ? (
-                        <DgAssetImage
-                          src={im.imageUrl}
-                          alt={im.name || im.fieldType}
-                        />
-                      ) : (
-                        <a
-                          className="rpt-cr-dgvid"
-                          href={im.videoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          ▶ וידאו
-                        </a>
-                      )}
-                      <figcaption title={im.name || im.fieldType}>
-                        <span className="rpt-cr-dgimg-kind">{im.fieldType}</span>
-                        <span className="rpt-cr-dgimg-nums">
-                          {fmtILS(im.cost)} · {fmtInt(im.clicks)} קליקים
-                        </span>
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </details>
-            )}
-
-            {(ad.images[0]?.cta || ad.images[0]?.finalUrl) && (
-              <div className="rpt-cr-gmeta">
-                {ad.images[0]?.cta && (
-                  <span className="rpt-cr-gcta" title="Call to action">
-                    {ad.images[0].cta}
-                  </span>
-                )}
-                {ad.images[0]?.finalUrl && (
+      {ad.imagesRetired.length > 0 && (
+        <details className="rpt-cr-dgretired">
+          <summary>
+            🗄️{" "}
+            {ad.imagesRetired.length === 1
+              ? "קריאייטיב היסטורי אחד"
+              : `${ad.imagesRetired.length} קריאייטיבים היסטוריים`}
+            <span className="rpt-cr-dgretired-hint">
+              כבר לא במודעה · לחצו להצגה
+            </span>
+          </summary>
+          <div className="rpt-cr-dgimgs themed-scrollbar">
+            {ad.imagesRetired.map((im, i) => (
+              <figure key={`${im.imageUrl}-${i}`} className="rpt-cr-dgimg">
+                {im.imageUrl ? (
+                  <DgAssetImage
+                    src={im.imageUrl}
+                    alt={im.name || im.fieldType}
+                  />
+                ) : (
                   <a
-                    className="rpt-cr-glink"
-                    href={ad.images[0].finalUrl}
+                    className="rpt-cr-dgvid"
+                    href={im.videoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    title={ad.images[0].finalUrl}
                   >
-                    דף נחיתה ↗
+                    ▶ וידאו
                   </a>
                 )}
-              </div>
-            )}
+                <figcaption title={im.name || im.fieldType}>
+                  <span className="rpt-cr-dgimg-kind">{im.fieldType}</span>
+                  <span className="rpt-cr-dgimg-nums">
+                    {fmtILS(im.cost)} · {fmtInt(im.clicks)} קליקים
+                  </span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {(ad.images[0]?.cta || ad.images[0]?.finalUrl) && (
+        <div className="rpt-cr-gmeta">
+          {ad.images[0]?.cta && (
+            <span className="rpt-cr-gcta" title="Call to action">
+              {ad.images[0].cta}
+            </span>
+          )}
+          {ad.images[0]?.finalUrl && (
+            <a
+              className="rpt-cr-glink"
+              href={ad.images[0].finalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={ad.images[0].finalUrl}
+            >
+              דף נחיתה ↗
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1643,7 +1764,11 @@ function GoogleAdsBlock({
                     </span>
                     <span>{fmtInt(a.impressions)} חשיפות</span>
                     {a.finalUrl && (
-                      <a href={a.finalUrl} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={a.finalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         🔗 דף נחיתה
                       </a>
                     )}

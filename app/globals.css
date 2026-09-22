@@ -26899,6 +26899,36 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
   gap: 0.8rem;
 }
+/* One block per campaign inside 🎨 מודעות פייסבוק. Rendered only when the
+   project runs more than one; a single campaign keeps the bare grid. */
+.rpt-cr-campgroup + .rpt-cr-campgroup {
+  margin-top: 1.1rem;
+}
+.rpt-cr-campgroup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  margin: 0 0 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.rpt-cr-campgroup-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  /* Campaign names are latin with Hebrew fragments; keep them LTR so the
+     underscores and the _fb suffix read in the order Ads Manager shows. */
+  direction: ltr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.rpt-cr-campgroup-sum {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
 .rpt-cr-card {
   position: relative;
   border: 1px solid var(--border-soft);
