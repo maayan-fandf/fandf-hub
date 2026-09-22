@@ -897,6 +897,40 @@ export default function ReportCreativesTab({
   }, [fb.topAds, liveAds]);
   const grouped = fbGroups.length > 1;
 
+  /**
+   * The same split for the ad sets, where it matters more than on the cards:
+   * an audience name is REBUILT in every new campaign, so "Frequent
+   * international travelers" appears once per campaign and the two rows sit
+   * next to each other, identical but for a line of small grey text.
+   *
+   * The 🏆 is deliberately NOT recomputed per block. It marks the cheapest
+   * lead among all of the project's audiences, and the row that earns it is
+   * identified before the split — index 0 of the server's CPL-sorted list —
+   * so grouping cannot mint a second winner.
+   */
+  const adSetGroups = useMemo(() => {
+    const by = new Map<string, ReportFbAdSet[]>();
+    for (const s of fb.topAdSets) {
+      const k = s.campaign || "";
+      const list = by.get(k);
+      if (list) list.push(s);
+      else by.set(k, [s]);
+    }
+    return [...by.entries()]
+      .map(([campaign, sets]) => ({
+        campaign,
+        sets,
+        cost: sets.reduce((n, s) => n + s.cost, 0),
+        leads: sets.reduce((n, s) => n + s.leads, 0),
+      }))
+      .sort((a, b) => b.cost - a.cost || a.campaign.localeCompare(b.campaign));
+  }, [fb.topAdSets]);
+  const adSetsGrouped = adSetGroups.length > 1;
+  const adSetWinnerKey =
+    fb.topAdSets[0] && fb.topAdSets[0].cpl > 0
+      ? `${fb.topAdSets[0].campaign}|${fb.topAdSets[0].name}`
+      : "";
+
   return (
     <div className="rpt-creatives">
       <ReportMediaSection data={data} />
@@ -1255,88 +1289,117 @@ export default function ReportCreativesTab({
         <>
           <h3 className="rpt-cr-title">🎯 קהלים (Ad Sets) — לפי עלות לליד</h3>
           {fbSfNoteAt === "adsets" && sfNote}
-          <div className="rpt-cr-adsets">
-            {fb.topAdSets.map((s, i) => (
-              <div
-                // Composite, because the name alone is NOT unique: the same
-                // audience is rebuilt in each new campaign, and rows are now
-                // split accordingly.
-                key={`${s.campaign}|${s.name}`}
-                className={
-                  "rpt-cr-adset" + (i === 0 && s.cpl > 0 ? " is-winner" : "")
-                }
-              >
-                <div className="rpt-cr-adset-name">
-                  {i === 0 && s.cpl > 0 ? "🏆 " : ""}
-                  {s.name}
+          {adSetGroups.map((g) => (
+            <div key={g.campaign || "—"} className="rpt-cr-campgroup">
+              {adSetsGrouped && (
+                <div className="rpt-cr-campgroup-head">
+                  <span className="rpt-cr-campgroup-name" title={g.campaign}>
+                    <bdi>{g.campaign || "ללא קמפיין"}</bdi>
+                  </span>
+                  <span className="rpt-cr-campgroup-sum">
+                    {g.sets.length} קהלים
+                    {g.cost > 0 ? ` · ${fmtILS(g.cost)}` : ""}
+                    {g.leads > 0 ? ` · ${fmtInt(g.leads)} לידים` : ""}
+                    {g.leads > 0 && g.cost > 0
+                      ? ` · ${fmtILS(g.cost / g.leads)} לליד`
+                      : ""}
+                  </span>
                 </div>
-                {/* The campaign, so two rows sharing an audience name can be
-                    told apart. Same treatment the ad cards give it. */}
-                {s.campaign && (
-                  <div className="rpt-cr-campaign" title={s.campaign}>
-                    {s.campaign}
-                  </div>
-                )}
-                {/* Who it was aimed at. Sits directly under the name rather
+              )}
+              <div className="rpt-cr-adsets">
+                {g.sets.map((s) => {
+                  const isWinner =
+                    !!adSetWinnerKey &&
+                    `${s.campaign}|${s.name}` === adSetWinnerKey;
+                  return (
+                    <div
+                      // Composite, because the name alone is NOT unique: the same
+                      // audience is rebuilt in each new campaign, and rows are now
+                      // split accordingly.
+                      key={`${s.campaign}|${s.name}`}
+                      className={
+                        "rpt-cr-adset" + (isWinner ? " is-winner" : "")
+                      }
+                    >
+                      <div className="rpt-cr-adset-name">
+                        {isWinner ? "🏆 " : ""}
+                        {s.name}
+                      </div>
+                      {/* The campaign, so two rows sharing an audience name can be
+                    told apart — unless the block header above already says
+                    it. Same treatment the ad cards give it. */}
+                      {!adSetsGrouped && s.campaign && (
+                        <div className="rpt-cr-campaign" title={s.campaign}>
+                          {s.campaign}
+                        </div>
+                      )}
+                      {/* Who it was aimed at. Sits directly under the name rather
                     than at the foot of the card on purpose: the hover
                     trendline is absolutely positioned at bottom:2.2rem, and
                     anything added below the stats disappears behind it. */}
-                {adSetAudience(s) && (
-                  <div
-                    className="rpt-cr-adset-aim"
-                    title={adSetAudienceTitle(s)}
-                  >
-                    🎯 <bdi>{adSetAudience(s)}</bdi>
-                    {s.targetAmbiguous && (
-                      <span className="rpt-cr-adset-aim-warn" aria-hidden>
-                        {" "}
-                        ~
-                      </span>
-                    )}
-                  </div>
-                )}
-                <div className="rpt-cr-adset-stats">
-                  <span>
-                    עלות: <b>{fmtILS(s.cost)}</b>
-                  </span>
-                  <span>
-                    לידים: <b>{fmtInt(s.leads)}</b>
-                  </span>
-                  <span>
-                    CPL: <b>{s.cpl > 0 ? fmtILS(s.cpl) : "—"}</b>
-                  </span>
-                </div>
-                {/* Shown when the row has CRM figures on EITHER basis — see
+                      {adSetAudience(s) && (
+                        <div
+                          className="rpt-cr-adset-aim"
+                          title={adSetAudienceTitle(s)}
+                        >
+                          🎯 <bdi>{adSetAudience(s)}</bdi>
+                          {s.targetAmbiguous && (
+                            <span className="rpt-cr-adset-aim-warn" aria-hidden>
+                              {" "}
+                              ~
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div className="rpt-cr-adset-stats">
+                        <span>
+                          עלות: <b>{fmtILS(s.cost)}</b>
+                        </span>
+                        <span>
+                          לידים: <b>{fmtInt(s.leads)}</b>
+                        </span>
+                        <span>
+                          CPL: <b>{s.cpl > 0 ? fmtILS(s.cpl) : "—"}</b>
+                        </span>
+                      </div>
+                      {/* Shown when the row has CRM figures on EITHER basis — see
                     hasCrmOnEitherBasis — so a flip changes the numbers in
                     place rather than adding or removing the line. */}
-                {withCrm.has(s) && (
-                  <div
-                    className="rpt-cr-adset-stats rpt-cr-adset-crm"
-                    title={`לידים, תואמו ובוצעו מה-CRM מקהל זה · תואמו ובוצעו ${BASIS_LABELS[basis]}`}
-                  >
-                    <span style={{ color: "#6366f1" }}>
-                      לידים: <b>{fmtInt(s.crmLeads)}</b>
-                    </span>
-                    <span style={{ color: "#ec4899" }}>
-                      תואמו: <b>{meetNum(s.scheduled, noSource)}</b>
-                      {s.costPerSched > 0 ? ` (${fmtILS(s.costPerSched)})` : ""}
-                    </span>
-                    <span style={{ color: "#f5576c" }}>
-                      בוצעו: <b>{meetNum(s.held, noSource)}</b>
-                      {s.costPerHeld > 0 ? ` (${fmtILS(s.costPerHeld)})` : ""}
-                    </span>
-                  </div>
-                )}
-                <AdSetHoverCard
-                  s={s}
-                  window={data.window}
-                  onOpenMap={() => setMapFor(s.name)}
-                  crm={withCrm.has(s)}
-                  noSource={noSource}
-                />
+                      {withCrm.has(s) && (
+                        <div
+                          className="rpt-cr-adset-stats rpt-cr-adset-crm"
+                          title={`לידים, תואמו ובוצעו מה-CRM מקהל זה · תואמו ובוצעו ${BASIS_LABELS[basis]}`}
+                        >
+                          <span style={{ color: "#6366f1" }}>
+                            לידים: <b>{fmtInt(s.crmLeads)}</b>
+                          </span>
+                          <span style={{ color: "#ec4899" }}>
+                            תואמו: <b>{meetNum(s.scheduled, noSource)}</b>
+                            {s.costPerSched > 0
+                              ? ` (${fmtILS(s.costPerSched)})`
+                              : ""}
+                          </span>
+                          <span style={{ color: "#f5576c" }}>
+                            בוצעו: <b>{meetNum(s.held, noSource)}</b>
+                            {s.costPerHeld > 0
+                              ? ` (${fmtILS(s.costPerHeld)})`
+                              : ""}
+                          </span>
+                        </div>
+                      )}
+                      <AdSetHoverCard
+                        s={s}
+                        window={data.window}
+                        onOpenMap={() => setMapFor(s.name)}
+                        crm={withCrm.has(s)}
+                        noSource={noSource}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
           <UntaggedMeetingsLine pair={fbUntagged} />
           {/* The real map, mounted only while open. Leaflet and its CSS are
               imported inside the modal's own effect, so nothing about it is
