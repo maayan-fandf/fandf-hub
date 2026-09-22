@@ -3,6 +3,7 @@ import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
 import { listAdsCreatedSince, metaConfigured, MetaGraphError } from "@/lib/metaGraph";
 import type { ReportFbAd } from "@/lib/reportShared";
+import { adNameOf, fbCardKey, normCardName } from "@/lib/reportShared";
 
 /**
  * "מודעות שעלו עכשיו" — the on-demand pull behind the רענון button on the
@@ -203,12 +204,23 @@ export async function getNewFbAdsForProject(opts: {
         if (matched && matched !== slugLower) continue;
         const unmapped = !matched;
 
-        const key = `${campaign}|${ad}`.toLowerCase();
+        // THE SAME KEY THE CARDS USE (lib/reportShared fbCardKey), not a raw
+        // `campaign|ad`. Meta writes one ad name with a VARYING number of
+        // invisible bidi marks, so the raw string is not even stable against
+        // itself: on אחוזת אפרידר, 2026-09-22, three creatives came back under
+        // nine spellings — "2026-09-22A פיקדון" with none, one and two leading
+        // U+200E — which sailed through both tests below and put the same
+        // creative on screen three times. The same mismatch also made an ad
+        // that IS already in the grid read as new, because the card's name had
+        // been normalised and Meta's had not.
+        const key = fbCardKey(campaign, ad);
         if (knownKeys?.has(key)) continue;
         if (seen.has(key)) continue;
         seen.add(key);
 
-        pushAd(r, accountId, campaign, ad, unmapped);
+        // Cleaned, so the card's title matches the grid's spelling of the same
+        // ad and the client's next knownKeys round-trips.
+        pushAd(r, accountId, campaign, normCardName(adNameOf(ad)), unmapped);
       }
     }
   };

@@ -17,6 +17,7 @@ import {
 } from "@/lib/meetingBasis";
 import {
   applyBasisToCreatives,
+  fbCardKey,
   fbStatusInfo,
   fmtInt,
   fmtILS,
@@ -758,9 +759,10 @@ export default function ReportCreativesTab({
   /* The cards the page is already showing, keyed the way lib/reportCreatives
      keys them, so the server can tell us only what is genuinely NEW and the
      count in the note means what it says. */
-  const knownKeys = [...fb.topAds, ...liveAds].map((a) =>
-    `${a.campaign}|${a.ad}`.toLowerCase(),
-  );
+  // Built with the SHARED key, because the server compares Meta's own ad
+  // names against it and those carry invisible bidi marks the card's name has
+  // already had stripped — see fbCardKey in lib/reportShared.
+  const knownKeys = [...fb.topAds, ...liveAds].map((a) => fbCardKey(a.campaign, a.ad));
 
   async function refreshNewAds() {
     if (refreshing) return;

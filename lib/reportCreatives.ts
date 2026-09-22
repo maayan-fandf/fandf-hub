@@ -29,6 +29,11 @@ import type {
   ReportUntaggedMeetings,
   ReportWindow,
 } from "@/lib/reportShared";
+import {
+  adNameOf,
+  fbCardKey,
+  normCardName as sharedNormCardName,
+} from "@/lib/reportShared";
 
 /**
  * Server data layer for the native קריאייטיבים tab — reads the same
@@ -130,12 +135,8 @@ function parseDate(v: unknown): string {
  *  gets auto-typed by Sheets; normalize any date-looking render back to
  *  ISO so the (campaign|ad) join and the meetings key stay consistent
  *  (legacy `fbAdName_`). */
-function adNameOf(v: unknown): string {
-  const s = String(v ?? "").trim();
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
-  return s;
-}
+// adNameOf now lives in lib/reportShared beside the card key it feeds; it is
+// imported at the top of this file.
 
 /** Inclusive YYYY-MM list over [startIso..endIso] (legacy
  *  `monthsInRange_`, capped at the live endpoint's 24). */
@@ -1566,15 +1567,13 @@ function adKey(campaign: string, ad: string): string {
  * The bidi strip stays: it is what the duplicate-card fix was actually
  * about, and two cards differing only by a U+200E really are one ad.
  */
-function normCardName(s: string): string {
-  return String(s ?? "")
-    .replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// The implementation moved to lib/reportShared (`normCardName` / `fbCardKey`)
+// once the client had to build the same key — see the doc block there. These
+// two stay as the names the rest of this file reads by.
+const normCardName = sharedNormCardName;
 
 function cardKey(campaign: string, ad: string): string {
-  return `${campaign}|${normCardName(ad)}`.toLowerCase();
+  return fbCardKey(campaign, ad);
 }
 
 /**

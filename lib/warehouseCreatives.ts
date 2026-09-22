@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { supabaseConfigured, supabaseRows } from "@/lib/supabase";
+import { fbCardKey } from "@/lib/reportShared";
 
 /**
  * Facebook creative assets read from the Supabase warehouse, as a FALLBACK
@@ -89,29 +90,11 @@ type CreativeRow = {
   synced_at: string | null;
 };
 
-/** Same normalisation reportCreatives uses for its card keys — bidi and
- *  zero-width strip, whitespace collapse. Kept in step with `normCardName`
- *  there; the two must agree or nothing joins. */
-function normCardName(s: string): string {
-  return String(s ?? "")
-    .replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Mirrors reportCreatives' `adNameOf`. Sheets coerces a date-shaped ad name
- *  into a real date and the reader normalises it back to ISO; a warehouse row
- *  for the same ad still reads "8/7/2026", so normalise both sides or those
- *  ads never join. Fires only on a whole-string d/m/yyyy. */
-function adNameOf(s: string): string {
-  const v = String(s ?? "").trim();
-  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  return m ? `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : v;
-}
-
-function cardKey(campaign: string, ad: string): string {
-  return `${campaign}|${normCardName(adNameOf(ad))}`.toLowerCase();
-}
+// The card key — bidi strip, whitespace collapse, ISO-ified date names —
+// is THE join between this file and the cards it fills, so it comes from
+// the one implementation in lib/reportShared rather than a copy that has to
+// be kept in step by hand.
+const cardKey = fbCardKey;
 
 /**
  * Creative assets for the given campaign NAMES, keyed the same way

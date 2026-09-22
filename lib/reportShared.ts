@@ -2207,6 +2207,57 @@ export function untaggedFor(
 
 /* ------------------------------ formatters ------------------------------ */
 
+/**
+ * THE card key for a Facebook ad, as a string both sides of the wire can
+ * build: `campaign|ad`, lowercased, with the ad name normalised by the two
+ * functions below.
+ *
+ * It lives here, in the shared module, because it is used on BOTH sides and
+ * they have to agree byte for byte. The server groups metrics rows into cards
+ * with it (lib/reportCreatives), the warehouse and Meta fallbacks key their
+ * imagery with it (lib/warehouseCreatives, lib/metaAdMetrics), and the
+ * client sends it to /api/report/fb-new-ads as the list of creatives it is
+ * ALREADY showing, so "מודעות שעלו עכשיו" can leave those out.
+ *
+ * That last one is where a private copy per file stopped being tenable:
+ * Meta writes the same ad name with a varying number of invisible bidi marks
+ * (U+200E/U+200F) — on אחוזת אפרידר, 2026-09-22, three creatives came back
+ * under nine different spellings, up to four marks apart — so an un-normalised
+ * key matched neither itself nor the card already on the page, and the same
+ * ad was reported as new three times over.
+ */
+export function fbCardKey(campaign: string, ad: string): string {
+  return `${String(campaign ?? "").trim()}|${normCardName(adNameOf(ad))}`.toLowerCase();
+}
+
+/**
+ * Ad name → card identity: strip the invisible bidi / zero-width marks Meta
+ * sprinkles through Hebrew names, collapse whitespace.
+ *
+ * Deliberately NOT lib/fbCreatives' `normAdName`, which additionally drops a
+ * trailing " - Video / Static / Carousel". That one is right where it lives
+ * (the CRM join: Meta's utm_content drops the suffix, so the metrics side has
+ * to as well) and wrong for a card: those are separate ads with separate
+ * budgets and separate results, and merging them hid the comparison the
+ * קריאייטיבים tab exists to make (חלומות בן שמן, 2026-08-12).
+ */
+export function normCardName(s: unknown): string {
+  return String(s ?? "")
+    .replace(/[​-‏‪-‮⁦-⁩⁠­﻿]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A pure-date ad name ("2026-05-27") gets auto-typed by Sheets and comes
+ *  back as "5/27/2026"; normalise any date-looking render to ISO so a sheet
+ *  row, a warehouse row and Meta's own answer land on one key (legacy
+ *  `fbAdName_`). */
+export function adNameOf(v: unknown): string {
+  const s = String(v ?? "").trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : s;
+}
+
 export const fmtInt = (n: number): string =>
   new Intl.NumberFormat("he-IL", { maximumFractionDigits: 0 }).format(
     Math.round(n || 0),

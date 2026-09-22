@@ -44,7 +44,48 @@ const PAGE_LIMIT = 1000;
 const MAX_PAGES = 8;
 
 /** Whole-call budget. This runs inside a project page's render. */
-const BUDGET_MS = 25000;
+const BUDGET_MS = 20000;
+
+/**
+ * Per-request ceiling, and why it cannot be left to lib/metaGraph.
+ *
+ * `graphEdge` retries a throttle three times at 5s / 15s / 45s before it
+ * gives up, which is the right policy for a nightly cron and a disaster
+ * inside a page render: one rate-limited account would hold the report for
+ * 65 seconds and then fail anyway. A healthy filtered call measured 2.8–4.1s,
+ * so this is generous by a factor of two and still bounded. The fetch itself
+ * keeps running when we stop waiting — it is a GET, and Meta's own limiter
+ * is what we are backing off from.
+ */
+const CALL_MS = 8000;
+
+/**
+ * After a rate limit, stop asking for a while.
+ *
+ * Meta's limiter is per app, so once it trips, EVERY project page would pay
+ * the ceiling above before falling back. One flag in the process turns that
+ * into one slow render instead of twenty. Cleared by time alone — Meta's
+ * limits clear on the scale of minutes and nothing tells us when.
+ */
+const COOLDOWN_MS = 10 * 60 * 1000;
+let cooldownUntil = 0;
+
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`timed out after ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export type MetaAdMetric = {
   /** YYYY-MM-DD */
@@ -108,9 +149,13 @@ async function fetchMetaAdMetrics(
   from: string,
   to: string,
 ): Promise<MetaAdMetrics> {
-  if (!metaConfigured()) return { rows: [], ok: false, reason: "not-configured" };
+  if (!metaConfigured())
+    return { rows: [], ok: false, reason: "not-configured" };
   if (!accountIds.length || !patterns.length || !from || !to) {
     return { rows: [], ok: false, reason: "no-target" };
+  }
+  if (Date.now() < cooldownUntil) {
+    return { rows: [], ok: false, reason: "rate-limit (cooling off)" };
   }
   const deadline = Date.now() + BUDGET_MS;
   // (ad, day) → row. Two patterns of the same project can match one campaign
@@ -130,34 +175,39 @@ async function fetchMetaAdMetrics(
       asked++;
       let rows: InsightRow[];
       try {
-        rows = await graphEdge<InsightRow>(
-          `act_${accountId}/insights`,
-          {
-            level: "ad",
-            time_increment: 1,
-            time_range: JSON.stringify({ since: from, until: to }),
-            fields: FIELDS,
-            limit: PAGE_LIMIT,
-            // Narrow BEFORE the wire: an account carries every project it
-            // runs, and pulling all of them to keep one is what runs into
-            // Meta's request limit.
-            filtering: JSON.stringify([
-              { field: "campaign.name", operator: "CONTAIN", value: pattern },
-            ]),
-          },
-          { maxPages: MAX_PAGES },
+        rows = await withTimeout(
+          graphEdge<InsightRow>(
+            `act_${accountId}/insights`,
+            {
+              level: "ad",
+              time_increment: 1,
+              time_range: JSON.stringify({ since: from, until: to }),
+              fields: FIELDS,
+              limit: PAGE_LIMIT,
+              // Narrow BEFORE the wire: an account carries every project it
+              // runs, and pulling all of them to keep one is what runs into
+              // Meta's request limit.
+              filtering: JSON.stringify([
+                { field: "campaign.name", operator: "CONTAIN", value: pattern },
+              ]),
+            },
+            { maxPages: MAX_PAGES },
+          ),
+          CALL_MS,
         );
       } catch (e) {
         const code = e instanceof MetaGraphError ? e.code : undefined;
         // 4 / 17 / 613 are the request-limit family, 190 a dead token. None
         // of them is worth trying the next account for.
+        const limited = code === 4 || code === 17 || code === 613;
+        if (limited) cooldownUntil = Date.now() + COOLDOWN_MS;
         console.warn(
           `[getMetaAdMetrics] act_${accountId} "${pattern}" failed${code ? ` (code ${code})` : ""}: ${e instanceof Error ? e.message : String(e)}`,
         );
         return {
           rows: [...byKey.values()],
           ok: false,
-          reason: code === 4 || code === 17 || code === 613 ? "rate-limit" : "error",
+          reason: limited ? "rate-limit" : "error",
         };
       }
       for (const r of rows) {
@@ -181,10 +231,14 @@ async function fetchMetaAdMetrics(
   return { rows: [...byKey.values()], ok: true };
 }
 
-const fetchCrossRequest = unstable_cache(fetchMetaAdMetrics, ["metaAdMetrics"], {
-  revalidate: TTL_SECONDS,
-  tags: [CACHE_TAG],
-});
+const fetchCrossRequest = unstable_cache(
+  fetchMetaAdMetrics,
+  ["metaAdMetrics"],
+  {
+    revalidate: TTL_SECONDS,
+    tags: [CACHE_TAG],
+  },
+);
 
 /**
  * Daily per-ad rows for the campaigns matching `patterns` in `accountIds`,
