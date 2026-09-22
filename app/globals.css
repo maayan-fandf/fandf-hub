@@ -25700,6 +25700,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
 .rpt-clientview .rpt-pace-action,                /* ⬇/⬆/🔍 budget-action arrows */
 .rpt-clientview .rpt-cr-badge-fatigue,           /* creative fatigue badges */
+.rpt-clientview .rpt-cr-whnote,                  /* "the cards came from the warehouse" — ad-ops plumbing (also stripped server-side) */
 .rpt-clientview .rpt-ch-quicklinks,              /* internal sheet/ads quick-links */
 .rpt-clientview .rpt-dx {                        /* "🔬 איבחון משפך" ad-vs-landing diagnosis */
   display: none !important;

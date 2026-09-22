@@ -78,14 +78,22 @@ function authHeaders(): Record<string, string> {
   return { apikey: k, Authorization: `Bearer ${k}` };
 }
 
-/** Raw GET against a PostgREST path (e.g. "v_bmby_journey_meetings?..."). */
+/** Raw GET against a PostgREST path (e.g. "v_bmby_journey_meetings?...").
+ *
+ *  `signal` is optional and nothing that existed before this passes one: the
+ *  warehouse has no deadline of its own, so a caller that can live without
+ *  its answer (a fallback, an enrichment) can put a clock on it and let the
+ *  page render. Seen 2026-09-22, with the table under load: single-row reads
+ *  taking 18s and filtered ones ending in "canceling statement due to
+ *  statement timeout" after two minutes. */
 export async function supabaseFetch(
   path: string,
-  init?: { extraHeaders?: Record<string, string> },
+  init?: { extraHeaders?: Record<string, string>; signal?: AbortSignal },
 ): Promise<Response> {
   return fetch(baseUrl() + path, {
     headers: { ...authHeaders(), ...(init?.extraHeaders || {}) },
     cache: "no-store", // caching is done one layer up via unstable_cache
+    signal: init?.signal,
   });
 }
 

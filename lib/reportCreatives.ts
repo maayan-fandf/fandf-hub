@@ -2,9 +2,12 @@ import { cache } from "react";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { sheetsClient } from "@/lib/sa";
 import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
+import { normalizeAdAccountName } from "@/lib/adAccounts";
+import { getMetaAdMetrics } from "@/lib/metaAdMetrics";
 import { readKeysCached } from "@/lib/keys";
 import { normAdName } from "@/lib/fbCreatives";
 import { getWarehouseCreatives } from "@/lib/warehouseCreatives";
+import { getWarehouseAdMetrics } from "@/lib/warehouseAdMetrics";
 import {
   getProjectMeetingsLiveWindows,
   monthWindow,
@@ -256,6 +259,25 @@ type FbAssetRec = {
 };
 
 type ProjectCreativeRaw = {
+  /** Meta ad-account NAMES this project's ad sets ran in, as the ad-set tab
+   *  spells them (duplicated per row; the reader de-duplicates). The only
+   *  surviving pointer from a project to its ad account, and what the direct
+   *  Meta read is aimed with. */
+  fbAccountNames: string[];
+  /** Those names resolved through the workbook's `Accounts lookup`. */
+  fbAccountIds: string[];
+  /** These `fbAds` came straight from the Meta API (withMetaAds), because the
+   *  metrics tab had nothing for the project. Covers the REPORT WINDOW only.
+   *  Absent on the normal path. */
+  fbAdsFromMeta?: boolean;
+  /** These `fbAds` were rebuilt from the Supabase warehouse because the
+   *  metrics tab held nothing for the project — see fillAdsFromWarehouse.
+   *  Absent on the normal path. */
+  fbAdsFromWarehouse?: boolean;
+  /** First day those rebuilt rows cover (the warehouse's lead floor). Later
+   *  than the report window's own start on most projects, which is why the
+   *  page says it out loud. */
+  fbAdsWarehouseFrom?: string;
   /** facebook-ads-metrics rows, project-matched. */
   fbAds: {
     date: string;
@@ -353,6 +375,8 @@ async function fetchProjectCreativeRaw(
     fbMetaStatus: {},
     fbAdSetTargeting: {},
     fbAdSets: [],
+    fbAccountNames: [],
+    fbAccountIds: [],
     gKeywords: [],
     gAds: [],
     gAssets: [],
@@ -394,6 +418,21 @@ async function fetchProjectCreativeRaw(
     .get({
       spreadsheetId: ssId,
       range: `'${ADSET_TARGETING_TAB}'!A1:L`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    })
+    .then((r) => (r.data.values ?? []) as unknown[][])
+    .catch(() => []);
+
+  // Meta ad-account NAME → id, so the warehouse ad fallback can put a name on
+  // rows that only carry an id (fillAdsFromWarehouse). Beside the batch and
+  // not inside it, for the same reason as the two reads above: one range that
+  // will not resolve fails the WHOLE batchGet, and this tab is worth a card's
+  // account label, never the whole קריאייטיבים tab.
+  const accountsP: Promise<unknown[][]> = sheets.spreadsheets.values
+    .get({
+      spreadsheetId: ssId,
+      range: `'Accounts lookup'!A1:B`,
       valueRenderOption: "UNFORMATTED_VALUE",
       dateTimeRenderOption: "FORMATTED_STRING",
     })
@@ -627,11 +666,19 @@ async function fetchProjectCreativeRaw(
     const iCost = findCol(h, ["SUM of Cost", "Cost"]);
     const iWLd = findCol(h, ["Website leads"]);
     const iFLd = findCol(h, ["On-Facebook leads", "On Facebook leads"]);
+    const iAcc = findCol(h, ["Account name", "Account"]);
     if (iCamp >= 0) {
       for (let r = 1; r < vAdsets.length; r++) {
         const row = vAdsets[r];
         const camp = String(row[iCamp] ?? "").trim();
         if (!mine(camp)) continue;
+        // Which Meta ad ACCOUNT this project runs in — the one thing only
+        // this tab still says out loud, and what the direct Meta read needs
+        // in order to ask about the right account (fillAdsFromMeta).
+        if (iAcc >= 0) {
+          const acc = clean(row[iAcc]);
+          if (acc) out.fbAccountNames.push(acc);
+        }
         out.fbAdSets.push({
           date: iDate >= 0 ? parseDate(row[iDate]) : "",
           campaign: camp,
@@ -783,6 +830,11 @@ async function fetchProjectCreativeRaw(
     }
   }
 
+  const vAccounts = await accountsP;
+  resolveAccountIds(out, vAccounts);
+  // BEFORE the assets fill, which runs off `out.fbAds`: when both tabs are
+  // empty the cards come from the warehouse and their pictures follow.
+  await fillAdsFromWarehouse(out, vAccounts);
   await fillAssetsFromWarehouse(out);
   // AFTER the warehouse fill, so rule 1 in applyMetaImages can actually see
   // a permanent URL to keep — running it before would overwrite nothing and
@@ -792,6 +844,212 @@ async function fetchProjectCreativeRaw(
   out.fbAdSetTargeting = indexAdSetTargeting(await targetingP, mine);
 
   return out;
+}
+
+/**
+ * Rebuild the project's ad rows from the Supabase warehouse when the metrics
+ * tab supplied NONE (see lib/warehouseAdMetrics.ts for the outage that
+ * prompted it — the tab went empty and every Facebook card in the hub went
+ * with it).
+ *
+ * ALL-OR-NOTHING, unlike the per-field assets fill below: the sheet wins
+ * whenever it produced a single row for this project, because the two
+ * sources carry different lookbacks and count a lead differently, and a card
+ * set stitched from both would compare ads that were measured differently.
+ *
+ * The campaign names come from rows that already passed `mine()` — the ad-set
+ * tab (its own Supermetrics query, which has survived every outage the
+ * ad-level ones have had) and any creative the assets tab did index. So this
+ * needs no slug matching, and a project whose OTHER tabs are empty too gets
+ * nothing rather than a guess.
+ */
+/**
+ * Ask Meta itself for the cards, when the metrics tab could not supply them.
+ *
+ * FIRST choice of the two fallbacks, above the warehouse: it is Meta's own
+ * answer rather than a copy of it, it has no sync lag and no missing lead
+ * history, and on eastern's September it landed on the ad-set tab's figures
+ * more closely than the warehouse did (₪9,349/74 vs ₪9,333/74, against the
+ * warehouse's ₪9,283/73). The warehouse read stays as the second line: Meta
+ * rate-limits, and a limit reached at 11am must not empty the grid.
+ *
+ * WINDOWED, unlike everything else in this file. The raw fetch is cached per
+ * (subjectEmail, slug) and knows nothing about the report's period, which is
+ * right for a sheet read that pulls a rolling year in one go — and wrong for
+ * an API that charges by the row: a year of ad-days per account would be
+ * minutes of wall-clock and a request limit within the hour. So this runs
+ * OUT here, where the window is known, and returns a copy rather than
+ * touching the cached object.
+ *
+ * What it costs downstream: `adMetricsSpan` and the cost-history panel see
+ * only the window's own months, so the 📜 history button goes quiet. The
+ * alternative was no cards at all.
+ */
+async function withMetaAds(
+  raw: ProjectCreativeRaw,
+  subjectEmail: string,
+  slug: string,
+  window: ReportWindow,
+): Promise<ProjectCreativeRaw> {
+  // The sheet is healthy for this project — nothing to do. (A warehouse
+  // fallback IS worth replacing: same reason it is second.)
+  if (raw.fbAds.length && !raw.fbAdsFromWarehouse) return raw;
+  if (!window.startIso || !window.endIso) return raw;
+  if (!raw.fbAccountIds.length) return raw;
+
+  const matchMap = await buildMatchMap(subjectEmail);
+  const slugLower = slug.toLowerCase();
+  const patterns = matchMap.find((m) => m.slug === slugLower)?.patterns ?? [];
+  if (!patterns.length) return raw;
+
+  const meta = await getMetaAdMetrics(
+    raw.fbAccountIds,
+    patterns,
+    window.startIso,
+    window.endIso,
+  );
+  if (!meta.ok && !meta.rows.length) {
+    console.warn(`[withMetaAds] ${slug}: no answer from Meta (${meta.reason})`);
+    return raw;
+  }
+  // CONTAIN is a substring test and Meta does not know the longest-pattern
+  // rule, so every row is re-matched here: "peleg" also matches
+  // peleg-yehud_business's campaigns, and they belong to that project.
+  const rows = meta.rows.filter((r) => matchSlug(r.campaign, matchMap) === slugLower);
+  if (!rows.length) return raw;
+
+  const next: ProjectCreativeRaw = {
+    ...raw,
+    fbAds: rows.map((r) => ({
+      date: r.date,
+      account: raw.fbAccountNames[0] ?? "",
+      campaign: r.campaign,
+      // Same normalisation as every other producer of this field, so the
+      // card lands on its own imagery and status.
+      ad: adNameOf(r.ad),
+      impressions: r.impressions,
+      clicks: r.clicks,
+      cost: r.cost,
+      leads: r.leads,
+    })),
+    fbAssets: { ...raw.fbAssets },
+    fbAdsFromWarehouse: undefined,
+    fbAdsWarehouseFrom: undefined,
+    fbAdsFromMeta: true,
+  };
+  attachMetaAssets(next);
+  return next;
+}
+
+/**
+ * Give the Meta-sourced cards their picture and status pill.
+ *
+ * With both Supermetrics ad tabs empty there is no asset record to fill, and
+ * applyMetaImages/applyMetaStatus only ever FILL one — they skip a key they
+ * have never seen, which is correct on the healthy path (an image with no
+ * metrics row is an archive card, and those are decided elsewhere). Here the
+ * metrics rows exist and the assets do not, so the record is created from
+ * the nightly Meta pull's own tabs, which are still refreshing.
+ */
+function attachMetaAssets(out: ProjectCreativeRaw): void {
+  for (const a of out.fbAds) {
+    const k = cardKey(a.campaign, a.ad);
+    if (out.fbAssets[k]) continue;
+    const image = out.fbMetaImages[k] ?? "";
+    const status = out.fbMetaStatus[k] ?? "";
+    if (!image && !status) continue;
+    out.fbAssets[k] = {
+      account: a.account,
+      status,
+      statusFromMeta: !!status,
+      image,
+      thumb: "",
+      destUrl: "",
+      body: "",
+      title: "",
+      url: "",
+      impressions: 0,
+    };
+  }
+}
+
+/** `Accounts lookup` (name → id) applied to the account names the ad-set tab
+ *  gave this project. Both sides are reduced to bare digits / normalised
+ *  names, because the tab writes the id as a number and the name with
+ *  whatever spacing whoever typed it used. */
+function resolveAccountIds(out: ProjectCreativeRaw, vAccounts: unknown[][]): void {
+  const names = [...new Set(out.fbAccountNames)];
+  out.fbAccountNames = names;
+  if (!names.length || vAccounts.length < 2) return;
+  const idByName = new Map<string, string>();
+  for (let r = 1; r < vAccounts.length; r++) {
+    const name = normalizeAdAccountName(vAccounts[r]?.[0]);
+    const id = String(vAccounts[r]?.[1] ?? "").replace(/\D/g, "");
+    if (name && id && !idByName.has(name)) idByName.set(name, id);
+  }
+  const ids = new Set<string>();
+  for (const n of names) {
+    const id = idByName.get(normalizeAdAccountName(n));
+    if (id) ids.add(id);
+  }
+  out.fbAccountIds = [...ids];
+}
+
+async function fillAdsFromWarehouse(
+  out: ProjectCreativeRaw,
+  vAccounts: unknown[][],
+): Promise<void> {
+  if (out.fbAds.length) return;
+  // Newest campaign first: the reader caps how many names it will ask about,
+  // and a project that has cycled through a year of monthly campaigns must
+  // not lose the one it is running now to a cap that cut on sheet order.
+  const newest = new Map<string, string>();
+  for (const s of out.fbAdSets) {
+    if (!s.campaign) continue;
+    const d = s.date || "";
+    if (d > (newest.get(s.campaign) ?? "")) newest.set(s.campaign, d);
+  }
+  for (const a of Object.values(out.fbAssetsIndexed)) {
+    if (a.campaign && !newest.has(a.campaign)) newest.set(a.campaign, "");
+  }
+  if (!newest.size) return;
+  const names = [...newest.entries()]
+    .sort((a, b) => (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0))
+    .map(([name]) => name);
+
+  const wh = await getWarehouseAdMetrics(names);
+  if (!wh.rows.length) return;
+
+  // Accounts lookup: id → the account NAME the metrics tab used to carry.
+  // Ids are written to the tab as numbers and arrive here as numbers, so both
+  // sides are reduced to bare digits before they are compared.
+  const idOf = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+  const accountById = new Map<string, string>();
+  for (let r = 1; r < vAccounts.length; r++) {
+    const name = clean(vAccounts[r]?.[0]);
+    const id = idOf(vAccounts[r]?.[1]);
+    if (name && id && !accountById.has(id)) accountById.set(id, name);
+  }
+
+  for (const r of wh.rows) {
+    out.fbAds.push({
+      date: r.date,
+      account: accountById.get(idOf(r.accountId)) ?? "",
+      campaign: r.campaign,
+      // Through `adNameOf`, exactly as the metrics-tab parse does, because the
+      // card key is built from it and lib/warehouseCreatives keys the imagery
+      // the same way. An ad named like a date is the case that bites: the
+      // sheet path normalises "8/7/2026" to ISO, so a raw warehouse name
+      // would sit one key away from its own picture and status.
+      ad: adNameOf(r.ad),
+      impressions: r.impressions,
+      clicks: r.clicks,
+      cost: r.cost,
+      leads: r.leads,
+    });
+  }
+  out.fbAdsFromWarehouse = true;
+  out.fbAdsWarehouseFrom = wh.from;
 }
 
 /**
@@ -2193,6 +2451,10 @@ function aggregateCreatives(
       adCount: activeCount,
       topAds,
       topAdSets,
+      ...(raw.fbAdsFromMeta ? { adsFromMeta: true } : {}),
+      ...(raw.fbAdsFromWarehouse
+        ? { adsFromWarehouse: true, adsWarehouseFrom: raw.fbAdsWarehouseFrom || "" }
+        : {}),
     },
     google: {
       clicks: googleClicks,
@@ -2239,7 +2501,12 @@ export const getProjectCreatives = cache(
     window: ReportWindow,
   ): Promise<ReportCreatives | null> => {
     try {
-      const raw = await readProjectCreativeRaw(subjectEmail, slug);
+      const raw = await withMetaAds(
+        await readProjectCreativeRaw(subjectEmail, slug),
+        subjectEmail,
+        slug,
+        window,
+      );
       const months = monthsInRange(window.startIso, window.endIso);
       let lookups = emptyLookups();
       let crmName = projectName;

@@ -1491,6 +1491,32 @@ export type ReportCreatives = {
     adCount: number;
     topAds: ReportFbAd[];
     topAdSets: ReportFbAdSet[];
+    /**
+     * The ad cards were rebuilt from the Supabase warehouse because the
+     * `facebook-ads-metrics` tab held nothing for this project — see
+     * lib/warehouseAdMetrics.ts. The KPIs above are untouched (they come
+     * from the ad-set tab), so this says "the cards, not the totals".
+     *
+     * INTERNAL: stripped from the client payload in NativeProjectRail,
+     * alongside the per-card 🗄️ marker it belongs with.
+     */
+    adsFromWarehouse?: boolean;
+    /**
+     * The ad cards were pulled straight from the Meta API for the report's
+     * own window, because the `facebook-ads-metrics` tab had nothing for
+     * this project — see lib/metaAdMetrics.ts. Preferred over the warehouse
+     * fallback below. Same INTERNAL treatment: stripped for client view.
+     */
+    adsFromMeta?: boolean;
+    /**
+     * First day those cards cover. The warehouse only began recording leads
+     * part-way through its life, so the rebuilt rows start LATER than the
+     * report window usually does — on a live-flight window that can be
+     * months later. The cards would then not add up to the KPIs above them,
+     * which are summed over the whole window from the ad-set tab, so the
+     * page prints this date rather than leaving the gap to be discovered.
+     */
+    adsWarehouseFrom?: string;
   };
   google: {
     clicks: number;

@@ -296,6 +296,10 @@ function AdPreviewLinks({ previews }: { previews?: string[] }) {
   );
 }
 
+/** ISO day → dd/MM/yyyy, for the one place this tab prints a date in prose. */
+const dmy = (iso: string) =>
+  iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso;
+
 /** Hover trendline (legacy _buildAdTrendlinePopover_): dense calendar
  *  days over the report window clamped to the last date with data; two
  *  sparklines — cost --teal, leads --violet. Through the tokens rather
@@ -831,6 +835,34 @@ export default function ReportCreativesTab({
         prev={prevAp?.facebook ?? null}
         activeAds={fb.adCount}
       />
+
+      {/* Where the card numbers came from, when it was not the usual feed.
+          OUTSIDE the `fbCards.length > 0` block on purpose: the case that
+          most needs explaining is the one with no cards at all — a month
+          the fallback cannot reach — and a note nested inside the grid
+          would be hidden exactly then. Internal: stripped from the client
+          payload in NativeProjectRail, with `.rpt-cr-whnote` hidden under
+          `.rpt-clientview` as defence in depth. */}
+      {(c.fb.adsFromMeta || c.fb.adsFromWarehouse) && (
+        <div className="rpt-basis-note rpt-cr-whnote">
+          לשונית facebook-ads-metrics בגיליון הקריאייטיבים לא החזירה נתונים
+          לפרויקט הזה, ולכן המספרים שעל הכרטיסים נקראו ממקור אחר:{" "}
+          {c.fb.adsFromMeta ? (
+            <>ישירות מפייסבוק, לפי התקופה שנבחרה בדוח.</>
+          ) : (
+            <>
+              ממאגר הנתונים (Supabase)
+              {c.fb.adsWarehouseFrom
+                ? `, שמחזיק לידים רק מ-${dmy(c.fb.adsWarehouseFrom)} ואילך — ולכן הכרטיסים מכסים מהתאריך הזה בלבד`
+                : ""}
+              .
+            </>
+          )}{" "}
+          הסכומים שבראש הטאב מגיעים מפיד אחר ולא הושפעו, כך שהם לא בהכרח
+          מסתכמים לסכום הכרטיסים.
+          {fbCards.length === 0 && " בתקופה הזו גם למקור הזה אין מודעות להציג."}
+        </div>
+      )}
 
       {fbCards.length > 0 && (
         <>

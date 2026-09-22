@@ -173,6 +173,11 @@ export default async function NativeProjectRail({
         ...data.creatives,
         fb: {
           ...data.creatives.fb,
+          // Same call as the per-card 🗄️ marker below: which feed the numbers
+          // were read from is ad-ops plumbing. The ads are the same ads.
+          adsFromWarehouse: undefined,
+          adsWarehouseFrom: undefined,
+          adsFromMeta: undefined,
           topAds: data.creatives.fb.topAds.map((a) => ({
             ...a,
             history: null,
