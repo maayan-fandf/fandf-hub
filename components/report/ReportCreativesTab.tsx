@@ -21,6 +21,7 @@ import {
 import {
   applyBasisToCreatives,
   fbCardKey,
+  WINNER_MIN_LEADS,
   fbStatusInfo,
   fmtInt,
   fmtILS,
@@ -299,6 +300,46 @@ function AdPreviewLinks({ previews }: { previews?: string[] }) {
         </a>
       ))}
     </div>
+  );
+}
+
+/**
+ * The תיאומים / פגישות pair on a campaign block's header.
+ *
+ * Shown even at zero, because that is the reading the split exists to make
+ * possible: a campaign that bought cheap leads and produced no meeting says
+ * so here, where before it took reading every card. Only leads that carried
+ * a UTM can be attributed to a campaign at all — measured 2026-09-22, 73% of
+ * BMBY's Facebook leads and 58% of Sehel's — so the tooltip says so and the
+ * untagged remainder keeps its own line under the blocks.
+ *
+ * `missing` is the basis with no source (Salesforce under "לפי מועד
+ * הפגישה"): the pair renders as the page's "—" rather than a zero that would
+ * read as "none happened".
+ */
+function CampGroupMeetings({
+  scheduled,
+  held,
+  missing,
+  noSource,
+}: {
+  scheduled: number;
+  held: number;
+  missing: boolean;
+  noSource: string | null;
+}) {
+  if (missing) {
+    return (
+      <>
+        {" · "}
+        <span title={noSource ?? undefined}>תיאומים —</span>
+      </>
+    );
+  }
+  return (
+    <span title="נספרים רק לידים שנשאו תגית UTM, ולכן אפשר לייחס אותם לקמפיין. השארית מופיעה בשורה מתחת לכרטיסים.">
+      {` · ${fmtInt(scheduled)} תיאומים · ${fmtInt(held)} פגישות`}
+    </span>
   );
 }
 
@@ -888,6 +929,12 @@ export default function ReportCreativesTab({
         ads,
         cost: ads.reduce((n, a) => n + a.cost, 0),
         leads: ads.reduce((n, a) => n + a.leads, 0),
+        // Already on the page's basis (applyBasisToCreatives), and summed
+        // over the cards SHOWN in this block, so the header always adds up
+        // to what sits under it. Meetings only count leads that carried a
+        // UTM — the remainder has its own line under the blocks.
+        scheduled: ads.reduce((n, a) => n + (a.scheduled || 0), 0),
+        held: ads.reduce((n, a) => n + (a.held || 0), 0),
         active: ads.filter(
           (a) => String(a.status).toUpperCase().trim() === "ACTIVE",
         ).length,
@@ -922,14 +969,24 @@ export default function ReportCreativesTab({
         sets,
         cost: sets.reduce((n, s) => n + s.cost, 0),
         leads: sets.reduce((n, s) => n + s.leads, 0),
+        scheduled: sets.reduce((n, s) => n + (s.scheduled || 0), 0),
+        held: sets.reduce((n, s) => n + (s.held || 0), 0),
       }))
       .sort((a, b) => b.cost - a.cost || a.campaign.localeCompare(b.campaign));
   }, [fb.topAdSets]);
   const adSetsGrouped = adSetGroups.length > 1;
-  const adSetWinnerKey =
-    fb.topAdSets[0] && fb.topAdSets[0].cpl > 0
-      ? `${fb.topAdSets[0].campaign}|${fb.topAdSets[0].name}`
-      : "";
+  /**
+   * The crowned audience: cheapest CPL among those that produced enough
+   * leads to mean it. The list arrives sorted by CPL, so this is the first
+   * row clearing the floor — NOT `topAdSets[0]`, which crowned an audience
+   * with a single lead whenever that lead happened to be cheap.
+   */
+  const adSetWinner = fb.topAdSets.find(
+    (s) => s.leads >= WINNER_MIN_LEADS && s.cpl > 0,
+  );
+  const adSetWinnerKey = adSetWinner
+    ? `${adSetWinner.campaign}|${adSetWinner.name}`
+    : "";
 
   return (
     <div className="rpt-creatives">
@@ -1010,6 +1067,12 @@ export default function ReportCreativesTab({
                     {g.leads > 0 && g.cost > 0
                       ? ` · ${fmtILS(g.cost / g.leads)} לליד`
                       : ""}
+                    <CampGroupMeetings
+                      scheduled={g.scheduled}
+                      held={g.held}
+                      missing={cb.meetingBasisMissing}
+                      noSource={noSource}
+                    />
                   </span>
                 </div>
               )}
@@ -1303,6 +1366,12 @@ export default function ReportCreativesTab({
                     {g.leads > 0 && g.cost > 0
                       ? ` · ${fmtILS(g.cost / g.leads)} לליד`
                       : ""}
+                    <CampGroupMeetings
+                      scheduled={g.scheduled}
+                      held={g.held}
+                      missing={cb.meetingBasisMissing}
+                      noSource={noSource}
+                    />
                   </span>
                 </div>
               )}

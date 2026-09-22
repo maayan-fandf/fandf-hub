@@ -2208,6 +2208,19 @@ export function untaggedFor(
 /* ------------------------------ formatters ------------------------------ */
 
 /**
+ * Leads a row needs before it can wear the 🏆.
+ *
+ * Shared, because the two sides had drifted: the ad cards have applied it
+ * since the legacy report (lib/reportCreatives picks the winner over rows
+ * with `leads >= WINNER_MIN_LEADS`), while the ad-set list simply crowned
+ * `topAdSets[0]` — the cheapest CPL at ANY volume — so an audience that
+ * produced one lead for ₪40 outranked one that produced thirty for ₪60.
+ * Three is not magic; it is the floor the cards already used, and it clears
+ * 69% of rows.
+ */
+export const WINNER_MIN_LEADS = 3;
+
+/**
  * THE card key for a Facebook ad, as a string both sides of the wire can
  * build: `campaign|ad`, lowercased, with the ad name normalised by the two
  * functions below.

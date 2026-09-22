@@ -32,6 +32,7 @@ import type {
 import {
   adNameOf,
   fbCardKey,
+  WINNER_MIN_LEADS,
   normCardName as sharedNormCardName,
 } from "@/lib/reportShared";
 
@@ -85,7 +86,8 @@ const TOP_ADS_HISTORICAL = 3;
  * are the ones worth still looking at, not an arbitrary slice of the map.
  */
 const TOP_ARCHIVE_ADS = 3;
-const WINNER_MIN_LEADS = 3;
+// The floor itself lives in lib/reportShared — the ad-set list applies it on
+// the client, and the two must not drift apart again.
 const TOP_KEYWORDS = 10;
 const TOP_ADSETS = 5;
 /** Demand Gen ads shown per project. Median ad carries 3 assets, the biggest
