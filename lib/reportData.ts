@@ -48,6 +48,7 @@ import {
   type DatedChannelMeetings,
 } from "@/lib/datedChannelMeetings";
 import { getCrmFunnelForProject } from "@/lib/crmData";
+import { getCrmNewLeads, newLeadsKey } from "@/lib/crmNewLeads";
 
 /**
  * Server data layer for the NATIVE project report (phase 1) — reads the
@@ -1340,6 +1341,16 @@ export const getProjectReportData = cache(
         }
       } catch {
         /* strip degrades to hidden */
+      }
+    }
+
+    // "26 (11 חדשים)" — live only, keyed by the project tab the budget
+    // desk resolved above (the CRM reports hold the current window alone).
+    if (mode === "live" && tabSlug && reportChannels.length) {
+      const fresh = await getCrmNewLeads(subjectEmail, tabSlug);
+      for (const c of reportChannels) {
+        const n = fresh[newLeadsKey(c.channel)];
+        if (n != null) c.newLeads = n;
       }
     }
 

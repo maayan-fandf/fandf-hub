@@ -167,6 +167,12 @@ export type ReportChannel = {
    *  from the payload). A numeric 0 is the opposite — a tracked channel
    *  that fired no events — and must survive to the tooltip. */
   pixelLeads?: number;
+  /** Of `leads`, how many are NEW — read from the same CRM report cells
+   *  the row's `לידים CRM` formula sums (lib/crmNewLeads). `leads` itself
+   *  counts returning (and on some tabs duplicate) inquiries too, so the
+   *  cell reads "26 (11 חדשים)". Live mode only; undefined when the
+   *  project's formula or report layout cannot be read. */
+  newLeads?: number;
   /**
    * תיאומים / ביצועים on the LEAD-ENTRY basis. Where they come from:
    *   live mode   — the ALL CLIENTS current row (pushed daily; matched the

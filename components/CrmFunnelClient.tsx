@@ -1009,7 +1009,12 @@ export default function CrmFunnelClient({
             // the page basis's meetings, and is left out under dated when the
             // funnel has no dated cost map rather than quoting the lead-entry
             // one.
-            const cost = funnel.costBySource?.[source];
+            // The cost is the CHANNEL's (spend ÷ every lead the channel's
+            // sources brought), so a source with no leads of its own would
+            // still wear it: אחוזת אפרידר's facebook-leadgen read "0 ₪820",
+            // פייסבוק's price on a chip that brought nothing. No leads, no
+            // price.
+            const cost = total > 0 ? funnel.costBySource?.[source] : undefined;
             const cpm = chipMeetingCost?.[source]?.cpm ?? 0;
             const title =
               cost && cost.cpl > 0

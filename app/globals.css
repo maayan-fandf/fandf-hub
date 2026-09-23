@@ -26658,6 +26658,15 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   color: var(--muted);
   font-size: 0.74rem;
 }
+/* "(11 חדשים)" after a לידים count that includes returning inquiries. */
+.rpt-ch-newleads {
+  margin-inline-start: 0.3em;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: help;
+}
 /* CRM-vs-pixel divergence flag on the לידים cell — hover for the numbers.
    Mirrors the legacy .divergence-flag (Index.html:2129). */
 .rpt-ch-diverge {

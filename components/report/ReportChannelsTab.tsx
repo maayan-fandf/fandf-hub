@@ -133,6 +133,31 @@ function leadsTooltip(c: ReportChannel): string | undefined {
   );
 }
 
+/**
+ * "(11 חדשים)" after a לידים count that includes returning inquiries.
+ *
+ * `לידים CRM` sums whatever the project tab's formula sums — on most tabs
+ * new + returning (+ duplicates). אחוזת אפרידר's פייסבוק, September: 26
+ * against the CRM section's 11, because 15 were people already in the CRM.
+ * Shown only when some of the count is NOT new; an all-new count, or none
+ * read (lib/crmNewLeads), leaves the cell as it was.
+ */
+function NewLeads({ leads, fresh }: { leads: number; fresh?: number }) {
+  if (fresh == null || !(fresh >= 0) || fresh >= leads) return null;
+  return (
+    <span
+      className="rpt-ch-newleads"
+      title={
+        `${fmtInt(fresh)} פניות חדשות. ` +
+        `${fmtInt(leads - fresh)} הנותרות הן פניות חוזרות או כפולות של לקוחות שכבר היו ב-CRM ` +
+        `— נספרות בסה״כ ובעלות לליד, אבל לא בפילוח המקורות של ה-CRM.`
+      }
+    >
+      ({fmtInt(fresh)} חדשים)
+    </span>
+  );
+}
+
 /** Gap between the pixel count and the CRM count, either way, at which the
  *  לידים cell gets its ⚠️. */
 const DIVERGE_PCT = 0.3;
@@ -1243,6 +1268,12 @@ export default function ReportChannelsTab({
       : selected.size === 1
         ? chLabel([...selected][0])
         : `${selected.size} ערוצים נבחרו`;
+  // The total's "(N חדשים)" only when every visible row with leads carries
+  // its own — a sum over some rows beside a total over all would read as
+  // the project's new-lead count and be short of it.
+  const totalNewLeads = visible.every((c) => c.leads <= 0 || c.newLeads != null)
+    ? visible.reduce((n, c) => n + (c.newLeads ?? 0), 0)
+    : undefined;
   const tCpl = totals.leads > 0 ? totals.spend / totals.leads : 0;
   const tCps = totals.scheduled > 0 ? totals.spend / totals.scheduled : 0;
   const tCpm = totals.meetings > 0 ? totals.spend / totals.meetings : 0;
@@ -1633,6 +1664,7 @@ export default function ReportChannelsTab({
                   </td>
                   <td title={leadsTooltip(c)}>
                     {fmtInt(c.leads)}
+                    <NewLeads leads={c.leads} fresh={c.newLeads} />
                     {leadsWarn && (
                       <span className="rpt-ch-diverge" title={leadsWarn}>
                         ⚠️
@@ -1784,6 +1816,7 @@ export default function ReportChannelsTab({
               </td>
               <td>
                 <b>{fmtInt(totals.leads)}</b>
+                <NewLeads leads={totals.leads} fresh={totalNewLeads} />
               </td>
               <td style={costHeatStyle("costPerLead", tCpl)}>
                 <b>{tCpl > 0 ? fmtILS(tCpl) : "—"}</b>
