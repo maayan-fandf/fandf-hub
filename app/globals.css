@@ -9682,6 +9682,18 @@ html[data-theme="dark"] .rpt-util-fill-time {
   font-size: 0.7rem;
 }
 .ga4w-tree-caret.is-leaf { opacity: 0; }
+/* The toggle inside an expandable row's name cell — a real button so the
+   row opens from the keyboard too; the row's own click stays for mice. */
+.ga4w-tree-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  min-width: 0;
+}
+.ga4w-tree-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 3px; }
+.ga4w-tree-row.is-nocamp .ga4w-tree-lbl { color: var(--muted); }
 .ga4w-tree-lbl {
   overflow: hidden;
   text-overflow: ellipsis;

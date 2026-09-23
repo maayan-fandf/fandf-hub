@@ -452,6 +452,27 @@ export type Ga4IntroRow = {
   closeKeyEvents: number;
 };
 
+/**
+ * One campaign's slice of a visitor type — the accordion under each row.
+ *
+ * Traffic without a campaign name is kept as its own part rather than
+ * dropped, so the parts always add up to the row above them.
+ */
+export type Ga4ReturningPart = {
+  /** Campaign name, or a Hebrew label for traffic that carries none. */
+  label: string;
+  /** A real campaign name — gets a channel icon. False for organic,
+   *  direct, referral, the unattributed remainder and the folded row. */
+  campaign: boolean;
+  /** How many campaigns this row folds together; 0 on an ordinary row. */
+  folded: number;
+  sessions: number;
+  engaged: number;
+  avgSeconds: number;
+  keyEvents: number;
+  convRate: number;
+};
+
 export type Ga4Returning = {
   rows: {
     kind: "new" | "returning";
@@ -461,7 +482,22 @@ export type Ga4Returning = {
     avgSeconds: number;
     keyEvents: number;
     convRate: number;
+    /** Optional: absent on a payload cached before v22. */
+    parts?: Ga4ReturningPart[];
   }[];
+};
+
+/** Campaigns listed under a visitor type before the rest fold into one
+ *  row. The non-campaign parts (organic, direct…) never fold — there are
+ *  at most four of them and they answer a different question. */
+const RETURNING_TOP_CAMPAIGNS = 10;
+
+/** sessionCampaignName values GA4 uses for traffic that has no campaign,
+ *  named the way the channel tree above names the same traffic. */
+const NO_CAMPAIGN_LABELS: Record<string, string> = {
+  "(organic)": "חיפוש אורגני",
+  "(direct)": "כניסה ישירה",
+  "(referral)": "הפניות מאתרים",
 };
 
 export type Ga4ReportData = {
@@ -1364,9 +1400,15 @@ async function fetchGa4ReportUncached(
         metrics: [{ name: "totalUsers" }, { name: "keyEvents" }],
         limit: 60,
       }),
+      // Crossed with the campaign so each visitor type can open into its
+      // campaigns. The row totals are summed from these cells rather than
+      // read from a second, uncrossed report: a session has exactly one
+      // value of each dimension, so the sum is exact — and the parts can
+      // never disagree with the row they sit under. (The batch is also at
+      // its five-report cap.)
       withFilter({
         dateRanges: [cur],
-        dimensions: [{ name: "newVsReturning" }],
+        dimensions: [{ name: "newVsReturning" }, { name: "sessionCampaignName" }],
         metrics: [
           { name: "sessions" },
           { name: "keyEvents" },
@@ -1374,7 +1416,10 @@ async function fetchGa4ReportUncached(
           { name: "engagedSessions" },
           { name: "averageSessionDuration" },
         ],
-        limit: 10,
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+        // Two visitor types x the project's campaigns. Generous on
+        // purpose: a truncated tail would under-count the row totals.
+        limit: 2000,
       }),
       // The other two tree views. Separate reports rather than one query
       // with every leaf dimension: crossing sourceMedium x campaign x
@@ -1461,20 +1506,76 @@ async function fetchGa4ReportUncached(
       };
     }
 
-    const retRows: Ga4Returning["rows"] = [];
+    // Rate and duration accumulate as value x sessions and are divided
+    // out at the end (mergeRate), at both levels.
+    type PartAcc = Omit<Ga4ReturningPart, "convRate" | "avgSeconds"> & {
+      rateW: number;
+      durW: number;
+    };
+    const byKind = new Map<"new" | "returning", Map<string, PartAcc>>();
     for (const r of rReturn?.rows ?? []) {
       const raw = dim(r, 0).trim().toLowerCase();
       // GA4 emits a "(not set)" bucket here for sessions it cannot
       // classify; it carries no meaning for the question being asked.
       if (raw !== "new" && raw !== "returning") continue;
+      const rawCamp = dim(r, 1).trim();
+      const name = cleanCampaign(rawCamp);
+      const label =
+        name || NO_CAMPAIGN_LABELS[rawCamp.toLowerCase()] || "לא שויך לקמפיין";
+      // Same merge key as the campaign table, so `FB - Website` and
+      // `FB+-+Website` are one part here too.
+      const key = name ? `c:${name.toLowerCase().replace(/[_-]+/g, "-")}` : `n:${label}`;
+      const parts = byKind.get(raw) ?? new Map<string, PartAcc>();
+      const p =
+        parts.get(key) ??
+        { label, campaign: !!name, folded: 0, sessions: 0, engaged: 0, keyEvents: 0, rateW: 0, durW: 0 };
+      const sessions = met(r, 0);
+      p.sessions += sessions;
+      p.keyEvents += met(r, 1);
+      p.rateW += met(r, 2) * sessions;
+      p.engaged += met(r, 3);
+      p.durW += met(r, 4) * sessions;
+      parts.set(key, p);
+      byKind.set(raw, parts);
+    }
+    const sumParts = (list: PartAcc[], label: string, folded: number): PartAcc => {
+      const acc: PartAcc = { label, campaign: false, folded, sessions: 0, engaged: 0, keyEvents: 0, rateW: 0, durW: 0 };
+      for (const p of list) {
+        acc.sessions += p.sessions;
+        acc.engaged += p.engaged;
+        acc.keyEvents += p.keyEvents;
+        acc.rateW += p.rateW;
+        acc.durW += p.durW;
+      }
+      return acc;
+    };
+    const finish = ({ rateW, durW, ...p }: PartAcc): Ga4ReturningPart => ({
+      ...p,
+      convRate: mergeRate(rateW, p.sessions),
+      avgSeconds: mergeRate(durW, p.sessions),
+    });
+    const retRows: Ga4Returning["rows"] = [];
+    for (const kind of ["new", "returning"] as const) {
+      const all = [...(byKind.get(kind)?.values() ?? [])].filter((p) => p.sessions > 0);
+      if (!all.length) continue;
+      const total = sumParts(all, "", 0);
+      const camps = all.filter((p) => p.campaign).sort((a, b) => b.sessions - a.sessions);
+      const rest = camps.slice(RETURNING_TOP_CAMPAIGNS);
+      const parts = [
+        ...camps.slice(0, RETURNING_TOP_CAMPAIGNS),
+        ...all.filter((p) => !p.campaign),
+        // Folded rather than cut: the parts must still add up to the row.
+        ...(rest.length ? [sumParts(rest, `עוד ${rest.length} קמפיינים`, rest.length)] : []),
+      ].sort((a, b) => b.sessions - a.sessions);
       retRows.push({
-        kind: raw,
-        label: raw === "new" ? "מבקרים חדשים" : "מבקרים חוזרים",
-        sessions: met(r, 0),
-        keyEvents: met(r, 1),
-        convRate: met(r, 2),
-        engaged: met(r, 3),
-        avgSeconds: met(r, 4),
+        kind,
+        label: kind === "new" ? "מבקרים חדשים" : "מבקרים חוזרים",
+        sessions: total.sessions,
+        keyEvents: total.keyEvents,
+        convRate: mergeRate(total.rateW, total.sessions),
+        engaged: total.engaged,
+        avgSeconds: mergeRate(total.durW, total.sessions),
+        parts: parts.map(finish),
       });
     }
     if (retRows.length > 0) returning = { rows: retRows };
@@ -1794,7 +1895,8 @@ export async function fetchGa4Report(
   // v21: every breakdown row carries the standard six measures, so
   //      sources/cities/devices/returning/pages/israel/abroad all gained
   //      fields. A v20 payload renders "—" in half the new columns.
-  const key = `ga4Report:v21:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
+  // v22: returning rows carry their campaign parts (the accordion).
+  const key = `ga4Report:v22:${propertyId}:${win.start}:${win.end}:${paths.join("|")}`;
   return unstable_cache(
     () => fetchGa4ReportUncached(propertyId, paths, win),
     [key],

@@ -8,6 +8,7 @@ import { lookupCity } from "@/lib/israelMap";
 import Ga4CityMap from "@/components/Ga4CityMap";
 import Ga4CampaignTree from "@/components/Ga4CampaignTree";
 import Ga4Demographics from "@/components/Ga4Demographics";
+import Ga4ReturningTable from "@/components/Ga4ReturningTable";
 import { StandardHead, StandardCells } from "@/components/Ga4Columns";
 import {
   fetchGa4Report,
@@ -218,7 +219,7 @@ export default async function Ga4ReportSection({
           that crashes the whole project page is far worse than one that
           quietly renders a block short — the version in the cache key in
           lib/ga4Report.ts is the real fix, this is the seatbelt. */}
-      {data.returning && <Returning r={data.returning} />}
+      {data.returning && <Ga4ReturningTable r={data.returning} />}
 
       {(data.intro?.length ?? 0) > 0 && <IntroCredit rows={data.intro} />}
 
@@ -486,64 +487,6 @@ function Conversions({
         אירועי מפתח מוגדרים בנפרד בכל נכס Google Analytics, ולכן אינם ניתנים
         להשוואה בין פרויקטים. ספירת הלידים הרשמית היא זו שב-CRM.
       </div>
-    </div>
-  );
-}
-
-/* ── New vs returning ─────────────────────────────────────────────── */
-
-/**
- * The honest stand-in for "multi-channel journeys".
- *
- * GA4's Data API has no conversion path, assist or time-to-conversion
- * field, and a first-touch vs last-touch comparison proved redundant on
- * this estate — key-event totals are conserved exactly across the two
- * attributions and channel shares move under 1.2 points, because the
- * traffic is overwhelmingly single-session. What people actually want to
- * know is whether visitors convert on the first visit or come back to do
- * it, and that does vary a lot between projects.
- */
-function Returning({ r }: { r: NonNullable<Ga4ReportData["returning"]> }) {
-  const total = r.rows.reduce((n, x) => n + x.sessions, 0);
-  if (total <= 0) return null;
-  const ret = r.rows.find((x) => x.kind === "returning");
-  const nw = r.rows.find((x) => x.kind === "new");
-  // The lift is the point of the block — returning visitors are a small
-  // slice of sessions and a much larger slice of conversions.
-  const lift =
-    ret && nw && nw.convRate > 0 ? ret.convRate / nw.convRate : null;
-
-  return (
-    <div className="ga4w-block">
-      <h3 className="ga4w-h3">מבקרים חדשים מול חוזרים</h3>
-      <div className="ga4w-table-wrap">
-      <table className="ga4w-table ga4w-table-std">
-        <StandardHead first="סוג מבקר" showConv />
-        <tbody>
-          {r.rows.map((x) => (
-            <tr key={x.kind}>
-              <td>{x.label}</td>
-              <StandardCells
-                sessions={x.sessions}
-                total={total}
-                engaged={x.engaged}
-                avgSeconds={x.avgSeconds}
-                keyEvents={x.keyEvents}
-                convRate={x.convRate}
-                showConv
-              />
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
-      {lift && lift > 1.15 && (
-        <div className="ga4w-note">
-          מבקרים חוזרים ממירים פי {lift.toFixed(1)} ממבקרים חדשים — כלומר חלק
-          מהלידים נסגר רק בביקור השני. זהו המדד הקרוב ביותר שקיים ב-Google
-          Analytics למסע רב-ערוצי.
-        </div>
-      )}
     </div>
   );
 }
