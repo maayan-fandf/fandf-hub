@@ -1345,6 +1345,10 @@ export type ReportFbAd = {
    *  campaign nobody registered is invisible to every other surface in the
    *  hub, and surfacing it is half the value of the refresh. */
   unmappedCampaign?: boolean;
+  /** Every ad set the live ad was launched into — one creative typically
+   *  goes out to several audiences at once (five on גינדי מרום ראשון,
+   *  2026-09-23), and the card is one per creative. Live cards only. */
+  adSets?: string[];
 };
 
 /** One month of an ad's life. cost/leads come from the ad-metrics tab

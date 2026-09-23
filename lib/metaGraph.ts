@@ -165,7 +165,33 @@ export type MetaAd = {
   preview_shareable_link?: string;
   campaign?: { name?: string };
   adset?: { name?: string };
-  creative?: { thumbnail_url?: string };
+  creative?: {
+    thumbnail_url?: string;
+    /** The copy, where it lives depends on how the ad was built — see
+     *  lib/fbNewAds adCopyOf. Only listAdsCreatedSince asks for these. */
+    body?: string;
+    title?: string;
+    link_url?: string;
+    object_story_spec?: {
+      link_data?: {
+        message?: string;
+        name?: string;
+        link?: string;
+        call_to_action?: { value?: { link?: string } };
+        child_attachments?: { name?: string }[];
+      };
+      video_data?: {
+        message?: string;
+        title?: string;
+        call_to_action?: { value?: { link?: string } };
+      };
+    };
+    asset_feed_spec?: {
+      bodies?: { text?: string }[];
+      titles?: { text?: string }[];
+      link_urls?: { website_url?: string }[];
+    };
+  };
 };
 
 /** Ads in one account, with the preview link. `updatedSince` (unix seconds)
@@ -487,6 +513,15 @@ export async function listAdSetTargeting(
  * `ad.created_time` rather than `updated_time` on purpose. The cron wants
  * "what changed" so it can merge; a person pressing רענון wants "what is
  * new", and an edit to a month-old ad is not what they are checking.
+ *
+ * The creative also carries its COPY (headline, primary text, link), so an account manager can check a just-launched ad against
+ * the brief. Where Meta keeps it depends on how the ad was built: on גינדי
+ * מרום ראשון, 2026-09-23, every image ad had empty `body`/`title` and its
+ * text only in `asset_feed_spec` (bodies/titles/descriptions as lists),
+ * while the video ads carried it in `body`/`title` and `video_data`. So
+ * all three are asked for, and the page is 25 rather than 50 — the specs
+ * are the heaviest part of the creative, and page weight is what Meta
+ * refuses (see above). 25 was the page the measurement ran at.
  */
 export async function listAdsCreatedSince(
   accountId: string,
@@ -496,11 +531,13 @@ export async function listAdsCreatedSince(
     fields:
       "id,name,effective_status,created_time,preview_shareable_link," +
       "campaign{name},adset{name}," +
-      `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX}){thumbnail_url}`,
+      `creative.thumbnail_width(${THUMB_PX}).thumbnail_height(${THUMB_PX})` +
+      "{thumbnail_url,body,title,link_url," +
+      "object_story_spec,asset_feed_spec}",
     filtering: JSON.stringify([
       { field: "ad.created_time", operator: "GREATER_THAN", value: sinceUnix },
     ]),
-    limit: 50,
+    limit: 25,
   });
 }
 

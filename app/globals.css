@@ -27240,6 +27240,15 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   max-height: 160px;
   overflow-y: auto;
 }
+/* The ad sets a just-launched creative went out to (fbNewAds adSets).
+   Not .rpt-cr-adsets — that is the ad-set grid further down. */
+.rpt-cr-live-adsets {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .rpt-cr-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { buildMatchMap, matchSlug } from "@/lib/campaignMatch";
 import { listAdsCreatedSince, metaConfigured, MetaGraphError } from "@/lib/metaGraph";
+import type { MetaAd } from "@/lib/metaGraph";
 import type { ReportFbAd } from "@/lib/reportShared";
 import { adNameOf, fbCardKey, normCardName } from "@/lib/reportShared";
 
@@ -118,6 +119,86 @@ function isoDate(v: unknown): string {
   return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "";
 }
 
+/** Distinct non-empty texts in first-seen order. Compared with whitespace
+ *  collapsed — the same primary text arrives as both `video_data.message`
+ *  and `creative.body` — but kept as written, line breaks included, since
+ *  the line breaks are part of what the brief specified. */
+function distinctTexts(list: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of list) {
+    const s = String(v ?? "").trim();
+    const k = s.replace(/\s+/g, " ");
+    if (!s || seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * An ad's copy as the reader of the ad sees it. Lists, not strings: a
+ * dynamic-creative ad holds several headlines and texts and Meta rotates
+ * them, and every variant is something the brief has to allow.
+ */
+export type FbAdCopy = {
+  /** Headline(s) — the bold line under the image. */
+  titles: string[];
+  /** Primary text(s) — the copy above the image. */
+  bodies: string[];
+  /** Where the click goes. "" when the ad opens a lead form. */
+  link: string;
+};
+
+/** The "link" Meta reports for a lead-form ad — a placeholder, not a page. */
+const LEAD_FORM_LINK = /^https?:\/\/fb\.me\/?$/i;
+
+/**
+ * An ad's copy, from wherever this creative keeps it.
+ *
+ * Three places, and which one depends on how the ad was built — measured on
+ * גינדי מרום ראשון's launches of 2026-09-23:
+ *   - `asset_feed_spec` — every IMAGE ad. `body`/`title` were empty and
+ *     `object_story_spec` held only the page ids; the text was here, as
+ *     lists (one entry each on those ads; a dynamic-creative ad has several).
+ *   - `object_story_spec.video_data` / `.link_data` — the VIDEO ads, and a
+ *     classic single-image or carousel ad (whose cards each carry their own
+ *     headline, collected here too).
+ *   - `creative.body` / `creative.title` — Meta's flattened copy, present on
+ *     the video ads beside video_data; the last resort.
+ * All are read and de-duplicated rather than picking one, so a creative
+ * that fills two places shows its text once and one that fills an
+ * unexpected place still shows it.
+ */
+export function adCopyOf(c: MetaAd["creative"]): FbAdCopy {
+  const afs = c?.asset_feed_spec;
+  const ld = c?.object_story_spec?.link_data;
+  const vd = c?.object_story_spec?.video_data;
+  const texts = (xs?: { text?: string }[]) => (xs ?? []).map((x) => x.text);
+  const kids = ld?.child_attachments ?? [];
+  const link =
+    [
+      afs?.link_urls?.[0]?.website_url,
+      ld?.link,
+      ld?.call_to_action?.value?.link,
+      vd?.call_to_action?.value?.link,
+      c?.link_url,
+    ]
+      .map((u) => clean(u))
+      .find((u) => u && !LEAD_FORM_LINK.test(u)) ?? "";
+  return {
+    titles: distinctTexts([
+      ...texts(afs?.titles),
+      ld?.name,
+      ...kids.map((k) => k.name),
+      vd?.title,
+      c?.title,
+    ]),
+    bodies: distinctTexts([...texts(afs?.bodies), ld?.message, vd?.message, c?.body]),
+    link,
+  };
+}
+
 /** Days since creation, floored at 0 — the card's ageDays field. */
 function ageDays(v: unknown): number {
   const t = Date.parse(String(v ?? ""));
@@ -167,7 +248,8 @@ export async function getNewFbAdsForProject(opts: {
   const matchMap = await buildMatchMap(subjectEmail);
   const failed: { accountId: string; error: string }[] = [];
   const ads: ReportFbAd[] = [];
-  const seen = new Set<string>();
+  /** card key → the card, so a creative's further ad sets land on it. */
+  const seen = new Map<string, ReportFbAd>();
 
   const scan = async (list: string[]) => {
     for (const accountId of list) {
@@ -215,12 +297,25 @@ export async function getNewFbAdsForProject(opts: {
         // been normalised and Meta's had not.
         const key = fbCardKey(campaign, ad);
         if (knownKeys?.has(key)) continue;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        // One creative, launched into several ad sets, comes back as one ad
+        // per ad set — five of them per creative on גינדי מרום ראשון. The
+        // card stays one per creative; the audiences collect on it.
+        const dup = seen.get(key);
+        if (dup) {
+          const set = clean(r.adset?.name);
+          if (set && !dup.adSets?.includes(set)) dup.adSets = [...(dup.adSets ?? []), set];
+          // The card speaks for all its ad sets now, so its status must too:
+          // if any copy is delivering, the creative is — the same rule as
+          // lib/reportCreatives' status merge. First-row-wins read a creative
+          // live in four audiences as paused when the first was.
+          const st = clean(r.effective_status);
+          if (st.toUpperCase() === "ACTIVE" && dup.status.toUpperCase() !== "ACTIVE") dup.status = st;
+          continue;
+        }
 
         // Cleaned, so the card's title matches the grid's spelling of the same
         // ad and the client's next knownKeys round-trips.
-        pushAd(r, accountId, campaign, normCardName(adNameOf(ad)), unmapped);
+        seen.set(key, pushAd(r, accountId, campaign, normCardName(adNameOf(ad)), unmapped));
       }
     }
   };
@@ -231,18 +326,27 @@ export async function getNewFbAdsForProject(opts: {
     campaign: string,
     ad: string,
     unmapped: boolean,
-  ) {
+  ): ReportFbAd {
       const image = clean(r.creative?.thumbnail_url);
       const preview = clean(r.preview_shareable_link);
-      ads.push({
+      const copy = adCopyOf(r.creative);
+      const adSet = clean(r.adset?.name);
+      const card: ReportFbAd = {
         account: accountId,
         campaign,
         ad,
         status: clean(r.effective_status),
         url: "",
-        destUrl: "",
-        body: "",
-        title: clean(r.adset?.name),
+        destUrl: copy.link,
+        // The same two fields the active cards show their headline and
+        // "📝 טקסט המודעה" from, so a just-launched ad reads exactly like the
+        // running ones — which is what an account manager checks it against
+        // the brief in. Every variant, since a dynamic-creative ad rotates
+        // them. `title` used to carry the AD SET name here, for want of a
+        // field; that is `adSets` now.
+        title: copy.titles.join(" | "),
+        body: copy.bodies.join("\n\n— — —\n\n"),
+        adSets: adSet ? [adSet] : [],
         thumb: image,
         image,
         impressions: 0,
@@ -268,7 +372,9 @@ export async function getNewFbAdsForProject(opts: {
         liveCreatedIso: isoDate(r.created_time),
         unmappedCampaign: unmapped,
         previews: withPreviews && preview ? [preview] : undefined,
-      });
+      };
+      ads.push(card);
+      return card;
   }
 
   await scan(accounts);

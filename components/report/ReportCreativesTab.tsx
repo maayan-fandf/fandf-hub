@@ -1162,6 +1162,15 @@ export default function ReportCreativesTab({
                             {a.title}
                           </div>
                         )}
+                        {/* A just-launched creative, launched into several ad
+                        sets at once — the card is one per creative, so the
+                        audiences are listed rather than one picked. */}
+                        {(a.adSets?.length ?? 0) > 0 && (
+                          <div className="rpt-cr-live-adsets" title={a.adSets!.join("\n")}>
+                            🎯 {a.adSets!.length > 1 ? `${a.adSets!.length} קהלים: ` : ""}
+                            {a.adSets!.join(" · ")}
+                          </div>
+                        )}
                         {!a.fatigued && a.ageDays >= 14 && (
                           <div
                             className="rpt-cr-age"
