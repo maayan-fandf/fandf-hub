@@ -114,10 +114,14 @@ function leadsTooltip(c: ReportChannel): string | undefined {
   if (pix == null || !Number.isFinite(pix) || pix < 0) return undefined;
   let gap = "";
   if (c.leads > 0) {
-    const diff = pix - c.leads;
+    // On the ROUNDED pixel count, the one printed on the line above. Google
+    // reports fractional conversions (eastern, Sept: 15.9), so the raw
+    // difference printed as "+1.9000000000000004" beside "פיקסל: 16" and
+    // "CRM: 14" — three numbers that did not add up on the same tooltip.
+    const diff = Math.round(pix) - c.leads;
     const pct = Math.round((diff / c.leads) * 100);
     const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
-    gap = `\nפער: ${sign}${Math.abs(pct)}%  (${diff >= 0 ? "+" : ""}${diff})`;
+    gap = `\nפער: ${sign}${Math.abs(pct)}%  (${sign}${Math.abs(diff)})`;
   }
   const zero =
     pix === 0 && c.leads > 0
@@ -129,14 +133,30 @@ function leadsTooltip(c: ReportChannel): string | undefined {
   );
 }
 
+/** Gap between the pixel count and the CRM count, either way, at which the
+ *  לידים cell gets its ⚠️. */
+const DIVERGE_PCT = 0.3;
+/** …and never for fewer leads apart than this, so 5 vs 7 on a quiet channel
+ *  (40% on two leads) does not raise the same flag as 16 vs 23. */
+const DIVERGE_MIN_GAP = 3;
+/** Below this many CRM leads a ratio is noise whatever it says. */
+const DIVERGE_MIN_LEADS = 5;
+
 /**
- * ⚠️ beside the לידים number when the pixel/CRM ratio is off — the port of
- * the legacy `leadsDivergenceIndicator` (Index.html:6294), same gates and
- * thresholds: ≥5 CRM leads (below that a single missed event tips the ratio
- * on noise), non-zero pixel, then ratio <0.7 or >1.8. Portfolio norm is
- * ~1.14 — the pixel should read a bit ABOVE CRM, so under 0.7 is the real
- * red flag. Returns the tooltip text, or undefined when there's nothing
- * to flag.
+ * ⚠️ beside the לידים number when the pixel and the CRM disagree.
+ *
+ * Was a port of the legacy `leadsDivergenceIndicator` (Index.html:6294):
+ * flag only when pixel/CRM fell under 0.7 or over 1.8, tuned to a portfolio
+ * median of 1.14. That missed exactly the gap an account manager noticed by
+ * eye — 16 CRM leads against 23 pixel events on a google-discovery row, +44%,
+ * no mark (Maayan, 2026-09-23).
+ *
+ * Re-measured over every ALL CLIENTS row with ≥5 CRM leads and a pixel count
+ * (658 rows, 2026-09-23): the ratio's median is 1.00 now, not 1.14, and the
+ * middle half sits between 0.89 and 1.14. So the rule is symmetric around
+ * 1, and the flag goes on the outer quarter: a gap of 30% or more either
+ * way, and at least 3 leads apart. That marks 25% of rows (the old rule
+ * marked 19%) and catches the +44% it used to miss.
  *
  * `pix <= 0` is excluded on purpose and the reason differs by case now that
  * blank and 0 are distinguishable: a BLANK (undefined) channel has no pixel
@@ -145,22 +165,28 @@ function leadsTooltip(c: ReportChannel): string | undefined {
  * a ratio needs two real numbers to be meaningful.
  */
 function leadsDivergence(c: ReportChannel): string | undefined {
-  const pix = c.pixelLeads;
-  if (pix == null || !Number.isFinite(pix) || pix <= 0) return undefined;
-  if (c.leads < 5) return undefined;
-  const ratio = pix / c.leads;
+  const raw = c.pixelLeads;
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return undefined;
+  if (c.leads < DIVERGE_MIN_LEADS) return undefined;
+  // Rounded, like every other place the pixel count is printed: Google
+  // reports fractional conversions, and the gap must agree with the number
+  // on the line above it.
+  const pix = Math.round(raw);
+  const gap = pix - c.leads;
+  const pct = gap / c.leads;
+  if (Math.abs(gap) < DIVERGE_MIN_GAP || Math.abs(pct) < DIVERGE_PCT) {
+    return undefined;
+  }
+  const shown = Math.round(Math.abs(pct) * 100);
   const msg =
-    ratio < 0.7
-      ? "פיקסל מתחת ל-70% מ-CRM — פיקסל אמור לתפוס יותר אירועים מ-CRM, לא פחות. בדוק שהפיקסל מותקן נכון ושהאירועים נרשמים."
-      : ratio > 1.8
-        ? "פיקסל גבוה פי 1.8+ מ-CRM — חריג לעומת שאר התיק (חציון 1.14). או שפיקסל סופר כפילויות, או ש-CRM מסנן הרבה לידים לא-רלוונטיים."
-        : "";
-  if (!msg) return undefined;
+    gap > 0
+      ? `הפיקסל רשם ${shown}% יותר אירועים ממה שהגיע ל-CRM. בדרך כלל כפילויות בפיקסל, או לידים שלא נקלטו או סוננו ב-CRM.`
+      : `הפיקסל רשם ${shown}% פחות אירועים ממה שהגיע ל-CRM — הוא אמור לתפוס לפחות אותו דבר. בדוק שהפיקסל מותקן נכון ושהאירועים נרשמים.`;
   return (
-    `פער CRM vs פיקסל:\n` +
-    `CRM (גיליון): ${fmtInt(c.leads)} לידים\n` +
-    `פיקסל (גיליון): ${fmtInt(pix)} אירועים\n` +
-    `יחס: ${ratio.toFixed(2)}\n${msg}`
+    `פער CRM מול פיקסל:\n` +
+    `CRM: ${fmtInt(c.leads)} לידים\n` +
+    `פיקסל: ${fmtInt(pix)} אירועים\n` +
+    `פער: ${gap > 0 ? "+" : "−"}${shown}%  (${gap > 0 ? "+" : "−"}${Math.abs(gap)})\n${msg}`
   );
 }
 
