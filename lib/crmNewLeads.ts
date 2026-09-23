@@ -120,8 +120,10 @@ async function fetchCrmNewLeads(
   const ssId = process.env.SHEET_ID_MAIN;
   if (!ssId || !projectTab) return {};
   const sheets = sheetsClient(subjectEmail);
-  // Not A1:AA60 like the budget desk: tidhar-hever's current block runs
-  // past row 60. The loop below stops at the block's "total" row anyway.
+  // Deeper than the budget desk's A1:J60 as margin: tidhar-hever's block
+  // already runs to row 45, and a row past the range would drop out of the
+  // new count silently while ALL CLIENTS still counts it. The loop below
+  // stops at the block's "total" row anyway.
   const range = `${quote(projectTab)}!A1:AA200`;
   const [vals, fx] = await Promise.all(
     (["UNFORMATTED_VALUE", "FORMULA"] as const).map((o) =>
