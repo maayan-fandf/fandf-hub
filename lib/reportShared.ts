@@ -168,7 +168,7 @@ export type ReportChannel = {
    *  that fired no events — and must survive to the tooltip. */
   pixelLeads?: number;
   /** Of `leads`, how many are NEW — read from the same CRM report cells
-   *  the row's `לידים CRM` formula sums (lib/crmNewLeads). `leads` itself
+   *  the row's `לידים CRM` formula sums (lib/crmSheetSplits). `leads` itself
    *  counts returning (and on some tabs duplicate) inquiries too, so the
    *  cell reads "26 (11 חדשים)". Live mode only; undefined when the
    *  project's formula or report layout cannot be read. */
@@ -186,6 +186,12 @@ export type ReportChannel = {
    */
   scheduled: number;
   meetings: number;
+  /** Of the live `scheduled` — the sheet's `תיאום וביטול`, which counts
+   *  cancelled meetings too — how many were cancelled: "4 (1 בוטלו)". Read
+   *  from the formula's own cancellation terms (lib/crmSheetSplits). Live
+   *  mode, lead-entry basis only: applyBasisToChannels drops it with the
+   *  dated swap, since it is a part of THIS number and no other. */
+  cancelledScheduled?: number;
   /**
    * The SAME two stages counted by when the meeting actually HAPPENED,
    * rather than by when the lead was created (which is what `scheduled`
@@ -2099,6 +2105,8 @@ export function applyBasisToChannels(
       ...c,
       scheduled,
       meetings,
+      // A part of the lead-entry תיאומים, not of these.
+      cancelledScheduled: undefined,
       costPerScheduled: scheduled > 0 ? c.spend / scheduled : 0,
       costPerMeeting: meetings > 0 ? c.spend / meetings : 0,
     };

@@ -140,7 +140,7 @@ function leadsTooltip(c: ReportChannel): string | undefined {
  * new + returning (+ duplicates). אחוזת אפרידר's פייסבוק, September: 26
  * against the CRM section's 11, because 15 were people already in the CRM.
  * Shown only when some of the count is NOT new; an all-new count, or none
- * read (lib/crmNewLeads), leaves the cell as it was.
+ * read (lib/crmSheetSplits), leaves the cell as it was.
  */
 function NewLeads({ leads, fresh }: { leads: number; fresh?: number }) {
   if (fresh == null || !(fresh >= 0) || fresh >= leads) return null;
@@ -154,6 +154,31 @@ function NewLeads({ leads, fresh }: { leads: number; fresh?: number }) {
       }
     >
       ({fmtInt(fresh)} חדשים)
+    </span>
+  );
+}
+
+/**
+ * "(1 בוטלו)" after a תיאומים count that includes cancelled meetings.
+ *
+ * The sheet's `תיאום וביטול` is scheduled + cancelled by definition, and the
+ * table's תיאומים is that column on the live lead-entry basis — so a
+ * channel reading 4 may hold a meeting that will never happen. Shown only
+ * when there IS a cancellation; the number comes from the formula's own
+ * cancellation terms (lib/crmSheetSplits), so it is always part of the 4.
+ */
+function CancelledPart({ scheduled, cancelled }: { scheduled: number; cancelled?: number }) {
+  if (cancelled == null || !(cancelled > 0) || cancelled > scheduled) return null;
+  return (
+    <span
+      className="rpt-ch-newleads"
+      title={
+        `${fmtInt(cancelled)} מתוך ${fmtInt(scheduled)} התיאומים בוטלו. ` +
+        `"תיאומים" כאן הוא עמודת "תיאום וביטול" בגיליון — היא סופרת גם פגישות שבוטלו, ` +
+        `וכך גם העלות לתיאום.`
+      }
+    >
+      ({fmtInt(cancelled)} בוטלו)
     </span>
   );
 }
@@ -1053,6 +1078,7 @@ export default function ReportChannelsTab({
         ...c,
         scheduled: 0,
         meetings: 0,
+        cancelledScheduled: undefined,
         costPerScheduled: 0,
         costPerMeeting: 0,
       }));
@@ -1273,6 +1299,11 @@ export default function ReportChannelsTab({
   // the project's new-lead count and be short of it.
   const totalNewLeads = visible.every((c) => c.leads <= 0 || c.newLeads != null)
     ? visible.reduce((n, c) => n + (c.newLeads ?? 0), 0)
+    : undefined;
+  // Same rule for "(N בוטלו)". Under the dated basis no row carries one
+  // (applyBasisToChannels drops it), so this is undefined there by itself.
+  const totalCancelled = visible.every((c) => c.scheduled <= 0 || c.cancelledScheduled != null)
+    ? visible.reduce((n, c) => n + (c.cancelledScheduled ?? 0), 0)
     : undefined;
   const tCpl = totals.leads > 0 ? totals.spend / totals.leads : 0;
   const tCps = totals.scheduled > 0 ? totals.spend / totals.scheduled : 0;
@@ -1675,7 +1706,14 @@ export default function ReportChannelsTab({
                     {c.costPerLead > 0 ? fmtILS(c.costPerLead) : "—"}
                   </td>
                   <ConvCell r={r1Of(c)} dash={r1Dash} />
-                  <td>{noSource ?? fmtInt(c.scheduled)}</td>
+                  <td>
+                    {noSource ?? (
+                      <>
+                        {fmtInt(c.scheduled)}
+                        <CancelledPart scheduled={c.scheduled} cancelled={c.cancelledScheduled} />
+                      </>
+                    )}
+                  </td>
                   <td
                     style={costHeatStyle("costPerScheduled", c.costPerScheduled)}
                   >
@@ -1824,6 +1862,9 @@ export default function ReportChannelsTab({
               <ConvCell r={tR1} dash={r1Dash} />
               <td>
                 <b>{noSource ?? fmtInt(totals.scheduled)}</b>
+                {!noSource && (
+                  <CancelledPart scheduled={totals.scheduled} cancelled={totalCancelled} />
+                )}
               </td>
               <td style={costHeatStyle("costPerScheduled", tCps)}>
                 <b>{noSource ?? (tCps > 0 ? fmtILS(tCps) : "—")}</b>

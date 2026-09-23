@@ -48,7 +48,7 @@ import {
   type DatedChannelMeetings,
 } from "@/lib/datedChannelMeetings";
 import { getCrmFunnelForProject } from "@/lib/crmData";
-import { getCrmNewLeads, newLeadsKey } from "@/lib/crmNewLeads";
+import { getCrmSheetSplits, splitKey } from "@/lib/crmSheetSplits";
 
 /**
  * Server data layer for the NATIVE project report (phase 1) — reads the
@@ -1344,13 +1344,23 @@ export const getProjectReportData = cache(
       }
     }
 
-    // "26 (11 חדשים)" — live only, keyed by the project tab the budget
-    // desk resolved above (the CRM reports hold the current window alone).
+    // "26 (11 חדשים)" and "4 (1 בוטלו)" — live only, keyed by the project
+    // tab the budget desk resolved above (the CRM reports hold the current
+    // window alone).
     if (mode === "live" && tabSlug && reportChannels.length) {
-      const fresh = await getCrmNewLeads(subjectEmail, tabSlug);
+      const splits = await getCrmSheetSplits(subjectEmail, tabSlug);
+      // Attached only where the part fits inside this row's own number.
+      // ALL CLIENTS and the CRM reports sit in separate 5-minute caches, so
+      // for a while after an automated report paste they can describe two
+      // different moments — a row reading 0 תיאומים beside a fresh "1
+      // cancelled". The cell would hide that part, but the סה״כ row would
+      // still add it in: "4 (2 בוטלו)" under rows showing one cancellation.
+      const fits = (part: number | undefined, whole: number) =>
+        part != null && part >= 0 && part <= whole ? part : undefined;
       for (const c of reportChannels) {
-        const n = fresh[newLeadsKey(c.channel)];
-        if (n != null) c.newLeads = n;
+        const k = splitKey(c.channel);
+        c.newLeads = fits(splits.newLeads[k], c.leads);
+        c.cancelledScheduled = fits(splits.cancelled[k], c.scheduled);
       }
     }
 
