@@ -1298,13 +1298,27 @@ function applyMetaStatus(out: ProjectCreativeRaw): void {
     // running ad as stopped, and the account manager who had just checked
     // Ads Manager was the one who caught it.
     //
-    // Only in this direction. A paused reading never overrides an active one,
-    // which keeps the rule the same as the within-source one above: if
-    // anything says the ad is delivering, it is delivering. The cost is that
-    // an ad paused since our last nightly pull can read active for a day; the
-    // opposite error hides live spend, and that is the worse of the two.
+    // A paused reading never overrides an active one — with ONE exception: a
+    // PARENT pause. The assets tab's "Ad status" is the ad's OWN status, and
+    // pausing the campaign or the ad set does not change it: eastern's
+    // Shbn_eastern_investors_WL_2026-07-08_FB, paused since ~2026-09-22, had
+    // every ad still set ACTIVE. That ACTIVE is not evidence of delivery,
+    // and our pull's CAMPAIGN_PAUSED / ADSET_PAUSED is — fbMetaStatus is
+    // ACTIVE if ANY ad in the group delivers (see its builder), so a parent
+    // pause here means none of them does. The pull could not be trusted for
+    // this before 2026-09-28: it only re-read ads whose own updated_time
+    // moved, which a parent pause does not do. Its status pass
+    // (fbAdPreviewsExport reconcileAccountStatuses) now makes every row true
+    // as of last night.
+    //
+    // Otherwise the rule stands: if anything says the ad is delivering, it
+    // is. The cost is that a campaign resumed since last night can read
+    // paused until tonight's pull — bounded to a day, where the error it
+    // replaces lasted as long as the campaign stayed paused.
     const isActive = status.toUpperCase() === "ACTIVE";
-    if (rec.status && !(isActive && rec.status.toUpperCase() !== "ACTIVE")) continue;
+    const recActive = rec.status.toUpperCase() === "ACTIVE";
+    const parentPaused = /^(CAMPAIGN|ADSET)_PAUSED$/i.test(status);
+    if (rec.status && !(isActive && !recActive) && !(parentPaused && recActive)) continue;
     rec.status = status;
     rec.statusFromMeta = true;
     rec.statusFromWarehouse = false;
