@@ -31,9 +31,9 @@ export const maxDuration = 60;
  * may read with another project's campaign patterns and get back that
  * project's ads.
  *
- * Preview links are staff-only, mirroring NativeProjectRail's strip — they
- * only resolve for a viewer holding a Business Manager session anyway, so a
- * client would get a Facebook error page.
+ * Preview links go to clients too since 2026-09-28: the live cards only
+ * ever carry Meta's shareable fb.me link, the one kind NativeProjectRail
+ * now lets through to a client (see its shareablePreview).
  */
 
 /** Per-instance spacing between pulls for one (caller, project).
@@ -118,7 +118,6 @@ export async function POST(req: Request) {
       slug,
       hours,
       knownKeys,
-      withPreviews: isStaff,
     });
     return NextResponse.json({ ok: true, ...res });
   } catch (e) {

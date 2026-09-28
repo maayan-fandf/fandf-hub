@@ -162,10 +162,23 @@ export default async function NativeProjectRail({
   // flight payload and in view-source for every client. The .rpt-clientview
   // display:none entry is defence in depth, not the gate.
   //
-  // `previews` rides along for a stronger reason than tidiness: a Meta
-  // ad-preview link only resolves for a viewer holding a Business Manager
-  // session on that ad account, so to a client it is a link to a Facebook
-  // error page. Never ship it to one.
+  // `previews` is FILTERED for a client, not dropped (owner request,
+  // 2026-09-28: the client should be able to open the ad). Two kinds of link
+  // arrive in it, and they are not alike:
+  //   - Supermetrics' "Ad preview URL" (the `כל מודעות פפיסבוק` tab) carries
+  //     a `d=` token reminted on every refresh and resolves only inside a
+  //     Business Manager session on the account — an error page to anyone
+  //     else. Never shipped to a client.
+  //   - Meta's `preview_shareable_link` (our fb-ad-previews tab), a short
+  //     https://fb.me/… — Meta's link for SHARING a preview with people
+  //     outside the account. Measured 2026-09-28: with no Facebook session
+  //     at all it lands on an error page (400), so the viewer does need to be
+  //     logged in to Facebook; it is not gated on the ad account.
+  // So a client gets the first fb.me link, and only that.
+  const shareablePreview = (list?: string[]) => {
+    const u = list?.find((x) => /^https:\/\/fb\.me\//i.test(x));
+    return u ? [u] : undefined;
+  };
   if (clientView && data?.creatives) {
     data = {
       ...data,
@@ -181,7 +194,7 @@ export default async function NativeProjectRail({
           topAds: data.creatives.fb.topAds.map((a) => ({
             ...a,
             history: null,
-            previews: undefined,
+            previews: shareablePreview(a.previews),
             // The 🗄️ warehouse-fallback marker is ad-ops plumbing — it tells
             // us a Supermetrics tab is down. A client should just see the
             // creative; the image is the same either way.
@@ -222,10 +235,8 @@ export default async function NativeProjectRail({
           ...data.creatives.fb,
           topAds: data.creatives.fb.topAds.map((a) => ({
             ...a,
-            // undefined (not []) when there is none, and still undefined for a
-            // client viewer — the strip above already cleared it, and a Meta
-            // preview link resolves to an error page without a Business
-            // Manager session.
+            // undefined (not []) when there is none. For a client viewer the
+            // strip above has already cut it to the one shareable link.
             previews: a.previews?.length ? a.previews.slice(0, 1) : undefined,
           })),
         },

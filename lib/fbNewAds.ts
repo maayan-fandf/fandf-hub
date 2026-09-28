@@ -220,12 +220,8 @@ export async function getNewFbAdsForProject(opts: {
   slug: string;
   hours?: number;
   knownKeys?: Set<string>;
-  /** Preview links resolve only for a viewer with a Business Manager session
-   *  on the account, so they are staff-only — same rule NativeProjectRail
-   *  applies to the cards it renders. */
-  withPreviews: boolean;
 }): Promise<FbNewAdsResult> {
-  const { subjectEmail, slug, knownKeys, withPreviews } = opts;
+  const { subjectEmail, slug, knownKeys } = opts;
   if (!metaConfigured()) throw new Error("META_ACCESS_TOKEN is not set");
 
   const hours = Math.min(MAX_HOURS, Math.max(1, opts.hours || DEFAULT_HOURS));
@@ -371,7 +367,10 @@ export async function getNewFbAdsForProject(opts: {
         noWindowData: true,
         liveCreatedIso: isoDate(r.created_time),
         unmappedCampaign: unmapped,
-        previews: withPreviews && preview ? [preview] : undefined,
+        // Meta's shareable fb.me link — the one kind of preview a client may
+        // have too (NativeProjectRail's shareablePreview; owner request
+        // 2026-09-28), so it is no longer gated on the caller being staff.
+        previews: /^https:\/\/fb\.me\//i.test(preview) ? [preview] : undefined,
       };
       ads.push(card);
       return card;

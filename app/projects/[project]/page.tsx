@@ -968,6 +968,31 @@ export default async function ProjectOverviewPage({
               on dashboardEmbedUrl like the picker: the switch needs no
               Apps Script URL, only the report payload. */}
           {useNativeReport && isRealEstateProject && <MeetingBasisToggle />}
+          {/* Preview-as-client toggle (internal only): strips the report to
+              what a client would see. Up here beside the page-wide switches
+              rather than in its own bar under the header (owner request,
+              2026-09-28) — it is one more "how is this page shown" control.
+              BasisLink rather than Link: the href is built once on the
+              server, and a flip of the meeting switch after that would
+              otherwise leave it pointing at the basis the page loaded on. */}
+          {useNativeReport && isInternalUser &&
+            (reportClientView ? (
+              <BasisLink
+                className="rpt-clientview-toggle is-active"
+                href={clientPreviewHref(false)}
+                title="את/ה צופה בדוח כפי שהלקוח רואה — לחץ לחזרה לתצוגה המלאה"
+              >
+                👁️ תצוגת לקוח · יציאה
+              </BasisLink>
+            ) : (
+              <BasisLink
+                className="rpt-clientview-toggle"
+                href={clientPreviewHref(true)}
+                title="הצג את הדוח כפי שהלקוח יראה אותו (ללא הצ׳רום הפנימי)"
+              >
+                👁️ תצוגת לקוח
+              </BasisLink>
+            ))}
           {/* "+ הודעה ללקוח" used to live here next to "+ משימה חדשה",
               but with the channel split it only ever writes to the
               client-tab discussion. Moved into the לקוח tab so users
@@ -1037,33 +1062,12 @@ export default async function ProjectOverviewPage({
           stacked layout below until parity, then flips on for clients. */}
       {useNativeReport ? (
         <>
-          {isInternalUser && (
+          {isInternalUser && dashboardPeriod && periodLabel && (
             <div className="rpt-railbar">
-              {/* Preview-as-client toggle (internal only): strips the report to
-                  what a client would see, to review before the real cutover.
-                  BasisLink rather than Link for it and the period reset below:
-                  both hrefs are built once on the server, and a flip of the
-                  meeting switch after that would otherwise leave them
-                  pointing at the basis the page loaded on. */}
-              {reportClientView ? (
-                <BasisLink
-                  className="rpt-clientview-toggle is-active"
-                  href={clientPreviewHref(false)}
-                  title="את/ה צופה בדוח כפי שהלקוח רואה — לחץ לחזרה לתצוגה המלאה"
-                >
-                  👁️ תצוגת לקוח · יציאה
-                </BasisLink>
-              ) : (
-                <BasisLink
-                  className="rpt-clientview-toggle"
-                  href={clientPreviewHref(true)}
-                  title="הצג את הדוח כפי שהלקוח יראה אותו (ללא הצ׳רום הפנימי)"
-                >
-                  👁️ תצוגת לקוח
-                </BasisLink>
-              )}
-              {dashboardPeriod && periodLabel && (
-                <span
+              {/* The תצוגת לקוח toggle used to open this bar; it moved into the
+                  header actions (owner request, 2026-09-28), so the bar is now
+                  only the filtered-period chip. */}
+              <span
                   className="rpt-period-chip"
                   title="התקופה המסוננת המוצגת בדוח"
                 >
@@ -1077,7 +1081,6 @@ export default async function ProjectOverviewPage({
                     ↩
                   </BasisLink>
                 </span>
-              )}
             </div>
           )}
           {/* One shared source-chip selection for the CRM + התנגדויות rail

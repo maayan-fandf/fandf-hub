@@ -950,6 +950,7 @@ a:hover {
 .header-actions .btn-ghost.btn-sm,
 .header-actions .btn-warn.btn-sm,
 .header-actions .copy-local-path-btn,
+.header-actions .rpt-clientview-toggle,
 .header-actions .dash-month-picker select {
   height: 2rem;
   padding-top: 0;
@@ -25706,7 +25707,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-ch-dot,                     /* campaign live/paused/mixed dots */
 .rpt-clientview .rpt-ch-diverge,                 /* CRM-vs-pixel ⚠️ (also stripped server-side) */
 .rpt-clientview .rpt-cr-hist-btn,                /* per-ad history hover (also stripped server-side) */
-.rpt-clientview .rpt-cr-previews,                /* Meta ad-preview links — need a Business Manager session (also stripped server-side) */
+.rpt-clientview .rpt-cr-previews,                /* the EXTRA preview versions — a client gets one shareable fb.me link, in the links row (filtered server-side) */
 .rpt-clientview .rpt-pace-mark,                  /* ✓טיפלתי handled mark */
 .rpt-clientview .rpt-pace-alert,                 /* pacing gap ⚠️ */
 .rpt-clientview .rpt-pace-btn,                   /* ✓טיפלתי dismiss buttons */
@@ -25794,8 +25795,8 @@ html[data-theme="dark"] .prl-triage-chip.is-accent {
   /* Clear the two stacked sticky bars above (topnav ~3.75rem + the project
      header, which is in its shrunk ~50px state by the time the rail pins) so
      the rail's top sections aren't tucked behind them on scroll. */
-  top: 7rem;
-  max-height: calc(100vh - 7.6rem);
+  top: var(--prl-rail-top, 7rem);
+  max-height: calc(100vh - var(--prl-rail-top, 7rem) - 0.6rem);
   overflow-y: auto;
   padding: 0.4rem;
   border: 1px solid var(--border-soft);
@@ -25931,8 +25932,8 @@ html[data-theme="dark"] .prl-bdg.is-accent {
     /* Clear the topnav + the (shrunk-by-scroll) sticky project header so the
        rail's top sections aren't tucked behind them on scroll. This desktop
        rule overrides the base .prl-rail top. */
-    top: 7rem;
-    max-height: calc(100vh - 7.6rem);
+    top: var(--prl-rail-top, 7rem);
+    max-height: calc(100vh - var(--prl-rail-top, 7rem) - 0.6rem);
   }
   /* Native-rail only: line the header (קנקו) + triage strip up with the
      CONTENT column's right edge (where the funnel/sections end), not the
@@ -29313,6 +29314,7 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   /* Header toolbar: action chips + month-picker trigger to ~38px */
   .header-actions .btn-primary.btn-sm,
   .header-actions .btn-ghost.btn-sm,
+  .header-actions .rpt-clientview-toggle,
   .header-actions .dash-dd-trigger {
     height: 2.4rem;
   }

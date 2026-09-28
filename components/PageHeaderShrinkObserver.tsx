@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * Tiny scroll watcher mounted inside a `.page-header` so the header can
@@ -42,18 +42,17 @@ const SHRINK_AT = 80; // px — the project name barely moves before flipping
 const RESTORE_AT = 24; // px — effectively "back at the top"
 
 export default function PageHeaderShrinkObserver() {
+  const sentinelRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    // Find the parent .page-header. Robust to wrapper changes — we
-    // hop up from this component's mount point until we find a header
-    // with the right class. Falls back to the first .page-header in
-    // the document if traversal misses.
-    let header: HTMLElement | null = null;
-    const sentinel = document.querySelector<HTMLElement>(
-      "[data-page-header-shrink-sentinel]",
-    );
-    if (sentinel) {
-      header = sentinel.closest<HTMLElement>(".page-header");
-    }
+    // Find the parent .page-header by hopping up from THIS component's own
+    // node (a ref, not a document query): while the page streams, the first
+    // sentinel in the document can belong to a hidden copy React is about to
+    // swap out, and a header found through it is one nobody sees — the rail
+    // offset below was measured off such a node and never moved again.
+    // Falls back to the first .page-header in the document if traversal
+    // misses.
+    let header: HTMLElement | null =
+      sentinelRef.current?.closest<HTMLElement>(".page-header") ?? null;
     if (!header) {
       header = document.querySelector<HTMLElement>(".page-header");
     }
@@ -74,8 +73,39 @@ export default function PageHeaderShrinkObserver() {
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll(); // sync state on mount (e.g. after a soft refresh that
                 // preserves scroll position)
-    return () => window.removeEventListener("scroll", onScroll);
+
+    // The project page's side rail (.prl-rail) is sticky UNDER this header,
+    // and its offset used to be a constant 7rem — right for a one-row
+    // header, and wrong the moment the action row wraps: at 1100-1280px the
+    // header runs to two rows and its bottom sat ~100px below the rail's
+    // top, over the rail's first sections (measured 2026-09-28, after the
+    // תצוגת לקוח toggle joined the row). So the offset follows the real
+    // height of the sticky stack instead. `- 12` keeps the one-row layout
+    // exactly where it was: 60px sticky top + 64px stack - 12 = the old 112.
+    const stack = header.closest<HTMLElement>(".project-top-stack");
+    const root = document.documentElement;
+    let ro: ResizeObserver | null = null;
+    if (stack && typeof ResizeObserver !== "undefined") {
+      const place = () => {
+        const cs = getComputedStyle(stack);
+        if (cs.position !== "sticky") {
+          root.style.removeProperty("--prl-rail-top");
+          return;
+        }
+        const top = parseFloat(cs.top) || 0;
+        const px = Math.round(top + stack.getBoundingClientRect().height - 12);
+        root.style.setProperty("--prl-rail-top", `${px}px`);
+      };
+      ro = new ResizeObserver(place);
+      ro.observe(stack);
+      place();
+    }
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      ro?.disconnect();
+      root.style.removeProperty("--prl-rail-top");
+    };
   }, []);
 
-  return <span data-page-header-shrink-sentinel hidden aria-hidden />;
+  return <span ref={sentinelRef} data-page-header-shrink-sentinel hidden aria-hidden />;
 }
