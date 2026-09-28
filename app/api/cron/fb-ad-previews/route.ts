@@ -36,7 +36,9 @@ export const maxDuration = 300;
  * walk of 5,055 ad sets and far less incrementally. That leaves roughly a
  * third of maxDuration spare — watch this number before widening either
  * pass again, because a kill during the write phase leaves a part-written
- * tab (the write clears first).
+ * tab (the write clears first). Since 2026-09-28 the previews export also
+ * runs a status pass per account (ids of the ads delivering now, plus a
+ * lookup of the few that stopped): ~15-20s across all 23 accounts.
  *
  * Cloud Scheduler: POST https://hub.fandf.co.il/api/cron/fb-ad-previews
  * with header X-Cron-Token=<APPS_SCRIPT_API_TOKEN> and body "{}", once daily.

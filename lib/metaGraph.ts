@@ -194,6 +194,69 @@ export type MetaAd = {
   };
 };
 
+/**
+ * Ids of the ads in one account that are delivering RIGHT NOW
+ * (effective_status ACTIVE). Ids only, so a whole account is a page or two:
+ * measured 2026-09-28 across all 23 accounts in ~15s, 728 running ads.
+ *
+ * It exists because an ad's effective_status changes without its
+ * `updated_time` moving: pausing the CAMPAIGN or the AD SET turns every ad in
+ * it CAMPAIGN_PAUSED / ADSET_PAUSED, but the ads themselves were not edited,
+ * so an incremental walk keyed on updated_time never sees it. See
+ * lib/fbAdPreviewsExport's status pass.
+ */
+export async function listActiveAdIds(accountId: string): Promise<Set<string>> {
+  const ads = await graphEdge<{ id: string }>(`act_${accountId}/ads`, {
+    fields: "id",
+    filtering: JSON.stringify([
+      { field: "effective_status", operator: "IN", value: ["ACTIVE"] },
+    ]),
+    limit: PAGE_LIMIT,
+  });
+  return new Set(ads.map((a) => String(a.id)));
+}
+
+/**
+ * effective_status for specific ads, fifty ids a request.
+ *
+ * One id Meta no longer has fails the whole `?ids=` request (code 100), so a
+ * failed batch is retried id by id; an id that fails alone with 100 is an ad
+ * that is gone, reported as DELETED. Any other error is thrown — a throttle
+ * or a dead token is not evidence about the ad.
+ */
+export async function getAdStatuses(ids: string[]): Promise<Map<string, string>> {
+  const t = token();
+  if (!t) throw new MetaGraphError("META_ACCESS_TOKEN is not set", 0);
+  const out = new Map<string, string>();
+  const lookUp = async (batch: string[]) => {
+    const url = new URL(`${BASE}/`);
+    url.searchParams.set("ids", batch.join(","));
+    url.searchParams.set("fields", "effective_status");
+    url.searchParams.set("access_token", t);
+    const res = await get<Record<string, { effective_status?: string }>>(url.toString());
+    for (const [id, v] of Object.entries(res ?? {}))
+      if (v?.effective_status) out.set(id, v.effective_status);
+  };
+  const gone = (e: unknown) => e instanceof MetaGraphError && e.code === 100;
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50);
+    try {
+      await lookUp(batch);
+    } catch (e) {
+      if (!gone(e)) throw e;
+      for (const id of batch) {
+        try {
+          await lookUp([id]);
+        } catch (e2) {
+          if (!gone(e2)) throw e2;
+          out.set(id, "DELETED");
+        }
+      }
+    }
+  }
+  return out;
+}
+
 /** Ads in one account, with the preview link. `updatedSince` (unix seconds)
  *  turns the nightly run into an incremental one — a full portfolio walk is
  *  ~30,600 ads and about four minutes, which does not fit a cron. */

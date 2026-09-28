@@ -4,6 +4,8 @@ import {
   listRecentAdImages,
   IMAGE_WINDOW_DAYS,
   listAdsWithPreview,
+  listActiveAdIds,
+  getAdStatuses,
   metaConfigured,
   MetaGraphError,
 } from "@/lib/metaGraph";
@@ -82,12 +84,84 @@ export type FbAdPreviewsResult = {
   /** Ads that got a fresh 1080px render this run: created inside
    *  IMAGE_WINDOW_DAYS, plus any still-running ad older than that. */
   withImage: number;
+  /** Rows whose effective_status the status pass corrected this run. */
+  statusFixed: number;
+  /** Accounts whose status pass failed — their rows keep the old status. */
+  statusCheckFailed: { accountId: string; error: string }[];
   rowsWritten: number;
   mode: "full" | "incremental";
   since: string;
 };
 
 const clean = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
+
+const errorText = (e: unknown) =>
+  e instanceof MetaGraphError
+    ? `${e.status}${e.code ? `/${e.code}` : ""} ${e.message}`
+    : e instanceof Error
+      ? e.message
+      : String(e);
+
+/**
+ * Pass three: make `effective_status` true for every row of one account, not
+ * only for the rows pass one happened to re-pull.
+ *
+ * WHY. Pass one is incremental on the AD's `updated_time`, and pausing a
+ * CAMPAIGN or an AD SET changes each of its ads' effective_status without
+ * touching their updated_time. So the tab kept saying ACTIVE for ads that had
+ * stopped — and the report's status merge, where "if anything says it is
+ * delivering, it is", then painted פעילה on them. Found 2026-09-28 on
+ * eastern: all 32 ads of Shbn_eastern_investors_WL_2026-07-08_FB read ACTIVE
+ * as of 2026-09-08 while the campaign had been paused since ~09-22; across
+ * the portfolio 46 of 728 ACTIVE rows (8 campaigns) were not delivering.
+ * The reverse drifts the same way — a resumed campaign's ads kept reading
+ * CAMPAIGN_PAUSED — and is fixed by the same pass.
+ *
+ * HOW. One ids-only walk of the ads delivering now (listActiveAdIds); a row
+ * in that set reads ACTIVE, and a row that says ACTIVE but is NOT in it gets
+ * its real status looked up (it is paused at some level, rejected, or gone).
+ * `synced_at` is left alone on purpose: it is the incremental CURSOR, and a
+ * status correction is not a re-pull (see the file's doc block).
+ *
+ * Returns how many rows changed.
+ */
+export async function reconcileAccountStatuses(
+  byAdId: Map<string, (string | number)[]>,
+  accountId: string,
+): Promise<number> {
+  const iStatus = HEADER.indexOf("effective_status");
+  const iAcct = HEADER.indexOf("account_id");
+  const live = await listActiveAdIds(accountId);
+  const resumed: string[] = [];
+  const stale: string[] = [];
+  for (const [adId, row] of byAdId) {
+    if (clean(row[iAcct]) !== accountId) continue;
+    const was = clean(row[iStatus]).toUpperCase();
+    if (live.has(adId)) {
+      if (was !== "ACTIVE") resumed.push(adId);
+    } else if (was === "ACTIVE") {
+      stale.push(adId);
+    }
+  }
+  // Both Meta calls first, THEN every change — all or nothing per account.
+  // A lookup that throws after half the rows were rewritten would leave the
+  // caller reporting "statuses stay as they were" over rows that did not.
+  const real = stale.length ? await getAdStatuses(stale) : new Map<string, string>();
+  let fixed = 0;
+  for (const adId of resumed) {
+    byAdId.get(adId)![iStatus] = "ACTIVE";
+    fixed++;
+  }
+  for (const adId of stale) {
+    const s = clean(real.get(adId));
+    // Still ACTIVE by the time we asked (it started delivering between the
+    // two calls): nothing to correct.
+    if (!s || s.toUpperCase() === "ACTIVE") continue;
+    byAdId.get(adId)![iStatus] = s;
+    fixed++;
+  }
+  return fixed;
+}
 
 export async function exportFbAdPreviews(
   opts: { full?: boolean } = {},
@@ -158,6 +232,8 @@ export async function exportFbAdPreviews(
   let adsSeen = 0;
   let withPreview = 0;
   let withImage = 0;
+  let statusFixed = 0;
+  const statusCheckFailed: { accountId: string; error: string }[] = [];
 
   for (const acct of accounts) {
     const id = clean(acct.account_id);
@@ -197,18 +273,19 @@ export async function exportFbAdPreviews(
         row[iImage] = image;
         withImage++;
       }
+
+      // Pass three: statuses that moved without the ad being edited. Its own
+      // try — the previews and images above are already good, and a failure
+      // here only means this account's statuses stay as they were.
+      try {
+        statusFixed += await reconcileAccountStatuses(byAdId, id);
+      } catch (e) {
+        statusCheckFailed.push({ accountId: id, error: errorText(e) });
+      }
     } catch (e) {
       // One account's failure must not cost the other twenty-two. A revoked
       // asset assignment is the likely cause and it is per-account.
-      failed.push({
-        accountId: id,
-        error:
-          e instanceof MetaGraphError
-            ? `${e.status}${e.code ? `/${e.code}` : ""} ${e.message}`
-            : e instanceof Error
-              ? e.message
-              : String(e),
-      });
+      failed.push({ accountId: id, error: errorText(e) });
     }
   }
 
@@ -253,6 +330,8 @@ export async function exportFbAdPreviews(
     adsSeen,
     withPreview,
     withImage,
+    statusFixed,
+    statusCheckFailed,
     rowsWritten: rows.length,
     mode: full ? "full" : "incremental",
     since: updatedSince ? new Date(updatedSince * 1000).toISOString() : "",
