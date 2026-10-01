@@ -16,18 +16,28 @@
  * persist internal tool-call/tool-result turns; the next user message
  * starts a new loop with just the user/model text history.
  *
- * Staff-only, meaning @fandf.co.il — everyone else gets 403. The tools
- * run as the caller, and for an outside address lib/sa does NOT fail:
- * it substitutes the owner identity, so the Workspace tools would read
- * the owner's Gmail / Drive / sheets. Being listed in Keys is not enough.
+ * Internal viewers only — staff, or a team member Keys lists under an
+ * outside address (lib/viewerTier); clients and strangers get 403.
+ *
+ * The two tiers do NOT get the same tools. The tools run as the caller,
+ * and for an outside address lib/sa does NOT fail: it substitutes the
+ * owner identity, so the Workspace tools (Gmail / Drive / raw sheets)
+ * would read the OWNER's mailbox, Drive and spreadsheets. Those are
+ * offered only when the session address and the subject are both
+ * @fandf.co.il; a team member gets the hub-data tools, which answer by
+ * the hub's own access rules for them. See workspaceToolsAllowed.
  */
 
 import { auth } from "@/auth";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
-import { isStaffEmail } from "@/lib/viewerTier";
+import { isInternalViewer } from "@/lib/viewerTier";
 import { streamClaudeChat } from "@/lib/claudeChat";
 import { type GeminiTurn } from "@/lib/gemini";
-import { TOOL_DECLARATIONS, getTool } from "@/lib/geminiTools";
+import {
+  getTool,
+  toolDeclarationsFor,
+  workspaceToolsAllowed,
+} from "@/lib/geminiTools";
 import { logToolCall } from "@/lib/aiToolLog";
 import {
   snapshotToSystemBlock,
@@ -551,16 +561,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // Staff-only gate, on the DOMAIN of the session's own address (never the
-  // view-as target). It used to be the projects read's isStaff, which is
-  // also true for an outside address listed in Keys "Access — internal
-  // only" / "Client-facing" — and for those the tools below run as the
+  // Internal-viewer gate (staff or team), on the session's own address —
+  // never the view-as target. A team member on an outside address is let
+  // in, but NOT to the Workspace tools: for them those would run as the
   // owner (lib/sa), i.e. her mailbox and Drive (authorization audit,
-  // 2026-10-01). Returns 403 (not 401) so the UI can distinguish "needs
+  // 2026-10-01) — see `allowWorkspace` below. Fails closed when the roster
+  // can't be read. Returns 403 (not 401) so the UI can distinguish "needs
   // login" from "you're not allowed here".
-  if (!isStaffEmail(myEmail)) {
+  if (!(await isInternalViewer(myEmail))) {
     return new Response(
-      JSON.stringify({ error: "chat is staff-only" }),
+      JSON.stringify({ error: "chat is for the internal team only" }),
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
@@ -589,6 +599,14 @@ export async function POST(req: Request) {
   const viewAs = await getEffectiveViewAs(myEmail).catch(() => "");
   const subjectEmail = viewAs || myEmail;
 
+  // IDENTITY, not visibility: Gmail / Drive / raw-sheet tools go to Google
+  // as the subject, and only a company address can be impersonated. False
+  // for a team member on a personal address, and for an admin viewing as a
+  // client or as such a team member — both used to reach the owner's
+  // account through these tools. The model is not offered them, and the
+  // executor below (and each tool itself) refuses them anyway.
+  const allowWorkspace = workspaceToolsAllowed(myEmail, subjectEmail);
+
   // System prompt is split so streamClaudeChat can cache the big static
   // block: SYSTEM_PERSONA is the cached prefix; the dynamic suffix below
   // (today's date + page context — both change per request) rides AFTER
@@ -615,6 +633,23 @@ export async function POST(req: Request) {
       "this. Tools take monthOverride / monthFilter as \"YYYY-MM\".\n" +
       "=== END DATE ===",
   ];
+  if (!allowWorkspace) {
+    // The cached persona describes the full catalog; say what is missing
+    // so the model doesn't plan around tools it was not given.
+    suffixParts.push(
+      "=== TOOLS UNAVAILABLE IN THIS CONVERSATION ===\n" +
+        "This user's account is not a company Google Workspace account, so " +
+        "the Workspace and raw-sheet tools are NOT available: searchGmail, " +
+        "readGmailThread, searchDrive, readDoc, readPdf, getSheetMetadata, " +
+        "readSheetTab, searchSheetRows. Ignore every instruction above that " +
+        "relies on them (including the Keys → slug → searchSheetRows " +
+        "fallback). Answer from the hub tools only. If a question needs " +
+        "Gmail, Drive files or raw spreadsheet rows, say briefly that this " +
+        "isn't available for this account and point to where in the hub the " +
+        "user can look — never guess the data.\n" +
+        "=== END TOOLS UNAVAILABLE ===",
+    );
+  }
   if (body.pageContext) {
     suffixParts.push(snapshotToSystemBlock(body.pageContext));
   }
@@ -649,11 +684,19 @@ export async function POST(req: Request) {
           system: SYSTEM_PERSONA,
           systemSuffix,
           history,
-          tools: TOOL_DECLARATIONS,
+          tools: toolDeclarationsFor(allowWorkspace),
           executeTool: async (name, args) => {
             const tool = getTool(name);
             if (!tool) {
               return { ok: false, error: `unknown tool: ${name}` };
+            }
+            // A Workspace tool the model was never offered (a name carried
+            // over from an earlier turn's text, or a prompt injection).
+            if (tool.workspace && !allowWorkspace) {
+              return {
+                ok: false,
+                error: `${name} is not available for this account — answer from the hub tools`,
+              };
             }
             // Telemetry: time the call + record the outcome. Logging is
             // fire-and-forget (never awaited) so it can't add latency to

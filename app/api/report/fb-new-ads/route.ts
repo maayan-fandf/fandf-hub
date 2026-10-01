@@ -3,7 +3,7 @@ import { currentUserEmail } from "@/lib/appsScript";
 import { getProjectSlug } from "@/lib/campaignMatch";
 import { driveFolderOwner } from "@/lib/sa";
 import { getNewFbAdsForProject, DEFAULT_HOURS } from "@/lib/fbNewAds";
-import { viewerTier } from "@/lib/viewerTier";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export const maxDuration = 60;
  * so "did my ad go up correctly?" cannot be answered by re-reading them,
  * however hard the cache is busted. See lib/fbNewAds.ts.
  *
- * WHO MAY ASK. Staff keep the domain blanket they have everywhere else; a
+ * WHO MAY ASK. Staff and team keep the blanket they have everywhere else; a
  * client is checked against getAccessScope for THIS project, the same
  * primitive /api/crm/signed gates on. The caller sends a project NAME and
  * never a slug: the slug is derived here, so nobody can pair a project they
@@ -86,17 +86,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "project is required" }, { status: 400 });
   }
 
-  const isStaff = email.endsWith("@fandf.co.il");
-  // Team = staff, hub admins and the Keys-listed freelancers; anyone else
-  // who gets past the project check below is a client.
-  let internal = isStaff;
-  if (!isStaff) {
+  // Internal = staff and the team members Keys lists under an outside
+  // address (lib/viewerTier), plus hub admins: any project, the full answer.
+  // Anyone else who gets past the project check below is a client.
+  let internal = await isInternalViewer(email);
+  if (!internal) {
     const { getAccessScope } = await import("@/lib/tasksDirect");
     const scope = await getAccessScope(email).catch(() => null);
     if (!scope || (!scope.isAdmin && !scope.accessibleProjects.has(project))) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
-    internal = scope.isAdmin || (await viewerTier(email)) === "team";
+    internal = scope.isAdmin;
   }
   if (!internal) hours = DEFAULT_HOURS;
 

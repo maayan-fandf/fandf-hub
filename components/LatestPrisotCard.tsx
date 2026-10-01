@@ -6,7 +6,7 @@ import {
 import PrisotThumb from "./PrisotThumb";
 import PrisotDataTable from "./PrisotDataTable";
 import SendForApprovalButton from "./SendForApprovalButton";
-import { isStaffEmail } from "@/lib/viewerTier";
+import { isInternalViewer } from "@/lib/viewerTier";
 import ApprovePrisaButton from "./ApprovePrisaButton";
 import RequestChangesButton from "./RequestChangesButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
@@ -74,11 +74,11 @@ export default async function LatestPrisotCard({
   ).catch(() => null);
   if (!latest) return null;
   const clientMode = !!isClientUser;
-  // Sending a plan for approval mails the client from the sender's own
-  // mailbox, so /api/prisot/send-approval is @fandf.co.il only — for an
-  // outside freelancer "own mailbox" would be the Drive owner's. Don't offer
-  // a button that can only answer 403.
-  const canSendForApproval = isStaffEmail(subjectEmail);
+  // Follows the gate on /api/prisot/send-approval: internal viewers — staff,
+  // and the team members Keys lists under an outside address (lib/viewerTier).
+  // Never a client (clientMode hides the whole workflow from them anyway).
+  // Don't offer a button that can only answer 403.
+  const canSendForApproval = await isInternalViewer(subjectEmail);
   // Attribution for a content-lock approval (the client "אשר פריסה"
   // action, or a manual Sheets lock): the approver email is stamped into
   // the lock reason as `אושר ע"י <email> …`. Drive Approvals-API flows

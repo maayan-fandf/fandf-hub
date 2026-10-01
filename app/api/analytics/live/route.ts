@@ -4,6 +4,7 @@ import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getMyProjectsDirect } from "@/lib/projectsDirect";
 import { resolveGa4Target } from "@/lib/ga4Project";
 import { fetchLive, fetchWindows } from "@/lib/ga4";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +46,14 @@ export async function GET(req: Request) {
     const email = viewAs && viewAs !== sessionEmail ? viewAs : sessionEmail;
 
     const mine = await getMyProjectsDirect(email);
-    const allowed = mine.projects.some((p) => p.name === project);
+    // Staff get every project from that list (its domain blanket). A team
+    // member Keys lists under an outside address gets only the rows naming
+    // them, yet the page gate (lib/projectAccess) opens every project to
+    // them — so the poll asks the roster too, or it 403s on a page they
+    // were let into.
+    const allowed =
+      mine.projects.some((p) => p.name === project) ||
+      (await isInternalViewer(email));
     if (!allowed) {
       return NextResponse.json({ ok: false, reason: "forbidden" }, { status: 403 });
     }

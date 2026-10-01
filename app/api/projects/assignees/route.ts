@@ -46,9 +46,23 @@ export async function GET(req: NextRequest) {
       // English name. Don't fail the assignees fetch over it.
       heByEmail = new Map();
     }
+    // THE TAGGING RULE, on the picker too: a client is never offered the
+    // people Keys lists as internal-only. The script hides them once it
+    // recognises the caller as this project's client; this does not depend
+    // on that detection (same rule as mentionsAllowedFor on the write path).
+    const offered =
+      gate.tier === "client"
+        ? result.assignees.filter((a) => {
+            const row = a as { role?: string; visible_to_clients?: boolean };
+            return !(
+              row.visible_to_clients === false ||
+              (row.visible_to_clients === undefined && row.role === "internal")
+            );
+          })
+        : result.assignees;
     const enriched = {
       ...result,
-      assignees: result.assignees.map((a) => {
+      assignees: offered.map((a) => {
         const he = heByEmail.get(a.email.toLowerCase().trim());
         return he ? { ...a, he_name: he } : a;
       }),

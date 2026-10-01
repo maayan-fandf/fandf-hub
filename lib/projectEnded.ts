@@ -16,6 +16,7 @@
 import { cache } from "react";
 import { getMyProjects, GENERAL_PROJECT_NAME } from "@/lib/appsScript";
 import { driveFolderOwner } from "@/lib/sa";
+import { isInternalViewer, isStaffEmail } from "@/lib/viewerTier";
 import {
   getAllClientsAllRows,
   sumProjectFunnels,
@@ -33,12 +34,24 @@ const HUB_ADMIN_EMAILS = new Set([
 
 /** Decide the morning-feed scope cheaply — without waiting for
  *  getMyProjects. Admins + @fandf.co.il domain users get scope=all;
- *  everyone else gets scope=mine. */
+ *  everyone else gets scope=mine.
+ *
+ *  Synchronous, so the domain is all it can see: a team member on an
+ *  outside address reads as "mine" here. Prefer morningScopeForViewer —
+ *  this one stays for callers that cannot await. */
 export function morningScopeFor(effectiveEmail: string): "all" | "mine" {
   const lc = effectiveEmail.toLowerCase().trim();
-  return HUB_ADMIN_EMAILS.has(lc) || lc.endsWith("@fandf.co.il")
-    ? "all"
-    : "mine";
+  return HUB_ADMIN_EMAILS.has(lc) || isStaffEmail(lc) ? "all" : "mine";
+}
+
+/** The same decision by the ROSTER instead of the domain: every internal
+ *  viewer — staff, or a team member Keys lists under an outside address
+ *  (lib/viewerTier) — gets scope=all. An unreadable roster reads as "mine". */
+export async function morningScopeForViewer(
+  effectiveEmail: string,
+): Promise<"all" | "mine"> {
+  if (morningScopeFor(effectiveEmail) === "all") return "all";
+  return (await isInternalViewer(effectiveEmail)) ? "all" : "mine";
 }
 
 /** True when the project's endIso (from the morning feed) is more than

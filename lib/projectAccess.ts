@@ -2,6 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { sessionOfAnyAccount } from "@/auth";
 import { getAccessScope } from "@/lib/tasksDirect";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 /**
  * For a page that got NO viewer email: if that is because the signed-in
@@ -32,8 +33,10 @@ export async function redirectIfOffRoster(viewerEmail: string): Promise<void> {
  * 2026-10-01; in the code since the client cutover of 2026-07-27).
  *
  * Same rule as the API routes that already gate (`/api/report/fb-new-ads`,
- * `/api/crm/signed`): @fandf.co.il staff pass on the domain; everyone else
- * needs the project in their Keys access scope, or to be a hub admin.
+ * `/api/crm/signed`): internal viewers pass on who they are — @fandf.co.il
+ * staff, and the team members Keys lists under an outside address
+ * (lib/viewerTier; owner's rule, 2026-10-01: they see everything). Everyone
+ * else needs the project in their Keys access scope, or to be a hub admin.
  *
  * FAILS CLOSED. If the scope cannot be read the answer is no — a real client
  * then sees a "no access" page for that load (this one, or /unauthorized when
@@ -51,7 +54,9 @@ export const canOpenProject = cache(
     const lc = String(email || "").toLowerCase().trim();
     const project = String(projectName || "").trim();
     if (!lc || !project) return false;
-    if (lc.endsWith("@fandf.co.il")) return true;
+    // Fails closed too: an unreadable roster makes an outside address "not
+    // internal", and it falls through to the scope check below.
+    if (await isInternalViewer(lc)) return true;
     try {
       const scope = await getAccessScope(lc);
       return scope.isAdmin || scope.accessibleProjects.has(project);

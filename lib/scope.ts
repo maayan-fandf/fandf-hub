@@ -81,7 +81,7 @@ export function scopedProjectNames(
  * Personal-dashboard scope: narrow a `getMyProjects` response to "projects
  * where this person is actually on the roster". Used by the home grid +
  * top-nav projects dropdown so they don't dump the entire access list on
- * @fandf.co.il staff (who are granted blanket internal-project access by
+ * internal viewers (who are granted blanket internal-project access by
  * `getMyProjectsDirect` for navigation purposes — the home/nav surfaces
  * want a personal view, not an access list).
  *

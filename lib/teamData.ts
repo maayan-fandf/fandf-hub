@@ -14,14 +14,16 @@
  * Sheets read quota the moment more than a few people show up).
  *
  * Client users (role === "client") are filtered out — `/team` is the
- * internal staff directory; clients live in the CRM. External
- * collaborators with no `@fandf.co.il` email are also filtered out
- * because they're a freelancer / contractor concern we don't model
- * yet (lower-priority, see the Phase 2 list).
+ * internal staff directory; clients live in the CRM. "Internal" is the
+ * roster's answer (lib/viewerTier), not the e-mail domain: @fandf.co.il
+ * staff, plus the team members Keys lists under an outside address.
+ * They get a card like anyone else — the Workspace Directory fields are
+ * simply empty for them. Any other outside address stays off the page.
  */
 
 import { tasksListDirect, tasksPeopleListDirect } from "@/lib/tasksDirect";
 import { getDirectoryUser } from "@/lib/userDirectory";
+import { isInternalViewer } from "@/lib/viewerTier";
 import { deriveInProgressTime } from "@/lib/inProgressTime";
 import type { TasksPerson, WorkTask } from "@/lib/appsScript";
 
@@ -95,13 +97,18 @@ export type ActiveTask = {
 
 const ROLE_CLIENT = /^client$|לקוח/i;
 
-function isStaff(p: TasksPerson): boolean {
-  // Filter out clients (CRM concern) and anyone without a fandf.co.il
-  // address (freelancers/external — Phase 2 will model them separately).
-  const role = (p.role || "").trim();
-  if (ROLE_CLIENT.test(role)) return false;
-  const email = (p.email || "").toLowerCase().trim();
-  return email.endsWith("@fandf.co.il");
+/** The people `/team` shows: not a client by role (CRM concern), and on
+ *  the internal roster — staff, or a Keys-listed team member whose address
+ *  is off the company domain. The roster is asked once per person, up
+ *  front; an address it cannot place (or cannot be read for) is left out. */
+async function internalTeamOf(people: TasksPerson[]): Promise<TasksPerson[]> {
+  const candidates = people.filter(
+    (p) => !ROLE_CLIENT.test((p.role || "").trim()),
+  );
+  const internal = await Promise.all(
+    candidates.map((p) => isInternalViewer(p.email || "")),
+  );
+  return candidates.filter((_, i) => internal[i]);
 }
 
 function inLastNDays(iso: string, n: number): boolean {
@@ -139,7 +146,7 @@ export async function getTeamRoster(
     ok: true as const,
     people: [] as TasksPerson[],
   }));
-  const staff = peopleRes.people.filter(isStaff);
+  const staff = await internalTeamOf(peopleRes.people);
   if (staff.length === 0) return [];
 
   // Pre-build a Set of staff emails so the workload pass can short-circuit
@@ -147,7 +154,7 @@ export async function getTeamRoster(
   const staffEmails = new Set(staff.map((p) => p.email.toLowerCase().trim()));
 
   // 2. Whole-collection tasks read. tasksListDirect honors the viewer's
-  //    access scope, but staff get the @fandf.co.il blanket pass, so we
+  //    access scope, but internal viewers get the blanket pass, so we
   //    effectively get every internal task here. include_umbrellas=false
   //    keeps the count clean — umbrellas aren't real work.
   const tasksRes = await tasksListDirect(viewerEmail, {

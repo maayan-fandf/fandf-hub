@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { createMentionDirect } from "@/lib/commentsWriteDirect";
 import { dismissMorningSignal } from "@/lib/appsScript";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,11 @@ export async function POST(req: NextRequest) {
   if (!email) {
     return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
-  const allowed = await canSeeCampaigns(email).catch(() => false);
+  // Internal first, role second (as on /morning): the role cell cannot tell
+  // a client from the team. Internal = staff or a Keys-listed team member.
+  const allowed =
+    (await isInternalViewer(email)) &&
+    (await canSeeCampaigns(email).catch(() => false));
   if (!allowed) {
     return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
   }

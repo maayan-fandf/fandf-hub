@@ -213,7 +213,11 @@ export default async function NewTaskPage({
         defaultAssignees={seedAssignees}
         defaultTitle={seedTitle}
         fromComment={commentSeed?.id || ""}
-        cleanupGmailTaskId={(sp.gmail_task_id || "").trim()}
+        // Staff only: the cleanup ticks a Google Task in the CALLER's own
+        // list, and for an outside address that list is the Drive owner's.
+        cleanupGmailTaskId={
+          tier === "staff" ? (sp.gmail_task_id || "").trim() : ""
+        }
         people={peopleRes?.people ?? []}
         currentUserEmail={me}
         formSchema={

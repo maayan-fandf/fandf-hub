@@ -32,6 +32,7 @@ import type {
 } from "@/lib/appsScript";
 import { sheetsClient, useFirestoreTasks, useFirestoreWrites } from "@/lib/sa";
 import { getAccessScope } from "@/lib/tasksDirect";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -46,15 +47,16 @@ function toIsoDate(v: unknown): string {
   return String(v);
 }
 
-/** True for F&F team members — the ONE rule that decides who may read
- *  `scope:"internal"` discussion. Every client-reachable reader below
- *  drops internal rows for a non-F&F caller, so the "client never sees
- *  internal" invariant holds at the data layer regardless of which UI
- *  surface (project page, timeline, inbox, badge, counts) does the
- *  reading. Mirrors the project page's `isInternalUser` test. */
-function isInternalEmail(email: string): boolean {
-  return email.toLowerCase().trim().endsWith("@fandf.co.il");
-}
+/* WHO MAY READ `scope:"internal"` DISCUSSION — one rule, isInternalViewer
+ * (lib/viewerTier): staff, or a team member Keys lists under an outside
+ * address. Every client-reachable reader below resolves it ONCE per call
+ * (`callerInternal`) and drops internal rows for anyone else, so the
+ * "client never sees internal" invariant holds at the data layer
+ * regardless of which UI surface (project page, timeline, inbox, badge,
+ * counts) does the reading. Mirrors the project page's `isInternalUser`.
+ * It was the e-mail domain until 2026-10-01, which hid the team's own
+ * channel from the team members who sign in with a personal address.
+ * Fails closed: an unreadable roster means "not internal". */
 
 /** Read a comment row's audience scope. Missing/legacy → "shared"
  *  (client-visible) so every pre-scope comment keeps its old behavior;
@@ -349,16 +351,16 @@ export async function projectCommentsDirect(
    *  applied after) the hard non-F&F → no-internal rule below. */
   scopeFilter?: "internal" | "shared",
 ): Promise<ProjectComments> {
-  const [{ rows, headerIdx }, scope] = await Promise.all([
+  const [{ rows, headerIdx }, scope, callerInternal] = await Promise.all([
     readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
+    isInternalViewer(subjectEmail),
   ]);
 
   if (!scope.isAdmin && !scope.accessibleProjects.has(project)) {
     throw new Error("Access denied to project: " + project);
   }
 
-  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
 
   // Collect all comment rows (row_kind empty) for this project.
@@ -479,16 +481,16 @@ export async function projectCommentRepliesDirect(
   parentCommentId: string,
   project: string,
 ): Promise<CommentReplies> {
-  const [{ rows, headerIdx }, scope] = await Promise.all([
+  const [{ rows, headerIdx }, scope, callerInternal] = await Promise.all([
     readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
+    isInternalViewer(subjectEmail),
   ]);
 
   if (!scope.isAdmin && !scope.accessibleProjects.has(project)) {
     throw new Error("Access denied to project: " + project);
   }
 
-  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
   const target = String(parentCommentId || "").trim();
 
@@ -551,13 +553,13 @@ export async function myMentionsDirect(
    *  works within the project-scoped set. */
   project?: string,
 ): Promise<MyMentions> {
-  const [{ rows, headerIdx }, scope] = await Promise.all([
+  const [{ rows, headerIdx }, scope, callerInternal] = await Promise.all([
     readCommentsOnce(subjectEmail, project),
     getAccessScope(subjectEmail),
+    isInternalViewer(subjectEmail),
   ]);
 
   const lcEmail = subjectEmail.toLowerCase().trim();
-  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
 
   // Two-pass: build the thread-root resolved map first so reply-mentions
@@ -1027,12 +1029,12 @@ export async function getMyCountsDirect(
   subjectEmail: string,
 ): Promise<MyCounts> {
   const target = subjectEmail.toLowerCase().trim();
-  const [{ rows, headerIdx }, scope] = await Promise.all([
+  const [{ rows, headerIdx }, scope, callerInternal] = await Promise.all([
     readCommentsOnce(subjectEmail),
     getAccessScope(subjectEmail),
+    isInternalViewer(subjectEmail),
   ]);
 
-  const callerInternal = isInternalEmail(subjectEmail);
   const rowKindIdx = headerIdx.get("row_kind");
   const idIdx = headerIdx.get("id");
   const parentIdx = headerIdx.get("parent_id");

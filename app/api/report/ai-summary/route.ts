@@ -1,28 +1,26 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { parseMeetingBasis } from "@/lib/meetingBasis";
 import { generateReportSummary } from "@/lib/reportAiSummary";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
  * POST /api/report/ai-summary  Body: { project, period?, company?, basis? }
- * On-demand AI performance summary for the native report (internal
- * @fandf.co.il users only — mirrors the legacy admin/owns-project gate,
- * but the whole native report is already internal-gated on the page).
- * The result is 6h-cached server-side (see lib/reportAiSummary).
+ * On-demand AI performance summary for the native report. Internal viewers
+ * only — staff, and the team members Keys lists under an outside address
+ * (requireTeam); never a client. Nothing here is personal to the caller:
+ * the summary is built from the shared report data, so the domain is not
+ * the test. The result is 6h-cached server-side (see lib/reportAiSummary).
  *
  * `basis` is the page-level meeting switch's EFFECTIVE basis ("lead" |
  * "dated"). Anything else — absent, garbage, a stale client that predates
  * the switch — is lead-entry, the page's default, via parseMeetingBasis.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  const email = session?.user?.email?.toLowerCase().trim() ?? "";
-  if (!email.endsWith("@fandf.co.il")) {
-    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
-  }
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   let body: { project?: unknown; period?: unknown; company?: unknown; basis?: unknown };
   try {
     body = (await req.json()) as typeof body;

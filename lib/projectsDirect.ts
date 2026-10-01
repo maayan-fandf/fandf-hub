@@ -34,6 +34,7 @@ import {
   getProjectTypeFromRow,
   rosterEmailsOf,
 } from "@/lib/keys";
+import { isInternalViewer, isStaffEmail } from "@/lib/viewerTier";
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -308,10 +309,16 @@ export async function getMyProjectsDirect(
 ): Promise<MyProjects> {
   const lc = subjectEmail.toLowerCase().trim();
   const isAdmin = HUB_ADMIN_EMAILS.has(lc);
+  // The `isInternal` FIELD keeps its old meaning — a company-domain address —
+  // for the callers that read it. What this person may SEE is `internal`.
+  const onDomain = isStaffEmail(lc);
 
-  const [{ headers, rows }, person] = await Promise.all([
+  const [{ headers, rows }, person, internal] = await Promise.all([
     readKeysRows(subjectEmail),
     resolveCallerDisplayName(subjectEmail),
+    // Staff, or a team member Keys lists under an outside address
+    // (lib/viewerTier). Same test getAccessScope uses for its blanket pass.
+    isInternalViewer(lc),
   ]);
 
   const iProj = headers.indexOf("פרוייקט");
@@ -332,7 +339,7 @@ export async function getMyProjectsDirect(
     return {
       projects: [],
       isAdmin,
-      isInternal: lc.endsWith("@fandf.co.il"),
+      isInternal: onDomain,
       isStaff: false,
       isClient: false,
       person,
@@ -365,7 +372,7 @@ export async function getMyProjectsDirect(
     const onClients =
       iClients >= 0 && rosterEmailsOf(row[iClients]).includes(lc);
     // For staff we'd need names→emails for C/D. Safe fallback: admins
-    // see all; @fandf.co.il domain is treated as staff unless they only
+    // see all; an internal viewer is treated as staff unless they only
     // appear on col E. This matches the Apps Script behavior closely
     // enough for the nav dropdown — precise staff status (for admin
     // console gates) still goes through the Apps Script path.
@@ -373,11 +380,14 @@ export async function getMyProjectsDirect(
       (iInternal >= 0 && rosterEmailsOf(row[iInternal]).includes(lc)) ||
       (iCf >= 0 && rosterEmailsOf(row[iCf]).includes(lc));
 
-    const visible = isAdmin || onClients || onStaff || lc.endsWith("@fandf.co.il");
+    // Internal viewers get every row, not only the ones that list them: the
+    // team sees the whole hub. This used to be the e-mail domain, which left
+    // a team member on an outside address with just their own rows.
+    const visible = isAdmin || onClients || onStaff || internal;
     if (!visible) continue;
 
     if (onClients) isClient = true;
-    if (onStaff || lc.endsWith("@fandf.co.il")) isStaff = true;
+    if (onStaff || internal) isStaff = true;
 
     const roster: ProjectRoster = {
       mediaManager,
@@ -399,9 +409,11 @@ export async function getMyProjectsDirect(
 
   // @fandf.co.il domain counts as staff even if they're not on any
   // project's roster column — covers admins + any future internal hire
-  // who hasn't been added to a specific project yet.
-  const isInternal = lc.endsWith("@fandf.co.il");
-  if (isInternal) isStaff = true;
+  // who hasn't been added to a specific project yet. (A team member on an
+  // outside address is `internal` only BECAUSE a J / K cell lists them, so
+  // `isStaff` still means "domain, or listed in J / K".)
+  const isInternal = onDomain;
+  if (internal) isStaff = true;
 
   return {
     projects,

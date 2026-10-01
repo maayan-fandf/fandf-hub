@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 /**
  * /team — the internal staff directory.
  *
- * Renders one card per @fandf.co.il teammate with workload chips,
+ * Renders one card per internal teammate (staff, and the team members
+ * Keys lists under an outside address) with workload chips,
  * action row (Gmail / WhatsApp / dial / calendar / tasks), and a
  * link to their full profile at /team/[email].
  *

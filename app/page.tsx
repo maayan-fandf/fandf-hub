@@ -18,7 +18,7 @@ import { getUserPrefs } from "@/lib/userPrefs";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { scopeProjectsToPerson } from "@/lib/scope";
 import { projectHref } from "@/lib/projectHref";
-import { isProjectEndedByIso, morningScopeFor } from "@/lib/projectEnded";
+import { isProjectEndedByIso, morningScopeForViewer } from "@/lib/projectEnded";
 import {
   getAllClientsAllRows,
   getSlugByProjectName,
@@ -60,9 +60,11 @@ export default async function HomePage() {
 
   // Decide morning scope cheaply — without waiting for getMyProjects.
   // Shared with app/layout.tsx (top-nav dropdown's hide-ended filter)
-  // via `morningScopeFor` so both call sites hit the same unstable_cache
+  // via `morningScopeForViewer` so both call sites hit the same unstable_cache
   // entry — otherwise the morning feed would fetch twice per request.
-  const morningScope = morningScopeFor(effectiveMe);
+  // By the roster, not the domain: a team member on an outside address is
+  // internal and gets the portfolio scope like staff.
+  const morningScope = await morningScopeForViewer(effectiveMe);
 
   // `getMorningFeed` is deliberately NOT in this batch — same reasoning as
   // app/projects/[project]/page.tsx L161. MEASURED 2026-08-16 on a cold
@@ -139,7 +141,7 @@ export default async function HomePage() {
   // with cost-per chips) as an internal user's. Safe because a client's
   // project list is already scoped to projects where their email is on the
   // Keys col-E client roster (projectsDirect: `visible = isAdmin || onClients
-  // || onStaff || @fandf.co.il`), so they can only ever see metrics for their
+  // || onStaff || internal`), so they can only ever see metrics for their
   // OWN projects — the same spend / leads / CPL figures they already get in
   // the פריסה card and their project report. When the reads fail the maps
   // stay empty and the filters simply show everything (prior no-feed

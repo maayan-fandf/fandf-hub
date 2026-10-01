@@ -8,11 +8,16 @@ import { driveFolderOwner } from "@/lib/sa";
  *              (domain-wide delegation), so "their" Gmail / Calendar / Tasks
  *              really are theirs.
  *   team     — an outside address listed in Keys "Access — internal only" or
- *              "Client-facing": a freelancer who works on projects. NOT staff:
- *              delegation can't impersonate a personal Gmail account, so
- *              lib/sa swaps them for DRIVE_FOLDER_OWNER — anything "personal"
- *              they open is the OWNER's. Shared resources (Drive folders, Chat
- *              spaces, tasks) are fine; mailboxes and calendars are not.
+ *              "Client-facing": someone on the team whose address is not on
+ *              the company domain. INTERNAL in every sense of what they may
+ *              SEE and DO in the hub (owner's rule, 2026-10-01: "Access —
+ *              internal only" people see everything; the column's one
+ *              meaning is that clients can't tag them). The single thing
+ *              that separates them from staff is technical: delegation
+ *              can't impersonate a personal Gmail account, so lib/sa swaps
+ *              them for DRIVE_FOLDER_OWNER — a "personal" mailbox, calendar
+ *              or Google Tasks list opened as them is the OWNER's. Those
+ *              stay staff-only; nothing else does.
  *   client   — an outside address in Keys "Email Client".
  *   stranger — signed in with Google, on no roster. Gets nothing.
  *
@@ -31,8 +36,30 @@ import { driveFolderOwner } from "@/lib/sa";
  */
 export type ViewerTier = "staff" | "team" | "client" | "stranger";
 
+/**
+ * IDENTITY test — "can the service account act as this address?". Use it
+ * only where the code goes to Google AS the person (their Gmail, Calendar,
+ * Google Tasks, a Chat message under their name). For "may this viewer see
+ * internal things" use isInternalViewer below — the two differ for exactly
+ * the team members whose address is off the company domain.
+ */
 export function isStaffEmail(email: string): boolean {
   return String(email || "").toLowerCase().trim().endsWith("@fandf.co.il");
+}
+
+/**
+ * VISIBILITY test — is this viewer internal (staff or team)? This is what
+ * every "internal only" decision in the hub should ask: the F&F-only
+ * discussion channel, the tasks surface, alerts, internal report chrome.
+ * Deciding those by the e-mail domain shut out the team members Keys lists
+ * as internal under a non-company address.
+ *
+ * Fails closed with viewerTier: an account whose roster can't be read is
+ * not internal.
+ */
+export async function isInternalViewer(email: string): Promise<boolean> {
+  const tier = await viewerTier(email);
+  return tier === "staff" || tier === "team";
 }
 
 // A roster answer is reused for a while per instance: `auth()` runs on every

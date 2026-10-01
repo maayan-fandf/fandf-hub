@@ -275,8 +275,8 @@ async function assertProjectAccess(
     throw new Error("Access denied to project: " + project);
   }
   // Delegate to the shared getAccessScope (lib/tasksDirect.ts) so the
-  // write gate uses the same display-name resolution and @fandf.co.il
-  // domain blanket the read paths use. Without this, non-admin
+  // write gate uses the same display-name resolution and internal
+  // (staff-or-team) blanket the read paths use. Without this, non-admin
   // managers (listed by name chip in cols C/D) couldn't change task
   // status on their own projects — Itay's reproduction.
   const { getAccessScope } = await import("@/lib/tasksDirect");

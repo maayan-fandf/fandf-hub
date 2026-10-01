@@ -46,6 +46,7 @@ import {
   useChatCrossPost,
 } from "@/lib/sa";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 /**
  * Run `fn` after the response has been flushed to the user. Wraps Next 15's
@@ -83,13 +84,13 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** True for F&F team members. The single rule that decides who may
- *  author / read `scope:"internal"` discussion — identical to the
- *  project page's `isInternalUser` test, kept here so the write-side
- *  guard never depends on getAccessScope (which has no client flag). */
-function isInternalEmail(email: string): boolean {
-  return email.toLowerCase().trim().endsWith("@fandf.co.il");
-}
+/* WHO MAY AUTHOR `scope:"internal"` DISCUSSION — isInternalViewer
+ * (lib/viewerTier): staff, or a team member Keys lists under an outside
+ * address. Identical to the project page's `isInternalUser` test and to
+ * the readers in lib/commentsDirect. Each writer below resolves it once
+ * (`authorInternal`). It was the e-mail domain until 2026-10-01, which
+ * refused the team members who sign in with a personal address. Fails
+ * closed: an unreadable roster means "not internal". */
 
 /** Normalize an untrusted scope input to the two valid values. Anything
  *  that isn't the explicit string "internal" collapses to "shared" —
@@ -131,6 +132,96 @@ function parseAssignees(raw: unknown): string[] {
     .filter((s) => s.includes("@"));
 }
 
+/** Most addresses one post by a non-internal author may tag. */
+const MAX_CLIENT_MENTIONS = 20;
+/** How long a non-internal author's post waits for the picker list. */
+const MENTION_CHECK_TIMEOUT_MS = 10_000;
+
+/**
+ * The internal people among `emails` (staff + Keys-listed team).
+ *
+ * An INTERNAL thread must not tag or notify anyone else: the notification
+ * carries the first 280 characters of the message, and the @-picker offers
+ * an internal author the project's client contacts too — one slip in the
+ * 🔒 channel e-mailed the client an internal message.
+ */
+async function internalAmong(emails: Iterable<string>): Promise<string[]> {
+  const list = Array.from(new Set(emails)).filter(Boolean);
+  const flags = await Promise.all(list.map((e) => isInternalViewer(e)));
+  return list.filter((_, i) => flags[i]);
+}
+
+/**
+ * THE TAGGING RULE (owner, 2026-10-01): the Keys column "Access — internal
+ * only" means exactly one thing — a CLIENT cannot tag those people.
+ *
+ * The @-picker already hides them from a client (/api/projects/assignees →
+ * Apps Script getProjectAssigneesForUser_), and the old Apps Script write
+ * path filtered a client's mentions to that same list. This direct write
+ * path had dropped the filter: the create / reply endpoints took ANY
+ * address from a client, so a client could tag an internal-only person —
+ * or have the hub e-mail an arbitrary address from the owner's mailbox
+ * (lib/sa sends as the owner for an outside author).
+ *
+ * So: an internal author's mentions pass through untouched. Anyone else
+ * keeps only the addresses the picker would offer THEM for THIS project.
+ * The Apps Script call is ~1s, so it is made only when such an author
+ * actually tagged someone. If it fails, every mention on the post is
+ * dropped (fail closed) — the comment itself is still saved.
+ */
+async function mentionsAllowedFor(
+  authorEmail: string,
+  authorInternal: boolean,
+  project: string,
+  mentions: string[],
+): Promise<string[]> {
+  if (authorInternal || mentions.length === 0) return mentions;
+  const wanted = Array.from(new Set(mentions)).slice(0, MAX_CLIENT_MENTIONS);
+  try {
+    const { getProjectAssignees } = await import("@/lib/appsScript");
+    // Bounded: the author is waiting on this before their post is saved,
+    // and the script's own ceiling is 45s.
+    const res = await Promise.race([
+      getProjectAssignees(project),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("assignee list timed out")),
+          MENTION_CHECK_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+    // getProjectAssignees runs as the SESSION user (never a "view as"
+    // target), not as `authorEmail`. They are the same person on every
+    // signed-in route; where they are not (a token link, a cron) the list
+    // was not computed for this author, so it must not be used.
+    const answeredFor = String(res?.me?.email ?? "").toLowerCase().trim();
+    if (answeredFor !== authorEmail.toLowerCase().trim()) {
+      throw new Error("assignee list was not computed for the author");
+    }
+    const offered = new Set<string>();
+    for (const a of res.assignees ?? []) {
+      // The script hides these rows itself once it recognises the caller
+      // as this project's client. Repeated here so the rule does not hang
+      // on that detection: we already know the author is not internal.
+      const row = a as { role?: string; visible_to_clients?: boolean };
+      const hidden =
+        row.visible_to_clients === false ||
+        (row.visible_to_clients === undefined && row.role === "internal");
+      if (hidden) continue;
+      const e = String(a.email ?? "").toLowerCase().trim();
+      if (e) offered.add(e);
+    }
+    return wanted.filter((e) => offered.has(e));
+  } catch (e) {
+    console.warn(
+      `[commentsWriteDirect] could not check a non-internal author's mentions on ${project} — dropping all ${wanted.length}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    return [];
+  }
+}
+
 /* ── Keys access control (project membership) ──────────────────────── */
 
 async function assertProjectAccess(
@@ -138,8 +229,8 @@ async function assertProjectAccess(
   project: string,
 ): Promise<void> {
   // Delegate to the shared getAccessScope (lib/tasksDirect.ts) so the
-  // write gate uses the same display-name resolution and @fandf.co.il
-  // domain blanket the read paths use.
+  // write gate uses the same display-name resolution and internal-viewer
+  // blanket the read paths use.
   const { getAccessScope } = await import("@/lib/tasksDirect");
   const scope = await getAccessScope(subjectEmail);
   if (scope.isAdmin) return;
@@ -561,10 +652,12 @@ export async function postReplyDirect(
   const threadScope = normalizeScope(
     String(parentRow[idx.get("scope") ?? -1] ?? ""),
   );
-  // Defense in depth: only F&F may write into an internal thread.
-  // The internal composer is never rendered for clients, but the
+  // Defense in depth: only the team (staff, or a Keys-listed team member
+  // on an outside address) may write into an internal thread. The
+  // internal composer is never rendered for clients, but the
   // create/reply API is directly callable — refuse here too.
-  if (threadScope === "internal" && !isInternalEmail(subjectEmail)) {
+  const authorInternal = await isInternalViewer(subjectEmail);
+  if (threadScope === "internal" && !authorInternal) {
     throw new Error("Not authorized to post in an internal thread");
   }
 
@@ -581,9 +674,20 @@ export async function postReplyDirect(
   // Parse @<email> patterns out of the body so task-discussion replies
   // (and any other reply) can tag people. The picker UI can come later;
   // even raw @maayan@fandf.co.il is enough for the data layer to work.
-  const parsedMentions = parseMentionsFromBody(trimmedBody).filter(
-    (e) => e !== me, // self-mentions never notify
+  // A client's tags are cut down to the people the picker offers them
+  // (mentionsAllowedFor) BEFORE the row is written, so a dropped tag is
+  // neither stored nor notified, now or in a later thread fan-out.
+  let parsedMentions = await mentionsAllowedFor(
+    me,
+    authorInternal,
+    parentProject,
+    parseMentionsFromBody(trimmedBody).filter(
+      (e) => e !== me, // self-mentions never notify
+    ),
   );
+  if (threadScope === "internal") {
+    parsedMentions = await internalAmong(parsedMentions);
+  }
   // If the parent is a task row, deep-link to the task page so the
   // notification "Open" button lands the recipient in the discussion
   // section directly. Detected by row_kind on the parent row.
@@ -710,13 +814,27 @@ export async function postReplyDirect(
   // and the user shouldn't wait on Gmail / Chat round-trips.
   deferAfterResponse(async () => {
     const { notifyOnce } = await import("@/lib/notifications");
+    // In an internal thread the fan-out below reaches internal people only
+    // (see internalAmong) — an older row may still carry a client's address
+    // in its mentions.
+    const mayNotify =
+      threadScope === "internal"
+        ? new Set(
+            await internalAmong([
+              parentAuthor,
+              ...threadEarlierMentions,
+              ...threadParticipants,
+            ]),
+          )
+        : null;
     // Reply notification → parent author (skipped if same person OR a
     // mention already covers them — mention takes precedence).
     const explicitMentionSet = new Set(parsedMentions);
     if (
       parentAuthor &&
       parentAuthor !== me &&
-      !explicitMentionSet.has(parentAuthor)
+      !explicitMentionSet.has(parentAuthor) &&
+      (!mayNotify || mayNotify.has(parentAuthor))
     ) {
       await notifyOnce({
         kind: "comment_reply",
@@ -755,6 +873,7 @@ export async function postReplyDirect(
     // the parent author, or the actor themselves.
     for (const recipient of threadEarlierMentions) {
       if (recipient === me) continue;
+      if (mayNotify && !mayNotify.has(recipient)) continue;
       if (explicitMentionSet.has(recipient)) continue;
       if (recipient === parentAuthor) continue;
       await notifyOnce({
@@ -780,6 +899,7 @@ export async function postReplyDirect(
     // kind=comment_reply ("replied to the thread"), not mention.
     for (const recipient of threadParticipants) {
       if (recipient === me) continue;
+      if (mayNotify && !mayNotify.has(recipient)) continue;
       if (recipient === parentAuthor) continue; // got comment_reply above
       if (explicitMentionSet.has(recipient)) continue; // got mention above
       if (threadEarlierMentions.has(recipient)) continue; // got mention above
@@ -1196,20 +1316,30 @@ export async function createMentionDirect(
   await assertProjectAccess(subjectEmail, project);
 
   const scope = normalizeScope(args.scope);
-  // Only F&F may open an internal thread. The internal composer isn't
+  // Only the team (staff, or a Keys-listed team member on an outside
+  // address) may open an internal thread. The internal composer isn't
   // shown to clients, but this endpoint is directly callable — refuse a
-  // non-F&F caller asking for scope:"internal" rather than silently
+  // non-internal caller asking for scope:"internal" rather than silently
   // downgrading (a downgrade would leak the message to the client).
-  if (scope === "internal" && !isInternalEmail(subjectEmail)) {
+  const authorInternal = await isInternalViewer(subjectEmail);
+  if (scope === "internal" && !authorInternal) {
     throw new Error("Not authorized to post an internal message");
   }
 
-  const assignees = parseAssignees(args.assignees);
+  const me = subjectEmail.toLowerCase().trim();
+  // A client's assignees are cut down to the people the picker offers
+  // them (mentionsAllowedFor); an internal author's list is untouched.
+  let assignees = await mentionsAllowedFor(
+    me,
+    authorInternal,
+    project,
+    parseAssignees(args.assignees),
+  );
+  if (scope === "internal") assignees = await internalAmong(assignees);
   const due = String(args.due || "").trim();
 
   const id = genCommentId();
   const now = nowIso();
-  const me = subjectEmail.toLowerCase().trim();
 
   // Mention rows no longer spawn personal Google Tasks. Google Tasks are
   // reserved for the work-management `tasksCreate` flow + the approval

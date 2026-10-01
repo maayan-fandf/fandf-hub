@@ -74,7 +74,7 @@ import {
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import { currentUserEmail } from "@/lib/appsScript";
 import { canOpenProject, redirectIfOffRoster } from "@/lib/projectAccess";
-import { isStaffEmail, viewerTier } from "@/lib/viewerTier";
+import { isInternalViewer, isStaffEmail } from "@/lib/viewerTier";
 import ProjectNoAccess from "@/components/ProjectNoAccess";
 import { viewerCanEditComment as viewerCanEdit } from "@/lib/commentPermissions";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
@@ -155,6 +155,14 @@ export default async function ProjectOverviewPage({
   if (!(await canOpenProject(viewerEmail, projectName))) {
     return <ProjectNoAccess projectName={projectName} email={viewerEmail} />;
   }
+  // INTERNAL = @fandf.co.il staff, or a team member Keys lists under an
+  // outside address (lib/viewerTier). This is the VISIBILITY test behind
+  // everything internal on the page — the F&F-only discussion channel, the
+  // tasks tab, GA4's tagging diagnostics, presentation mode. It used to be
+  // the e-mail domain, which shut those team members out of all of it
+  // (owner's rule, 2026-10-01: they see everything). Asked of the viewer's
+  // own session address, like the gate above.
+  const isInternalUser = await isInternalViewer(viewerEmail);
   // `?resolved=1` flips the three preview sections below from open-only
   // to open+resolved. Mirrors the Inbox "הצג סגורים" toggle so the
   // pattern is uniform across the hub.
@@ -289,15 +297,16 @@ export default async function ProjectOverviewPage({
   // URL would have no company param at all and the כללי-mode pivot in
   // the Apps Script side wouldn't trigger.
   //
-  // STAFF ONLY. The access gate above is by project NAME, so for anyone else
+  // INTERNAL VIEWERS ONLY (staff and team — they may see every company's
+  // projects). The access gate above is by project NAME, so for anyone else
   // the URL must not be what picks the company: a client of company A who
   // opened their own project with `?company=B` got no `projectMeta`, fell
   // through to this, and was shown company B's latest media plan — with a
   // working download and approve button (the plan lookup falls back to the
-  // company's כללי folder). A non-staff viewer gets the company from their
-  // own roster row or none.
+  // company's כללי folder). A client gets the company from their own roster
+  // row or none.
   const companyForDashboard =
-    projectMeta?.company ?? (isStaffEmail(viewerEmail) ? companyScope : "");
+    projectMeta?.company ?? (isInternalUser ? companyScope : "");
   // The logged-in user's email. MUST come from the session (`meP` =
   // currentUserEmail), NOT projectsData.email — the latter is "" whenever
   // getMyProjects() is slow or fails (it's `.catch(() => null)`), which
@@ -444,17 +453,26 @@ export default async function ProjectOverviewPage({
       })
     : "";
   // Iframe URL selection:
-  //   - Internal @fandf.co.il users → legacy embed URL on the USER_ACCESSING
+  //   - @fandf.co.il accounts → legacy embed URL on the USER_ACCESSING
   //     dashboard. Runs under their Google session, so the comment drawer,
   //     AI summaries, alert dismissal, admin summary, sheet/ads links, and
   //     every other google.script.run feature keep working.
-  //   - External clients (non-fandf domains) → hub-proxied `/api/dashboard/
-  //     <project>` route. The hub server fetches the Apps Script HTML
-  //     server-to-server (no browser cookies, so Google's `/u/N/` multi-
-  //     account rerouting can't apply) and serves it at hub origin. Read-
-  //     only snapshot; IFRAME_MODE=true on the Apps Script side skips all
-  //     google.script.run calls. See app/api/dashboard/[project]/route.ts.
-  const isInternalUser = userEmail.toLowerCase().endsWith("@fandf.co.il");
+  //   - Every outside address (clients, and team members on a personal
+  //     Gmail) → hub-proxied `/api/dashboard/<project>` route. The hub
+  //     server fetches the Apps Script HTML server-to-server (no browser
+  //     cookies, so Google's `/u/N/` multi-account rerouting can't apply)
+  //     and serves it at hub origin. Read-only snapshot; IFRAME_MODE=true
+  //     on the Apps Script side skips all google.script.run calls. See
+  //     app/api/dashboard/[project]/route.ts.
+  // This one is an IDENTITY test, deliberately NOT isInternalUser: the direct
+  // embed needs a company Google session in the browser, which an outside
+  // address does not have whatever Keys says about it. A team member gets
+  // the proxy instead, unstripped (the proxy route asks the roster before it
+  // forces client view) — but the Apps Script still renders it with its own
+  // domain-based IS_INTERNAL=false, so the classic report's alert columns
+  // are missing for them. Only the deprecated `?report=classic` view is
+  // affected; the native report is fully internal for them.
+  const hasCompanyGoogleSession = isStaffEmail(userEmail);
   // Client view-mode: gate every task-management surface (header
   // "+ משימה חדשה" button, the 📋 section, the convert-to-task icon
   // on each comment). Clients use the hub purely as a discussion +
@@ -469,11 +487,11 @@ export default async function ProjectOverviewPage({
       !projectsData.isAdmin &&
       !projectsData.isStaff &&
       !isInternalUser
-    : !["staff", "team"].includes(await viewerTier(userEmail));
-  // PRESENTATION MODE — an @fandf.co.il viewer with the top-nav תצוגת לקוח
+    : !isInternalUser;
+  // PRESENTATION MODE — an internal viewer with the top-nav תצוגת לקוח
   // switch on (the lib/clientViewMode cookie), or on a legacy `?clientView=1`
   // link. `reportClientView` is the DISPLAY gate: true for a real client and
-  // for staff presenting, and it hides everything a client is not shown —
+  // for staff or team presenting, and it hides everything a client is not shown —
   // the report's internal chrome, and since 2026-10-01 the internal SECTIONS
   // around it too (התראות, the tasks queue, the F&F-only discussion channel,
   // Clarity, GA4's tagging diagnostics). They used to stay up, so on a shared
@@ -527,15 +545,19 @@ export default async function ProjectOverviewPage({
   if (isKullitProject && companyForDashboard) {
     proxyEmbedParams.set("company", companyForDashboard);
   }
-  if (isClientUser) proxyEmbedParams.set("clientView", "1");
+  // reportClientView, not isClientUser: a team member on an outside address
+  // reaches the report through this proxy too, and when they are presenting
+  // the frame has to be stripped like the rest of the page. (The route forces
+  // the client view for a real client whatever the URL says.)
+  if (reportClientView) proxyEmbedParams.set("clientView", "1");
   const proxyEmbedQs = proxyEmbedParams.toString();
   const proxyEmbedUrl = `/api/dashboard/${encodeURIComponent(projectName)}${proxyEmbedQs ? `?${proxyEmbedQs}` : ""}`;
-  const dashboardEmbedUrl = isInternalUser ? legacyEmbedUrl : proxyEmbedUrl;
-  // "Open in new tab" link next to the metrics section. Internal users get
-  // the raw USER_ACCESSING /exec URL (preserves interactivity); external
-  // clients can't load that — route them to the proxy instead so the link
+  const dashboardEmbedUrl = hasCompanyGoogleSession ? legacyEmbedUrl : proxyEmbedUrl;
+  // "Open in new tab" link next to the metrics section. Company accounts get
+  // the raw USER_ACCESSING /exec URL (preserves interactivity); an outside
+  // address can't load that — route it to the proxy instead so the link
   // still works from their browser.
-  const dashboardOpenUrl = isInternalUser ? dashboardFilteredUrl : proxyEmbedUrl;
+  const dashboardOpenUrl = hasCompanyGoogleSession ? dashboardFilteredUrl : proxyEmbedUrl;
   // Native in-hub report (phase-5): the native vertical-nav rail is now the
   // DEFAULT for internal users — they get it without any query param.
   // Anyone can fall back to the legacy Apps Script iframe with

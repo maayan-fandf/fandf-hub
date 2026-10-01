@@ -12,6 +12,15 @@
  * escalation: the chat can only read what the user could read by
  * navigating the hub or opening their own Gmail / Drive.
  *
+ * That last part is true for @fandf.co.il subjects only. The assistant is
+ * open to every internal viewer (staff or team — lib/viewerTier), and for
+ * a team member on an outside address lib/sa does not impersonate them:
+ * it substitutes the Drive owner. The hub-data tools are unaffected (they
+ * apply the hub's own access rules to the subject), but the Workspace and
+ * Sheet tools would read HER mailbox, Drive and spreadsheets. Those are
+ * marked `workspace: true`, are not offered to a non-company subject
+ * (toolDeclarationsFor) and refuse on their own (assertWorkspaceSubject).
+ *
  * Catalog (read-only):
  *   • Hub resolvers: getTask, getProject, getCompanyContacts
  *   • Project data: getProjectMetrics, getCrmFunnel, getProjectAlerts,
@@ -36,6 +45,7 @@ import {
   getSAClient,
   sheetsClient,
 } from "@/lib/sa";
+import { isStaffEmail } from "@/lib/viewerTier";
 
 export type ToolExecutor = (
   subjectEmail: string,
@@ -45,7 +55,29 @@ export type ToolExecutor = (
 export type Tool = {
   declaration: FunctionDeclaration;
   execute: ToolExecutor;
+  /** Goes to Google AS the subject (Gmail, Drive, Sheets) rather than
+   *  through the hub's own access rules — company addresses only. */
+  workspace?: true;
 };
+
+/**
+ * IDENTITY gate for the `workspace` tools: is this subject an account the
+ * service account can really act as? For anything else lib/sa swaps in the
+ * Drive owner, so a team member on a personal address — or an admin's "view
+ * as" target that is a client — would be searching the owner's mailbox,
+ * Drive and sheets. Called first thing in each of those executors, on top
+ * of the route not offering them, so a tool call the model was never given
+ * still cannot run.
+ */
+function assertWorkspaceSubject(subjectEmail: string, tool: string): void {
+  if (!isStaffEmail(subjectEmail)) {
+    throw new Error(
+      `${tool} is not available for this account: it reads a personal ` +
+        `Google Workspace account, which only @fandf.co.il addresses have. ` +
+        `Answer from the hub tools instead.`,
+    );
+  }
+}
 
 // ── Arg helpers ──────────────────────────────────────────────────────
 
@@ -458,9 +490,11 @@ const searchTasksTool: Tool = {
 // the viewer's morning scope (no access, or feed empty for clients).
 async function findMorningProject(email: string, projectQuery: string) {
   const { getMorningFeed } = await import("@/lib/appsScript");
-  const { morningScopeFor } = await import("@/lib/projectEnded");
+  // Scope by the roster, not the domain: a team member on an outside
+  // address is internal and gets the portfolio feed like staff.
+  const { morningScopeForViewer } = await import("@/lib/projectEnded");
   const feed = await getMorningFeed({
-    scope: morningScopeFor(email),
+    scope: await morningScopeForViewer(email),
     overrideEmail: email,
   });
   const lc = projectQuery.toLowerCase().trim();
@@ -666,11 +700,11 @@ const getMorningFeedPortfolioTool: Tool = {
   execute: async (email, args) => {
     const scopeArg = optionalString(args, "scope");
     const { getMorningFeed } = await import("@/lib/appsScript");
-    const { morningScopeFor } = await import("@/lib/projectEnded");
+    const { morningScopeForViewer } = await import("@/lib/projectEnded");
     const scope =
       scopeArg === "all" || scopeArg === "mine"
         ? scopeArg
-        : morningScopeFor(email);
+        : await morningScopeForViewer(email);
     const feed = await getMorningFeed({ scope, overrideEmail: email });
     const SEV_RANK: Record<string, number> = { severe: 0, warn: 1, info: 2 };
     const all: {
@@ -1089,7 +1123,9 @@ const searchGmailTool: Tool = {
       required: ["query"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "searchGmail");
     const q = requireString(args, "query");
     const maxResults = optionalInt(args, "maxResults", 10, 25);
     const gmail = gmailReadClient(email);
@@ -1156,7 +1192,9 @@ const readGmailThreadTool: Tool = {
       required: ["threadId"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "readGmailThread");
     const threadId = requireString(args, "threadId");
     const gmail = gmailReadClient(email);
     const detail = await gmail.users.threads.get({
@@ -1259,7 +1297,9 @@ const searchDriveTool: Tool = {
       required: ["query"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "searchDrive");
     const q = requireString(args, "query");
     const maxResults = optionalInt(args, "maxResults", 10, 25);
     const drive = driveClient(email);
@@ -1301,7 +1341,9 @@ const readDocTool: Tool = {
       required: ["documentId"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "readDoc");
     const documentId = requireString(args, "documentId");
     // Use Drive's `files.export` to get text/plain — avoids needing
     // the docs.readonly scope (we already have /auth/drive in DWD).
@@ -1357,7 +1399,9 @@ const readPdfTool: Tool = {
       required: ["fileId"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "readPdf");
     const fileId = requireString(args, "fileId");
     const drive = driveClient(email);
     // Fetch metadata first so we can refuse non-PDFs cleanly + surface
@@ -1470,7 +1514,9 @@ const getSheetMetadataTool: Tool = {
       required: ["spreadsheetId"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "getSheetMetadata");
     const spreadsheetId = requireString(args, "spreadsheetId");
     const sheets = sheetsClient(email);
     const meta = await sheets.spreadsheets.get({
@@ -1550,7 +1596,9 @@ const readSheetTabTool: Tool = {
       required: ["spreadsheetId", "tab"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "readSheetTab");
     const spreadsheetId = requireString(args, "spreadsheetId");
     const tab = requireString(args, "tab");
     const localRange = optionalString(args, "range");
@@ -1689,7 +1737,9 @@ const searchSheetRowsTool: Tool = {
       required: ["spreadsheetId", "tab", "filters"],
     },
   },
+  workspace: true,
   execute: async (email, args) => {
+    assertWorkspaceSubject(email, "searchSheetRows");
     const spreadsheetId = requireString(args, "spreadsheetId");
     const tabRequested = requireString(args, "tab");
     const filtersRaw = (args.filters || {}) as Record<string, unknown>;
@@ -1838,6 +1888,30 @@ export const TOOL_CATALOG: Tool[] = [
 ];
 
 export const TOOL_DECLARATIONS = TOOL_CATALOG.map((t) => t.declaration);
+
+/**
+ * May this conversation use the `workspace` tools? Only when BOTH the
+ * signed-in account and the subject the tools run as (the "view as" target,
+ * when an admin set one) are company addresses — the session side keeps a
+ * team member out even if a subject were ever chosen for them, the subject
+ * side is the one lib/sa actually impersonates.
+ */
+export function workspaceToolsAllowed(
+  sessionEmail: string,
+  subjectEmail: string,
+): boolean {
+  return isStaffEmail(sessionEmail) && isStaffEmail(subjectEmail);
+}
+
+/** The declarations to hand the model: the whole catalog, or the hub-data
+ *  tools alone when the Workspace ones would run as someone else. */
+export function toolDeclarationsFor(
+  allowWorkspace: boolean,
+): FunctionDeclaration[] {
+  return TOOL_CATALOG.filter((t) => allowWorkspace || !t.workspace).map(
+    (t) => t.declaration,
+  );
+}
 
 export function getTool(name: string): Tool | undefined {
   return TOOL_CATALOG.find((t) => t.declaration.name === name);

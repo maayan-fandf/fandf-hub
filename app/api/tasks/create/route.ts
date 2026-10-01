@@ -33,8 +33,9 @@ export async function POST(req: NextRequest) {
   const { project, body: taskBody, assignees, due } = body;
   // Audience scope. Only "internal" | "shared" are meaningful; anything
   // else (incl. absent) → "shared" (client-visible, the legacy default).
-  // createMentionDirect re-checks that a non-F&F caller can't post
-  // "internal" — this is just input normalization.
+  // createMentionDirect re-checks that a non-internal caller (a client)
+  // can't post "internal" — this is just input normalization. It also
+  // cuts a client's `assignees` down to the people the picker offers them.
   const scope: "internal" | "shared" =
     body.scope === "internal" ? "internal" : "shared";
 

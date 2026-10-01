@@ -21,7 +21,7 @@ import {
   driveFolderOwner,
   useFirestoreWrites,
 } from "@/lib/sa";
-import { isStaffEmail } from "@/lib/viewerTier";
+import { isInternalViewer } from "@/lib/viewerTier";
 import { canOpenProject } from "@/lib/projectAccess";
 
 export type UploadResult = {
@@ -68,9 +68,11 @@ function lcEmails(v: unknown): string[] {
  *
  * Same rule as tasksGetDirect, applied to the row this file already reads
  * (tasksGetDirect scans the whole collection — too heavy for the upload
- * hot path): staff pass on the domain; anyone else must be on the task
- * (author / approver / assignee) or have its project in their Keys scope.
- * Fails closed.
+ * hot path): internal viewers pass — staff, and the team members Keys
+ * lists under an outside address (the upload runs as the Drive owner
+ * either way, so this is a visibility test, not an identity one); anyone
+ * else must be on the task (author / approver / assignee) or have its
+ * project in their Keys scope. Fails closed.
  */
 async function mayTouchTask(
   subjectEmail: string,
@@ -78,7 +80,7 @@ async function mayTouchTask(
 ): Promise<boolean> {
   const lc = String(subjectEmail || "").toLowerCase().trim();
   if (!lc) return false;
-  if (isStaffEmail(lc)) return true;
+  if (await isInternalViewer(lc)) return true;
   if (who.people.includes(lc)) return true;
   return canOpenProject(lc, who.project);
 }

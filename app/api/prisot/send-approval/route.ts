@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireStaff } from "@/lib/viewerGate";
+import { requireTeam } from "@/lib/viewerGate";
 import { getDriveFileMeta } from "@/lib/driveFolders";
 import { sendNotificationEmail } from "@/lib/notifications";
 import { buildPrisaApprovalEmail } from "@/lib/prisaApprovalEmail";
@@ -46,25 +46,36 @@ export const dynamic = "force-dynamic";
  * so a recipient without a Google account is a first-class case now
  * instead of a hard error.
  *
- * @fandf.co.il staff only (staff send; clients receive). "The requesting
- * user's own Gmail" is true for staff alone — for an outside address
- * lib/sa sends from the OWNER's mailbox — and this route mints the token
- * the three public endpoints (/approve/<token>, /api/prisot/preview,
- * /api/prisot/token-action) trust without a login, for whatever fileId
- * it is handed. Hiding the button from clients was the only gate before
- * (authorization audit, 2026-10-01). Per-recipient send failures are
- * collected rather than thrown, so one bad address doesn't strand the rest.
+ * Internal team only — staff, or a team member Keys lists under an
+ * outside address (the team sends; clients receive). This route mints the
+ * token the three public endpoints (/approve/<token>, /api/prisot/preview,
+ * /api/prisot/token-action) trust without a login, for whatever fileId it
+ * is handed, so it must never be reachable by a client. Hiding the button
+ * from clients was the only gate before (authorization audit, 2026-10-01).
+ *
+ * "The requesting user's own Gmail" is literally true for @fandf.co.il
+ * alone. A team member on an outside address cannot be impersonated, so
+ * lib/sa sends their mail from the OWNER's mailbox and the replies land
+ * there. That is how this send worked for them until the audit closed it to
+ * staff for half a day; it was reopened to the team on the owner's rule that
+ * Keys' internal people do everything in the hub (2026-10-01). She was told
+ * the mail leaves her mailbox; it has not been confirmed as a separate
+ * decision, so if she objects this is the one line to put back to
+ * requireStaff() (and canSendForApproval in LatestPrisotCard). The mail
+ * still names the sender in its opening line.
+ * Per-recipient send failures are collected rather than thrown, so one bad
+ * address doesn't strand the rest.
  */
 export async function POST(req: Request) {
-  const gate = await requireStaff();
+  const gate = await requireTeam();
   if (gate instanceof NextResponse) {
     if (gate.status !== 403) return gate;
-    // Said in words, in case the dialog is ever reached by a non-staff
-    // viewer (the plan card no longer offers them the button).
+    // Said in words, in case the dialog is ever reached by a client (the
+    // plan card does not offer them the button).
     return NextResponse.json(
       {
         ok: false,
-        error: "שליחה לאישור יוצאת מתיבת המייל של השולח, ולכן זמינה רק לכתובות @fandf.co.il",
+        error: "שליחת פריסה לאישור זמינה לצוות F&F בלבד",
       },
       { status: 403 },
     );

@@ -76,9 +76,11 @@ export default async function MorningPage({
   // internal roster (the session's own tier, never the view-as target's)
   // before its role counts. Everything this page renders hangs off this flag.
   const tier = await viewerTier(me);
+  // Staff or a Keys-listed team member. Also drives the lock messages below,
+  // which used to read the feed's own `isInternal` — Apps Script's domain test.
+  const internal = tier === "staff" || tier === "team";
   const roleEligible =
-    (tier === "staff" || tier === "team") &&
-    (roleRes.status === "fulfilled" ? roleRes.value : false);
+    internal && (roleRes.status === "fulfilled" ? roleRes.value : false);
   const data: MorningFeed | null =
     feedRes.status === "fulfilled" ? feedRes.value : null;
   const error =
@@ -224,7 +226,7 @@ export default async function MorningPage({
                   👤 סינון: <b>{scopedPerson}</b>
                 </>
               )}
-              {(data.isAdmin || data.isInternal) && (
+              {internal && (
                 <>
                   {" · "}
                   <ScopeToggle scope={scope} />
@@ -299,21 +301,21 @@ export default async function MorningPage({
         </div>
       )}
 
-      {data && !data.isAdmin && !data.isInternal && (
+      {data && !internal && (
         <div className="empty">
           <span className="emoji" aria-hidden>🔒</span>
           עמוד ההתראות זמין לצוות F&amp;F בלבד.
         </div>
       )}
 
-      {data && (data.isAdmin || data.isInternal) && !roleEligible && (
+      {data && internal && !roleEligible && (
         <div className="empty">
           <span className="emoji" aria-hidden>🔒</span>
           עמוד הקמפיינים זמין לאדמינים, מנהלים וצוות המדיה בלבד.
         </div>
       )}
 
-      {data && (data.isAdmin || data.isInternal) && roleEligible && visible.length === 0 && (
+      {data && internal && roleEligible && visible.length === 0 && (
         <div className="empty">
           <span className="emoji" aria-hidden>
             🌿

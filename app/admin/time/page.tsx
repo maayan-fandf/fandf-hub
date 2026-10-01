@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMyProjects, currentUserEmail, tasksList } from "@/lib/appsScript";
 import { readTimeLog, type TimeLogRow } from "@/lib/timeLog";
+import { isInternalViewer } from "@/lib/viewerTier";
 import { deriveInProgressTime } from "@/lib/inProgressTime";
 
 export const metadata = { title: "מעקב זמן" };
@@ -24,7 +25,8 @@ export const dynamic = "force-dynamic";
  * Access model (2026-05-27):
  *   - Admins (HUB_ADMIN_EMAILS) → see EVERY row, manage everyone's
  *     time-tracking from one screen.
- *   - Any other @fandf.co.il staff → see only THEIR rows (manual
+ *   - Any other internal viewer (staff, or team on an outside
+ *     address — lib/viewerTier) → see only THEIR rows (manual
  *     entries they logged + status-time on tasks where they're an
  *     assignee). They can still pause / edit those task times from
  *     this surface — TimeReport's per-row override + pause buttons
@@ -37,19 +39,18 @@ export const dynamic = "force-dynamic";
  * it as "מעקב זמן" so the URL is incidental for staff users.
  */
 export default async function TimeAdminPage() {
+  const adminEmail = await currentUserEmail().catch(() => "");
+  // Staff or team (lib/viewerTier), asked directly: the getMyProjects flags
+  // are not the gate — its `isInternal` is the e-mail domain, which leaves
+  // out the team members Keys lists under an outside address.
+  if (!(await isInternalViewer(adminEmail))) redirect("/");
   let isAdmin = false;
-  let isStaffOrInternal = false;
   try {
-    const me = await getMyProjects();
-    isAdmin = !!me.isAdmin;
-    isStaffOrInternal = !!(me.isInternal || me.isStaff || me.isAdmin);
+    isAdmin = !!(await getMyProjects()).isAdmin;
   } catch {
     isAdmin = false;
-    isStaffOrInternal = false;
   }
-  if (!isStaffOrInternal) redirect("/");
 
-  const adminEmail = await currentUserEmail();
   const myEmail = (adminEmail || "").toLowerCase().trim();
 
   const [ledger, taskRowsAll] = await Promise.all([

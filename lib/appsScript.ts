@@ -1037,10 +1037,81 @@ const fetchMorningFeedCached = unstable_cache(
  * predicate that silently changes meaning because another feature
  * widened it is worse than a duplicate. Consolidating all four behind
  * one exported helper is worth doing as its own change.
+ *
+ * This is APPS SCRIPT's idea of internal — "will the script answer this
+ * identity" — and stays the domain. The hub's own idea (lib/viewerTier)
+ * is wider: it adds the team members Keys lists under an outside address.
+ * getMorningFeed serves those without ever calling the script as them;
+ * see `team` there.
  */
 const MORNING_INTERNAL_DOMAIN = "@fandf.co.il";
 function isInternalForMorningFeed(email: string): boolean {
   return email.toLowerCase().trim().endsWith(MORNING_INTERNAL_DOMAIN);
+}
+
+/**
+ * A team member's view of the portfolio feed (see `team` in
+ * getMorningFeed). scope=all is the portfolio itself; "mine" keeps the
+ * projects whose Keys row lists them — by address in a roster cell, or by
+ * display name; a project-scoped request keeps that one project. Every
+ * internal viewer may see every project, so this narrows for relevance,
+ * not for access.
+ */
+async function cutPortfolioForTeam(
+  feed: MorningFeed,
+  email: string,
+  opts: { scope?: "mine" | "all"; project?: string },
+): Promise<MorningFeed> {
+  // The envelope was echoed for the filling identity. A team member is
+  // internal and — hub admins all being on the company domain — never an
+  // admin.
+  const own: MorningFeed = { ...feed, isAdmin: false, isInternal: true };
+  if (!opts.project && opts.scope === "all") return own;
+
+  let keep: (name: string) => boolean;
+  if (opts.project) {
+    const want = opts.project.trim().toLowerCase();
+    keep = (name) => name.trim().toLowerCase() === want;
+  } else {
+    const lc = email.toLowerCase().trim();
+    const [my, { rosterEmailsOf }, { isPersonOnProject }] = await Promise.all([
+      getMyProjects(email),
+      import("@/lib/keys"),
+      import("@/lib/scope"),
+    ]);
+    const mine = new Set(
+      my.projects
+        .filter(
+          (p) =>
+            isPersonOnProject(p, my.person) ||
+            rosterEmailsOf(
+              [
+                ...p.roster.internalOnly,
+                ...p.roster.clientFacing,
+                ...p.roster.clientEmails,
+              ].join(","),
+            ).includes(lc),
+        )
+        .map((p) => p.name),
+    );
+    keep = (name) => mine.has(name);
+  }
+
+  const projects = feed.projects.filter((p) => keep(p.name));
+  const withMax = (n: number) =>
+    projects.filter((p) => p.maxSeverity === n).length;
+  return {
+    ...own,
+    scope: opts.project ? "project" : "mine",
+    projects,
+    counts: {
+      total: projects.length,
+      severe: withMax(3),
+      warn: withMax(2),
+      info: withMax(1),
+      clear: withMax(0),
+    },
+  };
 }
 
 /**
@@ -1096,6 +1167,20 @@ export async function getMorningFeed(
 ): Promise<MorningFeed> {
   const email = opts.overrideEmail || (await currentUserEmail());
 
+  // ── Team members on an outside address ────────────────────────────
+  // Internal for the hub (lib/viewerTier: Keys "Access — internal only" /
+  // "Client-facing"), but Apps Script's own gate is the domain test above
+  // and would hand them its refusal envelope — which locked them out of
+  // every alerts surface. So the script is never called as them: whatever
+  // scope they ask for is cut from the portfolio feed the shared entry and
+  // the snapshot already hold (cutPortfolioForTeam). A client is on no
+  // such roster and still takes the per-email path, and the refusal,
+  // exactly as before; so does anyone while the roster cannot be read.
+  // Lazy-imported: lib/viewerTier pulls in googleapis through lib/keys.
+  const team =
+    !isInternalForMorningFeed(email) &&
+    (await (await import("@/lib/viewerTier")).isInternalViewer(email));
+
   // ── Shared cache entry for scope=all ──────────────────────────────
   // MEASURED 2026-08-16: this call is 132s for scope=all (118s for
   // scope=mine) and every other read the home page makes totals ~3.5s.
@@ -1116,9 +1201,12 @@ export async function getMorningFeed(
   // keyed purely on scope they would instead be served an internal
   // user's filled entry — a portfolio-wide leak. `project` is excluded
   // too, because a project-scoped feed IS access-gated per caller
-  // (Code.js L5878).
+  // (Code.js L5878). A team member (above) always reads the shared entry,
+  // whatever they asked for — they are internal, and it is the only feed
+  // the script will fill for them.
   const shared =
-    opts.scope === "all" && !opts.project && isInternalForMorningFeed(email);
+    team ||
+    (opts.scope === "all" && !opts.project && isInternalForMorningFeed(email));
 
   // Lazy-imported like every other @/lib/sa use in this file, to keep
   // googleapis out of the module graph for callers that never need it.
@@ -1135,6 +1223,9 @@ export async function getMorningFeed(
   // the badges for all staff at once. Re-test it and fall back to
   // per-email keying rather than trust the env.
   const useShared = shared && isInternalForMorningFeed(sharedSubject);
+  // With no usable shared identity a team member falls through to the
+  // per-email path and gets the script's refusal — closed, not open.
+  const teamCut = useShared && team;
 
   // ── Precomputed snapshot, for exactly the shared portfolio case ────
   // This is the change that stops anyone waiting on the 124s call: the
@@ -1154,16 +1245,19 @@ export async function getMorningFeed(
     if (snap) {
       // Same envelope fix as the shared-cache path below, for the same
       // reason — see the comment there.
-      return snap.feed.email !== email
-        ? { ...snap.feed, email }
-        : snap.feed;
+      const own =
+        snap.feed.email !== email ? { ...snap.feed, email } : snap.feed;
+      return teamCut ? cutPortfolioForTeam(own, email, opts) : own;
     }
   }
 
+  // For a team member the key is the portfolio entry's own (scope=all, no
+  // project) — the same string a staff scope=all request builds, so the
+  // two share one fill.
   const cacheKey = JSON.stringify({
     email: useShared ? sharedSubject : email,
-    scope: opts.scope,
-    project: opts.project,
+    scope: teamCut ? "all" : opts.scope,
+    project: teamCut ? undefined : opts.project,
   });
   const feed = await fetchMorningFeedCached(cacheKey);
 
@@ -1176,8 +1270,10 @@ export async function getMorningFeed(
   // L309) — both true for anyone who reaches this branch. Reading
   // `isAdmin` ALONE off a scope=all feed would be wrong; nothing does
   // today. api/morning/count L49 gates on it but only ever asks for
-  // scope=mine, which never takes this path.
-  return useShared && feed.email !== email ? { ...feed, email } : feed;
+  // scope=mine, which never takes this path for staff — and for a team
+  // member cutPortfolioForTeam sets both flags outright.
+  const own = useShared && feed.email !== email ? { ...feed, email } : feed;
+  return teamCut ? cutPortfolioForTeam(own, email, opts) : own;
 }
 
 export type DismissResult = {

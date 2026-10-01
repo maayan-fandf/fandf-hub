@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getMorningFeed } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { canSeeCampaigns } from "@/lib/userRole";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,12 @@ export async function GET() {
     return NextResponse.json({ counts: zero() });
   }
   try {
+    // Internal first, role second — the same order /morning applies. Staff
+    // or a Keys-listed team member (the session's own tier, never the
+    // view-as target's); the role cell alone cannot tell a client apart.
+    if (!(await isInternalViewer(sessionEmail))) {
+      return NextResponse.json({ counts: zero() });
+    }
     // Honor the gear-menu view_as so the count mirrors what /morning
     // would actually render for this user. Same precedence as the
     // morning page itself.
@@ -46,6 +53,8 @@ export async function GET() {
       return NextResponse.json({ counts: zero() });
     }
     const feed = await getMorningFeed({ scope: "mine", overrideEmail });
+    // The feed's own refusal envelope — what a view-as target who is not
+    // internal gets back. The viewer was already checked above.
     if (!feed.isAdmin && !feed.isInternal) {
       return NextResponse.json({ counts: zero() });
     }

@@ -8,6 +8,7 @@ import {
   getHeldMeetingsSehel,
   getUnsyncedMeetingAccounts,
 } from "@/lib/heldMeetings";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
  *   GET /api/crm/meetings?project=&company=&from=YYYY-MM-DD&to=YYYY-MM-DD
  *     → { ok, total, authoritativeHeld, clientsMet, withNotes,
  *         meetings: [...], clients: [...],
- *         notSynced?, notSyncedAccounts? (staff only) }
+ *         notSynced?, notSyncedAccounts? (staff and team only) }
  *
  *   total              every meeting in the list, inferred ones included
  *   authoritativeHeld  confirmed only (BMBY outcome 'held', Sehel "הלקוח הגיע
@@ -37,8 +38,8 @@ export const dynamic = "force-dynamic";
  * view-source — for every viewer on every load. Here it travels only when
  * someone opens the section.
  *
- * WHO MAY READ IT: exactly who may read חוזים — staff on any project, and a
- * client only on the projects they are listed on (Keys col E). The two
+ * WHO MAY READ IT: exactly who may read חוזים — staff and team on any
+ * project, and a client only on the projects they are listed on (Keys col E). The two
  * surfaces expose the same customers, so a difference between their gates
  * would be a way around whichever is stricter.
  *
@@ -89,10 +90,12 @@ export async function GET(req: Request) {
     );
   }
 
-  // Same per-project gate as /api/crm/signed. Without it, dropping the
-  // domain blanket would let any signed-in client read another developer's
-  // customers by editing ?project=.
-  if (!email.endsWith("@fandf.co.il")) {
+  // Same per-project gate as /api/crm/signed: internal viewers (staff, and
+  // the team Keys lists under an outside address) pass on who they are;
+  // without the check for everyone else, any signed-in client could read
+  // another developer's customers by editing ?project=.
+  const internal = await isInternalViewer(email);
+  if (!internal) {
     const { getAccessScope } = await import("@/lib/tasksDirect");
     const scope = await getAccessScope(email).catch(() => null);
     if (!scope || (!scope.isAdmin && !scope.accessibleProjects.has(project))) {
@@ -168,14 +171,15 @@ export async function GET(req: Request) {
       }).catch(() => null),
     ]);
     // The count is the fact and every viewer gets it; which account it is
-    // and why is plumbing, for staff only — same split as the GA4 section.
+    // and why is plumbing, for internal viewers only — same split as the GA4
+    // section.
     // syncChecked lets the panel tell "the project is not synced" from "one
     // of its five accounts is not" without learning which.
     const sync = coverage?.unsynced.length
       ? {
           notSynced: coverage.unsynced.length,
           syncChecked: coverage.checked,
-          ...(email.endsWith("@fandf.co.il")
+          ...(internal
             ? { notSyncedAccounts: coverage.unsynced }
             : {}),
         }

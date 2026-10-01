@@ -82,7 +82,7 @@ import {
 } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
 import { getProjectNavData } from "@/lib/projectEnded";
-import { isStaffEmail, viewerTier } from "@/lib/viewerTier";
+import { isInternalViewer, isStaffEmail } from "@/lib/viewerTier";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -154,14 +154,20 @@ export default async function RootLayout({
   // null when neither is available (e.g. the /signin page) so the nav
   // renders its unauthenticated state instead of throwing.
   const email = await currentUserEmail().catch(() => null);
-  // The customer-emails and Gmail-tasks pills and the assistant all read as
-  // the VIEWER — and for an outside address lib/sa swaps in the Drive owner,
-  // so they would show HER mailbox. (The agenda panel stays for freelancers:
-  // its calendar half refuses non-staff inside lib/agenda, the task half is
+  // The customer-emails and Gmail-tasks pills read the VIEWER's own mailbox
+  // — and for an outside address lib/sa swaps in the Drive owner, so they
+  // would show HER mailbox. (The agenda panel stays for freelancers: its
+  // calendar half refuses non-staff inside lib/agenda, the task half is
   // their own.)
   // Gated on the viewer's own domain, not on `isClientUser`: that one is
   // false for an outside freelancer, and false when the projects read fails.
   const isStaffViewer = !!email && isStaffEmail(email);
+  // The visibility twin of the line above: staff, OR a team member Keys
+  // lists under an outside address (lib/viewerTier). Everything internal
+  // that does not open the viewer's own Google account hangs off this one —
+  // the assistant, the תצוגת לקוח switch. The session's own address, never
+  // the "view as" target's; false when the roster cannot be read.
+  const isInternalSelf = !!email && (await isInternalViewer(email));
   // The global תצוגת לקוח switch's state (lib/clientViewMode). Read here only
   // to seed the top-nav button; the pages that act on it read it themselves.
   const clientViewOn =
@@ -212,7 +218,7 @@ export default async function RootLayout({
       // isClientUser false here showed a real client the internal chrome
       // (tasks link, quick-note, the agenda) for that load; the roster tier
       // answers without that read.
-      isClientUser = !["staff", "team"].includes(await viewerTier(email));
+      isClientUser = !isInternalSelf;
     }
     // One extra Sheets read to get the Hebrew name + role for the
     // topnav user pill. Best-effort: failures silently fall back to
@@ -344,15 +350,16 @@ export default async function RootLayout({
                   isAdmin={isAdminUser}
                   isClientUser={isClientUser}
                 />
-                {/* 👁️ תצוגת לקוח — the hub-wide switch. Gated on the viewer's
-                    OWN @fandf.co.il address, exactly the test the project
-                    page applies before honouring the cookie — not on
-                    `isClientUser`, which follows the gear menu's "view as"
-                    and defaults to false when the projects read fails: that
-                    showed the pill to people whose page would ignore it, and
-                    hid it from an admin viewing-as a client whose page
-                    would not. */}
-                {email.toLowerCase().endsWith("@fandf.co.il") && (
+                {/* 👁️ תצוגת לקוח — the hub-wide switch. Gated on the viewer
+                    being internal by their OWN address — staff, or a team
+                    member on an outside address, who presents to clients
+                    too — which is the test the project page applies before
+                    honouring the cookie. Not on `isClientUser`, which
+                    follows the gear menu's "view as" and defaults to false
+                    when the projects read fails: that showed the pill to
+                    people whose page would ignore it, and hid it from an
+                    admin viewing-as a client whose page would not. */}
+                {isInternalSelf && (
                   <ClientViewSwitch initialOn={clientViewOn} />
                 )}
                 <ThemeToggle />
@@ -398,11 +405,12 @@ export default async function RootLayout({
                   </Suspense>
                 )}
               </div>
-              {/* Gemini chat assistant — staff-only. Hidden in the UI
-                  for client users + the route handler enforces the
-                  same gate server-side. Lives at the layout root so
-                  the FAB + drawer overlay every page consistently. */}
-              {isStaffViewer && !isClientUser && <GeminiChatDrawer />}
+              {/* Gemini chat assistant — internal viewers only (staff and
+                  the Keys-listed team). Hidden in the UI for client users
+                  + the route handler enforces its own gate server-side.
+                  Lives at the layout root so the FAB + drawer overlay
+                  every page consistently. */}
+              {isInternalSelf && !isClientUser && <GeminiChatDrawer />}
             </PageContextProvider>
           </TaskPreviewProvider>
         </LightboxProvider>

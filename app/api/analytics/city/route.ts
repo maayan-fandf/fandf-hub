@@ -4,6 +4,7 @@ import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getMyProjectsDirect } from "@/lib/projectsDirect";
 import { resolveGa4Target } from "@/lib/ga4Project";
 import { fetchCityCampaigns } from "@/lib/ga4Report";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,12 @@ export async function GET(req: Request) {
     const email = viewAs && viewAs !== sessionEmail ? viewAs : sessionEmail;
 
     const mine = await getMyProjectsDirect(email);
-    if (!mine.projects.some((p) => p.name === project)) {
+    // Same widening as /api/analytics/live: a Keys-listed team member on an
+    // outside address may open every project, like staff.
+    if (
+      !mine.projects.some((p) => p.name === project) &&
+      !(await isInternalViewer(email))
+    ) {
       return NextResponse.json({ ok: false, reason: "forbidden" }, { status: 403 });
     }
 

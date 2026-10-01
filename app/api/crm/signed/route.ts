@@ -4,6 +4,7 @@ import { crmAccountCandidates } from "@/lib/crmData";
 import { readKeysCached } from "@/lib/keys";
 import { driveFolderOwner } from "@/lib/sa";
 import { getSignedClients, getSignedClientsSehel } from "@/lib/signedClients";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +21,8 @@ export const dynamic = "force-dynamic";
  * in the RSC flight payload — and in view-source — for every viewer on
  * every load. Here it travels only when someone opens the section.
  *
- * WHO MAY READ IT: staff on any project, and a client on the projects they
- * are listed on (Keys col E). Clients were excluded outright until
+ * WHO MAY READ IT: staff and team on any project, and a client on the
+ * projects they are listed on (Keys col E). Clients were excluded outright until
  * 2026-08-31; the owner opened חוזים to them on the grounds that these are
  * the buyers of their own project. The per-project check is what keeps that
  * from becoming "any client can read any developer's buyer list".
@@ -74,15 +75,17 @@ export async function GET(req: Request) {
     );
   }
 
-  // Who may read THIS project's customers. Staff keep the domain blanket
-  // they have everywhere else. A client is allowed too (owner decision
-  // 2026-08-31 — these are the buyers of their own project), but only for
-  // the projects they are actually listed on: without the per-project
-  // check, dropping the domain gate would have let any signed-in client
-  // read any other developer's buyer names and phones by editing the
-  // ?project= parameter. getAccessScope is the same primitive the rest of
-  // the app gates on, and it matches a client through Keys col E.
-  if (!email.endsWith("@fandf.co.il")) {
+  // Who may read THIS project's customers. Internal viewers — staff, and
+  // the team members Keys lists under an outside address (lib/viewerTier) —
+  // keep the blanket they have everywhere else. A client is allowed too
+  // (owner decision 2026-08-31 — these are the buyers of their own
+  // project), but only for the projects they are actually listed on:
+  // without the per-project check, dropping the blanket gate would have let
+  // any signed-in client read any other developer's buyer names and phones
+  // by editing the ?project= parameter. getAccessScope is the same
+  // primitive the rest of the app gates on, and it matches a client
+  // through Keys col E.
+  if (!(await isInternalViewer(email))) {
     const { getAccessScope } = await import("@/lib/tasksDirect");
     const scope = await getAccessScope(email).catch(() => null);
     if (!scope || (!scope.isAdmin && !scope.accessibleProjects.has(project))) {

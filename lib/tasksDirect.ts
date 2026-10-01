@@ -34,6 +34,7 @@ import {
 } from "@/lib/appsScript";
 import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
 import { readKeysCached, rosterEmailsOf } from "@/lib/keys";
+import { isInternalViewer } from "@/lib/viewerTier";
 
 const JSON_ARRAY_FIELDS = new Set([
   "departments",
@@ -358,13 +359,16 @@ export async function getAccessScope(subjectEmail: string): Promise<{
   // account-manager listed as "Itay Stein" in EMAIL Manager. Without
   // this, a non-admin manager's accessibleProjects came back EMPTY,
   // which made every /tasks/[id] load 500 with "Access denied" and
-  // hid every relevant task on /tasks. Internal F&F users also get a
-  // domain-blanket pass (matches getMyProjectsDirect's intent — staff
-  // can navigate to any internal project).
-  const isInternal = lc.endsWith("@fandf.co.il");
-  const [{ headers, rows }, displayNames] = await Promise.all([
+  // hid every relevant task on /tasks. Internal viewers also get a
+  // blanket pass (matches getMyProjectsDirect's intent — the team can
+  // navigate to any internal project). "Internal" is staff OR a Keys-
+  // listed team member on an outside address (lib/viewerTier), not the
+  // e-mail domain: the domain test shut those team members out of every
+  // project row they weren't personally listed on.
+  const [{ headers, rows }, displayNames, isInternal] = await Promise.all([
     readKeysCached(subjectEmail),
     isAdmin ? Promise.resolve([] as string[]) : getDisplayNamesForEmailLazy(subjectEmail),
+    isInternalViewer(lc),
   ]);
   const iProj = headers.indexOf("פרוייקט");
   const iCo = headers.indexOf("חברה");
@@ -432,7 +436,7 @@ export async function getAccessScope(subjectEmail: string): Promise<{
         }
       }
     }
-    // Domain blanket: internal F&F can navigate to any internal project
+    // Internal blanket: staff and team can navigate to any internal project
     // even if not on the roster. Mirrors getMyProjectsDirect's behavior.
     if (!matched && isInternal) matched = true;
     if (matched) accessible.add(project);
@@ -805,8 +809,9 @@ export async function tasksGetDirect(
     const scope = await getAccessScope(subjectEmail);
     // Access check, in order of permissiveness:
     //   1. admins always pass
-    //   2. internal @fandf.co.il users always pass — mirrors the
-    //      "domain blanket" intent already documented in
+    //   2. internal viewers (staff, or team on an outside address —
+    //      lib/viewerTier) always pass — mirrors the
+    //      "internal blanket" intent already documented in
     //      getAccessScope(). The blanket there only applies to projects
     //      that have a Keys-sheet row; tasks tied to projects WITHOUT a
     //      Keys row (e.g. `__personal__` notes, brand-new projects, or
@@ -821,7 +826,7 @@ export async function tasksGetDirect(
     // carry trailing whitespace, and the access scope already trims its
     // side, so without this normalization a 1-char delta would 500.
     const lc = subjectEmail.toLowerCase().trim();
-    const isInternal = lc.endsWith("@fandf.co.il");
+    const isInternal = await isInternalViewer(lc);
     const proj = t.project.trim();
     const onTask =
       (t.author_email || "").toLowerCase().trim() === lc ||

@@ -13,8 +13,10 @@ import { CLIENT_VIEW_COOKIE, CLIENT_VIEW_MAX_AGE } from "@/lib/clientViewMode";
  * a cookie (lib/clientViewMode) that every project page reads, and it stays
  * on across projects and sections until switched off.
  *
- * Staff only — the layout renders it for @fandf.co.il viewers, the same test
- * the project page applies before honouring the cookie.
+ * Internal viewers only. The project page honours the cookie for staff and
+ * for the team members Keys lists under an outside address (lib/viewerTier
+ * isInternalViewer); the layout, which decides who is shown the pill, has to
+ * apply that same test.
  *
  * THE COOKIE IS THE TRUTH, NOT THIS COMPONENT'S STATE. The pill is the only
  * thing telling the person presenting which view the client is looking at,
