@@ -596,7 +596,8 @@ const readSehel = cache((subjectEmail: string) =>
 );
 // Salesforce: single "Salesforce" tab in the same archive workbook (the
 // שיכון ובינוי projects use it — a mirror of the client's own SHBNCRM
-// tab, rolling ~3 months). Header is row 1. NOTE: the project and
+// tab, rolling ~3 months). The header row is FOUND, not assumed — see
+// locateSalesforceHeader below (row 1 until 2026-10-01). NOTE: the project and
 // creation-date headers carry a literal "↑" sort glyph ("פרויקט ↑" /
 // "תאריך יצירה ↑"), so those columns are matched by prefix, not exact
 // string, in computeSalesforceFunnel.
@@ -606,9 +607,54 @@ const readSehel = cache((subjectEmail: string) =>
 // A:P silently truncated all of them, so the funnel kept reading the
 // COARSEST status column while the resolved ones sat just out of range.
 // See the SALESFORCE_STATUS_COLUMNS block for what each one means.
-const readSalesforce = cache((subjectEmail: string) =>
-  fetchTabFromSheet(subjectEmail, "Salesforce!A:T"),
+const readSalesforce = cache(async (subjectEmail: string) =>
+  locateSalesforceHeader(await fetchTabFromSheet(subjectEmail, "Salesforce!A:T")),
 );
+
+/**
+ * Find the Salesforce tab's real header row — it is not always row 1.
+ *
+ * The tab is a pasted Salesforce report export, and on 2026-10-01 the paste
+ * began to include the report's two FILTER lines above the header:
+ *
+ *   row 1  "ליד מקורי שווה ל-" …………………… | מצב ליד2 | הזדמנות ID | מצב ליד 3
+ *   row 2  "פרויקט לא שווה ל-"
+ *   row 3  פרויקט | … | תאריך יצירה | מקור ליד | טלפון נייד | …
+ *
+ * Read as "header is row 1", no column resolved — no project, no creation
+ * date, no phone — and every Salesforce surface went empty at once: the CRM
+ * funnel, התנגדויות ומסע, and the UTM joins on the creative and ad-set cards
+ * (which is how it was noticed: "תיאומים —" on eastern while the capture
+ * sheet was tagging every Facebook lead).
+ *
+ * The header is the first of the top rows holding BOTH a `פרויקט…` and a
+ * `תאריך יצירה…` cell (row 2's lone "פרויקט לא שווה ל-" is not one). The
+ * helper columns' names (`מצב ליד2`, `הזדמנות ID`, `מצב ליד 3`) did not move
+ * with the paste — they still sit in row 1, over data that still lines up —
+ * so a name found ABOVE the header row, in any column but A (where the filter
+ * lines live), wins over the export's own cell for that column. That yields
+ * exactly the header set the tab had before, whichever way it is pasted.
+ */
+function locateSalesforceHeader(tab: RawTab): RawTab {
+  const isHeader = (cells: string[]) =>
+    cells.some((h) => h.startsWith("פרויקט")) &&
+    cells.some((h) => h.startsWith("תאריך יצירה"));
+  if (isHeader(tab.headers)) return tab;
+  const cellsOf = (r: unknown[]) =>
+    r.map((h) => String(h ?? "").replace(/\s+/g, " ").trim());
+  for (let i = 0; i < Math.min(tab.rows.length, 10); i++) {
+    const cells = cellsOf(tab.rows[i] ?? []);
+    if (!isHeader(cells)) continue;
+    const above = [tab.headers, ...tab.rows.slice(0, i).map((r) => cellsOf(r ?? []))];
+    const width = Math.max(cells.length, ...above.map((r) => r.length));
+    const headers = Array.from({ length: width }, (_, c) => {
+      if (c > 0) for (const r of above) if (r[c]) return r[c];
+      return cells[c] ?? "";
+    });
+    return { headers, rows: tab.rows.slice(i + 1) };
+  }
+  return tab;
+}
 
 /**
  * The newest lead DAY one CRM feed holds, whatever project it belongs to —
