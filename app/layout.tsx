@@ -64,6 +64,9 @@ import UserSettingsMenu from "@/components/UserSettingsMenu";
 import TopnavUserMenu from "@/components/TopnavUserMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
+import ClientViewSwitch from "@/components/ClientViewSwitch";
+import { CLIENT_VIEW_COOKIE } from "@/lib/clientViewMode";
+import { cookies } from "next/headers";
 import ParticlesBackground from "@/components/ParticlesBackground";
 import TopProgressBar from "@/components/TopProgressBar";
 import AgendaPanel from "@/components/AgendaPanel";
@@ -150,6 +153,10 @@ export default async function RootLayout({
   // null when neither is available (e.g. the /signin page) so the nav
   // renders its unauthenticated state instead of throwing.
   const email = await currentUserEmail().catch(() => null);
+  // The global תצוגת לקוח switch's state (lib/clientViewMode). Read here only
+  // to seed the top-nav button; the pages that act on it read it themselves.
+  const clientViewOn =
+    (await cookies().catch(() => null))?.get(CLIENT_VIEW_COOKIE)?.value === "1";
 
   // Prefetch the user's projects server-side so the nav dropdown opens
   // instantly. Honors the gear-menu "view as" pref so the top-nav projects
@@ -323,6 +330,17 @@ export default async function RootLayout({
                   isAdmin={isAdminUser}
                   isClientUser={isClientUser}
                 />
+                {/* 👁️ תצוגת לקוח — the hub-wide switch. Gated on the viewer's
+                    OWN @fandf.co.il address, exactly the test the project
+                    page applies before honouring the cookie — not on
+                    `isClientUser`, which follows the gear menu's "view as"
+                    and defaults to false when the projects read fails: that
+                    showed the pill to people whose page would ignore it, and
+                    hid it from an admin viewing-as a client whose page
+                    would not. */}
+                {email.toLowerCase().endsWith("@fandf.co.il") && (
+                  <ClientViewSwitch initialOn={clientViewOn} />
+                )}
                 <ThemeToggle />
                 <span
                   className="topnav-hint"

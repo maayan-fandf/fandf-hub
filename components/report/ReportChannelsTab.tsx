@@ -811,11 +811,15 @@ export default function ReportChannelsTab({
   pacingDismissals,
   canEditBudget = false,
   adLinks = null,
+  clientView = false,
 }: {
   data: ProjectReportData;
   pacingDismissals: Record<string, PacingDismissal>;
   canEditBudget?: boolean;
   adLinks?: ReportAdLinks | null;
+  /** A client is looking (a real one, or staff in תצוגת לקוח). Drops the
+   *  diagnosis cards that are advice to the media team — see diagCards. */
+  clientView?: boolean;
 }) {
   /**
    * Flight-window chrome: the תקציב + קצב יומי columns, the pacing cell and
@@ -1353,10 +1357,20 @@ export default function ReportChannelsTab({
     }
   };
 
-  const diagCards =
+  const allDiagCards =
     basis === "dated"
       ? diagnosePaidChannels(channels).filter((c) => !isQualityLeakCard(c))
       : diagnosePaidChannels(channels);
+  // A client sees only the GOOD cards (⭐ leading channel, ✅ balanced). The
+  // red and orange ones were already hidden by CSS; the 📊 ריכוז תקציב card
+  // is tone "info" and slipped through — "over-dependence on one channel =
+  // operational risk, consider testing 1-2 more with 10-15% of the budget"
+  // is the agency's note to itself, not a finding for the client (owner
+  // request, 2026-09-29). Filtered HERE rather than only hidden: the cards
+  // are computed in the browser, so CSS alone leaves their text in the DOM.
+  const diagCards = clientView
+    ? allDiagCards.filter((c) => c.tone === "good")
+    : allDiagCards;
 
   /**
    * The "—" each meeting-derived cell shows when the current basis has no

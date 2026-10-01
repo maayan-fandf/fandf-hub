@@ -950,7 +950,6 @@ a:hover {
 .header-actions .btn-ghost.btn-sm,
 .header-actions .btn-warn.btn-sm,
 .header-actions .copy-local-path-btn,
-.header-actions .rpt-clientview-toggle,
 .header-actions .dash-month-picker select {
   height: 2rem;
   padding-top: 0;
@@ -11159,6 +11158,14 @@ html[data-theme="dark"] .admin-missing-he {
   /* The ⌘K hint is only useful on desktop-with-keyboard. */
   .topnav-hint {
     display: none;
+  }
+  /* תצוגת לקוח: the eye alone when room is tight — its filled state still
+     shows that it is on, and the title carries the words. */
+  .topnav-clientview-label {
+    display: none;
+  }
+  .topnav-clientview {
+    padding: 0 0.5rem;
   }
   /* Email is informational — take less space when room is tight. */
   .topnav-email {
@@ -25653,39 +25660,46 @@ button.budget-need:focus-visible {
   background: color-mix(in srgb, var(--muted) 20%, transparent);
   color: var(--ink);
 }
-/* Internal-only "preview as client" toggle in the railbar. */
-.rpt-clientview-toggle {
+/* 👁️ תצוגת לקוח — the hub-wide switch in the top nav (ClientViewSwitch).
+   A pill the height of its neighbours (.theme-toggle is 2rem); filled while
+   the client view is ON, because that state is what the person presenting
+   has to be able to see at a glance — it replaces the dashed outline that
+   used to be drawn around the report in preview, which a client on a shared
+   screen saw too. */
+.topnav-clientview {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid var(--border-soft);
+  height: 2rem;
+  padding: 0 0.65rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
   border-radius: 999px;
+  font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-soft);
-  background: var(--surface);
-  text-decoration: none;
+  color: var(--muted);
+  background: var(--bg);
+  cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.rpt-clientview-toggle:hover {
+.topnav-clientview:hover {
   color: var(--text);
   border-color: var(--brand);
 }
-.rpt-clientview-toggle.is-active {
+.topnav-clientview.is-on {
   color: #fff;
   background: color-mix(in srgb, var(--brand) 78%, #7c3aed);
   border-color: transparent;
 }
-/* While PREVIEWING the client view, mark the whole report so it's obvious
-   the owner is looking at the stripped experience, not the full one.
-   Scoped to .rpt-clientpreview, not .rpt-clientview: the latter is also
-   set for real clients, who got this dashed box around their report with
-   nothing to explain it and no other view to contrast it against. */
-.rpt-clientpreview .prl {
-  outline: 2px dashed color-mix(in srgb, var(--brand) 45%, transparent);
-  outline-offset: 4px;
-  border-radius: 14px;
+.topnav-clientview[aria-disabled="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+.topnav-clientview:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 /* ── Client-view stripping ─────────────────────────────────────────────
@@ -25704,6 +25718,7 @@ button.budget-need:focus-visible {
 .rpt-clientview .rpt-bstrip,                     /* budget-balance / rebalance strip */
 .rpt-clientview .rpt-pd-card.is-bad,             /* paid-diagnosis bad/warn cards */
 .rpt-clientview .rpt-pd-card.is-warn,
+.rpt-clientview .rpt-pd-card.is-info,            /* 📊 ריכוז תקציב — advice to the media team (also filtered in ReportChannelsTab) */
 .rpt-clientview .rpt-ch-dot,                     /* campaign live/paused/mixed dots */
 .rpt-clientview .rpt-ch-diverge,                 /* CRM-vs-pixel ⚠️ (also stripped server-side) */
 .rpt-clientview .rpt-cr-hist-btn,                /* per-ad history hover (also stripped server-side) */
@@ -25721,7 +25736,7 @@ button.budget-need:focus-visible {
 /* Collapse the containers that would be left empty once their negatives are
    hidden (mirror of the classic `.alerts:not(:has(.alert.good))`). */
 .rpt-clientview .rpt-header-alerts:not(:has(.rpt-anomaly.is-good)),
-.rpt-clientview .rpt-paid-diag:not(:has(.rpt-pd-card:not(.is-bad):not(.is-warn))) {
+.rpt-clientview .rpt-paid-diag:not(:has(.rpt-pd-card.is-good)) {
   display: none !important;
 }
 /* Neutralize the pacing cell's off-pace tint so the client sees just the
@@ -29314,7 +29329,6 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   /* Header toolbar: action chips + month-picker trigger to ~38px */
   .header-actions .btn-primary.btn-sm,
   .header-actions .btn-ghost.btn-sm,
-  .header-actions .rpt-clientview-toggle,
   .header-actions .dash-dd-trigger {
     height: 2.4rem;
   }
@@ -29341,7 +29355,7 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
     max-width: calc(100vw - 1.8rem);
   }
 
-  /* Report toolbar (תצוגת לקוח + period chip) — let it wrap rather than clip */
+  /* Report toolbar (the filtered-period chip) — let it wrap rather than clip */
   .rpt-railbar {
     flex-wrap: wrap;
   }

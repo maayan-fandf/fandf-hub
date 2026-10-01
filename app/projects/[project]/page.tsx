@@ -50,6 +50,8 @@ import MetricsIframe from "@/components/MetricsIframe";
 import ProjectReportSection from "@/components/report/ProjectReportSection";
 import NativeProjectRail from "@/components/report/NativeProjectRail";
 import MeetingBasisToggle from "@/components/report/MeetingBasisToggle";
+import { cookies } from "next/headers";
+import { CLIENT_VIEW_COOKIE } from "@/lib/clientViewMode";
 import {
   BasisLink,
   MeetingBasisProvider,
@@ -441,6 +443,24 @@ export default async function ProjectOverviewPage({
     !projectsData?.isAdmin &&
     !projectsData?.isStaff &&
     !isInternalUser;
+  // PRESENTATION MODE — an @fandf.co.il viewer with the top-nav תצוגת לקוח
+  // switch on (the lib/clientViewMode cookie), or on a legacy `?clientView=1`
+  // link. `reportClientView` is the DISPLAY gate: true for a real client and
+  // for staff presenting, and it hides everything a client is not shown —
+  // the report's internal chrome, and since 2026-10-01 the internal SECTIONS
+  // around it too (התראות, the tasks queue, the F&F-only discussion channel,
+  // Clarity, GA4's tagging diagnostics). They used to stay up, so on a shared
+  // screen one click in the rail put internal alerts in front of the client.
+  //
+  // It is deliberately NOT fed into the `isClientUser` props of LatestPrisotCard
+  // / ProjectPriceCheckSection / the Drive link: there `isClientUser` swaps in
+  // things a client can DO (approve a plan, open the shared folder), and a
+  // staff member presenting is not a client.
+  const clientViewSwitchOn =
+    (await cookies().catch(() => null))?.get(CLIENT_VIEW_COOKIE)?.value === "1";
+  const internalClientView =
+    isInternalUser && (sp.clientView === "1" || clientViewSwitchOn);
+  const reportClientView = isClientUser || internalClientView;
   // Resolve the active channel here so we can gate page-level chrome
   // (the resolved-filter pill below) against it. DiscussionSection
   // re-derives this internally — keep the rules in sync if they
@@ -450,7 +470,7 @@ export default async function ProjectOverviewPage({
   // from a client must NOT resolve to "internal" (the data layer also
   // refuses, this is the UI half of the same invariant). Keep this in
   // sync with the identical gate inside DiscussionSection.
-  const activeChannel: "internal" | "client" | "tasks" = !isInternalUser
+  const activeChannel: "internal" | "client" | "tasks" = !isInternalUser || internalClientView
     ? "client"
     : sp.channel === "internal"
       ? "internal"
@@ -466,7 +486,7 @@ export default async function ProjectOverviewPage({
         authuser: userEmail,
         embed: true,
         monthOverride: dashboardPeriod,
-        clientView: isClientUser,
+        clientView: reportClientView,
       })
     : "";
   // External-client proxy URL — append monthOverride as a query param so the
@@ -517,15 +537,17 @@ export default async function ProjectOverviewPage({
   // client experience before the real client cutover — task #56). Drives the
   // `rpt-clientview` class on <main> (CSS hides the negative/ad-ops chrome) and
   // the clientView prop into NativeProjectRail (force-disables edit controls).
-  const reportClientView =
-    isClientUser || (isInternalUser && sp.clientView === "1");
+  //
+  // Since 2026-09-29 the preview is a hub-wide SWITCH in the top nav
+  // (components/ClientViewSwitch → the lib/clientViewMode cookie), so it
+  // survives moving between projects on a call with a client. The old
+  // `?clientView=1` parameter is still honoured for links already out there.
+  // (Computed above, next to isClientUser — the discussion channel and the
+  // classic embed need it too.)
   // The PREVIEW specifically — an internal user looking at the stripped
   // report on purpose. Distinct from reportClientView, which is also true
-  // for a real client. The dashed outline that marks "this is the client
-  // view" only means something to someone who has another view to return
-  // to; on a real client's screen it was an unexplained box around the
-  // page (flagged 2026-08-31).
-  const reportClientPreview = isInternalUser && sp.clientView === "1";
+  // for a real client.
+  const reportClientPreview = internalClientView;
   // Media/felix gate for the native report's inline budget edit +
   // pacing copy-and-open controls (same gate as the budget desk).
   const canEditReportBudget = useNativeReport
@@ -556,35 +578,6 @@ export default async function ProjectOverviewPage({
     const s = qs.toString();
     return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
   };
-  // Internal-only "preview as client" toggle — adds/removes ?clientView=1 while
-  // keeping the current period/section so the owner can review the stripped
-  // client view before the real client cutover.
-  const clientPreviewHref = (on: boolean): string => {
-    const qs = new URLSearchParams();
-    const keep = [
-      "resolved",
-      "person",
-      "view",
-      "channel",
-      "company",
-      "monthOverride",
-      "from",
-      "to",
-      "section",
-      // Kept so the preview shows the numbers the owner was just looking at.
-      // This server-built value is only right for the basis the page LOADED
-      // on; the link renders through BasisLink, which re-applies the live
-      // basis after a flip.
-      "meetings",
-    ] as const;
-    for (const k of keep) {
-      const v = sp[k];
-      if (typeof v === "string" && v) qs.set(k, v);
-    }
-    if (on) qs.set("clientView", "1");
-    const s = qs.toString();
-    return `/projects/${encodeURIComponent(projectName)}${s ? `?${s}` : ""}`;
-  };
   // Clear the active period filter (month / free range) back to live — keeps
   // section + other params, drops monthOverride/from/to. Mirrors the classic
   // dashboard's "↩ חזור לכל התקופה" reset on its date banner.
@@ -598,8 +591,9 @@ export default async function ProjectOverviewPage({
       "company",
       "section",
       "clientView",
-      // Resetting the PERIOD must not reset the meeting basis. Same BasisLink
-      // treatment as clientPreviewHref.
+      // Resetting the PERIOD must not reset the meeting basis. This server-built
+      // value is only right for the basis the page LOADED on; the link renders
+      // through BasisLink, which re-applies the live basis after a flip.
       "meetings",
     ] as const;
     for (const k of keep) {
@@ -691,7 +685,7 @@ export default async function ProjectOverviewPage({
     ) : null;
   const discussionBlock = (
     <div className="project-sections">
-      {!isClientUser && (
+      {!reportClientView && (
         <section className="project-section">
           <div className="section-head">
             <h2>
@@ -733,7 +727,8 @@ export default async function ProjectOverviewPage({
         showResolved={showResolved}
         requestedView={sp.view}
         requestedChannel={sp.channel}
-        isInternalUser={isInternalUser}
+        // Presenting: the shared channel only — no 🔒 פנימי / tasks tabs.
+        isInternalUser={isInternalUser && !internalClientView}
         isClientUser={isClientUser}
         userEmail={userEmail}
         people={peopleData?.ok ? peopleData.people : []}
@@ -741,7 +736,7 @@ export default async function ProjectOverviewPage({
     </div>
   );
   const alertsNode =
-    !isClientUser && isRealEstateProject ? (
+    !reportClientView && isRealEstateProject ? (
       <Suspense fallback={null}>
         <ProjectAlertsSection
           projectName={projectName}
@@ -800,7 +795,7 @@ export default async function ProjectOverviewPage({
     </Suspense>
   ) : null;
   const clarityNode =
-    isRealEstateProject && !isClientUser ? (
+    isRealEstateProject && !reportClientView ? (
       <Suspense fallback={null}>
         <ClarityInsightsSection
           subjectEmail={userEmail}
@@ -834,7 +829,7 @@ export default async function ProjectOverviewPage({
         project={projectName}
         monthFilter={monthOverride}
         dateRange={crmDateRange}
-        isInternal={isInternalUser}
+        isInternal={isInternalUser && !internalClientView}
       />
     </Suspense>
   ) : null;
@@ -930,8 +925,10 @@ export default async function ProjectOverviewPage({
               this project. Lands on /tasks/new with the project pre-
               selected via search param. Hidden for client users —
               they can't create tasks; their only write surface is
-              the client-tab message composer. */}
-          {!isClientUser && (
+              the client-tab message composer. Hidden while presenting
+              too (reportClientView): it is internal chrome on a shared
+              screen. */}
+          {!reportClientView && (
             <Link
               href={`/tasks/new?project=${encodeURIComponent(projectName)}`}
               className="btn-primary btn-sm"
@@ -968,31 +965,8 @@ export default async function ProjectOverviewPage({
               on dashboardEmbedUrl like the picker: the switch needs no
               Apps Script URL, only the report payload. */}
           {useNativeReport && isRealEstateProject && <MeetingBasisToggle />}
-          {/* Preview-as-client toggle (internal only): strips the report to
-              what a client would see. Up here beside the page-wide switches
-              rather than in its own bar under the header (owner request,
-              2026-09-28) — it is one more "how is this page shown" control.
-              BasisLink rather than Link: the href is built once on the
-              server, and a flip of the meeting switch after that would
-              otherwise leave it pointing at the basis the page loaded on. */}
-          {useNativeReport && isInternalUser &&
-            (reportClientView ? (
-              <BasisLink
-                className="rpt-clientview-toggle is-active"
-                href={clientPreviewHref(false)}
-                title="את/ה צופה בדוח כפי שהלקוח רואה — לחץ לחזרה לתצוגה המלאה"
-              >
-                👁️ תצוגת לקוח · יציאה
-              </BasisLink>
-            ) : (
-              <BasisLink
-                className="rpt-clientview-toggle"
-                href={clientPreviewHref(true)}
-                title="הצג את הדוח כפי שהלקוח יראה אותו (ללא הצ׳רום הפנימי)"
-              >
-                👁️ תצוגת לקוח
-              </BasisLink>
-            ))}
+          {/* The תצוגת לקוח toggle that sat here for a day (2026-09-28) is now
+              the hub-wide switch in the top nav — components/ClientViewSwitch. */}
           {/* "+ הודעה ללקוח" used to live here next to "+ משימה חדשה",
               but with the channel split it only ever writes to the
               client-tab discussion. Moved into the לקוח tab so users
@@ -1064,9 +1038,9 @@ export default async function ProjectOverviewPage({
         <>
           {isInternalUser && dashboardPeriod && periodLabel && (
             <div className="rpt-railbar">
-              {/* The תצוגת לקוח toggle used to open this bar; it moved into the
-                  header actions (owner request, 2026-09-28), so the bar is now
-                  only the filtered-period chip. */}
+              {/* The תצוגת לקוח toggle used to open this bar; it is the top-nav
+                  switch now (components/ClientViewSwitch), so the bar is only
+                  the filtered-period chip. */}
               <span
                   className="rpt-period-chip"
                   title="התקופה המסוננת המוצגת בדוח"
@@ -1098,7 +1072,7 @@ export default async function ProjectOverviewPage({
               initialSection={
                 typeof sp.section === "string" ? sp.section : undefined
               }
-              tasksBadge={openWorkTasks}
+              tasksBadge={reportClientView ? 0 : openWorkTasks}
               tasksNode={
                 <>
                   {railFilterBar}

@@ -328,6 +328,7 @@ export default async function NativeProjectRail({
             pacingDismissals={pacingDismissals}
             canEditBudget={effectiveCanEdit}
             adLinks={adLinks}
+            clientView={clientView}
           />
         ),
       });
