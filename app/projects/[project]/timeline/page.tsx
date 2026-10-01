@@ -8,6 +8,9 @@ export async function generateMetadata({
 }
 
 import Link from "next/link";
+import { canOpenProject } from "@/lib/projectAccess";
+import ProjectNoAccess from "@/components/ProjectNoAccess";
+import { currentUserEmail } from "@/lib/appsScript";
 import {
   getProjectTasks,
   getProjectComments,
@@ -52,6 +55,12 @@ export default async function ProjectTimelinePage({
 }) {
   const { project: projectParam } = await params;
   const projectName = decodeURIComponent(projectParam);
+  // Same gate as the project page (lib/projectAccess): the readers below
+  // refuse too, but a denial should be one clear page, not an error banner.
+  const viewerEmail = await currentUserEmail().catch(() => "");
+  if (!(await canOpenProject(viewerEmail, projectName))) {
+    return <ProjectNoAccess projectName={projectName} email={viewerEmail} />;
+  }
   const sp = await searchParams;
   const rawKind = sp.kind ?? "";
   const kindFilter: "" | "comment" | "task" =

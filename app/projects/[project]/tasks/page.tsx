@@ -8,6 +8,9 @@ export async function generateMetadata({
 }
 
 import Link from "next/link";
+import { canOpenProject } from "@/lib/projectAccess";
+import ProjectNoAccess from "@/components/ProjectNoAccess";
+import { currentUserEmail } from "@/lib/appsScript";
 import { getProjectTasks, type TaskItem } from "@/lib/appsScript";
 import Board from "@/components/Board";
 import FilterBar from "@/components/FilterBar";
@@ -27,6 +30,12 @@ export default async function TaskBoardPage({
 }) {
   const { project: projectParam } = await params;
   const projectName = decodeURIComponent(projectParam);
+  // Same gate as the project page (lib/projectAccess): the readers below
+  // refuse too, but a denial should be one clear page, not an error banner.
+  const viewerEmail = await currentUserEmail().catch(() => "");
+  if (!(await canOpenProject(viewerEmail, projectName))) {
+    return <ProjectNoAccess projectName={projectName} email={viewerEmail} />;
+  }
   const sp = await searchParams;
   const showDone = sp.done === "1";
   const assigneeFilter = sp.assignee ?? "";

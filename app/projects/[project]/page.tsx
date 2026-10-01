@@ -73,6 +73,8 @@ import {
 } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import { currentUserEmail } from "@/lib/appsScript";
+import { canOpenProject } from "@/lib/projectAccess";
+import ProjectNoAccess from "@/components/ProjectNoAccess";
 import { viewerCanEditComment as viewerCanEdit } from "@/lib/commentPermissions";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
 import GoogleDriveIcon from "@/components/GoogleDriveIcon";
@@ -142,6 +144,15 @@ export default async function ProjectOverviewPage({
 }) {
   const { project: projectParam } = await params;
   const projectName = decodeURIComponent(projectParam);
+  // ACCESS GATE — before anything is fetched. The report below is read as the
+  // service account's owner identity, not as the viewer, so without this any
+  // signed-in Google account could open any project by its URL (see
+  // lib/projectAccess for the whole story). The viewer's OWN session address
+  // decides, never the gear menu's "view as" target.
+  const viewerEmail = await currentUserEmail().catch(() => "");
+  if (!(await canOpenProject(viewerEmail, projectName))) {
+    return <ProjectNoAccess projectName={projectName} email={viewerEmail} />;
+  }
   // `?resolved=1` flips the three preview sections below from open-only
   // to open+resolved. Mirrors the Inbox "הצג סגורים" toggle so the
   // pattern is uniform across the hub.
