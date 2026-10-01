@@ -1,54 +1,31 @@
-import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
+import { cache } from "react";
+import type { Session } from "next-auth";
+import { handlers, sessionOfAnyAccount, signIn, signOut } from "@/auth.base";
+import { viewerTier } from "@/lib/viewerTier";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [
-    Google({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET,
-      // `drive.file` is the narrowest Drive scope that supports the Drive
-      // Picker API end-to-end: per-file access to anything the user picks
-      // through the Picker dialog OR uploads via the app. Crucially it's
-      // NOT a "restricted" scope under Google's verification rules — using
-      // `drive.readonly` or full `drive` would force the app through the
-      // restricted-scope verification (with an annual security audit).
-      // Added 2026-05-05 alongside the Drive Picker test-drive on the
-      // new-task page (components/DrivePickerButton.tsx).
-      authorization: {
-        params: {
-          scope:
-            "openid email profile https://www.googleapis.com/auth/drive.file",
-        },
-      },
-    }),
-  ],
-  pages: {
-    signIn: "/signin",
-  },
-  // We rely on the Apps Script API to enforce access (admin or project member).
-  // Any authenticated Google user can sign in; unauthorized users see the
-  // "request access" screen on the home page.
-  callbacks: {
-    // The JWT callback fires on initial sign-in (with `account` populated)
-    // and on every subsequent token refresh (with `account` undefined). We
-    // capture Google's `access_token` on first sign-in and persist it on the
-    // NextAuth JWT so the session callback can hand it to the client. The
-    // token is short-lived (~1h) — when it expires the user re-authenticates
-    // implicitly via NextAuth, which re-issues the JWT with a fresh token.
-    async jwt({ token, account }) {
-      if (account?.access_token) {
-        token.accessToken = account.access_token;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      // Surface the Google access token on session.user so client
-      // components (DrivePickerButton) can pass it to the Picker SDK.
-      // Email stays the canonical identity throughout the rest of the hub.
-      if (session.user && typeof token.accessToken === "string") {
-        session.user.accessToken = token.accessToken;
-      }
-      return session;
-    },
-  },
+export { handlers, signIn, signOut, sessionOfAnyAccount };
+
+/**
+ * THE DOOR. The session of the signed-in viewer — or null when the Google
+ * account is on no roster (not @fandf.co.il, and in no Keys row).
+ *
+ * Google sign-in admits anyone with a Google account, and middleware.ts runs
+ * on the edge where the roster can't be read, so it can only check that
+ * SOMEONE is logged in. Every route and page asks for identity through this
+ * function (directly, or via currentUserEmail in lib/appsScript), so hiding a
+ * stranger's session here is one choke point instead of 115 route edits: to
+ * the rest of the app a stranger looks exactly like nobody — 401 from the
+ * APIs, "no access" from the pages.
+ *
+ * It answers "may this account be in the hub at all", nothing finer. Which
+ * project a client may open is lib/projectAccess; which routes are for staff
+ * is lib/viewerGate.
+ *
+ * To address a stranger by name (/unauthorized) use sessionOfAnyAccount.
+ */
+export const auth = cache(async (): Promise<Session | null> => {
+  const session = await sessionOfAnyAccount();
+  const email = session?.user?.email;
+  if (!email) return session;
+  return (await viewerTier(email)) === "stranger" ? null : session;
 });

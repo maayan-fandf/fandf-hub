@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getTaskCampaigns } from "@/lib/appsScript";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: this feeds the task form, and the /tasks pages bounce
+  // clients — brief and campaign names are internal work data.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   const url = new URL(req.url);
   const project = (url.searchParams.get("project") || "").trim();

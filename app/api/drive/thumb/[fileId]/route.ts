@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { driveClient, driveFolderOwner } from "@/lib/sa";
+import { getTasksSharedDriveId } from "@/lib/driveFolders";
 
 /**
  * Proxy a Drive file's thumbnail through the hub server so external
@@ -13,12 +14,16 @@ import { driveClient, driveFolderOwner } from "@/lib/sa";
  * פריסה file's preview image. Returns the binary thumbnail body or 404
  * if the file has none / access denied.
  *
- * Security: the user must be authenticated to the hub; the SA-side
- * Drive read happens under DRIVE_FOLDER_OWNER's identity (which has
- * shared-drive access), so we deliberately don't validate that the
- * caller has access to this specific file. The file ID is treated as
- * non-sensitive since the caller would only have it because the page
- * already resolved it from a project they can see.
+ * Security: clients are intended callers (the plan card on their project
+ * page), so this is not a staff/team route; `auth()` keeps out accounts
+ * on no roster. The read happens under DRIVE_FOLDER_OWNER's identity, so
+ * the route refuses any file outside the tasks Shared Drive — every plan
+ * the card and the budget desk show lives there, and without it this was
+ * a preview of anything the owner can open. STILL OPEN (authorization
+ * audit, 2026-10-01): the file id is not checked against the projects the
+ * caller may open. It used to be "non-sensitive because the page resolved
+ * it"; a client who learns another project's file id still gets its
+ * preview.
  */
 export const dynamic = "force-dynamic";
 
@@ -50,9 +55,12 @@ export async function GET(
     const drive = driveClient(driveFolderOwner() || session.user.email);
     const meta = await drive.files.get({
       fileId,
-      fields: "thumbnailLink",
+      fields: "thumbnailLink, driveId",
       supportsAllDrives: true,
     });
+    if (meta.data.driveId !== getTasksSharedDriveId()) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
     const link = meta.data.thumbnailLink || "";
     if (!link) return new NextResponse("No thumbnail", { status: 404 });
 

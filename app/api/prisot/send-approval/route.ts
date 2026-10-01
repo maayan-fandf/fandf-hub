@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { getDriveFileMeta } from "@/lib/driveFolders";
 import { sendNotificationEmail } from "@/lib/notifications";
 import { buildPrisaApprovalEmail } from "@/lib/prisaApprovalEmail";
@@ -46,19 +46,30 @@ export const dynamic = "force-dynamic";
  * so a recipient without a Google account is a first-class case now
  * instead of a hard error.
  *
- * Session-auth only (internal users send; clients receive). Per-recipient
- * send failures are collected rather than thrown, so one bad address
- * doesn't strand the rest.
+ * @fandf.co.il staff only (staff send; clients receive). "The requesting
+ * user's own Gmail" is true for staff alone — for an outside address
+ * lib/sa sends from the OWNER's mailbox — and this route mints the token
+ * the three public endpoints (/approve/<token>, /api/prisot/preview,
+ * /api/prisot/token-action) trust without a login, for whatever fileId
+ * it is handed. Hiding the button from clients was the only gate before
+ * (authorization audit, 2026-10-01). Per-recipient send failures are
+ * collected rather than thrown, so one bad address doesn't strand the rest.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) {
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) {
+    if (gate.status !== 403) return gate;
+    // Said in words, in case the dialog is ever reached by a non-staff
+    // viewer (the plan card no longer offers them the button).
     return NextResponse.json(
-      { ok: false, error: "unauthenticated" },
-      { status: 401 },
+      {
+        ok: false,
+        error: "שליחה לאישור יוצאת מתיבת המייל של השולח, ולכן זמינה רק לכתובות @fandf.co.il",
+      },
+      { status: 403 },
     );
   }
+  const email = gate.email;
 
   let body: {
     fileId?: string;

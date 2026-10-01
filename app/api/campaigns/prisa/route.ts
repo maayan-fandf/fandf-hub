@@ -5,6 +5,7 @@ import {
   pickLatestPrisotForCompanyOrProject,
   readPrisotData,
 } from "@/lib/driveFolders";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,10 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
+  // Drive is read as the owner for whatever company/project the query
+  // names — the budget desk's popup, so team only, never a client.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   const allowed = await canSeeCampaigns(email).catch(() => false);
   if (!allowed) {
     return NextResponse.json(

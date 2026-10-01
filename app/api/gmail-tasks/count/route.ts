@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { countGmailOriginTasks } from "@/lib/gmailTasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) return NextResponse.json({ count: 0 });
+  // Staff only: this is the caller's own Google Tasks list, and for an
+  // outside address lib/sa reads the owner's instead. Refused callers get
+  // the same silent zero as a signed-out poll, so the badge stays hidden.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return NextResponse.json({ count: 0 });
+  const email = gate.email;
   try {
     const count = await countGmailOriginTasks(email);
     return NextResponse.json({ count });

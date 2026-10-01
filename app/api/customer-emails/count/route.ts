@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
+import { isStaffEmail } from "@/lib/viewerTier";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { listCustomerEmails } from "@/lib/customerEmails";
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
  *
  * Returns 0 (and renders no badge) when:
  *   - User isn't authenticated (401-equivalent)
+ *   - User isn't @fandf.co.il staff (403-equivalent)
  *   - User hasn't opted into the gmail_customer_poll pref
  *   - There are zero registered customer senders OR zero unread
  *     messages from them in the lookback window
@@ -25,16 +27,21 @@ export const dynamic = "force-dynamic";
  * here doesn't double the cost — Gmail's per-second quota soaks it.
  */
 export async function GET() {
-  const session = await auth();
-  const sessionEmail = session?.user?.email;
-  if (!sessionEmail) {
+  // Staff only: this reads the caller's own inbox, and for an outside
+  // address lib/sa reads the owner's instead. Refused callers get the
+  // same silent zero as a signed-out poll, so the badge just stays hidden.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) {
     return NextResponse.json({ count: 0 });
   }
+  const sessionEmail = gate.email;
   try {
     const viewAs = await getEffectiveViewAs(sessionEmail).catch(() => "");
     const targetEmail = viewAs || sessionEmail;
     const prefs = await getUserPrefs(targetEmail);
-    if (!prefs.gmail_customer_poll) {
+    // The pref only counts on a staff row — an outside address has no
+    // inbox of its own for it to refer to.
+    if (!isStaffEmail(targetEmail) || !prefs.gmail_customer_poll) {
       return NextResponse.json({ count: 0 });
     }
     const items = await listCustomerEmails(targetEmail);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { postMessage, parseSpaceId, listThreadMentionedEmails } from "@/lib/chat";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 import { ensureUserInSpace } from "@/lib/chatSpaceCreate";
@@ -16,23 +16,20 @@ const MAX_TEXT = 4000;
  * message into the project's space, impersonating the session user
  * (so the message appears authored by them, not by a bot identity).
  *
- * Authorization: NextAuth session must be active. We don't gate by
- * project access here because the underlying Chat API call already
+ * Authorization: @fandf.co.il staff only (requireStaff). We don't gate
+ * by project access here because the underlying Chat API call already
  * gates — if the impersonated user isn't a member of the space, the
- * post fails. That's both correct AND the simplest model.
+ * post fails. That only holds for staff: an outside account can't be
+ * impersonated, lib/sa swaps in the owner (a member of every space),
+ * and the post — and the mention emails — would go out in her name.
  *
  * On success, calls revalidateTag("chat-messages") so the next read
  * of the internal tab picks up the new message immediately rather
  * than waiting up to 60s for the listRecentMessages cache to expire.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
 
   let body: {
     project?: string;
@@ -130,7 +127,7 @@ export async function POST(req: Request) {
   // absent (legacy callers).
   let webhookUrl = "";
   try {
-    const { headers, rows } = await readKeysCached(session.user.email);
+    const { headers, rows } = await readKeysCached(gate.email);
     const iProj = headers.indexOf("פרוייקט");
     const iCo = headers.indexOf("חברה");
     const iWebhook = findChatSpaceColumnIndex(headers);
@@ -199,12 +196,12 @@ export async function POST(req: Request) {
   // for an unrelated reason). Skipped for non-domain users so we don't
   // accidentally widen access to clients posting via composer paths
   // they shouldn't reach.
-  if (session.user.email.toLowerCase().endsWith("@fandf.co.il")) {
+  if (gate.email.toLowerCase().endsWith("@fandf.co.il")) {
     try {
       await ensureUserInSpace(
         driveFolderOwner(),
         spaceId,
-        session.user.email,
+        gate.email,
       );
     } catch (e) {
       // ensureUserInSpace already swallows expected errors; this catch
@@ -223,7 +220,7 @@ export async function POST(req: Request) {
   // annotations on the posted message — that's what makes Chat fire
   // a real notification to the @-mentioned user.
   const messageName = await postMessage(
-    session.user.email,
+    gate.email,
     spaceId,
     text,
     {
@@ -267,7 +264,7 @@ export async function POST(req: Request) {
   if (threadName) {
     try {
       const threadEmails = await listThreadMentionedEmails(
-        session.user.email,
+        gate.email,
         spaceId,
         threadName,
       );
@@ -288,7 +285,7 @@ export async function POST(req: Request) {
         notifyOnce({
           kind: "chat_mention",
           forEmail: email,
-          actorEmail: session.user!.email!,
+          actorEmail: gate.email,
           project,
           title: project,
           body: bodyPreview,

@@ -21,6 +21,8 @@ import {
   driveFolderOwner,
   useFirestoreWrites,
 } from "@/lib/sa";
+import { isStaffEmail } from "@/lib/viewerTier";
+import { canOpenProject } from "@/lib/projectAccess";
 
 export type UploadResult = {
   fileId: string;
@@ -49,6 +51,43 @@ function envOrThrow(name: string): string {
 
 type TaskFolderInfo = { folderId: string; title: string };
 
+/** Who the task belongs to — read off the same row as the folder id. */
+type TaskWho = { project: string; people: string[] };
+
+function lcEmails(v: unknown): string[] {
+  return (Array.isArray(v) ? v : String(v ?? "").split(/[,;]+/))
+    .map((s) => String(s ?? "").toLowerCase().trim())
+    .filter(Boolean);
+}
+
+/**
+ * May this viewer add files to this task? The upload runs as the Drive
+ * owner, and nothing here used to compare the caller to the task — any
+ * account holding a task id could write into its folder (authorization
+ * audit, 2026-10-01).
+ *
+ * Same rule as tasksGetDirect, applied to the row this file already reads
+ * (tasksGetDirect scans the whole collection — too heavy for the upload
+ * hot path): staff pass on the domain; anyone else must be on the task
+ * (author / approver / assignee) or have its project in their Keys scope.
+ * Fails closed.
+ */
+async function mayTouchTask(
+  subjectEmail: string,
+  who: TaskWho,
+): Promise<boolean> {
+  const lc = String(subjectEmail || "").toLowerCase().trim();
+  if (!lc) return false;
+  if (isStaffEmail(lc)) return true;
+  if (who.people.includes(lc)) return true;
+  return canOpenProject(lc, who.project);
+}
+
+// A Drive id is letters, digits, "-" and "_". A folder id of any other
+// shape that reaches a `q` string is a query injection, not a folder; the
+// length floor also keeps out aliases such as "root".
+const DRIVE_ID_RE = /^[A-Za-z0-9_-]{10,}$/;
+
 // Per-process cache: taskId → { info, expiresAt }. Drive folder IDs are
 // effectively immutable per task (set at create time, never reassigned)
 // and titles change rarely. Caching the lookup with a 5-min TTL cuts
@@ -60,7 +99,10 @@ type TaskFolderInfo = { folderId: string; title: string };
 // Single shared map across subjects since the data is the same
 // regardless of viewer (drive_folder_id + title don't depend on who's
 // asking). The 5-min TTL bounds staleness if a title is renamed.
-type CacheEntry = { info: TaskFolderInfo; expiresAt: number };
+//
+// WHO may upload does depend on the viewer, so `who` is cached beside the
+// folder and checked on every call — a cache hit is not an access grant.
+type CacheEntry = { info: TaskFolderInfo; who: TaskWho; expiresAt: number };
 const FOLDER_INFO_CACHE = new Map<string, CacheEntry>();
 const FOLDER_INFO_TTL_MS = 5 * 60 * 1000;
 
@@ -69,7 +111,13 @@ async function findTaskFolderInfo(
   taskId: string,
 ): Promise<TaskFolderInfo> {
   const cached = FOLDER_INFO_CACHE.get(taskId);
-  if (cached && cached.expiresAt > Date.now()) {
+  // A cached "no" falls through to a fresh read rather than refusing: the
+  // viewer may have been assigned to the task since the entry was stored.
+  if (
+    cached &&
+    cached.expiresAt > Date.now() &&
+    (await mayTouchTask(subjectEmail, cached.who))
+  ) {
     return cached.info;
   }
   if (useFirestoreWrites()) {
@@ -86,6 +134,19 @@ async function findTaskFolderInfo(
     const d = snap.data() as Record<string, unknown>;
     let folderId = String(d.drive_folder_id ?? "").trim();
     const title = String(d.title ?? "").trim();
+    // Before the lazy folder creation below — a refused caller must not
+    // leave a folder behind in the shared drive.
+    const who: TaskWho = {
+      project: String(d.project ?? "").trim(),
+      people: [
+        ...lcEmails(d.author_email),
+        ...lcEmails(d.approver_email),
+        ...lcEmails(d.assignees),
+      ],
+    };
+    if (!(await mayTouchTask(subjectEmail, who))) {
+      throw new Error("Access denied");
+    }
     if (!folderId) {
       // LAZY folder creation (2026-06-10): tasks no longer get a Drive
       // folder at create time (it was cluttering project folders —
@@ -130,6 +191,7 @@ async function findTaskFolderInfo(
     const info: TaskFolderInfo = { folderId, title };
     FOLDER_INFO_CACHE.set(taskId, {
       info,
+      who,
       expiresAt: Date.now() + FOLDER_INFO_TTL_MS,
     });
     return info;
@@ -150,9 +212,25 @@ async function findTaskFolderInfo(
   if (idCol < 0 || rowKindCol < 0 || folderIdCol < 0) {
     throw new Error("Comments sheet is missing required columns");
   }
+  const cellOf = (row: unknown[], name: string): unknown => {
+    const c = headers.indexOf(name);
+    return c >= 0 ? row[c] : "";
+  };
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][idCol] ?? "") !== taskId) continue;
     if (String(values[i][rowKindCol] ?? "").trim() !== "task") continue;
+    // Sheet rows keep the assignees in the legacy `mentions` CSV column.
+    const who: TaskWho = {
+      project: String(cellOf(values[i], "project") ?? "").trim(),
+      people: [
+        ...lcEmails(cellOf(values[i], "author_email")),
+        ...lcEmails(cellOf(values[i], "approver_email")),
+        ...lcEmails(cellOf(values[i], "mentions")),
+      ],
+    };
+    if (!(await mayTouchTask(subjectEmail, who))) {
+      throw new Error("Access denied");
+    }
     const folderId = String(values[i][folderIdCol] ?? "").trim();
     if (!folderId) {
       throw new Error(
@@ -163,6 +241,7 @@ async function findTaskFolderInfo(
     const info: TaskFolderInfo = { folderId, title };
     FOLDER_INFO_CACHE.set(taskId, {
       info,
+      who,
       expiresAt: Date.now() + FOLDER_INFO_TTL_MS,
     });
     return info;
@@ -187,8 +266,16 @@ function escapeDriveQuery(value: string): string {
 // id so a task title rename doesn't immediately spawn a fresh subfolder
 // (the cache survives until expiry; a server restart re-resolves by
 // name search and falls back to creating a new one).
+//
+// The key also carries the PARENT folder the subfolder was found under.
+// listTaskAttachments takes its parent from the caller (the peek route
+// passes it from the query string), and with a task-id-only key a listing
+// under some other folder seeded this cache — the next upload to that
+// task then landed in the other folder.
 const ATTACH_CACHE = new Map<string, { id: string; expiresAt: number }>();
 const ATTACH_TTL_MS = 5 * 60 * 1000;
+const attachKey = (taskId: string, parentFolderId: string) =>
+  `${taskId}|${parentFolderId}`;
 
 async function ensureTaskAttachmentsFolder(
   drive: drive_v3.Drive,
@@ -196,8 +283,13 @@ async function ensureTaskAttachmentsFolder(
   taskId: string,
   taskTitle: string,
 ): Promise<string> {
-  const cached = ATTACH_CACHE.get(taskId);
+  const cached = ATTACH_CACHE.get(attachKey(taskId, parentFolderId));
   if (cached && cached.expiresAt > Date.now()) return cached.id;
+  if (!DRIVE_ID_RE.test(parentFolderId)) {
+    throw new Error(
+      "מזהה תיקיית ה-Drive של המשימה אינו תקין — בחר/י תיקייה מחדש בעריכת המשימה.",
+    );
+  }
 
   const subfolderName = sanitizeFolderName(taskTitle.trim() || taskId);
   // Look up an existing subfolder of this name first — handles server
@@ -224,7 +316,10 @@ async function ensureTaskAttachmentsFolder(
     folderId = created.data.id || "";
   }
   if (!folderId) throw new Error("Could not ensure attachments subfolder");
-  ATTACH_CACHE.set(taskId, { id: folderId, expiresAt: Date.now() + ATTACH_TTL_MS });
+  ATTACH_CACHE.set(attachKey(taskId, parentFolderId), {
+    id: folderId,
+    expiresAt: Date.now() + ATTACH_TTL_MS,
+  });
   return folderId;
 }
 
@@ -336,14 +431,17 @@ export async function listTaskAttachments(
   taskId: string,
   taskTitle: string,
 ): Promise<{ folderId: string; folderUrl: string; files: TaskAttachment[] }> {
-  if (!parentFolderId) return { folderId: "", folderUrl: "", files: [] };
+  // Not a Drive id → nothing to list (and nothing to splice into `q`).
+  if (!parentFolderId || !DRIVE_ID_RE.test(parentFolderId)) {
+    return { folderId: "", folderUrl: "", files: [] };
+  }
   const drive = driveClient(driveFolderOwner());
   void subjectEmail; // owner-impersonation is sufficient for read-only listing
   const subfolderName = sanitizeFolderName(taskTitle.trim() || taskId);
 
   // Find the subfolder. Use the cache when warm.
   let attachmentsFolderId = "";
-  const cached = ATTACH_CACHE.get(taskId);
+  const cached = ATTACH_CACHE.get(attachKey(taskId, parentFolderId));
   if (cached && cached.expiresAt > Date.now()) {
     attachmentsFolderId = cached.id;
   } else {
@@ -357,7 +455,7 @@ export async function listTaskAttachments(
     });
     attachmentsFolderId = listed.data.files?.[0]?.id || "";
     if (attachmentsFolderId) {
-      ATTACH_CACHE.set(taskId, {
+      ATTACH_CACHE.set(attachKey(taskId, parentFolderId), {
         id: attachmentsFolderId,
         expiresAt: Date.now() + ATTACH_TTL_MS,
       });

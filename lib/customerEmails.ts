@@ -24,6 +24,7 @@ import { findCompanyByClientEmail, readKeysCached } from "@/lib/keys";
 import { parseEmailAddress } from "@/lib/gmailTasks";
 import { getMyProjectsDirect } from "@/lib/projectsDirect";
 import { scopeProjectsToPerson } from "@/lib/scope";
+import { isStaffEmail } from "@/lib/viewerTier";
 
 /**
  * The set of company names the viewer is actually on the roster for —
@@ -147,6 +148,12 @@ export async function listCustomerEmails(
 ): Promise<CustomerEmailItem[]> {
   const days = opts.days ?? 3;
   const maxResults = opts.maxResults ?? 50;
+
+  // "My inbox" exists only for @fandf.co.il: for any other address lib/sa
+  // reads the OWNER's mailbox instead. The one choke point under the page
+  // and both routes — and it also covers an admin's "view as" target being
+  // a client or freelancer address.
+  if (!isStaffEmail(subjectEmail)) return [];
 
   const customers = await listRegisteredCustomerEmails(subjectEmail);
   if (customers.length === 0) return [];

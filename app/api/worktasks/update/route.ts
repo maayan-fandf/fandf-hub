@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { tasksUpdate, type TasksUpdatePatch } from "@/lib/appsScript";
 import { useSATasksWrites } from "@/lib/sa";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,11 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: a client is in scope for their own project, so the lib's
+  // project check alone would let them read (the response is the full
+  // task row, price included) and re-status its tasks.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: Body;
   try {

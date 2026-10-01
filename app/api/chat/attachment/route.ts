@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { chatClient } from "@/lib/sa";
 import { Readable } from "node:stream";
 
@@ -31,19 +31,19 @@ export const dynamic = "force-dynamic";
  * "AATTaIB...") so a query string is the most ergonomic format for an
  * img src — easier than path-encoding the whole opaque string.
  *
- * Security: the hub session gates access — only authenticated users
- * can hit the proxy. The SA-side download runs as the hub deployer
- * identity which is a member of every project space, so we don't
- * further validate per-space membership here. The resourceName is
- * unguessable in practice (long opaque token); the page only surfaces
- * it for attachments the user can already see in their chat feed.
+ * Security: @fandf.co.il staff only (requireStaff). The download runs
+ * under DWD as the caller, so Chat's own membership check applies to
+ * them and we don't further validate per-space membership here. The
+ * resourceName is unguessable in practice (long opaque token); the page
+ * only surfaces it for attachments the user can already see in their
+ * chat feed.
  */
 export async function GET(req: Request) {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) {
-    return new NextResponse("Unauthorized", { status: 401 });
-  }
+  // Staff only: the download runs as the caller, and for an outside account
+  // lib/sa swaps in the owner — whose Chat reaches far beyond project spaces.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const email = gate.email;
   const url = new URL(req.url);
   const resourceName = (url.searchParams.get("r") || "").trim();
   if (!resourceName) {

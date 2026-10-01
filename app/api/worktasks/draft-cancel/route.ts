@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { deleteDraftFolder } from "@/lib/draftFolders";
+import { requireTeam } from "@/lib/viewerGate";
 
 /**
  * POST /api/worktasks/draft-cancel
@@ -33,6 +34,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: drafts belong to the new-task form, and the Drive calls
+  // below run as the owner for any outside address.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: DraftCancelRequest;
   try {

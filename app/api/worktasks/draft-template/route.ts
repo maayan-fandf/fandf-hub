@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { resolveTemplate } from "@/lib/taskTemplates";
 import { materializeDraft } from "@/lib/draftFolders";
+import { requireTeam } from "@/lib/viewerGate";
 
 /**
  * POST /api/worktasks/draft-template
@@ -50,6 +51,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: every call creates a folder and a file copy in the Tasks
+  // shared drive as the owner. Only the new-task form calls it.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: DraftTemplateRequest;
   try {

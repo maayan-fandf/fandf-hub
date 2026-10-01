@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { tasksList } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { syncUserCompletions } from "@/lib/userFastSync";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,9 @@ export async function GET() {
       { status: 401 },
     );
   }
+  // Team only: the משימות badge is not rendered for clients (app/layout).
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   try {
     // Respect the gear-menu view_as so the badge mirrors what /tasks
     // would actually show as the user's open queue. Cookie wins over
@@ -46,6 +50,10 @@ export async function GET() {
     // after() so the badge response isn't blocked on the GT API list.
     // The 1-min Cloud Scheduler poll still catches the offline case.
     after(async () => {
+      // Staff only: a Google Tasks list is personal. For an outside
+      // address lib/sa swaps in the owner, so this would scan HER list
+      // and record her completions as the freelancer's.
+      if (gate.tier !== "staff") return;
       try {
         const result = await syncUserCompletions(sessionEmail);
         if (result.dispatched + result.skipped + result.errored > 0) {

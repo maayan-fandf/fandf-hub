@@ -14,6 +14,7 @@ import { getCommentByIdDirect } from "@/lib/commentsDirect";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { readPricingSetup } from "@/lib/pricing";
 import { getSharedDriveName } from "@/lib/driveFolders";
+import { viewerTier } from "@/lib/viewerTier";
 import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,13 @@ export default async function NewTaskPage({
   searchParams: Promise<Search>;
 }) {
   const sp = await searchParams;
+  // Internal-only, as an allow-list and before anything is read: the form's
+  // inputs (every company's price list, the people directory, the form
+  // schema) are all read as the Drive owner. The "not a client" test further
+  // down let through any account it could not prove was one — everybody,
+  // on a load where the projects read failed.
+  const tier = await viewerTier(await currentUserEmail().catch(() => ""));
+  if (tier !== "staff" && tier !== "team") redirect("/");
   // NextAuth session — used to forward the user's Google access_token
   // (drive.file scope) to the experimental Drive Picker. Token is
   // short-lived (~1h) but freshly minted on the server render, which

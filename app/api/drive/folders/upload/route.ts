@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTeam } from "@/lib/viewerGate";
 import { uploadFileToFolder } from "@/lib/driveFolders";
 
 export const runtime = "nodejs";
@@ -30,13 +30,13 @@ const MAX_BYTES = 30 * 1024 * 1024;
  * Used by TaskFilesPanel's drag-drop upload zone.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Team only, and before the body is read: the file is written as the
+  // Shared Drive owner into whatever folder is sent, so a client could
+  // plant a file in another client's folder. The upload zone is
+  // TaskFilesPanel, on the task pages clients never reach. This path is
+  // also outside the middleware matcher — this check is its only gate.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   // Size first, and from the header — a body that is too big has to be
   // rejected with a sentence the uploader can act on, BEFORE formData()
   // gets to fail on it for a reason that reads like a bug in the file.
@@ -85,6 +85,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // A real folder id only — "root" is a valid Drive alias, and here it
+  // would mean the owner's own My Drive.
+  if (!/^[A-Za-z0-9_-]{10,100}$/.test(parent)) {
+    return NextResponse.json(
+      { ok: false, error: "invalid parent" },
+      { status: 400 },
+    );
+  }
   if (!(file instanceof File) || !file.size) {
     return NextResponse.json(
       { ok: false, error: "file is required" },
@@ -103,7 +111,7 @@ export async function POST(req: Request) {
   try {
     const buf = Buffer.from(await file.arrayBuffer());
     const uploaded = await uploadFileToFolder(
-      session.user.email,
+      gate.email,
       parent,
       file.name || "untitled",
       file.type || "application/octet-stream",

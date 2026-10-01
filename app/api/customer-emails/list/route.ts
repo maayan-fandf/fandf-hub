@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
+import { isStaffEmail } from "@/lib/viewerTier";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { listCustomerEmails } from "@/lib/customerEmails";
@@ -12,24 +13,23 @@ export const dynamic = "force-dynamic";
  * /customer-emails page but in JSON form so the popover can render
  * client-side without a full navigation.
  *
- * Auth-gated and pref-gated identically to the count endpoint —
+ * Staff-gated and pref-gated identically to the count endpoint —
  * returns { ok: true, items: [] } when the toggle is off so the
  * popover renders an empty-state hint instead of leaking a 401.
  */
 export async function GET() {
-  const session = await auth();
-  const sessionEmail = session?.user?.email;
-  if (!sessionEmail) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Staff only: this reads the caller's own inbox, and for an outside
+  // address lib/sa reads the owner's instead.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const sessionEmail = gate.email;
   try {
     const viewAs = await getEffectiveViewAs(sessionEmail).catch(() => "");
     const targetEmail = viewAs || sessionEmail;
     const prefs = await getUserPrefs(targetEmail);
-    if (!prefs.gmail_customer_poll) {
+    // The pref only counts on a staff row — an outside address has no
+    // inbox of its own for it to refer to.
+    if (!isStaffEmail(targetEmail) || !prefs.gmail_customer_poll) {
       return NextResponse.json({ ok: true, items: [], optedIn: false });
     }
     const items = await listCustomerEmails(targetEmail);

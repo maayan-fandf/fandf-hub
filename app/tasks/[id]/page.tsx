@@ -7,7 +7,13 @@ export async function generateMetadata({
   // Look up the task title for the tab; falls back to the id if the
   // fetch fails (don't want the metadata path to crash the page render).
   try {
-    const { tasksGet } = await import("@/lib/appsScript");
+    const { tasksGet, currentUserEmail } = await import("@/lib/appsScript");
+    // Same allow-list as the page body. Metadata renders on its own, so
+    // without this a client (a member of their own project to the task
+    // reader) got the internal task title in <title> while the body
+    // redirected them away.
+    const tier = await viewerTier(await currentUserEmail().catch(() => ""));
+    if (tier !== "staff" && tier !== "team") return { title: "משימה" };
     const res = await tasksGet(id);
     const t = res?.task;
     if (t?.title) return { title: `משימה: ${t.title}` };
@@ -18,6 +24,7 @@ export async function generateMetadata({
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { viewerTier } from "@/lib/viewerTier";
 import { auth } from "@/auth";
 import {
   currentUserEmail,
@@ -103,6 +110,13 @@ export default async function TaskDetailPage({
   // `.then()` chain that previously serialized the (slow) schema
   // fetch behind it inside the batch (speed pass 2026-06-10).
   const myEmail = (await currentUserEmail().catch(() => "")) || "";
+  // Same allow-list as /tasks and /tasks/new, ahead of every read: staff and
+  // the freelancers Keys lists as internal. The `isClientUser` bounce below
+  // only catches an account it can prove is a client, and nobody on a load
+  // where the projects read fails — and a client counts as a member of their
+  // own project to the task reader.
+  const tier = await viewerTier(myEmail);
+  if (tier !== "staff" && tier !== "team") redirect("/");
   const [res, peopleRes, accessRes, formSchemaRes] =
     await Promise.all([
       tasksGet(decodedId).catch((e: unknown) => {

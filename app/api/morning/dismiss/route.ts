@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dismissMorningSignal } from "@/lib/appsScript";
+import { requireTeam } from "@/lib/viewerGate";
 
 export async function POST(req: NextRequest) {
+  // A dismissal is TEAM-WIDE and nothing downstream checks who asked (Apps
+  // Script doesn't either), so the team is named here: staff, plus the
+  // Keys-listed freelancers, who get the alerts row on project pages. Never
+  // clients — the row isn't rendered for them.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
+
   let body: { signalKey?: string; snoozeUntil?: string; reason?: string };
   try {
     body = await req.json();

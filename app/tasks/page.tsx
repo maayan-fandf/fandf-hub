@@ -17,6 +17,7 @@ import { buildUserStateByTaskId } from "@/lib/taskUserState";
 import { getUserRole, type UserRole } from "@/lib/userRole";
 import { getUserPrefs } from "@/lib/userPrefs";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
+import { viewerTier } from "@/lib/viewerTier";
 import { getSharedDriveName } from "@/lib/driveFolders";
 import TasksQueue, {
   type TasksSortKey,
@@ -91,6 +92,13 @@ export default async function TasksPage({
   const sp = await searchParams;
 
   const me = await currentUserEmail().catch(() => "");
+  // Allow-list, ahead of every read below: staff and the freelancers Keys
+  // lists as internal. The `isClientUser` bounce further down only catches
+  // an account it can prove is a client — and nobody on a load where the
+  // projects read fails — while the people directory this page hands to its
+  // client components is read as the Drive owner.
+  const tier = await viewerTier(me);
+  if (tier !== "staff" && tier !== "team") redirect("/");
   // Clients have no business on /tasks — bounce them to the home grid.
   // Mirrors the layout's nav-link gating + the project page's section
   // gating so there's no surface a client can land on accidentally.

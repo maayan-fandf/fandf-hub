@@ -8,7 +8,7 @@ export async function generateMetadata({
 }
 
 import Link from "next/link";
-import { canOpenProject } from "@/lib/projectAccess";
+import { canOpenProject, redirectIfOffRoster } from "@/lib/projectAccess";
 import ProjectNoAccess from "@/components/ProjectNoAccess";
 import { currentUserEmail } from "@/lib/appsScript";
 import {
@@ -58,6 +58,7 @@ export default async function ProjectTimelinePage({
   // Same gate as the project page (lib/projectAccess): the readers below
   // refuse too, but a denial should be one clear page, not an error banner.
   const viewerEmail = await currentUserEmail().catch(() => "");
+  await redirectIfOffRoster(viewerEmail);
   if (!(await canOpenProject(viewerEmail, projectName))) {
     return <ProjectNoAccess projectName={projectName} email={viewerEmail} />;
   }

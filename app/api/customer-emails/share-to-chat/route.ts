@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { postMessage, parseSpaceId } from "@/lib/chat";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
@@ -21,16 +21,16 @@ const MAX_TEXT = 4000;
  * Same auth + impersonation model as /api/chat/post: postMessage runs
  * with the session user's email as the impersonation subject so the
  * message lands authored by them (not a service-account identity).
+ *
+ * Staff only. "Authored by them" holds for @fandf.co.il alone: for an
+ * outside address lib/sa posts as the owner, into any project's
+ * internal space, with a body the caller wrote. What is shared here
+ * comes out of the caller's own inbox, which only staff have.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  const me = session?.user?.email;
-  if (!me) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const me = gate.email;
 
   let body: {
     company?: string;

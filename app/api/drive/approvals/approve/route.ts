@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { approvePrisaViaLock } from "@/lib/driveApprovals";
+import { getTasksSharedDriveId } from "@/lib/driveFolders";
 import { clearPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 import { resolvePrisaApprovalRequest } from "@/lib/prisaApprovalTokens";
+import { driveClient, driveFolderOwner } from "@/lib/sa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,9 +24,15 @@ export const dynamic = "force-dynamic";
  *
  * The request to approve is created by /api/prisot/send-approval.
  *
- * The button renders only inside the prisot card on a project page the
- * caller can already see; the file id is an un-guessable 32-char Drive
- * id surfaced only there.
+ * WHO MAY CALL. Clients are the intended callers, so this cannot be a
+ * staff/team gate; `auth()` keeps out accounts on no roster. The file id
+ * comes from the caller and the lock is set as the Shared Drive owner, so
+ * the route refuses any file outside the tasks Shared Drive — every plan
+ * the button is rendered for lives there. STILL OPEN (authorization
+ * audit, 2026-10-01): the id is not bound to a project the caller may
+ * open, so a client holding another project's plan id could approve it.
+ * Closing that needs the project in the request (ApprovePrisaButton sends
+ * only the file id today).
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -51,6 +59,26 @@ export async function POST(req: Request) {
       { ok: false, error: "fileId required" },
       { status: 400 },
     );
+  }
+
+  // Unchecked, this is "make any file the owner can edit read-only",
+  // wherever it lives. Fails closed: a file we could not look up is not
+  // locked.
+  const inTasksDrive = await driveClient(driveFolderOwner())
+    .files.get({ fileId, fields: "driveId", supportsAllDrives: true })
+    .then((r) => r.data.driveId === getTasksSharedDriveId())
+    .catch(() => null);
+  // A lookup that FAILED is not a refusal: a client pressing "אשר פריסה" on
+  // their own plan during a Drive hiccup should be told to try again, not
+  // "Forbidden". Still nothing is locked.
+  if (inTasksDrive === null) {
+    return NextResponse.json(
+      { ok: false, error: "לא הצלחנו לבדוק את הקובץ כרגע — נסו שוב בעוד רגע" },
+      { status: 502 },
+    );
+  }
+  if (!inTasksDrive) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
   const result = await approvePrisaViaLock({ approverEmail: email, fileId });

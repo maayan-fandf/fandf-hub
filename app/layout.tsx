@@ -82,6 +82,7 @@ import {
 } from "@/lib/appsScript";
 import { scopeProjectsToPerson } from "@/lib/scope";
 import { getProjectNavData } from "@/lib/projectEnded";
+import { isStaffEmail, viewerTier } from "@/lib/viewerTier";
 
 // Runs before React hydrates so data-theme is set before the first paint —
 // avoids the "flash of wrong theme" when a user has picked dark/light but
@@ -153,6 +154,14 @@ export default async function RootLayout({
   // null when neither is available (e.g. the /signin page) so the nav
   // renders its unauthenticated state instead of throwing.
   const email = await currentUserEmail().catch(() => null);
+  // The customer-emails and Gmail-tasks pills and the assistant all read as
+  // the VIEWER — and for an outside address lib/sa swaps in the Drive owner,
+  // so they would show HER mailbox. (The agenda panel stays for freelancers:
+  // its calendar half refuses non-staff inside lib/agenda, the task half is
+  // their own.)
+  // Gated on the viewer's own domain, not on `isClientUser`: that one is
+  // false for an outside freelancer, and false when the projects read fails.
+  const isStaffViewer = !!email && isStaffEmail(email);
   // The global תצוגת לקוח switch's state (lib/clientViewMode). Read here only
   // to seed the top-nav button; the pages that act on it read it themselves.
   const clientViewOn =
@@ -199,6 +208,11 @@ export default async function RootLayout({
       isAdminUser = !!data.isAdmin;
     } catch {
       navProjects = [];
+      // The projects read failed, so the flags above never arrived. Leaving
+      // isClientUser false here showed a real client the internal chrome
+      // (tasks link, quick-note, the agenda) for that load; the roster tier
+      // answers without that read.
+      isClientUser = !["staff", "team"].includes(await viewerTier(email));
     }
     // One extra Sheets read to get the Hebrew name + role for the
     // topnav user pill. Best-effort: failures silently fall back to
@@ -319,8 +333,8 @@ export default async function RootLayout({
                 </ActiveLink>
               )}
               {email && <NavInboxLink isClientUser={isClientUser} />}
-              {email && !isClientUser && <NavCustomerEmails />}
-              {email && !isClientUser && <NavGmailTasks />}
+              {isStaffViewer && !isClientUser && <NavCustomerEmails />}
+              {isStaffViewer && !isClientUser && <NavGmailTasks />}
             </TopnavLinks>
             {/* דשבורד (Apps Script) link hidden 2026-05-22 — legacy feature. */}
             {email && (
@@ -388,7 +402,7 @@ export default async function RootLayout({
                   for client users + the route handler enforces the
                   same gate server-side. Lives at the layout root so
                   the FAB + drawer overlay every page consistently. */}
-              {email && !isClientUser && <GeminiChatDrawer />}
+              {isStaffViewer && !isClientUser && <GeminiChatDrawer />}
             </PageContextProvider>
           </TaskPreviewProvider>
         </LightboxProvider>

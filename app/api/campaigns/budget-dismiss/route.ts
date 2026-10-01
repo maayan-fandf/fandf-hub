@@ -9,6 +9,7 @@ import {
   budgetShiftKey,
   type Platform,
 } from "@/lib/budgetTypes";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,10 @@ export async function POST(req: Request) {
   if (!email) {
     return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
+  // The snooze is shared by the whole team's alert surfaces: team only,
+  // whatever the free-text Role cell behind canSeeCampaigns says.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   const allowed = await canSeeCampaigns(email).catch(() => false);
   if (!allowed) {
     return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });

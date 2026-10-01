@@ -214,12 +214,22 @@ function ageDays(v: unknown): number {
  * lowercased by the caller with the report's own cardKey rules. Filtering
  * here rather than in the browser keeps the answer honest: the button says
  * how many NEW ads it found, and an ad the page already shows is not one.
+ *
+ * `ownOnly` is for a caller outside the team (a client). An ad account is
+ * shared by several developers' projects, so the two things below that make
+ * this useful to an account manager are exactly what a client must not get:
+ * the unmapped campaigns (which may be ANOTHER developer's launch, hours old)
+ * and the sweep across every account. With it set, only ads whose campaign
+ * positively matches this project's Keys pattern come back, and only from
+ * the accounts the project is already known in (authorization audit,
+ * 2026-10-01).
  */
 export async function getNewFbAdsForProject(opts: {
   subjectEmail: string;
   slug: string;
   hours?: number;
   knownKeys?: Set<string>;
+  ownOnly?: boolean;
 }): Promise<FbNewAdsResult> {
   const { subjectEmail, slug, knownKeys } = opts;
   if (!metaConfigured()) throw new Error("META_ACCESS_TOKEN is not set");
@@ -234,6 +244,9 @@ export async function getNewFbAdsForProject(opts: {
   let sweptAll = false;
   const { listAdAccounts } = await import("@/lib/metaGraph");
   if (!accounts.length) {
+    if (opts.ownOnly) {
+      return { ads: [], accounts: [], sweptAll: false, hours, failed: [], foreign: 0 };
+    }
     // Never advertised on Facebook, or advertises under a campaign name the
     // Keys patterns miss. 23 accounts is ~15s — slow for a button, but this
     // is the path where the alternative is an empty answer with no reason.
@@ -280,6 +293,9 @@ export async function getNewFbAdsForProject(opts: {
         // an account manager is checking for.
         const matched = matchSlug(campaign, matchMap);
         if (matched && matched !== slugLower) continue;
+        // …and for a client "matches nothing" is dropped too: an unmapped
+        // campaign is unowned, not theirs.
+        if (opts.ownOnly && matched !== slugLower) continue;
         const unmapped = !matched;
 
         // THE SAME KEY THE CARDS USE (lib/reportShared fbCardKey), not a raw
@@ -393,8 +409,10 @@ export async function getNewFbAdsForProject(opts: {
    * wrong answer — a hit never reaches here. `matchSlug` still decides
    * ownership, so widening the SEARCH does not widen what gets shown: an ad
    * belonging to another project is still dropped wherever it is found.
+   *
+   * Not for `ownOnly`: a client's press must not walk every account.
    */
-  if (!ads.length && !sweptAll) {
+  if (!ads.length && !sweptAll && !opts.ownOnly) {
     const all = (await listAdAccounts())
       .map((a) => clean(a.account_id))
       .filter((id) => id && !known.includes(id));

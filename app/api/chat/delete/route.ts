@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { deleteMessage } from "@/lib/chat";
 
 export const runtime = "nodejs";
@@ -13,13 +13,10 @@ export const dynamic = "force-dynamic";
  * list cache so the next read no longer shows the deleted row.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Staff only: "author-only" holds because Chat acts as the caller. An
+  // outside account is swapped for the owner (lib/sa) and would delete hers.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { messageName?: string };
   try {
@@ -44,7 +41,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    await deleteMessage(session.user.email, messageName);
+    await deleteMessage(gate.email, messageName);
     revalidateTag("chat-messages");
     return NextResponse.json({ ok: true });
   } catch (e) {

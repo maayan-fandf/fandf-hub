@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { canSeeCampaigns } from "@/lib/userRole";
+import { viewerTier } from "@/lib/viewerTier";
 import { currentUserEmail, getMyProjects, getProjectMetrics } from "@/lib/appsScript";
 import { getPortfolioBenchmarks } from "@/lib/portfolioBenchmarks";
 import { diagnosePaidChannels } from "@/lib/paidDiagnosis";
@@ -32,7 +33,8 @@ export const metadata = { title: "סטטיסטיקה" };
  * the URL so links stay shareable. ?project= changes still round-trip
  * here (the drill-down needs a per-project fetch).
  *
- * Gate: canSeeCampaigns (admins / managers / media).
+ * Gate: internal viewer (staff / Keys-listed freelancer) AND
+ * canSeeCampaigns (admins / managers / media).
  */
 export default async function StatsPage({
   searchParams,
@@ -50,7 +52,14 @@ export default async function StatsPage({
   // middleware enforces the NextAuth session before this page renders.
   const email = await currentUserEmail().catch(() => "");
   if (!email) redirect("/signin");
-  const allowed = await canSeeCampaigns(email).catch(() => false);
+  // Internal first, role second. canSeeCampaigns reads a free-text role
+  // cell and knows nothing about who is a client; the benchmarks below are
+  // the whole book, so an outside address must be on the internal roster
+  // before its role is even asked.
+  const tier = await viewerTier(email);
+  const allowed =
+    (tier === "staff" || tier === "team") &&
+    (await canSeeCampaigns(email).catch(() => false));
   if (!allowed) redirect("/unauthorized");
 
   const params = await searchParams;

@@ -6,10 +6,16 @@ export async function generateMetadata({
   const { email } = await params;
   const decoded = decodeURIComponent(email);
   // Try the person's display name; fall back to their email local part.
+  // Metadata is resolved before the page's own gate runs, so the Directory
+  // lookup repeats it — otherwise the tab title names the person to anyone.
   try {
-    const { getDirectoryUser } = await import("@/lib/userDirectory");
-    const u = await getDirectoryUser(decoded);
-    if (u?.fullName) return { title: u.fullName };
+    const me = await currentUserEmail();
+    const tier = await viewerTier(me);
+    if (tier === "staff" || tier === "team") {
+      const { getDirectoryUser } = await import("@/lib/userDirectory");
+      const u = await getDirectoryUser(decoded);
+      if (u?.fullName) return { title: u.fullName };
+    }
   } catch {}
   return { title: decoded.split("@")[0] };
 }
@@ -17,8 +23,9 @@ export async function generateMetadata({
 import Link from "next/link";
 import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
-import { currentUserEmail, getMyProjects, tasksList } from "@/lib/appsScript";
+import { currentUserEmail, tasksList } from "@/lib/appsScript";
 import { tasksPeopleListDirect } from "@/lib/tasksDirect";
+import { viewerTier } from "@/lib/viewerTier";
 import { getDirectoryUser } from "@/lib/userDirectory";
 import GmailIcon from "@/components/GmailIcon";
 import WhatsAppIcon from "@/components/WhatsAppIcon";
@@ -33,8 +40,9 @@ export const dynamic = "force-dynamic";
 /**
  * /team/[email] — single-person profile page.
  *
- * Same gate as /team (clients bounced to /). The email param is the
- * teammate's address (URL-encoded). Page fetches:
+ * Same gate as /team (everyone but staff and Keys-listed freelancers
+ * is bounced to /). The email param is the teammate's address
+ * (URL-encoded). Page fetches:
  *   - their TasksPerson row (name + role)
  *   - Workspace Directory enrichment (job title, phones, photo)
  *   - their OPEN tasks (awaiting_handling / in_progress /
@@ -84,15 +92,10 @@ export default async function TeamPersonPage({
   const me = (await currentUserEmail().catch(() => "")) || "";
   if (!me) redirect("/signin?next=/team/" + rawEmail);
 
-  // Same client gate as /team — keeps client users out of the
-  // internal directory.
-  const access = await getMyProjects().catch(() => null);
-  const isClientOnly =
-    !!access?.isClient &&
-    !access?.isAdmin &&
-    !access?.isStaff &&
-    !access?.isInternal;
-  if (isClientOnly) redirect("/");
+  // Same allow-list gate as /team — staff and Keys-listed freelancers
+  // only, before the Directory profile (phones) is read as the owner.
+  const tier = await viewerTier(me);
+  if (tier !== "staff" && tier !== "team") redirect("/");
 
   const [peopleRes, dir, tasksRes] = await Promise.all([
     tasksPeopleListDirect(me).catch(() => ({

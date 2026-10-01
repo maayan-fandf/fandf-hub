@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTeam } from "@/lib/viewerGate";
 import { createChildFolder } from "@/lib/driveFolders";
 
 export const runtime = "nodejs";
@@ -11,13 +11,11 @@ type Body = {
 };
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Team only: the folder is created as the Shared Drive owner under
+  // whatever parent is sent. The picker's "+ new folder" lives in the task
+  // form, which clients never reach.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -35,8 +33,16 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // A real folder id only — "root" is a valid Drive alias, and here it
+  // would mean the owner's own My Drive.
+  if (!/^[A-Za-z0-9_-]{10,100}$/.test(parent)) {
+    return NextResponse.json(
+      { ok: false, error: "invalid parent" },
+      { status: 400 },
+    );
+  }
   try {
-    const folder = await createChildFolder(session.user.email, parent, name);
+    const folder = await createChildFolder(gate.email, parent, name);
     return NextResponse.json({ ok: true, folder });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

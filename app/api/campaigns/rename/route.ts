@@ -6,6 +6,7 @@ import {
   findCampaignFolderByName,
   renameCampaignFolder,
 } from "@/lib/driveCampaigns";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -28,15 +29,16 @@ function columnLetter(colNumber: number): string {
 
 /**
  * POST /api/campaigns/rename
- * Body: { project: string, fromName: string, toName: string, folderId?: string }
+ * Body: { project: string, fromName: string, toName: string }
  *
  * Renames a campaign in two coordinated writes:
  *   1. Drive folder `<company>/<project>/<fromName>` → `<toName>`.
  *   2. Bulk-update every task row in Comments (row_kind=task,
  *      project=P, campaign=fromName) to set campaign=toName.
  *
- * Caller can optionally pass `folderId` to skip the folder lookup —
- * useful when the picker already had it. Otherwise we resolve by name.
+ * The folder is always resolved by name inside the gated project. A
+ * `folderId` in the body used to short-cut that lookup; it was trusted
+ * as-is, so it is no longer read (the picker never sent it).
  *
  * Failures are NOT atomic (Drive + Sheets are separate APIs). The
  * order is: rename Drive first, then update Sheets. If Drive succeeds
@@ -54,12 +56,16 @@ export async function POST(req: Request) {
     );
   }
   const userEmail = session.user.email;
+  // Renaming a brief is a team action (the task form; clients are
+  // redirected off it) and both writes run as the owner identity — so
+  // staff and Keys-listed freelancers only, never a client.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: {
     project?: unknown;
     fromName?: unknown;
     toName?: unknown;
-    folderId?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -72,7 +78,6 @@ export async function POST(req: Request) {
   const project = String(body.project || "").trim();
   const fromName = String(body.fromName || "").trim();
   const toName = String(body.toName || "").trim();
-  const folderIdHint = String(body.folderId || "").trim();
   if (!project || !fromName || !toName) {
     return NextResponse.json(
       { ok: false, error: "project, fromName, toName are required" },
@@ -96,18 +101,16 @@ export async function POST(req: Request) {
     }
     const company = scope.projectCompany.get(project) || "";
 
-    // Resolve the source folder. If the caller didn't pass `folderId`,
-    // look it up by name. A missing folder is not fatal — it just means
-    // the campaign is a task-only orphan; we still rename the task rows.
-    let folderId = folderIdHint;
-    if (!folderId) {
-      const found = await findCampaignFolderByName(userEmail, {
-        company,
-        project,
-        name: fromName,
-      });
-      folderId = found?.folderId || "";
-    }
+    // Resolve the source folder by name, under the gated project — never
+    // from an id in the body, which would rename whatever the owner can
+    // edit. A missing folder is not fatal — it just means the campaign is
+    // a task-only orphan; we still rename the task rows.
+    const found = await findCampaignFolderByName(userEmail, {
+      company,
+      project,
+      name: fromName,
+    });
+    const folderId = found?.folderId || "";
 
     // 1. Drive rename (best-effort if folder doesn't exist)
     let renamedFolder: { id: string; name: string; viewUrl: string } | null = null;

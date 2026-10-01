@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { updateMessageText } from "@/lib/chat";
 
 export const runtime = "nodejs";
@@ -21,13 +21,10 @@ const MAX_TEXT = 4000;
  * picks up the edited body without waiting on the 60s TTL.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Staff only: "author-only" holds because Chat acts as the caller. An
+  // outside account is swapped for the owner (lib/sa) and would rewrite hers.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { messageName?: string; text?: string };
   try {
@@ -61,7 +58,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    await updateMessageText(session.user.email, messageName, text);
+    await updateMessageText(gate.email, messageName, text);
     revalidateTag("chat-messages");
     return NextResponse.json({ ok: true });
   } catch (e) {

@@ -26,6 +26,7 @@
 import { unstable_cache } from "next/cache";
 import { tasksApiClient, gmailReadClient } from "@/lib/sa";
 import { findCompanyByClientEmail } from "@/lib/keys";
+import { isStaffEmail } from "@/lib/viewerTier";
 
 /** Marker prefix in a GT's notes that identifies it as hub-originated.
  *  Hub-spawned tasks always start their notes with this URL on the very
@@ -77,6 +78,11 @@ const CACHE_TTL = 60;
 async function listGmailOriginTasksRaw(
   subjectEmail: string,
 ): Promise<RawGmailTask[]> {
+  // "The user's" list exists only for @fandf.co.il: for any other address
+  // lib/sa impersonates the owner, so this would hand out HER tasks and
+  // mail. Checked here, under both count and list, and before the cache
+  // so nothing is stored under an outside address.
+  if (!isStaffEmail(subjectEmail)) return [];
   return cachedListGmailOriginTasks(subjectEmail);
 }
 
@@ -169,6 +175,9 @@ export async function dismissGmailOriginTask(
   subjectEmail: string,
   taskId: string,
 ): Promise<void> {
+  // Same reason as the read: an outside address would complete a task on
+  // the owner's list.
+  if (!isStaffEmail(subjectEmail)) throw new Error("Forbidden");
   const tasks = tasksApiClient(subjectEmail);
   await tasks.tasks.patch({
     tasklist: "@default",

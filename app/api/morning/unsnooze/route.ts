@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { unsnoozeMorningSignal } from "@/lib/appsScript";
 import { removeAlertDismissal } from "@/lib/alertDismissals";
+import { requireTeam } from "@/lib/viewerGate";
 
 /**
  * POST /api/morning/unsnooze
@@ -34,6 +35,12 @@ import { removeAlertDismissal } from "@/lib/alertDismissals";
  * fall back to the sheet (Firestore outage) still see the unsnooze.
  */
 export async function POST(req: NextRequest) {
+  // Same audience as /api/morning/dismiss. The Firestore delete and the
+  // snapshot bust below involve no user at all, so without this any signed-in
+  // account could re-fire the team's alerts and keep the snapshot cold.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
+
   let body: { signalKey?: string };
   try {
     body = await req.json();

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getTaskComments } from "@/lib/appsScript";
 import { listTaskAttachments } from "@/lib/taskUpload";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,11 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: the preview drawer opens from task rows, which clients are
+  // never shown, and it returns the internal task discussion plus a Drive
+  // listing read as the owner.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   const url = new URL(req.url);
   const id = (url.searchParams.get("id") || "").trim();

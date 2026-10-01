@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { createMentionDirect } from "@/lib/commentsWriteDirect";
 import { upsertPrisotChangeRequest } from "@/lib/prisotChangeRequests";
 import { resolvePrisaApprovalRequest } from "@/lib/prisaApprovalTokens";
+import { canOpenProject } from "@/lib/projectAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,17 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { ok: false, error: "note required" },
       { status: 400 },
+    );
+  }
+  // The same gate the project page (and so this button) sits behind. The
+  // post below would refuse too, but as a 500 that tells "access denied"
+  // from "no such project"; here it is one 403 before anything is written.
+  // NOT YET CHECKED: that `fileId` is this project's plan — see ROUND 2 in
+  // the 2026-10-01 authorization audit (needs the card's company).
+  if (!(await canOpenProject(email, project))) {
+    return NextResponse.json(
+      { ok: false, error: "forbidden" },
+      { status: 403 },
     );
   }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { useSATasksWrites } from "@/lib/sa";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,11 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: "project access" alone would let a client rewrite the
+  // time counter on their own project's tasks — the tracker lives on
+  // /tasks/[id] and /admin/time, neither of which clients see.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { taskId?: string; minutes?: unknown; reset?: unknown };
   try {

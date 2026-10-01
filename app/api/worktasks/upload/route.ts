@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { uploadToTaskFolder } from "@/lib/taskUpload";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,11 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: the file is written into the Tasks shared drive as the
+  // owner. Every caller is a task surface, which clients never see.
+  // (Which TASK the caller may touch is checked in uploadToTaskFolder.)
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let form: FormData;
   try {
@@ -74,6 +80,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Access denied") {
+      return NextResponse.json({ ok: false, error: msg }, { status: 403 });
+    }
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

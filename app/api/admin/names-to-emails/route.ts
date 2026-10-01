@@ -3,7 +3,9 @@ import {
   adminListNamesToEmails,
   adminUpsertNameToEmail,
   adminDeleteNameToEmail,
+  currentUserEmail,
 } from "@/lib/appsScript";
+import { HUB_ADMIN_EMAILS } from "@/lib/tasksDirect";
 
 /**
  * Admin CRUD for the `names to emails` sheet.
@@ -13,8 +15,25 @@ import {
  *
  * Auth is enforced by the Apps Script side (_requireHubAdmin_). Non-admins
  * get a 500 with "Admin only — …" which we surface verbatim.
+ *
+ * The hub checks too, first: this was the one admin route with no check
+ * of its own, so its whole gate lived in another codebase's deployment.
+ * HUB_ADMIN_EMAILS is the same list as the script's CONFIG.ADMIN_EMAILS.
  */
+async function refuseNonAdmin(): Promise<NextResponse | null> {
+  const email = (await currentUserEmail().catch(() => "")).toLowerCase().trim();
+  if (!email) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  if (!HUB_ADMIN_EMAILS.has(email)) {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
+  return null;
+}
+
 export async function GET() {
+  const refused = await refuseNonAdmin();
+  if (refused) return refused;
   try {
     const data = await adminListNamesToEmails();
     return NextResponse.json(data);
@@ -26,6 +45,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const refused = await refuseNonAdmin();
+  if (refused) return refused;
   let body: {
     fullName?: string;
     email?: string;
@@ -63,6 +84,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const refused = await refuseNonAdmin();
+  if (refused) return refused;
   let body: { fullName?: string };
   try {
     body = await req.json();

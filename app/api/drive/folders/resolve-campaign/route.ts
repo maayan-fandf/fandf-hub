@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTeam } from "@/lib/viewerGate";
 import { findCampaignFolderId } from "@/lib/driveFolders";
 
 export const runtime = "nodejs";
@@ -12,13 +12,12 @@ type Body = {
 };
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Team only: this turns any company / project / campaign NAME into its
+  // Drive folder id, looked up as the Shared Drive owner — the first step
+  // of walking someone else's folders. Both callers are in the task form,
+  // which clients never reach.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -39,7 +38,7 @@ export async function POST(req: Request) {
     // READ-ONLY. Returns { folderId: null } when any path segment is
     // missing — do NOT auto-create here. The task-create orchestrator
     // calls `ensureCampaignFolderId` later (at save time).
-    const result = await findCampaignFolderId(session.user.email, {
+    const result = await findCampaignFolderId(gate.email, {
       company: String(body.company || "").trim(),
       project,
       campaign: String(body.campaign || "").trim(),

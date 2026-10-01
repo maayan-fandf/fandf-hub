@@ -20,6 +20,7 @@
 
 import { tasksListDirect } from "@/lib/tasksDirect";
 import { calendarReadonlyClient } from "@/lib/sa";
+import { isStaffEmail } from "@/lib/viewerTier";
 import type { WorkTask, WorkTaskStatus } from "@/lib/appsScript";
 
 export type AgendaItem = {
@@ -158,6 +159,10 @@ async function calendarEventsInRange(
   fromDate: string,
   toDate: string,
 ): Promise<Array<AgendaItem & { _date: string }>> {
+  // Staff only. For an outside address lib/sa substitutes the Drive owner,
+  // so this would return HER calendar to a freelancer. Their agenda is the
+  // task half alone.
+  if (!isStaffEmail(userEmail)) return [];
   try {
     // Israel-local midnight at start of fromDate → end of toDate
     // (i.e. day after toDate).

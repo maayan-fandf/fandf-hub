@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserPrefs, setUserPrefs, type UserPrefs } from "@/lib/userPrefs";
+import { isStaffEmail } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * This route is for every viewer — a client mutes notifications here too.
+ * The one pref that is not is `gmail_customer_poll`: it means "show mail
+ * from MY inbox", and only @fandf.co.il has an inbox the hub can open as
+ * the viewer (for anyone else lib/sa opens the owner's). So an outside
+ * address can neither switch it on (POST) nor be told it is on (here) —
+ * a row that already carries it reads as off.
+ */
+function prefsFor(email: string, prefs: UserPrefs): UserPrefs {
+  return isStaffEmail(email) ? prefs : { ...prefs, gmail_customer_poll: false };
+}
 
 export async function GET() {
   const session = await auth();
@@ -15,7 +28,7 @@ export async function GET() {
     );
   }
   try {
-    const prefs = await getUserPrefs(email);
+    const prefs = prefsFor(email, await getUserPrefs(email));
     return NextResponse.json({ ok: true, prefs });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -41,6 +54,18 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { ok: false, error: "Invalid JSON body" },
       { status: 400 },
+    );
+  }
+  // Refused rather than silently dropped, and before anything is written:
+  // the toggle in the gear menu then shows why it flipped back. Switching
+  // it OFF stays allowed, so an outside row that has it can be cleared.
+  if (body.gmail_customer_poll && !isStaffEmail(email)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "מיילים מלקוחות זמין רק לכתובות @fandf.co.il",
+      },
+      { status: 403 },
     );
   }
   // Allow-list every field on UserPrefs. Earlier this branch listed
@@ -78,7 +103,7 @@ export async function POST(req: Request) {
   }
   if ("agenda_collapsed" in body) partial.agenda_collapsed = !!body.agenda_collapsed;
   try {
-    const prefs = await setUserPrefs(email, partial);
+    const prefs = prefsFor(email, await setUserPrefs(email, partial));
     return NextResponse.json({ ok: true, prefs });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

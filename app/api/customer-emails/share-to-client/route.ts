@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { createMentionDirect } from "@/lib/commentsWriteDirect";
 
 export const runtime = "nodejs";
@@ -20,16 +20,15 @@ const MAX_TEXT = 4000;
  * not a task.
  *
  * Caller picks the project explicitly.
+ *
+ * Staff only: what is shared comes out of the caller's own inbox, which
+ * only @fandf.co.il has, and it lands in front of the client of whatever
+ * project the caller names.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  const me = session?.user?.email;
-  if (!me) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const me = gate.email;
 
   let body: {
     project?: string;

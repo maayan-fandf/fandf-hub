@@ -1,5 +1,21 @@
 import { cache } from "react";
+import { redirect } from "next/navigation";
+import { sessionOfAnyAccount } from "@/auth";
 import { getAccessScope } from "@/lib/tasksDirect";
+
+/**
+ * For a page that got NO viewer email: if that is because the signed-in
+ * Google account is on no roster (auth() gives such an account no identity),
+ * send it to /unauthorized — which names the address and offers sign-out.
+ * Otherwise return and let the page's own "no access" path run. Without this
+ * someone signed into the wrong Google account who follows a project link
+ * reads "מחובר/ת כ-(לא ידוע)" and has no way out.
+ */
+export async function redirectIfOffRoster(viewerEmail: string): Promise<void> {
+  if (viewerEmail) return;
+  const anyAccount = await sessionOfAnyAccount().catch(() => null);
+  if (anyAccount?.user?.email) redirect("/unauthorized");
+}
 
 /**
  * May this viewer open this project?
@@ -20,7 +36,8 @@ import { getAccessScope } from "@/lib/tasksDirect";
  * needs the project in their Keys access scope, or to be a hub admin.
  *
  * FAILS CLOSED. If the scope cannot be read the answer is no — a real client
- * then sees the "no access" page for that load and a reload fixes it, which
+ * then sees a "no access" page for that load (this one, or /unauthorized when
+ * the roster itself could not be read) and trying again fixes it, which
  * is the price of not serving a report to someone we could not check
  * (owner's decision, 2026-10-01). Keys has a last-good snapshot behind it
  * (lib/keys), so in practice this needs a cold instance AND a Sheets failure.

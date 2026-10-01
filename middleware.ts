@@ -1,4 +1,9 @@
-import { auth } from "@/auth";
+// The edge-safe NextAuth instance, NOT "@/auth": that one reads the Keys
+// roster (googleapis), which the edge runtime can't load. So this middleware
+// only knows that SOMEONE is signed in; whether that account may be in the
+// hub at all is decided by `auth()` in "@/auth", which every route and page
+// calls.
+import { sessionOfAnyAccount as auth } from "@/auth.base";
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;

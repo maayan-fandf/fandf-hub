@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { driveClient, driveFolderOwner } from "@/lib/sa";
+import { getTasksSharedDriveId } from "@/lib/driveFolders";
 
 /**
  * Export a Google Sheet as .xlsx and stream it through the hub as a
@@ -17,6 +18,15 @@ import { driveClient, driveFolderOwner } from "@/lib/sa";
  * Workspace-native types, and this endpoint must never become a generic
  * "stream any Drive file" hole. Not cached — a פריסה is edited in place,
  * so a download must always reflect the live sheet.
+ *
+ * WHO MAY CALL. Clients are intended callers, so this is not a staff/team
+ * route; `auth()` keeps out accounts on no roster. Because the export runs
+ * as the owner, the route refuses any sheet outside the tasks Shared Drive
+ * — every plan the card links to lives there, and without it this
+ * exported any sheet the owner can open. STILL OPEN (authorization audit,
+ * 2026-10-01): the file id is not checked against the projects the caller
+ * may open, so a client who learns another project's plan id can still
+ * download it.
  */
 export const dynamic = "force-dynamic";
 
@@ -42,9 +52,12 @@ export async function GET(
     const drive = driveClient(driveFolderOwner() || session.user.email);
     const meta = await drive.files.get({
       fileId,
-      fields: "mimeType, name",
+      fields: "mimeType, name, driveId",
       supportsAllDrives: true,
     });
+    if (meta.data.driveId !== getTasksSharedDriveId()) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
     if ((meta.data.mimeType || "") !== SHEET_MIME) {
       return new NextResponse("Not a Google Sheet", { status: 400 });
     }

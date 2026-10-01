@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  currentUserEmail,
   getMyMentions,
   getMyProjects,
   tasksPeopleList,
@@ -7,6 +8,7 @@ import {
   type TasksPerson,
 } from "@/lib/appsScript";
 import { personDisplayName } from "@/lib/personDisplay";
+import { viewerTier } from "@/lib/viewerTier";
 import StaggerReveal from "@/components/anim/StaggerReveal";
 
 export const metadata = { title: "תיבת תיוגים" };
@@ -45,7 +47,8 @@ export default async function InboxPage({
   ]);
   // Pass the resolved list down to MentionCard so author emails render
   // as Hebrew names. Falls back to email-prefix when the call fails.
-  const people: TasksPerson[] =
+  // (Narrowed to `people` below, once the visible mentions are known.)
+  const directory: TasksPerson[] =
     peopleRes.status === "fulfilled" && peopleRes.value.ok
       ? peopleRes.value.people
       : [];
@@ -77,6 +80,27 @@ export default async function InboxPage({
     if (projectFilter && m.project !== projectFilter) return false;
     return true;
   });
+
+  // `people` is handed to client components, so whatever is in it is in the
+  // page payload. A client was getting the whole names-to-emails directory
+  // (every name, address and role, other clients' rows included) to label a
+  // few authors — they now get only the people their own mentions name, plus
+  // themselves. Staff and Keys-listed freelancers keep the full list: replies
+  // load lazily and resolve their @mentions against it.
+  const viewer = (await currentUserEmail().catch(() => "")).toLowerCase().trim();
+  const viewerIs = await viewerTier(viewer);
+  let people = directory;
+  if (viewerIs !== "staff" && viewerIs !== "team") {
+    const named = new Set<string>([viewer]);
+    for (const m of visible) {
+      named.add((m.author_email || "").toLowerCase().trim());
+      for (const hit of (m.body || "").matchAll(MENTION_EMAIL_RE)) {
+        named.add(hit[1].toLowerCase());
+      }
+    }
+    named.delete("");
+    people = directory.filter((p) => named.has((p.email || "").toLowerCase()));
+  }
 
   const openCount = scoped.filter((m) => !m.resolved).length;
   const resolvedCount = scoped.filter((m) => {
@@ -250,6 +274,9 @@ function MentionCard({
 }
 
 /* ─── Helpers ────────────────────────────────────────────────────── */
+
+// `@email` mention token — the same shape components/CommentBody renders.
+const MENTION_EMAIL_RE = /@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
 
 function truncate(s: string, n: number): string {
   if (!s) return "";

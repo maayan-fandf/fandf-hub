@@ -16,14 +16,15 @@
  * persist internal tool-call/tool-result turns; the next user message
  * starts a new loop with just the user/model text history.
  *
- * Staff-only. Client users (col-E roster only) get 403 — DWD doesn't
- * impersonate non-fandf users so the Workspace tools wouldn't work
- * anyway. Hidden in the UI for them too.
+ * Staff-only, meaning @fandf.co.il — everyone else gets 403. The tools
+ * run as the caller, and for an outside address lib/sa does NOT fail:
+ * it substitutes the owner identity, so the Workspace tools would read
+ * the owner's Gmail / Drive / sheets. Being listed in Keys is not enough.
  */
 
 import { auth } from "@/auth";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
-import { getMyProjects } from "@/lib/appsScript";
+import { isStaffEmail } from "@/lib/viewerTier";
 import { streamClaudeChat } from "@/lib/claudeChat";
 import { type GeminiTurn } from "@/lib/gemini";
 import { TOOL_DECLARATIONS, getTool } from "@/lib/geminiTools";
@@ -550,18 +551,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // Staff-only gate. Reuses the same projects-fetch the layout does to
-  // determine isClientUser. Returns 403 (not 401) so the UI can
-  // distinguish "needs login" from "you're not allowed here".
-  let isStaff = false;
-  try {
-    const data = await getMyProjects();
-    isStaff = !!(data.isAdmin || data.isStaff || data.isInternal);
-  } catch {
-    // Failure to determine staff status → deny conservatively.
-    isStaff = false;
-  }
-  if (!isStaff) {
+  // Staff-only gate, on the DOMAIN of the session's own address (never the
+  // view-as target). It used to be the projects read's isStaff, which is
+  // also true for an outside address listed in Keys "Access — internal
+  // only" / "Client-facing" — and for those the tools below run as the
+  // owner (lib/sa), i.e. her mailbox and Drive (authorization audit,
+  // 2026-10-01). Returns 403 (not 401) so the UI can distinguish "needs
+  // login" from "you're not allowed here".
+  if (!isStaffEmail(myEmail)) {
     return new Response(
       JSON.stringify({ error: "chat is staff-only" }),
       { status: 403, headers: { "content-type": "application/json" } },

@@ -3,6 +3,7 @@ import { currentUserEmail } from "@/lib/appsScript";
 import { getProjectSlug } from "@/lib/campaignMatch";
 import { driveFolderOwner } from "@/lib/sa";
 import { getNewFbAdsForProject, DEFAULT_HOURS } from "@/lib/fbNewAds";
+import { viewerTier } from "@/lib/viewerTier";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,15 @@ export const maxDuration = 60;
  * never a slug: the slug is derived here, so nobody can pair a project they
  * may read with another project's campaign patterns and get back that
  * project's ads.
+ *
+ * WHAT A CLIENT GETS BACK is narrower than what the team gets. An ad
+ * account is shared between developers, and the full answer includes
+ * campaigns no Keys row claims yet (possibly another developer's launch)
+ * plus every ad-account id and Meta's raw error text. So for a caller who
+ * is not team: only ads positively matched to this project, no all-accounts
+ * sweep, the default window whatever `hours` says, and the account ids and
+ * error text blanked (the counts stay, so the note under the button still
+ * reads right). See `ownOnly` in lib/fbNewAds.
  *
  * Preview links go to clients too since 2026-09-28: the live cards only
  * ever carry Meta's shareable fb.me link, the one kind NativeProjectRail
@@ -77,13 +87,18 @@ export async function POST(req: Request) {
   }
 
   const isStaff = email.endsWith("@fandf.co.il");
+  // Team = staff, hub admins and the Keys-listed freelancers; anyone else
+  // who gets past the project check below is a client.
+  let internal = isStaff;
   if (!isStaff) {
     const { getAccessScope } = await import("@/lib/tasksDirect");
     const scope = await getAccessScope(email).catch(() => null);
     if (!scope || (!scope.isAdmin && !scope.accessibleProjects.has(project))) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
+    internal = scope.isAdmin || (await viewerTier(email)) === "team";
   }
+  if (!internal) hours = DEFAULT_HOURS;
 
   const guard = `${email}|${project}`;
   const now = Date.now();
@@ -118,7 +133,19 @@ export async function POST(req: Request) {
       slug,
       hours,
       knownKeys,
+      ownOnly: !internal,
     });
+    if (!internal) {
+      return NextResponse.json({
+        ok: true,
+        ads: res.ads.map((a) => ({ ...a, account: "" })),
+        hours: res.hours,
+        sweptAll: false,
+        accounts: res.accounts.map(() => ""),
+        failed: res.failed.map(() => ({ accountId: "", error: "" })),
+        foreign: 0,
+      });
+    }
     return NextResponse.json({ ok: true, ...res });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

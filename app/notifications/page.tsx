@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { listNotifications, type NotificationRow } from "@/lib/notifications";
-import { tasksPeopleList } from "@/lib/appsScript";
+import { tasksPeopleList, type TasksPerson } from "@/lib/appsScript";
 import NotificationsList from "@/components/NotificationsList";
 
 export const metadata = { title: "התראות" };
@@ -59,7 +59,19 @@ export default async function NotificationsPage({
       : Promise.resolve(),
     tasksPeopleList().catch(() => ({ ok: false, people: [] as never[] })),
   ]);
-  const people = peopleRes.ok ? peopleRes.people : [];
+  // Only the people these notifications name. The list goes to a client
+  // component, so it is in the page payload — and the whole names-to-emails
+  // directory was being shipped to whoever opened the page, clients
+  // included, to label a handful of actors. Same names on screen either way.
+  const actors = new Set(
+    items.map((i) => (i.actor_email || "").toLowerCase().trim()),
+  );
+  actors.delete("");
+  const people = peopleRes.ok
+    ? peopleRes.people.filter((p: TasksPerson) =>
+        actors.has((p.email || "").toLowerCase()),
+      )
+    : [];
 
   const unreadCount = items.filter((i) => !i.read_at).length;
 

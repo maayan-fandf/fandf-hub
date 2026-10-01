@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProjectAssignees, currentUserEmail } from "@/lib/appsScript";
+import { getProjectAssignees } from "@/lib/appsScript";
 import { tasksPeopleListDirect } from "@/lib/tasksDirect";
+import { requireViewer } from "@/lib/viewerGate";
 
 /**
  * Project members for the @-mention picker. Apps Script returns
@@ -17,6 +18,12 @@ import { tasksPeopleListDirect } from "@/lib/tasksDirect";
  * client code can read `a.he_name || a.name` uniformly.
  */
 export async function GET(req: NextRequest) {
+  // Clients open this picker too (the project discussion composer), so any
+  // viewer may ask. WHICH project they may ask about is decided by the Apps
+  // Script (_hubAuthForProject_), which gets the same session email.
+  const gate = await requireViewer();
+  if (gate instanceof NextResponse) return gate;
+
   const project = req.nextUrl.searchParams.get("project");
   if (!project) {
     return NextResponse.json({ error: "project query param required" }, { status: 400 });
@@ -28,13 +35,10 @@ export async function GET(req: NextRequest) {
     // impersonated subject; the session user is fine for this read.
     let heByEmail = new Map<string, string>();
     try {
-      const me = await currentUserEmail();
-      if (me) {
-        const peopleRes = await tasksPeopleListDirect(me);
-        for (const p of peopleRes.people) {
-          if (p.email && p.he_name) {
-            heByEmail.set(p.email.toLowerCase().trim(), p.he_name);
-          }
+      const peopleRes = await tasksPeopleListDirect(gate.email);
+      for (const p of peopleRes.people) {
+        if (p.email && p.he_name) {
+          heByEmail.set(p.email.toLowerCase().trim(), p.he_name);
         }
       }
     } catch {

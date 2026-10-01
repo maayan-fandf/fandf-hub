@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { AppendChainStepInput } from "@/lib/appendChainStep";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,10 @@ export async function POST(req: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
+  // Team only: work tasks are internal — a client is in scope for their
+  // own project, so the project check alone would let them add steps.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: AppendChainStepInput;
   try {

@@ -9,7 +9,7 @@
  * we fall back to DEV_USER_EMAIL so the app still runs.
  */
 
-import { auth } from "@/auth";
+import { auth, sessionOfAnyAccount } from "@/auth";
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { withRetry, isTransientError } from "@/lib/retry";
@@ -142,13 +142,25 @@ function assertEnv(name: string): string {
 }
 
 export async function currentUserEmail(): Promise<string> {
+  let offRoster = false;
   try {
     const session = await auth();
     if (session?.user?.email) return session.user.email;
+    // auth() hides a signed-in account that is on no roster. That is a
+    // refusal, not "nobody is signed in" — the dev fallback below must not
+    // then hand the stranger an identity.
+    offRoster = !!(await sessionOfAnyAccount())?.user?.email;
   } catch {
     // auth() can throw before NextAuth is fully configured; fall through to fallback.
   }
-  const fallback = process.env.DEV_USER_EMAIL;
+  if (offRoster) {
+    throw new Error("Not authorized — this Google account is not on any project roster");
+  }
+  // Local dev only. In production an unauthenticated caller must stay
+  // unauthenticated even if the variable were ever set there — four upload
+  // routes sit outside the middleware and rely on this function alone.
+  const fallback =
+    process.env.NODE_ENV !== "production" ? process.env.DEV_USER_EMAIL : undefined;
   if (fallback) return fallback;
   throw new Error("Not authenticated — sign in or set DEV_USER_EMAIL in .env.local");
 }

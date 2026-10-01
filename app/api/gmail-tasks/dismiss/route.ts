@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { dismissGmailOriginTask } from "@/lib/gmailTasks";
 
 export const runtime = "nodejs";
@@ -10,11 +10,11 @@ export const dynamic = "force-dynamic";
  *  converts it to a hub WorkTask (or just dismisses it). Body shape:
  *  `{ taskId: string }`. */
 export async function POST(req: Request) {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) {
-    return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
-  }
+  // Staff only: this completes a task on the caller's own Google Tasks
+  // list, and for an outside address lib/sa writes to the owner's instead.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const email = gate.email;
   let taskId = "";
   try {
     const body = await req.json();

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { tasksGetDirect } from "@/lib/tasksDirect";
 import { tasksUpdateDirect } from "@/lib/tasksWriteDirect";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: a client is in scope for their own project, so without
+  // this they could dismiss completion claims on its tasks.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   const subject = session.user.email;
   let body: { id?: string } = {};
   try {

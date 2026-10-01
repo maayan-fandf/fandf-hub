@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { addReaction, removeReaction } from "@/lib/chat";
 
 export const runtime = "nodejs";
@@ -21,13 +21,10 @@ export const dynamic = "force-dynamic";
  * underlying Chat API enforces this; we just plumb it through.
  */
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  // Staff only: the reaction is attributed to the caller, and an outside
+  // account is swapped for the owner (lib/sa) — it would react in her name.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { messageName?: string; emoji?: string; action?: string };
   try {
@@ -67,9 +64,9 @@ export async function POST(req: Request) {
 
   try {
     if (action === "add") {
-      await addReaction(session.user.email, messageName, emoji);
+      await addReaction(gate.email, messageName, emoji);
     } else {
-      await removeReaction(session.user.email, messageName, emoji);
+      await removeReaction(gate.email, messageName, emoji);
     }
     revalidateTag("chat-messages");
     return NextResponse.json({ ok: true });

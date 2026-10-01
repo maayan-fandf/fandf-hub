@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { listGmailOriginTasks } from "@/lib/gmailTasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) {
-    return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
-  }
+  // Staff only: this is the caller's own Google Tasks list and the mail
+  // behind it, and for an outside address lib/sa reads the owner's instead.
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const email = gate.email;
   try {
     const tasks = await listGmailOriginTasks(email);
     return NextResponse.json({ ok: true, tasks });

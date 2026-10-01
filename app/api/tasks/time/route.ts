@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { tasksGet } from "@/lib/appsScript";
 import { logTaskTime, readTaskTimeLog } from "@/lib/timeLog";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +39,10 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: entries carry staff emails and internal notes, and the
+  // TimeLog tab is read as the owner for any outside address.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   const taskId = (new URL(req.url).searchParams.get("taskId") || "").trim();
   if (!taskId) {
     return NextResponse.json(
@@ -46,7 +51,16 @@ export async function GET(req: Request) {
     );
   }
   try {
-    const entries = await readTaskTimeLog(email, taskId);
+    // Same gate as the POST below: the ledger is filtered only by task
+    // id, so the caller has to be able to resolve the task first.
+    const res = await tasksGet(taskId).catch(() => null);
+    if (!res?.task) {
+      return NextResponse.json(
+        { ok: false, error: "Task not found" },
+        { status: 404 },
+      );
+    }
+    const entries = await readTaskTimeLog(email, res.task.id);
     const totalMinutes = entries.reduce((s, e) => s + (e.minutes || 0), 0);
     return NextResponse.json({ ok: true, entries, totalMinutes });
   } catch (e) {
@@ -65,6 +79,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: logging time is internal work management. Without this a
+  // client could append ledger rows against tasks on their own project.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { taskId?: string; minutes?: unknown; note?: unknown };
   try {

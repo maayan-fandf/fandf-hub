@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { getUserPrefs } from "@/lib/userPrefs";
+import { isStaffEmail } from "@/lib/viewerTier";
 
 export const metadata = { title: "מיילים מלקוחות" };
 import {
@@ -28,7 +29,10 @@ export const dynamic = "force-dynamic";
 export default async function CustomerEmailsPage() {
   const session = await auth();
   const sessionEmail = session?.user?.email;
-  if (!sessionEmail) {
+  // Staff only: the page shows the viewer's own inbox, and for an outside
+  // address lib/sa would open the owner's instead. Checked on the session
+  // address — never on the "view as" target.
+  if (!sessionEmail || !isStaffEmail(sessionEmail)) {
     redirect("/");
   }
 
@@ -37,7 +41,9 @@ export default async function CustomerEmailsPage() {
 
   const prefs = await getUserPrefs(targetEmail);
 
-  if (!prefs.gmail_customer_poll) {
+  // The pref only counts on a staff row (an admin may be viewing as a
+  // client, who has no inbox of their own for it to refer to).
+  if (!isStaffEmail(targetEmail) || !prefs.gmail_customer_poll) {
     return (
       <main className="page customer-emails-page">
         <header className="customer-emails-head">

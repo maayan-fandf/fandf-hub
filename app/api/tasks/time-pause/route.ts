@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { useSATasksWrites } from "@/lib/sa";
 import { deriveInProgressTime } from "@/lib/inProgressTime";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: work tasks are an internal tool, no client surface has
+  // the pause button. The assignee/admin check below still applies.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { taskId?: string; action?: unknown };
   try {

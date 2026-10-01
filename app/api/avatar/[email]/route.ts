@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserPhoto } from "@/lib/userAvatar";
 import { getDriveAvatar } from "@/lib/driveAvatars";
+import { requireViewer } from "@/lib/viewerGate";
 
 /**
  * Proxy a team member's avatar bytes through the hub. The Avatar
@@ -15,10 +16,13 @@ import { getDriveAvatar } from "@/lib/driveAvatars";
  *   2. the user's Workspace profile photo (lib/userAvatar) as a
  *      fallback for anyone without a file in the folder.
  *
- * No auth gate here on purpose: the response only contains bytes
- * already destined for someone's avatar circle, the libs gate by
- * `@fandf.co.il` domain / folder membership, and Cache-Control means
- * each unique avatar costs at most one request per browser per day.
+ * Any hub viewer may load an avatar — clients see their team's faces in
+ * the discussion and the roster — but not a Google account that is on no
+ * roster: the libs only check the TARGET address, and they read the
+ * Drive folder and the Workspace directory as the owner identity.
+ * Cache-Control is `private` for the same reason: a shared cache would
+ * hand the bytes to whoever asks next without coming back here. Each
+ * unique avatar still costs at most one request per browser per day.
  */
 export const dynamic = "force-dynamic";
 
@@ -40,7 +44,7 @@ function transparentResponse(): NextResponse {
       // 24h browser cache, 7d SWR — we don't expect users to change
       // their Workspace photo more than once a day. The lib's
       // process-local cache covers the server-side TTL.
-      "cache-control": "public, max-age=86400, stale-while-revalidate=604800",
+      "cache-control": "private, max-age=86400, stale-while-revalidate=604800",
     },
   });
 }
@@ -49,6 +53,9 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ email: string }> },
 ) {
+  const gate = await requireViewer();
+  if (gate instanceof NextResponse) return gate;
+
   const { email: raw } = await params;
   const email = decodeURIComponent(raw || "").toLowerCase().trim();
   if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) {
@@ -64,7 +71,7 @@ export async function GET(
     status: 200,
     headers: {
       "content-type": photo.contentType,
-      "cache-control": "public, max-age=86400, stale-while-revalidate=604800",
+      "cache-control": "private, max-age=86400, stale-while-revalidate=604800",
     },
   });
 }

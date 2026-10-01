@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { currentUserEmail, getMyProjects } from "@/lib/appsScript";
+import { currentUserEmail } from "@/lib/appsScript";
 import { getTeamRoster } from "@/lib/teamData";
+import { viewerTier } from "@/lib/viewerTier";
 import TeamPersonCard from "@/components/TeamPersonCard";
 import StaggerReveal from "@/components/anim/StaggerReveal";
 
@@ -16,9 +17,9 @@ export const dynamic = "force-dynamic";
  * action row (Gmail / WhatsApp / dial / calendar / tasks), and a
  * link to their full profile at /team/[email].
  *
- * Access: staff-only. Clients (col-E-only users in
- * names-to-emails) get bounced to the home page — same gate
- * pattern as /tasks/[id], since the team directory is an internal
+ * Access: internal only — @fandf.co.il staff and the outside
+ * freelancers Keys lists as internal (lib/viewerTier). Everyone else
+ * is bounced to the home page: the team directory is an internal
  * surface and clients have no business seeing the rest of the
  * roster.
  *
@@ -36,15 +37,13 @@ export default async function TeamPage({
   const me = (await currentUserEmail().catch(() => "")) || "";
   if (!me) redirect("/signin?next=/team");
 
-  // Client-user gate. getMyProjects returns isClient/isAdmin/isStaff/isInternal
-  // — the exact same shape /tasks uses for its gate.
-  const access = await getMyProjects().catch(() => null);
-  const isClientOnly =
-    !!access?.isClient &&
-    !access?.isAdmin &&
-    !access?.isStaff &&
-    !access?.isInternal;
-  if (isClientOnly) redirect("/");
+  // Internal-only gate, as an ALLOW-list: staff, plus the outside freelancers
+  // Keys lists as internal. The old test was "not a client", which let in
+  // every account that was not provably one — including a client on a load
+  // where the projects read failed. The roster below is read as the Drive
+  // owner (Directory phones included), so nobody else may reach it.
+  const tier = await viewerTier(me);
+  if (tier !== "staff" && tier !== "team") redirect("/");
 
   const sp = await searchParams;
   const qDept = (sp.dept || "").trim().toLowerCase();

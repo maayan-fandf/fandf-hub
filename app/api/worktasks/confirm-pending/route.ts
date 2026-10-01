@@ -4,6 +4,7 @@ import { tasksGetDirect } from "@/lib/tasksDirect";
 import { tasksUpdateDirect } from "@/lib/tasksWriteDirect";
 import { autoTransitionTarget } from "@/lib/autoTransition";
 import type { WorkTaskStatus, GTaskKind } from "@/lib/appsScript";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,8 @@ export const dynamic = "force-dynamic";
  * completion was detected; this endpoint flips the hub status to the
  * computed target and clears the flag.
  *
- * Auth: any authenticated hub user. The status_history entry records
+ * Auth: staff and the Keys-listed freelancers (requireTeam) — never
+ * clients, who have no task surface. The status_history entry records
  * the confirmer + the original claim's `by` so the audit trail shows
  * both who marked the GT complete AND who confirmed it.
  */
@@ -29,6 +31,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: a client is in scope for their own project, so without
+  // this they could flip the status of its tasks.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   const subject = session.user.email;
   let body: { id?: string } = {};
   try {

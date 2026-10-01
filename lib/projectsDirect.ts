@@ -32,6 +32,7 @@ import {
   findChatSpaceColumnIndex,
   findProjectTypeColumnIndex,
   getProjectTypeFromRow,
+  rosterEmailsOf,
 } from "@/lib/keys";
 
 function envOrThrow(name: string): string {
@@ -358,19 +359,19 @@ export async function getMyProjectsDirect(
     // Membership test for non-admins. Matches findProjectsForEmail +
     // findAccessScopeForEmail in Apps Script:
     //   - Email match on col E (clients) → isClient
-    //   - Email match on any staff column (cols J / K email substring,
-    //     or display-name columns C / D when we later resolve them) →
-    //     isStaff
-    const clientEmailsRaw = iClients >= 0 ? String(row[iClients] ?? "").toLowerCase() : "";
-    const onClients = clientEmailsRaw.includes(lc);
+    //   - Email match on any staff column (cols J / K, or display-name
+    //     columns C / D when we later resolve them) → isStaff
+    // EXACT address, not substring — see rosterEmailsOf in lib/keys.
+    const onClients =
+      iClients >= 0 && rosterEmailsOf(row[iClients]).includes(lc);
     // For staff we'd need names→emails for C/D. Safe fallback: admins
     // see all; @fandf.co.il domain is treated as staff unless they only
     // appear on col E. This matches the Apps Script behavior closely
     // enough for the nav dropdown — precise staff status (for admin
     // console gates) still goes through the Apps Script path.
     const onStaff =
-      (iInternal >= 0 && String(row[iInternal] ?? "").toLowerCase().includes(lc)) ||
-      (iCf >= 0 && String(row[iCf] ?? "").toLowerCase().includes(lc));
+      (iInternal >= 0 && rosterEmailsOf(row[iInternal]).includes(lc)) ||
+      (iCf >= 0 && rosterEmailsOf(row[iCf]).includes(lc));
 
     const visible = isAdmin || onClients || onStaff || lc.endsWith("@fandf.co.il");
     if (!visible) continue;

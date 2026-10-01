@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { tasksCreate, type TasksCreateInput } from "@/lib/appsScript";
 import { useSATasksWrites } from "@/lib/sa";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: creating a task assigns staff, spawns their Google Tasks,
+  // sends mail and writes a billing row. /tasks/new bounces clients.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: TasksCreateInput;
   try {
@@ -30,6 +35,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // The id is the server's to mint. A pre-assigned one is for the chain
+  // orchestrators, which call the lib directly — from the request it
+  // would REPLACE an existing task's doc (the create is a set-by-id).
+  delete body.id;
 
   try {
     // Fast path: direct Google API calls via the DWD service account.

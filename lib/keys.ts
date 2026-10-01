@@ -94,6 +94,16 @@ async function fetchKeysResilient(subjectEmail: string): Promise<KeysData> {
     // blank than a genuinely empty Keys tab, and caching it would defeat the
     // fallback.
     if (data.headers.length) lastGoodKeys = data;
+    // …and for the same reason don't SERVE the blank when a real read is on
+    // hand: this result is cached for 5 minutes, and with the roster read
+    // from it (lib/viewerTier) a blank would turn every outside viewer away
+    // for that long.
+    else if (lastGoodKeys) return lastGoodKeys;
+    // No real read yet on this instance either: throw rather than return the
+    // blank, because a returned value is cached for 5 minutes and a throw is
+    // not — the next request simply tries again. To callers it is the same
+    // as the failed read the catch below already rethrows.
+    else throw new Error("Keys read came back empty");
     return data;
   } catch (e) {
     if (lastGoodKeys) {
@@ -124,6 +134,44 @@ export const readKeysCached = cache(
  */
 export function invalidateKeysCache(): void {
   revalidateTag(KEYS_CACHE_TAG);
+}
+
+/**
+ * The e-mail addresses in one Keys roster cell ("Email Client", "Access —
+ * internal only", "Client-facing"), lower-cased.
+ *
+ * Use this — with `.includes(email)` on the ARRAY — for every "is this
+ * person on this row" test. The access gates used to test the raw cell text
+ * with `cell.includes(email)`, a SUBSTRING match: "cohen1984@gmail.com"
+ * matched a cell listing "yossi.cohen1984@gmail.com", so anyone who could
+ * register the tail of a listed address inherited that person's projects.
+ *
+ * The cells are free text — addresses separated by commas, semicolons,
+ * newlines or spaces, sometimes mixed with display names (col J is "Name,
+ * Name, address"), sometimes "Name <address>". Anything without an "@" is
+ * not an address and is dropped.
+ *
+ * Exact matching must not turn into a lock-out, so the cell is cleaned the
+ * way Keys headers are: the invisible direction / zero-width marks that ride
+ * along when a Hebrew sheet is pasted into are stripped first (an address
+ * with a stray RTL mark matched under the old substring test and would
+ * otherwise stop matching), and "/", "|" and ":" separate too (the last one
+ * also covers "mailto:" and "Name: address").
+ */
+export function rosterEmailsOf(cell: unknown): string[] {
+  const out: string[] = [];
+  const text = String(cell ?? "")
+    .replace(KEYS_HEADER_NORMALIZE, "")
+    .replace(/[\u2066-\u2069]/g, "") // bidi isolates, not in the header class
+    .toLowerCase();
+  for (const tok of text.split(/[\s,;<>()"[\]/|:]+/)) {
+    // Quotes are trimmed from the EDGES only: an apostrophe inside the local
+    // part (o'brien@…) is a legal address, and splitting on it would both
+    // lock that person out and admit "brien@…" in their place.
+    const t = tok.replace(/^['‘’׳]+|['‘’׳.]+$/g, "");
+    if (t.includes("@")) out.push(t);
+  }
+  return out;
 }
 
 /**

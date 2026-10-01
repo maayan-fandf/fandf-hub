@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { TasksCreateChainInput } from "@/lib/tasksCreateChain";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: creating tasks assigns staff, spawns their Google Tasks,
+  // sends mail and writes billing rows. /tasks/new bounces clients.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: TasksCreateChainInput;
   try {

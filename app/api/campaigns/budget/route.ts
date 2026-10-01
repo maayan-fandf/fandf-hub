@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { sheetsClient } from "@/lib/sa";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { bustBudgetCaches } from "@/lib/revalidateBudgets";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
  * SHEET_ID_MAIN — the inline edit on the קמפיינים → תקציבים grid.
  *
  * Safety:
- *  - Session auth + canSeeCampaigns gate (admins / managers / media).
+ *  - Session auth + requireTeam (staff / Keys-listed freelancers, never
+ *    clients) + canSeeCampaigns gate (admins / managers / media).
  *  - USE_BUDGET_WRITES must be "1" (kill-switch; default off).
  *  - The target cell's channel (col D of the same row) is re-read and
  *    must match `expectedChannel` — guards against writing to the wrong
@@ -36,6 +38,11 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // The role gate below reads a free-text Role cell and knows nothing of
+  // tiers; the write itself runs as the owner identity for any outside
+  // address. So: team first (never a client), then the role.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   if (String(process.env.USE_BUDGET_WRITES || "").trim() !== "1") {
     return NextResponse.json(
       { ok: false, error: "Budget writes are disabled" },

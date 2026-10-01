@@ -33,7 +33,7 @@ import {
   type GTaskRef,
 } from "@/lib/appsScript";
 import { sheetsClient, useFirestoreTasks } from "@/lib/sa";
-import { readKeysCached } from "@/lib/keys";
+import { readKeysCached, rosterEmailsOf } from "@/lib/keys";
 
 const JSON_ARRAY_FIELDS = new Set([
   "departments",
@@ -395,12 +395,13 @@ export async function getAccessScope(subjectEmail: string): Promise<{
     }
 
     let matched = false;
-    // Email-substring match against cols E (clients) and J / K
-    // (internal/client-facing CSV of emails).
+    // EXACT address match against cols E (clients) and J / K
+    // (internal/client-facing lists). Was `cell.includes(lc)` — a substring
+    // test, so an address that is the tail of a listed one inherited its
+    // projects. See rosterEmailsOf in lib/keys.
     for (const ci of [iClients, iInternal, iCf]) {
       if (ci < 0) continue;
-      const raw = String(row[ci] ?? "").toLowerCase();
-      if (raw.includes(lc)) {
+      if (rosterEmailsOf(row[ci]).includes(lc)) {
         matched = true;
         break;
       }

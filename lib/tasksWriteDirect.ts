@@ -32,6 +32,7 @@ import {
   useFirestoreWrites,
 } from "@/lib/sa";
 import { readKeysCached } from "@/lib/keys";
+import { isStaffEmail, viewerTier } from "@/lib/viewerTier";
 import { deferAfterResponse } from "@/lib/afterResponse";
 import { isQuietHours, nextWorkDateIso } from "@/lib/quietHours";
 import {
@@ -259,10 +260,20 @@ async function assertProjectAccess(
   project: string,
 ): Promise<void> {
   // Pseudo-projects (e.g. __personal__) skip the Keys roster check. The
-  // assignee scope is what gates these rows downstream — anyone can write
-  // into their own pseudo-project but the read filter only surfaces it
-  // back to the listed assignees.
-  if (isPseudoProject(project)) return;
+  // assignee scope is what gates these rows downstream — the read filter
+  // only surfaces a row back to its listed assignees.
+  //
+  // But "no roster to check" must not mean "no check": this used to return
+  // for ANY caller, so a "__x" project name let a client — or, before the
+  // door in auth.ts, any Google account — create tasks that assign staff,
+  // spawn their Google Tasks, send mail and write PricingLog rows
+  // (authorization audit, 2026-10-01). Personal notes are a team feature,
+  // so the tier is the gate: staff and the Keys-listed freelancers.
+  if (isPseudoProject(project)) {
+    const tier = await viewerTier(subjectEmail);
+    if (tier === "staff" || tier === "team") return;
+    throw new Error("Access denied to project: " + project);
+  }
   // Delegate to the shared getAccessScope (lib/tasksDirect.ts) so the
   // write gate uses the same display-name resolution and @fandf.co.il
   // domain blanket the read paths use. Without this, non-admin
@@ -977,11 +988,15 @@ export async function createGoogleTasks(
   // Normalize + dedupe before the pref gate — a recipient appearing
   // twice (duplicate mention, author-also-assignee union upstream)
   // must spawn ONE GT, not one per occurrence.
+  // …and staff only. The Google Task is written into the recipient's own
+  // Tasks list by acting as them, which works for @fandf.co.il alone: for
+  // an outside address lib/sa substitutes the Drive owner, so every task
+  // assigned to a freelancer landed in the OWNER's Google Tasks.
   const unique = [
     ...new Set(
       recipients.map((e) => String(e || "").toLowerCase().trim()),
     ),
-  ].filter(Boolean);
+  ].filter((e) => e && isStaffEmail(e));
   const allowed = await filterByGtasksPref(unique);
   if (allowed.length === 0) return out;
   const title = gtaskTitle(opts.kind, task, opts.reissued);

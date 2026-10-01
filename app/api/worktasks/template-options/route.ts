@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getTaskFormSchema } from "@/lib/taskFormSchema";
 import { resolveTemplate } from "@/lib/taskTemplates";
+import { requireTeam } from "@/lib/viewerGate";
 
 /**
  * GET /api/worktasks/template-options?department=&kind=
@@ -36,6 +37,10 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: lists internal template files, read from Drive as the
+  // owner. Only the new-task form calls it.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   const url = new URL(req.url);
   const department = String(url.searchParams.get("department") || "").trim();

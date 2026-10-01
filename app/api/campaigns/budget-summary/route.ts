@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { canSeeCampaigns } from "@/lib/userRole";
 import { sheetsClient, driveFolderOwner } from "@/lib/sa";
 import { classifyChannel, E3_PLATFORMS } from "@/lib/budgetTypes";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,10 @@ export async function GET(req: Request) {
       { status: 401 },
     );
   }
+  // Read as the owner for any slug the caller names: team only, whatever
+  // the free-text Role cell behind canSeeCampaigns says about a client.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
   const allowed = await canSeeCampaigns(email).catch(() => false);
   if (!allowed) {
     return NextResponse.json(

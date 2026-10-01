@@ -27,6 +27,7 @@ import {
   type ProjectFunnelTotals,
 } from "@/lib/allClients";
 import { driveFolderOwner } from "@/lib/sa";
+import { sessionOfAnyAccount } from "@/auth";
 import { costChipStyle } from "@/lib/budgetShiftSuggestions";
 
 type AlertCounts = { severe: number; warn: number; info: number };
@@ -39,6 +40,13 @@ export default async function HomePage() {
   // fall back to the session user's own identity — view-as is best-effort,
   // not a security gate.
   const me = await currentUserEmail().catch(() => "");
+  // Signed in with Google but on no roster: auth() gives such an account no
+  // identity, so nothing below would load for it. Say so plainly instead of
+  // rendering an empty grid with an error banner.
+  if (!me) {
+    const anyAccount = await sessionOfAnyAccount().catch(() => null);
+    if (anyAccount?.user?.email) redirect("/unauthorized");
+  }
   // prefs + view-as fetched in parallel — they were serial awaits
   // (two stacked round-trips on every home load). Speed pass 2026-06-10.
   const [prefs, viewAs] = me

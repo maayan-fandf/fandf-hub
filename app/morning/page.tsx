@@ -16,6 +16,7 @@ import { scopedProjectNames } from "@/lib/scope";
 import { getScopedPerson } from "@/lib/scope-server";
 import { canViewAdLinks } from "@/lib/adLinkAccess";
 import { canSeeCampaigns } from "@/lib/userRole";
+import { viewerTier } from "@/lib/viewerTier";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { getAllClientsCurrentForProject } from "@/lib/allClients";
 import { computeCrmAlerts } from "@/lib/crmAlerts";
@@ -70,8 +71,14 @@ export default async function MorningPage({
       tasksPeopleList(),
       listAlertDismissals(),
     ]);
+  // Internal first, role second: canSeeCampaigns reads a free-text role cell
+  // and cannot tell a client from staff, so an outside address must be on the
+  // internal roster (the session's own tier, never the view-as target's)
+  // before its role counts. Everything this page renders hangs off this flag.
+  const tier = await viewerTier(me);
   const roleEligible =
-    roleRes.status === "fulfilled" ? roleRes.value : false;
+    (tier === "staff" || tier === "team") &&
+    (roleRes.status === "fulfilled" ? roleRes.value : false);
   const data: MorningFeed | null =
     feedRes.status === "fulfilled" ? feedRes.value : null;
   const error =

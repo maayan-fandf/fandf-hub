@@ -6,6 +6,7 @@ import {
 import PrisotThumb from "./PrisotThumb";
 import PrisotDataTable from "./PrisotDataTable";
 import SendForApprovalButton from "./SendForApprovalButton";
+import { isStaffEmail } from "@/lib/viewerTier";
 import ApprovePrisaButton from "./ApprovePrisaButton";
 import RequestChangesButton from "./RequestChangesButton";
 import GoogleDriveIcon from "./GoogleDriveIcon";
@@ -73,6 +74,11 @@ export default async function LatestPrisotCard({
   ).catch(() => null);
   if (!latest) return null;
   const clientMode = !!isClientUser;
+  // Sending a plan for approval mails the client from the sender's own
+  // mailbox, so /api/prisot/send-approval is @fandf.co.il only — for an
+  // outside freelancer "own mailbox" would be the Drive owner's. Don't offer
+  // a button that can only answer 403.
+  const canSendForApproval = isStaffEmail(subjectEmail);
   // Attribution for a content-lock approval (the client "אשר פריסה"
   // action, or a manual Sheets lock): the approver email is stamped into
   // the lock reason as `אושר ע"י <email> …`. Drive Approvals-API flows
@@ -274,16 +280,18 @@ export default async function LatestPrisotCard({
                     send again until the 14-day expiry. Re-sending also
                     supersedes the earlier links (see tokenMatchesRequest),
                     which is exactly what you want after a revision. */}
-                <SendForApprovalButton
-                  fileId={latest.id}
-                  fileName={latest.name}
-                  mimeType={latest.mimeType}
-                  project={project}
-                  company={company}
-                  suggestedClients={clientEmails}
-                  suggestedTeam={teamRecipients}
-                  resend
-                />
+                {canSendForApproval && (
+                  <SendForApprovalButton
+                    fileId={latest.id}
+                    fileName={latest.name}
+                    mimeType={latest.mimeType}
+                    project={project}
+                    company={company}
+                    suggestedClients={clientEmails}
+                    suggestedTeam={teamRecipients}
+                    resend
+                  />
+                )}
               </>
             );
           })()}
@@ -313,16 +321,18 @@ export default async function LatestPrisotCard({
                     ע״י {declinerName}
                   </span>
                 )}
-                <SendForApprovalButton
-                  fileId={latest.id}
-                  fileName={latest.name}
-                  mimeType={latest.mimeType}
-                  project={project}
-                  company={company}
-                  suggestedClients={clientEmails}
-                  suggestedTeam={teamRecipients}
-                  resend
-                />
+                {canSendForApproval && (
+                  <SendForApprovalButton
+                    fileId={latest.id}
+                    fileName={latest.name}
+                    mimeType={latest.mimeType}
+                    project={project}
+                    company={company}
+                    suggestedClients={clientEmails}
+                    suggestedTeam={teamRecipients}
+                    resend
+                  />
+                )}
               </>
             );
           })()}
@@ -334,18 +344,20 @@ export default async function LatestPrisotCard({
               >
                 ⛔ לא מאושר
               </span>
-              <SendForApprovalButton
-                fileId={latest.id}
-                fileName={latest.name}
-                mimeType={latest.mimeType}
-                project={project}
-                company={company}
-                suggestedClients={clientEmails}
-                suggestedTeam={teamRecipients}
-                // After a change request this IS a re-send — the label says
-                // so, and the dialog warns that the earlier links expire.
-                resend={!!changeRequest}
-              />
+              {canSendForApproval && (
+                <SendForApprovalButton
+                  fileId={latest.id}
+                  fileName={latest.name}
+                  mimeType={latest.mimeType}
+                  project={project}
+                  company={company}
+                  suggestedClients={clientEmails}
+                  suggestedTeam={teamRecipients}
+                  // After a change request this IS a re-send — the label says
+                  // so, and the dialog warns that the earlier links expire.
+                  resend={!!changeRequest}
+                />
+              )}
             </>
           )}
           {!clientMode && latest.source === "general" && (

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireStaff } from "@/lib/viewerGate";
 import { readKeysCached, findChatSpaceColumnIndex } from "@/lib/keys";
 
 export const runtime = "nodejs";
@@ -18,20 +18,17 @@ export const dynamic = "force-dynamic";
  * Sort order matches what the user sees in the projects nav: כללי
  * last (matches the home page's sort-to-bottom convention).
  *
- * Auth: any authenticated session — Keys read goes through the
- * caller's identity so domain access still gates the response. No
- * pref check; this endpoint is also called by the picker itself
- * which is gated by the gmail_customer_poll pref via the parent UI.
+ * Auth: @fandf.co.il staff only, like the rest of the customer-emails
+ * feature this picker belongs to. The Keys read does NOT gate anything
+ * by itself — for an outside address it runs as the owner, so without
+ * this any signed-in account could list any company's projects. No
+ * pref check; the picker is gated by gmail_customer_poll via the
+ * parent UI.
  */
 export async function GET(req: Request) {
-  const session = await auth();
-  const me = session?.user?.email;
-  if (!me) {
-    return NextResponse.json(
-      { ok: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
+  const gate = await requireStaff();
+  if (gate instanceof NextResponse) return gate;
+  const me = gate.email;
   const url = new URL(req.url);
   const company = (url.searchParams.get("company") || "").trim();
   if (!company) {

@@ -6,6 +6,7 @@ import {
 } from "@/lib/appsScript";
 import { getEffectiveViewAs } from "@/lib/viewAsCookie";
 import { canSeeCampaigns } from "@/lib/userRole";
+import { viewerTier } from "@/lib/viewerTier";
 
 export const metadata = { title: "תקציבים" };
 import { canViewAdLinks } from "@/lib/adLinkAccess";
@@ -47,7 +48,14 @@ export default async function BudgetsPage({
   const overrideEmail = viewAs && viewAs !== me ? viewAs : undefined;
   const subject = overrideEmail || me;
 
-  const roleEligible = await canSeeCampaigns(subject).catch(() => false);
+  // Internal first, role second: canSeeCampaigns reads a free-text role cell
+  // and cannot tell a client from staff, and everything below is the whole
+  // book read as the Drive owner. The tier is the session's own, never the
+  // view-as target's.
+  const tier = await viewerTier(me);
+  const roleEligible =
+    (tier === "staff" || tier === "team") &&
+    (await canSeeCampaigns(subject).catch(() => false));
 
   if (!roleEligible) {
     return (

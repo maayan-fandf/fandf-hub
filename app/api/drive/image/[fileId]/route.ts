@@ -16,6 +16,15 @@ import { driveClient, driveFolderOwner } from "@/lib/sa";
  * Cache: 5 minutes browser-side, same as the thumb proxy. Image files
  * inside פריסות don't typically change in place (a new spread = a new
  * file with a new ID), so this is conservative but safe.
+ *
+ * WHO MAY CALL. Clients are intended callers twice over — the plan card,
+ * and every image in a discussion they can read (CommentBody routes all
+ * Drive image links here) — so this is not a staff/team route; `auth()`
+ * keeps out accounts on no roster. STILL OPEN (authorization audit,
+ * 2026-10-01): the file id is not checked against anything, so a client
+ * who learns the id of an image the owner can read gets its bytes. Unlike
+ * the thumb/xlsx proxies this one is not limited to the tasks Shared
+ * Drive: a comment may carry a hand-pasted link to an image elsewhere.
  */
 export const dynamic = "force-dynamic";
 

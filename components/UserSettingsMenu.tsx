@@ -141,6 +141,9 @@ export default function UserSettingsMenu({
   isClientUser?: boolean;
 }) {
   const router = useRouter();
+  // Display only — the server decides (lib/viewerGate). Spelled out here
+  // because lib/viewerTier reads the roster and can't load in the browser.
+  const isStaffViewer = myEmail.toLowerCase().trim().endsWith("@fandf.co.il");
   const [open, setOpen] = useState(false);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -323,7 +326,10 @@ export default function UserSettingsMenu({
                   </span>
                 </label>
                 <BrowserNotifToggle />
-                {!isClientUser && (
+                {/* Both toggles act on the viewer's OWN Google account (Tasks
+                    list, mailbox), which only exists for @fandf.co.il — the
+                    server refuses the Gmail one for anyone else. */}
+                {!isClientUser && isStaffViewer && (
                   <>
                     <label className="settings-menu-toggle">
                       <input

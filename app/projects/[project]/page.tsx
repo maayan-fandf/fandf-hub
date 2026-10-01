@@ -73,7 +73,8 @@ import {
 } from "@/lib/driveFolders";
 import { buildLocalDrivePaths } from "@/lib/localDrivePath";
 import { currentUserEmail } from "@/lib/appsScript";
-import { canOpenProject } from "@/lib/projectAccess";
+import { canOpenProject, redirectIfOffRoster } from "@/lib/projectAccess";
+import { isStaffEmail, viewerTier } from "@/lib/viewerTier";
 import ProjectNoAccess from "@/components/ProjectNoAccess";
 import { viewerCanEditComment as viewerCanEdit } from "@/lib/commentPermissions";
 import CopyLocalPathButton from "@/components/CopyLocalPathButton";
@@ -150,6 +151,7 @@ export default async function ProjectOverviewPage({
   // lib/projectAccess for the whole story). The viewer's OWN session address
   // decides, never the gear menu's "view as" target.
   const viewerEmail = await currentUserEmail().catch(() => "");
+  await redirectIfOffRoster(viewerEmail);
   if (!(await canOpenProject(viewerEmail, projectName))) {
     return <ProjectNoAccess projectName={projectName} email={viewerEmail} />;
   }
@@ -286,8 +288,16 @@ export default async function ProjectOverviewPage({
   // their personal roster). Without this fallback, the dashboard iframe
   // URL would have no company param at all and the כללי-mode pivot in
   // the Apps Script side wouldn't trigger.
+  //
+  // STAFF ONLY. The access gate above is by project NAME, so for anyone else
+  // the URL must not be what picks the company: a client of company A who
+  // opened their own project with `?company=B` got no `projectMeta`, fell
+  // through to this, and was shown company B's latest media plan — with a
+  // working download and approve button (the plan lookup falls back to the
+  // company's כללי folder). A non-staff viewer gets the company from their
+  // own roster row or none.
   const companyForDashboard =
-    projectMeta?.company ?? (companyScope || "");
+    projectMeta?.company ?? (isStaffEmail(viewerEmail) ? companyScope : "");
   // The logged-in user's email. MUST come from the session (`meP` =
   // currentUserEmail), NOT projectsData.email — the latter is "" whenever
   // getMyProjects() is slow or fails (it's `.catch(() => null)`), which
@@ -449,11 +459,17 @@ export default async function ProjectOverviewPage({
   // "+ משימה חדשה" button, the 📋 section, the convert-to-task icon
   // on each comment). Clients use the hub purely as a discussion +
   // metrics surface; tasks live on the F&F internal side.
-  const isClientUser =
-    !!projectsData?.isClient &&
-    !projectsData?.isAdmin &&
-    !projectsData?.isStaff &&
-    !isInternalUser;
+  //
+  // When the projects read failed (`projectsData` is null) this used to come
+  // out FALSE — so on that load a real client got the internal page: tasks
+  // queue, alerts, the F&F-only discussion channel. The roster tier answers
+  // without that read, so fall back to it instead of to "not a client".
+  const isClientUser = projectsData
+    ? !!projectsData.isClient &&
+      !projectsData.isAdmin &&
+      !projectsData.isStaff &&
+      !isInternalUser
+    : !["staff", "team"].includes(await viewerTier(userEmail));
   // PRESENTATION MODE — an @fandf.co.il viewer with the top-nav תצוגת לקוח
   // switch on (the lib/clientViewMode cookie), or on a legacy `?clientView=1`
   // link. `reportClientView` is the DISPLAY gate: true for a real client and

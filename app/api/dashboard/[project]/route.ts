@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUserEmail } from "@/lib/appsScript";
+import { canOpenProject } from "@/lib/projectAccess";
+import { viewerTier } from "@/lib/viewerTier";
 
 /**
  * Server-side proxy for the Apps Script dashboard iframe.
@@ -39,6 +41,17 @@ export async function GET(
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
+  // The same gate, on the same two values, as the page that embeds this
+  // frame (app/projects/[project]/page.tsx) — so whoever can open the page
+  // gets its report, and nobody gets another project's by editing the URL.
+  // The script's own scoping is looser than the hub's: it treats an outside
+  // address listed anywhere in Keys as blanket staff.
+  const { project: projectParam } = await params;
+  const project = decodeURIComponent(projectParam);
+  if (!(await canOpenProject(email, project))) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+
   const base = process.env.APPS_SCRIPT_API_URL;
   const token = process.env.APPS_SCRIPT_API_TOKEN;
   if (!base || !token) {
@@ -46,9 +59,6 @@ export async function GET(
       status: 500,
     });
   }
-
-  const { project: projectParam } = await params;
-  const project = decodeURIComponent(projectParam);
 
   // monthOverride forwarded from the iframe `src` query string. Format
   // "YYYY-MM" — anything else is silently dropped so a malformed param
@@ -74,7 +84,15 @@ export async function GET(
   // renderDashboardHtml + emits a `body.client-view` class so the
   // template's CSS can hide negative-signal surfaces (alert.bad,
   // pd-bad/pd-warn insight cards, fd-bad funnel diagnoses).
-  const clientView = incomingParams.get("clientView") === "1" ? "1" : "";
+  // A client does not get to choose: the page adds the parameter for them,
+  // and deleting it from the URL by hand used to return the internal
+  // render. Staff and the outside team keep it as an opt-in.
+  const tier = await viewerTier(email);
+  const clientView =
+    (tier !== "staff" && tier !== "team") ||
+    incomingParams.get("clientView") === "1"
+      ? "1"
+      : "";
 
   const url = new URL(base);
   url.searchParams.set("api", "1");

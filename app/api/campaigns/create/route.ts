@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getAccessScope } from "@/lib/tasksDirect";
 import { createCampaignFolder } from "@/lib/driveCampaigns";
+import { requireTeam } from "@/lib/viewerGate";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,10 @@ export const dynamic = "force-dynamic";
  * picker so the folder is materialized upfront, not deferred to first
  * task save. Idempotent.
  *
- * Access gate: the caller must already have project access (admin or
- * Keys-listed). The folder is owned by DRIVE_FOLDER_OWNER regardless;
- * we just gate which projects you can spawn folders under.
+ * Access gate: team only (requireTeam), and the caller must already have
+ * project access (admin or Keys-listed). The folder is owned by
+ * DRIVE_FOLDER_OWNER regardless; we just gate which projects you can
+ * spawn folders under.
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -27,6 +29,11 @@ export async function POST(req: Request) {
     );
   }
   const userEmail = session.user.email;
+  // Briefs are the team's surface (the task form; clients are redirected
+  // off it), and the folder is created as the owner identity — so staff
+  // and Keys-listed freelancers only, never a client on their own project.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { project?: unknown; name?: unknown };
   try {

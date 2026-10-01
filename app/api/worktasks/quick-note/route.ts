@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { useSATasksWrites } from "@/lib/sa";
+import { requireTeam } from "@/lib/viewerGate";
 
 /**
  * POST /api/worktasks/quick-note
@@ -23,6 +24,10 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Team only: the quick-note button is not rendered for clients
+  // (app/layout), and a note needs no project — so nothing else gates it.
+  const gate = await requireTeam();
+  if (gate instanceof NextResponse) return gate;
 
   let body: { title?: string; description?: string; due?: string };
   try {
