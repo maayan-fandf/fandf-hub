@@ -64,6 +64,7 @@ import UserSettingsMenu from "@/components/UserSettingsMenu";
 import TopnavUserMenu from "@/components/TopnavUserMenu";
 import ActiveLink from "@/components/ActiveLink";
 import ThemeToggle from "@/components/ThemeToggle";
+import GameLauncher from "@/components/GameLauncher";
 import ClientViewSwitch from "@/components/ClientViewSwitch";
 import { CLIENT_VIEW_COOKIE } from "@/lib/clientViewMode";
 import { cookies } from "next/headers";
@@ -363,6 +364,7 @@ export default async function RootLayout({
                   <ClientViewSwitch initialOn={clientViewOn} />
                 )}
                 <ThemeToggle />
+                <GameLauncher />
                 <span
                   className="topnav-hint"
                   title="לחץ ⌘K או Ctrl+K לפתיחת חיפוש"

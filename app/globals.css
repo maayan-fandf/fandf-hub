@@ -31666,3 +31666,50 @@ html[data-theme="dark"] {
   .lj-col:last-of-type .lj-row > :first-child { order: 3; }
   .lj-col:last-of-type .lj-row > :last-child { order: 1; }
 }
+
+/* ─── 🥊 WWF&F popup (components/GameLauncher.tsx) ─────────────────────
+   The game draws a 384×224 canvas and scales it to its window, so the
+   frame keeps that ratio and takes whichever of width or height runs out
+   first. */
+.game-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 70%, transparent);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.game-modal {
+  position: relative;
+  width: min(94vw, calc((100vh - 5rem) * 384 / 224));
+  aspect-ratio: 384 / 224;
+  background: #000;
+  border-radius: 12px;
+  box-shadow: var(--md-sys-elevation-level3);
+}
+.game-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+}
+.game-close {
+  position: absolute;
+  top: -2.4rem;
+  inset-inline-end: 0;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, #000 55%, transparent);
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.game-close:hover {
+  background: color-mix(in srgb, #000 80%, transparent);
+}
