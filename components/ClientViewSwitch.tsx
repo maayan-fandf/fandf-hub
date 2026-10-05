@@ -5,7 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { CLIENT_VIEW_COOKIE, CLIENT_VIEW_MAX_AGE } from "@/lib/clientViewMode";
 
 /**
- * 👁️ תצוגת לקוח — one switch in the top nav, for the whole hub.
+ * 👁️ מצגת — one switch in the top nav, for the whole hub. The pill read
+ * "תצוגת לקוח" until 2026-10-05 (renamed at the owner's request); comments
+ * elsewhere, and every identifier (clientView, .rpt-clientview, the cookie),
+ * still use that name for the same thing.
  *
  * On a call with a client the owner flips between the full view and what the
  * client sees (owner request, 2026-09-29). It used to be a per-page link that
@@ -105,7 +108,7 @@ export default function ClientViewSwitch({ initialOn }: { initialOn: boolean }) 
       onClick={flip}
       title={
         on
-          ? "את/ה בתצוגת לקוח — כל פרויקט מוצג כפי שהלקוח רואה אותו. לחץ לחזרה לתצוגה המלאה."
+          ? "את/ה במצב מצגת — כל פרויקט מוצג כפי שהלקוח רואה אותו. לחץ לחזרה לתצוגה המלאה."
           : "הצג את הפרויקטים כפי שהלקוח רואה אותם — נשאר פעיל במעבר בין פרויקטים, למשל בשיחת זום."
       }
     >
@@ -113,7 +116,7 @@ export default function ClientViewSwitch({ initialOn }: { initialOn: boolean }) 
       {/* Its own span so a narrow top nav can drop the words and keep the
           eye — the filled state still says it is on. */}
       <span className="topnav-clientview-label">
-        {on ? "תצוגת לקוח · יציאה" : "תצוגת לקוח"}
+        {on ? "מצגת · יציאה" : "מצגת"}
       </span>
     </button>
   );
