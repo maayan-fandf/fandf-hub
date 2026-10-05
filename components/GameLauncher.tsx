@@ -8,6 +8,24 @@ import { createPortal } from "react-dom";
  *  hub only frames it. */
 const GAME_URL = "https://fandf-wwff.web.app/";
 
+/** The game's own numbers (src/main.ts in its repo): a 384×224 canvas, drawn
+ *  with a 16px margin inside its window, at a whole-number scale once that
+ *  is 2× or more. */
+const VIEW_W = 384;
+const VIEW_H = 224;
+const GAME_MARGIN = 16;
+
+/** The scale the game will pick for the room the popup has. Sizing the popup
+ *  to exactly that, and tucking the game's margin out of sight, is what
+ *  leaves no black band around the picture. */
+function fitScale() {
+  const s = Math.min(
+    (window.innerWidth * 0.94) / VIEW_W,
+    (window.innerHeight - 88) / VIEW_H,
+  );
+  return s >= 2 ? Math.floor(s) : s;
+}
+
 /**
  * 🥊 in the topnav — opens the game in a popup.
  *
@@ -19,6 +37,7 @@ const GAME_URL = "https://fandf-wwff.web.app/";
  */
 export default function GameLauncher() {
   const [open, setOpen] = useState(false);
+  const [scale, setScale] = useState(2);
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -26,11 +45,15 @@ export default function GameLauncher() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    const onResize = () => setScale(fitScale());
+    onResize();
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
       document.body.style.overflow = prevOverflow;
     };
   }, [open]);
@@ -60,6 +83,7 @@ export default function GameLauncher() {
               role="dialog"
               aria-modal="true"
               aria-label="WWF&F"
+              style={{ width: VIEW_W * scale, height: VIEW_H * scale }}
             >
               <button
                 type="button"
@@ -69,14 +93,21 @@ export default function GameLauncher() {
               >
                 ×
               </button>
-              <iframe
-                ref={frameRef}
-                className="game-frame"
-                src={GAME_URL}
-                title="WWF&F"
-                allow="autoplay; fullscreen; gamepad"
-                onLoad={() => frameRef.current?.focus()}
-              />
+              <div className="game-screen">
+                <iframe
+                  ref={frameRef}
+                  className="game-frame"
+                  src={GAME_URL}
+                  title="WWF&F"
+                  allow="autoplay; fullscreen; gamepad"
+                  style={{
+                    inset: -GAME_MARGIN,
+                    width: VIEW_W * scale + GAME_MARGIN * 2,
+                    height: VIEW_H * scale + GAME_MARGIN * 2,
+                  }}
+                  onLoad={() => frameRef.current?.focus()}
+                />
+              </div>
             </div>
           </div>,
           document.body,
