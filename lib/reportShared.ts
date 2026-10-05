@@ -167,11 +167,20 @@ export type ReportChannel = {
    *  from the payload). A numeric 0 is the opposite — a tracked channel
    *  that fired no events — and must survive to the tooltip. */
   pixelLeads?: number;
-  /** Of `leads`, how many are NEW — read from the same CRM report cells
-   *  the row's `לידים CRM` formula sums (lib/crmSheetSplits). `leads` itself
-   *  counts returning (and on some tabs duplicate) inquiries too, so the
-   *  cell reads "26 (11 חדשים)". Live mode only; undefined when the
-   *  project's formula or report layout cannot be read. */
+  /**
+   * Of `leads`, how many are NEW. `leads` itself counts returning (and on
+   * some tabs duplicate) inquiries too, so the cell reads "26 (11 חדשים)".
+   *   live mode   — read from the same CRM report cells the row's
+   *                 `לידים CRM` formula sums (lib/crmSheetSplits).
+   *   month mode  — counted today from the warehouse funnel beside the
+   *                 FROZEN `leads` (lib/reportData monthNewLeads), since the
+   *                 CRM reports hold the current window alone.
+   *   range mode  — the funnel's new leads, a part of the funnel's own
+   *                 count that `leads` is there.
+   * undefined wherever it cannot be read or does not fit — an unreadable
+   * formula or report layout, a Sheet-routed or Salesforce funnel, a past
+   * month whose row the warehouse counts differently from the sheet.
+   */
   newLeads?: number;
   /**
    * תיאומים / ביצועים on the LEAD-ENTRY basis. Where they come from:

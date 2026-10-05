@@ -46,6 +46,7 @@ import {
   getDatedChannelMeetings,
   resolveCrm,
   type DatedChannelMeetings,
+  type SourceMapAttribution,
 } from "@/lib/datedChannelMeetings";
 import { getCrmFunnelForProject } from "@/lib/crmData";
 import { getCrmSheetSplits, splitKey } from "@/lib/crmSheetSplits";
@@ -835,6 +836,11 @@ async function buildRangeReportChannels(args: {
   // than a pro-rated one.
   const outcomes: RangeBasis["outcomes"] =
     attribution && attributionCovers(attribution) ? "crm" : "prorated";
+  // "(N חדשים)". On the CRM path a row's leads ARE the funnel's, folded by
+  // this same attributor, so its new leads are a part of that very number —
+  // none of month mode's two-source caution applies. A Sehel range shows
+  // nothing: its leads are registrations, all of them new.
+  const fresh = outcomes === "crm" && funnel ? attributeNewLeads(funnel, labels) : null;
 
   const channels: ReportChannel[] = built.map(({ a, platform, subs, spend, daily, estimated }) => {
     const hit = outcomes === "crm" ? attribution?.byChannel[a.channel] : undefined;
@@ -849,6 +855,7 @@ async function buildRangeReportChannels(args: {
       budget: a.budget,
       spend,
       leads,
+      newLeads: fresh ? fitsWithin(fresh.byChannel[a.channel]?.leads ?? 0, leads) : undefined,
       pixelLeads: a.pixelLeads == null ? undefined : Math.round(a.pixelLeads),
       spendEstimated: estimated,
       scheduled,
@@ -901,6 +908,86 @@ const ZERO_MEETINGS = (): ReportMeetingTotals => ({ scheduled: 0, meetings: 0 })
 
 const sumValues = (m: Record<string, number>): number =>
   Object.values(m).reduce((s, n) => s + (n || 0), 0);
+
+/* ─── "(N חדשים)" outside live mode ─────────────────────────────────── */
+
+/** A part of a count, only where it fits inside that count. */
+const fitsWithin = (part: number | undefined, whole: number): number | undefined =>
+  part != null && part >= 0 && part <= whole ? part : undefined;
+
+/**
+ * The funnel's new leads (CrmFunnel.sourceMatrices.newLeadsBySource) folded
+ * onto the ערוצים rows — by the attributor the leads themselves are folded
+ * with, so a row's new leads and its leads come from the same CRM sources.
+ * null when the funnel's route cannot tell new from returning.
+ */
+function attributeNewLeads(
+  funnel: { sourceMatrices: { newLeadsBySource?: Record<string, number> } },
+  tableChannels: readonly string[],
+): SourceMapAttribution | null {
+  const fresh = funnel.sourceMatrices.newLeadsBySource;
+  if (!fresh) return null;
+  return attributeSourceMaps(
+    { leadsBySource: fresh, scheduledMeetingsBySource: {}, meetingsBySource: {} },
+    tableChannels,
+  );
+}
+
+/**
+ * How far the warehouse's count of a row's leads may sit from the frozen
+ * חודשי number for the two to count as the same leads: 5%, and never less
+ * than one lead. See monthNewLeads.
+ *
+ * September 2026, the 100 BMBY rows of 15 projects: 82 exact, 87 within a
+ * lead, 93 within 5%. The rest are not near misses but rows the warehouse
+ * sees differently (מטרו's facebook: 49 frozen, 28 in the warehouse), which
+ * is the case the check is for.
+ */
+const MONTH_SPLIT_TOLERANCE = 0.05;
+
+/**
+ * A past month's "(N חדשים)" for one ערוצים row, or undefined when it cannot
+ * honestly be shown (owner request, 2026-10-05).
+ *
+ * Live mode reads the part and the whole off the same CRM report
+ * (lib/crmSheetSplits), which holds the current window alone — a closed
+ * month keeps only the total, typed into its חודשי row. So here the row's
+ * לידים stays that frozen number and the new part is counted TODAY from the
+ * warehouse. Two sources, and the part is attached only where they visibly
+ * describe the same leads:
+ *
+ *   BMBY   the warehouse counts new AND returning, so its own total for the
+ *          row has to land within MONTH_SPLIT_TOLERANCE of the frozen one.
+ *          A row whose CRM source names only partly reach it would otherwise
+ *          show a short "new" beside a full total, and the difference would
+ *          read as returning leads.
+ *   Sehel  the warehouse holds registrations — new clients only — so there
+ *          is no second total to compare. The row must have claimed at least
+ *          one: with none there is no telling a channel that brought only
+ *          returning inquiries from one whose source name never matched.
+ *
+ * and, on both, where the part fits inside the frozen number.
+ */
+function monthNewLeads(args: {
+  platform: "bmby" | "sehel" | "salesforce" | null;
+  frozenLeads: number;
+  /** Every CRM lead the row claimed; undefined = it claimed no source. */
+  crmLeads: number | undefined;
+  /** The new ones among them; undefined = none of its sources had any. */
+  crmNew: number | undefined;
+}): number | undefined {
+  const { platform, frozenLeads, crmLeads, crmNew } = args;
+  if (crmLeads == null) return undefined;
+  if (platform === "bmby") {
+    const slack = Math.max(1, Math.round(frozenLeads * MONTH_SPLIT_TOLERANCE));
+    if (Math.abs(crmLeads - frozenLeads) > slack) return undefined;
+  } else if (platform === "sehel") {
+    if (crmLeads <= 0) return undefined;
+  } else {
+    return undefined;
+  }
+  return fitsWithin(crmNew ?? 0, frozenLeads);
+}
 
 /**
  * Month mode's LEAD-ENTRY תיאומים / ביצועים, per ערוצים row.
@@ -987,12 +1074,28 @@ async function liveMonthLeadEntry(args: {
     if (rule !== "owner-lead" && rule !== "registration-cohort") {
       return keepFrozen("no-warehouse", funnel.platform, rule);
     }
-    const a = attributeSourceMaps(
-      funnel.sourceMatrices,
-      channels.map((c) => c.channel),
-    );
+    const labels = channels.map((c) => c.channel);
+    const a = attributeSourceMaps(funnel.sourceMatrices, labels);
+    // "(N חדשים)" beside the row's לידים, which itself stays the frozen
+    // number — see monthNewLeads.
+    const fresh = attributeNewLeads(funnel, labels);
+    const newLeadsOf = (c: ReportChannel): number | undefined =>
+      fresh
+        ? monthNewLeads({
+            platform: funnel.platform,
+            frozenLeads: c.leads,
+            crmLeads: a.byChannel[c.channel]?.leads,
+            crmNew: fresh.byChannel[c.channel]?.leads,
+          })
+        : undefined;
     if (!attributionCovers(a)) {
-      return keepFrozen("low-coverage", funnel.platform, rule, a);
+      const kept = keepFrozen("low-coverage", funnel.platform, rule, a);
+      // The meeting pair stays frozen, but a BMBY row's new leads do not
+      // lean on coverage: each row is held to its own frozen total. A Sehel
+      // row has no such check, so there the coverage bar stands.
+      return funnel.platform === "bmby"
+        ? { ...kept, channels: channels.map((c) => ({ ...c, newLeads: newLeadsOf(c) })) }
+        : kept;
     }
     // Events the funnel counted in its scalar tiles but filed under NO
     // source key, so attributeSourceMaps never saw them: a Sehel
@@ -1023,6 +1126,7 @@ async function liveMonthLeadEntry(args: {
         meetings,
         costPerScheduled: scheduled > 0 ? c.spend / scheduled : 0,
         costPerMeeting: meetings > 0 ? c.spend / meetings : 0,
+        newLeads: newLeadsOf(c),
       };
     });
     return {
@@ -1344,9 +1448,10 @@ export const getProjectReportData = cache(
       }
     }
 
-    // "26 (11 חדשים)" and "4 (1 בוטלו)" — live only, keyed by the project
-    // tab the budget desk resolved above (the CRM reports hold the current
-    // window alone).
+    // "26 (11 חדשים)" and "4 (1 בוטלו)" off the sheet — live only, keyed by
+    // the project tab the budget desk resolved above (the CRM reports hold
+    // the current window alone). A past month and a range take their new
+    // leads from the funnel instead: monthNewLeads, buildRangeReportChannels.
     if (mode === "live" && tabSlug && reportChannels.length) {
       const splits = await getCrmSheetSplits(subjectEmail, tabSlug);
       // Attached only where the part fits inside this row's own number.
@@ -1355,12 +1460,10 @@ export const getProjectReportData = cache(
       // different moments — a row reading 0 תיאומים beside a fresh "1
       // cancelled". The cell would hide that part, but the סה״כ row would
       // still add it in: "4 (2 בוטלו)" under rows showing one cancellation.
-      const fits = (part: number | undefined, whole: number) =>
-        part != null && part >= 0 && part <= whole ? part : undefined;
       for (const c of reportChannels) {
         const k = splitKey(c.channel);
-        c.newLeads = fits(splits.newLeads[k], c.leads);
-        c.cancelledScheduled = fits(splits.cancelled[k], c.scheduled);
+        c.newLeads = fitsWithin(splits.newLeads[k], c.leads);
+        c.cancelledScheduled = fitsWithin(splits.cancelled[k], c.scheduled);
       }
     }
 

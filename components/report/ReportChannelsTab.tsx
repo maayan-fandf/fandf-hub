@@ -141,8 +141,20 @@ function leadsTooltip(c: ReportChannel): string | undefined {
  * against the CRM section's 11, because 15 were people already in the CRM.
  * Shown only when some of the count is NOT new; an all-new count, or none
  * read (lib/crmSheetSplits), leaves the cell as it was.
+ *
+ * `pastMonth`: the count is a closed month's frozen number and the new part
+ * was counted today from the CRM (lib/reportData monthNewLeads) — two
+ * readings that can sit a lead apart, so the tooltip says which is which.
  */
-function NewLeads({ leads, fresh }: { leads: number; fresh?: number }) {
+function NewLeads({
+  leads,
+  fresh,
+  pastMonth = false,
+}: {
+  leads: number;
+  fresh?: number;
+  pastMonth?: boolean;
+}) {
   if (fresh == null || !(fresh >= 0) || fresh >= leads) return null;
   return (
     <span
@@ -150,7 +162,10 @@ function NewLeads({ leads, fresh }: { leads: number; fresh?: number }) {
       title={
         `${fmtInt(fresh)} פניות חדשות. ` +
         `${fmtInt(leads - fresh)} הנותרות הן פניות חוזרות או כפולות של לקוחות שכבר היו ב-CRM ` +
-        `— נספרות בסה״כ ובעלות לליד, אבל לא בפילוח המקורות של ה-CRM.`
+        `— נספרות בסה״כ ובעלות לליד, אבל לא בפילוח המקורות של ה-CRM.` +
+        (pastMonth
+          ? ` בחודש סגור החדשים נספרים היום מנתוני ה-CRM, והסה״כ הוא המספר שנשמר בסגירת החודש.`
+          : "")
       }
     >
       ({fmtInt(fresh)} חדשים)
@@ -1722,7 +1737,11 @@ export default function ReportChannelsTab({
                   </td>
                   <td title={leadsTooltip(c)}>
                     {fmtInt(c.leads)}
-                    <NewLeads leads={c.leads} fresh={c.newLeads} />
+                    <NewLeads
+                      leads={c.leads}
+                      fresh={c.newLeads}
+                      pastMonth={data.mode === "month"}
+                    />
                     {leadsWarn && (
                       <span className="rpt-ch-diverge" title={leadsWarn}>
                         ⚠️
@@ -1881,7 +1900,11 @@ export default function ReportChannelsTab({
               </td>
               <td>
                 <b>{fmtInt(totals.leads)}</b>
-                <NewLeads leads={totals.leads} fresh={totalNewLeads} />
+                <NewLeads
+                  leads={totals.leads}
+                  fresh={totalNewLeads}
+                  pastMonth={data.mode === "month"}
+                />
               </td>
               <td style={costHeatStyle("costPerLead", tCpl)}>
                 <b>{tCpl > 0 ? fmtILS(tCpl) : "—"}</b>

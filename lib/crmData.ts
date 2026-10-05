@@ -282,6 +282,25 @@ export type CrmFunnel = {
     offFunnelStatuses: string[];
     /** source → lead count. Every counted row contributed once. */
     leadsBySource: Record<string, number>;
+    /**
+     * source → NEW lead count: the part of leadsBySource that is not a
+     * returning inquiry, under the SAME keys — so the ערוצים table can fold
+     * it onto its rows with the attributor it already uses for the leads
+     * ("(13 חדשים)" on a past month or range, lib/reportData). Warehouse
+     * routes only:
+     *   BMBY   leads whose `is_return_lead` is false (bmbyNewLeadsBySource);
+     *   Sehel  every lead — sehel_leads_daily holds one row per client, its
+     *          registration, so a lead in the window IS a new client.
+     * Measured 2026-10-05 against the new-leads column of the CRM reports
+     * themselves (lib/crmSheetSplits, over whatever window each pasted
+     * report held). BMBY: equal on all 133 ערוצים rows, across 31 projects,
+     * whose lead totals agreed with the sheet's, and no lead without a
+     * flag. Sehel: equal on every row of אחוזת אפרידר's live window (36),
+     * and its September reads 322 here against 321 in Sehel's own report.
+     * undefined on every other route — a Sheet-routed card's leads are the
+     * Sheet's, and this would be a part of a different whole.
+     */
+    newLeadsBySource?: Record<string, number>;
     /** source → contacted count. Subset of leadsBySource. */
     contactedBySource: Record<string, number>;
     /** source → attemptedMeetings (ניסיון תיאום פגישה, cumulative) count.
@@ -911,6 +930,43 @@ function computeReturningSplit(
   const total = returning + newLeads;
   if (total === 0) return undefined;
   return { total, returning, newLeads, bySource };
+}
+
+/**
+ * sourceMatrices.newLeadsBySource for the BMBY warehouse route: the leads
+ * that are not returning, keyed the way the funnel keys leadsBySource
+ * (normSource of bmbyLeadSourceKey — NOT returningSplit.bySource's bare
+ * media_source_clean, which drops the blank-source leads ALL CLIENTS files
+ * under "Other").
+ *
+ * The keying is repeated here rather than shared with aggregateBmbyFunnel,
+ * so it is checked instead of trusted: every lead is recounted under the
+ * same key, and unless that recount reproduces `leadsBySource` exactly the
+ * result is undefined. Also undefined when any lead carries no flag — a
+ * count of "new" that silently leaves leads out would read as more
+ * returning ones.
+ */
+function bmbyNewLeadsBySource(
+  leads: {
+    media_source_clean: string | null;
+    channel_key?: string | null;
+    is_return_lead: boolean | null;
+  }[],
+  leadsBySource: Record<string, number>,
+): Record<string, number> | undefined {
+  const all: Record<string, number> = {};
+  const fresh: Record<string, number> = {};
+  for (const l of leads) {
+    if (l.is_return_lead == null) return undefined;
+    const src = normSource(bmbyLeadSourceKey(l));
+    if (!src) continue;
+    all[src] = (all[src] || 0) + 1;
+    if (!l.is_return_lead) fresh[src] = (fresh[src] || 0) + 1;
+  }
+  for (const k of new Set([...Object.keys(all), ...Object.keys(leadsBySource)])) {
+    if ((all[k] || 0) !== (leadsBySource[k] || 0)) return undefined;
+  }
+  return fresh;
 }
 
 /** For each returning lead, the media channel of the client's immediately-
@@ -2198,6 +2254,10 @@ async function computeBmbyFunnelFromWarehouse(
   // from the leads we already fetched (no extra query). Whole-window.
   funnel.speedToLead = computeSpeedToLead(leads);
   funnel.returningSplit = computeReturningSplit(leads);
+  funnel.sourceMatrices.newLeadsBySource = bmbyNewLeadsBySource(
+    leads,
+    funnel.sourceMatrices.leadsBySource,
+  );
   // Prior-channel breakdown for returning leads — off the project's full
   // lead history (the prior inquiry is usually before the window).
   if (funnel.returningSplit && funnel.returningSplit.returning > 0) {
@@ -3103,6 +3163,9 @@ async function computeSehelFunnelFromWarehouse(
   }
 
   const sm = base.sourceMatrices;
+  // Every lead of this route is a new client (see the field's doc), so the
+  // new-leads map is the lead map itself.
+  sm.newLeadsBySource = { ...sm.leadsBySource };
   base.scheduledMeetings = lead.totals.scheduled;
   base.meetings = lead.totals.held;
   base.meetingRatePct = base.leads > 0 ? (lead.totals.held / base.leads) * 100 : null;
