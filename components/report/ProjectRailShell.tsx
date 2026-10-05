@@ -69,12 +69,16 @@ export default function ProjectRailShell({
   defaultSection,
   initialSection,
   triage = [],
+  clientView = false,
 }: {
   groups: RailGroup[];
   sections: RailSection[];
   defaultSection: string;
   initialSection?: string;
   triage?: RailTriage[];
+  /** A client is looking (a real one, or staff in תצוגת לקוח). Turns off the
+   *  budget-pace signal below — see the `overview` rule in recompute. */
+  clientView?: boolean;
 }) {
   const validIds = new Set(sections.map((s) => s.id));
   const first =
@@ -206,12 +210,16 @@ export default function ProjectRailShell({
           : null;
       }
       // Budget off its required pace (over/under) shows a red pace badge in
-      // the header → flag סקירת פעילות.
+      // the header → flag סקירת פעילות. Not for a client: the badge is in
+      // their DOM but hidden by the .rpt-clientview CSS, so reading it here
+      // put "דורש טיפול: תקציב לא בקצב" and a ⚠️ on the rail in front of the
+      // very viewer the badge is hidden from (owner request, 2026-10-05).
       const overview = root.querySelector('[data-sid="overview"]');
       if (overview) {
-        next.overview = overview.querySelector(".rpt-pace-badge.is-red")
-          ? { text: "⚠️", tone: "warning" }
-          : null;
+        next.overview =
+          !clientView && overview.querySelector(".rpt-pace-badge.is-red")
+            ? { text: "⚠️", tone: "warning" }
+            : null;
       }
       setDerived((prev) => {
         const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
@@ -225,7 +233,9 @@ export default function ProjectRailShell({
     const mo = new MutationObserver(recompute);
     mo.observe(root, { childList: true, subtree: true });
     return () => mo.disconnect();
-  }, []);
+    // clientView flips without a remount (the top-nav switch refreshes the
+    // route), so the rule above has to be re-read when it does.
+  }, [clientView]);
 
   const badgeFor = (s: RailSection): RailBadge | null =>
     Object.prototype.hasOwnProperty.call(derived, s.id)

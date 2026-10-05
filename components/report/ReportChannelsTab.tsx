@@ -470,6 +470,17 @@ function ConvCell({ r, dash }: { r: number | null; dash?: ReactNode }) {
 const isQualityLeakCard = (c: PaidDiagCard) =>
   c.icon === "📉" || c.head.startsWith("איכות לידים נמוכה");
 
+/**
+ * The ✅ all-clear ("מדיה בתשלום נראית מאוזנת"), the card the rules emit when
+ * none of them fired. It is tone "good", so a filter on tone alone keeps it —
+ * but what it reports is the absence of warnings (budget waste, a CPL
+ * outlier, over-concentration) that a client is never shown in the first
+ * place. Matched like isQualityLeakCard, to leave reportShared's port of the
+ * legacy rules untouched.
+ */
+const isAllClearCard = (c: PaidDiagCard) =>
+  c.icon === "✅" || c.head === "מדיה בתשלום נראית מאוזנת";
+
 /** Hebrew takes the singular at exactly one ("1 תיאומים" is wrong). */
 const heCount = (n: number, one: string, many: string) =>
   n === 1 ? one : `${fmtInt(n)} ${many}`;
@@ -1361,15 +1372,17 @@ export default function ReportChannelsTab({
     basis === "dated"
       ? diagnosePaidChannels(channels).filter((c) => !isQualityLeakCard(c))
       : diagnosePaidChannels(channels);
-  // A client sees only the GOOD cards (⭐ leading channel, ✅ balanced). The
-  // red and orange ones were already hidden by CSS; the 📊 ריכוז תקציב card
-  // is tone "info" and slipped through — "over-dependence on one channel =
-  // operational risk, consider testing 1-2 more with 10-15% of the budget"
-  // is the agency's note to itself, not a finding for the client (owner
-  // request, 2026-09-29). Filtered HERE rather than only hidden: the cards
-  // are computed in the browser, so CSS alone leaves their text in the DOM.
+  // A client sees only the ⭐ leading-channel cards. The red and orange ones
+  // were already hidden by CSS; the 📊 ריכוז תקציב card is tone "info" and
+  // slipped through — "over-dependence on one channel = operational risk,
+  // consider testing 1-2 more with 10-15% of the budget" is the agency's
+  // note to itself, not a finding for the client (owner request,
+  // 2026-09-29). The ✅ all-clear is tone "good", so it passed as well; it
+  // is dropped too (owner request, 2026-10-05) — see isAllClearCard.
+  // Filtered HERE rather than only hidden: the cards are computed in the
+  // browser, so CSS alone leaves their text in the DOM.
   const diagCards = clientView
-    ? allDiagCards.filter((c) => c.tone === "good")
+    ? allDiagCards.filter((c) => c.tone === "good" && !isAllClearCard(c))
     : allDiagCards;
 
   /**

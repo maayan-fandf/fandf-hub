@@ -577,6 +577,7 @@ export default async function NativeProjectRail({
         defaultSection={mediaNode ? "media" : "overview"}
         initialSection={initialSection}
         triage={triage}
+        clientView={clientView}
       />
     </>
   );
