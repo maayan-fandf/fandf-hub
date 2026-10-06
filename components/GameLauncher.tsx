@@ -34,10 +34,16 @@ function fitScale() {
  * hears none of its key presses: the hub's shortcuts stay out of the fight,
  * and Esc inside the game cannot close the popup — the × and a click on
  * the backdrop do.
+ *
+ * On a touch screen the game lays its own controls out round the picture, in
+ * the corners and under it (src/touch.ts in its repo), so there the popup is
+ * the whole screen with nothing clipped, and the × has a strip of its own
+ * above the game rather than sitting on one of its buttons.
  */
 export default function GameLauncher() {
   const [open, setOpen] = useState(false);
   const [scale, setScale] = useState(2);
+  const [touch, setTouch] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -47,6 +53,7 @@ export default function GameLauncher() {
     };
     const onResize = () => setScale(fitScale());
     onResize();
+    setTouch(window.matchMedia("(pointer: coarse)").matches);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
     const prevOverflow = document.body.style.overflow;
@@ -79,11 +86,15 @@ export default function GameLauncher() {
             }}
           >
             <div
-              className="game-modal"
+              className={"game-modal" + (touch ? " is-touch" : "")}
               role="dialog"
               aria-modal="true"
               aria-label="WWF&F"
-              style={{ width: VIEW_W * scale, height: VIEW_H * scale }}
+              style={
+                touch
+                  ? undefined
+                  : { width: VIEW_W * scale, height: VIEW_H * scale }
+              }
             >
               <button
                 type="button"
@@ -100,11 +111,15 @@ export default function GameLauncher() {
                   src={GAME_URL}
                   title="WWF&F"
                   allow="autoplay; fullscreen; gamepad"
-                  style={{
-                    inset: -GAME_MARGIN,
-                    width: VIEW_W * scale + GAME_MARGIN * 2,
-                    height: VIEW_H * scale + GAME_MARGIN * 2,
-                  }}
+                  style={
+                    touch
+                      ? undefined
+                      : {
+                          inset: -GAME_MARGIN,
+                          width: VIEW_W * scale + GAME_MARGIN * 2,
+                          height: VIEW_H * scale + GAME_MARGIN * 2,
+                        }
+                  }
                   onLoad={() => frameRef.current?.focus()}
                 />
               </div>
