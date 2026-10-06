@@ -6,7 +6,8 @@ import { sheetsClient } from "@/lib/sa";
  * Two splits of the live ערוצים table's CRM counts, read from the same CRM
  * report cells the project tab's own formulas sum:
  *
- *   newLeads   — of `לידים CRM`, how many are NEW:     "26 (11 חדשים)"
+ *   newLeads   — of `לידים CRM`, how many are NEW; the table shows the rest
+ *                of the count, the returning ones:     "26 (15 חוזרים)"
  *   cancelled  — of `תיאום וביטול` (the table's תיאומים), how many were
  *                cancelled:                            "4 (1 בוטלו)"
  *

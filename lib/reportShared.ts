@@ -168,20 +168,23 @@ export type ReportChannel = {
    *  that fired no events — and must survive to the tooltip. */
   pixelLeads?: number;
   /**
-   * Of `leads`, how many are NEW. `leads` itself counts returning (and on
-   * some tabs duplicate) inquiries too, so the cell reads "26 (11 חדשים)".
-   *   live mode   — read from the same CRM report cells the row's
-   *                 `לידים CRM` formula sums (lib/crmSheetSplits).
+   * Of `leads`, how many are RETURNING inquiries (on some tabs duplicates
+   * too) — people who were already in the CRM. `leads` counts them along
+   * with the new ones, so the cell reads "26 (15 חוזרים)". It read
+   * "(11 חדשים)", the other part of the same split, until 2026-10-06.
+   *   live mode   — `leads` less the new-leads column of the same CRM report
+   *                 cells the row's `לידים CRM` formula sums
+   *                 (lib/crmSheetSplits).
    *   month mode  — counted today from the warehouse funnel beside the
-   *                 FROZEN `leads` (lib/reportData monthNewLeads), since the
-   *                 CRM reports hold the current window alone.
-   *   range mode  — the funnel's new leads, a part of the funnel's own
-   *                 count that `leads` is there.
+   *                 FROZEN `leads` (lib/reportData monthReturningLeads),
+   *                 since the CRM reports hold the current window alone.
+   *   range mode  — the funnel's own count, which `leads` is there, less
+   *                 its new leads.
    * undefined wherever it cannot be read or does not fit — an unreadable
    * formula or report layout, a Sheet-routed or Salesforce funnel, a past
    * month whose row the warehouse counts differently from the sheet.
    */
-  newLeads?: number;
+  returningLeads?: number;
   /**
    * תיאומים / ביצועים on the LEAD-ENTRY basis. Where they come from:
    *   live mode   — the ALL CLIENTS current row (pushed daily; matched the

@@ -26694,7 +26694,9 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   color: var(--muted);
   font-size: 0.74rem;
 }
-/* "(11 חדשים)" after a לידים count that includes returning inquiries. */
+/* "(15 חוזרים)" after a לידים count that includes returning inquiries
+   (it read "(11 חדשים)" at first, hence the name), and "(1 בוטלו)" after a
+   תיאומים count that includes cancelled meetings. */
 .rpt-ch-newleads {
   margin-inline-start: 0.3em;
   color: var(--muted);

@@ -285,9 +285,9 @@ export type CrmFunnel = {
     /**
      * source → NEW lead count: the part of leadsBySource that is not a
      * returning inquiry, under the SAME keys — so the ערוצים table can fold
-     * it onto its rows with the attributor it already uses for the leads
-     * ("(13 חדשים)" on a past month or range, lib/reportData). Warehouse
-     * routes only:
+     * it onto its rows with the attributor it already uses for the leads,
+     * and show what is left of each row as "(13 חוזרים)" on a past month or
+     * range (lib/reportData). Warehouse routes only:
      *   BMBY   leads whose `is_return_lead` is false (bmbyNewLeadsBySource);
      *   Sehel  every lead — sehel_leads_daily holds one row per client, its
      *          registration, so a lead in the window IS a new client.

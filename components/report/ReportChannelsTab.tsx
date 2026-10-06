@@ -134,41 +134,43 @@ function leadsTooltip(c: ReportChannel): string | undefined {
 }
 
 /**
- * "(11 חדשים)" after a לידים count that includes returning inquiries.
+ * "(15 חוזרים)" after a לידים count that includes returning inquiries.
  *
  * `לידים CRM` sums whatever the project tab's formula sums — on most tabs
  * new + returning (+ duplicates). אחוזת אפרידר's פייסבוק, September: 26
  * against the CRM section's 11, because 15 were people already in the CRM.
- * Shown only when some of the count is NOT new; an all-new count, or none
- * read (lib/crmSheetSplits), leaves the cell as it was.
+ * Shown only when some of the count IS returning; an all-new count, or none
+ * read (lib/crmSheetSplits), leaves the cell as it was. The cell named the
+ * other part, "(11 חדשים)", until the owner asked for the returning one
+ * (2026-10-06).
  *
- * `pastMonth`: the count is a closed month's frozen number and the new part
- * was counted today from the CRM (lib/reportData monthNewLeads) — two
+ * `pastMonth`: the count is a closed month's frozen number and the split
+ * was counted today from the CRM (lib/reportData monthReturningLeads) — two
  * readings that can sit a lead apart, so the tooltip says which is which.
  */
-function NewLeads({
+function ReturningLeads({
   leads,
-  fresh,
+  returning,
   pastMonth = false,
 }: {
   leads: number;
-  fresh?: number;
+  returning?: number;
   pastMonth?: boolean;
 }) {
-  if (fresh == null || !(fresh >= 0) || fresh >= leads) return null;
+  if (returning == null || !(returning >= 1) || returning > leads) return null;
   return (
     <span
       className="rpt-ch-newleads"
       title={
-        `${fmtInt(fresh)} פניות חדשות. ` +
-        `${fmtInt(leads - fresh)} הנותרות הן פניות חוזרות או כפולות של לקוחות שכבר היו ב-CRM ` +
-        `— נספרות בסה״כ ובעלות לליד, אבל לא בפילוח המקורות של ה-CRM.` +
+        `פניות חוזרות או כפולות, של לקוחות שכבר היו ב-CRM: ` +
+        `${fmtInt(returning)} מתוך ${fmtInt(leads)}. ` +
+        `פנייה כזו נספרת בסה״כ ובעלות לליד, אבל לא בפילוח המקורות של ה-CRM.` +
         (pastMonth
-          ? ` בחודש סגור החדשים נספרים היום מנתוני ה-CRM, והסה״כ הוא המספר שנשמר בסגירת החודש.`
+          ? ` בחודש סגור הסה״כ הוא המספר שנשמר בסגירת החודש, והחלוקה לחדשות ולחוזרות נעשית היום מנתוני ה-CRM.`
           : "")
       }
     >
-      ({fmtInt(fresh)} חדשים)
+      ({fmtInt(returning)} {Math.round(returning) === 1 ? "חוזר" : "חוזרים"})
     </span>
   );
 }
@@ -1324,11 +1326,11 @@ export default function ReportChannelsTab({
       : selected.size === 1
         ? chLabel([...selected][0])
         : `${selected.size} ערוצים נבחרו`;
-  // The total's "(N חדשים)" only when every visible row with leads carries
+  // The total's "(N חוזרים)" only when every visible row with leads carries
   // its own — a sum over some rows beside a total over all would read as
-  // the project's new-lead count and be short of it.
-  const totalNewLeads = visible.every((c) => c.leads <= 0 || c.newLeads != null)
-    ? visible.reduce((n, c) => n + (c.newLeads ?? 0), 0)
+  // the project's returning-lead count and be short of it.
+  const totalReturning = visible.every((c) => c.leads <= 0 || c.returningLeads != null)
+    ? visible.reduce((n, c) => n + (c.returningLeads ?? 0), 0)
     : undefined;
   // Same rule for "(N בוטלו)". Under the dated basis no row carries one
   // (applyBasisToChannels drops it), so this is undefined there by itself.
@@ -1737,9 +1739,9 @@ export default function ReportChannelsTab({
                   </td>
                   <td title={leadsTooltip(c)}>
                     {fmtInt(c.leads)}
-                    <NewLeads
+                    <ReturningLeads
                       leads={c.leads}
-                      fresh={c.newLeads}
+                      returning={c.returningLeads}
                       pastMonth={data.mode === "month"}
                     />
                     {leadsWarn && (
@@ -1900,9 +1902,9 @@ export default function ReportChannelsTab({
               </td>
               <td>
                 <b>{fmtInt(totals.leads)}</b>
-                <NewLeads
+                <ReturningLeads
                   leads={totals.leads}
-                  fresh={totalNewLeads}
+                  returning={totalReturning}
                   pastMonth={data.mode === "month"}
                 />
               </td>
