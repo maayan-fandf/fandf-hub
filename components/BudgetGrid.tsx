@@ -1373,19 +1373,33 @@ function PlatformDrillGroups({
           <th>בפועל</th>
           <th
             className="th-help"
-            title="לידים שנרשמו ב-CRM. רחפו על המספר כדי לראות את העלות לליד (הוצאה ÷ לידים)."
+            title="לידים שנרשמו ב-CRM. מתחת למספר: העלות לליד (הוצאה ÷ לידים)."
           >
             לידים <span aria-hidden>ⓘ</span>
           </th>
           <th
+            className="th-conv"
+            title="המרה מליד לתיאום (תיאומים ÷ לידים)"
+            aria-label="המרה מליד לתיאום"
+          >
+            %
+          </th>
+          <th
             className="th-help"
-            title="תיאומי פגישות שנקבעו (CRM). רחפו על המספר כדי לראות את העלות לתיאום (הוצאה ÷ תיאומים)."
+            title="תיאומי פגישות שנקבעו (CRM). מתחת למספר: העלות לתיאום (הוצאה ÷ תיאומים)."
           >
             תיאומים <span aria-hidden>ⓘ</span>
           </th>
           <th
+            className="th-conv"
+            title="המרה מתיאום לביצוע (פגישות שבוצעו ÷ תיאומים)"
+            aria-label="המרה מתיאום לביצוע"
+          >
+            %
+          </th>
+          <th
             className="th-help"
-            title="פגישות שבוצעו בפועל (CRM). רחפו על המספר כדי לראות את העלות לפגישה (הוצאה ÷ פגישות)."
+            title="פגישות שבוצעו בפועל (CRM). מתחת למספר: העלות לפגישה (הוצאה ÷ פגישות)."
           >
             פגישות <span aria-hidden>ⓘ</span>
           </th>
@@ -1696,20 +1710,30 @@ function platformDimmed(
 }
 
 /**
- * The three CRM-performance cells shared by the channel rows + the
- * collapsed channel-summary row: לידים / תיאומים / פגישות, each showing
- * the count with its cost-per metric (CPL / CPS / CPM) on hover. perf is
- * channel-level — passed on a single-campaign row or the channel summary,
- * and omitted (blank cells) on the expanded sub-campaign rows so counts
- * aren't duplicated.
+ * The CRM-performance cells shared by the channel rows + the collapsed
+ * channel-summary row: לידים / תיאומים / פגישות, each showing the count with
+ * its cost-per metric (CPL / CPS / CPM) on a line under it, and between
+ * them the conversion to the next stage (ליד → תיאום, תיאום → ביצוע) —
+ * the same two ratios as המרה לתיאום / המרה לביצוע on the project page's
+ * ערוצים table. perf is channel-level — passed on a single-campaign row or
+ * the channel summary, and omitted (blank cells) on the expanded
+ * sub-campaign rows so counts aren't duplicated.
  */
 function PerfCells({ perf }: { perf?: ChannelPerf }) {
+  // The cost line is rendered in all five cells or in none: a cell that has
+  // nothing to put there still holds the line, so the counts and the rates
+  // between them sit at one height across the row. A row with no cost at
+  // all (no results, or an unpaid channel) stays a single line.
+  const costLine =
+    !!perf &&
+    ((perf.leads > 0 && perf.cpl > 0) ||
+      (perf.scheduled > 0 && perf.cps > 0) ||
+      (perf.meetings > 0 && perf.cpm > 0));
   const cell = (
     cls: string,
     count: number | undefined,
     cost: number | undefined,
     metric: "cpl" | "cps" | "cpm",
-    costLabel: string,
     emptyLabel: string,
     extra?: ReactNode,
   ) => {
@@ -1719,17 +1743,35 @@ function PerfCells({ perf }: { perf?: ChannelPerf }) {
     // need attention pop. Blank/no-data counts keep the default color.
     const color = has ? costMetricColor(metric, cost ?? 0) : null;
     return (
-      <td
-        className={cls}
-        title={perf ? (has ? `${costLabel}: ${fmt(Math.round(cost || 0))}` : emptyLabel) : undefined}
-      >
+      <td className={cls} title={perf && !has ? emptyLabel : undefined}>
         <span style={color ? { color, fontWeight: 600 } : undefined}>
           {perf ? (has ? (count as number).toLocaleString("he-IL") : "—") : ""}
         </span>
         {extra}
+        {costLine && (
+          <span className="perf-cost">
+            {has && (cost ?? 0) > 0 ? fmt(cost as number) : <>&nbsp;</>}
+          </span>
+        )}
       </td>
     );
   };
+  // No denominator → no rate; a stage that has results but passed none on
+  // reads 0%, as it does on the project page. The one exception: no
+  // תיאומים next to held meetings means the CRM doesn't report the
+  // scheduling stage (a held meeting was scheduled), so 0% would be wrong.
+  const conv = (from: number | undefined, to: number | undefined, after = 0) => (
+    <td className="c-conv">
+      {perf && (from ?? 0) > 0 && ((to ?? 0) > 0 || after <= 0) && (
+        <span className="perf-conv">← {fmtRate((to ?? 0) / (from as number))}</span>
+      )}
+      {costLine && (
+        <span className="perf-cost" aria-hidden>
+          &nbsp;
+        </span>
+      )}
+    </td>
+  );
   return (
     <>
       {cell(
@@ -1737,12 +1779,13 @@ function PerfCells({ perf }: { perf?: ChannelPerf }) {
         perf?.leads,
         perf?.cpl,
         "cpl",
-        "עלות לליד",
         "אין לידים בתקופה",
         <CplTrend trend={perf?.cplTrend ?? 0} show={!!perf && (perf?.leads ?? 0) > 0} />,
       )}
-      {cell("c-sched", perf?.scheduled, perf?.cps, "cps", "עלות לתיאום", "אין תיאומים בתקופה")}
-      {cell("c-meet", perf?.meetings, perf?.cpm, "cpm", "עלות לפגישה", "אין פגישות בתקופה")}
+      {conv(perf?.leads, perf?.scheduled, perf?.meetings)}
+      {cell("c-sched", perf?.scheduled, perf?.cps, "cps", "אין תיאומים בתקופה")}
+      {conv(perf?.scheduled, perf?.meetings)}
+      {cell("c-meet", perf?.meetings, perf?.cpm, "cpm", "אין פגישות בתקופה")}
     </>
   );
 }
@@ -2800,6 +2843,13 @@ function CsvPlatformButtons({
 
 function fmt(n: number): string {
   return "₪" + Math.round(n || 0).toLocaleString("he-IL");
+}
+
+/** A conversion ratio as a percent for the narrow column between two
+ *  metrics: whole from 10% up, one decimal under it (7.5% is not 8%). */
+function fmtRate(r: number): string {
+  const pct = (r || 0) * 100;
+  return `${pct >= 10 ? Math.round(pct) : Math.round(pct * 10) / 10}%`;
 }
 
 /** ISO date (YYYY-MM-DD) → compact D.M.YY for the time-bar date range. */
