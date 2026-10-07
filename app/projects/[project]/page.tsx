@@ -42,6 +42,7 @@ import {
   getAvailableMonthsDirect,
   type AllClientsRow,
 } from "@/lib/allClients";
+import { getProjectLiveWindow } from "@/lib/reportData";
 import { driveFolderOwner } from "@/lib/sa";
 import ClientChatComposer from "@/components/ClientChatComposer";
 import TasksQueue from "@/components/TasksQueue";
@@ -1002,7 +1003,7 @@ export default async function ProjectOverviewPage({
               account over time, not the selected period. */}
           {dashboardEmbedUrl && (isRealEstateProject || hasMedia) && (
             <Suspense fallback={null}>
-              <DashboardMonthOverrideSlot current={monthOverride} />
+              <DashboardMonthOverrideSlot current={monthOverride} project={projectName} />
             </Suspense>
           )}
           {/* Meeting-count switch (לפי כניסת ליד | לפי מועד הפגישה) — the
@@ -2216,19 +2217,34 @@ function buildDashboardUrl(
 // kept as cheap defense-in-depth: the list is global + slow-changing, so
 // reusing the last good one across a transient blank is safe.
 let _lastAvailableMonths: string[] = [];
-async function DashboardMonthOverrideSlot({ current }: { current: string }) {
+async function DashboardMonthOverrideSlot({
+  current,
+  project,
+}: {
+  current: string;
+  project: string;
+}) {
   let months: string[] = [];
-  try {
-    const res = await getAvailableMonthsDirect(driveFolderOwner());
-    months = Array.isArray(res?.months) ? res.months : [];
-  } catch {
-    months = [];
-  }
+  // The dates "פריסה נוכחית" covers, for the picker's hover — the window the
+  // live report runs on, off the same cached ALL CLIENTS rows as the months.
+  // Best-effort: the picker works without them.
+  const [monthsRes, live] = await Promise.all([
+    getAvailableMonthsDirect(driveFolderOwner()).catch(() => null),
+    getProjectLiveWindow(driveFolderOwner(), project).catch(() => null),
+  ]);
+  months = Array.isArray(monthsRes?.months) ? monthsRes.months : [];
   if (months.length) {
     _lastAvailableMonths = months;
   } else if (_lastAvailableMonths.length) {
     months = _lastAvailableMonths; // transient report failure → last good list
   }
   if (!months.length) return null;
-  return <DashboardMonthOverridePicker current={current} months={months} />;
+  return (
+    <DashboardMonthOverridePicker
+      current={current}
+      months={months}
+      liveFrom={live?.startIso}
+      liveTo={live?.endIso}
+    />
+  );
 }

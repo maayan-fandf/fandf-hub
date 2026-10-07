@@ -4,6 +4,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import DateRangePicker from "./DateRangePicker";
 import { useReportNavigationPending } from "@/components/report/MeetingBasisContext";
+import { fmtDateHe } from "@/lib/reportShared";
 
 type Props = {
   /** Currently-applied month-override, mirrored from `?monthOverride=` in
@@ -12,7 +13,15 @@ type Props = {
   /** Months that have חודשי data for this user, sorted newest-first.
    *  Format: "YYYY-MM". Server-provided so we don't surface empty months. */
   months: string[];
+  /** The dates "פריסה נוכחית" covers for this project — the window live
+   *  mode reports on (lib/reportData getProjectLiveWindow), "YYYY-MM-DD".
+   *  Shown on hover wherever the picker says פריסה נוכחית; either one
+   *  missing and the hover says nothing about dates. */
+  liveFrom?: string;
+  liveTo?: string;
 };
+
+const TRIGGER_HINT = "בחר חודש או טווח תאריכים חופשי";
 
 const HEBREW_MONTHS = [
   "ינואר",
@@ -53,7 +62,12 @@ function ddmm(iso: string): string {
  *
  * Bookmark-friendly by design — the URL contains the full state.
  */
-export default function DashboardMonthOverridePicker({ current, months }: Props) {
+export default function DashboardMonthOverridePicker({
+  current,
+  months,
+  liveFrom,
+  liveTo,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -145,6 +159,15 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
   // While a navigation is in flight show the just-picked period, not the URL's
   // (stale until the transition resolves).
   const triggerLabel = isPending && pendingLabel ? pendingLabel : appliedLabel;
+  // "פריסה נוכחית" names a period without saying which — its dates go on the
+  // hover of the two places that carry the name: the trigger while it is the
+  // applied period, and its row in the list.
+  const liveDates =
+    liveFrom && liveTo ? `${fmtDateHe(liveFrom)} – ${fmtDateHe(liveTo)}` : "";
+  const triggerTitle =
+    liveDates && !current && !rangeActive
+      ? `פריסה נוכחית: ${liveDates}\n${TRIGGER_HINT}`
+      : TRIGGER_HINT;
 
   return (
     <div className="dash-month-picker" dir="rtl" ref={ref}>
@@ -159,7 +182,7 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-busy={isPending || undefined}
-        title="בחר חודש או טווח תאריכים חופשי"
+        title={triggerTitle}
       >
         {isPending ? (
           <span className="dash-dd-spin" aria-hidden />
@@ -182,6 +205,7 @@ export default function DashboardMonthOverridePicker({ current, months }: Props)
             <button
               type="button"
               className={"dash-dd-item" + (!current && !rangeActive ? " is-sel" : "")}
+              title={liveDates || undefined}
               onClick={() => {
                 onMonth("");
                 setOpen(false);

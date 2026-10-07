@@ -342,6 +342,47 @@ function prevWindowOf(win: ReportWindow): ReportWindow | null {
   return { startIso: prevStart, endIso: prevEnd };
 }
 
+/**
+ * The window live mode reports on — what the period picker calls "פריסה
+ * נוכחית": the flight envelope of the project's current ALL CLIENTS rows,
+ * earliest התחלה to latest סיום (legacy Code.js:2225).
+ *
+ * A media-workbook project (דיגיתל שלי) has NO rows in ALL CLIENTS — it
+ * reports from its own sheet — so the envelope is two empty strings, and
+ * inRange() downstream then applies no bound at all. The section became an
+ * all-time view of every ad ever run, with lifetime totals above it, and no
+ * picker to narrow it (the picker is real-estate-only). Fall back to the
+ * workbook's own flight span so the report describes the same period its
+ * calendar draws.
+ */
+async function liveWindowOf(
+  currentRows: readonly AllClientsRow[],
+  projectName: string,
+): Promise<ReportWindow> {
+  let start = "";
+  let end = "";
+  for (const c of currentRows) {
+    if (c.startIso && (!start || c.startIso < start)) start = c.startIso;
+    if (c.endIso && c.endIso > end) end = c.endIso;
+  }
+  if (start || end) return { startIso: start, endIso: end };
+  const span = await getMediaFlightSpan(projectName).catch(() => null);
+  return span ?? { startIso: "", endIso: "" };
+}
+
+/**
+ * The dates behind "פריסה נוכחית" on their own, for the period picker's
+ * tooltip — the window getProjectReportData gives live mode, without the
+ * report. Costs a filter over the request's already-cached ALL CLIENTS rows.
+ */
+export const getProjectLiveWindow = cache(
+  async (subjectEmail: string, projectName: string): Promise<ReportWindow> =>
+    liveWindowOf(
+      await getAllClientsCurrentForProject({ subjectEmail, project: projectName }),
+      projectName,
+    ),
+);
+
 function lastDayOfMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m, 0));
@@ -1229,26 +1270,7 @@ export const getProjectReportData = cache(
         subjectEmail,
         project: projectName,
       });
-      // Flight envelope: earliest התחלה, latest סיום across current rows
-      // (legacy Code.js:2225).
-      let start = "";
-      let end = "";
-      for (const c of channels) {
-        if (c.startIso && (!start || c.startIso < start)) start = c.startIso;
-        if (c.endIso && c.endIso > end) end = c.endIso;
-      }
-      window = { startIso: start, endIso: end };
-      // A media-workbook project (דיגיתל שלי) has NO rows in ALL CLIENTS —
-      // it reports from its own sheet — so the envelope above is two empty
-      // strings, and inRange() downstream then applies no bound at all.
-      // The section became an all-time view of every ad ever run, with
-      // lifetime totals above it, and no picker to narrow it (the picker
-      // is real-estate-only). Fall back to the workbook's own flight span
-      // so the report describes the same period its calendar draws.
-      if (!start && !end) {
-        const span = await getMediaFlightSpan(projectName).catch(() => null);
-        if (span) window = span;
-      }
+      window = await liveWindowOf(channels, projectName);
     }
 
     // Creatives fetch runs concurrently with the platform-daily read —
