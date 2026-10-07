@@ -76,8 +76,9 @@ export default function ProjectRailShell({
   defaultSection: string;
   initialSection?: string;
   triage?: RailTriage[];
-  /** A client is looking (a real one, or staff in תצוגת לקוח). Turns off the
-   *  budget-pace signal below — see the `overview` rule in recompute. */
+  /** A client is looking (a real one, or staff in מצגת). Turns off the
+   *  budget-pace and price-gap signals below — see the `overview` and
+   *  `prices` rules in recompute. */
   clientView?: boolean;
 }) {
   const validIds = new Set(sections.map((s) => s.id));
@@ -201,13 +202,17 @@ export default function ProjectRailShell({
             : null;
       }
       // מחירים: a published-price mismatch across surfaces (warn/severe pill).
+      // Not for a client (owner request, 2026-10-07). The client render of
+      // the section carries no pill to read, so this guard is for the moment
+      // the מצגת switch flips: the internal render is still on screen until
+      // the refreshed one streams in.
       const prices = root.querySelector('[data-sid="prices"]');
       if (prices) {
-        next.prices = prices.querySelector(
-          ".price-check-status-warn, .price-check-status-severe",
-        )
-          ? { text: "⚠️", tone: "warning" }
-          : null;
+        next.prices =
+          !clientView &&
+          prices.querySelector(".price-check-status-warn, .price-check-status-severe")
+            ? { text: "⚠️", tone: "warning" }
+            : null;
       }
       // Budget off its required pace (over/under) shows a red pace badge in
       // the header → flag סקירת פעילות. Not for a client: the badge is in

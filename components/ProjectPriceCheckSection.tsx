@@ -40,11 +40,11 @@ export default async function ProjectPriceCheckSection({
   isClientUser = false,
 }: {
   projectName: string;
-  /** Client viewer — strips the internal ad-ops chrome: the FB/Google
-   *  "פתח ב-Ads" deep-links, the "מודעות מושהות" ad-status chips, and
-   *  the internal mismatch/QA status pill + min/max outlier badges.
-   *  Clients keep the published prices, the landing/Yad2 links, and the
-   *  per-room inventory. */
+  /** Client viewer — a real client, or staff presenting in מצגת. Strips the
+   *  internal ad-ops chrome: the FB/Google "פתח ב-Ads" deep-links, the
+   *  "מודעות מושהות" ad-status chips, and the internal mismatch/QA status
+   *  pill + min/max outlier badges. Clients keep the published prices, the
+   *  landing/Yad2 links, and the per-room inventory. */
   isClientUser?: boolean;
 }) {
   const clientMode = !!isClientUser;

@@ -499,9 +499,13 @@ export default async function ProjectOverviewPage({
   // screen one click in the rail put internal alerts in front of the client.
   //
   // It is deliberately NOT fed into the `isClientUser` props of LatestPrisotCard
-  // / ProjectPriceCheckSection / the Drive link: there `isClientUser` swaps in
-  // things a client can DO (approve a plan, open the shared folder), and a
-  // staff member presenting is not a client.
+  // / the Drive link: there `isClientUser` swaps in things a client can DO
+  // (approve a plan, open the shared folder), and a staff member presenting is
+  // not a client. ProjectPriceCheckSection DOES get it (2026-10-07): its
+  // client mode only takes internal chrome away — the price-gap pill, the
+  // paused-ads chips, the Ads-manager links — and with the internal render
+  // left up in מצגת, the rail read that pill and put "דורש טיפול: פערי מחירים
+  // בפרסום" in front of the client.
   const clientViewSwitchOn =
     (await cookies().catch(() => null))?.get(CLIENT_VIEW_COOKIE)?.value === "1";
   const internalClientView =
@@ -900,7 +904,7 @@ export default async function ProjectOverviewPage({
     <Suspense fallback={null}>
       <ProjectPriceCheckSection
         projectName={projectName}
-        isClientUser={isClientUser}
+        isClientUser={reportClientView}
       />
     </Suspense>
   ) : null;
