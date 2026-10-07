@@ -1,6 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import GoogleAdsIcon from "@/components/GoogleAdsIcon";
+import FacebookAdsIcon from "@/components/FacebookAdsIcon";
+
+/**
+ * The "open the ad platform" button of the two budget tables — the project
+ * page's קצב יומי cell and the budget desk's נדרש ליום cell: the platform's
+ * logo and the hub's "opens elsewhere" arrow.
+ *
+ * It copies on the way, as it always did — the amount, and for Google the
+ * campaign id its own search needs — but what it does that the number beside
+ * it does not is open the platform, so that is what it shows. It wore ⧉
+ * until 2026-10-07, which read as "copy" and left the owner asking which of
+ * the two controls opens the platform.
+ */
+export function OpenPlatformButton({
+  platform,
+  amount,
+  url,
+  copyId,
+}: {
+  platform: "google" | "facebook";
+  amount: string;
+  url: string;
+  copyId?: string;
+}) {
+  const name = platform === "google" ? "Google Ads" : "Facebook Ads";
+  const title =
+    `פותח את הקמפיינים ב-${name}, ומעתיק את הסכום` +
+    (copyId ? " ואת מזהה הקמפיין לסינון" : "");
+  const Icon = platform === "google" ? GoogleAdsIcon : FacebookAdsIcon;
+  return (
+    <CopyAmountButton
+      amount={amount}
+      url={url}
+      copyId={copyId}
+      variant="ghost"
+      title={title}
+      label={
+        <>
+          {/* The logo's own <title> would otherwise answer a hover with just
+              the platform's name, hiding the button's. */}
+          <Icon size="1.05em" title={title} />
+          <span aria-hidden>↗</span>
+        </>
+      }
+    />
+  );
+}
 
 /* Small button that copies a numeric amount to the clipboard and optionally
    opens a deep-link. Used on morning-dashboard signals where a campaign
@@ -12,11 +60,17 @@ export default function CopyAmountButton({
   variant = "primary",
   copyId,
   copyAmount = true,
+  title,
 }: {
   amount: string;
-  label?: string;
+  /** What the button shows. A node, so the "open the platform" buttons in
+   *  the budget tables can carry the platform's logo. */
+  label?: ReactNode;
   url?: string;
   variant?: "primary" | "ghost";
+  /** Hover text, in place of the one worked out below from what the button
+   *  copies and opens — for a caller that can name the platform. */
+  title?: string;
   /** Campaign id (slug). When set, the clipboard ends up with TWO
    *  history items: the budget (written first) and the id (written
    *  LAST, so the id is the CURRENT clipboard — paste it into the
@@ -91,7 +145,8 @@ export default function CopyAmountButton({
         if (url) window.open(url, "_blank", "noopener");
       }}
       title={
-        !copyAmount
+        title ??
+        (!copyAmount
           ? copyId
             ? "פותח את הפלטפורמה ומעתיק את מזהה הקמפיין לסינון"
             : "פותח את הפלטפורמה"
@@ -99,7 +154,7 @@ export default function CopyAmountButton({
             ? copyId
               ? "מעתיק את הסכום + מזהה הקמפיין לסינון, ופותח את הפלטפורמה"
               : "מעתיק את הסכום ופותח את הפלטפורמה"
-            : "מעתיק את הסכום ללוח"
+            : "מעתיק את הסכום ללוח")
       }
     >
       {copied ? "✓ הועתק" : label ?? `📋 העתק ₪${amount}`}

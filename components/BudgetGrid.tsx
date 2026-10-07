@@ -12,7 +12,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import BudgetCrmDaily from "./BudgetCrmDaily";
 import type { CrmDailyBundle } from "@/lib/crmDailyShared";
-import CopyAmountButton from "./CopyAmountButton";
+import CopyAmountButton, { OpenPlatformButton } from "./CopyAmountButton";
 import PrisaButton from "./PrisaButton";
 import GoogleAdsIcon from "./GoogleAdsIcon";
 import FacebookAdsIcon from "./FacebookAdsIcon";
@@ -1893,7 +1893,7 @@ function CampaignRow({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   // Click-to-copy on the colored daily-required badge (just the number,
-  // no slug, no platform open — the heavier "⧉ open + copy slug" button
+  // no slug, no platform open — the heavier "open the platform" button
   // beside it covers that workflow).
   const [numCopied, setNumCopied] = useState(false);
   async function copyDailyNumber() {
@@ -2120,34 +2120,36 @@ function CampaignRow({
               ₪{dailyReq.toLocaleString("he-IL")}
               {actionTone === "over" ? " ⬇" : actionTone === "under" ? " ⬆" : ""}
             </button>
-            <CopyAmountButton
-              amount={String(dailyReq)}
-              variant="ghost"
-              // FB row: open Ads Manager already filtered for BOTH the
-              // project slug (already in the base fbAdsUrl) AND this
-              // row's type slug — both as CONTAINS_ALL terms in the
-              // filter_set, so FB shows only campaigns whose name
-              // contains both. The clipboard then only needs the daily
-              // number (no campaign identifier to paste). Owner asked
-              // 2026-05-27.
-              // Google row: unchanged — opens the account and copies
-              // the project slug so the user can paste it into FB-
-              // -style search inside Google's UI (which doesn't take
-              // a slug filter via URL). Budget number stays one back
-              // in clipboard history.
-              url={
-                r.platform === "facebook" && platformUrl
-                  ? fbUrlWithExtraFilter(
-                      platformUrl,
-                      r.campaignType?.trim() || "",
-                    )
-                  : platformUrl
-              }
-              copyId={
-                platformUrl && r.platform !== "facebook" ? tab : undefined
-              }
-              label={platformUrl ? "⧉" : "📋"}
-            />
+            {platformUrl ? (
+              <OpenPlatformButton
+                platform={r.platform === "facebook" ? "facebook" : "google"}
+                amount={String(dailyReq)}
+                // FB row: open Ads Manager already filtered for BOTH the
+                // project slug (already in the base fbAdsUrl) AND this
+                // row's type slug — both as CONTAINS_ALL terms in the
+                // filter_set, so FB shows only campaigns whose name
+                // contains both. The clipboard then only needs the daily
+                // number (no campaign identifier to paste). Owner asked
+                // 2026-05-27.
+                // Google row: unchanged — opens the account and copies
+                // the project slug so the user can paste it into FB-
+                // -style search inside Google's UI (which doesn't take
+                // a slug filter via URL). Budget number stays one back
+                // in clipboard history.
+                url={
+                  r.platform === "facebook"
+                    ? fbUrlWithExtraFilter(
+                        platformUrl,
+                        r.campaignType?.trim() || "",
+                      )
+                    : platformUrl
+                }
+                copyId={r.platform !== "facebook" ? tab : undefined}
+              />
+            ) : (
+              // No link to the ad account for this row — the amount alone.
+              <CopyAmountButton amount={String(dailyReq)} variant="ghost" label="📋" />
+            )}
           </span>
         )}
       </td>

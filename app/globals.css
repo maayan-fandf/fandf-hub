@@ -21999,6 +21999,10 @@ html[data-theme="dark"] .budget-crm-note.is-alert { color: #f87171; }
 .budget-err { margin-inline-start: .35em; cursor: help; }
 
 .budget-daily { display: inline-flex; align-items: center; gap: .35em; }
+/* The row's button — logo + ↗ where it opens the platform, 📋 where there is
+   no link — borrows the morning feed's pill. Tighter here, so the logo
+   variant takes no more of the cell than the bare glyph it replaced. */
+.budget-daily .morning-copy-btn { padding: .35em .5em; }
 /* נדרש ליום — project-page-style colored pill + action arrow
    (⬇ lower when over-pacing, ⬆ raise when under-pacing). */
 .budget-need {
@@ -26784,6 +26788,33 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
 .rpt-pace .rpt-pace-num {
   font-variant-numeric: tabular-nums;
 }
+/* The figure as a click-to-copy button (internal viewers). No chrome of its
+   own, so it still reads as the number in the cell; the pointer, a dotted
+   underline on hover and a green flash once copied say it can be clicked. */
+button.rpt-pace-copy {
+  border: 0;
+  margin: 0;
+  padding: 0 0.15em;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+button.rpt-pace-copy:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+button.rpt-pace-copy:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 1px;
+}
+button.rpt-pace-copy.is-copied {
+  background: #16a34a;
+  color: #fff;
+  text-decoration: none;
+}
 .rpt-pace.is-handled {
   opacity: 0.55;
 }
@@ -29184,7 +29215,8 @@ html[data-theme="dark"] .rpt-basis-badge.is-fallback {
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
-/* the pacing copy button reuses .morning-copy-btn from the budget desk */
+/* the pacing cell's "open the platform" button (OpenPlatformButton) reuses
+   .morning-copy-btn from the budget desk */
 .rpt-pace .morning-copy-btn {
   margin-inline-start: 0.35rem;
   padding: 0 0.35rem;

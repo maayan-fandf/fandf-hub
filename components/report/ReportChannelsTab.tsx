@@ -5,7 +5,7 @@ import { channelIcon } from "@/lib/channelIcon";
 import ChannelIcon from "@/components/ChannelIcon";
 import { pacingChannelKey } from "@/lib/budgetTypes";
 import ReportChannelCharts from "@/components/report/ReportChannelCharts";
-import CopyAmountButton from "@/components/CopyAmountButton";
+import { OpenPlatformButton } from "@/components/CopyAmountButton";
 import GoogleAdsIcon from "@/components/GoogleAdsIcon";
 import FacebookAdsIcon from "@/components/FacebookAdsIcon";
 
@@ -197,6 +197,38 @@ function CancelledPart({ scheduled, cancelled }: { scheduled: number; cancelled?
     >
       ({fmtInt(cancelled)} בוטלו)
     </span>
+  );
+}
+
+/** Last line of the קצב יומי cell's tooltip for viewers who get PaceNumber. */
+const PACE_COPY_HINT = "לחיצה על המספר מעתיקה אותו";
+
+/**
+ * The קצב יומי figure as a click-to-copy button: it is the number a media
+ * manager types into the platform's daily-budget field (owner request,
+ * 2026-10-07 — the budget desk's נדרש ליום pill already worked this way).
+ * It has no `title` of its own, so hovering it still shows the cell's
+ * מתוכנן / מוגדר בפלטפורמה lines, which end with PACE_COPY_HINT.
+ */
+function PaceNumber({ rate }: { rate: number }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={"rpt-pace-num rpt-pace-copy" + (copied ? " is-copied" : "")}
+      aria-label={`העתק ${fmtILS(rate)}`}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(String(Math.round(rate)));
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* best-effort */
+        }
+      }}
+    >
+      {fmtILS(rate)}
+    </button>
   );
 }
 
@@ -1659,6 +1691,8 @@ export default function ReportChannelsTab({
               );
               const chKey = c.channel.toLowerCase();
               const leadsWarn = leadsDivergence(c);
+              // Internal viewers copy the figure by clicking it (PaceNumber).
+              const copyRate = canEditBudget && c.dailyRate > 0;
               return (
                 <tr key={c.channel}>
                   <td
@@ -1781,7 +1815,11 @@ export default function ReportChannelsTab({
                         (pacing?.cls ? ` ${pacing.cls}` : "") +
                         (fade === "dismissed" ? " is-handled" : "")
                       }
-                      title={pacing?.lines.join("\n") || undefined}
+                      title={
+                        [...(pacing?.lines ?? []), ...(copyRate ? [PACE_COPY_HINT] : [])].join(
+                          "\n",
+                        ) || undefined
+                      }
                     >
                       {fade === "dismissed" && (
                         <span className="rpt-pace-mark" title="טופל">
@@ -1796,9 +1834,13 @@ export default function ReportChannelsTab({
                           ⚠️
                         </span>
                       )}
-                      <span className="rpt-pace-num">
-                        {c.dailyRate ? fmtILS(c.dailyRate) : "—"}
-                      </span>
+                      {copyRate ? (
+                        <PaceNumber rate={c.dailyRate} />
+                      ) : (
+                        <span className="rpt-pace-num">
+                          {c.dailyRate ? fmtILS(c.dailyRate) : "—"}
+                        </span>
+                      )}
                       {pacing?.action === "lower" && (
                         <span className="rpt-pace-action" aria-label="הורד תקציב"> ⬇</span>
                       )}
@@ -1828,8 +1870,7 @@ export default function ReportChannelsTab({
                           ↩︎
                         </button>
                       )}
-                      {canEditBudget &&
-                        c.dailyRate > 0 &&
+                      {copyRate &&
                         (() => {
                           const url =
                             c.platform === "google"
@@ -1838,24 +1879,21 @@ export default function ReportChannelsTab({
                                 ? adLinks?.fbAdsUrl
                                 : "";
                           if (!url) return null;
-                          const openUrl =
-                            c.platform === "google"
-                              ? `${url}${url.includes("#") ? "" : `#fandf-filter=${encodeURIComponent(data.slug)}`}`
-                              : url;
+                          const google = c.platform === "google";
+                          const openUrl = google
+                            ? `${url}${url.includes("#") ? "" : `#fandf-filter=${encodeURIComponent(data.slug)}`}`
+                            : url;
                           return (
-                            <CopyAmountButton
+                            <OpenPlatformButton
+                              platform={google ? "google" : "facebook"}
                               amount={String(Math.round(c.dailyRate))}
                               // Google: copy the slug too, so it can be pasted
                               // into Google Ads' own search (its URL can't
                               // pre-filter). FB: the fbAdsUrl already filters by
                               // the project slug, so the clipboard only needs
                               // the number — no slug (matches BudgetGrid).
-                              copyId={
-                                c.platform === "facebook" ? undefined : data.slug
-                              }
+                              copyId={google ? data.slug : undefined}
                               url={openUrl}
-                              variant="ghost"
-                              label="⧉"
                             />
                           );
                         })()}
