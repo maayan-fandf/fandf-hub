@@ -294,7 +294,7 @@ function OutcomeLegend({
  *  Rows are the UNION of "has funnel" and "has money": טלפוניה has leads
  *  and no spend, a just-launched channel has spend and no leads, and
  *  dropping either would lose a channel the merged card is supposed to
- *  cover. */
+ *  cover. They are ordered by budget, largest first. */
 function OutcomeBars({
   channels,
   withMeetings = true,
@@ -306,9 +306,15 @@ function OutcomeBars({
   withMeetings?: boolean;
 }) {
   const pal = useChartPalette();
-  const rows = channels.filter(
-    (c) => c.leads + c.scheduled + c.meetings > 0 || c.budget > 0 || c.spend > 0,
-  );
+  // Biggest budget first, stepping down (owner request, 2026-10-07) — left to
+  // right, the way every chart on the page reads. It used to follow the
+  // sheet's row order, which says nothing. Channels on the same budget (the
+  // unpaid ones, all at ₪0) fall back to what they spent, then to their leads.
+  const rows = channels
+    .filter(
+      (c) => c.leads + c.scheduled + c.meetings > 0 || c.budget > 0 || c.spend > 0,
+    )
+    .sort((a, b) => b.budget - a.budget || b.spend - a.spend || b.leads - a.leads);
   if (!rows.length)
     return <div className="rpt-empty rpt-empty-sm">אין נתוני משפך או תקציב</div>;
   const data = rows.map((c) => {
