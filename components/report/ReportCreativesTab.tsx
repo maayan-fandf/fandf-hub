@@ -730,12 +730,30 @@ function AdSetHoverCard({
   );
 }
 
+/** What stands in for `data.creatives` on a project the daily feeds have
+ *  nothing for, once the רענון pull has found it an ad — see the component.
+ *  No CRM join on either basis: there is nothing to have joined. */
+const NO_CREATIVES: ReportCreatives = {
+  fb: { cost: 0, leads: 0, cpl: 0, adCount: 0, topAds: [], topAdSets: [] },
+  google: { clicks: 0, conversions: 0, topKeywords: [], ads: [], dgAds: [] },
+  meetingBases: { lead: false, dated: false },
+};
+/** Stable "no rows" lists, so the memos keyed on them do not re-run on
+ *  every render of a tab with no payload. */
+const NO_FB_ADS: ReportFbAd[] = [];
+const NO_FB_ADSETS: ReportFbAdSet[] = [];
+
 export default function ReportCreativesTab({
   data,
   showPreviews = false,
   fbNode = null,
+  internal = false,
 }: {
   data: ProjectReportData;
+  /** An internal viewer (not a client, not מצגת): the "מודעות שעלו עכשיו"
+   *  button is offered even when the page has no Facebook card to put it
+   *  over. See `pullBeforeCards`. */
+  internal?: boolean;
   /** The Facebook/Meta UTM breakdown ("פילוח פייסבוק"). Rendered HERE, at
    *  the end of the Facebook run and before the Google bands, rather than
    *  appended after the whole tab — where it sat below the Google keyword
@@ -776,57 +794,22 @@ export default function ReportCreativesTab({
      payload identity, which only changes with a server render — the refresh
      overlay re-renders this tab without touching it. */
   const { basis } = useMeetingBasis();
-  const c = data.creatives;
+  // No payload = the daily feeds have nothing for this project, which is
+  // also what a project that starts today looks like. Once the רענון pull
+  // has found it an ad, an EMPTY payload stands in, so the normal render
+  // below runs with nothing in it but that ad's card.
+  const c = data.creatives ?? (liveAds.length ? NO_CREATIVES : null);
   const view = useMemo(
     () => (c ? creativesBasisView(c, basis, data.datedSource) : null),
     [c, basis, data.datedSource],
   );
-
-  if (!c || !view) {
-    return (
-      <div className="rpt-creatives">
-        <ReportMediaSection data={data} />
-        <div className="rpt-empty">
-          אין נתוני קריאייטיבים לפרויקט בתקופה הזו (חשבון הפרסום אינו ברשימת
-          ה-Supermetrics, או שאין פעילות בטווח).
-        </div>
-        {/* Still shown when there are no creatives: the UTM breakdown comes
-            from the CRM warehouse, not the ad-assets feed, so it can be the
-            only Facebook detail a project has. */}
-        {fbNode}
-      </div>
-    );
-  }
-  // Everything below reads the SWAPPED payload. Only the meeting fields
-  // differ from `c`; order, keys and every basis-free figure are the same.
-  const { cb, withCrm, noSource, sfDated } = view;
-  const { fb, google } = cb;
-  const ap = data.adPlatform;
-  const prevAp = data.prevAdPlatform;
-  /* Salesforce under dated: one caveat line, under the first Facebook block
-     that shows a CRM line (ads, else ad sets) and under the keyword table's
-     title. Nowhere else — a note over cards that carry no CRM figures would
-     explain a "—" the reader cannot see. */
-  const fbSfNoteAt: "ads" | "adsets" | null = !sfDated
-    ? null
-    : fb.topAds.some((a) => withCrm.has(a))
-      ? "ads"
-      : fb.topAdSets.some((s) => withCrm.has(s))
-        ? "adsets"
-        : null;
-  const sfNote = (
-    <div className="rpt-basis-note">{BASIS_COPY.sfDatedCreatives}</div>
-  );
-  /* The internal "עוד N תיאומים · M ביצועים מלידים ללא תגית UTM" remainders
-     (CSS-hidden under .rpt-clientview). Facebook's closes the ad-set grid,
-     because Σ audiences + it = the ערוצים facebook row; with no ad sets it
-     closes the ad grid instead. undefined on a basis with no source, and
-     the component renders nothing for an empty pair. */
-  const fbUntagged = untaggedFor(cb, "fb", basis);
-  const gsUntagged = untaggedFor(cb, "gs", basis);
-  const googleActiveAds = google.ads.filter(
-    (a) => a.status === "Enabled",
-  ).length;
+  /* The swapped Facebook lists, or none. Read here — with everything down to
+     the early return — rather than after it: the two memos are hooks, and
+     since the stand-in above this tab goes from "no payload" to "a payload"
+     within one mount, which a hook placed after the return would turn into
+     "rendered more hooks than during the previous render". */
+  const fbTopAds = view?.cb.fb.topAds ?? NO_FB_ADS;
+  const fbTopAdSets = view?.cb.fb.topAdSets ?? NO_FB_ADSETS;
 
   /* The cards the page is already showing, keyed the way lib/reportCreatives
      keys them, so the server can tell us only what is genuinely NEW and the
@@ -834,7 +817,7 @@ export default function ReportCreativesTab({
   // Built with the SHARED key, because the server compares Meta's own ad
   // names against it and those carry invisible bidi marks the card's name has
   // already had stripped — see fbCardKey in lib/reportShared.
-  const knownKeys = [...fb.topAds, ...liveAds].map((a) =>
+  const knownKeys = [...fbTopAds, ...liveAds].map((a) =>
     fbCardKey(a.campaign, a.ad),
   );
 
@@ -879,7 +862,9 @@ export default function ReportCreativesTab({
       // was correct. Naming the accounts scanned makes it a result.
       setRefreshNote(
         found.length
-          ? `נמצאו ${found.length} מודעות חדשות` +
+          ? (found.length === 1
+              ? "נמצאה מודעה חדשה אחת"
+              : `נמצאו ${found.length} מודעות חדשות`) +
               ((j.foreign ?? 0) > 0
                 ? ` (${j.foreign} בחשבון שאינו החשבון הרגיל של הפרויקט)`
                 : "")
@@ -897,7 +882,7 @@ export default function ReportCreativesTab({
   /* Live cards first: the ad someone just launched is the one they opened
      the page to look at. They carry no numbers, so they cannot distort the
      ranking of the cards that do. */
-  const fbCards = [...liveAds, ...fb.topAds];
+  const fbCards = [...liveAds, ...fbTopAds];
 
   /**
    * The cards, split into one block per CAMPAIGN.
@@ -941,8 +926,7 @@ export default function ReportCreativesTab({
       }))
       .sort((a, b) => b.cost - a.cost || a.campaign.localeCompare(b.campaign));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fb.topAds, liveAds]);
-  const grouped = fbGroups.length > 1;
+  }, [fbTopAds, liveAds]);
 
   /**
    * The same split for the ad sets, where it matters more than on the cards:
@@ -957,7 +941,7 @@ export default function ReportCreativesTab({
    */
   const adSetGroups = useMemo(() => {
     const by = new Map<string, ReportFbAdSet[]>();
-    for (const s of fb.topAdSets) {
+    for (const s of fbTopAdSets) {
       const k = s.campaign || "";
       const list = by.get(k);
       if (list) list.push(s);
@@ -973,7 +957,88 @@ export default function ReportCreativesTab({
         held: sets.reduce((n, s) => n + (s.held || 0), 0),
       }))
       .sort((a, b) => b.cost - a.cost || a.campaign.localeCompare(b.campaign));
-  }, [fb.topAdSets]);
+  }, [fbTopAdSets]);
+
+  /* The Facebook block's header: its title and the רענון button, which acts
+     on exactly what sits under it. One node, because it has two homes — over
+     the cards, and (internal viewers, live period) on a page that has no card
+     yet. See `pullBeforeCards`. */
+  const refreshRow = (
+    <div className="rpt-cr-titlerow">
+      <h3 className="rpt-cr-title">🎨 מודעות פייסבוק</h3>
+      <button
+        type="button"
+        className="rpt-cr-refresh"
+        onClick={refreshNewAds}
+        disabled={refreshing}
+        title="בודק מול פייסבוק אילו מודעות עלו בימים האחרונים ועדיין לא הופיעו כאן. הנתונים בדוח מתעדכנים פעם ביום, אז מודעה שעלתה היום עוד לא בפנים."
+      >
+        {refreshing ? "בודק…" : "🔄 מודעות שעלו עכשיו"}
+      </button>
+      {refreshNote && (
+        <span className="rpt-cr-refresh-note">{refreshNote}</span>
+      )}
+    </div>
+  );
+  /* The button with no card under it. It used to be absent there, on the
+     reasoning that a project the feeds never carried has nothing to compare a
+     live pull against — which left it missing in the one case it is most
+     wanted: a project whose first ad went up an hour ago (נאות הדרים באר שבע,
+     2026-10-08). lib/fbNewAds has always handled that case, by asking every
+     account. Internal only, since a client's pull never leaves the accounts
+     the project is already known in and would come back empty; live period
+     only, since "just went up" means nothing on a closed month. */
+  const pullBeforeCards = internal && data.mode === "live";
+
+  if (!c || !view) {
+    return (
+      <div className="rpt-creatives">
+        <ReportMediaSection data={data} />
+        {pullBeforeCards && refreshRow}
+        <div className="rpt-empty">
+          אין נתוני קריאייטיבים לפרויקט בתקופה הזו (חשבון הפרסום אינו ברשימת
+          ה-Supermetrics, או שאין פעילות בטווח).
+        </div>
+        {/* Still shown when there are no creatives: the UTM breakdown comes
+            from the CRM warehouse, not the ad-assets feed, so it can be the
+            only Facebook detail a project has. */}
+        {fbNode}
+      </div>
+    );
+  }
+  // Everything below reads the SWAPPED payload. Only the meeting fields
+  // differ from `c`; order, keys and every basis-free figure are the same.
+  const { cb, withCrm, noSource, sfDated } = view;
+  const { fb, google } = cb;
+  const ap = data.adPlatform;
+  const prevAp = data.prevAdPlatform;
+  /* Salesforce under dated: one caveat line, under the first Facebook block
+     that shows a CRM line (ads, else ad sets) and under the keyword table's
+     title. Nowhere else — a note over cards that carry no CRM figures would
+     explain a "—" the reader cannot see. */
+  const fbSfNoteAt: "ads" | "adsets" | null = !sfDated
+    ? null
+    : fb.topAds.some((a) => withCrm.has(a))
+      ? "ads"
+      : fb.topAdSets.some((s) => withCrm.has(s))
+        ? "adsets"
+        : null;
+  const sfNote = (
+    <div className="rpt-basis-note">{BASIS_COPY.sfDatedCreatives}</div>
+  );
+  /* The internal "עוד N תיאומים · M ביצועים מלידים ללא תגית UTM" remainders
+     (CSS-hidden under .rpt-clientview). Facebook's closes the ad-set grid,
+     because Σ audiences + it = the ערוצים facebook row; with no ad sets it
+     closes the ad grid instead. undefined on a basis with no source, and
+     the component renders nothing for an empty pair. */
+  const fbUntagged = untaggedFor(cb, "fb", basis);
+  const gsUntagged = untaggedFor(cb, "gs", basis);
+  const googleActiveAds = google.ads.filter(
+    (a) => a.status === "Enabled",
+  ).length;
+
+  const grouped = fbGroups.length > 1;
+
   const adSetsGrouped = adSetGroups.length > 1;
   /**
    * The crowned audience: cheapest CPL among those that produced enough
@@ -1029,28 +1094,12 @@ export default function ReportCreativesTab({
         </div>
       )}
 
+      {/* A project with Google data and no Facebook card yet: the header and
+          its button stand alone, so its first Facebook ad can be pulled. */}
+      {fbCards.length === 0 && pullBeforeCards && refreshRow}
       {fbCards.length > 0 && (
         <>
-          {/* The refresh lives on this header rather than beside the tab
-              because it acts on exactly what sits under it. Note that a
-              project with no FB cards at all shows no header and therefore
-              no button — the feeds have never carried it, so there is
-              nothing to compare a live pull against. */}
-          <div className="rpt-cr-titlerow">
-            <h3 className="rpt-cr-title">🎨 מודעות פייסבוק</h3>
-            <button
-              type="button"
-              className="rpt-cr-refresh"
-              onClick={refreshNewAds}
-              disabled={refreshing}
-              title="בודק מול פייסבוק אילו מודעות עלו בימים האחרונים ועדיין לא הופיעו כאן. הנתונים בדוח מתעדכנים פעם ביום, אז מודעה שעלתה היום עוד לא בפנים."
-            >
-              {refreshing ? "בודק…" : "🔄 מודעות שעלו עכשיו"}
-            </button>
-            {refreshNote && (
-              <span className="rpt-cr-refresh-note">{refreshNote}</span>
-            )}
-          </div>
+          {refreshRow}
           {fbSfNoteAt === "ads" && sfNote}
           {fbGroups.map((g) => (
             <div key={g.campaign || "—"} className="rpt-cr-campgroup">

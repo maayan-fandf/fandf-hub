@@ -423,13 +423,42 @@ export async function getNewFbAdsForProject(opts: {
     }
   }
 
+  /**
+   * ONCE THE PROJECT'S OWN ADS ARE FOUND, STOP GUESSING.
+   *
+   * An unmapped campaign is shown because it MIGHT be this project's launch
+   * under a name Keys does not know. That guess is worth making while nothing
+   * else has turned up. When an ad that positively matches the project has,
+   * an unmapped campaign in some other developer's account is no longer a
+   * candidate, only noise: נאות הדרים באר שבע's first ad (2026-10-08) came
+   * back from the sweep with four of הרימון's, launched the day before in an
+   * account the project has nothing to do with. So with a match in hand the
+   * unmapped ones are kept only where the project advertises — the accounts
+   * it is known in, and the ones the matched ads were just found in.
+   */
+  const ownAccounts = new Set(
+    ads.filter((a) => !a.unmappedCampaign).map((a) => a.account),
+  );
+  const shown = ownAccounts.size
+    ? ads.filter(
+        (a) =>
+          !a.unmappedCampaign ||
+          known.includes(a.account) ||
+          ownAccounts.has(a.account),
+      )
+    : ads;
+
   // Newest first: the ad someone just launched is the one they came to see.
-  ads.sort((a, b) => String(b.liveCreatedIso).localeCompare(String(a.liveCreatedIso)));
+  shown.sort((a, b) => String(b.liveCreatedIso).localeCompare(String(a.liveCreatedIso)));
 
   /** Ads found somewhere OTHER than the project's known accounts — worth
    *  telling the reader, because it means the project has started
-   *  advertising from a new account and nothing else in the hub knows yet. */
-  const foreign = ads.filter((a) => !known.includes(a.account)).length;
+   *  advertising from a new account and nothing else in the hub knows yet.
+   *  Zero for a project with no known account at all: its first ad is not
+   *  "in another account", there is no usual one yet. */
+  const foreign = known.length
+    ? shown.filter((a) => !known.includes(a.account)).length
+    : 0;
 
-  return { ads, accounts, sweptAll, hours, failed, foreign };
+  return { ads: shown, accounts, sweptAll, hours, failed, foreign };
 }

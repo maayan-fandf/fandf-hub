@@ -352,6 +352,7 @@ export default async function NativeProjectRail({
             data={data}
             showPreviews={mediaLed}
             fbNode={campaignsFbNode}
+            internal={!clientView}
           />
         </>
       ),
