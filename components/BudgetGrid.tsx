@@ -87,7 +87,8 @@ export default function BudgetGrid({
   adLinks: Record<string, ProjLinks>;
   /** Slug(==tab, lowercased) → is-inactive, using the same rule as the
    *  projects home screen / top-nav (lib/projectEnded): ended >5 days ago
-   *  OR no current-month spend. Explicit true/false per feed project;
+   *  OR neither spend nor a budget on a still-open flight (the page computes
+   *  it). Explicit true/false per feed project;
    *  absent = not in the feed (falls back to the all-zero heuristic). */
   inactiveProjects: Record<string, boolean>;
   showAdLinks: boolean;
@@ -3050,9 +3051,10 @@ function HealthDot({ v }: { v?: HealthVerdict }) {
 
 /**
  * Same "is this live?" answer as the projects home screen + top-nav: a
- * project is inactive when it ended (>5 days past) OR has no current-month
- * spend — precomputed server-side in `inactiveProjects` from the morning
- * feed. Projects missing from the feed fall back to the all-zero heuristic.
+ * project is inactive when it ended (>5 days past) OR has neither spend nor
+ * a budget on a still-open flight — precomputed server-side in
+ * `inactiveProjects` from the budget master. Projects missing from it fall
+ * back to the all-zero heuristic.
  */
 function isInactive(
   p: BudgetProject,

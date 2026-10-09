@@ -142,9 +142,18 @@ export default async function BudgetsPage({
       if (key) adLinks[key] = entry;
     }
   }
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jerusalem",
+  }).format(new Date());
+
   // Live/inactive map derived from the budget master (the same project list the
-  // grid renders): non-live when ended (>5 days past) OR no current-month
-  // spend — same definition as the projects home screen + top-nav. Keyed by
+  // grid renders): non-live when ended (>5 days past) OR no spend has landed
+  // AND no budget is planned — the definition the projects home screen +
+  // top-nav use (lib/projectEnded). The budget half keeps a project that was
+  // just set up on the desk before its first spend arrives, which is when its
+  // split most needs checking. Stricter than home in one way: the budget only
+  // counts while its flight is still open, so a project that ended without
+  // spending doesn't come back on the strength of a leftover budget. Keyed by
   // both tab and name. (This used to come from the morning feed, which now
   // times out — so it was silently empty on prod.)
   const inactiveProjects: Record<string, boolean> = {};
@@ -153,7 +162,16 @@ export default async function BudgetsPage({
       (s, pl) => s + (pl?.spend || 0),
       0,
     );
-    const inactive = isProjectEndedByIso(p.endIso) || !(spendSum > 0);
+    // Per channel row rather than off the project's E5: a tab whose header
+    // block sits a row off (Yuvalim_hod-hasharon) reads a blank project end
+    // date, while its rows still carry their own.
+    const openBudget = p.rows.reduce((s, r) => s + (r.ended ? 0 : r.budget), 0);
+    // E3 counts too: a target that hasn't been split across channels yet is
+    // exactly what this desk is for.
+    const openTarget = p.e3 > 0 && (!p.endIso || p.endIso >= today);
+    const inactive =
+      isProjectEndedByIso(p.endIso) ||
+      (!(spendSum > 0) && !(openBudget > 0 || openTarget));
     for (const k of [p.tab, p.name]) {
       const key = (k || "").toLowerCase().trim();
       if (key) inactiveProjects[key] = inactive;
@@ -178,9 +196,6 @@ export default async function BudgetsPage({
     };
   }
   const usdIlsRate = rateRes.status === "fulfilled" ? rateRes.value : 3.7;
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jerusalem",
-  }).format(new Date());
 
   return (
     <main className="container">

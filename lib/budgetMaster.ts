@@ -89,6 +89,9 @@ const SKIP_TABS = new Set([
   "GADS+FB",
   "SupermetricsQueries",
   "TEST_DataPipe",
+  // IMPORTRANGE spill of the articles-budget workbook. Its E3 happens to
+  // hold a number, so it read as a project with a target and no spend.
+  "benefit",
 ]);
 
 /* ── date helpers ────────────────────────────────────────────────── */
